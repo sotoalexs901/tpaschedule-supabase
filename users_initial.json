@@ -1,0 +1,7 @@
+
+[
+  {"username":"anapoles","pin":"9005","role":"station_manager"},
+  {"username":"amartinez","pin":"1234","role":"duty_manager"},
+  {"username":"ogiraldo","pin":"4321","role":"duty_manager"},
+  {"username":"gmoya","pin":"5678","role":"duty_manager"}
+]
