@@ -1,124 +1,116 @@
-
-import React, { useEffect, useState, useMemo } from 'react'
-import { db } from '../firebase'
-import {
-  collection, getDocs, addDoc, serverTimestamp, query, where
-} from 'firebase/firestore'
-import ScheduleGrid from '../components/ScheduleGrid.jsx'
+import React, { useState, useEffect } from "react";
+import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../firebase";
+import ScheduleGrid from "../components/ScheduleGrid";
 
 export default function SchedulePage() {
-  const [weekStart, setWeekStart] = useState('')
-  const [rows, setRows] = useState([])
-  const [employees, setEmployees] = useState([])
-  const [restrictions, setRestrictions] = useState([])
-  const [budgets, setBudgets] = useState({})
-  const [status, setStatus] = useState('')
+  const [airline, setAirline] = useState("");
+  const [department, setDepartment] = useState("");
+  const [dayNumbers, setDayNumbers] = useState({
+    mon: "",
+    tue: "",
+    wed: "",
+    thu: "",
+    fri: "",
+    sat: "",
+    sun: "",
+  });
 
+  const [employees, setEmployees] = useState([]);
+
+  // Load employees from Firestore
   useEffect(() => {
-    async function loadBase() {
-      const empSnap = await getDocs(collection(db, 'employees'))
-      setEmployees(empSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+    const fetchEmployees = async () => {
+      const snap = await getDocs(collection(db, "employees"));
+      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    };
+    fetchEmployees();
+  }, []);
 
-      const restSnap = await getDocs(collection(db, 'restrictions'))
-      setRestrictions(restSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+  const handleSaveSchedule = async (gridData) => {
+    if (!airline || !department) {
+      alert("Select airline and department");
+      return;
     }
-    loadBase().catch(console.error)
-  }, [])
 
-  useEffect(() => {
-    async function loadBudgets() {
-      if (!weekStart) {
-        setBudgets({})
-        return
-      }
-      const qBud = query(
-        collection(db, 'airlineBudgets'),
-        where('weekStart', '==', weekStart)
-      )
-      const snap = await getDocs(qBud)
-      const map = {}
-      snap.forEach(doc => {
-        const d = doc.data()
-        map[d.airline] = d.budgetHours || 0
-      })
-      setBudgets(map)
-    }
-    loadBudgets().catch(console.error)
-  }, [weekStart])
+    await addDoc(collection(db, "schedules"), {
+      createdAt: serverTimestamp(),
+      airline,
+      department,
+      days: dayNumbers,
+      grid: gridData,
+      status: "pending",
+    });
 
-  const blockedIds = useMemo(() => {
-    const set = new Set()
-    restrictions.forEach(r => {
-      if (r.employeeId) set.add(r.employeeId)
-    })
-    return set
-  }, [restrictions])
-
-  const handleSubmit = async () => {
-    if (!weekStart) {
-      alert('Select week start date')
-      return
-    }
-    setStatus('Saving schedule...')
-    const schedRef = await addDoc(collection(db, 'schedules'), {
-      weekStart,
-      status: 'pending_approval',
-      createdAt: serverTimestamp()
-    })
-    const shiftsCol = collection(db, 'schedules', schedRef.id, 'shifts')
-    for (const row of rows) {
-      const { employeeId, airline, role, shiftsByDay } = row
-      if (!employeeId || !airline) continue
-      Object.entries(shiftsByDay || {}).forEach(async ([day, s]) => {
-        if (!s.start && !s.end) return
-        await addDoc(shiftsCol, {
-          dateDay: day,
-          employeeId,
-          airline,
-          role,
-          start: s.start || '',
-          end: s.end || ''
-        })
-      })
-    }
-    setStatus(`Schedule submitted for approval (id: ${schedRef.id})`)
-  }
+    alert("Schedule submitted for approval");
+  };
 
   return (
-    <div className="card space-y-4">
-      <h2 className="text-sm font-semibold">Create Weekly Schedule (Duty Managers)</h2>
-      <div className="flex gap-2 items-center text-xs">
-        <label className="font-medium">Week start (Monday):</label>
-        <input
-          type="date"
-          className="border rounded px-2 py-1"
-          value={weekStart}
-          onChange={e => setWeekStart(e.target.value)}
-        />
-        <button className="btn" type="button" onClick={() => setRows([])}>
-          Clear grid
-        </button>
+    <div className="p-4 space-y-4">
+      <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-1 text-sm">
+          <label className="font-medium">Airline</label>
+          <select
+            className="border rounded w-full px-2 py-1"
+            value={airline}
+            onChange={(e) => setAirline(e.target.value)}
+          >
+            <option value="">Select airline</option>
+            <option value="SY">SY</option>
+            <option value="AV">AV</option>
+            <option value="WL">WL</option>
+            <option value="EA">EA</option>
+            <option value="WCHR">WCHR</option>
+            <option value="AA-BSO">AA BSO</option>
+            <option value="CABIN">Cabin Service</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+
+        <div className="space-y-1 text-sm">
+          <label className="font-medium">Department</label>
+          <select
+            className="border rounded w-full px-2 py-1"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+          >
+            <option value="">Select department</option>
+            <option value="Ramp">Ramp</option>
+            <option value="TC">Ticket Counter</option>
+            <option value="BSO">BSO</option>
+            <option value="Cabin">Cabin Service</option>
+            <option value="WCHR">WCHR</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div></div>
+      </div>
+
+      {/* Editable day numbers */}
+      <div className="grid grid-cols-7 gap-2 text-xs">
+        {Object.keys(dayNumbers).map((key) => (
+          <div key={key} className="space-y-1">
+            <label className="font-medium uppercase">{key}</label>
+            <input
+              className="border rounded w-full text-center px-1 py-1"
+              value={dayNumbers[key]}
+              onChange={(e) =>
+                setDayNumbers({ ...dayNumbers, [key]: e.target.value })
+              }
+              placeholder="10"
+            />
+          </div>
+        ))}
       </div>
 
       <ScheduleGrid
-        rows={rows}
-        onChange={setRows}
         employees={employees}
-        blockedIds={blockedIds}
-        budgets={budgets}
+        dayNumbers={dayNumbers}
+        onSave={handleSaveSchedule}
       />
-
-      <div className="flex justify-between items-center text-xs">
-        <div className="space-x-2">
-          <span className="badge">Multiple rows allowed per employee (two shifts / 24h)</span>
-          <span className="badge badge-blocked">Blocked employees cannot be assigned</span>
-        </div>
-        <button className="btn btn-primary" type="button" onClick={handleSubmit}>
-          Submit schedule for approval
-        </button>
-      </div>
-
-      {status && <p className="text-[11px] text-gray-600">{status}</p>}
     </div>
-  )
+  );
 }
