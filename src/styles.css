@@ -1,12 +1,70 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-.card { @apply bg-white rounded-2xl shadow p-4; }
+/* Global Layout */
+.card { @apply bg-white rounded-xl shadow p-4; }
 .btn { @apply px-3 py-2 rounded-xl border text-sm font-medium bg-white hover:bg-gray-50; }
 .btn-primary { @apply bg-blue-600 text-white hover:bg-blue-700 border-blue-600; }
-.table { @apply w-full text-xs border border-gray-200; border-collapse: collapse; }
-.table th, .table td { @apply border border-gray-200 px-2 py-1; }
-.badge { @apply inline-block text-[10px] px-2 py-0.5 rounded-full bg-gray-100; }
-.badge-blocked { @apply bg-red-100 text-red-700; }
+
+/* Excel Table Styling */
+.schedule-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 11px;
+}
+
+/* Thick Excel borders */
+.schedule-table th,
+.schedule-table td {
+  border: 2px solid #000000;
+  padding: 4px;
+}
+
+/* Header row (black) */
+.schedule-header {
+  background-color: #000000;
+  color: white;
+  font-weight: bold;
+  text-align: center;
+  font-size: 11px;
+}
+
+/* Employee name cell */
+.employee-cell {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Day cells with two shifts stacked */
+.shift-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 110px;
+}
+
+/* Small inputs for times */
+.shift-input {
+  @apply border rounded px-1 text-center;
+  width: 52px;
+  font-size: 10px;
+}
+
+/* ELEMENT COLORS BY AIRLINE */
+.airline-SY { background-color: #FFD966; }
+.airline-AV { background-color: #F7B6D2; }
+.airline-WL { background-color: #C9E7FF; }
+.airline-EA { background-color: #D6F5D6; }
+.airline-WCHR { background-color: #D2E3FF; }
+.airline-AABSO { background-color: #C8F7E7; }
+.airline-CABIN { background-color: #E8E8E8; }
+.airline-OTHER { background-color: #E5DAF6; }
+
+/* OFF cell always white */
+.shift-off {
+  background-color: white !important;
+  color: black;
+  font-weight: bold;
+  text-align: center;
+}
