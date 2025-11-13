@@ -8,6 +8,10 @@ import {
 import { db } from "../firebase";
 import ScheduleGrid from "../components/ScheduleGrid";
 
+// PDF Libraries
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
+
 export default function SchedulePage() {
   const [airline, setAirline] = useState("");
   const [department, setDepartment] = useState("");
@@ -104,6 +108,32 @@ export default function SchedulePage() {
     alert("Schedule submitted!");
   };
 
+  // -------------------------------
+  // EXPORT PDF FUNCTION
+  // -------------------------------
+  const exportPDF = async () => {
+    const element = document.getElementById("schedule-print-area");
+    if (!element) return alert("Printable area not found.");
+
+    const canvas = await html2canvas(element, {
+      scale: 3,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+    });
+
+    const imgData = canvas.toDataURL("image/png");
+
+    const pdf = new jsPDF("landscape", "pt", "a4");
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+
+    pdf.save(`Schedule_${airline}_${department}.pdf`);
+  };
+
   const printSchedule = () => {
     window.print();
   };
@@ -170,16 +200,18 @@ export default function SchedulePage() {
         ))}
       </div>
 
-      {/* FULL COLOR EXCEL-STYLE GRID */}
-      <ScheduleGrid
-        employees={employees}
-        dayNumbers={dayNumbers}
-        onSave={handleSaveSchedule}
-        rows={rows}
-        setRows={setRows}
-        airline={airline}
-        department={department}
-      />
+      {/* PRINT AREA */}
+      <div id="schedule-print-area">
+        <ScheduleGrid
+          employees={employees}
+          dayNumbers={dayNumbers}
+          onSave={handleSaveSchedule}
+          rows={rows}
+          setRows={setRows}
+          airline={airline}
+          department={department}
+        />
+      </div>
 
       {/* Sums & Budget */}
       <div className="card text-sm">
@@ -214,9 +246,16 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Print Button */}
+      {/* EXPORT & PRINT BUTTONS */}
       <button
-        className="btn w-full border border-black mt-4"
+        className="btn w-full border border-black mt-4 bg-green-600 text-white py-2 rounded"
+        onClick={exportPDF}
+      >
+        Export PDF
+      </button>
+
+      <button
+        className="btn w-full border border-black mt-2 bg-gray-200 py-2 rounded"
         onClick={printSchedule}
       >
         Print Schedule
