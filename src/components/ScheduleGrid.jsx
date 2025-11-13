@@ -8,8 +8,8 @@ export default function ScheduleGrid({
   rows,
   setRows,
   airline,
-  department,
 }) {
+  // Add row
   const addRow = () => {
     setRows([
       ...rows,
@@ -26,7 +26,7 @@ export default function ScheduleGrid({
     ]);
   };
 
-  // Color class selector (based on airline + dept)
+  // Color class selector (based on airline)
   const getColorClass = () => {
     if (airline === "SY") return "airline-SY";
     if (airline === "AV") return "airline-AV";
@@ -43,11 +43,14 @@ export default function ScheduleGrid({
   const handleSave = () => onSave(rows);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+
+      {/* EXCEL STYLE TABLE */}
       <table className="schedule-table">
         <thead>
           <tr className="schedule-header">
             <th>EMPLOYEE</th>
+
             {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => (
               <th key={d}>
                 {d.toUpperCase()} / {dayNumbers[d] || ""}
@@ -58,8 +61,10 @@ export default function ScheduleGrid({
 
         <tbody>
           {rows.map((row, index) => (
-            <tr key={index}>
-              <td className="employee-cell border-black border-2">
+            <tr key={index} className="border-black border-2">
+
+              {/* Employee Name */}
+              <td className="employee-cell border-black border-2 p-1 w-40">
                 <select
                   className="border rounded w-full text-xs px-1 py-1"
                   value={row.employeeId}
@@ -78,6 +83,7 @@ export default function ScheduleGrid({
                 </select>
               </td>
 
+              {/* Day columns */}
               {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => (
                 <td
                   key={day}
@@ -98,7 +104,8 @@ export default function ScheduleGrid({
         </tbody>
       </table>
 
-      <button className="btn w-full" onClick={addRow}>
+      {/* BUTTONS */}
+      <button className="btn w-full border border-black" onClick={addRow}>
         + Add Employee Row
       </button>
 
@@ -108,3 +115,4 @@ export default function ScheduleGrid({
     </div>
   );
 }
+
