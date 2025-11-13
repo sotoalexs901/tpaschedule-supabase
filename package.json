@@ -1,4 +1,3 @@
-
 {
   "name": "tpa-schedule-firebase",
   "version": "1.0.0",
@@ -9,15 +8,13 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-"dependencies": {
+  "dependencies": {
     "jspdf": "^2.5.1",
     "html2canvas": "^1.4.1",
     "firebase": "^10.7.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.23.1"
-}
-
   },
   "devDependencies": {
     "vite": "^5.4.8",
@@ -25,4 +22,3 @@
     "postcss": "^8.4.47",
     "autoprefixer": "^10.4.20"
   }
-}
