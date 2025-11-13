@@ -15,7 +15,7 @@ export default function AppLayout() {
     <div className="min-h-screen flex flex-col bg-slate-100">
 
       {/* ─────────────────────────────── */}
-      {/*           TOP NAVBAR            */}
+      {/*           TOP BAR              */}
       {/* ─────────────────────────────── */}
       <header className="bg-white shadow px-4 py-3 flex items-center justify-between">
         <h1 className="text-lg font-semibold">TPA Schedule System</h1>
@@ -34,10 +34,11 @@ export default function AppLayout() {
       </header>
 
       {/* ─────────────────────────────── */}
-      {/*             MENU BAR            */}
+      {/*            NAV BAR             */}
       {/* ─────────────────────────────── */}
       <nav className="bg-gray-800 text-white px-4 py-2 flex space-x-4 text-sm">
 
+        {/* Dashboard */}
         <NavLink
           to="/dashboard"
           className={({ isActive }) =>
@@ -49,6 +50,7 @@ export default function AppLayout() {
           Dashboard
         </NavLink>
 
+        {/* Schedule */}
         <NavLink
           to="/schedule"
           className={({ isActive }) =>
@@ -60,8 +62,10 @@ export default function AppLayout() {
           Schedule
         </NavLink>
 
+        {/* Only Station Manager */}
         {user.role === "station_manager" && (
           <>
+            {/* Approvals */}
             <NavLink
               to="/approvals"
               className={({ isActive }) =>
@@ -73,6 +77,7 @@ export default function AppLayout() {
               Approvals
             </NavLink>
 
+            {/* Employees */}
             <NavLink
               to="/employees"
               className={({ isActive }) =>
@@ -84,6 +89,7 @@ export default function AppLayout() {
               Employees
             </NavLink>
 
+            {/* Blocked Employees */}
             <NavLink
               to="/blocked"
               className={({ isActive }) =>
@@ -95,7 +101,19 @@ export default function AppLayout() {
               Blocked Employees
             </NavLink>
 
-            {/* NEW: BUDGET CONFIG PAGE */}
+            {/* Dashboard Editor (restored) */}
+            <NavLink
+              to="/dashboard-editor"
+              className={({ isActive }) =>
+                `px-2 py-1 rounded ${
+                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
+                }`
+              }
+            >
+              Dashboard Editor
+            </NavLink>
+
+            {/* Budgets (new) */}
             <NavLink
               to="/budgets"
               className={({ isActive }) =>
@@ -111,7 +129,7 @@ export default function AppLayout() {
       </nav>
 
       {/* ─────────────────────────────── */}
-      {/*             CONTENT             */}
+      {/*           MAIN CONTENT         */}
       {/* ─────────────────────────────── */}
       <main className="flex-1 p-4">
         <Outlet />
