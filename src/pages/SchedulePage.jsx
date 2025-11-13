@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import ScheduleGrid from "../components/ScheduleGrid";
 
@@ -17,8 +22,10 @@ export default function SchedulePage() {
   });
 
   const [employees, setEmployees] = useState([]);
+  const [airlineBudgets, setAirlineBudgets] = useState({});
+  const [rows, setRows] = useState([]);
 
-  // Load employees from Firestore
+  // Load employees
   useEffect(() => {
     const fetchEmployees = async () => {
       const snap = await getDocs(collection(db, "employees"));
@@ -27,7 +34,56 @@ export default function SchedulePage() {
     fetchEmployees();
   }, []);
 
-  const handleSaveSchedule = async (gridData) => {
+  // Load budget per airline
+  useEffect(() => {
+    const fetchBudgets = async () => {
+      const snap = await getDocs(collection(db, "airlineBudgets"));
+      const obj = {};
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        obj[data.airline] = data.budgetHours;
+      });
+      setAirlineBudgets(obj);
+    };
+    fetchBudgets();
+  }, []);
+
+  // Calculate total hours for each employee
+  const diffHours = (start, end) => {
+    if (!start || !end) return 0;
+    if (start === "OFF") return 0;
+    const [sh, sm] = start.split(":").map(Number);
+    const [eh, em] = end.split(":").map(Number);
+    let s = sh * 60 + sm;
+    let e = eh * 60 + em;
+    if (e < s) e += 24 * 60; // crossing midnight
+    return (e - s) / 60;
+  };
+
+  const calculateTotals = () => {
+    const employeeTotals = {};
+    let airlineTotal = 0;
+
+    rows.forEach((row) => {
+      if (!row.employeeId) return;
+
+      let total = 0;
+      ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].forEach((day) => {
+        row[day].forEach((shift) => {
+          total += diffHours(shift.start, shift.end);
+        });
+      });
+
+      employeeTotals[row.employeeId] = total;
+      airlineTotal += total;
+    });
+
+    return { employeeTotals, airlineTotal };
+  };
+
+  const { employeeTotals, airlineTotal } = calculateTotals();
+
+  const handleSaveSchedule = async () => {
     if (!airline || !department) {
       alert("Select airline and department");
       return;
@@ -38,18 +94,27 @@ export default function SchedulePage() {
       airline,
       department,
       days: dayNumbers,
-      grid: gridData,
+      grid: rows,
+      totals: employeeTotals,
+      airlineWeeklyHours: airlineTotal,
+      budget: airlineBudgets[airline] || 0,
       status: "pending",
     });
 
-    alert("Schedule submitted for approval");
+    alert("Schedule submitted!");
+  };
+
+  const printSchedule = () => {
+    window.print();
   };
 
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
 
+      {/* Airline, Department, Week Days */}
       <div className="grid grid-cols-3 gap-4">
+        {/* Airline */}
         <div className="space-y-1 text-sm">
           <label className="font-medium">Airline</label>
           <select
@@ -69,6 +134,7 @@ export default function SchedulePage() {
           </select>
         </div>
 
+        {/* Department */}
         <div className="space-y-1 text-sm">
           <label className="font-medium">Department</label>
           <select
@@ -85,11 +151,9 @@ export default function SchedulePage() {
             <option value="Other">Other</option>
           </select>
         </div>
-
-        <div></div>
       </div>
 
-      {/* Editable day numbers */}
+      {/* Day numbers */}
       <div className="grid grid-cols-7 gap-2 text-xs">
         {Object.keys(dayNumbers).map((key) => (
           <div key={key} className="space-y-1">
@@ -106,11 +170,57 @@ export default function SchedulePage() {
         ))}
       </div>
 
+      {/* FULL COLOR EXCEL-STYLE GRID */}
       <ScheduleGrid
         employees={employees}
         dayNumbers={dayNumbers}
         onSave={handleSaveSchedule}
+        rows={rows}
+        setRows={setRows}
+        airline={airline}
+        department={department}
       />
+
+      {/* Sums & Budget */}
+      <div className="card text-sm">
+        <h2 className="font-semibold mb-2">Weekly Summary</h2>
+
+        <p><b>Total hours for airline:</b> {airlineTotal.toFixed(2)}</p>
+        <p><b>Budget hours:</b> {airlineBudgets[airline] || 0}</p>
+
+        {airlineBudgets[airline] && (
+          <p
+            className={
+              airlineTotal > airlineBudgets[airline]
+                ? "text-red-600 font-bold"
+                : "text-green-700 font-bold"
+            }
+          >
+            {airlineTotal > airlineBudgets[airline]
+              ? "Over budget"
+              : "Within budget"}
+          </p>
+        )}
+
+        <div className="mt-3">
+          {Object.entries(employeeTotals).map(([id, total]) => {
+            const emp = employees.find((e) => e.id === id);
+            return (
+              <p key={id}>
+                {emp?.name || "Unknown"} — <b>{total.toFixed(2)} hrs</b>
+              </p>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Print Button */}
+      <button
+        className="btn w-full border border-black mt-4"
+        onClick={printSchedule}
+      >
+        Print Schedule
+      </button>
     </div>
   );
 }
