@@ -3,116 +3,102 @@ import ScheduleCell from "./ScheduleCell";
 
 export default function ScheduleGrid({
   employees,
-  dayNumbers,
-  onSave,
   rows,
   setRows,
+  readonly = false,
   airline,
+  department,
+  dayNumbers
 }) {
-  // Add row
+  const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
   const addRow = () => {
+    if (readonly) return;
     setRows([
       ...rows,
       {
         employeeId: "",
-        mon: [{ start: "", end: "" }, { start: "", end: "" }],
-        tue: [{ start: "", end: "" }, { start: "", end: "" }],
-        wed: [{ start: "", end: "" }, { start: "", end: "" }],
-        thu: [{ start: "", end: "" }, { start: "", end: "" }],
-        fri: [{ start: "", end: "" }, { start: "", end: "" }],
-        sat: [{ start: "", end: "" }, { start: "", end: "" }],
-        sun: [{ start: "", end: "" }, { start: "", end: "" }],
+        mon: [{ start: "", end: "" }],
+        tue: [{ start: "", end: "" }],
+        wed: [{ start: "", end: "" }],
+        thu: [{ start: "", end: "" }],
+        fri: [{ start: "", end: "" }],
+        sat: [{ start: "", end: "" }],
+        sun: [{ start: "", end: "" }],
       },
     ]);
   };
 
-  // Color class selector (based on airline)
-  const getColorClass = () => {
-    if (airline === "SY") return "airline-SY";
-    if (airline === "AV") return "airline-AV";
-    if (airline === "WL") return "airline-WL";
-    if (airline === "EA") return "airline-EA";
-    if (airline === "WCHR") return "airline-WCHR";
-    if (airline === "AA-BSO") return "airline-AABSO";
-    if (airline === "CABIN") return "airline-CABIN";
-    return "airline-OTHER";
-  };
-
-  const colorClass = getColorClass();
-
-  const handleSave = () => onSave(rows);
-
   return (
-    <div className="space-y-4">
+    <div className="border bg-white">
+      {/* HEADER */}
+      <div className="grid grid-cols-9 bg-gray-200 font-bold text-sm text-center p-2 border-b">
+        <div>Employee</div>
+        {days.map((d) => (
+          <div key={d} className="uppercase">
+            {d} <br />
+            <span className="text-xs">{dayNumbers[d] || ""}</span>
+          </div>
+        ))}
+      </div>
 
-      {/* EXCEL STYLE TABLE */}
-      <table className="schedule-table">
-        <thead>
-          <tr className="schedule-header">
-            <th>EMPLOYEE</th>
+      {/* BODY */}
+      {rows.map((row, idx) => (
+        <div
+          key={idx}
+          className="grid grid-cols-9 border-b text-center items-center"
+        >
+          {/* Employee name */}
+          <div className="p-1">
+            {!readonly ? (
+              <select
+                className="border w-full p-1"
+                value={row.employeeId}
+                onChange={(e) => {
+                  const updated = [...rows];
+                  updated[idx].employeeId = e.target.value;
+                  setRows(updated);
+                }}
+              >
+                <option value="">Select</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="text-sm font-medium">
+                {employees.find((x) => x.id === row.employeeId)?.name ||
+                  "Unknown"}
+              </div>
+            )}
+          </div>
 
-            {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => (
-              <th key={d}>
-                {d.toUpperCase()} / {dayNumbers[d] || ""}
-              </th>
-            ))}
-          </tr>
-        </thead>
-
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index} className="border-black border-2">
-
-              {/* Employee Name */}
-              <td className="employee-cell border-black border-2 p-1 w-40">
-                <select
-                  className="border rounded w-full text-xs px-1 py-1"
-                  value={row.employeeId}
-                  onChange={(e) => {
-                    const updated = [...rows];
-                    updated[index].employeeId = e.target.value;
-                    setRows(updated);
-                  }}
-                >
-                  <option value="">Select</option>
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name}
-                    </option>
-                  ))}
-                </select>
-              </td>
-
-              {/* Day columns */}
-              {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => (
-                <td
-                  key={day}
-                  className={`${colorClass} border-black border-2 p-1`}
-                >
-                  <ScheduleCell
-                    value={row[day]}
-                    onChange={(val) => {
-                      const updated = [...rows];
-                      updated[index][day] = val;
-                      setRows(updated);
-                    }}
-                  />
-                </td>
-              ))}
-            </tr>
+          {/* Day cells */}
+          {days.map((day) => (
+            <ScheduleCell
+              key={day}
+              day={day}
+              row={row}
+              rowIndex={idx}
+              rows={rows}
+              setRows={setRows}
+              readonly={readonly}
+            />
           ))}
-        </tbody>
-      </table>
+        </div>
+      ))}
 
-      {/* BUTTONS */}
-      <button className="btn w-full border border-black" onClick={addRow}>
-        + Add Employee Row
-      </button>
-
-      <button className="btn-primary w-full" onClick={handleSave}>
-        Submit Schedule
-      </button>
+      {/* Add row button */}
+      {!readonly && (
+        <button
+          onClick={addRow}
+          className="w-full bg-blue-600 text-white py-2 mt-2"
+        >
+          + Add row
+        </button>
+      )}
     </div>
   );
 }
-
