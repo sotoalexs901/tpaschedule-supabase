@@ -9,12 +9,15 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "dependencies": {
-    "firebase": "^11.1.0",
-    "@vitejs/plugin-react": "^4.3.1",
+"dependencies": {
+    "jspdf": "^2.5.1",
+    "html2canvas": "^1.4.1",
+    "firebase": "^10.7.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.28.0"
+    "react-router-dom": "^6.23.1"
+}
+
   },
   "devDependencies": {
     "vite": "^5.4.8",
