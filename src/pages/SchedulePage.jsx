@@ -12,6 +12,17 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
+// Load logo helper
+const loadImage = (src) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+};
+
 export default function SchedulePage() {
   const [airline, setAirline] = useState("");
   const [department, setDepartment] = useState("");
@@ -38,7 +49,7 @@ export default function SchedulePage() {
     fetchEmployees();
   }, []);
 
-  // Load budget per airline
+  // Load budgets
   useEffect(() => {
     const fetchBudgets = async () => {
       const snap = await getDocs(collection(db, "airlineBudgets"));
@@ -52,7 +63,7 @@ export default function SchedulePage() {
     fetchBudgets();
   }, []);
 
-  // Calculate total hours for each employee
+  // Calculate total hours per employee
   const diffHours = (start, end) => {
     if (!start || !end) return 0;
     if (start === "OFF") return 0;
@@ -60,7 +71,7 @@ export default function SchedulePage() {
     const [eh, em] = end.split(":").map(Number);
     let s = sh * 60 + sm;
     let e = eh * 60 + em;
-    if (e < s) e += 24 * 60; // crossing midnight
+    if (e < s) e += 24 * 60;
     return (e - s) / 60;
   };
 
@@ -109,11 +120,21 @@ export default function SchedulePage() {
   };
 
   // -------------------------------
-  // EXPORT PDF FUNCTION
+  // EXPORT PDF WITH AIRLINE LOGO
   // -------------------------------
   const exportPDF = async () => {
     const element = document.getElementById("schedule-print-area");
     if (!element) return alert("Printable area not found.");
+
+    // Load airline logo from public/logos/
+    const logoPath = `/logos/${airline}.png`;
+    let logoImg = null;
+
+    try {
+      logoImg = await loadImage(logoPath);
+    } catch (e) {
+      console.warn("Logo not found for airline:", airline);
+    }
 
     const canvas = await html2canvas(element, {
       scale: 3,
@@ -126,10 +147,23 @@ export default function SchedulePage() {
     const pdf = new jsPDF("landscape", "pt", "a4");
 
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const imgWidth = pageWidth;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    // Add the airline logo (if exists)
+    if (logoImg) {
+      const logoWidth = 140;
+      const logoHeight = 70;
+      pdf.addImage(logoImg, "PNG", 20, 20, logoWidth, logoHeight);
+    }
+
+    // Shift table down if logo exists
+    const yOffset = logoImg ? 110 : 20;
+
+    // Table image
+    const imgWidth = pageWidth - 40;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+    pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
 
     pdf.save(`Schedule_${airline}_${department}.pdf`);
   };
@@ -142,9 +176,8 @@ export default function SchedulePage() {
     <div className="p-4 space-y-4">
       <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
 
-      {/* Airline, Department, Week Days */}
+      {/* Airline, Department */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Airline */}
         <div className="space-y-1 text-sm">
           <label className="font-medium">Airline</label>
           <select
@@ -164,7 +197,6 @@ export default function SchedulePage() {
           </select>
         </div>
 
-        {/* Department */}
         <div className="space-y-1 text-sm">
           <label className="font-medium">Department</label>
           <select
@@ -213,7 +245,7 @@ export default function SchedulePage() {
         />
       </div>
 
-      {/* Sums & Budget */}
+      {/* SUMMARY */}
       <div className="card text-sm">
         <h2 className="font-semibold mb-2">Weekly Summary</h2>
 
@@ -246,7 +278,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* EXPORT & PRINT BUTTONS */}
+      {/* EXPORT BUTTONS */}
       <button
         className="btn w-full border border-black mt-4 bg-green-600 text-white py-2 rounded"
         onClick={exportPDF}
