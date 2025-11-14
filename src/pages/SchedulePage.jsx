@@ -6,6 +6,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { useUser } from "../UserContext.jsx";
 import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -37,6 +38,7 @@ const loadImage = (src) =>
   });
 
 export default function SchedulePage() {
+  const { user } = useUser(); // 🔵 User actual
   const [airline, setAirline] = useState("");
   const [department, setDepartment] = useState("");
   const [dayNumbers, setDayNumbers] = useState({
@@ -87,7 +89,9 @@ export default function SchedulePage() {
     rows.forEach((r) => {
       let subtotal = 0;
       ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].forEach((d) => {
-        r[d]?.forEach((shift) => (subtotal += diffHours(shift.start, shift.end)));
+        r[d]?.forEach(
+          (shift) => (subtotal += diffHours(shift.start, shift.end))
+        );
       });
       employeeTotals[r.employeeId] = subtotal;
       airlineTotal += subtotal;
@@ -102,6 +106,7 @@ export default function SchedulePage() {
   const handleSaveSchedule = async () => {
     if (!airline || !department)
       return alert("Please select airline and department.");
+
     await addDoc(collection(db, "schedules"), {
       createdAt: serverTimestamp(),
       airline,
@@ -112,7 +117,9 @@ export default function SchedulePage() {
       airlineWeeklyHours: airlineTotal,
       budget: airlineBudgets[airline] || 0,
       status: "pending",
+      role: user.role, // 🔥 Necesario para Firestore Rules
     });
+
     alert("Schedule submitted for approval!");
   };
 
@@ -139,14 +146,14 @@ export default function SchedulePage() {
     const pdf = new jsPDF("landscape", "pt", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
 
-    // Add Logo
+    // Logo
     if (logoImg) {
       pdf.addImage(logoImg, "PNG", 20, 20, 150, 70);
     }
 
-    // Table image
     const imgData = canvas.toDataURL("image/png");
     const yOffset = logoImg ? 110 : 20;
+
     const imgWidth = pageWidth - 40;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
