@@ -11,12 +11,12 @@ import {
 } from "firebase/firestore";
 import { Link } from "react-router-dom";
 
-// Logos desde Firebase Storage
+// Logos correctos usando las mismas keys que SchedulePage
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
-  "WL Havana Air":
+  "WL-Havana":
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2006_28_07%20p.m..png?alt=media&token=7bcf90fd-c854-400e-a28a-f838adca89f4",
-  "WL Invicta":
+  "WL-Invicta":
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_49%20p.m..png?alt=media&token=092a1deb-3285-41e1-ab0c-2e48a8faab92",
   AV: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_37%20p.m..png?alt=media&token=f133d1c8-51f9-4513-96df-8a75c6457b5b",
   EA: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_41%20p.m..png?alt=media&token=13fe584f-078f-4073-8d92-763ac549e5eb",
@@ -30,10 +30,11 @@ const AIRLINE_LOGOS = {
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
 };
 
+// Colores con las mismas keys
 const AIRLINE_COLORS = {
   SY: "#F28C28",
-  "WL Havana Air": "#3A7BD5",
-  "WL Invicta": "#0057B8",
+  "WL-Havana": "#3A7BD5",
+  "WL-Invicta": "#0057B8",
   AV: "#D22630",
   EA: "#003E7E",
   WCHR: "#7D39C7",
@@ -62,10 +63,7 @@ export default function ApprovalsPage() {
   }, []);
 
   const approveSchedule = async (id) => {
-    await updateDoc(doc(db, "schedules", id), {
-      status: "approved",
-    });
-
+    await updateDoc(doc(db, "schedules", id), { status: "approved" });
     setPending((prev) => prev.filter((p) => p.id !== id));
     alert("Schedule approved!");
   };
