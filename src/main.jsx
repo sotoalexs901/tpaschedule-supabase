@@ -13,6 +13,8 @@ import BlockedEmployeesPage from './pages/BlockedEmployeesPage.jsx'
 import EmployeesPage from './pages/EmployeesPage.jsx'
 import ApprovalsPage from './pages/ApprovalsPage.jsx'
 import BudgetsPage from './pages/BudgetsPage.jsx'
+import ApprovedViewPage from "./pages/ApprovedScheduleView.jsx"
+
 
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser()
@@ -78,7 +80,14 @@ function AppRouter() {
     </ProtectedRoute>
   }
 />
-
+<Route
+  path="approved/:id"
+  element={
+    <ProtectedRoute roles={['station_manager', 'duty_manager']}>
+      <ApprovedScheduleView />
+    </ProtectedRoute>
+  }
+/>
       </Routes>
     </BrowserRouter>
   )
