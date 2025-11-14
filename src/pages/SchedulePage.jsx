@@ -7,34 +7,34 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import ScheduleGrid from "../components/ScheduleGrid";
-
-// PDF Libraries
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// Load logo helper (local images)
-const loadImage = (src) => {
-  return new Promise((resolve, reject) => {
+// -------------------------------------------
+// 🔵 LOGOS OFICIALES EN FIREBASE
+// -------------------------------------------
+const AIRLINE_LOGOS = {
+  SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
+  "WL-Havana": "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2006_28_07%20p.m..png?alt=media&token=7bcf90fd-c854-400e-a28a-f838adca89f4",
+  "WL-Invicta": "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_49%20p.m..png?alt=media&token=092a1deb-3285-41e1-ab0c-2e48a8faab92",
+  AV: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_37%20p.m..png?alt=media&token=f133d1c8-51f9-4513-96df-8a75c6457b5b",
+  EA: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_41%20p.m..png?alt=media&token=13fe584f-078f-4073-8d92-763ac549e5eb",
+  WCHR: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_32%20p.m..png?alt=media&token=4f7e9ddd-692b-4288-af0a-8027a1fc6e1c",
+  CABIN: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_28%20p.m..png?alt=media&token=b269ad02-0761-4b6b-b2f1-b510365cce49",
+  "AA-BSO":
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_25%20p.m..png?alt=media&token=09862a10-d237-43e9-a373-8bd07c30ce62",
+  OTHER:
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
+};
+
+// Helper: load image async
+const loadImage = (src) =>
+  new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
-    img.onerror = reject;
     img.src = src;
   });
-};
-
-// Map airline → correct logo file
-const AIRLINE_LOGOS = {
-  "SY": "/logos/SY.png",
-  "WL HAVANA AIR": "/logos/WL Havana Air.png",
-  "WL INVICTA": "/logos/WL Invicta.png",
-  "AV": "/logos/AV.png",
-  "EA": "/logos/EA.png",
-  "WCHR": "/logos/WCHR.png",
-  "CABIN": "/logos/CABIN.png",
-  "AA-BSO": "/logos/AA-BSO.png",
-  "OTHER": "/logos/OTHER.png",
-};
 
 export default function SchedulePage() {
   const [airline, setAirline] = useState("");
@@ -50,60 +50,47 @@ export default function SchedulePage() {
   });
 
   const [employees, setEmployees] = useState([]);
-  const [airlineBudgets, setAirlineBudgets] = useState({});
   const [rows, setRows] = useState([]);
+  const [airlineBudgets, setAirlineBudgets] = useState({});
 
-  // Load employees
+  // Load Employees
   useEffect(() => {
-    const fetchEmployees = async () => {
-      const snap = await getDocs(collection(db, "employees"));
-      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    };
-    fetchEmployees();
+    getDocs(collection(db, "employees")).then((snap) =>
+      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
   }, []);
 
-  // Load budgets
+  // Load Budgets
   useEffect(() => {
-    const fetchBudgets = async () => {
-      const snap = await getDocs(collection(db, "airlineBudgets"));
-      const obj = {};
-      snap.docs.forEach((d) => {
-        const data = d.data();
-        obj[data.airline] = data.budgetHours;
-      });
-      setAirlineBudgets(obj);
+    getDocs(collection(db, "airlineBudgets")).then((snap) => {
+      const map = {};
+      snap.docs.forEach((d) => (map[d.data().airline] = d.data().budgetHours));
+      setAirlineBudgets(map);
     });
-    fetchBudgets();
   }, []);
 
-  // Calculate total hours per employee
+  // Hours calculation
   const diffHours = (start, end) => {
-    if (!start || !end) return 0;
-    if (start === "OFF") return 0;
+    if (!start || !end || start === "OFF") return 0;
     const [sh, sm] = start.split(":").map(Number);
     const [eh, em] = end.split(":").map(Number);
     let s = sh * 60 + sm;
     let e = eh * 60 + em;
-    if (e < s) e += 24 * 60;
+    if (e < s) e += 1440;
     return (e - s) / 60;
   };
 
   const calculateTotals = () => {
-    const employeeTotals = {};
     let airlineTotal = 0;
+    const employeeTotals = {};
 
-    rows.forEach((row) => {
-      if (!row.employeeId) return;
-
-      let total = 0;
-      ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].forEach((day) => {
-        row[day].forEach((shift) => {
-          total += diffHours(shift.start, shift.end);
-        });
+    rows.forEach((r) => {
+      let subtotal = 0;
+      ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].forEach((d) => {
+        r[d]?.forEach((shift) => (subtotal += diffHours(shift.start, shift.end)));
       });
-
-      employeeTotals[row.employeeId] = total;
-      airlineTotal += total;
+      employeeTotals[r.employeeId] = subtotal;
+      airlineTotal += subtotal;
     });
 
     return { employeeTotals, airlineTotal };
@@ -111,12 +98,10 @@ export default function SchedulePage() {
 
   const { employeeTotals, airlineTotal } = calculateTotals();
 
+  // Save to Firestore
   const handleSaveSchedule = async () => {
-    if (!airline || !department) {
-      alert("Select airline and department");
-      return;
-    }
-
+    if (!airline || !department)
+      return alert("Please select airline and department.");
     await addDoc(collection(db, "schedules"), {
       createdAt: serverTimestamp(),
       airline,
@@ -128,89 +113,77 @@ export default function SchedulePage() {
       budget: airlineBudgets[airline] || 0,
       status: "pending",
     });
-
-    alert("Schedule submitted!");
+    alert("Schedule submitted for approval!");
   };
 
-  // -------------------------------
-  // EXPORT PDF WITH LOGO
-  // -------------------------------
+  // ------------------------------------------------------
+  // 🔵 EXPORT PDF WITH FIREBASE LOGO
+  // ------------------------------------------------------
   const exportPDF = async () => {
-    const element = document.getElementById("schedule-print-area");
-    if (!element) return alert("Printable area not found.");
+    const container = document.getElementById("schedule-print-area");
+    if (!container) return alert("Printable area not found.");
 
-    const logoPath = AIRLINE_LOGOS[airline] || null;
+    const logoUrl = AIRLINE_LOGOS[airline];
     let logoImg = null;
 
-    if (logoPath) {
-      try {
-        logoImg = await loadImage(logoPath);
-      } catch (e) {
-        console.warn("Could not load logo:", logoPath);
-      }
+    if (logoUrl) {
+      logoImg = await loadImage(logoUrl);
     }
 
-    const canvas = await html2canvas(element, {
+    const canvas = await html2canvas(container, {
       scale: 3,
       useCORS: true,
-      backgroundColor: "#ffffff",
+      backgroundColor: "#FFFFFF",
     });
 
-    const imgData = canvas.toDataURL("image/png");
-
     const pdf = new jsPDF("landscape", "pt", "a4");
-
     const pageWidth = pdf.internal.pageSize.getWidth();
 
-    // Insert logo
+    // Add Logo
     if (logoImg) {
-      const logoWidth = 150;
-      const logoHeight = 70;
-      pdf.addImage(logoImg, "PNG", 25, 20, logoWidth, logoHeight);
+      pdf.addImage(logoImg, "PNG", 20, 20, 150, 70);
     }
 
-    const yOffset = logoImg ? 120 : 30;
-
+    // Table image
+    const imgData = canvas.toDataURL("image/png");
+    const yOffset = logoImg ? 110 : 20;
     const imgWidth = pageWidth - 40;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
     pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
-
     pdf.save(`Schedule_${airline}_${department}.pdf`);
   };
-
-  const printSchedule = () => window.print();
 
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
 
-      {/* Airline & Department */}
+      {/* AIRLINE + DEPARTMENT */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="space-y-1 text-sm">
-          <label className="font-medium">Airline</label>
+        <div>
+          <label className="font-medium text-sm">Airline</label>
           <select
-            className="border rounded w-full px-2 py-1"
+            className="border p-1 rounded w-full"
             value={airline}
             onChange={(e) => setAirline(e.target.value)}
           >
             <option value="">Select airline</option>
             <option value="SY">SY</option>
+            <option value="WL-Havana">WL Havana Air</option>
+            <option value="WL-Invicta">WL Invicta</option>
             <option value="AV">AV</option>
-            <option value="WL HAVANA AIR">WL Havana Air</option>
-            <option value="WL INVICTA">WL Invicta</option>
             <option value="EA">EA</option>
             <option value="WCHR">WCHR</option>
-            <option value="AA-BSO">AA BSO</option>
-            <option value="CABIN">Cabin Service</option>
+            <option value="CABIN">CABIN</option>
+            <option value="AA-BSO">AA-BSO</option>
             <option value="OTHER">Other</option>
           </select>
         </div>
 
-        <div className="space-y-1 text-sm">
-          <label className="font-medium">Department</label>
+        <div>
+          <label className="font-medium text-sm">Department</label>
           <select
-            className="border rounded w-full px-2 py-1"
+            className="border p-1 rounded w-full"
             value={department}
             onChange={(e) => setDepartment(e.target.value)}
           >
@@ -225,18 +198,17 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Day numbers */}
+      {/* DAY NUMBERS */}
       <div className="grid grid-cols-7 gap-2 text-xs">
         {Object.keys(dayNumbers).map((key) => (
-          <div key={key} className="space-y-1">
-            <label className="font-medium uppercase">{key}</label>
+          <div key={key}>
+            <label className="uppercase text-[11px] font-semibold">{key}</label>
             <input
-              className="border rounded w-full text-center px-1 py-1"
+              className="border rounded text-center px-1 py-1 w-full"
               value={dayNumbers[key]}
               onChange={(e) =>
                 setDayNumbers({ ...dayNumbers, [key]: e.target.value })
               }
-              placeholder="10"
             />
           </div>
         ))}
@@ -247,64 +219,36 @@ export default function SchedulePage() {
         <ScheduleGrid
           employees={employees}
           dayNumbers={dayNumbers}
-          onSave={handleSaveSchedule}
           rows={rows}
           setRows={setRows}
           airline={airline}
           department={department}
+          onSave={handleSaveSchedule}
         />
       </div>
 
       {/* SUMMARY */}
       <div className="card text-sm">
-        <h2 className="font-semibold mb-2">Weekly Summary</h2>
+        <h2 className="font-semibold">Weekly Summary</h2>
+        <p>Total Hours: {airlineTotal.toFixed(2)}</p>
+        <p>Budget: {airlineBudgets[airline] || 0}</p>
 
-        <p>
-          <b>Total hours for airline:</b> {airlineTotal.toFixed(2)}
-        </p>
-        <p>
-          <b>Budget hours:</b> {airlineBudgets[airline] || 0}
-        </p>
-
-        {airlineBudgets[airline] && (
-          <p
-            className={
-              airlineTotal > airlineBudgets[airline]
-                ? "text-red-600 font-bold"
-                : "text-green-700 font-bold"
-            }
-          >
-            {airlineTotal > airlineBudgets[airline]
-              ? "Over budget"
-              : "Within budget"}
-          </p>
-        )}
-
-        <div className="mt-3">
-          {Object.entries(employeeTotals).map(([id, total]) => {
-            const emp = employees.find((e) => e.id === id);
-            return (
-              <p key={id}>
-                {emp?.name || "Unknown"} — <b>{total.toFixed(2)} hrs</b>
-              </p>
-            );
-          })}
-        </div>
+        {Object.entries(employeeTotals).map(([id, hrs]) => {
+          const emp = employees.find((e) => e.id === id);
+          return (
+            <p key={id}>
+              {emp?.name || "Unknown"} — <b>{hrs.toFixed(2)} hrs</b>
+            </p>
+          );
+        })}
       </div>
 
-      {/* EXPORT BUTTONS */}
+      {/* BUTTONS */}
       <button
-        className="btn w-full border border-black mt-4 bg-green-600 text-white py-2 rounded"
         onClick={exportPDF}
+        className="w-full bg-green-600 text-white py-2 rounded"
       >
         Export PDF
-      </button>
-
-      <button
-        className="btn w-full border border-black mt-2 bg-gray-200 py-2 rounded"
-        onClick={printSchedule}
-      >
-        Print Schedule
       </button>
     </div>
   );
