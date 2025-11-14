@@ -25,6 +25,7 @@ export default function ScheduleCell({
 
   const update = (shiftIndex, field, value) => {
     if (readonly) return;
+
     const updated = [...rows];
     const current = updated[rowIndex][day];
 
@@ -32,7 +33,6 @@ export default function ScheduleCell({
       current[shiftIndex] = { start: "", end: "" };
     }
 
-    // Si seleccionan OFF en start, limpiamos end
     if (field === "start" && value === "OFF") {
       current[shiftIndex].start = "OFF";
       current[shiftIndex].end = "";
@@ -46,17 +46,21 @@ export default function ScheduleCell({
 
   const addSecondShift = () => {
     if (readonly) return;
+
     const updated = [...rows];
     const current = updated[rowIndex][day] || [];
+
     if (current.length < 2) {
       current.push({ start: "", end: "" });
     }
+
     updated[rowIndex][day] = current;
     setRows(updated);
   };
 
   return (
     <div className="p-1 border-l text-xs">
+
       {/* SHIFT 1 */}
       {shifts[0] && (shifts[0].start || shifts[0].end || !readonly) && (
         <div className="mb-1">
@@ -67,9 +71,10 @@ export default function ScheduleCell({
                 : ""}
             </div>
           ) : (
-            <div className="flex flex-col gap-1">
+            <div className="flex gap-1 items-center">
+              {/* Start */}
               <select
-                className="border p-1 text-[11px]"
+                className="border p-1 text-[11px] w-[55px]"
                 value={shifts[0].start || ""}
                 onChange={(e) => update(0, "start", e.target.value)}
               >
@@ -81,9 +86,10 @@ export default function ScheduleCell({
                 ))}
               </select>
 
+              {/* End */}
               {shifts[0].start !== "OFF" && (
                 <select
-                  className="border p-1 text-[11px]"
+                  className="border p-1 text-[11px] w-[55px]"
                   value={shifts[0].end || ""}
                   onChange={(e) => update(0, "end", e.target.value)}
                 >
@@ -100,7 +106,7 @@ export default function ScheduleCell({
         </div>
       )}
 
-      {/* SHIFT 2 (opcional) */}
+      {/* SHIFT 2 */}
       {shifts[1] && (shifts[1].start || shifts[1].end || !readonly) && (
         <div className="mt-1 border-t pt-1">
           {readonly ? (
@@ -110,9 +116,10 @@ export default function ScheduleCell({
                 : ""}
             </div>
           ) : (
-            <div className="flex flex-col gap-1">
+            <div className="flex gap-1 items-center">
+              {/* Start 2 */}
               <select
-                className="border p-1 text-[11px]"
+                className="border p-1 text-[11px] w-[55px]"
                 value={shifts[1].start || ""}
                 onChange={(e) => update(1, "start", e.target.value)}
               >
@@ -124,9 +131,10 @@ export default function ScheduleCell({
                 ))}
               </select>
 
+              {/* End 2 */}
               {shifts[1].start !== "OFF" && (
                 <select
-                  className="border p-1 text-[11px]"
+                  className="border p-1 text-[11px] w-[55px]"
                   value={shifts[1].end || ""}
                   onChange={(e) => update(1, "end", e.target.value)}
                 >
@@ -143,7 +151,7 @@ export default function ScheduleCell({
         </div>
       )}
 
-      {/* Botón para agregar segundo turno */}
+      {/* ADD SECOND SHIFT BUTTON */}
       {!readonly && shifts.length < 2 && (
         <button
           className="mt-1 text-[10px] text-blue-600 underline"
