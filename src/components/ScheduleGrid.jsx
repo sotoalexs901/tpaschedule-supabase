@@ -22,7 +22,7 @@ const AIRLINE_LOGOS = {
 
 // ⭐ Colores por aerolínea
 const AIRLINE_COLORS = {
-  SY: "#F28C28", // Sun Country
+  SY: "#F28C28",
   "WL Havana Air": "#3A7BD5",
   "WL Invicta": "#0057B8",
   AV: "#D22630",
@@ -42,7 +42,7 @@ export default function ScheduleGrid({
   department,
   dayNumbers,
   onSave,
-  approved = false, // Nuevo
+  approved = false,
 }) {
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
@@ -77,7 +77,6 @@ export default function ScheduleGrid({
         className="grid grid-cols-9 font-bold text-sm text-center p-2 border-b items-center"
         style={{ backgroundColor: headerColor, color: "white" }}
       >
-        {/* Logo */}
         <div className="flex flex-col items-center justify-center">
           {logo && (
             <img src={logo} alt={airline} className="h-10 object-contain mb-1" />
@@ -87,7 +86,6 @@ export default function ScheduleGrid({
           </div>
         </div>
 
-        {/* Días */}
         {days.map((d) => (
           <div key={d} className="uppercase">
             {d}
@@ -155,7 +153,7 @@ export default function ScheduleGrid({
         </button>
       )}
 
-      {/* 🔵 SUBMIT BUTTON */}
+      {/* 🔵 SUBMIT */}
       {!readonly && onSave && !approved && (
         <div className="p-3 border-t flex justify-end">
           <button
