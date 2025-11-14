@@ -13,7 +13,7 @@ import BlockedEmployeesPage from './pages/BlockedEmployeesPage.jsx'
 import EmployeesPage from './pages/EmployeesPage.jsx'
 import ApprovalsPage from './pages/ApprovalsPage.jsx'
 import BudgetsPage from './pages/BudgetsPage.jsx'
-import ApprovedViewPage from "./pages/ApprovedScheduleView.jsx"
+import ApprovedScheduleView from "./pages/ApprovedScheduleView.jsx"
 
 
 function ProtectedRoute({ children, roles }) {
