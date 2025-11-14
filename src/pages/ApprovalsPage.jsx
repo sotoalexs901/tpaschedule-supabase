@@ -4,12 +4,14 @@ import {
   collection,
   getDocs,
   query,
+  where,
+  updateDoc,
+  doc,
   orderBy,
-  where
 } from "firebase/firestore";
 import { Link } from "react-router-dom";
 
-// Logos desde Firebase
+// Logos desde Firebase Storage
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
   "WL Havana Air":
@@ -28,7 +30,6 @@ const AIRLINE_LOGOS = {
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
 };
 
-// Colores por aerolínea
 const AIRLINE_COLORS = {
   SY: "#F28C28",
   "WL Havana Air": "#3A7BD5",
@@ -41,35 +42,44 @@ const AIRLINE_COLORS = {
   OTHER: "#555555",
 };
 
-export default function ApprovedSchedulesPage() {
-  const [approved, setApproved] = useState([]);
+export default function ApprovalsPage() {
+  const [pending, setPending] = useState([]);
 
   useEffect(() => {
-    const loadSchedules = async () => {
+    const load = async () => {
       const q = query(
         collection(db, "schedules"),
-        where("status", "==", "approved"),
+        where("status", "==", "pending"),
         orderBy("createdAt", "desc")
       );
 
       const snap = await getDocs(q);
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setApproved(list);
+      setPending(list);
     };
 
-    loadSchedules();
+    load();
   }, []);
+
+  const approveSchedule = async (id) => {
+    await updateDoc(doc(db, "schedules", id), {
+      status: "approved",
+    });
+
+    setPending((prev) => prev.filter((p) => p.id !== id));
+    alert("Schedule approved!");
+  };
 
   return (
     <div className="p-6">
-      <h1 className="text-xl font-bold mb-6">Approved Weekly Schedules</h1>
+      <h1 className="text-xl font-bold mb-6">Pending Schedules for Approval</h1>
 
-      {approved.length === 0 && (
-        <p className="text-gray-600">No approved schedules yet.</p>
+      {pending.length === 0 && (
+        <p className="text-gray-600">No pending schedules.</p>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {approved.map((s) => {
+        {pending.map((s) => {
           const color = AIRLINE_COLORS[s.airline] || "#333";
           const logo = AIRLINE_LOGOS[s.airline];
 
@@ -78,14 +88,14 @@ export default function ApprovedSchedulesPage() {
               key={s.id}
               className="rounded-lg shadow border bg-white overflow-hidden"
             >
-              {/* Header con logo y color */}
+              {/* Header */}
               <div
                 className="p-3 text-white flex items-center justify-between"
                 style={{ backgroundColor: color }}
               >
                 <div>
                   <p className="text-lg font-semibold">{s.airline}</p>
-                  <p className="text-sm opacity-80">{s.department}</p>
+                  <p className="text-sm opacity-90">{s.department}</p>
                 </div>
 
                 {logo && (
@@ -98,9 +108,9 @@ export default function ApprovedSchedulesPage() {
               </div>
 
               {/* Body */}
-              <div className="p-4 space-y-2 text-sm">
+              <div className="p-4 text-sm space-y-2">
                 <p>
-                  <b>Total hours:</b> {s.airlineWeeklyHours?.toFixed(2)}
+                  <b>Total Hours:</b> {s.airlineWeeklyHours?.toFixed(2)}
                 </p>
                 <p>
                   <b>Budget:</b> {s.budget || "N/A"}
@@ -128,10 +138,10 @@ export default function ApprovedSchedulesPage() {
                 </Link>
 
                 <button
-                  onClick={() => alert("PDF coming soon!")}
-                  className="bg-green-600 text-white px-3 py-1 rounded w-full"
+                  onClick={() => approveSchedule(s.id)}
+                  className="bg-green-600 text-white px-3 py-1 rounded w-full font-semibold"
                 >
-                  PDF
+                  Approve
                 </button>
               </div>
             </div>
