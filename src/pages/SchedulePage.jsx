@@ -12,7 +12,7 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// Load logo helper
+// Load logo helper (local images)
 const loadImage = (src) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -21,6 +21,19 @@ const loadImage = (src) => {
     img.onerror = reject;
     img.src = src;
   });
+};
+
+// Map airline → correct logo file
+const AIRLINE_LOGOS = {
+  "SY": "/logos/SY.png",
+  "WL HAVANA AIR": "/logos/WL Havana Air.png",
+  "WL INVICTA": "/logos/WL Invicta.png",
+  "AV": "/logos/AV.png",
+  "EA": "/logos/EA.png",
+  "WCHR": "/logos/WCHR.png",
+  "CABIN": "/logos/CABIN.png",
+  "AA-BSO": "/logos/AA-BSO.png",
+  "OTHER": "/logos/OTHER.png",
 };
 
 export default function SchedulePage() {
@@ -59,7 +72,7 @@ export default function SchedulePage() {
         obj[data.airline] = data.budgetHours;
       });
       setAirlineBudgets(obj);
-    };
+    });
     fetchBudgets();
   }, []);
 
@@ -120,20 +133,21 @@ export default function SchedulePage() {
   };
 
   // -------------------------------
-  // EXPORT PDF WITH AIRLINE LOGO
+  // EXPORT PDF WITH LOGO
   // -------------------------------
   const exportPDF = async () => {
     const element = document.getElementById("schedule-print-area");
     if (!element) return alert("Printable area not found.");
 
-    // Load airline logo from public/logos/
-    const logoPath = `/logos/${airline}.png`;
+    const logoPath = AIRLINE_LOGOS[airline] || null;
     let logoImg = null;
 
-    try {
-      logoImg = await loadImage(logoPath);
-    } catch (e) {
-      console.warn("Logo not found for airline:", airline);
+    if (logoPath) {
+      try {
+        logoImg = await loadImage(logoPath);
+      } catch (e) {
+        console.warn("Could not load logo:", logoPath);
+      }
     }
 
     const canvas = await html2canvas(element, {
@@ -147,19 +161,16 @@ export default function SchedulePage() {
     const pdf = new jsPDF("landscape", "pt", "a4");
 
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
 
-    // Add the airline logo (if exists)
+    // Insert logo
     if (logoImg) {
-      const logoWidth = 140;
+      const logoWidth = 150;
       const logoHeight = 70;
-      pdf.addImage(logoImg, "PNG", 20, 20, logoWidth, logoHeight);
+      pdf.addImage(logoImg, "PNG", 25, 20, logoWidth, logoHeight);
     }
 
-    // Shift table down if logo exists
-    const yOffset = logoImg ? 110 : 20;
+    const yOffset = logoImg ? 120 : 30;
 
-    // Table image
     const imgWidth = pageWidth - 40;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
@@ -168,15 +179,13 @@ export default function SchedulePage() {
     pdf.save(`Schedule_${airline}_${department}.pdf`);
   };
 
-  const printSchedule = () => {
-    window.print();
-  };
+  const printSchedule = () => window.print();
 
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
 
-      {/* Airline, Department */}
+      {/* Airline & Department */}
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-1 text-sm">
           <label className="font-medium">Airline</label>
@@ -188,7 +197,8 @@ export default function SchedulePage() {
             <option value="">Select airline</option>
             <option value="SY">SY</option>
             <option value="AV">AV</option>
-            <option value="WL">WL</option>
+            <option value="WL HAVANA AIR">WL Havana Air</option>
+            <option value="WL INVICTA">WL Invicta</option>
             <option value="EA">EA</option>
             <option value="WCHR">WCHR</option>
             <option value="AA-BSO">AA BSO</option>
@@ -249,8 +259,12 @@ export default function SchedulePage() {
       <div className="card text-sm">
         <h2 className="font-semibold mb-2">Weekly Summary</h2>
 
-        <p><b>Total hours for airline:</b> {airlineTotal.toFixed(2)}</p>
-        <p><b>Budget hours:</b> {airlineBudgets[airline] || 0}</p>
+        <p>
+          <b>Total hours for airline:</b> {airlineTotal.toFixed(2)}
+        </p>
+        <p>
+          <b>Budget hours:</b> {airlineBudgets[airline] || 0}
+        </p>
 
         {airlineBudgets[airline] && (
           <p
