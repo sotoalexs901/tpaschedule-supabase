@@ -72,6 +72,15 @@ function AppRouter() {
             }
           />
         </Route>
+        <Route
+  path="approved"
+  element={
+    <ProtectedRoute roles={['station_manager', 'duty_manager']}>
+      <ApprovedSchedulesPage />
+    </ProtectedRoute>
+  }
+/>
+
 <Route
   path="budgets"
   element={
