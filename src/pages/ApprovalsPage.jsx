@@ -11,7 +11,7 @@ import {
 } from "firebase/firestore";
 import { Link } from "react-router-dom";
 
-// Logos correctos usando las mismas keys que SchedulePage
+// Logos desde Firebase Storage
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
   "WL-Havana":
@@ -30,7 +30,7 @@ const AIRLINE_LOGOS = {
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
 };
 
-// Colores con las mismas keys
+// Colores por aerolínea
 const AIRLINE_COLORS = {
   SY: "#F28C28",
   "WL-Havana": "#3A7BD5",
@@ -65,7 +65,7 @@ export default function ApprovalsPage() {
   const approveSchedule = async (id) => {
     await updateDoc(doc(db, "schedules", id), { status: "approved" });
     setPending((prev) => prev.filter((p) => p.id !== id));
-    alert("Schedule approved!");
+    alert("Schedule approved successfully!");
   };
 
   return (
