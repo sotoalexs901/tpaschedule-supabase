@@ -101,7 +101,6 @@ export default function ScheduleGrid({
           key={idx}
           className="grid grid-cols-9 border-b text-center items-stretch"
         >
-          {/* EMPLOYEE SELECT */}
           <div className="p-1 flex items-center">
             {!readonly ? (
               <select
@@ -128,7 +127,6 @@ export default function ScheduleGrid({
             )}
           </div>
 
-          {/* DÍAS */}
           {days.map((day) => (
             <ScheduleCell
               key={day}
@@ -143,7 +141,6 @@ export default function ScheduleGrid({
         </div>
       ))}
 
-      {/* 🔵 ADD ROW */}
       {!readonly && !approved && (
         <button
           onClick={addRow}
@@ -153,7 +150,6 @@ export default function ScheduleGrid({
         </button>
       )}
 
-      {/* 🔵 SUBMIT */}
       {!readonly && onSave && !approved && (
         <div className="p-3 border-t flex justify-end">
           <button
