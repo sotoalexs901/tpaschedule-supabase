@@ -178,16 +178,17 @@ export default function SchedulePage() {
             value={airline}
             onChange={(e) => setAirline(e.target.value)}
           >
-            <option value="">Select airline</option>
-            <option value="SY">SY</option>
-            <option value="WL Havana Air">WL Havana Air</option>
-            <option value="WL Invicta">WL Invicta</option>
-            <option value="AV">AV</option>
-            <option value="EA">EA</option>
-            <option value="WCHR">WCHR</option>
-            <option value="CABIN">CABIN</option>
-            <option value="AA-BSO">AA-BSO</option>
-            <option value="OTHER">Other</option>
+          <option value="">Select airline</option>
+<option value="SY">SY</option>
+<option value="WL Havana Air">WL Havana Air</option>
+<option value="WL Invicta">WL Invicta</option>
+<option value="AV">AV</option>
+<option value="EA">EA</option>
+<option value="WCHR">WCHR</option>
+<option value="CABIN">Cabin Service</option>
+<option value="AA-BSO">AA-BSO</option>
+<option value="OTHER">Other</option>
+
           </select>
         </div>
 
