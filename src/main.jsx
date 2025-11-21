@@ -1,4 +1,3 @@
-
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
@@ -13,8 +12,8 @@ import BlockedEmployeesPage from './pages/BlockedEmployeesPage.jsx'
 import EmployeesPage from './pages/EmployeesPage.jsx'
 import ApprovalsPage from './pages/ApprovalsPage.jsx'
 import BudgetsPage from './pages/BudgetsPage.jsx'
+import ApprovedSchedulesPage from './pages/ApprovedSchedulesPage.jsx'
 import ApprovedScheduleView from "./pages/ApprovedScheduleView.jsx"
-
 
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser()
@@ -27,7 +26,11 @@ function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
+
+        {/* Login */}
         <Route path="/login" element={<LoginPage />} />
+
+        {/* Main layout */}
         <Route
           path="/"
           element={
@@ -36,8 +39,12 @@ function AppRouter() {
             </ProtectedRoute>
           }
         >
+
+          {/* Dashboard */}
           <Route index element={<DashboardPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
+
+          {/* Dashboard Editor - Only Station Manager */}
           <Route
             path="dashboard-editor"
             element={
@@ -46,7 +53,11 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+
+          {/* Create schedule */}
           <Route path="schedule" element={<SchedulePage />} />
+
+          {/* Blocked employees */}
           <Route
             path="blocked"
             element={
@@ -55,6 +66,8 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+
+          {/* Employees database */}
           <Route
             path="employees"
             element={
@@ -63,6 +76,8 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+
+          {/* Approvals (only Station Manager) */}
           <Route
             path="approvals"
             element={
@@ -71,32 +86,39 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
-        </Route>
-        <Route
-  path="approved"
-  element={
-    <ProtectedRoute roles={['station_manager', 'duty_manager']}>
-      <ApprovedSchedulesPage />
-    </ProtectedRoute>
-  }
-/>
 
-<Route
-  path="budgets"
-  element={
-    <ProtectedRoute roles={['station_manager']}>
-      <BudgetsPage />
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="approved/:id"
-  element={
-    <ProtectedRoute roles={['station_manager', 'duty_manager']}>
-      <ApprovedScheduleView />
-    </ProtectedRoute>
-  }
-/>
+          {/* Approved schedules (Station Manager + Duty Manager) */}
+          <Route
+            path="approved"
+            element={
+              <ProtectedRoute roles={['station_manager', 'duty_manager']}>
+                <ApprovedSchedulesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* View single approved schedule */}
+          <Route
+            path="approved/:id"
+            element={
+              <ProtectedRoute roles={['station_manager', 'duty_manager']}>
+                <ApprovedScheduleView />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Budgets */}
+          <Route
+            path="budgets"
+            element={
+              <ProtectedRoute roles={['station_manager']}>
+                <BudgetsPage />
+              </ProtectedRoute>
+            }
+          />
+
+        </Route>
+
       </Routes>
     </BrowserRouter>
   )
