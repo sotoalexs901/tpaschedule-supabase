@@ -14,6 +14,7 @@ import ApprovalsPage from './pages/ApprovalsPage.jsx'
 import BudgetsPage from './pages/BudgetsPage.jsx'
 import ApprovedSchedulesPage from './pages/ApprovedSchedulesPage.jsx'
 import ApprovedScheduleView from "./pages/ApprovedScheduleView.jsx"
+import CreateUserPage from "./pages/CreateUserPage.jsx";
 
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser()
