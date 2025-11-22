@@ -15,6 +15,7 @@ import BudgetsPage from './pages/BudgetsPage.jsx'
 import ApprovedSchedulesPage from './pages/ApprovedSchedulesPage.jsx'
 import ApprovedScheduleView from "./pages/ApprovedScheduleView.jsx"
 import CreateUserPage from "./pages/CreateUserPage.jsx";
+import EditUsersPage from "./pages/EditUsersPage.jsx";
 
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser()
@@ -127,6 +128,15 @@ function AppRouter() {
     </ProtectedRoute>
   }
 />
+        <Route
+  path="edit-users"
+  element={
+    <ProtectedRoute roles={['station_manager']}>
+      <EditUsersPage />
+    </ProtectedRoute>
+  }
+/>
+
       </Routes>
     </BrowserRouter>
   )
