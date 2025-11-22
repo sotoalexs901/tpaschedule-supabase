@@ -1,18 +1,7 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
-import {
-  Home,
-  Calendar,
-  Users,
-  UserMinus,
-  ClipboardCheck,
-  Settings,
-  FileText,
-  LogOut,
-  UserPlus,
-  Edit
-} from "lucide-react"; // Íconos limpios estilo aviation
+
 
 export default function AppLayout() {
   const { user, setUser } = useUser();
