@@ -118,7 +118,14 @@ function AppRouter() {
           />
 
         </Route>
-
+<Route
+  path="create-user"
+  element={
+    <ProtectedRoute roles={["station_manager"]}>
+      <CreateUserPage />
+    </ProtectedRoute>
+  }
+/>
       </Routes>
     </BrowserRouter>
   )
