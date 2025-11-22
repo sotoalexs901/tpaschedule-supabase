@@ -1,115 +1,174 @@
-/* ----------------------------
-   ESTILOS GENERALES APP
------------------------------*/
+/* --------------------------------------------------------- */
+/*                 RESET & BASE STYLES                      */
+/* --------------------------------------------------------- */
+
+/* Quita estilos viejos del navegador */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: "Inter", sans-serif;
 }
 
+/* Fuente moderna */
 body {
-  background: #f1f5f9;
-  color: #1e293b;
-  overflow-x: hidden;
+  font-family: 'Inter', sans-serif;
+  color: #111827;
+  background: #f1f5f9; /* slate-100 */
 }
 
-/* Corrige que el contenido no se pegue al borde */
-main {
-  padding: 20px !important;
-}
-
-/* ----------------------------
-   SIDEBAR
------------------------------*/
-aside {
-  box-shadow: 3px 0 8px rgba(0, 0, 0, 0.08);
-}
-
-/* Links dentro del sidebar */
-aside a {
-  display: block;
+/* Quita decoraciones de enlaces */
+a {
   text-decoration: none;
 }
 
-/* Nav items */
-aside .active {
-  background: #1d4ed8 !important;
-  color: white !important;
+/* --------------------------------------------------------- */
+/*                  LOGIN PAGE (mantener estilos)           */
+/* --------------------------------------------------------- */
+.login-container {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  background: #e5e7eb;
+  overflow: hidden;
 }
 
-aside a:hover {
-  background: #0f3b79 !important;
+.login-left {
+  flex: 1;
+  background-image: url("https://images.unsplash.com/photo-1529070538774-1843cb3265df?auto=format&fit=crop&w=1200&q=80");
+  background-size: cover;
+  background-position: center;
+  filter: brightness(0.8);
 }
 
-/* ----------------------------
-   TITULOS Y CONTENEDORES
------------------------------*/
-
-h1, h2, h3 {
-  color: #0a2342;
+.login-right {
+  width: 45%;
+  max-width: 480px;
+  background: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  box-shadow: -5px 0 20px rgba(0,0,0,0.1);
 }
 
+.login-box {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.login-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #0A2342;
+  text-align: center;
+}
+
+.login-subtitle {
+  text-align: center;
+  color: #555;
+  font-size: 14px;
+  margin-top: -10px;
+  margin-bottom: 15px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.login-field input {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+  transition: 0.2s;
+}
+
+.login-field input:focus {
+  outline: none;
+  border-color: #0A2342;
+  box-shadow: 0 0 0 2px rgba(10, 35, 66, 0.15);
+}
+
+.login-button {
+  background: #0A2342;
+  color: white;
+  padding: 12px;
+  border-radius: 6px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.login-button:hover {
+  background: #0c2d57;
+}
+
+.login-error {
+  color: #b91c1c;
+  font-size: 13px;
+  margin-top: -5px;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .login-left {
+    display: none;
+  }
+  .login-right {
+    width: 100%;
+    box-shadow: none;
+  }
+}
+
+/* --------------------------------------------------------- */
+/*                FIX PARA EL LAYOUT PRINCIPAL              */
+/* --------------------------------------------------------- */
+
+/* Evita que el menú superior del AppLayout se rompa */
+nav a {
+  display: block;
+}
+
+/* Evita que textos y bloques del dashboard salgan pegados */
 .card {
   background: white;
   padding: 16px;
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
 }
 
-.section-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 12px;
+/* Imágenes dentro del dashboard */
+.card img {
+  max-width: 150px;
+  border-radius: 6px;
 }
 
-/* ----------------------------
-   TABLAS / LISTAS
------------------------------*/
+/* Tabla o listas limpias */
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 20px;
 }
 
-table th {
-  background: #0a2342;
-  color: white;
-  padding: 10px;
-  font-size: 14px;
-  text-align: center;
+th, td {
+  padding: 8px;
 }
 
-table td {
-  padding: 10px;
-  font-size: 14px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-/* ----------------------------
-   BOTONES GENERALES
------------------------------*/
-button {
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.btn-primary {
-  background: #0A2342;
-  color: white;
-  padding: 10px 14px;
-  border-radius: 6px;
-  border: none;
-}
-
-.btn-primary:hover {
-  background: #0c2d57;
-}
-
-/* ----------------------------
-   LOGIN PAGE FIX
------------------------------*/
-.login-container {
-  min-height: 100vh !important;
+/* --------------------------------------------------------- */
+/*            ARREGLA SEPARACIÓN ENTRE MENÚ Y CONTENIDO     */
+/* --------------------------------------------------------- */
+main {
+  padding-top: 1rem;
 }
