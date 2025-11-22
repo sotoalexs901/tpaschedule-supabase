@@ -1,6 +1,18 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
+import {
+  Home,
+  Calendar,
+  Users,
+  UserMinus,
+  ClipboardCheck,
+  Settings,
+  FileText,
+  LogOut,
+  UserPlus,
+  Edit
+} from "lucide-react"; // Íconos limpios estilo aviation
 
 export default function AppLayout() {
   const { user, setUser } = useUser();
@@ -12,167 +24,126 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100">
+    <div className="flex min-h-screen bg-slate-100">
 
       {/* ─────────────────────────────── */}
-      {/*           TOP BAR              */}
+      {/*         SIDEBAR IZQUIERDA      */}
       {/* ─────────────────────────────── */}
-      <header className="bg-white shadow px-4 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">TPA Schedule System</h1>
-
-        <div className="flex items-center space-x-4 text-sm">
-          <span className="font-medium">
-            Logged in as: <strong>{user.username}</strong>
-          </span>
-          <button
-            onClick={logout}
-            className="px-3 py-1 rounded border bg-white hover:bg-gray-100"
-          >
-            Logout
-          </button>
+      <aside className="w-64 bg-[#0A2342] text-white flex flex-col">
+        
+        {/* HEADER DEL SIDEBAR */}
+        <div className="p-5 border-b border-blue-900">
+          <h1 className="text-lg font-bold tracking-wide">
+            ✈️ TPA OPS SYSTEM
+          </h1>
+          <p className="text-xs opacity-70 mt-1">
+            Logged as: <b>{user.username}</b>
+          </p>
         </div>
-      </header>
 
-      {/* ─────────────────────────────── */}
-      {/*            NAV BAR             */}
-      {/* ─────────────────────────────── */}
-      <nav className="bg-gray-800 text-white px-4 py-2 flex space-x-4 text-sm">
+        {/* MENÚ PRINCIPAL */}
+        <nav className="flex-1 p-3 space-y-1">
 
-        {/* Dashboard */}
-        <NavLink
-          to="/dashboard"
-          className={({ isActive }) =>
-            `px-2 py-1 rounded ${
-              isActive ? "bg-gray-600" : "hover:bg-gray-700"
-            }`
-          }
+          {/* Dashboard */}
+          <NavItem to="/dashboard" icon={<Home size={18} />} label="Dashboard" />
+
+          {/* Create Schedule */}
+          <NavItem to="/schedule" icon={<Calendar size={18} />} label="Create Schedule" />
+
+          {/* Station Manager exclusive */}
+          {user.role === "station_manager" && (
+            <>
+              <NavItem
+                to="/approvals"
+                icon={<ClipboardCheck size={18} />}
+                label="Approvals"
+              />
+
+              <NavItem
+                to="/employees"
+                icon={<Users size={18} />}
+                label="Employees"
+              />
+
+              <NavItem
+                to="/blocked"
+                icon={<UserMinus size={18} />}
+                label="Blocked Employees"
+              />
+
+              <NavItem
+                to="/dashboard-editor"
+                icon={<Settings size={18} />}
+                label="Dashboard Editor"
+              />
+
+              <NavItem
+                to="/budgets"
+                icon={<FileText size={18} />}
+                label="Budgets"
+              />
+
+              {/* NEW - CREATE USER */}
+              <NavItem
+                to="/create-user"
+                icon={<UserPlus size={18} />}
+                label="Create User"
+              />
+
+              {/* NEW - EDIT USERS */}
+              <NavItem
+                to="/edit-users"
+                icon={<Edit size={18} />}
+                label="Manage Users"
+              />
+            </>
+          )}
+
+          {/* Approved schedules (Station + Duty) */}
+          {(user.role === "station_manager" || user.role === "duty_manager") && (
+            <NavItem
+              to="/approved"
+              icon={<FileText size={18} />}
+              label="Approved Schedules"
+            />
+          )}
+        </nav>
+
+        {/* LOGOUT */}
+        <button
+          onClick={logout}
+          className="flex items-center gap-2 text-white px-5 py-3 border-t border-blue-900 hover:bg-blue-950"
         >
-          Dashboard
-        </NavLink>
-
-        {/* Schedule */}
-        <NavLink
-          to="/schedule"
-          className={({ isActive }) =>
-            `px-2 py-1 rounded ${
-              isActive ? "bg-gray-600" : "hover:bg-gray-700"
-            }`
-          }
-        >
-          Schedule
-        </NavLink>
-
-        {/* Only Station Manager */}
-        {user.role === "station_manager" && (
-          <>
-            {/* Approvals */}
-            <NavLink
-              to="/approvals"
-              className={({ isActive }) =>
-                `px-2 py-1 rounded ${
-                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
-                }`
-              }
-            >
-              Approvals
-            </NavLink>
-
-            {/* Employees */}
-            <NavLink
-              to="/employees"
-              className={({ isActive }) =>
-                `px-2 py-1 rounded ${
-                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
-                }`
-              }
-            >
-              Employees
-            </NavLink>
-
-            {/* Blocked Employees */}
-            <NavLink
-              to="/blocked"
-              className={({ isActive }) =>
-                `px-2 py-1 rounded ${
-                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
-                }`
-              }
-            >
-              Blocked Employees
-            </NavLink>
-
-            {/* Dashboard Editor */}
-            <NavLink
-              to="/dashboard-editor"
-              className={({ isActive }) =>
-                `px-2 py-1 rounded ${
-                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
-                }`
-              }
-            >
-              Dashboard Editor
-            </NavLink>
-
-            {/* Budgets */}
-            <NavLink
-              to="/budgets"
-              className={({ isActive }) =>
-                `px-2 py-1 rounded ${
-                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
-                }`
-              }
-            >
-              Budgets
-            </NavLink>
-
-            {/* CREATE USER — NEW */}
-            <NavLink
-              to="/create-user"
-              className={({ isActive }) =>
-                `px-2 py-1 rounded ${
-                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
-                }`
-              }
-            >
-              Create User
-            </NavLink>
-
-            {/* EDIT USERS — NEW */}
-            <NavLink
-              to="/edit-users"
-              className={({ isActive }) =>
-                `px-2 py-1 rounded ${
-                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
-                }`
-              }
-            >
-              Edit Users
-            </NavLink>
-
-          </>
-        )}
-
-        {/* Duty Manager: Approved schedules only */}
-        {user.role === "duty_manager" && (
-          <NavLink
-            to="/approved"
-            className={({ isActive }) =>
-              `px-2 py-1 rounded ${
-                isActive ? "bg-gray-600" : "hover:bg-gray-700"
-              }`
-            }
-          >
-            Approved Schedules
-          </NavLink>
-        )}
-      </nav>
+          <LogOut size={18} />
+          Logout
+        </button>
+      </aside>
 
       {/* ─────────────────────────────── */}
-      {/*       MAIN CONTENT AREA        */}
+      {/*          MAIN CONTENT           */}
       {/* ─────────────────────────────── */}
-      <main className="flex-1 p-4">
+      <main className="flex-1 p-6">
         <Outlet />
       </main>
     </div>
+  );
+}
+
+/* COMPONENTE NAV ITEM */
+function NavItem({ to, icon, label }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2 rounded text-sm transition ${
+          isActive
+            ? "bg-blue-700 text-white"
+            : "text-gray-200 hover:bg-blue-800 hover:text-white"
+        }`
+      }
+    >
+      {icon}
+      {label}
+    </NavLink>
   );
 }
