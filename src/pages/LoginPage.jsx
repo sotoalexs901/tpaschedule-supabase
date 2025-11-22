@@ -3,7 +3,6 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
-import "./LoginPage.css"; // 🎨 archivo extra opcional para estilo premium
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -18,7 +17,7 @@ export default function LoginPage() {
     setError("");
 
     if (!username || !pin) {
-      setError("Enter user and PIN");
+      setError("Enter username and PIN");
       return;
     }
 
@@ -31,7 +30,7 @@ export default function LoginPage() {
     const snap = await getDocs(q);
 
     if (snap.empty) {
-      setError("Invalid user or PIN");
+      setError("Invalid credentials");
       return;
     }
 
@@ -43,42 +42,46 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="login-container">
+    <div className="min-h-screen flex items-center justify-center bg-slate-200">
+      <div className="bg-white p-8 rounded shadow-md w-80">
 
-      {/* PANEL IZQUIERDO (BACKGROUND) */}
-      <div className="login-left"></div>
+        <h1 className="text-xl font-bold text-center mb-2 text-[#0A2342]">
+          TPA Ops Portal
+        </h1>
+        <p className="text-center text-sm text-gray-500 mb-4">
+          Crew Scheduling System
+        </p>
 
-      {/* PANEL DERECHO (FORMULARIO) */}
-      <div className="login-right">
-        <form className="login-box" onSubmit={handleLogin}>
-          
-          <h1 className="login-title">TPA Ops Portal</h1>
-          <p className="login-subtitle">Crew Scheduling & Management</p>
+        <form onSubmit={handleLogin} className="space-y-3">
 
-          <div className="login-field">
-            <label>User</label>
+          <div>
+            <label className="text-sm font-medium">User</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter Username"
+              className="w-full p-2 border rounded mt-1"
             />
           </div>
 
-          <div className="login-field">
-            <label>PIN</label>
+          <div>
+            <label className="text-sm font-medium">PIN</label>
             <input
               type="password"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
-              placeholder="Enter PIN"
+              className="w-full p-2 border rounded mt-1"
             />
           </div>
 
-          {error && <p className="login-error">{error}</p>}
+          {error && <p className="text-red-600 text-sm">{error}</p>}
 
-          <button className="login-button" type="submit">
+          <button
+            type="submit"
+            className="w-full bg-blue-700 text-white p-2 rounded hover:bg-blue-800 mt-2"
+          >
             Login
           </button>
+
         </form>
       </div>
     </div>
