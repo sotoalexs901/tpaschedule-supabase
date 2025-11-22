@@ -1,76 +1,86 @@
-import React, { useState } from 'react'
-import { collection, query, where, getDocs } from 'firebase/firestore'
-import { db } from '../firebase'
-import { useUser } from '../UserContext.jsx'
-import { useNavigate } from 'react-router-dom'
+import React, { useState } from "react";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "../firebase";
+import { useUser } from "../UserContext.jsx";
+import { useNavigate } from "react-router-dom";
+import "./LoginPage.css"; // 🎨 archivo extra opcional para estilo premium
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('')
-  const [pin, setPin] = useState('')
-  const [error, setError] = useState('')
-  const { setUser } = useUser()
-  const navigate = useNavigate()
+  const [username, setUsername] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+
+  const { setUser } = useUser();
+  const navigate = useNavigate();
 
   const handleLogin = async (e) => {
-    e.preventDefault()
-    setError('')
+    e.preventDefault();
+    setError("");
 
-    const q = query(
-      collection(db, 'users'),
-      where('username', '==', username),
-      where('pin', '==', pin)
-    )
-
-    const snap = await getDocs(q)
-
-    if (snap.empty) {
-      setError('Invalid user or PIN')
-      return
+    if (!username || !pin) {
+      setError("Enter user and PIN");
+      return;
     }
 
-    const docu = snap.docs[0]
-    const data = docu.data()
+    const q = query(
+      collection(db, "users"),
+      where("username", "==", username),
+      where("pin", "==", pin)
+    );
 
-    // Guardar en contexto (MUY IMPORTANTE)
-    setUser({
-      id: docu.id,
-      username: data.username,
-      role: data.role,   // <--- NECESARIO PARA RULES + ROUTES
-    })
+    const snap = await getDocs(q);
 
-    navigate('/dashboard')
-  }
+    if (snap.empty) {
+      setError("Invalid user or PIN");
+      return;
+    }
+
+    const doc = snap.docs[0];
+    const data = doc.data();
+
+    setUser({ id: doc.id, username: data.username, role: data.role });
+    navigate("/dashboard");
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <form onSubmit={handleLogin} className="card w-full max-w-sm space-y-3">
-        <h1 className="text-lg font-semibold text-center">TPA Schedule Login</h1>
+    <div className="login-container">
 
-        <div className="space-y-1 text-sm">
-          <label>User</label>
-          <input
-            className="border rounded w-full px-2 py-1"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-          />
-        </div>
+      {/* PANEL IZQUIERDO (BACKGROUND) */}
+      <div className="login-left"></div>
 
-        <div className="space-y-1 text-sm">
-          <label>PIN</label>
-          <input
-            className="border rounded w-full px-2 py-1"
-            type="password"
-            value={pin}
-            onChange={e => setPin(e.target.value)}
-          />
-        </div>
+      {/* PANEL DERECHO (FORMULARIO) */}
+      <div className="login-right">
+        <form className="login-box" onSubmit={handleLogin}>
+          
+          <h1 className="login-title">TPA Ops Portal</h1>
+          <p className="login-subtitle">Crew Scheduling & Management</p>
 
-        {error && <p className="text-[11px] text-red-600">{error}</p>}
+          <div className="login-field">
+            <label>User</label>
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Enter Username"
+            />
+          </div>
 
-        <button className="btn btn-primary w-full" type="submit">
-          Login
-        </button>
-      </form>
+          <div className="login-field">
+            <label>PIN</label>
+            <input
+              type="password"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="Enter PIN"
+            />
+          </div>
+
+          {error && <p className="login-error">{error}</p>}
+
+          <button className="login-button" type="submit">
+            Login
+          </button>
+        </form>
+      </div>
     </div>
-  )
+  );
 }
