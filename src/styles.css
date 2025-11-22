@@ -1,424 +1,123 @@
-/* Reset fix — evita que el login o schedule rompa el layout global */
-* {
-  box-sizing: border-box;
-}
-
-body, html {
-  margin: 0;
-  padding: 0;
-  font-family: sans-serif;
-}
-/* ────────────────────────────────────────────────
-   GLOBAL LAYOUT – Clean Airport Portal Theme
-   ──────────────────────────────────────────────── */
-
+/* -----------------------------------------------------
+   RESET BÁSICO (mejorado para Tailwind)
+------------------------------------------------------ */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: "Inter", "Segoe UI", Arial, sans-serif;
 }
 
-body {
-  background: #f4f7fb;
-  color: #1f2937;
+html, body {
+  height: 100%;
+  background-color: #f1f5f9; /* slate-100 */
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* ────────────────────────────────────────────────
-   TOP BAR
-   ──────────────────────────────────────────────── */
-
-header {
-  background: #ffffff;
-  border-bottom: 1px solid #d1d5db;
-}
-
-header h1 {
-  color: #1e3a8a;
-  font-weight: 700;
-}
-
-header .top-info {
-  color: #374151;
-  font-size: 14px;
-}
-
-/* Logout button */
-header button {
-  background: #1e40af;
-  color: white;
-  border: none;
-  padding: 6px 14px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-header button:hover {
-  background: #1d4ed8;
-}
-
-/* ────────────────────────────────────────────────
-   NAVIGATION MENU
-   ──────────────────────────────────────────────── */
-
-nav {
-  background: #1e293b;
-  display: flex;
-  gap: 10px;
-  padding: 10px 18px;
-}
-
-nav a {
-  color: #e2e8f0;
-  padding: 7px 14px;
-  border-radius: 4px;
-  font-size: 14px;
-  text-decoration: none;
-  transition: 0.2s;
-}
-
-nav a:hover {
-  background: #334155;
-}
-
-nav a.active {
-  background: #0ea5e9;
-  color: white;
-  font-weight: 600;
-}
-
-/* ────────────────────────────────────────────────
-   CARDS
-   ──────────────────────────────────────────────── */
-
-.card {
-  background: white;
-  padding: 18px;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  margin-bottom: 18px;
-}
-
-/* ────────────────────────────────────────────────
-   TABLES
-   ──────────────────────────────────────────────── */
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-table th {
-  background: #eef2ff;
-  padding: 10px;
-  text-align: left;
-  color: #1e3a8a;
-  font-weight: 600;
-}
-
-table td {
-  padding: 10px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-table tr:hover td {
-  background: #f1f5f9;
-}
-
-/* ────────────────────────────────────────────────
-   BUTTONS
-   ──────────────────────────────────────────────── */
-
-.btn {
-  padding: 6px 14px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: 0.2s;
-  border: none;
-}
-
-.btn-primary {
-  background: #2563eb;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #1d4ed8;
-}
-
-.btn-danger {
-  background: #dc2626;
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #b91c1c;
-}
-
-.btn-light {
-  background: #f3f4f6;
-  color: #111827;
-  border: 1px solid #d1d5db;
-}
-
-.btn-light:hover {
-  background: #e5e7eb;
-}
-
-/* ────────────────────────────────────────────────
-   FORMS
-   ──────────────────────────────────────────────── */
-
-input,
-select {
-  padding: 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  width: 100%;
-  font-size: 14px;
-}
-
-input:focus,
-select:focus {
-  outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px #bfdbfe;
-}
-
-/* ────────────────────────────────────────────────
-   SCHEDULE GRID
-   ──────────────────────────────────────────────── */
-
-.schedule-header {
-  background: #1e3a8a;
-  color: white;
-  font-weight: 600;
-  padding: 8px;
-  text-align: center;
-}
-
-.schedule-cell {
-  padding: 6px;
-  border-left: 1px solid #e5e7eb;
-}
-
-.schedule-row {
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.schedule-row:hover {
-  background: #f8fafc;
-}
-
-/* Shift dropdown */
-select.shift-select {
-  width: 70px;
-  font-size: 12px;
-  padding: 4px;
-}
-
-/* Add row button */
-.add-row-btn {
-  width: 100%;
-  margin-top: 10px;
-  padding: 8px;
-  background: #0ea5e9;
-  color: white;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.add-row-btn:hover {
-  background: #0284c7;
-}
-
-/* Submit for approval */
-.submit-btn {
-  background: #16a34a;
-  color: white;
-  padding: 10px 18px;
-  border-radius: 4px;
-  font-size: 15px;
-  float: right;
-}
-
-.submit-btn:hover {
-  background: #15803d;
-}
-
-/* ────────────────────────────────────────────────
-   LOGIN PAGE
-   ──────────────────────────────────────────────── */
-
+/* -----------------------------------------------------
+   LOGIN PAGE (tu estilo premium)
+------------------------------------------------------ */
 .login-container {
-  background: #f1f5f9;
-  min-height: 100vh;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  height: 100vh;
 }
 
-.login-card {
+.login-left {
+  flex: 1;
+  background: url("https://images.unsplash.com/photo-1526772662000-3f88f10405ff")
+    center/cover no-repeat;
+}
+
+.login-right {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-box {
+  width: 340px;
   background: white;
-  width: 350px;
-  padding: 24px;
+  padding: 35px;
   border-radius: 10px;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  animation: fadeIn .5s ease-out;
 }
 
-.login-card h1 {
-  font-size: 20px;
+.login-title {
+  font-size: 1.6rem;
   font-weight: 700;
-  color: #1e3a8a;
+  color: #0A2342;
   text-align: center;
 }
 
-.error-text {
+.login-subtitle {
+  text-align: center;
+  color: #64748b;
+  margin-bottom: 20px;
+}
+
+.login-field {
+  margin-bottom: 15px;
+}
+
+.login-field label {
+  display: block;
+  font-size: .85rem;
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #0A2342;
+}
+
+.login-field input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: .9rem;
+}
+
+.login-error {
   color: #dc2626;
-  font-size: 12px;
-}
-
-/* ────────────────────────────────────────────────
-   UTILS
-   ──────────────────────────────────────────────── */
-
-.text-muted {
-  color: #6b7280;
-}
-
-.text-small {
-  font-size: 13px;
-}
-/* ============================= */
-/*   SCHEDULE GRID – EXCEL LOOK  */
-/* ============================= */
-
-.sch-wrapper {
-  background: #ffffff;
-  border: 2px solid #000;
-  padding: 8px 10px 12px;
-  font-size: 12px;
-}
-
-.sch-wrapper-approved {
-  opacity: 0.9;
-}
-
-.sch-title {
+  margin-bottom: 10px;
   text-align: center;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  margin-bottom: 2px;
+  font-size: .85rem;
 }
 
-.sch-subtitle {
-  text-align: center;
-  font-size: 11px;
-  color: #4b5563;
-  margin-bottom: 6px;
-}
-
-.sch-table-container {
-  overflow-x: auto;
-}
-
-.sch-table {
+.login-button {
   width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  font-size: 11px;
-}
-
-.sch-table th,
-.sch-table td {
-  border: 1px solid #000;
-  padding: 2px 4px;
-  text-align: center;
-}
-
-.sch-header {
-  font-weight: 700;
-  color: #ffffff;
-  text-transform: uppercase;
-}
-
-.sch-header-employee {
-  background: #facc15; /* cabecera EMPLOYEE */
-  color: #000000;
-  width: 180px;
-  text-align: left;
-}
-
-.sch-employee-cell {
-  background: #fffbe6;
-  font-weight: 600;
-  text-align: left;
-  padding-left: 6px;
-}
-
-.sch-employee-select {
-  width: 100%;
-  font-size: 11px;
+  background: #0A2342;
+  color: white;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 1rem;
   border: none;
-  background: transparent;
-  outline: none;
-}
-
-.sch-cell {
-  min-width: 95px;
-  height: 26px;
-}
-
-.sch-cell-select-row {
-  display: flex;
-  gap: 2px;
-  justify-content: center;
-  align-items: center;
-}
-
-.sch-select {
-  font-size: 10px;
-  padding: 1px 2px;
-  border: 1px solid #9ca3af;
-  background: rgba(255, 255, 255, 0.85);
-  max-width: 55px;
-}
-
-/* Botones */
-.sch-add-row-btn {
-  margin-top: 6px;
-  width: 100%;
-  padding: 6px 0;
-  font-size: 12px;
-  font-weight: 500;
-  background: #2563eb;
-  color: white;
-  border-radius: 2px;
-}
-
-.sch-add-row-btn:hover {
-  background: #1d4ed8;
-}
-
-.sch-submit-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-
-.sch-submit-btn {
-  background: #16a34a;
-  color: white;
-  padding: 6px 16px;
-  font-size: 12px;
-  border-radius: 3px;
+  cursor: pointer;
   font-weight: 600;
+  transition: .2s;
 }
 
-.sch-submit-btn:hover {
-  background: #15803d;
+.login-button:hover {
+  background: #0d2e66;
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* -----------------------------------------------------
+   ELIMINAMOS ESTILOS VIEJOS DEL NAVBAR HORIZONTAL
+------------------------------------------------------ */
+
+nav ul,
+nav li,
+header,
+.top-nav,
+.site-header,
+#navbar,
+.menu {
+  all: unset;
+}
+
+/* Esto evita que estilos antiguos sobreescriban el sidebar */
