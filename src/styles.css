@@ -281,3 +281,134 @@ select.shift-select {
 .text-small {
   font-size: 13px;
 }
+/* ============================= */
+/*   SCHEDULE GRID – EXCEL LOOK  */
+/* ============================= */
+
+.sch-wrapper {
+  background: #ffffff;
+  border: 2px solid #000;
+  padding: 8px 10px 12px;
+  font-size: 12px;
+}
+
+.sch-wrapper-approved {
+  opacity: 0.9;
+}
+
+.sch-title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.sch-subtitle {
+  text-align: center;
+  font-size: 11px;
+  color: #4b5563;
+  margin-bottom: 6px;
+}
+
+.sch-table-container {
+  overflow-x: auto;
+}
+
+.sch-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 11px;
+}
+
+.sch-table th,
+.sch-table td {
+  border: 1px solid #000;
+  padding: 2px 4px;
+  text-align: center;
+}
+
+.sch-header {
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+}
+
+.sch-header-employee {
+  background: #facc15; /* cabecera EMPLOYEE */
+  color: #000000;
+  width: 180px;
+  text-align: left;
+}
+
+.sch-employee-cell {
+  background: #fffbe6;
+  font-weight: 600;
+  text-align: left;
+  padding-left: 6px;
+}
+
+.sch-employee-select {
+  width: 100%;
+  font-size: 11px;
+  border: none;
+  background: transparent;
+  outline: none;
+}
+
+.sch-cell {
+  min-width: 95px;
+  height: 26px;
+}
+
+.sch-cell-select-row {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  align-items: center;
+}
+
+.sch-select {
+  font-size: 10px;
+  padding: 1px 2px;
+  border: 1px solid #9ca3af;
+  background: rgba(255, 255, 255, 0.85);
+  max-width: 55px;
+}
+
+/* Botones */
+.sch-add-row-btn {
+  margin-top: 6px;
+  width: 100%;
+  padding: 6px 0;
+  font-size: 12px;
+  font-weight: 500;
+  background: #2563eb;
+  color: white;
+  border-radius: 2px;
+}
+
+.sch-add-row-btn:hover {
+  background: #1d4ed8;
+}
+
+.sch-submit-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.sch-submit-btn {
+  background: #16a34a;
+  color: white;
+  padding: 6px 16px;
+  font-size: 12px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.sch-submit-btn:hover {
+  background: #15803d;
+}
