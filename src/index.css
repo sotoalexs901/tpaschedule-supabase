@@ -1,0 +1,95 @@
+/* --------------------------------------------------------- */
+/*                TAILWIND DIRECTIVES                        */
+/* --------------------------------------------------------- */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --------------------------------------------------------- */
+/* RESET BÁSICO (NO interfiere con Tailwind)                 */
+/* --------------------------------------------------------- */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Inter', sans-serif;
+  background-color: #f1f5f9; /* slate-100 */
+}
+
+/* --------------------------------------------------------- */
+/* FIX: NAVLINK SIN DECORACIÓN                                */
+/* --------------------------------------------------------- */
+a {
+  text-decoration: none;
+}
+
+/* --------------------------------------------------------- */
+/* CARD ESTÁNDAR (Dashboard, Approvals, Approved, etc.)      */
+/* --------------------------------------------------------- */
+.card {
+  background: white;
+  padding: 18px;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  margin-bottom: 20px;
+}
+
+/* --------------------------------------------------------- */
+/* TABLAS                                                     */
+/* --------------------------------------------------------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  background: #0A2342;
+  color: white;
+  padding: 10px;
+  font-size: 14px;
+}
+
+td {
+  padding: 8px;
+  font-size: 14px;
+}
+
+/* --------------------------------------------------------- */
+/* BOTONES UNIVERSALES                                        */
+/* --------------------------------------------------------- */
+.btn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.btn-blue {
+  background: #0A2342;
+  color: white;
+}
+
+.btn-blue:hover {
+  background: #0c2d57;
+}
+
+/* --------------------------------------------------------- */
+/* SEPARADOR VISUAL ENTRE SIDEBAR Y CONTENIDO                */
+/* --------------------------------------------------------- */
+main {
+  padding-top: 10px;
+}
+
+/* --------------------------------------------------------- */
+/* OCULTAR ESTILOS QUE ROMPÍAN TODO                          */
+/* --------------------------------------------------------- */
+/* ❌ Esto evita que el dashboard salga todo pegado arriba */
+header, nav {
+  all: unset;
+}
+
+/* Pero restauramos estilos correctos para AppLayout */
+header, nav {
+  display: block;
+}
