@@ -1,70 +1,283 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ────────────────────────────────────────────────
+   GLOBAL LAYOUT – Clean Airport Portal Theme
+   ──────────────────────────────────────────────── */
 
-/* Global Layout */
-.card { @apply bg-white rounded-xl shadow p-4; }
-.btn { @apply px-3 py-2 rounded-xl border text-sm font-medium bg-white hover:bg-gray-50; }
-.btn-primary { @apply bg-blue-600 text-white hover:bg-blue-700 border-blue-600; }
-
-/* Excel Table Styling */
-.schedule-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 11px;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
 }
 
-/* Thick Excel borders */
-.schedule-table th,
-.schedule-table td {
-  border: 2px solid #000000;
-  padding: 4px;
+body {
+  background: #f4f7fb;
+  color: #1f2937;
 }
 
-/* Header row (black) */
-.schedule-header {
-  background-color: #000000;
+/* ────────────────────────────────────────────────
+   TOP BAR
+   ──────────────────────────────────────────────── */
+
+header {
+  background: #ffffff;
+  border-bottom: 1px solid #d1d5db;
+}
+
+header h1 {
+  color: #1e3a8a;
+  font-weight: 700;
+}
+
+header .top-info {
+  color: #374151;
+  font-size: 14px;
+}
+
+/* Logout button */
+header button {
+  background: #1e40af;
   color: white;
-  font-weight: bold;
-  text-align: center;
-  font-size: 11px;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: 0.2s;
 }
 
-/* Employee name cell */
-.employee-cell {
-  font-size: 11px;
+header button:hover {
+  background: #1d4ed8;
+}
+
+/* ────────────────────────────────────────────────
+   NAVIGATION MENU
+   ──────────────────────────────────────────────── */
+
+nav {
+  background: #1e293b;
+  display: flex;
+  gap: 10px;
+  padding: 10px 18px;
+}
+
+nav a {
+  color: #e2e8f0;
+  padding: 7px 14px;
+  border-radius: 4px;
+  font-size: 14px;
+  text-decoration: none;
+  transition: 0.2s;
+}
+
+nav a:hover {
+  background: #334155;
+}
+
+nav a.active {
+  background: #0ea5e9;
+  color: white;
   font-weight: 600;
 }
 
-/* Day cells with two shifts stacked */
-.shift-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 110px;
+/* ────────────────────────────────────────────────
+   CARDS
+   ──────────────────────────────────────────────── */
+
+.card {
+  background: white;
+  padding: 18px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  margin-bottom: 18px;
 }
 
-/* Small inputs for times */
-.shift-input {
-  @apply border rounded px-1 text-center;
-  width: 52px;
-  font-size: 10px;
+/* ────────────────────────────────────────────────
+   TABLES
+   ──────────────────────────────────────────────── */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
 }
 
-/* ELEMENT COLORS BY AIRLINE */
-.airline-SY { background-color: #FFD966; }
-.airline-AV { background-color: #F7B6D2; }
-.airline-WL { background-color: #C9E7FF; }
-.airline-EA { background-color: #D6F5D6; }
-.airline-WCHR { background-color: #D2E3FF; }
-.airline-AABSO { background-color: #C8F7E7; }
-.airline-CABIN { background-color: #E8E8E8; }
-.airline-OTHER { background-color: #E5DAF6; }
+table th {
+  background: #eef2ff;
+  padding: 10px;
+  text-align: left;
+  color: #1e3a8a;
+  font-weight: 600;
+}
 
-/* OFF cell always white */
-.shift-off {
-  background-color: white !important;
-  color: black;
-  font-weight: bold;
+table td {
+  padding: 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+table tr:hover td {
+  background: #f1f5f9;
+}
+
+/* ────────────────────────────────────────────────
+   BUTTONS
+   ──────────────────────────────────────────────── */
+
+.btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: 0.2s;
+  border: none;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
+}
+
+.btn-light {
+  background: #f3f4f6;
+  color: #111827;
+  border: 1px solid #d1d5db;
+}
+
+.btn-light:hover {
+  background: #e5e7eb;
+}
+
+/* ────────────────────────────────────────────────
+   FORMS
+   ──────────────────────────────────────────────── */
+
+input,
+select {
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  width: 100%;
+  font-size: 14px;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px #bfdbfe;
+}
+
+/* ────────────────────────────────────────────────
+   SCHEDULE GRID
+   ──────────────────────────────────────────────── */
+
+.schedule-header {
+  background: #1e3a8a;
+  color: white;
+  font-weight: 600;
+  padding: 8px;
   text-align: center;
+}
+
+.schedule-cell {
+  padding: 6px;
+  border-left: 1px solid #e5e7eb;
+}
+
+.schedule-row {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.schedule-row:hover {
+  background: #f8fafc;
+}
+
+/* Shift dropdown */
+select.shift-select {
+  width: 70px;
+  font-size: 12px;
+  padding: 4px;
+}
+
+/* Add row button */
+.add-row-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  background: #0ea5e9;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.add-row-btn:hover {
+  background: #0284c7;
+}
+
+/* Submit for approval */
+.submit-btn {
+  background: #16a34a;
+  color: white;
+  padding: 10px 18px;
+  border-radius: 4px;
+  font-size: 15px;
+  float: right;
+}
+
+.submit-btn:hover {
+  background: #15803d;
+}
+
+/* ────────────────────────────────────────────────
+   LOGIN PAGE
+   ──────────────────────────────────────────────── */
+
+.login-container {
+  background: #f1f5f9;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  background: white;
+  width: 350px;
+  padding: 24px;
+  border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+}
+
+.login-card h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e3a8a;
+  text-align: center;
+}
+
+.error-text {
+  color: #dc2626;
+  font-size: 12px;
+}
+
+/* ────────────────────────────────────────────────
+   UTILS
+   ──────────────────────────────────────────────── */
+
+.text-muted {
+  color: #6b7280;
+}
+
+.text-small {
+  font-size: 13px;
 }
