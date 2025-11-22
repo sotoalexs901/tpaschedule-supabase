@@ -3,6 +3,7 @@ import {
   collection,
   getDocs,
   updateDoc,
+  deleteDoc,
   doc,
 } from "firebase/firestore";
 import { db } from "../firebase";
@@ -11,6 +12,7 @@ import { useUser } from "../UserContext.jsx";
 export default function EditUsersPage() {
   const { user } = useUser();
 
+  // Solo station_manager puede entrar
   if (!user || user.role !== "station_manager") {
     return (
       <div className="p-6">
@@ -36,15 +38,33 @@ export default function EditUsersPage() {
 
   const updateUser = async (u) => {
     setSavingId(u.id);
-
     await updateDoc(doc(db, "users", u.id), {
       username: u.username,
       pin: u.pin,
       role: u.role,
     });
-
     setSavingId(null);
     alert("User updated!");
+  };
+
+  const deleteUser = async (id) => {
+    if (!confirm("Are you sure you want to delete this user?")) return;
+
+    await deleteDoc(doc(db, "users", id));
+    setUsers((prev) => prev.filter((u) => u.id !== id));
+    alert("User deleted.");
+  };
+
+  const resetPin = async (id) => {
+    if (!confirm("Reset PIN to 0000?")) return;
+
+    await updateDoc(doc(db, "users", id), { pin: "0000" });
+
+    setUsers((prev) =>
+      prev.map((u) => (u.id === id ? { ...u, pin: "0000" } : u))
+    );
+
+    alert("PIN reset to 0000.");
   };
 
   const handleChange = (id, field, value) => {
@@ -57,7 +77,7 @@ export default function EditUsersPage() {
 
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-xl font-semibold">Edit Users</h1>
+      <h1 className="text-xl font-semibold">Manage Users</h1>
 
       <div className="card p-4 overflow-auto">
         <table className="table text-sm">
@@ -67,6 +87,8 @@ export default function EditUsersPage() {
               <th>PIN</th>
               <th>Role</th>
               <th className="text-center">Save</th>
+              <th className="text-center">Reset PIN</th>
+              <th className="text-center text-red-600">Delete</th>
             </tr>
           </thead>
 
@@ -104,6 +126,7 @@ export default function EditUsersPage() {
                   </select>
                 </td>
 
+                {/* SAVE */}
                 <td className="text-center">
                   <button
                     onClick={() => updateUser(u)}
@@ -113,6 +136,27 @@ export default function EditUsersPage() {
                     {savingId === u.id ? "Saving…" : "Save"}
                   </button>
                 </td>
+
+                {/* RESET PIN */}
+                <td className="text-center">
+                  <button
+                    onClick={() => resetPin(u.id)}
+                    className="bg-yellow-500 text-white px-3 py-1 rounded"
+                  >
+                    Reset
+                  </button>
+                </td>
+
+                {/* DELETE */}
+                <td className="text-center">
+                  <button
+                    onClick={() => deleteUser(u.id)}
+                    className="bg-red-600 text-white px-3 py-1 rounded"
+                  >
+                    Delete
+                  </button>
+                </td>
+
               </tr>
             ))}
           </tbody>
