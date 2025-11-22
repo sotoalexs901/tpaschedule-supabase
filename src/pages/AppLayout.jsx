@@ -101,7 +101,7 @@ export default function AppLayout() {
               Blocked Employees
             </NavLink>
 
-            {/* Dashboard Editor (restored) */}
+            {/* Dashboard Editor */}
             <NavLink
               to="/dashboard-editor"
               className={({ isActive }) =>
@@ -113,7 +113,7 @@ export default function AppLayout() {
               Dashboard Editor
             </NavLink>
 
-            {/* Budgets (new) */}
+            {/* Budgets */}
             <NavLink
               to="/budgets"
               className={({ isActive }) =>
@@ -124,12 +124,51 @@ export default function AppLayout() {
             >
               Budgets
             </NavLink>
+
+            {/* CREATE USER — NEW */}
+            <NavLink
+              to="/create-user"
+              className={({ isActive }) =>
+                `px-2 py-1 rounded ${
+                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
+                }`
+              }
+            >
+              Create User
+            </NavLink>
+
+            {/* EDIT USERS — NEW */}
+            <NavLink
+              to="/edit-users"
+              className={({ isActive }) =>
+                `px-2 py-1 rounded ${
+                  isActive ? "bg-gray-600" : "hover:bg-gray-700"
+                }`
+              }
+            >
+              Edit Users
+            </NavLink>
+
           </>
+        )}
+
+        {/* Duty Manager: Approved schedules only */}
+        {user.role === "duty_manager" && (
+          <NavLink
+            to="/approved"
+            className={({ isActive }) =>
+              `px-2 py-1 rounded ${
+                isActive ? "bg-gray-600" : "hover:bg-gray-700"
+              }`
+            }
+          >
+            Approved Schedules
+          </NavLink>
         )}
       </nav>
 
       {/* ─────────────────────────────── */}
-      {/*           MAIN CONTENT         */}
+      {/*       MAIN CONTENT AREA        */}
       {/* ─────────────────────────────── */}
       <main className="flex-1 p-4">
         <Outlet />
