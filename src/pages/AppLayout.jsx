@@ -1,6 +1,18 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
+import {
+  Home,
+  Calendar,
+  ClipboardCheck,
+  Users,
+  UserMinus,
+  Settings,
+  FileSpreadsheet,
+  UserPlus,
+  FileCheck,
+  LogOut,
+} from "lucide-react";
 
 export default function AppLayout() {
   const { user, setUser } = useUser();
@@ -12,70 +24,86 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen flex bg-slate-100">
+    <div className="flex min-h-screen bg-slate-100">
 
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-[#0A2342] text-white flex flex-col">
+      {/* ------------------------------------------------------------- */}
+      {/*                            SIDEBAR                             */}
+      {/* ------------------------------------------------------------- */}
+      <aside className="w-64 bg-[#0A2342] text-white flex flex-col shadow-xl">
 
-        {/* Header */}
+        {/* LOGO + USER */}
         <div className="p-5 border-b border-blue-900">
-          <h1 className="text-lg font-bold tracking-wide">TPA OPS SYSTEM</h1>
+          <h1 className="text-xl font-bold tracking-wider">TPA OPS SYSTEM</h1>
           <p className="text-xs opacity-70 mt-1">
-            Logged as: <b>{user.username}</b>
+            Logged in as <b>{user.username}</b>
           </p>
         </div>
 
-        {/* Menu */}
-        <nav className="flex-1 p-3 space-y-1 text-sm">
-          <NavItem to="/dashboard" label="Dashboard" />
-          <NavItem to="/schedule" label="Create Schedule" />
+        {/* NAVIGATION */}
+        <nav className="flex-1 p-4 space-y-2 text-sm">
+
+          <SidebarItem to="/dashboard" icon={<Home size={18} />} label="Dashboard" />
+
+          <SidebarItem to="/schedule" icon={<Calendar size={18} />} label="Create Schedule" />
 
           {user.role === "station_manager" && (
             <>
-              <NavItem to="/approvals" label="Approvals" />
-              <NavItem to="/employees" label="Employees" />
-              <NavItem to="/blocked" label="Blocked Employees" />
-              <NavItem to="/dashboard-editor" label="Dashboard Editor" />
-              <NavItem to="/budgets" label="Budgets" />
-              <NavItem to="/create-user" label="Create User" />
-              <NavItem to="/edit-users" label="Manage Users" />
+              <SidebarItem to="/approvals" icon={<ClipboardCheck size={18} />} label="Approvals" />
+
+              <SidebarItem to="/employees" icon={<Users size={18} />} label="Employees" />
+
+              <SidebarItem to="/blocked" icon={<UserMinus size={18} />} label="Blocked Employees" />
+
+              <SidebarItem to="/dashboard-editor" icon={<Settings size={18} />} label="Dashboard Editor" />
+
+              <SidebarItem to="/budgets" icon={<FileSpreadsheet size={18} />} label="Budgets" />
+
+              <SidebarItem to="/create-user" icon={<UserPlus size={18} />} label="Create User" />
+
+              <SidebarItem to="/edit-users" icon={<Users size={18} />} label="Manage Users" />
             </>
           )}
 
-          {(user.role === "station_manager" ||
-            user.role === "duty_manager") && (
-            <NavItem to="/approved" label="Approved Schedules" />
+          {(user.role === "station_manager" || user.role === "duty_manager") && (
+            <SidebarItem to="/approved" icon={<FileCheck size={18} />} label="Approved Schedules" />
           )}
+
         </nav>
 
-        {/* Logout */}
+        {/* LOGOUT */}
         <button
           onClick={logout}
-          className="flex items-center gap-2 text-white px-5 py-3 border-t border-blue-900 hover:bg-blue-950"
+          className="flex items-center gap-2 px-5 py-3 border-t border-blue-900 text-white hover:bg-blue-950 transition"
         >
+          <LogOut size={18} />
           Logout
         </button>
       </aside>
 
-      {/* MAIN CONTENT */}
-      <main className="flex-1 p-6 overflow-auto">
+      {/* ------------------------------------------------------------- */}
+      {/*                     MAIN CONTENT AREA                          */}
+      {/* ------------------------------------------------------------- */}
+      <main className="flex-1 p-6 overflow-y-auto">
         <Outlet />
       </main>
     </div>
   );
 }
 
-function NavItem({ to, label }) {
+/* ------------------------------------------------------------- */
+/*                 COMPONENTE: SIDEBAR ITEM                      */
+/* ------------------------------------------------------------- */
+function SidebarItem({ to, icon, label }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `block px-3 py-2 rounded transition ${
-          isActive ? "bg-blue-700 text-white" : "text-gray-200 hover:bg-blue-800"
-        }`
+        `flex items-center gap-3 px-3 py-2 rounded transition-all 
+        ${isActive ? "bg-blue-700 text-white shadow-md" : "text-gray-200 hover:bg-blue-800"}`
       }
     >
-      {label}
+      {icon}
+      <span>{label}</span>
     </NavLink>
   );
 }
