@@ -1,4 +1,3 @@
-// src/pages/AppLayout.jsx
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
@@ -14,18 +13,21 @@ export default function AppLayout() {
 
   return (
     <div className="app-shell">
-      {/* SIDEBAR */}
+      {/* ───────── SIDEBAR ───────── */}
       <aside className="app-sidebar">
-        {/* Header */}
-        <div className="app-sidebar-header">
-          <h1 className="app-logo">TPA OPS SYSTEM</h1>
-          <p className="app-logged">
-            Logged as: <strong>{user?.username}</strong>
-          </p>
+        {/* Header del sidebar */}
+        <div className="sidebar-header">
+          <div className="sidebar-logo-circle">✈️</div>
+          <div>
+            <div className="sidebar-title">TPA OPS SYSTEM</div>
+            <div className="sidebar-subtitle">
+              Logged as: <strong>{user?.username}</strong>
+            </div>
+          </div>
         </div>
 
         {/* Menú */}
-        <nav className="app-sidebar-menu">
+        <nav className="sidebar-menu">
           <NavItem to="/dashboard" label="Dashboard" />
           <NavItem to="/schedule" label="Create Schedule" />
 
@@ -47,13 +49,13 @@ export default function AppLayout() {
           )}
         </nav>
 
-        {/* Logout */}
-        <button className="app-logout-btn" onClick={logout}>
+        {/* Logout abajo */}
+        <button className="sidebar-logout" type="button" onClick={logout}>
           Logout
         </button>
       </aside>
 
-      {/* CONTENIDO PRINCIPAL */}
+      {/* ───────── CONTENIDO PRINCIPAL ───────── */}
       <main className="app-main">
         <Outlet />
       </main>
@@ -61,12 +63,13 @@ export default function AppLayout() {
   );
 }
 
+/** Link del menú */
 function NavItem({ to, label }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
-        "app-nav-link" + (isActive ? " app-nav-link-active" : "")
+        "sidebar-link" + (isActive ? " sidebar-link-active" : "")
       }
     >
       {label}
