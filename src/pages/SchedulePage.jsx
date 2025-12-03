@@ -1,10 +1,11 @@
-// src/pages/SchedulePage.jsx
 import React, { useState, useEffect } from "react";
 import {
   collection,
   getDocs,
   addDoc,
   serverTimestamp,
+  query,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -12,7 +13,7 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// Logos oficiales desde Firebase (rellena tus URLs reales)
+// 🔵 Logos oficiales desde Firebase (pon aquí tus URLs reales)
 const AIRLINE_LOGOS = {
   SY: "URL",
   "WL Havana Air": "URL",
@@ -25,18 +26,6 @@ const AIRLINE_LOGOS = {
   OTHER: "URL",
 };
 
-// Helper: cargar imagen
-const loadImage = (src) =>
-  new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.src = src;
-  });
-
-// -------------------------------
-// Helpers de tiempo y conflictos
-// -------------------------------
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
@@ -48,72 +37,44 @@ const DAY_LABELS = {
   sun: "SUND",
 };
 
-function timeToMinutes(t) {
-  const [h, m] = t.split(":").map(Number);
+// Helper para logo PDF
+const loadImage = (src) =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.src = src;
+  });
+
+// Helpers para solapamiento de horas
+const toMinutes = (timeStr) => {
+  if (!timeStr || timeStr === "OFF") return null;
+  const [h, m] = timeStr.split(":").map(Number);
   return h * 60 + m;
-}
+};
 
-function shiftsOverlap(aStart, aEnd, bStart, bEnd) {
-  // Asumimos formato HH:MM y que OFF ya fue filtrado
-  const aS = timeToMinutes(aStart);
-  const aE = timeToMinutes(aEnd);
-  const bS = timeToMinutes(bStart);
-  const bE = timeToMinutes(bEnd);
+const normalizeInterval = (start, end) => {
+  const s = toMinutes(start);
+  const eRaw = toMinutes(end);
+  if (s == null || eRaw == null) return null;
+  let e = eRaw;
+  // Si el fin es menor o igual que el inicio, asumimos que cruza medianoche
+  if (e <= s) e += 24 * 60;
+  return [s, e];
+};
 
-  // Intervalos se solapan si el inicio de uno es menor al fin del otro y viceversa
-  return aS < bE && bS < aE;
-}
+const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
+  const a = normalizeInterval(aStart, aEnd);
+  const b = normalizeInterval(bStart, bEnd);
+  if (!a || !b) return false;
+  const [s1, e1] = a;
+  const [s2, e2] = b;
+  return s1 < e2 && s2 < e1; // solapamiento estándar de intervalos
+};
 
-/**
- * Busca conflictos de un MISMO empleado en el MISMO día
- * dentro del schedule que se está editando.
- *
- * Devuelve un array de strings con mensajes de conflicto.
- */
-function findConflicts(rows, employees, dayNumbers, airline, department) {
-  const conflicts = [];
-
-  // Mapa id->nombre para mensajes
-  const empMap = {};
-  employees.forEach((e) => {
-    empMap[e.id] = e.name || "Unknown";
-  });
-
-  // Por cada fila (empleado)
-  rows.forEach((row) => {
-    if (!row.employeeId) return;
-    const empName = empMap[row.employeeId] || "Unknown";
-
-    DAY_KEYS.forEach((dayKey) => {
-      const shifts = row[dayKey] || [];
-      if (!shifts.length) return;
-
-      // Revisa combinaciones de turnos de ese día para ese empleado
-      for (let i = 0; i < shifts.length; i++) {
-        const sA = shifts[i];
-        if (!sA.start || sA.start === "OFF" || !sA.end) continue;
-
-        for (let j = i + 1; j < shifts.length; j++) {
-          const sB = shifts[j];
-          if (!sB.start || sB.start === "OFF" || !sB.end) continue;
-
-          if (shiftsOverlap(sA.start, sA.end, sB.start, sB.end)) {
-            const dayLabel = DAY_LABELS[dayKey] || dayKey.toUpperCase();
-            const dayNum = dayNumbers?.[dayKey]
-              ? ` / ${dayNumbers[dayKey]}`
-              : "";
-
-            conflicts.push(
-              `• ${empName} — ${airline} / ${department} — ${dayLabel}${dayNum}\n   Turnos: ${sA.start}-${sA.end} y ${sB.start}-${sB.end}`
-            );
-          }
-        }
-      }
-    });
-  });
-
-  return conflicts;
-}
+// Crea un “tag” de semana basado en los números de días
+const buildWeekTag = (days) =>
+  DAY_KEYS.map((k) => days?.[k]?.toString().trim() || "").join("|");
 
 export default function SchedulePage() {
   const { user } = useUser();
@@ -140,11 +101,14 @@ export default function SchedulePage() {
     );
   }, []);
 
-  // Cargar budgets
+  // Cargar budgets por aerolínea
   useEffect(() => {
     getDocs(collection(db, "airlineBudgets")).then((snap) => {
       const map = {};
-      snap.docs.forEach((d) => (map[d.data().airline] = d.data().budgetHours));
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        map[data.airline] = data.budgetHours;
+      });
       setAirlineBudgets(map);
     });
   }, []);
@@ -152,11 +116,11 @@ export default function SchedulePage() {
   // Cálculo de horas
   const diffHours = (start, end) => {
     if (!start || !end || start === "OFF") return 0;
-    const [sh, sm] = start.split(":").map(Number);
-    const [eh, em] = end.split(":").map(Number);
-    let s = sh * 60 + sm;
-    let e = eh * 60 + em;
-    if (e < s) e += 1440;
+    const s = toMinutes(start);
+    const eRaw = toMinutes(end);
+    if (s == null || eRaw == null) return 0;
+    let e = eRaw;
+    if (e < s) e += 24 * 60;
     return (e - s) / 60;
   };
 
@@ -171,9 +135,7 @@ export default function SchedulePage() {
           subtotal += diffHours(shift.start, shift.end);
         });
       });
-      if (r.employeeId) {
-        employeeTotals[r.employeeId] = subtotal;
-      }
+      employeeTotals[r.employeeId] = subtotal;
       airlineTotal += subtotal;
     });
 
@@ -182,52 +144,153 @@ export default function SchedulePage() {
 
   const { employeeTotals, airlineTotal } = calculateTotals();
 
-  // Guardar en Firestore (con chequeo de conflictos interno)
+  // ⚠️ Comprobación de conflictos con otras aerolíneas (misma semana)
+  const checkConflictsWithOtherAirlines = async () => {
+    const weekTag = buildWeekTag(dayNumbers).trim();
+
+    // Si no hay números de días, no intentamos comparar
+    if (!weekTag) {
+      return { conflicts: [], weekTag: null };
+    }
+
+    // Buscar TODOS los schedules con la misma semana (pendientes o aprobados)
+    const q = query(
+      collection(db, "schedules"),
+      where("weekTag", "==", weekTag)
+    );
+
+    const snap = await getDocs(q);
+    const existingSchedules = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    if (!existingSchedules.length) {
+      return { conflicts: [], weekTag };
+    }
+
+    const empMap = {};
+    employees.forEach((e) => {
+      empMap[e.id] = e.name;
+    });
+
+    const conflicts = [];
+
+    existingSchedules.forEach((sch) => {
+      // Puedes excluir el mismo airline/department si quieres solo “otras” aerolíneas
+      // if (sch.airline === airline && sch.department === department) return;
+
+      DAY_KEYS.forEach((dayKey) => {
+        (sch.grid || []).forEach((oldRow) => {
+          (rows || []).forEach((newRow) => {
+            if (
+              !newRow.employeeId ||
+              newRow.employeeId !== oldRow.employeeId
+            ) {
+              return;
+            }
+
+            const oldShifts = oldRow[dayKey] || [];
+            const newShifts = newRow[dayKey] || [];
+
+            oldShifts.forEach((os) => {
+              newShifts.forEach((ns) => {
+                if (
+                  !os.start ||
+                  !ns.start ||
+                  os.start === "OFF" ||
+                  ns.start === "OFF"
+                ) {
+                  return;
+                }
+
+                if (intervalsOverlap(os.start, os.end, ns.start, ns.end)) {
+                  conflicts.push({
+                    employeeName: empMap[newRow.employeeId] || "Unknown",
+                    dayKey,
+                    newShift: ns,
+                    existingShift: os,
+                    otherAirline: sch.airline,
+                    otherDept: sch.department,
+                  });
+                }
+              });
+            });
+          });
+        });
+      });
+    });
+
+    return { conflicts, weekTag };
+  };
+
+  // Guardar schedule (con chequeo de conflictos)
   const handleSaveSchedule = async () => {
     if (!airline || !department) {
       alert("Please select airline and department.");
       return;
     }
 
-    // 1) Buscar conflictos
-    const conflicts = findConflicts(
-      rows,
-      employees,
-      dayNumbers,
-      airline,
-      department
-    );
+    // 1) Chequeo de conflictos cross-airline
+    const { conflicts, weekTag } = await checkConflictsWithOtherAirlines();
 
     if (conflicts.length > 0) {
-      alert(
-        `🚩 Se detectaron empleados programados doble en el mismo día:\n\n${conflicts.join(
-          "\n\n"
-        )}\n\nPor favor corrige estos turnos antes de enviar.`
+      const previewLines = conflicts.slice(0, 6).map((c) => {
+        const dayLabel = DAY_LABELS[c.dayKey] || c.dayKey.toUpperCase();
+        return `- ${c.employeeName} | ${dayLabel} | ${c.newShift.start}–${
+          c.newShift.end
+        }  (already on ${c.otherAirline} — ${c.otherDept} ${
+          c.existingShift.start
+        }–${c.existingShift.end})`;
+      });
+
+      const extra =
+        conflicts.length > 6
+          ? `\n...and ${conflicts.length - 6} more conflicts.`
+          : "";
+
+      const proceed = window.confirm(
+        "⚠️ RED FLAG – Employee double assigned in another airline for the same day / time.\n\n" +
+          previewLines.join("\n") +
+          extra +
+          "\n\nDo you still want to submit this schedule?"
       );
-      return; // NO guarda mientras existan conflictos
+
+      if (!proceed) {
+        return; // el usuario canceló
+      }
     }
 
-    // 2) Si todo ok, guardar
+    const weekTagToSave = weekTag || buildWeekTag(dayNumbers);
+
+    // 2) Guardar en Firestore
     await addDoc(collection(db, "schedules"), {
       createdAt: serverTimestamp(),
       airline,
       department,
       days: dayNumbers,
+      weekTag: weekTagToSave,
       grid: rows,
       totals: employeeTotals,
       airlineWeeklyHours: airlineTotal,
       budget: airlineBudgets[airline] || 0,
       status: "pending",
       createdBy: user?.username || null,
+      role: user?.role || null,
     });
 
     alert("Schedule submitted for approval!");
   };
 
-  // Exportar PDF (igual que tenías)
+  // ------------------------------------------------------
+  // EXPORT PDF (igual que antes, usando el logo de airline)
+  // ------------------------------------------------------
   const exportPDF = async () => {
     const container = document.getElementById("schedule-print-area");
-    if (!container) return alert("Printable area not found.");
+    if (!container) {
+      alert("Printable area not found.");
+      return;
+    }
 
     const logoUrl = AIRLINE_LOGOS[airline];
     let logoImg = null;
@@ -259,6 +322,9 @@ export default function SchedulePage() {
     pdf.save(`Schedule_${airline}_${department}.pdf`);
   };
 
+  // ------------------------------------------------------
+  // RENDER
+  // ------------------------------------------------------
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
@@ -292,7 +358,7 @@ export default function SchedulePage() {
             value={department}
             onChange={(e) => setDepartment(e.target.value)}
           >
-            <option value="">Select</option>
+            <option value="">Select department</option>
             <option value="Ramp">Ramp</option>
             <option value="TC">Ticket Counter</option>
             <option value="BSO">BSO</option>
@@ -305,10 +371,10 @@ export default function SchedulePage() {
 
       {/* Day numbers */}
       <div className="grid grid-cols-7 gap-2 text-xs">
-        {Object.keys(dayNumbers).map((key) => (
+        {DAY_KEYS.map((key) => (
           <div key={key}>
             <label className="uppercase text-[11px] font-semibold">
-              {key}
+              {DAY_LABELS[key]}
             </label>
             <input
               className="border rounded text-center px-1 py-1 w-full"
@@ -321,7 +387,7 @@ export default function SchedulePage() {
         ))}
       </div>
 
-      {/* Área imprimible / grid */}
+      {/* Área imprimible */}
       <div id="schedule-print-area">
         <ScheduleGrid
           employees={employees}
@@ -334,20 +400,11 @@ export default function SchedulePage() {
         />
       </div>
 
-      {/* Summary */}
+      {/* Resumen semanal */}
       <div className="card text-sm">
         <h2 className="font-semibold">Weekly Summary</h2>
         <p>Total Hours: {airlineTotal.toFixed(2)}</p>
         <p>Budget: {airlineBudgets[airline] || 0}</p>
-
-        {Object.entries(employeeTotals).map(([id, hrs]) => {
-          const emp = employees.find((e) => e.id === id);
-          return (
-            <p key={id}>
-              {emp?.name || "Unknown"} — <b>{hrs.toFixed(2)} hrs</b>
-            </p>
-          );
-        })}
       </div>
 
       {/* Botón PDF */}
