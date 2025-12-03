@@ -166,218 +166,108 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role]);
 
-  // --- RENDER ---
-
-  const pendingCount = pendingSchedules.length;
-  const eventsCount = events.length;
-  const blockedCount = blockedEmployees.length;
-
-  return (
-    <div className="space-y-4">
-      {/* HEADER */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Dashboard</h1>
-          <p className="text-sm text-gray-600">
-            Welcome, <b>{user?.username}</b>{" "}
-            {user?.role && <span>({user.role})</span>}
-          </p>
-        </div>
-
-        <button className="btn btn-soft text-xs" onClick={reloadAll}>
-          ⟳ Refresh
-        </button>
-      </div>
-
-      {/* MENSAJE PRINCIPAL DEL STATION MANAGER */}
-      <div className="card text-sm">
-        <div className="card-header">
-          <h2 className="card-title">Station Manager Message</h2>
-        </div>
-        {mainMessage ? (
-          <>
-            <p className="whitespace-pre-wrap text-gray-700">{mainMessage}</p>
-            {mainMeta && (
-              <p className="text-[11px] text-gray-500 mt-2">
-                Last update:{" "}
-                {mainMeta.updatedAt
-                  ? mainMeta.updatedAt
-                  : "—"}{" "}
-                {mainMeta.updatedBy ? `• by ${mainMeta.updatedBy}` : ""}
-              </p>
-            )}
-          </>
-        ) : (
-          <p className="text-gray-500 text-sm">
-            No message configured yet. Station Manager can set it in the
-            Dashboard Editor.
-          </p>
-        )}
-      </div>
-
-      {/* RESUMEN RÁPIDO (CARDS) */}
-      <div className="grid md:grid-cols-3 gap-4">
-        <div className="card text-sm">
-          <div className="card-header">
-            <span className="card-title">Pending Schedules</span>
-          </div>
-          <p className="text-2xl font-bold">{pendingCount}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Schedules waiting for Station Manager approval.
-          </p>
-          {user?.role === "station_manager" && (
-            <button
-              className="btn btn-primary text-xs mt-2"
-              onClick={() => navigate("/approvals")}
-            >
-              Go to Approvals
-            </button>
-          )}
-        </div>
-
-        <div className="card text-sm">
-          <div className="card-header">
-            <span className="card-title">Upcoming Events</span>
-          </div>
-          <p className="text-2xl font-bold">{eventsCount}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Trainings, meetings or ops events coming up.
-          </p>
-        </div>
-
-        <div className="card text-sm">
-          <div className="card-header">
-            <span className="card-title">Employees Unavailable</span>
-          </div>
-          <p className="text-2xl font-bold">{blockedCount}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Employees blocked / not available for scheduling.
-          </p>
-          {user?.role === "station_manager" && (
-            <button
-              className="btn text-xs mt-2"
-              onClick={() => navigate("/blocked")}
-            >
-              View Blocked Employees
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* LISTA DE EVENTOS */}
-      <div className="card text-sm">
-        <div className="card-header">
-          <h2 className="card-title">Events</h2>
-        </div>
-        {loadingEvents ? (
-          <p className="text-gray-600">Loading events…</p>
-        ) : events.length === 0 ? (
-          <p className="text-gray-500 text-sm">
-            No events added yet. Station Manager can add them in Dashboard
-            Editor.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {events.map((ev) => (
-              <li key={ev.id} className="border-b last:border-b-0 pb-2">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-sm">{ev.title}</span>
-                  <span className="text-xs text-gray-500">
-                    {ev.date}
-                    {ev.time ? ` • ${ev.time}` : ""}
-                  </span>
-                </div>
-                {ev.details && (
-                  <p className="text-xs text-gray-700 mt-1">{ev.details}</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* EMPLEADOS BLOQUEADOS / FUERA */}
-      <div className="card text-sm">
-        <div className="card-header">
-          <h2 className="card-title">Employees Not Available</h2>
-        </div>
-        {loadingBlocked ? (
-          <p className="text-gray-600">Loading employees…</p>
-        ) : blockedEmployees.length === 0 ? (
-          <p className="text-gray-500 text-sm">
-            No blocked employees registered.
-          </p>
-        ) : (
-          <ul className="space-y-1">
-            {blockedEmployees.map((emp) => (
-              <li
-                key={emp.id}
-                className="flex justify-between items-center border-b last:border-b-0 py-1"
-              >
-                <div>
-                  <span className="font-semibold text-sm">
-                    {emp.name || emp.employeeName || "Employee"}
-                  </span>
-                  {emp.reason && (
-                    <span className="text-xs text-gray-500 ml-2">
-                      • {emp.reason}
-                    </span>
-                  )}
-                </div>
-                {/* si tienes campos from/to, los puedes mostrar aquí */}
-                {(emp.from || emp.startDate || emp.until || emp.endDate) && (
-                  <span className="text-xs text-gray-500">
-                    {emp.from || emp.startDate || ""}{" "}
-                    {emp.until || emp.endDate
-                      ? `→ ${emp.until || emp.endDate}`
-                      : ""}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* AVISOS / INVITACIONES */}
-      <div className="card text-sm">
-        <div className="card-header">
-          <h2 className="card-title">Notices & Invitations</h2>
-        </div>
-        {loadingNotices ? (
-          <p className="text-gray-600">Loading notices…</p>
-        ) : notices.length === 0 ? (
-          <p className="text-gray-500 text-sm">
-            No notices yet. Station Manager can add them in Dashboard Editor.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {notices.map((n) => (
-              <li
-                key={n.id}
-                className="border-b last:border-b-0 pb-2 flex flex-col gap-1"
-              >
-                <span className="font-semibold text-sm">{n.title}</span>
-                {n.body && (
-                  <p className="text-xs text-gray-700 whitespace-pre-wrap">
-                    {n.body}
-                  </p>
-                )}
-                {n.link && (
-                  <a
-                    href={n.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-blue-600 underline"
-                  >
-                    Open link
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+return (
+  <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+    
+    {/* HEADER */}
+    <div className="mb-6">
+      <h1 className="text-3xl font-bold text-gray-800">
+        Welcome back, {user?.username || "Station Manager"} 👋
+      </h1>
+      <p className="text-sm text-gray-600 mt-1">
+        Here's a quick overview of what's happening this week.
+      </p>
     </div>
-  );
-}
+
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      {/* MESSAGE CARD */}
+      <div className="md:col-span-3 bg-white/80 backdrop-blur-lg p-5 rounded-2xl shadow-md border border-white/60">
+        <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
+          📢 Manager Message
+        </h2>
+        <p className="text-gray-700 text-sm whitespace-pre-line">
+          {message || "No message posted yet."}
+        </p>
+      </div>
+
+      {/* EVENTS */}
+      <div className="bg-white/80 backdrop-blur-lg p-5 rounded-2xl shadow-md border border-white/60">
+        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          📅 Upcoming Events
+        </h2>
+        
+        {events.length === 0 && (
+          <p className="text-gray-500 text-sm">No events scheduled.</p>
+        )}
+
+        <div className="space-y-3">
+          {events.map(ev => (
+            <div key={ev.id} className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+              <p className="font-semibold text-blue-800">{ev.title}</p>
+              <p className="text-xs text-gray-600">{ev.date} {ev.time ? `• ${ev.time}` : ""}</p>
+              {ev.details && (
+                <p className="text-xs mt-1 text-gray-700">{ev.details}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* NOTICES */}
+      <div className="bg-white/80 backdrop-blur-lg p-5 rounded-2xl shadow-md border border-white/60">
+        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          📌 Notices / Invitations
+        </h2>
+
+        {notices.length === 0 && (
+          <p className="text-gray-500 text-sm">No notices posted.</p>
+        )}
+
+        <div className="space-y-3">
+          {notices.map(n => (
+            <div key={n.id} className="p-3 bg-yellow-50 rounded-lg border border-yellow-100">
+              <p className="font-semibold text-yellow-800">{n.title}</p>
+              {n.body && <p className="text-xs mt-1">{n.body}</p>}
+              {n.link && (
+                <a
+                  href={n.link}
+                  target="_blank"
+                  className="text-xs text-blue-700 underline mt-1 block"
+                >
+                  View more →
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* BLOCKED EMPLOYEES */}
+      <div className="bg-white/80 backdrop-blur-lg p-5 rounded-2xl shadow-md border border-white/60">
+        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          🚫 Employees Not Available
+        </h2>
+
+        {blocked.length === 0 && (
+          <p className="text-gray-500 text-sm">No employees blocked.</p>
+        )}
+
+        <div className="space-y-3">
+          {blocked.map(b => (
+            <div key={b.id} className="p-3 bg-red-50 rounded-lg border border-red-100">
+              <p className="font-semibold text-red-800">
+                {b.name || b.employeeName}
+              </p>
+              <p className="text-xs text-gray-700">{b.reason}</p>
+              <p className="text-[11px] text-gray-500">
+                {b.start_date} → {b.end_date || "N/A"}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  </div>
+);
