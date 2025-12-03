@@ -1,88 +1,99 @@
+// src/pages/LoginPage.jsx
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
-import { useNavigate } from "react-router-dom";
 
 export default function LoginPage() {
+  const navigate = useNavigate();
+  const { setUser } = useUser();
+
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
 
-  const { setUser } = useUser();
-  const navigate = useNavigate();
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleLogin = async () => {
     setError("");
 
     if (!username || !pin) {
-      setError("Enter username and PIN");
+      setError("Please enter username and PIN.");
       return;
     }
 
-    const q = query(
-      collection(db, "users"),
-      where("username", "==", username),
-      where("pin", "==", pin)
-    );
+    try {
+      const q = query(
+        collection(db, "users"),
+        where("username", "==", username),
+        where("pin", "==", pin)
+      );
 
-    const snap = await getDocs(q);
+      const snap = await getDocs(q);
 
-    if (snap.empty) {
-      setError("Invalid credentials");
-      return;
+      if (snap.empty) {
+        setError("Invalid credentials.");
+        return;
+      }
+
+      const userData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      setUser(userData);
+
+      navigate("/dashboard");
+    } catch (err) {
+      console.error(err);
+      setError("Login error. Try again.");
     }
-
-    const doc = snap.docs[0];
-    const data = doc.data();
-
-    setUser({ id: doc.id, username: data.username, role: data.role });
-    navigate("/dashboard");
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-200">
-      <div className="bg-white p-8 rounded shadow-md w-80">
-
-        <h1 className="text-xl font-bold text-center mb-2 text-[#0A2342]">
+    <div
+      className="min-h-screen flex items-center justify-center bg-cover bg-center"
+      style={{
+        backgroundImage:
+          "url('https://images.unsplash.com/photo-1529070538774-1843cb3265df?auto=format&fit=crop&w=1950&q=80')",
+      }}
+    >
+      {/* GLASS CARD */}
+      <div className="bg-white/70 backdrop-blur-lg p-8 rounded-2xl shadow-2xl w-80 border border-white/40">
+        
+        {/* Logo opcional */}
+        <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">
           TPA Ops Portal
         </h1>
-        <p className="text-center text-sm text-gray-500 mb-4">
+        <p className="text-xs text-center text-gray-600 mb-4">
           Crew Scheduling System
         </p>
 
-        <form onSubmit={handleLogin} className="space-y-3">
+        {/* Username */}
+        <label className="text-sm font-medium">User</label>
+        <input
+          type="text"
+          className="border w-full p-2 rounded mb-3 text-sm"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
 
-          <div>
-            <label className="text-sm font-medium">User</label>
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full p-2 border rounded mt-1"
-            />
-          </div>
+        {/* PIN */}
+        <label className="text-sm font-medium">PIN</label>
+        <input
+          type="password"
+          className="border w-full p-2 rounded mb-4 text-sm"
+          value={pin}
+          onChange={(e) => setPin(e.target.value)}
+        />
 
-          <div>
-            <label className="text-sm font-medium">PIN</label>
-            <input
-              type="password"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              className="w-full p-2 border rounded mt-1"
-            />
-          </div>
+        {/* Error */}
+        {error && (
+          <p className="text-red-600 text-xs mb-3 text-center">{error}</p>
+        )}
 
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-
-          <button
-            type="submit"
-            className="w-full bg-blue-700 text-white p-2 rounded hover:bg-blue-800 mt-2"
-          >
-            Login
-          </button>
-
-        </form>
+        {/* LOGIN BUTTON */}
+        <button
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded shadow-md transition"
+          onClick={handleLogin}
+        >
+          Login
+        </button>
       </div>
     </div>
   );
