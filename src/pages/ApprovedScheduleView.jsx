@@ -6,22 +6,22 @@ import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// ===================== LOGOS POR AEROLÍNEA =====================
+// ===================== LOGOS POR AEROLÍNEA (PON TUS URLs REALES) =====================
 const AIRLINE_LOGOS = {
-  SY: "URL_DE_LOGO_SY",
-  "WL Havana Air": "URL_DE_LOGO_WL_HAVANA",
-  "WL Invicta": "URL_DE_LOGO_WL_INVICTA",
-  AV: "URL_DE_LOGO_AV",
-  EA: "URL_DE_LOGO_EA",
-  WCHR: "URL_DE_LOGO_WCHR",
-  CABIN: "URL_DE_LOGO_CABIN",
-  "AA-BSO": "URL_DE_LOGO_AA_BSO",
-  OTHER: "URL_DE_LOGO_OTHER",
+  SY: "URL_LOGO_SY",
+  "WL Havana Air": "URL_LOGO_WL_HAVANA",
+  "WL Invicta": "URL_LOGO_WL_INVICTA",
+  AV: "URL_LOGO_AV",
+  EA: "URL_LOGO_EA",
+  WCHR: "URL_LOGO_WCHR",
+  CABIN: "URL_LOGO_CABIN",
+  "AA-BSO": "URL_LOGO_AA_BSO",
+  OTHER: "URL_LOGO_OTHER",
 };
 
 // ===================== COLORES POR AEROLÍNEA =====================
 const AIRLINE_COLORS = {
-  SY: "#FFA500", // Naranja tipo Sun Country
+  SY: "#FFA500", // Sun Country style
   "WL Havana Air": "#005BBB",
   "WL Invicta": "#00695C",
   AV: "#D32F2F",
@@ -32,7 +32,17 @@ const AIRLINE_COLORS = {
   OTHER: "#FFD966",
 };
 
-// Orden fijo de días
+// Helper para cargar imagen (para PDF)
+const loadImage = (src) =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+
+// Orden de días
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
@@ -52,94 +62,82 @@ function getShiftText(shifts, idx) {
   return `${s.start} - ${s.end}`;
 }
 
-// ===================== TABLA ESTILO EXCEL =====================
+// ===================== TABLA ESTILO EXCEL (SOLO TABLA) =====================
 function ExcelScheduleTable({ schedule, employees }) {
-  const { days, grid, airline, department } = schedule;
+  const { days, grid, airline } = schedule;
 
-  // Mapa id -> nombre
   const empMap = {};
   employees.forEach((e) => {
     empMap[e.id] = e.name;
   });
 
-  const logo = AIRLINE_LOGOS[airline];
   const color = AIRLINE_COLORS[airline] || "#FFD966";
 
   return (
-    <div className="excel-schedule-wrapper">
-      {/* HEADER CON LOGO + TÍTULO */}
-      <div className="excel-header">
-        {logo && <img src={logo} alt={airline} className="excel-logo" />}
-        <h1 className="excel-title">
-          {airline} — {department}
-        </h1>
-      </div>
+    <table className="excel-table">
+      <thead>
+        <tr>
+          <th className="excel-header-employee">EMPLOYEE</th>
+          {DAY_KEYS.map((key) => (
+            <th key={key} className="excel-header-day">
+              {DAY_LABELS[key]} {days?.[key] ? `/ ${days[key]}` : ""}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {grid.map((row, idx) => {
+          const name = empMap[row.employeeId] || "Unknown";
 
-      <table className="excel-table">
-        <thead>
-          <tr>
-            <th className="excel-header-employee">EMPLOYEE</th>
-            {DAY_KEYS.map((key) => (
-              <th key={key} className="excel-header-day">
-                {DAY_LABELS[key]} {days?.[key] ? `/ ${days[key]}` : ""}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {grid.map((row, idx) => {
-            const name = empMap[row.employeeId] || "Unknown";
+          return (
+            <React.Fragment key={idx}>
+              {/* Fila 1: primer turno */}
+              <tr>
+                <td className="excel-employee-cell" rowSpan={2}>
+                  {name}
+                </td>
+                {DAY_KEYS.map((dKey) => {
+                  const text = getShiftText(row[dKey], 0);
+                  const hasWork = text !== "OFF";
+                  return (
+                    <td
+                      key={dKey}
+                      className="excel-cell"
+                      style={{
+                        background: hasWork ? color : "#FFFFFF",
+                        fontWeight: hasWork ? 600 : 400,
+                      }}
+                    >
+                      {text}
+                    </td>
+                  );
+                })}
+              </tr>
 
-            return (
-              <React.Fragment key={idx}>
-                {/* Fila 1: primer turno */}
-                <tr>
-                  <td className="excel-employee-cell" rowSpan={2}>
-                    {name}
-                  </td>
-                  {DAY_KEYS.map((dKey) => {
-                    const text = getShiftText(row[dKey], 0);
-                    const hasWork = text !== "OFF";
-                    return (
-                      <td
-                        key={dKey}
-                        className="excel-cell"
-                        style={{
-                          background: hasWork ? color : "#FFFFFF",
-                          fontWeight: hasWork ? 600 : 400,
-                        }}
-                      >
-                        {text}
-                      </td>
-                    );
-                  })}
-                </tr>
-
-                {/* Fila 2: segundo turno */}
-                <tr>
-                  {DAY_KEYS.map((dKey) => {
-                    const text = getShiftText(row[dKey], 1);
-                    const hasWork = text !== "OFF";
-                    return (
-                      <td
-                        key={dKey}
-                        className="excel-cell"
-                        style={{
-                          background: hasWork ? color : "#FFFFFF",
-                          fontWeight: hasWork ? 600 : 400,
-                        }}
-                      >
-                        {text}
-                      </td>
-                    );
-                  })}
-                </tr>
-              </React.Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+              {/* Fila 2: segundo turno */}
+              <tr>
+                {DAY_KEYS.map((dKey) => {
+                  const text = getShiftText(row[dKey], 1);
+                  const hasWork = text !== "OFF";
+                  return (
+                    <td
+                      key={dKey}
+                      className="excel-cell"
+                      style={{
+                        background: hasWork ? color : "#FFFFFF",
+                        fontWeight: hasWork ? 600 : 400,
+                      }}
+                    >
+                      {text}
+                    </td>
+                  );
+                })}
+              </tr>
+            </React.Fragment>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -151,13 +149,11 @@ export default function ApprovedScheduleView() {
 
   useEffect(() => {
     async function load() {
-      // Schedule
       const snap = await getDoc(doc(db, "schedules", id));
       if (snap.exists()) {
         setSchedule({ id: snap.id, ...snap.data() });
       }
 
-      // Empleados para mostrar nombres
       const empSnap = await getDocs(collection(db, "employees"));
       setEmployees(empSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     }
@@ -169,7 +165,9 @@ export default function ApprovedScheduleView() {
     return <p className="p-6">Loading approved schedule...</p>;
   }
 
-  // ---------- EXPORTAR PDF (incluye logo y colores) ----------
+  const logoUrl = AIRLINE_LOGOS[schedule.airline];
+
+  // ---------- EXPORTAR PDF ----------
   const exportPDF = async () => {
     const element = document.getElementById("approved-print-area");
     if (!element) {
@@ -177,31 +175,62 @@ export default function ApprovedScheduleView() {
       return;
     }
 
-    const canvas = await html2canvas(element, {
-      scale: 3,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-    });
+    try {
+      // Capturamos SOLO el título + tabla (sin el <img> del logo)
+      const canvas = await html2canvas(element, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
 
-    const pdf = new jsPDF("landscape", "pt", "a4");
-    const imgData = canvas.toDataURL("image/png");
-    const pageWidth = pdf.internal.pageSize.getWidth();
+      const pdf = new jsPDF("landscape", "pt", "a4");
+      const imgData = canvas.toDataURL("image/png");
+      const pageWidth = pdf.internal.pageSize.getWidth();
 
-    const imgWidth = pageWidth;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      // Si hay logo, lo agregamos manualmente arriba del PDF
+      let yOffset = 20;
+      if (logoUrl) {
+        try {
+          const logoImg = await loadImage(logoUrl);
+          pdf.addImage(logoImg, "PNG", 20, yOffset, 150, 70);
+          yOffset += 80; // un poco de espacio debajo del logo
+        } catch (e) {
+          console.warn("No se pudo cargar el logo para el PDF:", e);
+        }
+      }
 
-    pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
-    pdf.save(`Approved_${schedule.airline}_${schedule.department}.pdf`);
+      const imgWidth = pageWidth - 40;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
+      pdf.save(`Approved_${schedule.airline}_${schedule.department}.pdf`);
+    } catch (err) {
+      console.error("Error exportando PDF:", err);
+      alert("Hubo un problema al exportar el PDF. Revisa la consola del navegador.");
+    }
   };
 
   return (
     <div className="p-6 space-y-4 approved-page">
-      {/* Zona que se captura para el PDF */}
+      {/* HEADER VISUAL CON LOGO (NO SE CAPTURA EN html2canvas) */}
+      <div className="excel-header">
+        {logoUrl && (
+          <img src={logoUrl} alt={schedule.airline} className="excel-logo" />
+        )}
+        <h1 className="excel-title">
+          {schedule.airline} — {schedule.department}
+        </h1>
+      </div>
+
+      {/* ÁREA QUE SE CAPTURA PARA EL PDF: TÍTULO TEXTO + TABLA */}
       <div id="approved-print-area">
+        <h2 className="excel-title-pdf">
+          {schedule.airline} — {schedule.department}
+        </h2>
         <ExcelScheduleTable schedule={schedule} employees={employees} />
       </div>
 
-      {/* Resumen abajo */}
+      {/* RESUMEN */}
       <div className="card text-sm mt-4">
         <h2 className="font-semibold mb-2">Weekly Summary</h2>
         <p>
