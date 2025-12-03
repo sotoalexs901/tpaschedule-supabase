@@ -1,4 +1,3 @@
-// src/pages/BlockedEmployeesPage.jsx
 import React, { useEffect, useState } from "react";
 import { db } from "../firebase";
 import {
@@ -11,86 +10,92 @@ import {
 import { useUser } from "../UserContext.jsx";
 
 export default function BlockedEmployeesPage() {
-  const { user } = useUser();
-
   const [employees, setEmployees] = useState([]);
   const [restrictions, setRestrictions] = useState([]);
   const [status, setStatus] = useState("");
+  const { user } = useUser();
 
-  // 🔹 Campos del formulario
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
-  const [reason, setReason] = useState("PTO");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // 🔒 Solo station_manager y duty_manager
+  if (
+    !user ||
+    (user.role !== "station_manager" && user.role !== "duty_manager")
+  ) {
+    return (
+      <div className="card">
+        <p className="text-sm text-red-600">
+          You are not authorized to manage blocked employees.
+        </p>
+      </div>
+    );
+  }
 
-  // Cargar empleados + restricciones
   useEffect(() => {
     async function load() {
-      try {
-        const empSnap = await getDocs(collection(db, "employees"));
-        setEmployees(empSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const empSnap = await getDocs(collection(db, "employees"));
+      setEmployees(empSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
-        const restSnap = await getDocs(collection(db, "restrictions"));
-        setRestrictions(restSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (err) {
-        console.error("Error loading blocked employees:", err);
-        setStatus("Error loading data.");
-      }
+      const restSnap = await getDocs(collection(db, "restrictions"));
+      setRestrictions(restSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     }
     load().catch(console.error);
   }, []);
 
-  const resetForm = () => {
-    setSelectedEmployeeId("");
-    setReason("PTO");
-    setStartDate("");
-    setEndDate("");
-  };
+  const addRestriction = async () => {
+    const employeeId = prompt("Employee ID (from Employees table)");
+    if (!employeeId) return;
 
-  const addRestriction = async (e) => {
-    e?.preventDefault?.();
-
-    if (!selectedEmployeeId) {
-      setStatus("Select an employee first.");
-      return;
-    }
+    const reason =
+      prompt("Reason (PTO, Sick, Day Off, Maternity, Suspended)") || "PTO";
+    const start_date = prompt("Start date (YYYY-MM-DD)") || null;
+    const end_date = prompt("End date (YYYY-MM-DD)") || null;
 
     setStatus("Saving restriction...");
 
-    const payload = {
-      employeeId: selectedEmployeeId,
+    const ref = await addDoc(collection(db, "restrictions"), {
+      employeeId,
       reason,
-      start_date: startDate || null,
-      end_date: endDate || null,
-      createdAt: new Date().toISOString(),
-      createdBy: user?.username || null,
-      role: user?.role || "station_manager",
-    };
+      start_date,
+      end_date,
+      role: user.role, // se guarda quién lo creó (duty/station)
+      createdBy: user.username || null,
+    });
 
-    const ref = await addDoc(collection(db, "restrictions"), payload);
+    setRestrictions([
+      ...restrictions,
+      {
+        id: ref.id,
+        employeeId,
+        reason,
+        start_date,
+        end_date,
+        role: user.role,
+        createdBy: user.username || null,
+      },
+    ]);
 
-    setRestrictions((prev) => [...prev, { id: ref.id, ...payload }]);
-    resetForm();
     setStatus("Restriction added.");
   };
 
   const removeRestriction = async (id) => {
     await deleteDoc(doc(db, "restrictions", id));
-    setRestrictions((prev) => prev.filter((r) => r.id !== id));
+    setRestrictions(restrictions.filter((r) => r.id !== id));
   };
 
-  // Buscar nombre del empleado por id
-  const nameFor = (id) => {
-    const emp = employees.find((e) => e.id === id);
-    return emp?.name || emp?.fullName || id;
-  };
+  const nameFor = (id) => employees.find((e) => e.id === id)?.name || id;
 
   return (
     <div className="card space-y-3">
       <div className="flex justify-between items-center">
         <h2 className="text-sm font-semibold">
-          Blocked Employees (Station Manager)
+          Blocked Employees (Station & Duty Managers)
         </h2>
+        <button
+          className="btn btn-primary text-xs"
+          type="button"
+          onClick={addRestriction}
+        >
+          Add Restriction
+        </button>
       </div>
 
       <p className="text-[11px] text-gray-500">
@@ -98,85 +103,6 @@ export default function BlockedEmployeesPage() {
         Day Off Requested, Maternity, Suspended).
       </p>
 
-      {/* 🔹 FORMULARIO PARA AGREGAR RESTRICCIÓN */}
-      <form
-        onSubmit={addRestriction}
-        className="grid md:grid-cols-4 gap-2 items-end mb-3"
-      >
-        {/* Employee selector */}
-        <div>
-          <label className="text-[11px] font-semibold block mb-1">
-            Employee
-          </label>
-          <select
-            className="border rounded w-full text-xs px-2 py-1"
-            value={selectedEmployeeId}
-            onChange={(e) => setSelectedEmployeeId(e.target.value)}
-          >
-            <option value="">Select employee</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name || emp.fullName || emp.id}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Reason */}
-        <div>
-          <label className="text-[11px] font-semibold block mb-1">
-            Reason
-          </label>
-          <select
-            className="border rounded w-full text-xs px-2 py-1"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          >
-            <option value="PTO">PTO</option>
-            <option value="Sick">Sick</option>
-            <option value="Day Off Requested">Day Off Requested</option>
-            <option value="Maternity">Maternity</option>
-            <option value="Suspended">Suspended</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-
-        {/* Start date */}
-        <div>
-          <label className="text-[11px] font-semibold block mb-1">
-            Start date
-          </label>
-          <input
-            type="date"
-            className="border rounded w-full text-xs px-2 py-1"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-        </div>
-
-        {/* End date + botón */}
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="text-[11px] font-semibold block mb-1">
-              End date
-            </label>
-            <input
-              type="date"
-              className="border rounded w-full text-xs px-2 py-1"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
-          <button
-            type="submit"
-            className="btn btn-primary text-xs h-9 self-end"
-          >
-            Add
-          </button>
-        </div>
-      </form>
-
-      {/* TABLA DE RESTRICCIONES */}
       <div className="overflow-auto">
         <table className="table">
           <thead>
@@ -208,8 +134,8 @@ export default function BlockedEmployeesPage() {
             ))}
             {restrictions.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center text-xs text-gray-500">
-                  No blocked employees yet.
+                <td colSpan={5} className="text-xs text-gray-500">
+                  No blocked employees.
                 </td>
               </tr>
             )}
