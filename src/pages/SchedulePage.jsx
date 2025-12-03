@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   collection,
   getDocs,
@@ -14,17 +14,23 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// 🔵 Logos oficiales desde Firebase (reemplaza "URL" por tus links reales)
+// 🔵 Logos oficiales desde Firebase (mismos que usas en SchedulePage / ScheduleGrid)
 const AIRLINE_LOGOS = {
-  SY: "URL",
-  "WL Havana Air": "URL",
-  "WL Invicta": "URL",
-  AV: "URL",
-  EA: "URL",
-  WCHR: "URL",
-  CABIN: "URL",
-  "AA-BSO": "URL",
-  OTHER: "URL",
+  SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
+  "WL Havana Air":
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2006_28_07%20p.m..png?alt=media&token=7bcf90fd-c854-400e-a28a-f838adca89f4",
+  "WL Invicta":
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_49%20p.m..png?alt=media&token=092a1deb-3285-41e1-ab0c-2e48a8faab92",
+  AV: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_37%20p.m..png?alt=media&token=f133d1c8-51f9-4513-96df-8a75c6457b5b",
+  EA: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_41%20p.m..png?alt=media&token=13fe584f-078f-4073-8d92-763ac549e5eb",
+  WCHR:
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_32%20p.m..png?alt=media&token=4f7e9ddd-692b-4288-af0a-8027a1fc6e1c",
+  CABIN:
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_28%20p.m..png?alt=media&token=b269ad02-0761-4b6b-b2f1-b510365cce49",
+  "AA-BSO":
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_25%20p.m..png?alt=media&token=09862a10-d237-43e9-a373-8bd07c30ce62",
+  OTHER:
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
 };
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -73,13 +79,19 @@ const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
   return s1 < e2 && s2 < e1; // solapamiento estándar de intervalos
 };
 
-// Crea un “tag” de semana basado en los números de días
-const buildWeekTag = (days) =>
-  DAY_KEYS.map((k) => days?.[k]?.toString().trim() || "").join("|");
+// ✅ Crea un “tag” de semana basado en los números de días
+//    Si todos están vacíos, devuelve "" para NO buscar conflictos todavía.
+const buildWeekTag = (days) => {
+  const parts = DAY_KEYS.map((k) => days?.[k]?.toString().trim() || "");
+  const hasAny = parts.some(Boolean);
+  if (!hasAny) return "";
+  return parts.join("|");
+};
 
 export default function SchedulePage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [airline, setAirline] = useState("");
   const [department, setDepartment] = useState("");
@@ -96,6 +108,18 @@ export default function SchedulePage() {
   const [employees, setEmployees] = useState([]);
   const [rows, setRows] = useState([]);
   const [airlineBudgets, setAirlineBudgets] = useState({});
+
+  // 🔁 Si venimos desde un ApprovedScheduleView con plantilla:
+  useEffect(() => {
+    if (location.state?.template) {
+      const { airline, department, days, grid } = location.state.template;
+
+      if (airline) setAirline(airline);
+      if (department) setDepartment(department);
+      if (days) setDayNumbers(days);
+      if (grid) setRows(grid);
+    }
+  }, [location.state]);
 
   // Cargar empleados
   useEffect(() => {
@@ -151,12 +175,10 @@ export default function SchedulePage() {
   const checkConflictsWithOtherAirlines = async () => {
     const weekTag = buildWeekTag(dayNumbers).trim();
 
-    // Si no hay números de días, no intentamos comparar
     if (!weekTag) {
       return { conflicts: [], weekTag: null };
     }
 
-    // Buscar TODOS los schedules con la misma semana (pendientes o aprobados)
     const q = query(
       collection(db, "schedules"),
       where("weekTag", "==", weekTag)
@@ -180,9 +202,6 @@ export default function SchedulePage() {
     const conflicts = [];
 
     existingSchedules.forEach((sch) => {
-      // Si quieres solo otras aerolíneas, puedes excluir la actual:
-      // if (sch.airline === airline && sch.department === department) return;
-
       DAY_KEYS.forEach((dayKey) => {
         (sch.grid || []).forEach((oldRow) => {
           (rows || []).forEach((newRow) => {
@@ -234,7 +253,6 @@ export default function SchedulePage() {
       return;
     }
 
-    // 1) Chequeo de conflictos cross-airline
     const { conflicts, weekTag } = await checkConflictsWithOtherAirlines();
 
     if (conflicts.length > 0) {
@@ -260,13 +278,12 @@ export default function SchedulePage() {
       );
 
       if (!proceed) {
-        return; // el usuario canceló
+        return;
       }
     }
 
     const weekTagToSave = weekTag || buildWeekTag(dayNumbers);
 
-    // 2) Guardar en Firestore
     await addDoc(collection(db, "schedules"), {
       createdAt: serverTimestamp(),
       airline,
@@ -285,9 +302,7 @@ export default function SchedulePage() {
     alert("Schedule submitted for approval!");
   };
 
-  // ------------------------------------------------------
-  // EXPORT PDF (igual que antes, usando el logo de airline)
-  // ------------------------------------------------------
+  // EXPORT PDF
   const exportPDF = async () => {
     const container = document.getElementById("schedule-print-area");
     if (!container) {
@@ -325,9 +340,7 @@ export default function SchedulePage() {
     pdf.save(`Schedule_${airline}_${department}.pdf`);
   };
 
-  // ------------------------------------------------------
   // RENDER
-  // ------------------------------------------------------
   return (
     <div className="p-4 space-y-4">
       {/* 🔙 Back to Dashboard */}
