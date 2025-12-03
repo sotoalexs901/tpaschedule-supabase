@@ -69,7 +69,7 @@ function getShiftText(shifts, idx) {
 
 // ============= TABLA ESTILO SUN COUNTRY / EXCEL =============
 function ExcelScheduleTable({ schedule, employees }) {
-  const { days, grid, airline, department } = schedule;
+  const { days = {}, grid = [], airline, department } = schedule;
 
   const logo = AIRLINE_LOGOS[airline];
   const headerColor = AIRLINE_COLORS[airline] || "#0f172a";
@@ -80,7 +80,7 @@ function ExcelScheduleTable({ schedule, employees }) {
     empMap[e.id] = e.name;
   });
 
-  // Texto corto de días (ej: "MON 03 / TUESD 04 ...") para usar como subtitle
+  // Texto corto de días para el subtítulo
   const weekText = DAY_KEYS.map((key) => {
     const label = DAY_LABELS[key];
     const num = days?.[key] || "";
@@ -234,7 +234,7 @@ export default function ApprovedScheduleView() {
     return <p className="p-6">Loading approved schedule...</p>;
   }
 
-  // ✅ NUEVO: usar este horario como plantilla en /schedule
+  // ✅ Usar este horario como plantilla en /schedule
   const handleUseAsTemplate = () => {
     navigate("/schedule", {
       state: {
@@ -271,7 +271,7 @@ export default function ApprovedScheduleView() {
     const imgData = canvas.toDataURL("image/png");
     const pageWidth = pdf.internal.pageSize.getWidth();
 
-    // (Opcional) Logo arriba también en el PDF
+    // Logo arriba también en el PDF
     if (logoImg) {
       pdf.addImage(logoImg, "PNG", 20, 20, 140, 60);
     }
@@ -323,7 +323,7 @@ export default function ApprovedScheduleView() {
         </p>
       </div>
 
-      {/* ✅ NUEVO: botón para clonar como plantilla */}
+      {/* ✅ Botón para clonar como plantilla */}
       <button
         onClick={handleUseAsTemplate}
         className="bg-blue-600 text-white py-2 rounded w-full mt-2"
