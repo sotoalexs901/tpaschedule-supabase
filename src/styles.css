@@ -503,11 +503,15 @@ textarea:focus {
     padding: 1rem;
   }
 }
+
 /* ============================= */
-/*   LAYOUT GENERAL DE LA APP    */
+/*   LAYOUT GENERAL ANTIGUO      */
+/*   (si en algún momento usas    */
+/*    .app-shell / .app-sidebar) */
 /* ============================= */
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   height: 100%;
@@ -610,56 +614,90 @@ html, body {
   padding: 24px 28px;
   overflow: auto;
 }
-/* === HEADER CON LOGO === */
-.excel-header {
-  text-align: center;
-  margin-bottom: 10px;
+
+/* =========================================================
+   EXCEL / APPROVED SCHEDULE VIEW
+========================================================= */
+
+/* Contenedor que se captura en el PDF */
+.excel-print-area {
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
 }
 
+/* Header visible en pantalla: logo + barra de título */
+.excel-header-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* Logo de la aerolínea (pantalla y PDF) */
 .excel-logo {
-  height: 80px;
+  height: 70px;
   object-fit: contain;
-  margin-bottom: 6px;
 }
 
-/* === TITULO === */
-.excel-title {
-  font-size: 32px;
+/* Barra de color detrás del título */
+.excel-title-bar {
+  width: 100%;
+  max-width: 1100px;
+  padding: 8px 16px;
+  border-radius: 4px;
+}
+
+/* Texto del título dentro de la barra */
+.excel-title-text {
+  color: #ffffff;
+  font-size: 24px;
   font-weight: 800;
-  margin: 0;
-  text-transform: uppercase;
+  text-align: center;
+  letter-spacing: 1px;
 }
 
-/* === TABLA === */
+/* Tabla estilo Excel (ApprovedScheduleView) */
 .excel-table {
   width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
   table-layout: fixed;
 }
 
 .excel-table th,
 .excel-table td {
-  border: 1px solid black;
-  padding: 6px;
+  border: 1px solid #111827;
+  padding: 8px 4px;
   text-align: center;
 }
 
+/* Cabecera EMPLOYEE */
 .excel-header-employee {
-  background: #ddd;
+  background: #e5e7eb;
+  font-weight: 700;
+  text-align: left;
+  padding-left: 8px;
+  width: 180px;
+}
+
+/* Cabecera días (color se aplica inline desde React) */
+.excel-header-day {
+  font-weight: 700;
+}
+
+/* Celda con nombre de empleado (rowSpan=2) */
+.excel-employee-cell {
+  background: #e5e7eb;
   font-weight: 700;
   text-align: left;
   padding-left: 8px;
 }
 
-/* OFF cells */
-.excel-cell-off {
-  background: white;
-}
-
-.excel-employee-cell {
-  background: #ddd;
-  font-weight: bold;
-  text-align: left;
-  padding-left: 8px;
+/* Celdas de horas (color / OFF se controla desde React) */
+.excel-cell {
+  min-height: 26px;
 }
