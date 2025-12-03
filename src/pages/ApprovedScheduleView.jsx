@@ -6,27 +6,31 @@ import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// --- Helper para logos (opcional: pon aquí tus URLs reales) ---
+// ===================== LOGOS POR AEROLÍNEA =====================
 const AIRLINE_LOGOS = {
-  SY: "URL",
-  "WL Havana Air": "URL",
-  "WL Invicta": "URL",
-  AV: "URL",
-  EA: "URL",
-  WCHR: "URL",
-  CABIN: "URL",
-  "AA-BSO": "URL",
-  OTHER: "URL",
+  SY: "URL_DE_LOGO_SY",
+  "WL Havana Air": "URL_DE_LOGO_WL_HAVANA",
+  "WL Invicta": "URL_DE_LOGO_WL_INVICTA",
+  AV: "URL_DE_LOGO_AV",
+  EA: "URL_DE_LOGO_EA",
+  WCHR: "URL_DE_LOGO_WCHR",
+  CABIN: "URL_DE_LOGO_CABIN",
+  "AA-BSO": "URL_DE_LOGO_AA_BSO",
+  OTHER: "URL_DE_LOGO_OTHER",
 };
 
-// Helper para cargar imagen
-const loadImage = (src) =>
-  new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.src = src;
-  });
+// ===================== COLORES POR AEROLÍNEA =====================
+const AIRLINE_COLORS = {
+  SY: "#FFA500", // Naranja tipo Sun Country
+  "WL Havana Air": "#005BBB",
+  "WL Invicta": "#00695C",
+  AV: "#D32F2F",
+  EA: "#1A73E8",
+  WCHR: "#9B59B6",
+  CABIN: "#4CAF50",
+  "AA-BSO": "#B0BEC5",
+  OTHER: "#FFD966",
+};
 
 // Orden fijo de días
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -48,32 +52,36 @@ function getShiftText(shifts, idx) {
   return `${s.start} - ${s.end}`;
 }
 
-// ------------ TABLA ESTILO EXCEL -------------
+// ===================== TABLA ESTILO EXCEL =====================
 function ExcelScheduleTable({ schedule, employees }) {
   const { days, grid, airline, department } = schedule;
 
-  // Construir un map id->nombre para rapidez
+  // Mapa id -> nombre
   const empMap = {};
   employees.forEach((e) => {
     empMap[e.id] = e.name;
   });
 
+  const logo = AIRLINE_LOGOS[airline];
+  const color = AIRLINE_COLORS[airline] || "#FFD966";
+
   return (
     <div className="excel-schedule-wrapper">
-      {/* Título grande tipo SUN COUNTRY */}
-      <h1 className="excel-title">
-        {airline} — {department}
-      </h1>
+      {/* HEADER CON LOGO + TÍTULO */}
+      <div className="excel-header">
+        {logo && <img src={logo} alt={airline} className="excel-logo" />}
+        <h1 className="excel-title">
+          {airline} — {department}
+        </h1>
+      </div>
 
       <table className="excel-table">
         <thead>
-          {/* Fila header: EMPLOYEE + días */}
           <tr>
             <th className="excel-header-employee">EMPLOYEE</th>
             {DAY_KEYS.map((key) => (
               <th key={key} className="excel-header-day">
-                {DAY_LABELS[key]}{" "}
-                {days?.[key] ? `/ ${days[key]}` : ""}
+                {DAY_LABELS[key]} {days?.[key] ? `/ ${days[key]}` : ""}
               </th>
             ))}
           </tr>
@@ -95,10 +103,11 @@ function ExcelScheduleTable({ schedule, employees }) {
                     return (
                       <td
                         key={dKey}
-                        className={
-                          "excel-cell " +
-                          (hasWork ? "excel-cell-work" : "excel-cell-off")
-                        }
+                        className="excel-cell"
+                        style={{
+                          background: hasWork ? color : "#FFFFFF",
+                          fontWeight: hasWork ? 600 : 400,
+                        }}
                       >
                         {text}
                       </td>
@@ -106,7 +115,7 @@ function ExcelScheduleTable({ schedule, employees }) {
                   })}
                 </tr>
 
-                {/* Fila 2: segundo turno (o OFF) */}
+                {/* Fila 2: segundo turno */}
                 <tr>
                   {DAY_KEYS.map((dKey) => {
                     const text = getShiftText(row[dKey], 1);
@@ -114,10 +123,11 @@ function ExcelScheduleTable({ schedule, employees }) {
                     return (
                       <td
                         key={dKey}
-                        className={
-                          "excel-cell " +
-                          (hasWork ? "excel-cell-work" : "excel-cell-off")
-                        }
+                        className="excel-cell"
+                        style={{
+                          background: hasWork ? color : "#FFFFFF",
+                          fontWeight: hasWork ? 600 : 400,
+                        }}
                       >
                         {text}
                       </td>
@@ -133,7 +143,7 @@ function ExcelScheduleTable({ schedule, employees }) {
   );
 }
 
-// ------------ PÁGINA PRINCIPAL -------------
+// ===================== PÁGINA PRINCIPAL =====================
 export default function ApprovedScheduleView() {
   const { id } = useParams();
   const [schedule, setSchedule] = useState(null);
@@ -147,7 +157,7 @@ export default function ApprovedScheduleView() {
         setSchedule({ id: snap.id, ...snap.data() });
       }
 
-      // Todos los empleados para mostrar nombres
+      // Empleados para mostrar nombres
       const empSnap = await getDocs(collection(db, "employees"));
       setEmployees(empSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     }
@@ -159,17 +169,12 @@ export default function ApprovedScheduleView() {
     return <p className="p-6">Loading approved schedule...</p>;
   }
 
+  // ---------- EXPORTAR PDF (incluye logo y colores) ----------
   const exportPDF = async () => {
     const element = document.getElementById("approved-print-area");
     if (!element) {
       alert("Printable area not found");
       return;
-    }
-
-    const logoUrl = AIRLINE_LOGOS[schedule.airline];
-    let logoImg = null;
-    if (logoUrl) {
-      logoImg = await loadImage(logoUrl);
     }
 
     const canvas = await html2canvas(element, {
@@ -182,27 +187,21 @@ export default function ApprovedScheduleView() {
     const imgData = canvas.toDataURL("image/png");
     const pageWidth = pdf.internal.pageSize.getWidth();
 
-    // Logo arriba (opcional)
-    if (logoImg) {
-      pdf.addImage(logoImg, "PNG", 20, 20, 150, 70);
-    }
-
-    const yOffset = logoImg ? 110 : 20;
-    const imgWidth = pageWidth - 40;
+    const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
+    pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
     pdf.save(`Approved_${schedule.airline}_${schedule.department}.pdf`);
   };
 
   return (
     <div className="p-6 space-y-4 approved-page">
-      {/* Zona que se imprime en el PDF */}
+      {/* Zona que se captura para el PDF */}
       <div id="approved-print-area">
         <ExcelScheduleTable schedule={schedule} employees={employees} />
       </div>
 
-      {/* Resumen abajo igual que antes */}
+      {/* Resumen abajo */}
       <div className="card text-sm mt-4">
         <h2 className="font-semibold mb-2">Weekly Summary</h2>
         <p>
