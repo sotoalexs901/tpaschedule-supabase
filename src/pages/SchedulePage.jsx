@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   collection,
   getDocs,
@@ -13,7 +14,7 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// 🔵 Logos oficiales desde Firebase (pon aquí tus URLs reales)
+// 🔵 Logos oficiales desde Firebase (reemplaza "URL" por tus links reales)
 const AIRLINE_LOGOS = {
   SY: "URL",
   "WL Havana Air": "URL",
@@ -78,6 +79,8 @@ const buildWeekTag = (days) =>
 
 export default function SchedulePage() {
   const { user } = useUser();
+  const navigate = useNavigate();
+
   const [airline, setAirline] = useState("");
   const [department, setDepartment] = useState("");
   const [dayNumbers, setDayNumbers] = useState({
@@ -177,7 +180,7 @@ export default function SchedulePage() {
     const conflicts = [];
 
     existingSchedules.forEach((sch) => {
-      // Puedes excluir el mismo airline/department si quieres solo “otras” aerolíneas
+      // Si quieres solo otras aerolíneas, puedes excluir la actual:
       // if (sch.airline === airline && sch.department === department) return;
 
       DAY_KEYS.forEach((dayKey) => {
@@ -327,6 +330,16 @@ export default function SchedulePage() {
   // ------------------------------------------------------
   return (
     <div className="p-4 space-y-4">
+      {/* 🔙 Back to Dashboard */}
+      <button
+        type="button"
+        className="btn btn-soft"
+        style={{ marginBottom: "0.75rem" }}
+        onClick={() => navigate("/dashboard")}
+      >
+        ← Back to Dashboard
+      </button>
+
       <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
 
       {/* Airline + Department */}
