@@ -1,7 +1,16 @@
 // src/pages/DashboardPage.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  orderBy,
+  limit,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -9,24 +18,133 @@ export default function DashboardPage() {
   const { user } = useUser();
   const navigate = useNavigate();
 
-  const [pendingCount, setPendingCount] = useState(0);
+  // Mensaje principal (dashboard/main)
+  const [mainMessage, setMainMessage] = useState("");
+  const [mainMeta, setMainMeta] = useState(null);
+
+  // Eventos
+  const [events, setEvents] = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
+  // Avisos / invitaciones
+  const [notices, setNotices] = useState([]);
+  const [loadingNotices, setLoadingNotices] = useState(false);
+
+  // Empleados no disponibles / bloqueados
+  const [blockedEmployees, setBlockedEmployees] = useState([]);
+  const [loadingBlocked, setLoadingBlocked] = useState(false);
+
+  // Schedules pendientes
+  const [pendingSchedules, setPendingSchedules] = useState([]);
   const [loadingPending, setLoadingPending] = useState(false);
 
-  const [absencesNextWeek, setAbsencesNextWeek] = useState([]);
-  const [loadingAbsences, setLoadingAbsences] = useState(false);
+  // --- CARGAS DESDE FIRESTORE ---
 
-  // 🔄 Cargar cantidad de horarios pendientes SOLO para station_manager
-  const fetchPending = async () => {
-    if (!user || user.role !== "station_manager") return;
+  // Mensaje principal
+  const fetchMainMessage = async () => {
+    try {
+      const ref = doc(db, "dashboard", "main");
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data();
+        setMainMessage(data.message || "");
+        setMainMeta({
+          updatedAt: data.updatedAt || null,
+          updatedBy: data.updatedBy || null,
+        });
+      } else {
+        setMainMessage("");
+        setMainMeta(null);
+      }
+    } catch (err) {
+      console.error("Error loading main dashboard message:", err);
+    }
+  };
 
+  // Eventos (próximos, ordenados por fecha)
+  const fetchEvents = async () => {
+    setLoadingEvents(true);
+    try {
+      const colRef = collection(db, "dashboard_events");
+      const snap = await getDocs(colRef);
+
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const items = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((e) => !e.date || e.date >= today)
+        .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+        .slice(0, 5); // primeros 5
+
+      setEvents(items);
+    } catch (err) {
+      console.error("Error loading events:", err);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  // Avisos / invitaciones
+  const fetchNotices = async () => {
+    setLoadingNotices(true);
+    try {
+      const colRef = collection(db, "dashboard_notices");
+      const snap = await getDocs(colRef);
+
+      const items = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const aTime = a.createdAt?.seconds || 0;
+          const bTime = b.createdAt?.seconds || 0;
+          return bTime - aTime; // más reciente primero
+        })
+        .slice(0, 5);
+
+      setNotices(items);
+    } catch (err) {
+      console.error("Error loading notices:", err);
+    } finally {
+      setLoadingNotices(false);
+    }
+  };
+
+  // Empleados bloqueados / no disponibles (ya tienes módulo de blocked)
+  const fetchBlockedEmployees = async () => {
+    setLoadingBlocked(true);
+    try {
+      const colRef = collection(db, "blockedEmployees");
+      const snap = await getDocs(colRef);
+
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // Si tus bloqueos tienen fechas (ej: from / to), aquí podrías filtrar
+      // para "próxima semana". Por ahora mostramos todos los bloqueados.
+      setBlockedEmployees(items);
+    } catch (err) {
+      console.error("Error loading blocked employees:", err);
+    } finally {
+      setLoadingBlocked(false);
+    }
+  };
+
+  // Schedules pendientes de aprobación
+  const fetchPendingSchedules = async () => {
     setLoadingPending(true);
     try {
-      const q = query(
+      const qPending = query(
         collection(db, "schedules"),
         where("status", "==", "pending")
       );
-      const snap = await getDocs(q);
-      setPendingCount(snap.size);
+      const snap = await getDocs(qPending);
+
+      const items = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const aTime = a.createdAt?.seconds || 0;
+          const bTime = b.createdAt?.seconds || 0;
+          return bTime - aTime;
+        });
+
+      setPendingSchedules(items);
     } catch (err) {
       console.error("Error loading pending schedules:", err);
     } finally {
@@ -34,242 +152,231 @@ export default function DashboardPage() {
     }
   };
 
-  // 🗓 Obtener rango de la próxima semana (lunes–domingo)
-  const getNextWeekRange = () => {
-    const today = new Date();
-    const day = today.getDay(); // 0=Sunday,1=Monday,...6=Saturday
-
-    // cuántos días faltan para el próximo lunes
-    let daysUntilNextMonday = (1 - day + 7) % 7;
-    if (daysUntilNextMonday === 0) {
-      daysUntilNextMonday = 7; // si hoy es lunes, próxima semana = siguiente lunes
-    }
-
-    const start = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() + daysUntilNextMonday,
-      0,
-      0,
-      0,
-      0
-    );
-
-    const end = new Date(
-      start.getFullYear(),
-      start.getMonth(),
-      start.getDate() + 6,
-      23,
-      59,
-      59,
-      999
-    );
-
-    return { start, end };
-  };
-
-  // 👥 Cargar ausencias de la próxima semana desde `employeeAbsences`
-  const fetchAbsencesNextWeek = async () => {
-    setLoadingAbsences(true);
-    try {
-      const snap = await getDocs(collection(db, "employeeAbsences"));
-      const { start, end } = getNextWeekRange();
-
-      const items = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((item) => {
-          const startDate = item.startDate?.toDate
-            ? item.startDate.toDate()
-            : null;
-          const endDate = item.endDate?.toDate ? item.endDate.toDate() : null;
-
-          if (!startDate || !endDate) return false;
-
-          // overlap con la próxima semana
-          return startDate <= end && endDate >= start;
-        })
-        .sort((a, b) => {
-          const aDate = a.startDate?.toDate
-            ? a.startDate.toDate().getTime()
-            : 0;
-          const bDate = b.startDate?.toDate
-            ? b.startDate.toDate().getTime()
-            : 0;
-          return aDate - bDate;
-        });
-
-      setAbsencesNextWeek(items);
-    } catch (err) {
-      console.error("Error loading employee absences:", err);
-    } finally {
-      setLoadingAbsences(false);
-    }
+  // Cargar todo al entrar al dashboard
+  const reloadAll = () => {
+    fetchMainMessage();
+    fetchEvents();
+    fetchNotices();
+    fetchBlockedEmployees();
+    fetchPendingSchedules();
   };
 
   useEffect(() => {
-    fetchPending();
-    fetchAbsencesNextWeek();
+    reloadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user?.role]);
 
-  // 🔃 REFRESH (punto 3): refrescar toda la página
-  const handleFullRefresh = () => {
-    window.location.reload();
-  };
+  // --- RENDER ---
 
-  // Helper para formatear fecha corta
-  const formatShortDate = (dateLike) => {
-    if (!dateLike) return "";
-    const d =
-      dateLike instanceof Date
-        ? dateLike
-        : dateLike.toDate
-        ? dateLike.toDate()
-        : new Date(dateLike);
-
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  };
+  const pendingCount = pendingSchedules.length;
+  const eventsCount = events.length;
+  const blockedCount = blockedEmployees.length;
 
   return (
     <div className="space-y-4">
-      {/* Header del dashboard */}
-      <div className="flex justify-between items-center">
+      {/* HEADER */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">TPA Operations Dashboard</h1>
+          <h1 className="text-lg font-semibold">Dashboard</h1>
           <p className="text-sm text-gray-600">
-            Welcome back, <b>{user?.username}</b>.
+            Welcome, <b>{user?.username}</b>{" "}
+            {user?.role && <span>({user.role})</span>}
           </p>
         </div>
 
-        {/* Botón refresh de la página */}
-        <button
-          type="button"
-          onClick={handleFullRefresh}
-          className="btn btn-soft"
-        >
+        <button className="btn btn-soft text-xs" onClick={reloadAll}>
           ⟳ Refresh
         </button>
       </div>
 
-      {/* Tarjetas principales */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Info de usuario */}
-        <div className="card">
+      {/* MENSAJE PRINCIPAL DEL STATION MANAGER */}
+      <div className="card text-sm">
+        <div className="card-header">
+          <h2 className="card-title">Station Manager Message</h2>
+        </div>
+        {mainMessage ? (
+          <>
+            <p className="whitespace-pre-wrap text-gray-700">{mainMessage}</p>
+            {mainMeta && (
+              <p className="text-[11px] text-gray-500 mt-2">
+                Last update:{" "}
+                {mainMeta.updatedAt
+                  ? mainMeta.updatedAt
+                  : "—"}{" "}
+                {mainMeta.updatedBy ? `• by ${mainMeta.updatedBy}` : ""}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-gray-500 text-sm">
+            No message configured yet. Station Manager can set it in the
+            Dashboard Editor.
+          </p>
+        )}
+      </div>
+
+      {/* RESUMEN RÁPIDO (CARDS) */}
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="card text-sm">
           <div className="card-header">
-            <span className="card-title">User Info</span>
+            <span className="card-title">Pending Schedules</span>
           </div>
-          <p className="text-sm text-gray-600">
-            Role: <b>{user?.role}</b>
+          <p className="text-2xl font-bold">{pendingCount}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Schedules waiting for Station Manager approval.
+          </p>
+          {user?.role === "station_manager" && (
+            <button
+              className="btn btn-primary text-xs mt-2"
+              onClick={() => navigate("/approvals")}
+            >
+              Go to Approvals
+            </button>
+          )}
+        </div>
+
+        <div className="card text-sm">
+          <div className="card-header">
+            <span className="card-title">Upcoming Events</span>
+          </div>
+          <p className="text-2xl font-bold">{eventsCount}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Trainings, meetings or ops events coming up.
           </p>
         </div>
 
-        {/* Pending schedules – solo Station Manager */}
-        {user?.role === "station_manager" && (
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Pending Schedules</span>
-              <button
-                type="button"
-                onClick={fetchPending}
-                className="btn btn-soft"
-              >
-                Reload
-              </button>
-            </div>
-
-            {loadingPending ? (
-              <p className="text-sm text-gray-600">
-                Loading pending schedules…
-              </p>
-            ) : (
-              <>
-                <p className="text-3xl font-bold">{pendingCount}</p>
-                <p className="text-sm text-gray-600">
-                  schedule{pendingCount === 1 ? "" : "s"} waiting for approval.
-                </p>
-
-                {pendingCount > 0 && (
-                  <div className="mt-3 p-2 rounded-md bg-yellow-50 border border-yellow-300 text-sm">
-                    ⚠️ You have <b>{pendingCount}</b> schedule
-                    {pendingCount === 1 ? "" : "s"} pending approval.
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => navigate("/approvals")}
-                  className="mt-3 w-full bg-blue-600 text-white py-2 rounded text-sm"
-                >
-                  Go to Approvals
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* NUEVO: Empleados fuera la próxima semana */}
-        <div className="card">
+        <div className="card text-sm">
           <div className="card-header">
-            <span className="card-title">Next Week – Employees Off</span>
-            <button
-              type="button"
-              onClick={fetchAbsencesNextWeek}
-              className="btn btn-soft"
-            >
-              Reload
-            </button>
+            <span className="card-title">Employees Unavailable</span>
           </div>
-
-          {loadingAbsences ? (
-            <p className="text-sm text-gray-600">Loading absences…</p>
-          ) : absencesNextWeek.length === 0 ? (
-            <p className="text-sm text-gray-600">
-              No employees marked as off next week.
-            </p>
-          ) : (
-            <ul className="text-sm text-gray-700 space-y-1 max-h-56 overflow-auto">
-              {absencesNextWeek.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex flex-col border-b border-gray-100 pb-1 last:border-b-0"
-                >
-                  <span className="font-semibold">
-                    {item.employeeName || "Unnamed"}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {item.department || "Dept N/A"} •{" "}
-                    {formatShortDate(item.startDate)} –{" "}
-                    {formatShortDate(item.endDate)}
-                    {item.reason ? ` • ${item.reason}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <p className="mt-2 text-[11px] text-gray-500">
-            Duty Managers should NOT schedule these employees for next week.
+          <p className="text-2xl font-bold">{blockedCount}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Employees blocked / not available for scheduling.
           </p>
+          {user?.role === "station_manager" && (
+            <button
+              className="btn text-xs mt-2"
+              onClick={() => navigate("/blocked")}
+            >
+              View Blocked Employees
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Sección extra */}
+      {/* LISTA DE EVENTOS */}
       <div className="card text-sm">
-        <h2 className="font-semibold mb-1">Quick tips</h2>
-        <ul className="list-disc pl-5 text-gray-600">
-          <li>Use "Create Schedule" to send new weekly schedules.</li>
-          <li>
-            Duty Managers can check “Approved Schedules” to see which schedules
-            are ready.
-          </li>
-          <li>
-            Station Managers see pending schedules and next-week absences here
-            in the dashboard.
-          </li>
-        </ul>
+        <div className="card-header">
+          <h2 className="card-title">Events</h2>
+        </div>
+        {loadingEvents ? (
+          <p className="text-gray-600">Loading events…</p>
+        ) : events.length === 0 ? (
+          <p className="text-gray-500 text-sm">
+            No events added yet. Station Manager can add them in Dashboard
+            Editor.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {events.map((ev) => (
+              <li key={ev.id} className="border-b last:border-b-0 pb-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-sm">{ev.title}</span>
+                  <span className="text-xs text-gray-500">
+                    {ev.date}
+                    {ev.time ? ` • ${ev.time}` : ""}
+                  </span>
+                </div>
+                {ev.details && (
+                  <p className="text-xs text-gray-700 mt-1">{ev.details}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* EMPLEADOS BLOQUEADOS / FUERA */}
+      <div className="card text-sm">
+        <div className="card-header">
+          <h2 className="card-title">Employees Not Available</h2>
+        </div>
+        {loadingBlocked ? (
+          <p className="text-gray-600">Loading employees…</p>
+        ) : blockedEmployees.length === 0 ? (
+          <p className="text-gray-500 text-sm">
+            No blocked employees registered.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {blockedEmployees.map((emp) => (
+              <li
+                key={emp.id}
+                className="flex justify-between items-center border-b last:border-b-0 py-1"
+              >
+                <div>
+                  <span className="font-semibold text-sm">
+                    {emp.name || emp.employeeName || "Employee"}
+                  </span>
+                  {emp.reason && (
+                    <span className="text-xs text-gray-500 ml-2">
+                      • {emp.reason}
+                    </span>
+                  )}
+                </div>
+                {/* si tienes campos from/to, los puedes mostrar aquí */}
+                {(emp.from || emp.startDate || emp.until || emp.endDate) && (
+                  <span className="text-xs text-gray-500">
+                    {emp.from || emp.startDate || ""}{" "}
+                    {emp.until || emp.endDate
+                      ? `→ ${emp.until || emp.endDate}`
+                      : ""}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* AVISOS / INVITACIONES */}
+      <div className="card text-sm">
+        <div className="card-header">
+          <h2 className="card-title">Notices & Invitations</h2>
+        </div>
+        {loadingNotices ? (
+          <p className="text-gray-600">Loading notices…</p>
+        ) : notices.length === 0 ? (
+          <p className="text-gray-500 text-sm">
+            No notices yet. Station Manager can add them in Dashboard Editor.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {notices.map((n) => (
+              <li
+                key={n.id}
+                className="border-b last:border-b-0 pb-2 flex flex-col gap-1"
+              >
+                <span className="font-semibold text-sm">{n.title}</span>
+                {n.body && (
+                  <p className="text-xs text-gray-700 whitespace-pre-wrap">
+                    {n.body}
+                  </p>
+                )}
+                {n.link && (
+                  <a
+                    href={n.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue-600 underline"
+                  >
+                    Open link
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
