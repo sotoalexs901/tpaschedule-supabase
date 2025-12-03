@@ -12,7 +12,7 @@ export default function AppLayout() {
     navigate("/login");
   };
 
-  // Estilos base del sidebar (inline para que nada los pise)
+  // Estilos base del sidebar
   const sidebarStyle = {
     width: 230,
     background: "#020617",
@@ -69,7 +69,7 @@ export default function AppLayout() {
             TPA OPS SYSTEM
           </h1>
           <p style={loggedTextStyle}>
-            Logged as: <b>{user.username}</b>
+            Logged as: <b>{user?.username}</b> ({user?.role})
           </p>
         </div>
 
@@ -78,11 +78,10 @@ export default function AppLayout() {
           <NavItem to="/dashboard" label="Dashboard" />
           <NavItem to="/schedule" label="Create Schedule" />
 
-          {user.role === "station_manager" && (
+          {/* 🔵 SOLO STATION MANAGER */}
+          {user?.role === "station_manager" && (
             <>
               <NavItem to="/approvals" label="Approvals" />
-              <NavItem to="/employees" label="Employees" />
-              <NavItem to="/blocked" label="Blocked Employees" />
               <NavItem to="/dashboard-editor" label="Dashboard Editor" />
               <NavItem to="/budgets" label="Budgets" />
               <NavItem to="/create-user" label="Create User" />
@@ -90,9 +89,14 @@ export default function AppLayout() {
             </>
           )}
 
-          {(user.role === "station_manager" ||
-            user.role === "duty_manager") && (
-            <NavItem to="/approved" label="Approved Schedules" />
+          {/* 🔵 STATION + DUTY: Employees, Blocked, Approved */}
+          {(user?.role === "station_manager" ||
+            user?.role === "duty_manager") && (
+            <>
+              <NavItem to="/employees" label="Employees" />
+              <NavItem to="/blocked" label="Blocked Employees" />
+              <NavItem to="/approved" label="Approved Schedules" />
+            </>
           )}
         </nav>
 
