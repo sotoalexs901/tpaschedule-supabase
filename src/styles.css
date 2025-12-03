@@ -701,3 +701,17 @@ body {
 .excel-cell {
   min-height: 26px;
 }
+/* Badge rojo para mostrar cantidad de pendientes en Approvals */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+}
