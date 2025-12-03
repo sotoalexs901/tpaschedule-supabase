@@ -13,7 +13,7 @@ import html2canvas from "html2canvas";
 
 // Logos oficiales desde Firebase
 const AIRLINE_LOGOS = {
-  SY: "URL",
+  SY: "URL",            // 🔴 RECUERDA: aquí van tus URLs reales de Storage
   "WL Havana Air": "URL",
   "WL Invicta": "URL",
   AV: "URL",
@@ -111,32 +111,84 @@ export default function SchedulePage() {
     alert("Schedule submitted for approval!");
   };
 
-  // PDF
+  // ------------------------------------------------------
+  // PDF: exportar horario con logo
+  // ------------------------------------------------------
   const exportPDF = async () => {
+    if (!airline || !department) {
+      alert("Please select airline and department first.");
+      return;
+    }
+
     const container = document.getElementById("schedule-print-area");
-    const logoUrl = AIRLINE_LOGOS[airline];
-    let logoImg = null;
+    if (!container) {
+      alert("Printable area not found.");
+      return;
+    }
 
-    if (logoUrl) logoImg = await loadImage(logoUrl);
+    try {
+      const logoUrl = AIRLINE_LOGOS[airline];
+      let logoImg = null;
 
-    const canvas = await html2canvas(container, {
-      scale: 3,
-      useCORS: true,
-      backgroundColor: "#FFF",
-    });
+      if (logoUrl && logoUrl !== "URL") {
+        // solo intentamos si no dejaste el placeholder "URL"
+        logoImg = await loadImage(logoUrl);
+      }
 
-    const pdf = new jsPDF("landscape", "pt", "a4");
-    const imgData = canvas.toDataURL("image/png");
-    const pageWidth = pdf.internal.pageSize.getWidth();
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        // estos dos ayudan a evitar PDFs en blanco
+        windowWidth: container.scrollWidth,
+        windowHeight: container.scrollHeight,
+      });
 
-    if (logoImg) pdf.addImage(logoImg, "PNG", 20, 20, 150, 70);
+      const pdf = new jsPDF("landscape", "pt", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 20;
 
-    const yOffset = logoImg ? 110 : 20;
-    const imgWidth = pageWidth - 40;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let currentY = margin;
 
-    pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
-    pdf.save(`Schedule_${airline}_${department}.pdf`);
+      // Logo + título
+      if (logoImg) {
+        const logoHeight = 60;
+        const logoWidth = (logoImg.width * logoHeight) / logoImg.height;
+
+        pdf.addImage(logoImg, "PNG", margin, currentY, logoWidth, logoHeight);
+        pdf.setFontSize(14);
+        pdf.text(
+          `${airline} — ${department}`,
+          margin + logoWidth + 16,
+          currentY + 30
+        );
+
+        currentY += logoHeight + 15;
+      } else {
+        pdf.setFontSize(16);
+        pdf.text(`${airline} — ${department}`, margin, currentY + 10);
+        currentY += 30;
+      }
+
+      // Imagen del grid
+      const imgData = canvas.toDataURL("image/png");
+      let imgWidth = pageWidth - margin * 2;
+      let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      const maxHeight = pageHeight - currentY - margin;
+      if (imgHeight > maxHeight) {
+        const scale = maxHeight / imgHeight;
+        imgHeight = maxHeight;
+        imgWidth = imgWidth * scale;
+      }
+
+      pdf.addImage(imgData, "PNG", margin, currentY, imgWidth, imgHeight);
+      pdf.save(`Schedule_${airline}_${department}.pdf`);
+    } catch (err) {
+      console.error("PDF error", err);
+      alert("There was an error creating the PDF. Check the console.");
+    }
   };
 
   return (
@@ -215,7 +267,10 @@ export default function SchedulePage() {
         <p>Budget: {airlineBudgets[airline] || 0}</p>
       </div>
 
-      <button onClick={exportPDF} className="bg-green-600 text-white py-2 w-full">
+      <button
+        onClick={exportPDF}
+        className="bg-green-600 text-white py-2 w-full rounded"
+      >
         Export PDF
       </button>
     </div>
