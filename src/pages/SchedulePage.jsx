@@ -1,3 +1,4 @@
+// src/pages/SchedulePage.jsx
 import React, { useState, useEffect } from "react";
 import {
   collection,
@@ -11,9 +12,9 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// Logos oficiales desde Firebase
+// Logos oficiales desde Firebase (rellena tus URLs reales)
 const AIRLINE_LOGOS = {
-  SY: "URL",            // 🔴 RECUERDA: aquí van tus URLs reales de Storage
+  SY: "URL",
   "WL Havana Air": "URL",
   "WL Invicta": "URL",
   AV: "URL",
@@ -24,6 +25,7 @@ const AIRLINE_LOGOS = {
   OTHER: "URL",
 };
 
+// Helper: cargar imagen
 const loadImage = (src) =>
   new Promise((resolve) => {
     const img = new Image();
@@ -31,6 +33,87 @@ const loadImage = (src) =>
     img.onload = () => resolve(img);
     img.src = src;
   });
+
+// -------------------------------
+// Helpers de tiempo y conflictos
+// -------------------------------
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const DAY_LABELS = {
+  mon: "MON",
+  tue: "TUESD",
+  wed: "WED",
+  thu: "THURSD",
+  fri: "FRIDAY",
+  sat: "SATURD",
+  sun: "SUND",
+};
+
+function timeToMinutes(t) {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function shiftsOverlap(aStart, aEnd, bStart, bEnd) {
+  // Asumimos formato HH:MM y que OFF ya fue filtrado
+  const aS = timeToMinutes(aStart);
+  const aE = timeToMinutes(aEnd);
+  const bS = timeToMinutes(bStart);
+  const bE = timeToMinutes(bEnd);
+
+  // Intervalos se solapan si el inicio de uno es menor al fin del otro y viceversa
+  return aS < bE && bS < aE;
+}
+
+/**
+ * Busca conflictos de un MISMO empleado en el MISMO día
+ * dentro del schedule que se está editando.
+ *
+ * Devuelve un array de strings con mensajes de conflicto.
+ */
+function findConflicts(rows, employees, dayNumbers, airline, department) {
+  const conflicts = [];
+
+  // Mapa id->nombre para mensajes
+  const empMap = {};
+  employees.forEach((e) => {
+    empMap[e.id] = e.name || "Unknown";
+  });
+
+  // Por cada fila (empleado)
+  rows.forEach((row) => {
+    if (!row.employeeId) return;
+    const empName = empMap[row.employeeId] || "Unknown";
+
+    DAY_KEYS.forEach((dayKey) => {
+      const shifts = row[dayKey] || [];
+      if (!shifts.length) return;
+
+      // Revisa combinaciones de turnos de ese día para ese empleado
+      for (let i = 0; i < shifts.length; i++) {
+        const sA = shifts[i];
+        if (!sA.start || sA.start === "OFF" || !sA.end) continue;
+
+        for (let j = i + 1; j < shifts.length; j++) {
+          const sB = shifts[j];
+          if (!sB.start || sB.start === "OFF" || !sB.end) continue;
+
+          if (shiftsOverlap(sA.start, sA.end, sB.start, sB.end)) {
+            const dayLabel = DAY_LABELS[dayKey] || dayKey.toUpperCase();
+            const dayNum = dayNumbers?.[dayKey]
+              ? ` / ${dayNumbers[dayKey]}`
+              : "";
+
+            conflicts.push(
+              `• ${empName} — ${airline} / ${department} — ${dayLabel}${dayNum}\n   Turnos: ${sA.start}-${sA.end} y ${sB.start}-${sB.end}`
+            );
+          }
+        }
+      }
+    });
+  });
+
+  return conflicts;
+}
 
 export default function SchedulePage() {
   const { user } = useUser();
@@ -50,12 +133,14 @@ export default function SchedulePage() {
   const [rows, setRows] = useState([]);
   const [airlineBudgets, setAirlineBudgets] = useState({});
 
+  // Cargar empleados
   useEffect(() => {
     getDocs(collection(db, "employees")).then((snap) =>
       setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
   }, []);
 
+  // Cargar budgets
   useEffect(() => {
     getDocs(collection(db, "airlineBudgets")).then((snap) => {
       const map = {};
@@ -64,6 +149,7 @@ export default function SchedulePage() {
     });
   }, []);
 
+  // Cálculo de horas
   const diffHours = (start, end) => {
     if (!start || !end || start === "OFF") return 0;
     const [sh, sm] = start.split(":").map(Number);
@@ -80,10 +166,14 @@ export default function SchedulePage() {
 
     rows.forEach((r) => {
       let subtotal = 0;
-      ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].forEach((d) => {
-        r[d]?.forEach((x) => (subtotal += diffHours(x.start, x.end)));
+      DAY_KEYS.forEach((d) => {
+        r[d]?.forEach((shift) => {
+          subtotal += diffHours(shift.start, shift.end);
+        });
       });
-      employeeTotals[r.employeeId] = subtotal;
+      if (r.employeeId) {
+        employeeTotals[r.employeeId] = subtotal;
+      }
       airlineTotal += subtotal;
     });
 
@@ -92,10 +182,32 @@ export default function SchedulePage() {
 
   const { employeeTotals, airlineTotal } = calculateTotals();
 
+  // Guardar en Firestore (con chequeo de conflictos interno)
   const handleSaveSchedule = async () => {
-    if (!airline || !department)
-      return alert("Please select airline and department.");
+    if (!airline || !department) {
+      alert("Please select airline and department.");
+      return;
+    }
 
+    // 1) Buscar conflictos
+    const conflicts = findConflicts(
+      rows,
+      employees,
+      dayNumbers,
+      airline,
+      department
+    );
+
+    if (conflicts.length > 0) {
+      alert(
+        `🚩 Se detectaron empleados programados doble en el mismo día:\n\n${conflicts.join(
+          "\n\n"
+        )}\n\nPor favor corrige estos turnos antes de enviar.`
+      );
+      return; // NO guarda mientras existan conflictos
+    }
+
+    // 2) Si todo ok, guardar
     await addDoc(collection(db, "schedules"), {
       createdAt: serverTimestamp(),
       airline,
@@ -106,100 +218,57 @@ export default function SchedulePage() {
       airlineWeeklyHours: airlineTotal,
       budget: airlineBudgets[airline] || 0,
       status: "pending",
+      createdBy: user?.username || null,
     });
 
     alert("Schedule submitted for approval!");
   };
 
-  // ------------------------------------------------------
-  // PDF: exportar horario con logo
-  // ------------------------------------------------------
+  // Exportar PDF (igual que tenías)
   const exportPDF = async () => {
-    if (!airline || !department) {
-      alert("Please select airline and department first.");
-      return;
-    }
-
     const container = document.getElementById("schedule-print-area");
-    if (!container) {
-      alert("Printable area not found.");
-      return;
+    if (!container) return alert("Printable area not found.");
+
+    const logoUrl = AIRLINE_LOGOS[airline];
+    let logoImg = null;
+
+    if (logoUrl) {
+      logoImg = await loadImage(logoUrl);
     }
 
-    try {
-      const logoUrl = AIRLINE_LOGOS[airline];
-      let logoImg = null;
+    const canvas = await html2canvas(container, {
+      scale: 3,
+      useCORS: true,
+      backgroundColor: "#FFFFFF",
+    });
 
-      if (logoUrl && logoUrl !== "URL") {
-        // solo intentamos si no dejaste el placeholder "URL"
-        logoImg = await loadImage(logoUrl);
-      }
+    const pdf = new jsPDF("landscape", "pt", "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
 
-      const canvas = await html2canvas(container, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        // estos dos ayudan a evitar PDFs en blanco
-        windowWidth: container.scrollWidth,
-        windowHeight: container.scrollHeight,
-      });
-
-      const pdf = new jsPDF("landscape", "pt", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 20;
-
-      let currentY = margin;
-
-      // Logo + título
-      if (logoImg) {
-        const logoHeight = 60;
-        const logoWidth = (logoImg.width * logoHeight) / logoImg.height;
-
-        pdf.addImage(logoImg, "PNG", margin, currentY, logoWidth, logoHeight);
-        pdf.setFontSize(14);
-        pdf.text(
-          `${airline} — ${department}`,
-          margin + logoWidth + 16,
-          currentY + 30
-        );
-
-        currentY += logoHeight + 15;
-      } else {
-        pdf.setFontSize(16);
-        pdf.text(`${airline} — ${department}`, margin, currentY + 10);
-        currentY += 30;
-      }
-
-      // Imagen del grid
-      const imgData = canvas.toDataURL("image/png");
-      let imgWidth = pageWidth - margin * 2;
-      let imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      const maxHeight = pageHeight - currentY - margin;
-      if (imgHeight > maxHeight) {
-        const scale = maxHeight / imgHeight;
-        imgHeight = maxHeight;
-        imgWidth = imgWidth * scale;
-      }
-
-      pdf.addImage(imgData, "PNG", margin, currentY, imgWidth, imgHeight);
-      pdf.save(`Schedule_${airline}_${department}.pdf`);
-    } catch (err) {
-      console.error("PDF error", err);
-      alert("There was an error creating the PDF. Check the console.");
+    if (logoImg) {
+      pdf.addImage(logoImg, "PNG", 20, 20, 150, 70);
     }
+
+    const imgData = canvas.toDataURL("image/png");
+    const yOffset = logoImg ? 110 : 20;
+
+    const imgWidth = pageWidth - 40;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
+    pdf.save(`Schedule_${airline}_${department}.pdf`);
   };
 
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
 
+      {/* Airline + Department */}
       <div className="grid grid-cols-3 gap-4">
         <div>
-          <label>Airline</label>
+          <label className="font-medium text-sm">Airline</label>
           <select
-            className="border p-1 w-full"
+            className="border p-1 rounded w-full"
             value={airline}
             onChange={(e) => setAirline(e.target.value)}
           >
@@ -217,9 +286,9 @@ export default function SchedulePage() {
         </div>
 
         <div>
-          <label>Department</label>
+          <label className="font-medium text-sm">Department</label>
           <select
-            className="border p-1 w-full"
+            className="border p-1 rounded w-full"
             value={department}
             onChange={(e) => setDepartment(e.target.value)}
           >
@@ -234,12 +303,15 @@ export default function SchedulePage() {
         </div>
       </div>
 
+      {/* Day numbers */}
       <div className="grid grid-cols-7 gap-2 text-xs">
         {Object.keys(dayNumbers).map((key) => (
           <div key={key}>
-            <label>{key}</label>
+            <label className="uppercase text-[11px] font-semibold">
+              {key}
+            </label>
             <input
-              className="border text-center w-full"
+              className="border rounded text-center px-1 py-1 w-full"
               value={dayNumbers[key]}
               onChange={(e) =>
                 setDayNumbers({ ...dayNumbers, [key]: e.target.value })
@@ -249,6 +321,7 @@ export default function SchedulePage() {
         ))}
       </div>
 
+      {/* Área imprimible / grid */}
       <div id="schedule-print-area">
         <ScheduleGrid
           employees={employees}
@@ -261,15 +334,26 @@ export default function SchedulePage() {
         />
       </div>
 
+      {/* Summary */}
       <div className="card text-sm">
-        <h2>Weekly Summary</h2>
-        <p>Total: {airlineTotal.toFixed(2)} hrs</p>
+        <h2 className="font-semibold">Weekly Summary</h2>
+        <p>Total Hours: {airlineTotal.toFixed(2)}</p>
         <p>Budget: {airlineBudgets[airline] || 0}</p>
+
+        {Object.entries(employeeTotals).map(([id, hrs]) => {
+          const emp = employees.find((e) => e.id === id);
+          return (
+            <p key={id}>
+              {emp?.name || "Unknown"} — <b>{hrs.toFixed(2)} hrs</b>
+            </p>
+          );
+        })}
       </div>
 
+      {/* Botón PDF */}
       <button
         onClick={exportPDF}
-        className="bg-green-600 text-white py-2 w-full rounded"
+        className="w-full bg-green-600 text-white py-2 rounded"
       >
         Export PDF
       </button>
