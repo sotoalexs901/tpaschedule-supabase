@@ -40,10 +40,11 @@ const AIRLINE_COLORS = {
 
 // Helper para cargar imágenes de logo (para PDF)
 const loadImage = (src) =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
+    img.onerror = reject;
     img.src = src;
   });
 
@@ -69,7 +70,7 @@ function getShiftText(shifts, idx) {
 
 // ============= TABLA ESTILO SUN COUNTRY / EXCEL =============
 function ExcelScheduleTable({ schedule, employees }) {
-  const { days = {}, grid = [], airline, department } = schedule;
+  const { days, grid, airline, department } = schedule;
 
   const logo = AIRLINE_LOGOS[airline];
   const headerColor = AIRLINE_COLORS[airline] || "#0f172a";
@@ -234,7 +235,7 @@ export default function ApprovedScheduleView() {
     return <p className="p-6">Loading approved schedule...</p>;
   }
 
-  // ✅ Usar este horario como plantilla en /schedule
+  // ✅ Clonar este horario como plantilla en /schedule
   const handleUseAsTemplate = () => {
     navigate("/schedule", {
       state: {
@@ -248,40 +249,74 @@ export default function ApprovedScheduleView() {
     });
   };
 
+  // ✅ Exportar PDF (con workaround para imágenes remotas)
   const exportPDF = async () => {
-    const element = document.getElementById("approved-print-area");
-    if (!element) {
-      alert("Printable area not found");
-      return;
+    try {
+      const element = document.getElementById("approved-print-area");
+      if (!element) {
+        alert("Printable area not found");
+        return;
+      }
+
+      const logoUrl = AIRLINE_LOGOS[schedule.airline];
+      let logoImg = null;
+      if (logoUrl) {
+        try {
+          logoImg = await loadImage(logoUrl);
+        } catch (e) {
+          console.warn("Logo could not be loaded for PDF header", e);
+        }
+      }
+
+      // ⛔ Evitar tainted canvas: ocultar imágenes dentro del área capturada
+      const imgs = Array.from(element.querySelectorAll("img"));
+      const originalDisplay = imgs.map((img) => img.style.display);
+      imgs.forEach((img) => {
+        img.style.display = "none";
+      });
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
+
+      // Restaurar imágenes
+      imgs.forEach((img, idx) => {
+        img.style.display = originalDisplay[idx] || "";
+      });
+
+      const pdf = new jsPDF("landscape", "pt", "a4");
+      const imgData = canvas.toDataURL("image/png");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const marginX = 20;
+      let y = 20;
+
+      // Logo en header del PDF
+      if (logoImg) {
+        pdf.addImage(logoImg, "PNG", marginX, y, 140, 60);
+        y += 70;
+      }
+
+      const availableHeight = pageHeight - y - 20;
+      let imgWidth = pageWidth - marginX * 2;
+      let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      // Ajustar si es más alto que la página
+      if (imgHeight > availableHeight) {
+        const ratio = availableHeight / imgHeight;
+        imgWidth *= ratio;
+        imgHeight *= ratio;
+      }
+
+      pdf.addImage(imgData, "PNG", marginX, y, imgWidth, imgHeight);
+      pdf.save(`Approved_${schedule.airline}_${schedule.department}.pdf`);
+    } catch (err) {
+      console.error("Error exporting PDF:", err);
+      alert("Error exporting PDF. Check the console for details.");
     }
-
-    const logoUrl = AIRLINE_LOGOS[schedule.airline];
-    let logoImg = null;
-    if (logoUrl) {
-      logoImg = await loadImage(logoUrl);
-    }
-
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-    });
-
-    const pdf = new jsPDF("landscape", "pt", "a4");
-    const imgData = canvas.toDataURL("image/png");
-    const pageWidth = pdf.internal.pageSize.getWidth();
-
-    // Logo arriba también en el PDF
-    if (logoImg) {
-      pdf.addImage(logoImg, "PNG", 20, 20, 140, 60);
-    }
-
-    const yOffset = logoImg ? 90 : 20;
-    const imgWidth = pageWidth - 40;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-    pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
-    pdf.save(`Approved_${schedule.airline}_${schedule.department}.pdf`);
   };
 
   return (
@@ -323,7 +358,7 @@ export default function ApprovedScheduleView() {
         </p>
       </div>
 
-      {/* ✅ Botón para clonar como plantilla */}
+      {/* ✅ Clonar como plantilla */}
       <button
         onClick={handleUseAsTemplate}
         className="bg-blue-600 text-white py-2 rounded w-full mt-2"
@@ -331,7 +366,7 @@ export default function ApprovedScheduleView() {
         Use this schedule as template for new week
       </button>
 
-      {/* Botón export PDF */}
+      {/* Exportar PDF */}
       <button
         onClick={exportPDF}
         className="bg-green-600 text-white py-2 rounded w-full mt-2"
