@@ -1,3 +1,4 @@
+// src/pages/AppLayout.jsx
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
@@ -14,12 +15,14 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen flex bg-slate-100">
       {/* SIDEBAR */}
-      <aside className="w-64 bg-[#0A2342] text-white flex flex-col">
+      <aside className="w-64 bg-[#0A2342] flex flex-col">
         {/* Header */}
         <div className="p-5 border-b border-blue-900">
-          <h1 className="text-lg font-bold tracking-wide">TPA OPS SYSTEM</h1>
-          {/* Quitamos la opacidad para que se vea fuerte */}
-          <p className="text-xs mt-1">
+          <h1 className="text-lg font-bold tracking-wide text-white">
+            TPA OPS SYSTEM
+          </h1>
+          {/* ❗️Quitamos opacity-70 y dejamos texto blanco normal */}
+          <p className="text-xs mt-1 text-white">
             Logged as: <b>{user.username}</b>
           </p>
         </div>
@@ -50,13 +53,13 @@ export default function AppLayout() {
         {/* Logout */}
         <button
           onClick={logout}
-          className="flex items-center gap-2 text-white px-5 py-3 border-t border-blue-900 hover:bg-blue-950"
+          className="px-5 py-3 border-t border-blue-900 text-white hover:bg-blue-950 text-sm text-left"
         >
           Logout
         </button>
       </aside>
 
-      {/* CONTENIDO PRINCIPAL */}
+      {/* MAIN CONTENT */}
       <main className="flex-1 p-6 overflow-auto">
         <Outlet />
       </main>
@@ -64,13 +67,16 @@ export default function AppLayout() {
   );
 }
 
-/* Enlace del sidebar usando las clases definidas en styles.css */
+/**
+ * NavItem usa las clases .sidebar-link y .sidebar-link-active
+ * que ya tienes definidas en styles.css
+ */
 function NavItem({ to, label }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `sidebar-link ${isActive ? "sidebar-link-active" : ""}`
+        isActive ? "sidebar-link sidebar-link-active" : "sidebar-link"
       }
     >
       {label}
