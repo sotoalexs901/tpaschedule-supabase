@@ -1,112 +1,140 @@
-
-import React, { useEffect, useState } from 'react'
-import { db } from '../firebase'
-import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
+// src/pages/DashboardPage.jsx
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "../firebase";
+import { useUser } from "../UserContext.jsx";
 
 export default function DashboardPage() {
-  const [message, setMessage] = useState('')
-  const [photos, setPhotos] = useState([])
-  const [docsList, setDocsList] = useState([])
-  const [events, setEvents] = useState([])
-  const [notices, setNotices] = useState([])
+  const { user } = useUser();
+  const navigate = useNavigate();
+
+  const [pendingCount, setPendingCount] = useState(0);
+  const [loadingPending, setLoadingPending] = useState(false);
+
+  // 🔄 Cargar cantidad de horarios pendientes SOLO para station_manager
+  const fetchPending = async () => {
+    if (!user || user.role !== "station_manager") return;
+
+    setLoadingPending(true);
+    try {
+      const q = query(
+        collection(db, "schedules"),
+        where("status", "==", "pending")
+      );
+      const snap = await getDocs(q);
+      setPendingCount(snap.size);
+    } catch (err) {
+      console.error("Error loading pending schedules:", err);
+    } finally {
+      setLoadingPending(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      const mainRef = doc(db, 'dashboard', 'main')
-      const mainSnap = await getDoc(mainRef)
-      if (mainSnap.exists()) setMessage(mainSnap.data().message || '')
+    fetchPending();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
-      const photosSnap = await getDocs(
-        query(collection(db, 'dashboard_photos'), orderBy('createdAt', 'desc'), limit(5))
-      )
-      setPhotos(photosSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-
-      const docsSnap = await getDocs(
-        query(collection(db, 'dashboard_docs'), orderBy('createdAt', 'desc'), limit(5))
-      )
-      setDocsList(docsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-
-      const eventsSnap = await getDocs(
-        query(collection(db, 'dashboard_events'), orderBy('date', 'asc'), limit(10))
-      )
-      setEvents(eventsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-
-      const noticesSnap = await getDocs(
-        query(collection(db, 'dashboard_notices'), orderBy('createdAt', 'desc'), limit(10))
-      )
-      setNotices(noticesSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-    }
-    load().catch(console.error)
-  }, [])
+  // 🔃 REFRESH (punto 3): refrescar toda la página
+  const handleFullRefresh = () => {
+    window.location.reload();
+  };
 
   return (
     <div className="space-y-4">
-      <div className="card">
-        <h2 className="text-sm font-semibold mb-1">Station Manager Message</h2>
-        <p className="text-sm whitespace-pre-line">{message || 'No notes yet.'}</p>
+      {/* Header del dashboard */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-lg font-semibold">TPA Operations Dashboard</h1>
+          <p className="text-sm text-gray-600">
+            Welcome back, <b>{user?.username}</b>.
+          </p>
+        </div>
+
+        {/* Botón refresh de la página (Punto 3) */}
+        <button
+          type="button"
+          onClick={handleFullRefresh}
+          className="btn btn-soft"
+        >
+          ⟳ Refresh
+        </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="card space-y-2">
-          <h3 className="text-xs font-semibold text-gray-600">Photos</h3>
-          {photos.map(p => (
-            <div key={p.id} className="text-xs space-y-1">
-              <img src={p.url} alt={p.caption || 'photo'} className="w-full rounded-lg max-h-40 object-cover" />
-              {p.caption && <div className="text-[11px] text-gray-600">{p.caption}</div>}
-            </div>
-          ))}
-          {!photos.length && <p className="text-[11px] text-gray-400">No photos.</p>}
+      {/* Tarjeta de resumen general */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">User Info</span>
+          </div>
+          <p className="text-sm text-gray-600">
+            Role: <b>{user?.role}</b>
+          </p>
         </div>
 
-        <div className="card space-y-2">
-          <h3 className="text-xs font-semibold text-gray-600">Documents</h3>
-          {docsList.map(d => (
-            <div key={d.id} className="text-xs">
-              <a href={d.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
-                {d.title || 'Document'}
-              </a>
+        {/* Solo Station Manager ve esta parte de approvals */}
+        {user?.role === "station_manager" && (
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Pending Schedules</span>
+              <button
+                type="button"
+                onClick={fetchPending}
+                className="btn btn-soft"
+              >
+                Reload
+              </button>
             </div>
-          ))}
-          {!docsList.length && <p className="text-[11px] text-gray-400">No documents.</p>}
-        </div>
-      </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="card space-y-2">
-          <h3 className="text-xs font-semibold text-gray-600">Upcoming Events</h3>
-          {events.map(e => (
-            <div key={e.id} className="text-xs">
-              <div className="font-medium">{e.title}</div>
-              <div className="text-[11px] text-gray-600">
-                {e.date} {e.time ? `· ${e.time}` : ''}
-              </div>
-              {e.details && <div className="text-[11px] text-gray-500">{e.details}</div>}
-            </div>
-          ))}
-          {!events.length && <p className="text-[11px] text-gray-400">No events.</p>}
-        </div>
+            {loadingPending ? (
+              <p className="text-sm text-gray-600">Loading pending schedules…</p>
+            ) : (
+              <>
+                <p className="text-3xl font-bold">
+                  {pendingCount}
+                </p>
+                <p className="text-sm text-gray-600">
+                  schedule{pendingCount === 1 ? "" : "s"} waiting for approval.
+                </p>
 
-        <div className="card space-y-2">
-          <h3 className="text-xs font-semibold text-gray-600">Notices / Invitations</h3>
-          {notices.map(n => (
-            <div key={n.id} className="text-xs">
-              <div className="font-medium">{n.title}</div>
-              {n.body && <div className="text-[11px] text-gray-600">{n.body}</div>}
-              {n.link && (
-                <a
-                  href={n.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] text-blue-600 underline"
+                {/* ⚠️ Notificación visual si hay pendientes */}
+                {pendingCount > 0 && (
+                  <div className="mt-3 p-2 rounded-md bg-yellow-50 border border-yellow-300 text-sm">
+                    ⚠️ You have{" "}
+                    <b>{pendingCount}</b>{" "}
+                    schedule{pendingCount === 1 ? "" : "s"} pending approval.
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => navigate("/approvals")}
+                  className="mt-3 w-full bg-blue-600 text-white py-2 rounded text-sm"
                 >
-                  Open
-                </a>
-              )}
-            </div>
-          ))}
-          {!notices.length && <p className="text-[11px] text-gray-400">No notices.</p>}
-        </div>
+                  Go to Approvals
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Sección extra por si quieres agregar más cosas al dashboard luego */}
+      <div className="card text-sm">
+        <h2 className="font-semibold mb-1">Quick tips</h2>
+        <ul className="list-disc pl-5 text-gray-600">
+          <li>Use "Create Schedule" to send new weekly schedules.</li>
+          <li>
+            Duty Managers can check “Approved Schedules” to see what’s ready to
+            use.
+          </li>
+          <li>
+            Station Managers see pending schedules here and in the Approvals
+            section.
+          </li>
+        </ul>
       </div>
     </div>
-  )
+  );
 }
