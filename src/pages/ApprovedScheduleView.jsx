@@ -184,7 +184,7 @@ function ExcelScheduleTable({ schedule, employees }) {
                 <tr>
                   {DAY_KEYS.map((dKey) => {
                     const text = getShiftText(row[dKey], 1);
-                    const hasWork = text !== "OFF";
+                   const hasWork = text !== "OFF";
                     return (
                       <td
                         key={dKey}
@@ -249,7 +249,7 @@ export default function ApprovedScheduleView() {
     });
   };
 
-  // ✅ Exportar PDF (con workaround para imágenes remotas)
+  // ✅ Exportar PDF con texto sólido (sin transparencia)
   const exportPDF = async () => {
     try {
       const element = document.getElementById("approved-print-area");
@@ -267,6 +267,25 @@ export default function ApprovedScheduleView() {
           console.warn("Logo could not be loaded for PDF header", e);
         }
       }
+
+      // 🔹 Forzar estilos sólidos en las celdas para el PDF
+      const styledCells = Array.from(
+        element.querySelectorAll(
+          ".excel-cell, .excel-header-day, .excel-header-employee, .excel-employee-cell"
+        )
+      );
+
+      const originalStyles = styledCells.map((cell) => ({
+        color: cell.style.color,
+        opacity: cell.style.opacity,
+        backgroundColor: cell.style.backgroundColor,
+      }));
+
+      styledCells.forEach((cell) => {
+        cell.style.color = "#000000";        // texto negro
+        cell.style.opacity = "1";           // sin transparencia
+        cell.style.backgroundColor = "#fff"; // fondo blanco
+      });
 
       // ⛔ Evitar tainted canvas: ocultar imágenes dentro del área capturada
       const imgs = Array.from(element.querySelectorAll("img"));
@@ -286,6 +305,13 @@ export default function ApprovedScheduleView() {
         img.style.display = originalDisplay[idx] || "";
       });
 
+      // Restaurar estilos originales en las celdas
+      styledCells.forEach((cell, i) => {
+        cell.style.color = originalStyles[i].color;
+        cell.style.opacity = originalStyles[i].opacity;
+        cell.style.backgroundColor = originalStyles[i].backgroundColor;
+      });
+
       const pdf = new jsPDF("landscape", "pt", "a4");
       const imgData = canvas.toDataURL("image/png");
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -294,7 +320,7 @@ export default function ApprovedScheduleView() {
       const marginX = 20;
       let y = 20;
 
-      // Logo en header del PDF
+      // Logo en header del PDF (independiente del html2canvas)
       if (logoImg) {
         pdf.addImage(logoImg, "PNG", marginX, y, 140, 60);
         y += 70;
@@ -304,7 +330,6 @@ export default function ApprovedScheduleView() {
       let imgWidth = pageWidth - marginX * 2;
       let imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      // Ajustar si es más alto que la página
       if (imgHeight > availableHeight) {
         const ratio = availableHeight / imgHeight;
         imgWidth *= ratio;
