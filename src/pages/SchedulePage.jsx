@@ -1,3 +1,4 @@
+// src/pages/SchedulePage.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -14,7 +15,7 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// 🔵 Logos oficiales desde Firebase (mismos que usas en SchedulePage / ScheduleGrid)
+// 🔵 Logos oficiales desde Firebase
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
   "WL Havana Air":
@@ -79,14 +80,9 @@ const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
   return s1 < e2 && s2 < e1; // solapamiento estándar de intervalos
 };
 
-// ✅ Crea un “tag” de semana basado en los números de días
-//    Si todos están vacíos, devuelve "" para NO buscar conflictos todavía.
-const buildWeekTag = (days) => {
-  const parts = DAY_KEYS.map((k) => days?.[k]?.toString().trim() || "");
-  const hasAny = parts.some(Boolean);
-  if (!hasAny) return "";
-  return parts.join("|");
-};
+// Crea un “tag” de semana basado en los números de días
+const buildWeekTag = (days) =>
+  DAY_KEYS.map((k) => days?.[k]?.toString().trim() || "").join("|");
 
 export default function SchedulePage() {
   const { user } = useUser();
@@ -140,7 +136,8 @@ export default function SchedulePage() {
     });
   }, []);
 
-  // Cálculo de horas
+  // ========= CÁLCULO DE HORAS (con lunch) =========
+  // Regla: si un shift dura más de 6h 1min, se descuenta 0.5h de lunch
   const diffHours = (start, end) => {
     if (!start || !end || start === "OFF") return 0;
     const s = toMinutes(start);
@@ -148,28 +145,51 @@ export default function SchedulePage() {
     if (s == null || eRaw == null) return 0;
     let e = eRaw;
     if (e < s) e += 24 * 60;
-    return (e - s) / 60;
+
+    let hours = (e - s) / 60;
+    // Más de 6 horas y 1 minuto => -0.5h lunch
+    if (hours > 6 + 1 / 60) {
+      hours -= 0.5;
+    }
+    return hours;
   };
 
   const calculateTotals = () => {
     let airlineTotal = 0;
     const employeeTotals = {};
+    const dailyTotals = {
+      mon: 0,
+      tue: 0,
+      wed: 0,
+      thu: 0,
+      fri: 0,
+      sat: 0,
+      sun: 0,
+    };
 
     rows.forEach((r) => {
-      let subtotal = 0;
-      DAY_KEYS.forEach((d) => {
-        r[d]?.forEach((shift) => {
-          subtotal += diffHours(shift.start, shift.end);
+      let employeeWeekly = 0;
+
+      DAY_KEYS.forEach((dKey) => {
+        let employeeDay = 0;
+
+        (r[dKey] || []).forEach((shift) => {
+          const h = diffHours(shift.start, shift.end);
+          employeeDay += h;
         });
+
+        dailyTotals[dKey] += employeeDay;
+        employeeWeekly += employeeDay;
       });
-      employeeTotals[r.employeeId] = subtotal;
-      airlineTotal += subtotal;
+
+      employeeTotals[r.employeeId] = employeeWeekly;
+      airlineTotal += employeeWeekly;
     });
 
-    return { employeeTotals, airlineTotal };
+    return { employeeTotals, airlineTotal, dailyTotals };
   };
 
-  const { employeeTotals, airlineTotal } = calculateTotals();
+  const { employeeTotals, airlineTotal, dailyTotals } = calculateTotals();
 
   // ⚠️ Comprobación de conflictos con otras aerolíneas (misma semana)
   const checkConflictsWithOtherAirlines = async () => {
@@ -293,6 +313,7 @@ export default function SchedulePage() {
       grid: rows,
       totals: employeeTotals,
       airlineWeeklyHours: airlineTotal,
+      airlineDailyHours: dailyTotals,
       budget: airlineBudgets[airline] || 0,
       status: "pending",
       createdBy: user?.username || null,
@@ -428,9 +449,19 @@ export default function SchedulePage() {
 
       {/* Resumen semanal */}
       <div className="card text-sm">
-        <h2 className="font-semibold">Weekly Summary</h2>
-        <p>Total Hours: {airlineTotal.toFixed(2)}</p>
+        <h2 className="font-semibold mb-1">Weekly Summary</h2>
+        <p>Total Hours (with lunch): {airlineTotal.toFixed(2)}</p>
         <p>Budget: {airlineBudgets[airline] || 0}</p>
+
+        <h3 className="font-semibold mt-3 mb-1 text-xs">Daily Hours (All employees)</h3>
+        <div className="grid grid-cols-4 gap-2 text-[11px]">
+          {DAY_KEYS.map((dKey) => (
+            <div key={dKey} className="bg-gray-50 border rounded px-2 py-1">
+              <div className="font-semibold">{DAY_LABELS[dKey]}</div>
+              <div>{dailyTotals[dKey].toFixed(2)} hrs</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Botón PDF */}
