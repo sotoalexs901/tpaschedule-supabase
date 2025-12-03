@@ -6,7 +6,7 @@ import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// ===================== LOGOS POR AEROLÍNEA (PON TUS URLs REALES) =====================
+// ===================== LOGOS POR AEROLÍNEA =====================
 const AIRLINE_LOGOS = {
   SY: "URL_LOGO_SY",
   "WL Havana Air": "URL_LOGO_WL_HAVANA",
@@ -21,7 +21,7 @@ const AIRLINE_LOGOS = {
 
 // ===================== COLORES POR AEROLÍNEA =====================
 const AIRLINE_COLORS = {
-  SY: "#FFA500", // Sun Country style
+  SY: "#F4B400",
   "WL Havana Air": "#005BBB",
   "WL Invicta": "#00695C",
   AV: "#D32F2F",
@@ -29,10 +29,10 @@ const AIRLINE_COLORS = {
   WCHR: "#9B59B6",
   CABIN: "#4CAF50",
   "AA-BSO": "#B0BEC5",
-  OTHER: "#FFD966",
+  OTHER: "#FFB74D",
 };
 
-// Helper para cargar imagen (para PDF)
+// Helper para cargar imagen (PDF)
 const loadImage = (src) =>
   new Promise((resolve, reject) => {
     const img = new Image();
@@ -62,7 +62,7 @@ function getShiftText(shifts, idx) {
   return `${s.start} - ${s.end}`;
 }
 
-// ===================== TABLA ESTILO EXCEL (SOLO TABLA) =====================
+// ===================== TABLA ESTILO EXCEL =====================
 function ExcelScheduleTable({ schedule, employees }) {
   const { days, grid, airline } = schedule;
 
@@ -71,7 +71,7 @@ function ExcelScheduleTable({ schedule, employees }) {
     empMap[e.id] = e.name;
   });
 
-  const color = AIRLINE_COLORS[airline] || "#FFD966";
+  const color = AIRLINE_COLORS[airline] || "#FFB74D";
 
   return (
     <table className="excel-table">
@@ -79,7 +79,11 @@ function ExcelScheduleTable({ schedule, employees }) {
         <tr>
           <th className="excel-header-employee">EMPLOYEE</th>
           {DAY_KEYS.map((key) => (
-            <th key={key} className="excel-header-day">
+            <th
+              key={key}
+              className="excel-header-day"
+              style={{ background: color, color: "#ffffff" }}
+            >
               {DAY_LABELS[key]} {days?.[key] ? `/ ${days[key]}` : ""}
             </th>
           ))}
@@ -105,6 +109,7 @@ function ExcelScheduleTable({ schedule, employees }) {
                       className="excel-cell"
                       style={{
                         background: hasWork ? color : "#FFFFFF",
+                        color: hasWork ? "#ffffff" : "#111827",
                         fontWeight: hasWork ? 600 : 400,
                       }}
                     >
@@ -125,6 +130,7 @@ function ExcelScheduleTable({ schedule, employees }) {
                       className="excel-cell"
                       style={{
                         background: hasWork ? color : "#FFFFFF",
+                        color: hasWork ? "#ffffff" : "#111827",
                         fontWeight: hasWork ? 600 : 400,
                       }}
                     >
@@ -165,6 +171,7 @@ export default function ApprovedScheduleView() {
     return <p className="p-6">Loading approved schedule...</p>;
   }
 
+  const airlineColor = AIRLINE_COLORS[schedule.airline] || "#FFB74D";
   const logoUrl = AIRLINE_LOGOS[schedule.airline];
 
   // ---------- EXPORTAR PDF ----------
@@ -176,7 +183,6 @@ export default function ApprovedScheduleView() {
     }
 
     try {
-      // Capturamos SOLO el título + tabla (sin el <img> del logo)
       const canvas = await html2canvas(element, {
         scale: 3,
         useCORS: true,
@@ -187,22 +193,36 @@ export default function ApprovedScheduleView() {
       const imgData = canvas.toDataURL("image/png");
       const pageWidth = pdf.internal.pageSize.getWidth();
 
-      // Si hay logo, lo agregamos manualmente arriba del PDF
       let yOffset = 20;
+
+      // Logo + barra de color arriba en el PDF
       if (logoUrl) {
         try {
           const logoImg = await loadImage(logoUrl);
-          pdf.addImage(logoImg, "PNG", 20, yOffset, 150, 70);
-          yOffset += 80; // un poco de espacio debajo del logo
+          pdf.addImage(logoImg, "PNG", 30, yOffset, 120, 60);
         } catch (e) {
           console.warn("No se pudo cargar el logo para el PDF:", e);
         }
       }
 
-      const imgWidth = pageWidth - 40;
+      // Barra de título a todo lo ancho
+      pdf.setFillColor(airlineColor);
+      pdf.rect(0, yOffset + 70, pageWidth, 30, "F");
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(16);
+      pdf.text(
+        `${schedule.airline} — ${schedule.department}`,
+        pageWidth / 2,
+        yOffset + 90,
+        { align: "center" }
+      );
+
+      // Ahora la tabla capturada
+      const tableYOffset = yOffset + 110;
+      const imgWidth = pageWidth - 60;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
+      pdf.addImage(imgData, "PNG", 30, tableYOffset, imgWidth, imgHeight);
       pdf.save(`Approved_${schedule.airline}_${schedule.department}.pdf`);
     } catch (err) {
       console.error("Error exportando PDF:", err);
@@ -212,21 +232,20 @@ export default function ApprovedScheduleView() {
 
   return (
     <div className="p-6 space-y-4 approved-page">
-      {/* HEADER VISUAL CON LOGO (NO SE CAPTURA EN html2canvas) */}
-      <div className="excel-header">
+      {/* HEADER VISUAL EN PANTALLA */}
+      <div className="excel-header-screen">
         {logoUrl && (
           <img src={logoUrl} alt={schedule.airline} className="excel-logo" />
         )}
-        <h1 className="excel-title">
-          {schedule.airline} — {schedule.department}
-        </h1>
+        <div className="excel-title-bar" style={{ background: airlineColor }}>
+          <h1 className="excel-title-text">
+            {schedule.airline} — {schedule.department}
+          </h1>
+        </div>
       </div>
 
-      {/* ÁREA QUE SE CAPTURA PARA EL PDF: TÍTULO TEXTO + TABLA */}
-      <div id="approved-print-area">
-        <h2 className="excel-title-pdf">
-          {schedule.airline} — {schedule.department}
-        </h2>
+      {/* ÁREA CAPTURADA PARA EL PDF */}
+      <div id="approved-print-area" className="excel-print-area">
         <ExcelScheduleTable schedule={schedule} employees={employees} />
       </div>
 
