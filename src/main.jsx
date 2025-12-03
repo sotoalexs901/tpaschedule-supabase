@@ -25,7 +25,6 @@ import BudgetsPage from "./pages/BudgetsPage.jsx";
 import CreateUserPage from "./pages/CreateUserPage.jsx";
 import EditUsersPage from "./pages/EditUsersPage.jsx";
 
-
 // 🔒 Protección de rutas
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser();
@@ -39,13 +38,11 @@ function ProtectedRoute({ children, roles }) {
   return children;
 }
 
-
 // 🔵 Sistema de rutas principal
 function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-
         {/* LOGIN */}
         <Route path="/login" element={<LoginPage />} />
 
@@ -58,12 +55,11 @@ function AppRouter() {
             </ProtectedRoute>
           }
         >
-
           {/* Dashboard */}
           <Route index element={<DashboardPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
 
-          {/* Dashboard Editor */}
+          {/* Dashboard Editor (solo station_manager) */}
           <Route
             path="dashboard-editor"
             element={
@@ -73,30 +69,30 @@ function AppRouter() {
             }
           />
 
-          {/* Crear horario */}
+          {/* Crear horario (todos los roles logueados) */}
           <Route path="schedule" element={<SchedulePage />} />
 
-          {/* Employees blocked */}
+          {/* Employees blocked → station_manager + duty_manager */}
           <Route
             path="blocked"
             element={
-              <ProtectedRoute roles={["station_manager"]}>
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
                 <BlockedEmployeesPage />
               </ProtectedRoute>
             }
           />
 
-          {/* Employees */}
+          {/* Employees → station_manager + duty_manager */}
           <Route
             path="employees"
             element={
-              <ProtectedRoute roles={["station_manager"]}>
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
                 <EmployeesPage />
               </ProtectedRoute>
             }
           />
 
-          {/* Approvals */}
+          {/* Approvals → solo station_manager */}
           <Route
             path="approvals"
             element={
@@ -106,7 +102,7 @@ function AppRouter() {
             }
           />
 
-          {/* Approved schedules */}
+          {/* Approved schedules → station_manager + duty_manager */}
           <Route
             path="approved"
             element={
@@ -116,7 +112,7 @@ function AppRouter() {
             }
           />
 
-          {/* Ver un schedule aprobado */}
+          {/* Ver un schedule aprobado → station_manager + duty_manager */}
           <Route
             path="approved/:id"
             element={
@@ -126,7 +122,7 @@ function AppRouter() {
             }
           />
 
-          {/* Budgets */}
+          {/* Budgets → solo station_manager */}
           <Route
             path="budgets"
             element={
@@ -136,7 +132,7 @@ function AppRouter() {
             }
           />
 
-          {/* Crear usuario */}
+          {/* Crear usuario → solo station_manager */}
           <Route
             path="create-user"
             element={
@@ -146,7 +142,7 @@ function AppRouter() {
             }
           />
 
-          {/* Editar usuarios */}
+          {/* Editar usuarios → solo station_manager */}
           <Route
             path="edit-users"
             element={
@@ -155,13 +151,11 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
-
         </Route>
       </Routes>
     </BrowserRouter>
   );
 }
-
 
 // 🔵 Render principal
 ReactDOM.createRoot(document.getElementById("root")).render(
