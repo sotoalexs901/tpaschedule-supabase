@@ -12,23 +12,69 @@ export default function AppLayout() {
     navigate("/login");
   };
 
+  // Estilos base del sidebar (inline para que nada los pise)
+  const sidebarStyle = {
+    width: 230,
+    background: "#020617",
+    color: "#ffffff",
+    display: "flex",
+    flexDirection: "column",
+    minHeight: "100vh",
+  };
+
+  const sidebarHeaderStyle = {
+    padding: "20px 16px",
+    borderBottom: "1px solid rgba(148,163,184,0.35)",
+  };
+
+  const loggedTextStyle = {
+    fontSize: 11,
+    marginTop: 4,
+    color: "#ffffff",
+    opacity: 1,
+  };
+
+  const navStyle = {
+    flex: 1,
+    padding: "12px 10px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  };
+
+  const logoutStyle = {
+    borderTop: "1px solid rgba(148,163,184,0.35)",
+    padding: "10px 14px",
+    background: "transparent",
+    color: "#ffffff",
+    textAlign: "left",
+    fontSize: 13,
+    cursor: "pointer",
+  };
+
   return (
     <div className="min-h-screen flex bg-slate-100">
       {/* SIDEBAR */}
-      <aside className="w-64 bg-[#0A2342] flex flex-col">
+      <aside style={sidebarStyle}>
         {/* Header */}
-        <div className="p-5 border-b border-blue-900">
-          <h1 className="text-lg font-bold tracking-wide text-white">
+        <div style={sidebarHeaderStyle}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 16,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+            }}
+          >
             TPA OPS SYSTEM
           </h1>
-          {/* ❗️Quitamos opacity-70 y dejamos texto blanco normal */}
-          <p className="text-xs mt-1 text-white">
+          <p style={loggedTextStyle}>
             Logged as: <b>{user.username}</b>
           </p>
         </div>
 
         {/* Menú */}
-        <nav className="flex-1 p-3 space-y-1 text-sm">
+        <nav style={navStyle}>
           <NavItem to="/dashboard" label="Dashboard" />
           <NavItem to="/schedule" label="Create Schedule" />
 
@@ -51,15 +97,12 @@ export default function AppLayout() {
         </nav>
 
         {/* Logout */}
-        <button
-          onClick={logout}
-          className="px-5 py-3 border-t border-blue-900 text-white hover:bg-blue-950 text-sm text-left"
-        >
+        <button style={logoutStyle} onClick={logout}>
           Logout
         </button>
       </aside>
 
-      {/* MAIN CONTENT */}
+      {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 p-6 overflow-auto">
         <Outlet />
       </main>
@@ -67,16 +110,33 @@ export default function AppLayout() {
   );
 }
 
-/**
- * NavItem usa las clases .sidebar-link y .sidebar-link-active
- * que ya tienes definidas en styles.css
- */
+// Componente de link del menú lateral
 function NavItem({ to, label }) {
+  const baseStyle = {
+    display: "block",
+    padding: "8px 10px",
+    borderRadius: 6,
+    fontSize: 13,
+    textDecoration: "none",
+    color: "#ffffff",
+    opacity: 1,
+    transition: "background 0.15s, color 0.15s",
+  };
+
   return (
     <NavLink
       to={to}
-      className={({ isActive }) =>
-        isActive ? "sidebar-link sidebar-link-active" : "sidebar-link"
+      style={({ isActive }) =>
+        isActive
+          ? {
+              ...baseStyle,
+              background: "#1d4ed8",
+              color: "#ffffff",
+            }
+          : {
+              ...baseStyle,
+              background: "transparent",
+            }
       }
     >
       {label}
