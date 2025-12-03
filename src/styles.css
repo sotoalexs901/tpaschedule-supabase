@@ -463,3 +463,36 @@ textarea:focus {
 .excel-cell-work {
   color: #ffffff;
 }
+/* =======================
+   FIX DEFINITIVO DE SIDEBAR
+   ======================= */
+
+/* Forzar texto blanco sin opacidad en todo el sidebar */
+aside.w-64 * {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* Links */
+.sidebar-link {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+.sidebar-link:hover {
+  background: #1e293b !important;
+  color: #ffffff !important;
+}
+
+/* Link activo */
+.sidebar-link-active {
+  background: #1d4ed8 !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* Texto "Logged as" */
+aside.w-64 p {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
