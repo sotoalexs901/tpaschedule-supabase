@@ -2,12 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../firebase";
-import {
-  doc,
-  getDoc,
-  collection,
-  getDocs
-} from "firebase/firestore";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -151,8 +146,7 @@ function ExcelScheduleTable({ schedule, employees }) {
             <th className="excel-header-employee">EMPLOYEE</th>
             {DAY_KEYS.map((key) => (
               <th key={key} className="excel-header-day">
-                {DAY_LABELS[key]}{" "}
-                {days?.[key] ? `/ ${days[key]}` : ""}
+                {DAY_LABELS[key]} {days?.[key] ? `/ ${days[key]}` : ""}
               </th>
             ))}
           </tr>
@@ -240,6 +234,20 @@ export default function ApprovedScheduleView() {
     return <p className="p-6">Loading approved schedule...</p>;
   }
 
+  // ✅ NUEVO: usar este horario como plantilla en /schedule
+  const handleUseAsTemplate = () => {
+    navigate("/schedule", {
+      state: {
+        template: {
+          airline: schedule.airline,
+          department: schedule.department,
+          days: schedule.days,
+          grid: schedule.grid,
+        },
+      },
+    });
+  };
+
   const exportPDF = async () => {
     const element = document.getElementById("approved-print-area");
     if (!element) {
@@ -315,6 +323,15 @@ export default function ApprovedScheduleView() {
         </p>
       </div>
 
+      {/* ✅ NUEVO: botón para clonar como plantilla */}
+      <button
+        onClick={handleUseAsTemplate}
+        className="bg-blue-600 text-white py-2 rounded w-full mt-2"
+      >
+        Use this schedule as template for new week
+      </button>
+
+      {/* Botón export PDF */}
       <button
         onClick={exportPDF}
         className="bg-green-600 text-white py-2 rounded w-full mt-2"
