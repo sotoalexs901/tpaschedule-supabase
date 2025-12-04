@@ -36,7 +36,7 @@ export default function DashboardPage() {
   const [pendingSchedules, setPendingSchedules] = useState([]);
   const [loadingPending, setLoadingPending] = useState(false);
 
-  // Fotos destacadas del dashboard
+  // Fotos / highlights del dashboard
   const [photos, setPhotos] = useState([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
 
@@ -151,7 +151,7 @@ export default function DashboardPage() {
     }
   };
 
-  // Fotos / highlights del dashboard
+  // Fotos (dashboard_photos)
   const fetchPhotos = async () => {
     setLoadingPhotos(true);
     try {
@@ -191,246 +191,255 @@ export default function DashboardPage() {
 
   // --------- RENDER --------- //
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* HEADER */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
-              Welcome back, {user?.username || "Station Manager"} 👋
-            </h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Here&apos;s a quick overview of what&apos;s happening this week.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={reloadAll}
-            className="px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 bg-white/70 shadow-sm hover:bg-white transition"
-          >
-            Refresh dashboard
-          </button>
+    <div className="min-h-screen bg-slate-50 p-6">
+      {/* HEADER */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">
+            Welcome back, {user?.username || "Station Manager"} 👋
+          </h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Here&apos;s a quick overview of what&apos;s happening this week.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-          {/* MESSAGE CARD */}
-          <div className="md:col-span-3 bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-100 p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-50 text-rose-500 text-xs">
-                📣
-              </span>
-              <h2 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">
-                Station Manager Message
-              </h2>
-            </div>
+        <button
+          type="button"
+          onClick={reloadAll}
+          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800"
+        >
+          Refresh dashboard
+        </button>
+      </div>
 
-            <p className="text-slate-800 text-sm whitespace-pre-line leading-relaxed">
-              {mainMessage || "No message posted yet."}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* MESSAGE CARD */}
+        <div className="xl:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2 mb-2">
+            <span role="img" aria-label="message">
+              📢
+            </span>
+            Station Manager Message
+          </h2>
+          <p className="text-sm text-slate-800 whitespace-pre-line">
+            {mainMessage || "No message posted yet."}
+          </p>
+          {mainMeta?.updatedAt && (
+            <p className="text-[11px] text-slate-500 mt-2">
+              Last update: {mainMeta.updatedAt}{" "}
+              {mainMeta.updatedBy ? `• by ${mainMeta.updatedBy}` : ""}
             </p>
+          )}
+        </div>
 
-            {mainMeta?.updatedAt && (
-              <p className="text-[11px] text-slate-500 mt-3 border-t border-slate-100 pt-2">
-                Last update: {mainMeta.updatedAt}{" "}
-                {mainMeta.updatedBy ? `• by ${mainMeta.updatedBy}` : ""}
-              </p>
+        {/* STATION HIGHLIGHTS (FOTOS) */}
+        <div className="xl:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+              <span role="img" aria-label="highlights">
+                ✈️
+              </span>
+              Station Highlights
+            </h2>
+            {photos.length > 0 && (
+              <span className="text-[11px] text-slate-500">
+                {photos.length} photo{photos.length !== 1 ? "s" : ""}
+              </span>
             )}
           </div>
 
-          {/* STATION HIGHLIGHTS / PHOTOS */}
-          <div className="md:col-span-3 bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-100 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-sky-50 text-sky-500 text-xs">
-                  ✈️
-                </span>
-                <h2 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">
-                  Station Highlights
-                </h2>
-              </div>
+          {loadingPhotos ? (
+            <p className="text-sm text-slate-400">Loading photos...</p>
+          ) : photos.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No station highlights yet. Upload photos from Dashboard Editor.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {photos.map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-slate-50 border border-slate-100 rounded-xl overflow-hidden shadow-xs"
+                >
+                  <div className="aspect-[4/3] bg-slate-100 overflow-hidden">
+                    <img
+                      src={p.url}
+                      alt={p.caption || "Station highlight"}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  {p.caption && (
+                    <p className="text-[11px] text-slate-600 px-2 py-1 truncate">
+                      {p.caption}
+                    </p>
+                  )}
+                </div>
+              ))}
             </div>
+          )}
+        </div>
 
-            {loadingPhotos ? (
-              <p className="text-slate-400 text-sm">Loading photos...</p>
-            ) : photos.length === 0 ? (
-              <p className="text-slate-500 text-sm">
-                No highlights yet. Add some photos from the Dashboard Editor.
-              </p>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {photos.map((p) => (
-                  <figure
-                    key={p.id}
-                    className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition"
-                  >
-                    {p.url && (
-                      <img
-                        src={p.url}
-                        alt={p.caption || "Highlight"}
-                        className="w-full h-40 object-cover"
-                      />
-                    )}
-                    <figcaption className="px-3 py-2">
-                      <p className="text-xs font-medium text-slate-800 truncate">
-                        {p.caption || "Highlight"}
-                      </p>
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            )}
-          </div>
+        {/* UPCOMING EVENTS */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+            <span role="img" aria-label="events">
+              📅
+            </span>
+            Upcoming Events
+          </h2>
 
-          {/* UPCOMING EVENTS */}
-          <div className="bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-100 p-5">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-800 uppercase tracking-wide">
-              📅 Upcoming Events
+          {loadingEvents ? (
+            <p className="text-sm text-slate-400">Loading events...</p>
+          ) : events.length === 0 ? (
+            <p className="text-sm text-slate-500">No events scheduled.</p>
+          ) : (
+            <div className="space-y-3">
+              {events.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="p-3 bg-sky-50 rounded-lg border border-sky-100"
+                >
+                  <p className="font-semibold text-sky-900 text-sm">
+                    {ev.title}
+                  </p>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    {ev.date} {ev.time ? `• ${ev.time}` : ""}
+                  </p>
+                  {ev.details && (
+                    <p className="text-xs mt-1 text-slate-700">
+                      {ev.details}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* NOTICES / INVITATIONS */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+            <span role="img" aria-label="notices">
+              📌
+            </span>
+            Notices / Invitations
+          </h2>
+
+          {loadingNotices ? (
+            <p className="text-sm text-slate-400">Loading notices...</p>
+          ) : notices.length === 0 ? (
+            <p className="text-sm text-slate-500">No notices posted.</p>
+          ) : (
+            <div className="space-y-3">
+              {notices.map((n) => (
+                <div
+                  key={n.id}
+                  className="p-3 bg-amber-50 rounded-lg border border-amber-100"
+                >
+                  <p className="font-semibold text-amber-900 text-sm">
+                    {n.title}
+                  </p>
+                  {n.body && (
+                    <p className="text-xs mt-1 text-slate-800">{n.body}</p>
+                  )}
+                  {n.link && (
+                    <a
+                      href={n.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-sky-700 underline mt-1 block"
+                    >
+                      View more →
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* EMPLOYEES NOT AVAILABLE */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+            <span role="img" aria-label="blocked">
+              🚫
+            </span>
+            Employees Not Available
+          </h2>
+
+          {loadingBlocked ? (
+            <p className="text-sm text-slate-400">Loading employees...</p>
+          ) : blockedEmployees.length === 0 ? (
+            <p className="text-sm text-slate-500">No employees blocked.</p>
+          ) : (
+            <div className="space-y-3">
+              {blockedEmployees.map((b) => (
+                <div
+                  key={b.id}
+                  className="p-3 bg-rose-50 rounded-lg border border-rose-100"
+                >
+                  <p className="font-semibold text-rose-900 text-sm">
+                    {b.employeeName || b.name || b.employeeId}
+                  </p>
+                  <p className="text-xs text-slate-700">{b.reason}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {b.start_date || "N/A"} → {b.end_date || "N/A"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* PENDING SCHEDULES (para Station Manager) */}
+        <div className="xl:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+              <span role="img" aria-label="pending">
+                📥
+              </span>
+              Pending Schedules for Approval
             </h2>
-
-            {loadingEvents ? (
-              <p className="text-slate-400 text-sm">Loading events...</p>
-            ) : events.length === 0 ? (
-              <p className="text-slate-500 text-sm">No events scheduled.</p>
-            ) : (
-              <div className="space-y-3">
-                {events.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="p-3 bg-sky-50/70 rounded-lg border border-sky-100"
-                  >
-                    <p className="font-semibold text-sky-900 text-sm">
-                      {ev.title}
-                    </p>
-                    <p className="text-[11px] text-slate-600 mt-0.5">
-                      {ev.date} {ev.time ? `• ${ev.time}` : ""}
-                    </p>
-                    {ev.details && (
-                      <p className="text-xs mt-1 text-slate-700">
-                        {ev.details}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* NOTICES / INVITATIONS */}
-          <div className="bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-100 p-5">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-800 uppercase tracking-wide">
-              📌 Notices / Invitations
-            </h2>
-
-            {loadingNotices ? (
-              <p className="text-slate-400 text-sm">Loading notices...</p>
-            ) : notices.length === 0 ? (
-              <p className="text-slate-500 text-sm">No notices posted.</p>
-            ) : (
-              <div className="space-y-3">
-                {notices.map((n) => (
-                  <div
-                    key={n.id}
-                    className="p-3 bg-amber-50/80 rounded-lg border border-amber-100"
-                  >
-                    <p className="font-semibold text-amber-900 text-sm">
-                      {n.title}
-                    </p>
-                    {n.body && (
-                      <p className="text-xs mt-1 text-slate-700">
-                        {n.body}
-                      </p>
-                    )}
-                    {n.link && (
-                      <a
-                        href={n.link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-sky-700 underline mt-1 block"
-                      >
-                        View more →
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* EMPLOYEES NOT AVAILABLE */}
-          <div className="bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-100 p-5">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-800 uppercase tracking-wide">
-              🚫 Employees Not Available
-            </h2>
-
-            {loadingBlocked ? (
-              <p className="text-slate-400 text-sm">Loading employees...</p>
-            ) : blockedEmployees.length === 0 ? (
-              <p className="text-slate-500 text-sm">No employees blocked.</p>
-            ) : (
-              <div className="space-y-3">
-                {blockedEmployees.map((b) => (
-                  <div
-                    key={b.id}
-                    className="p-3 bg-rose-50/80 rounded-lg border border-rose-100"
-                  >
-                    <p className="font-semibold text-rose-900 text-sm">
-                      {b.employeeName || b.name || b.employeeId}
-                    </p>
-                    <p className="text-xs text-slate-700">{b.reason}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      {b.start_date || "N/A"} → {b.end_date || "N/A"}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* PENDING SCHEDULES (para Station Manager) */}
-          <div className="md:col-span-3 bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-100 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold flex items-center gap-2 text-slate-800 uppercase tracking-wide">
-                📥 Pending Schedules for Approval
-              </h2>
+            {user?.role === "station_manager" && (
               <button
                 type="button"
-                className="px-3 py-1.5 rounded-lg text-[11px] font-medium border border-slate-200 bg-slate-50 hover:bg-slate-100 transition"
+                className="px-3 py-1 text-[11px] rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
                 onClick={() => navigate("/approvals")}
               >
                 Go to Approvals
               </button>
-            </div>
-
-            {loadingPending ? (
-              <p className="text-slate-400 text-sm">Loading schedules...</p>
-            ) : pendingSchedules.length === 0 ? (
-              <p className="text-slate-500 text-sm">
-                No schedules waiting for approval.
-              </p>
-            ) : (
-              <div className="grid md:grid-cols-3 gap-3 text-sm">
-                {pendingSchedules.map((sch) => (
-                  <div
-                    key={sch.id}
-                    className="border border-slate-100 rounded-xl p-3 bg-slate-50/80 hover:bg-slate-100 transition"
-                  >
-                    <p className="font-semibold text-slate-800 text-sm">
-                      {sch.airline} — {sch.department}
-                    </p>
-                    <p className="text-[11px] text-slate-600 mt-1">
-                      Total Hours:{" "}
-                      {sch.airlineWeeklyHours
-                        ? sch.airlineWeeklyHours.toFixed(2)
-                        : "0.00"}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Sent by: {sch.createdBy || "unknown"}
-                    </p>
-                  </div>
-                ))}
-              </div>
             )}
           </div>
+
+          {loadingPending ? (
+            <p className="text-sm text-slate-400">Loading schedules...</p>
+          ) : pendingSchedules.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No schedules waiting for approval.
+            </p>
+          ) : (
+            <div className="grid md:grid-cols-3 gap-3 text-sm">
+              {pendingSchedules.map((sch) => (
+                <div
+                  key={sch.id}
+                  className="border border-slate-200 rounded-lg p-3 bg-slate-50"
+                >
+                  <p className="font-semibold text-slate-900">
+                    {sch.airline} — {sch.department}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Total Hours:{" "}
+                    {sch.airlineWeeklyHours
+                      ? sch.airlineWeeklyHours.toFixed(2)
+                      : "0.00"}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Sent by: {sch.createdBy || "unknown"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
