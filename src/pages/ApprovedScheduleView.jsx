@@ -7,13 +7,13 @@ import {
   getDoc,
   collection,
   getDocs,
-  deleteDoc,   // ⬅️ IMPORTANTE
+  deleteDoc,
 } from "firebase/firestore";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
-import { useUser } from "../UserContext.jsx";  // ⬅️ PARA SABER EL ROL
+import { useUser } from "../UserContext.jsx";
 
-// 🔵 Logos oficiales desde Firebase (mismos que usas en SchedulePage / ScheduleGrid)
+// 🔵 Logos oficiales desde Firebase
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
   "WL Havana Air":
@@ -32,7 +32,7 @@ const AIRLINE_LOGOS = {
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4b5f-b126-9c6a69f6dcc6",
 };
 
-// 🔵 Colores por aerolínea (igual que en ApprovalsPage / ScheduleGrid)
+// 🔵 Colores por aerolínea
 const AIRLINE_COLORS = {
   SY: "#F28C28",
   "WL Havana Air": "#3A7BD5",
@@ -75,7 +75,7 @@ function getShiftText(shifts, idx) {
   return `${s.start} - ${s.end}`;
 }
 
-// ============= TABLA ESTILO SUN COUNTRY / EXCEL =============
+// ============= TABLA ESTILO EXCEL =============
 function ExcelScheduleTable({ schedule, employees }) {
   const { days, grid, airline, department } = schedule;
 
@@ -106,7 +106,7 @@ function ExcelScheduleTable({ schedule, employees }) {
         padding: "16px",
       }}
     >
-      {/* HEADER CON LOGO + COLOR POR AEROLÍNEA */}
+      {/* HEADER */}
       <div
         className="excel-header"
         style={{
@@ -218,7 +218,7 @@ function ExcelScheduleTable({ schedule, employees }) {
 export default function ApprovedScheduleView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useUser(); // ⬅️ para saber si es station_manager
+  const { user } = useUser();
 
   const [schedule, setSchedule] = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -226,13 +226,11 @@ export default function ApprovedScheduleView() {
 
   useEffect(() => {
     async function load() {
-      // Cargar schedule
       const snap = await getDoc(doc(db, "schedules", id));
       if (snap.exists()) {
         setSchedule({ id: snap.id, ...snap.data() });
       }
 
-      // Cargar empleados para mostrar nombres
       const empSnap = await getDocs(collection(db, "employees"));
       setEmployees(empSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     }
@@ -244,7 +242,6 @@ export default function ApprovedScheduleView() {
     return <p className="p-6">Loading approved schedule...</p>;
   }
 
-  // ✅ Clonar este horario como plantilla en /schedule
   const handleUseAsTemplate = () => {
     navigate("/schedule", {
       state: {
@@ -258,14 +255,12 @@ export default function ApprovedScheduleView() {
     });
   };
 
-  // ✅ Borrar este schedule (solo station_manager)
   const handleDeleteSchedule = async () => {
     if (!user || user.role !== "station_manager") return;
 
     const confirmDelete = window.confirm(
       "⚠️ Are you sure you want to permanently delete this approved schedule?"
     );
-
     if (!confirmDelete) return;
 
     try {
@@ -281,7 +276,6 @@ export default function ApprovedScheduleView() {
     }
   };
 
-  // ✅ Exportar PDF
   const exportPDF = async () => {
     try {
       const element = document.getElementById("approved-print-area");
@@ -300,12 +294,10 @@ export default function ApprovedScheduleView() {
         }
       }
 
-      // Ocultar imágenes dentro del área capturada (para evitar tainted canvas)
+      // Evitar tainted canvas
       const imgs = Array.from(element.querySelectorAll("img"));
       const originalDisplay = imgs.map((img) => img.style.display);
-      imgs.forEach((img) => {
-        img.style.display = "none";
-      });
+      imgs.forEach((img) => (img.style.display = "none"));
 
       const canvas = await html2canvas(element, {
         scale: 2,
@@ -313,7 +305,6 @@ export default function ApprovedScheduleView() {
         backgroundColor: "#ffffff",
       });
 
-      // Restaurar imágenes
       imgs.forEach((img, idx) => {
         img.style.display = originalDisplay[idx] || "";
       });
@@ -326,7 +317,6 @@ export default function ApprovedScheduleView() {
       const marginX = 20;
       let y = 20;
 
-      // Logo en header del PDF
       if (logoImg) {
         pdf.addImage(logoImg, "PNG", marginX, y, 140, 60);
         y += 70;
@@ -352,21 +342,19 @@ export default function ApprovedScheduleView() {
 
   return (
     <div className="p-6 space-y-4 approved-page">
-      {/* ← Volver al dashboard */}
       <button
         onClick={() => navigate("/approved")}
         className="btn btn-soft"
         style={{ marginBottom: "0.75rem" }}
+        type="button"
       >
         ← Back to Approved Schedules
       </button>
 
-      {/* Zona que se imprime en el PDF */}
       <div id="approved-print-area">
         <ExcelScheduleTable schedule={schedule} employees={employees} />
       </div>
 
-      {/* Resumen debajo */}
       <div className="card text-sm mt-4 space-y-1">
         <h2 className="font-semibold mb-2">Weekly Summary</h2>
         <p>
@@ -389,30 +377,52 @@ export default function ApprovedScheduleView() {
         </p>
       </div>
 
-      {/* Botones de acción */}
+      {/* BOTONES DE ACCIÓN */}
       <div className="grid md:grid-cols-3 gap-3 mt-2">
-        {/* Clonar como plantilla */}
+        {/* Template */}
         <button
+          type="button"
           onClick={handleUseAsTemplate}
-          className="bg-blue-600 text-white py-2 rounded w-full text-sm"
+          className="btn w-full text-sm"
+          style={{
+            backgroundColor: "#2563eb",
+            color: "#ffffff",
+            fontWeight: 600,
+            opacity: 1,
+          }}
         >
           Use this schedule as template for new week
         </button>
 
-        {/* Exportar PDF */}
+        {/* Export PDF */}
         <button
+          type="button"
           onClick={exportPDF}
-          className="bg-green-600 text-white py-2 rounded w-full text-sm"
+          className="btn w-full text-sm"
+          style={{
+            backgroundColor: "#16a34a",
+            color: "#ffffff",
+            fontWeight: 600,
+            opacity: 1,
+          }}
         >
           Export PDF
         </button>
 
-        {/* Borrar schedule – SOLO STATION MANAGER */}
+        {/* Delete */}
         {user?.role === "station_manager" && (
           <button
+            type="button"
             onClick={handleDeleteSchedule}
             disabled={deleting}
-            className="bg-red-600 text-white py-2 rounded w-full text-sm disabled:opacity-60"
+            className="btn w-full text-sm"
+            style={{
+              backgroundColor: "#dc2626",
+              color: "#ffffff",
+              fontWeight: 600,
+              opacity: deleting ? 0.6 : 1,
+              cursor: deleting ? "not-allowed" : "pointer",
+            }}
           >
             {deleting ? "Deleting..." : "Delete this schedule"}
           </button>
