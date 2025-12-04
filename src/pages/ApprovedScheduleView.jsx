@@ -2,9 +2,16 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../firebase";
-import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+  deleteDoc,   // ⬅️ IMPORTANTE
+} from "firebase/firestore";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import { useUser } from "../UserContext.jsx";  // ⬅️ PARA SABER EL ROL
 
 // 🔵 Logos oficiales desde Firebase (mismos que usas en SchedulePage / ScheduleGrid)
 const AIRLINE_LOGOS = {
@@ -22,7 +29,7 @@ const AIRLINE_LOGOS = {
   "AA-BSO":
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_25%20p.m..png?alt=media&token=09862a10-d237-43e9-a373-8bd07c30ce62",
   OTHER:
-    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4b5f-b126-9c6a69f6dcc6",
 };
 
 // 🔵 Colores por aerolínea (igual que en ApprovalsPage / ScheduleGrid)
@@ -184,7 +191,7 @@ function ExcelScheduleTable({ schedule, employees }) {
                 <tr>
                   {DAY_KEYS.map((dKey) => {
                     const text = getShiftText(row[dKey], 1);
-                   const hasWork = text !== "OFF";
+                    const hasWork = text !== "OFF";
                     return (
                       <td
                         key={dKey}
@@ -211,9 +218,11 @@ function ExcelScheduleTable({ schedule, employees }) {
 export default function ApprovedScheduleView() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useUser(); // ⬅️ para saber si es station_manager
 
   const [schedule, setSchedule] = useState(null);
   const [employees, setEmployees] = useState([]);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -249,7 +258,30 @@ export default function ApprovedScheduleView() {
     });
   };
 
-  // ✅ Exportar PDF con texto sólido (sin transparencia)
+  // ✅ Borrar este schedule (solo station_manager)
+  const handleDeleteSchedule = async () => {
+    if (!user || user.role !== "station_manager") return;
+
+    const confirmDelete = window.confirm(
+      "⚠️ Are you sure you want to permanently delete this approved schedule?"
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      setDeleting(true);
+      await deleteDoc(doc(db, "schedules", schedule.id));
+      alert("Schedule deleted successfully.");
+      navigate("/approved");
+    } catch (err) {
+      console.error("Error deleting schedule:", err);
+      alert("Error deleting schedule. Check console for details.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ✅ Exportar PDF
   const exportPDF = async () => {
     try {
       const element = document.getElementById("approved-print-area");
@@ -268,26 +300,7 @@ export default function ApprovedScheduleView() {
         }
       }
 
-      // 🔹 Forzar estilos sólidos en las celdas para el PDF
-      const styledCells = Array.from(
-        element.querySelectorAll(
-          ".excel-cell, .excel-header-day, .excel-header-employee, .excel-employee-cell"
-        )
-      );
-
-      const originalStyles = styledCells.map((cell) => ({
-        color: cell.style.color,
-        opacity: cell.style.opacity,
-        backgroundColor: cell.style.backgroundColor,
-      }));
-
-      styledCells.forEach((cell) => {
-        cell.style.color = "#000000";        // texto negro
-        cell.style.opacity = "1";           // sin transparencia
-        cell.style.backgroundColor = "#fff"; // fondo blanco
-      });
-
-      // ⛔ Evitar tainted canvas: ocultar imágenes dentro del área capturada
+      // Ocultar imágenes dentro del área capturada (para evitar tainted canvas)
       const imgs = Array.from(element.querySelectorAll("img"));
       const originalDisplay = imgs.map((img) => img.style.display);
       imgs.forEach((img) => {
@@ -305,13 +318,6 @@ export default function ApprovedScheduleView() {
         img.style.display = originalDisplay[idx] || "";
       });
 
-      // Restaurar estilos originales en las celdas
-      styledCells.forEach((cell, i) => {
-        cell.style.color = originalStyles[i].color;
-        cell.style.opacity = originalStyles[i].opacity;
-        cell.style.backgroundColor = originalStyles[i].backgroundColor;
-      });
-
       const pdf = new jsPDF("landscape", "pt", "a4");
       const imgData = canvas.toDataURL("image/png");
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -320,7 +326,7 @@ export default function ApprovedScheduleView() {
       const marginX = 20;
       let y = 20;
 
-      // Logo en header del PDF (independiente del html2canvas)
+      // Logo en header del PDF
       if (logoImg) {
         pdf.addImage(logoImg, "PNG", marginX, y, 140, 60);
         y += 70;
@@ -348,11 +354,11 @@ export default function ApprovedScheduleView() {
     <div className="p-6 space-y-4 approved-page">
       {/* ← Volver al dashboard */}
       <button
-        onClick={() => navigate("/dashboard")}
+        onClick={() => navigate("/approved")}
         className="btn btn-soft"
         style={{ marginBottom: "0.75rem" }}
       >
-        ← Back to Dashboard
+        ← Back to Approved Schedules
       </button>
 
       {/* Zona que se imprime en el PDF */}
@@ -361,7 +367,7 @@ export default function ApprovedScheduleView() {
       </div>
 
       {/* Resumen debajo */}
-      <div className="card text-sm mt-4">
+      <div className="card text-sm mt-4 space-y-1">
         <h2 className="font-semibold mb-2">Weekly Summary</h2>
         <p>
           <b>Total Hours:</b>{" "}
@@ -383,21 +389,35 @@ export default function ApprovedScheduleView() {
         </p>
       </div>
 
-      {/* ✅ Clonar como plantilla */}
-      <button
-        onClick={handleUseAsTemplate}
-        className="bg-blue-600 text-white py-2 rounded w-full mt-2"
-      >
-        Use this schedule as template for new week
-      </button>
+      {/* Botones de acción */}
+      <div className="grid md:grid-cols-3 gap-3 mt-2">
+        {/* Clonar como plantilla */}
+        <button
+          onClick={handleUseAsTemplate}
+          className="bg-blue-600 text-white py-2 rounded w-full text-sm"
+        >
+          Use this schedule as template for new week
+        </button>
 
-      {/* Exportar PDF */}
-      <button
-        onClick={exportPDF}
-        className="bg-green-600 text-white py-2 rounded w-full mt-2"
-      >
-        Export PDF
-      </button>
+        {/* Exportar PDF */}
+        <button
+          onClick={exportPDF}
+          className="bg-green-600 text-white py-2 rounded w-full text-sm"
+        >
+          Export PDF
+        </button>
+
+        {/* Borrar schedule – SOLO STATION MANAGER */}
+        {user?.role === "station_manager" && (
+          <button
+            onClick={handleDeleteSchedule}
+            disabled={deleting}
+            className="bg-red-600 text-white py-2 rounded w-full text-sm disabled:opacity-60"
+          >
+            {deleting ? "Deleting..." : "Delete this schedule"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
