@@ -8,6 +8,8 @@ import {
   getDocs,
   query,
   where,
+  orderBy,
+  limit,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -35,6 +37,10 @@ export default function DashboardPage() {
   // Schedules pendientes
   const [pendingSchedules, setPendingSchedules] = useState([]);
   const [loadingPending, setLoadingPending] = useState(false);
+
+  // 🔵 Fotos del dashboard
+  const [photos, setPhotos] = useState([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
 
   // --------- CARGAS DESDE FIRESTORE --------- //
 
@@ -147,6 +153,22 @@ export default function DashboardPage() {
     }
   };
 
+  // 🔵 Fotos del dashboard (últimas 4)
+  const fetchPhotos = async () => {
+    setLoadingPhotos(true);
+    try {
+      const photosRef = collection(db, "dashboard_photos");
+      const qPhotos = query(photosRef, orderBy("createdAt", "desc"), limit(4));
+      const snap = await getDocs(qPhotos);
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setPhotos(items);
+    } catch (err) {
+      console.error("Error loading dashboard photos:", err);
+    } finally {
+      setLoadingPhotos(false);
+    }
+  };
+
   // Cargar todo al entrar al dashboard
   const reloadAll = () => {
     fetchMainMessage();
@@ -154,6 +176,7 @@ export default function DashboardPage() {
     fetchNotices();
     fetchBlockedEmployees();
     fetchPendingSchedules();
+    fetchPhotos();
   };
 
   useEffect(() => {
@@ -198,6 +221,43 @@ export default function DashboardPage() {
               Last update: {mainMeta.updatedAt}{" "}
               {mainMeta.updatedBy ? `• by ${mainMeta.updatedBy}` : ""}
             </p>
+          )}
+        </div>
+
+        {/* 🔵 STATION HIGHLIGHTS (FOTOS) */}
+        <div className="md:col-span-3 bg-white/80 backdrop-blur-lg p-5 rounded-2xl shadow-md border border-white/60">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            📸 Station Highlights
+          </h2>
+
+          {loadingPhotos ? (
+            <p className="text-gray-400 text-sm">Loading photos...</p>
+          ) : photos.length === 0 ? (
+            <p className="text-gray-500 text-sm">
+              No photos uploaded yet. Use the Dashboard Editor to add one.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              {photos.map((p) => (
+                <div
+                  key={p.id}
+                  className="rounded-xl overflow-hidden border border-gray-200 bg-gray-50"
+                >
+                  {p.url && (
+                    <img
+                      src={p.url}
+                      alt={p.caption || "Dashboard photo"}
+                      className="w-full h-32 object-cover"
+                    />
+                  )}
+                  <div className="px-2 py-1">
+                    <p className="text-[11px] text-gray-700 truncate">
+                      {p.caption || "Photo"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
