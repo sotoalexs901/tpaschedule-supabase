@@ -19,8 +19,8 @@ export default function EmployeesPage() {
   const [status, setStatus] = useState("Active");
   const [notes, setNotes] = useState("");
 
-  // importación
-  const [importFile, setImportFile] = useState(null);
+  // importación por pegar texto
+  const [bulkText, setBulkText] = useState("");
   const [importStatus, setImportStatus] = useState("");
 
   // Cargar empleados
@@ -64,107 +64,72 @@ export default function EmployeesPage() {
   };
 
   // =========================
-  //  IMPORTAR DESDE CSV/TXT
+  //  IMPORTAR PEGANDO TEXTO
   // =========================
-  const handleFileChange = (e) => {
-    setImportFile(e.target.files?.[0] || null);
-    setImportStatus("");
-  };
-
-  const handleImport = () => {
-    if (!importFile) {
-      setImportStatus("Please select a CSV/TXT file first.");
+  const handleBulkImport = async () => {
+    if (!bulkText.trim()) {
+      setImportStatus("Paste some data first.");
       return;
     }
 
-    setImportStatus("Reading file...");
+    setImportStatus("Processing…");
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target.result;
+    try {
+      const lines = bulkText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
 
-        // separamos por líneas
-        const lines = text
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter((l) => l.length > 0);
-
-        if (lines.length < 2) {
-          setImportStatus("File seems to be empty or has no data rows.");
-          return;
-        }
-
-        // primera línea = headers
-        const headerLine = lines[0];
-        const headers = headerLine
-          .split(/[\t,;]+/)
-          .map((h) => h.trim().toLowerCase());
-
-        const idxName = headers.findIndex((h) =>
-          ["employee name", "name"].includes(h)
-        );
-        const idxDept = headers.findIndex((h) =>
-          ["department", "dept"].includes(h)
-        );
-        const idxPos = headers.findIndex((h) =>
-          ["position", "job", "role"].includes(h)
-        );
-        const idxStatus = headers.findIndex((h) => h === "status");
-        const idxNotes = headers.findIndex((h) => h === "notes");
-
-        if (idxName === -1) {
-          setImportStatus(
-            "Missing 'Employee Name' column in the first row (header)."
-          );
-          return;
-        }
-
-        let createdCount = 0;
-
-        // procesamos cada fila de datos
-        for (let i = 1; i < lines.length; i++) {
-          const row = lines[i];
-          const cells = row.split(/[\t,;]+/);
-
-          const employeeName = cells[idxName]?.trim();
-          if (!employeeName) continue; // saltar filas sin nombre
-
-          const dept = idxDept >= 0 ? cells[idxDept]?.trim() : "";
-          const pos = idxPos >= 0 ? cells[idxPos]?.trim() : "";
-          const statusRaw = idxStatus >= 0 ? cells[idxStatus]?.trim() : "Active";
-          const notesVal = idxNotes >= 0 ? cells[idxNotes]?.trim() : "";
-
-          const normalizedStatus =
-            statusRaw.toLowerCase() === "inactive" ? "Inactive" : "Active";
-
-          await addDoc(collection(db, "employees"), {
-            name: employeeName,
-            department: dept || null,
-            position: pos || null,
-            status: normalizedStatus,
-            active: normalizedStatus === "Active",
-            notes: notesVal || null,
-            createdAt: new Date().toISOString(),
-          });
-
-          createdCount++;
-        }
-
-        setImportStatus(`Imported ${createdCount} employees successfully.`);
-        setImportFile(null);
-        await loadEmployees();
-      } catch (err) {
-        console.error(err);
-        setImportStatus("Error importing file. Check console for details.");
+      if (lines.length === 0) {
+        setImportStatus("No valid lines found.");
+        return;
       }
-    };
 
-    reader.onerror = () => {
-      setImportStatus("Error reading file.");
-    };
+      // detectamos si la primera línea es header
+      const firstLine = lines[0].toLowerCase();
+      const hasHeader =
+        firstLine.includes("employee") || firstLine.includes("status");
 
-    reader.readAsText(importFile);
+      const startIndex = hasHeader ? 1 : 0;
+
+      let createdCount = 0;
+
+      for (let i = startIndex; i < lines.length; i++) {
+        const row = lines[i];
+        // acepta separado por coma, tab o punto y coma
+        const cells = row.split(/[\t,;]+/).map((c) => c.trim());
+
+        if (!cells[0]) continue; // sin nombre, lo ignoramos
+
+        const employeeName = cells[0];
+        const dept = cells[1] || "";
+        const pos = cells[2] || "";
+        const statusRaw = cells[3] || "Active";
+        const notesVal = cells[4] || "";
+
+        const normalizedStatus =
+          statusRaw.toLowerCase() === "inactive" ? "Inactive" : "Active";
+
+        await addDoc(collection(db, "employees"), {
+          name: employeeName,
+          department: dept || null,
+          position: pos || null,
+          status: normalizedStatus,
+          active: normalizedStatus === "Active",
+          notes: notesVal || null,
+          createdAt: new Date().toISOString(),
+        });
+
+        createdCount++;
+      }
+
+      setImportStatus(`Imported ${createdCount} employees successfully.`);
+      setBulkText("");
+      await loadEmployees();
+    } catch (err) {
+      console.error(err);
+      setImportStatus("Error importing data. Check console for details.");
+    }
   };
 
   return (
@@ -239,34 +204,37 @@ export default function EmployeesPage() {
         </form>
       </div>
 
-      {/* IMPORTACIÓN MASIVA */}
+      {/* IMPORTACIÓN MASIVA POR PEGAR TEXTO */}
       <div className="card space-y-2">
-        <h2 className="text-sm font-semibold">Import employees from CSV</h2>
+        <h2 className="text-sm font-semibold">Import employees (paste data)</h2>
         <p className="text-[11px] text-gray-600">
-          Upload a <b>.csv</b> or <b>.txt</b> file with this header:
+          Copia y pega desde Excel / Sheets. Formatos aceptados:
           <br />
-          <code>
-            Employee Name, Department, Position, Status, Notes
-          </code>
+          <code>Employee Name, Department, Position, Status, Notes</code>
           <br />
-          Status must be <b>Active</b> or <b>Inactive</b>.
+          o solo <code>Employee Name, Status</code>. Separador puede ser coma, tab o punto y coma.
+          <br />
+          La primera línea puede ser un encabezado (Employee Name, Status, ...).
         </p>
 
-        <div className="flex flex-col md:flex-row gap-2 items-start md:items-center">
-          <input
-            type="file"
-            accept=".csv,.txt"
-            className="text-xs"
-            onChange={handleFileChange}
-          />
-          <button
-            type="button"
-            className="btn text-xs"
-            onClick={handleImport}
-          >
-            Import file
-          </button>
-        </div>
+        <textarea
+          className="border rounded w-full text-xs p-2"
+          rows={6}
+          placeholder={`Employee Name,Department,Position,Status,Notes
+Maria Perez,Ramp,Agent,Active,Full time
+Juan Lopez,TC,Lead,Inactive,LOA
+...`}
+          value={bulkText}
+          onChange={(e) => setBulkText(e.target.value)}
+        />
+
+        <button
+          type="button"
+          className="btn text-xs mt-1"
+          onClick={handleBulkImport}
+        >
+          Import from pasted text
+        </button>
 
         {importStatus && (
           <p className="text-[11px] text-gray-700 mt-1">{importStatus}</p>
