@@ -496,3 +496,21 @@ aside.w-64 p {
   color: #ffffff !important;
   opacity: 1 !important;
 }
+/* Texto de las celdas del horario aprobado */
+.excel-table td,
+.excel-cell,
+.excel-cell-work,
+.excel-cell-off {
+  color: #111827 !important;   /* gris muy oscuro / casi negro */
+  opacity: 1 !important;       /* nada de transparencia */
+  font-weight: 500;            /* un poco más grueso para que se lea mejor */
+}
+
+/* Opcional: diferencia visual entre OFF y turno con horas */
+.excel-cell-work {
+  background-color: #f1f5f9;   /* azul-gris muy claro */
+}
+
+.excel-cell-off {
+  background-color: #ffffff;   /* fondo blanco, pero texto igual de visible */
+}
