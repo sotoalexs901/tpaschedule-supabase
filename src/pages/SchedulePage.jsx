@@ -103,12 +103,12 @@ export default function SchedulePage() {
 
   const [employees, setEmployees] = useState([]);
   const [rows, setRows] = useState([]);
-  const deleteRow = (index) => {
-  const updated = [...rows];
-  updated.splice(index, 1);
-  setRows(updated);
-};
   const [airlineBudgets, setAirlineBudgets] = useState({});
+
+  // 🔧 Eliminar fila
+  const deleteRow = (index) => {
+    setRows((prev) => prev.filter((_, i) => i !== index));
+  };
 
   // 🔁 Si venimos desde un ApprovedScheduleView con plantilla:
   useEffect(() => {
@@ -121,6 +121,54 @@ export default function SchedulePage() {
       if (grid) setRows(grid);
     }
   }, [location.state]);
+
+  // 🔁 Si NO venimos desde plantilla, intentar cargar el último draft del usuario
+  useEffect(() => {
+    const loadDraft = async () => {
+      try {
+        if (location.state?.template) return; // No pisar plantilla
+        if (!user?.username) return;
+
+        const qDraft = query(
+          collection(db, "schedules"),
+          where("status", "==", "draft"),
+          where("createdBy", "==", user.username)
+        );
+
+        const snap = await getDocs(qDraft);
+        if (snap.empty) return;
+
+        // Escogemos el más reciente por createdAt
+        const docs = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort(
+            (a, b) =>
+              (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
+          );
+
+        const latest = docs[0];
+        setAirline(latest.airline || "");
+        setDepartment(latest.department || "");
+        setDayNumbers(
+          latest.days || {
+            mon: "",
+            tue: "",
+            wed: "",
+            thu: "",
+            fri: "",
+            sat: "",
+            sun: "",
+          }
+        );
+        setRows(latest.grid || []);
+        console.log("Loaded draft schedule:", latest.id);
+      } catch (err) {
+        console.error("Error loading draft schedule:", err);
+      }
+    };
+
+    loadDraft();
+  }, [user?.username, location.state]);
 
   // Cargar empleados
   useEffect(() => {
@@ -196,7 +244,7 @@ export default function SchedulePage() {
 
   const { employeeTotals, airlineTotal, dailyTotals } = calculateTotals();
 
-  // ⚠️ Comprobación de conflictos con otras aerolíneas (misma semana)
+  // ⚠️ Comprobación de conflictos con otras aerolíneas (misma semana) – SOLO para submit
   const checkConflictsWithOtherAirlines = async () => {
     const weekTag = buildWeekTag(dayNumbers).trim();
 
@@ -204,12 +252,12 @@ export default function SchedulePage() {
       return { conflicts: [], weekTag: null };
     }
 
-    const q = query(
+    const qExisting = query(
       collection(db, "schedules"),
       where("weekTag", "==", weekTag)
     );
 
-    const snap = await getDocs(q);
+    const snap = await getDocs(qExisting);
     const existingSchedules = snap.docs.map((d) => ({
       id: d.id,
       ...d.data(),
@@ -271,7 +319,35 @@ export default function SchedulePage() {
     return { conflicts, weekTag };
   };
 
-  // Guardar schedule (con chequeo de conflictos)
+  // Guardar schedule como DRAFT (sin red flag)
+  const handleSaveDraft = async () => {
+    if (!airline || !department) {
+      alert("Please select airline and department before saving a draft.");
+      return;
+    }
+
+    const weekTagToSave = buildWeekTag(dayNumbers);
+
+    await addDoc(collection(db, "schedules"), {
+      createdAt: serverTimestamp(),
+      airline,
+      department,
+      days: dayNumbers,
+      weekTag: weekTagToSave,
+      grid: rows,
+      totals: employeeTotals,
+      airlineWeeklyHours: airlineTotal,
+      airlineDailyHours: dailyTotals,
+      budget: airlineBudgets[airline] || 0,
+      status: "draft",
+      createdBy: user?.username || null,
+      role: user?.role || null,
+    });
+
+    alert("Draft saved. You can come back later to continue.");
+  };
+
+  // Guardar schedule (SUBMIT for approval)
   const handleSaveSchedule = async () => {
     if (!airline || !department) {
       alert("Please select airline and department.");
@@ -449,6 +525,7 @@ export default function SchedulePage() {
           airline={airline}
           department={department}
           onSave={handleSaveSchedule}
+          onSaveDraft={handleSaveDraft}
           onDeleteRow={deleteRow}
         />
       </div>
@@ -459,7 +536,9 @@ export default function SchedulePage() {
         <p>Total Hours (with lunch): {airlineTotal.toFixed(2)}</p>
         <p>Budget: {airlineBudgets[airline] || 0}</p>
 
-        <h3 className="font-semibold mt-3 mb-1 text-xs">Daily Hours (All employees)</h3>
+        <h3 className="font-semibold mt-3 mb-1 text-xs">
+          Daily Hours (All employees)
+        </h3>
         <div className="grid grid-cols-4 gap-2 text-[11px]">
           {DAY_KEYS.map((dKey) => (
             <div key={dKey} className="bg-gray-50 border rounded px-2 py-1">
