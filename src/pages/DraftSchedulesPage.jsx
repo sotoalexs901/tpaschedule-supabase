@@ -1,7 +1,14 @@
 // src/pages/DraftSchedulesPage.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import jsPDF from "jspdf";
@@ -102,8 +109,6 @@ export default function DraftSchedulesPage() {
           department: draft.department,
           days: draft.days,
           grid: draft.grid,
-          // podrías pasar también un flag si luego quieres saber
-          // que viene desde un draft específico
         },
       },
     });
@@ -171,6 +176,22 @@ export default function DraftSchedulesPage() {
     }
   };
 
+  // ❌ Borrar draft
+  const handleDeleteDraft = async (draftId) => {
+    const ok = window.confirm(
+      "Are you sure you want to delete this draft? This cannot be undone."
+    );
+    if (!ok) return;
+
+    try {
+      await deleteDoc(doc(collection(db, "schedules"), draftId));
+      setDrafts((prev) => prev.filter((d) => d.id !== draftId));
+    } catch (err) {
+      console.error("Error deleting draft:", err);
+      alert("Error deleting draft. Check console for details.");
+    }
+  };
+
   return (
     <div className="p-4 space-y-4">
       {/* Back */}
@@ -185,7 +206,7 @@ export default function DraftSchedulesPage() {
       <h1 className="text-lg font-semibold mb-1">Draft Schedules</h1>
       <p className="text-xs text-slate-500 mb-3">
         Here you can see your saved drafts, reopen them to continue editing,
-        or export them to PDF.
+        export them to PDF, or delete drafts you no longer need.
       </p>
 
       {loading ? (
@@ -239,6 +260,13 @@ export default function DraftSchedulesPage() {
                 >
                   Export PDF
                 </button>
+                <button
+                  type="button"
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded px-2 py-1"
+                  onClick={() => handleDeleteDraft(draft.id)}
+                >
+                  Delete
+                </button>
               </div>
             </div>
           ))}
@@ -247,4 +275,3 @@ export default function DraftSchedulesPage() {
     </div>
   );
 }
-
