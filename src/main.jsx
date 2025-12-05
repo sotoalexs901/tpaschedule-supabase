@@ -24,6 +24,7 @@ import BudgetsPage from "./pages/BudgetsPage.jsx";
 
 import CreateUserPage from "./pages/CreateUserPage.jsx";
 import EditUsersPage from "./pages/EditUsersPage.jsx";
+import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
 
 // 🔒 Protección de rutas
 function ProtectedRoute({ children, roles }) {
