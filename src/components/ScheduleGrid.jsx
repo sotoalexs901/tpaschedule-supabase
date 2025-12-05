@@ -17,7 +17,7 @@ const AIRLINE_COLORS = {
 const TIME_OPTIONS = (() => {
   const arr = ["OFF"];
   for (let h = 0; h < 24; h++) {
-    for (let m of [0, 30]) {
+    for (let m of [0, 15, 30, 45]) {
       const hh = String(h).padStart(2, "0");
       const mm = String(m).padStart(2, "0");
       arr.push(`${hh}:${mm}`);
