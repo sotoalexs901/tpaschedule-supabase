@@ -90,18 +90,18 @@ export default function AppLayout() {
             </>
           )}
 
-          {/* 🔵 STATION + DUTY: Employees, Blocked, Approved, Returned, Weekly Summary */}
-          {(user?.role === "station_manager" ||
-            user?.role === "duty_manager") && (
-            <>
-              <NavItem to="/employees" label="Employees" />
-              <NavItem to="/blocked" label="Blocked Employees" />
-              <NavItem to="/approved" label="Approved Schedules" />
-              <NavItem to="/returned" label="Returned Schedules" />
-              <NavItem to="/weekly-summary" label="Weekly Summary" />
-            </>
-          )}
-        </nav>
+{/* STATION + DUTY: Employees, Blocked, Approved, Returned, Weekly Summary, Drafts */}
+{(user?.role === "station_manager" || user?.role === "duty_manager") && (
+  <>
+    <NavItem to="/employees" label="Employees" />
+    <NavItem to="/blocked" label="Blocked Employees" />
+    <NavItem to="/drafts" label="Draft Schedules" />   {/* ✅ NUEVO */}
+    <NavItem to="/approved" label="Approved Schedules" />
+    <NavItem to="/returned" label="Returned Schedules" />
+    <NavItem to="/weekly-summary" label="Weekly Summary" />
+  </>
+)}
+
 
         {/* Logout */}
         <button style={logoutStyle} onClick={logout}>
