@@ -46,6 +46,7 @@ export default function ScheduleGrid({
   dayNumbers,
   onSave,
   approved = false,
+  onDeleteRow, // ⬅️ NUEVO: callback para borrar fila
 }) {
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const headerColor = AIRLINE_COLORS[airline] || "#e5e7eb";
@@ -165,17 +166,16 @@ export default function ScheduleGrid({
     ]);
   };
 
+  const showActionsColumn =
+    !readonly && !approved && typeof onDeleteRow === "function";
+
   return (
-    <div
-      className={`sch-wrapper ${approved ? "sch-wrapper-approved" : ""}`}
-    >
+    <div className={`sch-wrapper ${approved ? "sch-wrapper-approved" : ""}`}>
       {/* TÍTULO TIPO EXCEL */}
       <div className="sch-title" style={{ color: headerColor }}>
         {airline || "AIRLINE"}
       </div>
-      <div className="sch-subtitle">
-        {department || "Department"}
-      </div>
+      <div className="sch-subtitle">{department || "Department"}</div>
 
       {/* TABLA ESTILO EXCEL */}
       <div className="sch-table-container">
@@ -189,10 +189,19 @@ export default function ScheduleGrid({
                   className="sch-header"
                   style={{ backgroundColor: headerColor }}
                 >
-                  {DAY_LABELS[d]}{" "}
-                  {dayNumbers?.[d] ? `/ ${dayNumbers[d]}` : ""}
+                  {DAY_LABELS[d]} {dayNumbers?.[d] ? `/ ${dayNumbers[d]}` : ""}
                 </th>
               ))}
+
+              {/* Columna de acciones (Delete) */}
+              {showActionsColumn && (
+                <th
+                  className="sch-header sch-header-actions"
+                  style={{ backgroundColor: headerColor }}
+                >
+                  Actions
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -235,16 +244,25 @@ export default function ScheduleGrid({
                     </td>
 
                     {/* Celdas día – shift 1 */}
-                    {days.map((day) =>
-                      renderShiftCell(row, rowIndex, day, 0)
+                    {days.map((day) => renderShiftCell(row, rowIndex, day, 0))}
+
+                    {/* Celda de acciones (Delete) con rowSpan=2 */}
+                    {showActionsColumn && (
+                      <td className="sch-actions-cell" rowSpan={2}>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteRow(rowIndex)}
+                          className="px-3 py-1 text-xs bg-red-600 text-white rounded-md hover:bg-red-700 shadow-sm"
+                        >
+                          🗑 Delete
+                        </button>
+                      </td>
                     )}
                   </tr>
 
                   {/* Fila 2 – Segundo turno */}
                   <tr>
-                    {days.map((day) =>
-                      renderShiftCell(row, rowIndex, day, 1)
-                    )}
+                    {days.map((day) => renderShiftCell(row, rowIndex, day, 1))}
                   </tr>
                 </React.Fragment>
               );
@@ -255,10 +273,7 @@ export default function ScheduleGrid({
 
       {/* BOTÓN ADD ROW */}
       {!readonly && !approved && (
-        <button
-          onClick={addRow}
-          className="sch-add-row-btn"
-        >
+        <button onClick={addRow} className="sch-add-row-btn">
           + Add employee row
         </button>
       )}
@@ -266,10 +281,7 @@ export default function ScheduleGrid({
       {/* BOTÓN SUBMIT */}
       {!readonly && onSave && !approved && (
         <div className="sch-submit-row">
-          <button
-            onClick={onSave}
-            className="sch-submit-btn"
-          >
+          <button onClick={onSave} className="sch-submit-btn">
             Submit for approval
           </button>
         </div>
