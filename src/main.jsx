@@ -1,3 +1,4 @@
+// src/main.jsx
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -24,18 +25,17 @@ import BudgetsPage from "./pages/BudgetsPage.jsx";
 
 import CreateUserPage from "./pages/CreateUserPage.jsx";
 import EditUsersPage from "./pages/EditUsersPage.jsx";
-import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
-import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx";
 
+// ⭐ NUEVOS
+import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
+import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx"; // si ya existe
 
 // 🔒 Protección de rutas
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser();
 
-  // No está logueado → enviar a login
   if (!user) return <Navigate to="/login" replace />;
 
-  // Tiene rol restringido
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
   return children;
@@ -49,7 +49,7 @@ function AppRouter() {
         {/* LOGIN */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* RUTAS PROTEGIDAS (requieren usuario logueado) */}
+        {/* RUTAS PROTEGIDAS */}
         <Route
           path="/"
           element={
@@ -62,7 +62,7 @@ function AppRouter() {
           <Route index element={<DashboardPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
 
-          {/* Dashboard Editor (solo station_manager) */}
+          {/* Dashboard Editor */}
           <Route
             path="dashboard-editor"
             element={
@@ -72,10 +72,10 @@ function AppRouter() {
             }
           />
 
-          {/* Crear horario (todos los roles logueados) */}
+          {/* Crear horario */}
           <Route path="schedule" element={<SchedulePage />} />
 
-          {/* Employees blocked → station_manager + duty_manager */}
+          {/* Employees blocked */}
           <Route
             path="blocked"
             element={
@@ -85,7 +85,7 @@ function AppRouter() {
             }
           />
 
-          {/* Employees → station_manager + duty_manager */}
+          {/* Employees */}
           <Route
             path="employees"
             element={
@@ -95,7 +95,7 @@ function AppRouter() {
             }
           />
 
-          {/* Approvals → solo station_manager */}
+          {/* Approvals */}
           <Route
             path="approvals"
             element={
@@ -105,7 +105,7 @@ function AppRouter() {
             }
           />
 
-          {/* Approved schedules → station_manager + duty_manager */}
+          {/* Approved schedules */}
           <Route
             path="approved"
             element={
@@ -114,6 +114,17 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+
+          {/* Ver un schedule aprobado */}
+          <Route
+            path="approved/:id"
+            element={
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+                <ApprovedScheduleView />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Returned schedules */}
           <Route
             path="returned"
@@ -124,17 +135,17 @@ function AppRouter() {
             }
           />
 
-          {/* Ver un schedule aprobado → station_manager + duty_manager */}
+          {/* ⭐ Weekly Employees Summary */}
           <Route
-            path="approved/:id"
+            path="weekly-summary"
             element={
               <ProtectedRoute roles={["station_manager", "duty_manager"]}>
-                <ApprovedScheduleView />
+                <WeeklyEmployeesSummaryPage />
               </ProtectedRoute>
             }
           />
 
-          {/* Budgets → solo station_manager */}
+          {/* Budgets */}
           <Route
             path="budgets"
             element={
@@ -144,7 +155,7 @@ function AppRouter() {
             }
           />
 
-          {/* Crear usuario → solo station_manager */}
+          {/* Crear usuario */}
           <Route
             path="create-user"
             element={
@@ -154,7 +165,7 @@ function AppRouter() {
             }
           />
 
-          {/* Editar usuarios → solo station_manager */}
+          {/* Editar usuarios */}
           <Route
             path="edit-users"
             element={
@@ -164,16 +175,6 @@ function AppRouter() {
             }
           />
         </Route>
-        {/* Weekly Employees Summary */}
-<Route
-  path="weekly-employees"
-  element={
-    <ProtectedRoute roles={["station_manager", "duty_manager"]}>
-      <WeeklyEmployeesSummaryPage />
-    </ProtectedRoute>
-  }
-/>
-
       </Routes>
     </BrowserRouter>
   );
