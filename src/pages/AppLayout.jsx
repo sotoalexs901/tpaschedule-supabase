@@ -89,15 +89,20 @@ export default function AppLayout() {
             </>
           )}
 
-          {/* 🔵 STATION + DUTY: Employees, Blocked, Approved */}
-          {(user?.role === "station_manager" ||
-            user?.role === "duty_manager") && (
-            <>
-              <NavItem to="/employees" label="Employees" />
-              <NavItem to="/blocked" label="Blocked Employees" />
-              <NavItem to="/approved" label="Approved Schedules" />
-            </>
-          )}
+        {/* 🔵 STATION + DUTY: Employees, Blocked, Approved, Weekly Summary */}
+{(user?.role === "station_manager" ||
+  user?.role === "duty_manager") && (
+  <>
+    <NavItem to="/employees" label="Employees" />
+    <NavItem to="/blocked" label="Blocked Employees" />
+    <NavItem to="/approved" label="Approved Schedules" />
+    <NavItem
+      to="/weekly-employees"
+      label="Weekly Employees Summary"
+    />
+  </>
+)}
+
         </nav>
 
         {/* Logout */}
