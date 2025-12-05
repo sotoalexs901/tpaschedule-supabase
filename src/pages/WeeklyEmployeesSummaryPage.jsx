@@ -113,49 +113,112 @@ export default function WeeklyEmployeesSummaryPage() {
   const airlineKeys = Object.keys(summaryByAirline).sort();
 
   return (
-    <div className="space-y-4">
-      {/* Back */}
-      <button
-        type="button"
-        className="btn btn-soft"
-        onClick={() => navigate("/dashboard")}
-      >
-        ← Back to Dashboard
-      </button>
+      <div className="card p-4">
+    <h2 className="text-md font-semibold mb-3">
+      Week of: {formatWeekLabel(selectedWeekTag)}
+    </h2>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">
-            Weekly Employees by Airline
-          </h1>
-          <p className="text-xs text-slate-500">
-            Shows employees assigned for a selected week, grouped by airline
-            with total weekly hours.
-          </p>
-        </div>
+    <div className="overflow-auto">
+      <table className="min-w-[900px] border text-xs">
+        <thead>
+          <tr className="bg-gray-100 border">
+            <th className="border px-2 py-1">Employee Name</th>
 
-        {/* Selector de semana */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-600">Week:</span>
-          {weekTags.length === 0 ? (
-            <span className="text-xs text-slate-400">
-              No approved schedules found
-            </span>
-          ) : (
-            <select
-              className="border rounded text-xs px-2 py-1"
-              value={selectedWeekTag}
-              onChange={(e) => setSelectedWeekTag(e.target.value)}
-            >
-              {weekTags.map((tag) => (
-                <option key={tag} value={tag}>
-                  {formatWeekLabel(tag)}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
+            {/* Columnas fijas de aerolíneas en orden estándar */}
+            {[
+              "WL Havana Air",
+              "WL Invicta",
+              "AV",
+              "AA-BSO",
+              "CABIN",
+              "WCHR",
+              "SY",
+              "OTHER",
+            ].map((air) => (
+              <th key={air} className="border px-2 py-1 text-center">
+                {air}
+              </th>
+            ))}
+
+            <th className="border px-2 py-1 text-center">Total weekly hours</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {/* FILAS POR EMPLEADO */}
+          {employees
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((emp) => {
+              const rowHours = summaryByAirline
+                ? {
+                    "WL Havana Air": summaryByAirline["WL Havana Air"]?.[emp.id] || 0,
+                    "WL Invicta": summaryByAirline["WL Invicta"]?.[emp.id] || 0,
+                    AV: summaryByAirline["AV"]?.[emp.id] || 0,
+                    "AA-BSO": summaryByAirline["AA-BSO"]?.[emp.id] || 0,
+                    CABIN: summaryByAirline["CABIN"]?.[emp.id] || 0,
+                    WCHR: summaryByAirline["WCHR"]?.[emp.id] || 0,
+                    SY: summaryByAirline["SY"]?.[emp.id] || 0,
+                    OTHER: summaryByAirline["OTHER"]?.[emp.id] || 0,
+                  }
+                : {};
+
+              const total = Object.values(rowHours).reduce((a, b) => a + b, 0);
+
+              // Ocultar empleados con cero horas en todas las aerolíneas
+              if (total === 0) return null;
+
+              return (
+                <tr key={emp.id} className="border">
+                  <td className="border px-2 py-1">{emp.name}</td>
+
+                  {Object.values(rowHours).map((h, i) => (
+                    <td key={i} className="border px-2 py-1 text-center">
+                      {h === 0 ? "" : h}
+                    </td>
+                  ))}
+
+                  <td className="border px-2 py-1 text-center font-semibold">
+                    {total}
+                  </td>
+                </tr>
+              );
+            })}
+
+          {/* TOTAL POR AEROLÍNEA */}
+          <tr className="bg-gray-100 border font-semibold">
+            <td className="border px-2 py-1">TOTAL HOURS PER AIRLINE</td>
+
+            {[
+              "WL Havana Air",
+              "WL Invicta",
+              "AV",
+              "AA-BSO",
+              "CABIN",
+              "WCHR",
+              "SY",
+              "OTHER",
+            ].map((air, i) => {
+              const total = Object.values(summaryByAirline[air] || {}).reduce(
+                (sum, h) => sum + h,
+                0
+              );
+              return (
+                <td key={i} className="border px-2 py-1 text-center">
+                  {total === 0 ? "" : total}
+                </td>
+              );
+            })}
+
+            <td className="border px-2 py-1 text-center">
+              {Object.values(summaryByAirline)
+                .flatMap((air) => Object.values(air))
+                .reduce((a, b) => a + b, 0)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
       {loading ? (
         <p className="text-sm text-slate-400">Loading weekly summary...</p>
