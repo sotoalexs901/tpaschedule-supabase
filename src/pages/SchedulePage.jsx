@@ -103,6 +103,11 @@ export default function SchedulePage() {
 
   const [employees, setEmployees] = useState([]);
   const [rows, setRows] = useState([]);
+  const deleteRow = (index) => {
+  const updated = [...rows];
+  updated.splice(index, 1);
+  setRows(updated);
+};
   const [airlineBudgets, setAirlineBudgets] = useState({});
 
   // 🔁 Si venimos desde un ApprovedScheduleView con plantilla:
