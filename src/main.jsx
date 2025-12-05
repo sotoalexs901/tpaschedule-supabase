@@ -28,15 +28,17 @@ import EditUsersPage from "./pages/EditUsersPage.jsx";
 
 // ⭐ NUEVOS
 import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
-import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx"; // si ya existe
+import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx";
 import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 
 // 🔒 Protección de rutas
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser();
 
+  // No logueado → login
   if (!user) return <Navigate to="/login" replace />;
 
+  // Rol no permitido
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
   return children;
@@ -63,7 +65,7 @@ function AppRouter() {
           <Route index element={<DashboardPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
 
-          {/* Dashboard Editor */}
+          {/* Dashboard Editor (solo Station Manager) */}
           <Route
             path="dashboard-editor"
             element={
@@ -96,7 +98,7 @@ function AppRouter() {
             }
           />
 
-          {/* Approvals */}
+          {/* Approvals (solo Station Manager) */}
           <Route
             path="approvals"
             element={
@@ -136,7 +138,7 @@ function AppRouter() {
             }
           />
 
-          {/* ⭐ Weekly Employees Summary */}
+          {/* Weekly Employees Summary */}
           <Route
             path="weekly-summary"
             element={
@@ -146,7 +148,7 @@ function AppRouter() {
             }
           />
 
-          {/* Budgets */}
+          {/* Budgets (solo Station Manager) */}
           <Route
             path="budgets"
             element={
@@ -156,7 +158,7 @@ function AppRouter() {
             }
           />
 
-          {/* Crear usuario */}
+          {/* Crear usuario (solo Station Manager) */}
           <Route
             path="create-user"
             element={
@@ -166,7 +168,7 @@ function AppRouter() {
             }
           />
 
-          {/* Editar usuarios */}
+          {/* Editar usuarios (solo Station Manager) */}
           <Route
             path="edit-users"
             element={
@@ -175,16 +177,16 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
-          {/* Draft schedules */}
-<Route
-  path="drafts"
-  element={
-    <ProtectedRoute roles={["station_manager", "duty_manager"]}>
-      <DraftSchedulesPage />
-    </ProtectedRoute>
-  }
-/>
 
+          {/* Draft schedules (Station + Duty) */}
+          <Route
+            path="drafts"
+            element={
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+                <DraftSchedulesPage />
+              </ProtectedRoute>
+            }
+          />
         </Route>
       </Routes>
     </BrowserRouter>
