@@ -78,18 +78,7 @@ export default function AppLayout() {
           <NavItem to="/dashboard" label="Dashboard" />
           <NavItem to="/schedule" label="Create Schedule" />
 
-          {/* 🔵 SOLO STATION MANAGER */}
-          {user?.role === "station_manager" && (
-            <>
-              <NavItem to="/approvals" label="Approvals" />
-              <NavItem to="/dashboard-editor" label="Dashboard Editor" />
-              <NavItem to="/budgets" label="Budgets" />
-              <NavItem to="/create-user" label="Create User" />
-              <NavItem to="/edit-users" label="Manage Users" />
-            </>
-          )}
-
-          {/* 🔵 STATION + DUTY: Employees, Blocked, Approved, Returned */}
+                    {/* 🔵 STATION + DUTY: Employees, Blocked, Approved, Returned, Weekly Summary */}
           {(user?.role === "station_manager" ||
             user?.role === "duty_manager") && (
             <>
@@ -97,9 +86,9 @@ export default function AppLayout() {
               <NavItem to="/blocked" label="Blocked Employees" />
               <NavItem to="/approved" label="Approved Schedules" />
               <NavItem to="/returned" label="Returned Schedules" />
+              <NavItem to="/weekly-summary" label="Weekly Summary" />
             </>
           )}
-
 
         </nav>
 
