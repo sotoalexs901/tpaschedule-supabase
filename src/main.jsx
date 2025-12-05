@@ -25,6 +25,8 @@ import BudgetsPage from "./pages/BudgetsPage.jsx";
 import CreateUserPage from "./pages/CreateUserPage.jsx";
 import EditUsersPage from "./pages/EditUsersPage.jsx";
 import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
+import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx";
+
 
 // 🔒 Protección de rutas
 function ProtectedRoute({ children, roles }) {
@@ -109,6 +111,15 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["station_manager", "duty_manager"]}>
                 <ApprovedSchedulesPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Returned schedules */}
+          <Route
+            path="returned"
+            element={
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+                <ReturnedSchedulesPage />
               </ProtectedRoute>
             }
           />
