@@ -449,6 +449,7 @@ export default function SchedulePage() {
           airline={airline}
           department={department}
           onSave={handleSaveSchedule}
+          onDeleteRow={deleteRow}
         />
       </div>
 
