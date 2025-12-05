@@ -29,6 +29,7 @@ import EditUsersPage from "./pages/EditUsersPage.jsx";
 // ⭐ NUEVOS
 import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
 import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx"; // si ya existe
+import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 
 // 🔒 Protección de rutas
 function ProtectedRoute({ children, roles }) {
@@ -174,6 +175,16 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+          {/* Draft schedules */}
+<Route
+  path="drafts"
+  element={
+    <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+      <DraftSchedulesPage />
+    </ProtectedRoute>
+  }
+/>
+
         </Route>
       </Routes>
     </BrowserRouter>
