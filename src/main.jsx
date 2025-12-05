@@ -153,6 +153,16 @@ function AppRouter() {
             }
           />
         </Route>
+        {/* Weekly Employees Summary */}
+<Route
+  path="weekly-employees"
+  element={
+    <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+      <WeeklyEmployeesSummaryPage />
+    </ProtectedRoute>
+  }
+/>
+
       </Routes>
     </BrowserRouter>
   );
