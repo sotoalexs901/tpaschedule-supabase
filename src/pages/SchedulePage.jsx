@@ -66,8 +66,7 @@ const normalizeInterval = (start, end) => {
   const eRaw = toMinutes(end);
   if (s == null || eRaw == null) return null;
   let e = eRaw;
-  // Si el fin es menor o igual que el inicio, asumimos que cruza medianoche
-  if (e <= s) e += 24 * 60;
+  if (e <= s) e += 24 * 60; // cruza medianoche
   return [s, e];
 };
 
@@ -77,7 +76,7 @@ const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
   if (!a || !b) return false;
   const [s1, e1] = a;
   const [s2, e2] = b;
-  return s1 < e2 && s2 < e1; // solapamiento estándar de intervalos
+  return s1 < e2 && s2 < e1;
 };
 
 // Crea un “tag” de semana basado en los números de días
@@ -105,11 +104,6 @@ export default function SchedulePage() {
   const [rows, setRows] = useState([]);
   const [airlineBudgets, setAirlineBudgets] = useState({});
 
-  // 🔧 Eliminar fila
-  const deleteRow = (index) => {
-    setRows((prev) => prev.filter((_, i) => i !== index));
-  };
-
   // 🔁 Si venimos desde un ApprovedScheduleView con plantilla:
   useEffect(() => {
     if (location.state?.template) {
@@ -121,54 +115,6 @@ export default function SchedulePage() {
       if (grid) setRows(grid);
     }
   }, [location.state]);
-
-  // 🔁 Si NO venimos desde plantilla, intentar cargar el último draft del usuario
-  useEffect(() => {
-    const loadDraft = async () => {
-      try {
-        if (location.state?.template) return; // No pisar plantilla
-        if (!user?.username) return;
-
-        const qDraft = query(
-          collection(db, "schedules"),
-          where("status", "==", "draft"),
-          where("createdBy", "==", user.username)
-        );
-
-        const snap = await getDocs(qDraft);
-        if (snap.empty) return;
-
-        // Escogemos el más reciente por createdAt
-        const docs = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .sort(
-            (a, b) =>
-              (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-          );
-
-        const latest = docs[0];
-        setAirline(latest.airline || "");
-        setDepartment(latest.department || "");
-        setDayNumbers(
-          latest.days || {
-            mon: "",
-            tue: "",
-            wed: "",
-            thu: "",
-            fri: "",
-            sat: "",
-            sun: "",
-          }
-        );
-        setRows(latest.grid || []);
-        console.log("Loaded draft schedule:", latest.id);
-      } catch (err) {
-        console.error("Error loading draft schedule:", err);
-      }
-    };
-
-    loadDraft();
-  }, [user?.username, location.state]);
 
   // Cargar empleados
   useEffect(() => {
@@ -190,7 +136,7 @@ export default function SchedulePage() {
   }, []);
 
   // ========= CÁLCULO DE HORAS (con lunch) =========
-  // Regla: si un shift dura más de 6h 1min, se descuenta 0.5h de lunch
+  // Regla: si un shift dura más de 6h 1min, se descuenta 0.5h
   const diffHours = (start, end) => {
     if (!start || !end || start === "OFF") return 0;
     const s = toMinutes(start);
@@ -200,7 +146,6 @@ export default function SchedulePage() {
     if (e < s) e += 24 * 60;
 
     let hours = (e - s) / 60;
-    // Más de 6 horas y 1 minuto => -0.5h lunch
     if (hours > 6 + 1 / 60) {
       hours -= 0.5;
     }
@@ -244,7 +189,7 @@ export default function SchedulePage() {
 
   const { employeeTotals, airlineTotal, dailyTotals } = calculateTotals();
 
-  // ⚠️ Comprobación de conflictos con otras aerolíneas (misma semana) – SOLO para submit
+  // ⚠️ Comprobación de conflictos con otras aerolíneas (misma semana)
   const checkConflictsWithOtherAirlines = async () => {
     const weekTag = buildWeekTag(dayNumbers).trim();
 
@@ -252,12 +197,12 @@ export default function SchedulePage() {
       return { conflicts: [], weekTag: null };
     }
 
-    const qExisting = query(
+    const q = query(
       collection(db, "schedules"),
       where("weekTag", "==", weekTag)
     );
 
-    const snap = await getDocs(qExisting);
+    const snap = await getDocs(q);
     const existingSchedules = snap.docs.map((d) => ({
       id: d.id,
       ...d.data(),
@@ -319,10 +264,10 @@ export default function SchedulePage() {
     return { conflicts, weekTag };
   };
 
-  // Guardar schedule como DRAFT (sin red flag)
+  // ✅ Guardar como DRAFT
   const handleSaveDraft = async () => {
     if (!airline || !department) {
-      alert("Please select airline and department before saving a draft.");
+      alert("Please select airline and department.");
       return;
     }
 
@@ -344,10 +289,10 @@ export default function SchedulePage() {
       role: user?.role || null,
     });
 
-    alert("Draft saved. You can come back later to continue.");
+    alert("Schedule saved as draft.");
   };
 
-  // Guardar schedule (SUBMIT for approval)
+  // Guardar schedule (PENDING → para approval)
   const handleSaveSchedule = async () => {
     if (!airline || !department) {
       alert("Please select airline and department.");
@@ -442,6 +387,12 @@ export default function SchedulePage() {
     pdf.save(`Schedule_${airline}_${department}.pdf`);
   };
 
+  // Mapa id → nombre para el resumen
+  const employeeNameMap = {};
+  employees.forEach((e) => {
+    employeeNameMap[e.id] = e.name;
+  });
+
   // RENDER
   return (
     <div className="p-4 space-y-4">
@@ -525,8 +476,7 @@ export default function SchedulePage() {
           airline={airline}
           department={department}
           onSave={handleSaveSchedule}
-          onSaveDraft={handleSaveDraft}
-          onDeleteRow={deleteRow}
+          onSaveDraft={handleSaveDraft} // ✅ NUEVO
         />
       </div>
 
@@ -547,6 +497,44 @@ export default function SchedulePage() {
             </div>
           ))}
         </div>
+
+        {/* 🔍 Horas por empleado en ESTE schedule */}
+        <h3 className="font-semibold mt-3 mb-1 text-xs">
+          Employee weekly hours (this schedule)
+        </h3>
+        <div className="grid md:grid-cols-2 gap-2 text-[11px]">
+          {rows.map((r, idx) => {
+            if (!r.employeeId) return null;
+            const total = employeeTotals[r.employeeId] || 0;
+            const over = total > 40;
+            const name = employeeNameMap[r.employeeId] || "Unknown";
+
+            return (
+              <div
+                key={idx}
+                className={
+                  "flex items-center justify-between border rounded px-2 py-1 " +
+                  (over ? "bg-red-50" : "bg-gray-50")
+                }
+              >
+                <span
+                  className={
+                    over ? "font-semibold text-red-700" : "font-semibold"
+                  }
+                >
+                  {name}
+                </span>
+                <span className={over ? "font-semibold text-red-700" : ""}>
+                  {total.toFixed(2)} hrs
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-slate-500 mt-1">
+          Employees with more than 40 hrs in this schedule are highlighted in
+          red.
+        </p>
       </div>
 
       {/* Botón PDF */}
