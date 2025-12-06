@@ -1,281 +1,192 @@
 // src/pages/TimeOffStatusPublicPage.jsx
-import React, { useState } from "react";
-import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
+import React, { useEffect, useState } from "react";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 
 export default function TimeOffStatusPublicPage() {
-  const [employeeName, setEmployeeName] = useState("");
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [pin, setPin] = useState("");
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [statusMsg, setStatusMsg] = useState("");
 
-  const handleSearch = async (e) => {
+  // Cargar lista de empleados para el SELECT
+  useEffect(() => {
+    async function loadEmployees() {
+      try {
+        const snap = await getDocs(collection(db, "employees"));
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        // orden por nombre
+        list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        setEmployees(list);
+      } catch (err) {
+        console.error("Error loading employees:", err);
+      }
+    }
+
+    loadEmployees().catch(console.error);
+  }, []);
+
+  const handleCheckStatus = async (e) => {
     e.preventDefault();
-    setError("");
+    setStatusMsg("");
     setRequests([]);
 
-    const name = employeeName.trim();
-    if (!name) {
-      setError("Please enter your full name.");
+    if (!selectedEmployeeId || !pin) {
+      setStatusMsg("Please select your name and enter your 4-digit PIN.");
       return;
     }
 
-    try {
-      setLoading(true);
+    if (!/^\d{4}$/.test(pin)) {
+      setStatusMsg("PIN must be exactly 4 digits.");
+      return;
+    }
 
-      // 🔍 Buscar por employeeName EXACTO
+    const employee = employees.find((e) => e.id === selectedEmployeeId);
+    if (!employee) {
+      setStatusMsg("Employee not found.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
       const qReq = query(
         collection(db, "timeOffRequests"),
-        where("employeeName", "==", name),
-        // orderBy solo funciona si está indexado con where, así que
-        // si da problemas puedes quitar orderBy
-        // orderBy("createdAt", "desc")
+        where("employeeName", "==", employee.name),
+        where("pin", "==", pin)
       );
 
       const snap = await getDocs(qReq);
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const list = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
 
-      // Ordenar en el cliente por fecha (más reciente primero)
+      // ordenar por fecha de creación (más reciente primero)
       list.sort(
         (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
       );
 
+      setRequests(list);
+
       if (list.length === 0) {
-        setError(
-          "No requests found for that name. Check spelling or ask your manager."
+        setStatusMsg(
+          "No requests found for this name and PIN. Please check your PIN or contact your supervisor."
         );
       }
-
-      setRequests(list);
     } catch (err) {
-      console.error("Error loading time off status:", err);
-      setError("Error searching requests. Try again later.");
+      console.error("Error loading status:", err);
+      setStatusMsg("Error loading status. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const formatStatus = (status) => {
-    if (!status) return "pending";
-    if (status === "approved") return "Approved";
-    if (status === "rejected") return "Rejected";
-    return status[0].toUpperCase() + status.slice(1);
-  };
-
-  const statusColor = (status) => {
-    if (status === "approved") return "#16a34a"; // green
-    if (status === "rejected") return "#dc2626"; // red
-    return "#ca8a04"; // amber (pending)
-  };
-
   return (
-    <div
-      className="min-h-screen"
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background:
-          "linear-gradient(to bottom right, #020617, #0f172a, #1e293b)",
-        padding: "1rem",
-      }}
-    >
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
       <div
-        style={{
-          width: "100%",
-          maxWidth: 480,
-          background: "rgba(15,23,42,0.92)",
-          borderRadius: "1rem",
-          padding: "1.5rem",
-          color: "#e5e7eb",
-          boxShadow: "0 20px 45px rgba(0,0,0,0.65)",
-          border: "1px solid rgba(148,163,184,0.4)",
-        }}
+        className="card"
+        style={{ maxWidth: 520, width: "100%", borderRadius: 16 }}
       >
-        {/* Título */}
-        <div style={{ textAlign: "center", marginBottom: "1rem" }}>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "1.4rem",
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#f9fafb",
-            }}
-          >
-            TPA OPS SYSTEM
-          </h1>
-          <p
-            style={{
-              margin: "0.25rem 0 0",
-              fontSize: "0.8rem",
-              color: "#9ca3af",
-            }}
-          >
-            Day Off Request Status
-          </p>
-        </div>
+        <h1 className="text-lg font-semibold mb-1 text-center">
+          Check Day Off Request Status
+        </h1>
+        <p className="text-[11px] text-gray-600 text-center mb-3">
+          Select your name, enter your 4-digit PIN, and view the status of your
+          requests.
+        </p>
 
-        {/* Formulario */}
-        <form onSubmit={handleSearch} style={{ marginBottom: "1rem" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.8rem",
-              fontWeight: 500,
-              marginBottom: "0.25rem",
-            }}
-          >
-            Employee Name (as submitted)
-          </label>
-          <input
-            type="text"
-            value={employeeName}
-            onChange={(e) => setEmployeeName(e.target.value)}
-            placeholder="e.g. John Doe"
-            style={{
-              width: "100%",
-              padding: "0.45rem 0.55rem",
-              borderRadius: "0.5rem",
-              border: "1px solid #4b5563",
-              fontSize: "0.85rem",
-              marginBottom: "0.75rem",
-            }}
-          />
-
-          {error && (
-            <p
-              style={{
-                fontSize: "0.8rem",
-                color: "#fecaca",
-                background: "rgba(248,113,113,0.1)",
-                borderRadius: "0.5rem",
-                padding: "0.4rem 0.5rem",
-                marginBottom: "0.75rem",
-              }}
+        {/* FORM DE BÚSQUEDA */}
+        <form onSubmit={handleCheckStatus} className="space-y-3 text-sm">
+          {/* Nombre desde SELECT */}
+          <div>
+            <label className="font-medium text-xs block mb-1">
+              Employee Name
+            </label>
+            <select
+              className="border rounded w-full px-2 py-1 text-sm"
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
             >
-              {error}
-            </p>
-          )}
+              <option value="">Select your name</option>
+              {employees.map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* PIN */}
+          <div>
+            <label className="font-medium text-xs block mb-1">4-digit PIN</label>
+            <input
+              type="password"
+              className="border rounded w-full px-2 py-1 text-sm"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              maxLength={4}
+              placeholder="XXXX"
+            />
+          </div>
 
           <button
             type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: "0.5rem 0.75rem",
-              borderRadius: "999px",
-              border: "none",
-              background: loading ? "#1d4ed8aa" : "#1d4ed8",
-              color: "#f9fafb",
-              fontSize: "0.9rem",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
+            className="w-full bg-blue-700 hover:bg-blue-800 text-white py-2 rounded mt-2 text-sm font-semibold shadow"
           >
-            {loading ? "Searching..." : "Check status"}
+            {loading ? "Searching..." : "Check Status"}
           </button>
+
+          {/* Nota 72 horas */}
+          <p className="text-[11px] text-gray-600 text-center mt-2">
+            HR and Management team may take up to 72 hours to approve or reject
+            your request.
+          </p>
+
+          {statusMsg && (
+            <p className="text-[11px] text-center mt-2 text-gray-600">
+              {statusMsg}
+            </p>
+          )}
         </form>
 
-        {/* Resultados */}
-        {requests.length > 0 && (
-          <div
-            style={{
-              marginTop: "0.75rem",
-              background: "rgba(15,23,42,0.85)",
-              borderRadius: "0.75rem",
-              padding: "0.75rem",
-              border: "1px solid rgba(55,65,81,0.9)",
-            }}
-          >
-            <p
-              style={{
-                fontSize: "0.75rem",
-                color: "#9ca3af",
-                marginBottom: "0.5rem",
-              }}
-            >
-              Showing last {requests.length} request
-              {requests.length > 1 ? "s" : ""} for{" "}
-              <span style={{ fontWeight: 600, color: "#e5e7eb" }}>
-                {employeeName}
-              </span>
-              .
-            </p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* RESULTADOS */}
+        <div className="mt-4 text-sm">
+          {requests.length > 0 && (
+            <div className="space-y-2">
               {requests.map((req) => (
-                <div
-                  key={req.id}
-                  style={{
-                    padding: "0.6rem 0.7rem",
-                    borderRadius: "0.6rem",
-                    background: "#020617",
-                    border: "1px solid rgba(75,85,99,0.9)",
-                    fontSize: "0.78rem",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: "0.25rem",
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, color: "#e5e7eb" }}>
-                      {req.reasonType || "Time Off"}
+                <div key={req.id} className="border rounded px-3 py-2 bg-white">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-semibold text-[13px]">
+                      {req.reasonType} — {req.startDate} → {req.endDate}
                     </span>
                     <span
-                      style={{
-                        fontWeight: 700,
-                        color: statusColor(req.status),
-                        textTransform: "uppercase",
-                        fontSize: "0.7rem",
-                      }}
+                      className={`text-[11px] font-semibold ${
+                        req.status === "approved"
+                          ? "text-green-700"
+                          : req.status === "rejected"
+                          ? "text-red-700"
+                          : "text-gray-700"
+                      }`}
                     >
-                      {formatStatus(req.status)}
+                      {req.status?.toUpperCase() || "PENDING"}
                     </span>
                   </div>
-                  <p
-                    style={{
-                      margin: 0,
-                      color: "#e5e7eb",
-                      fontSize: "0.78rem",
-                    }}
-                  >
-                    {req.startDate} → {req.endDate}
-                  </p>
                   {req.notes && (
-                    <p
-                      style={{
-                        margin: "0.3rem 0 0",
-                        color: "#9ca3af",
-                        fontSize: "0.72rem",
-                      }}
-                    >
-                      <strong>Notes:</strong> {req.notes}
+                    <p className="text-[11px] text-gray-600">
+                      Notes: {req.notes}
                     </p>
                   )}
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* Footer pequeño */}
-        <p
-          style={{
-            marginTop: "0.75rem",
-            fontSize: "0.7rem",
-            color: "#6b7280",
-            textAlign: "center",
-          }}
-        >
-          If you see something incorrect, please contact your Duty or Station
-          Manager.
-        </p>
+          )}
+        </div>
       </div>
     </div>
   );
