@@ -1,10 +1,9 @@
 // src/pages/WeeklyEmployeesSummaryPage.jsx
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 
-// Claves y etiquetas de días
+// Claves y etiquetas de días (igual que en otros archivos)
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
@@ -16,45 +15,40 @@ const DAY_LABELS = {
   sun: "SUND",
 };
 
-export default function WeeklyEmployeesSummaryPage() {
-  const navigate = useNavigate();
+// Orden fijo de aerolíneas en la tabla
+const AIRLINES_ORDER = [
+  "WL Havana Air",
+  "WL Invicta",
+  "AV",
+  "AA-BSO",
+  "CABIN",
+  "WCHR",
+  "SY",
+  "OTHER",
+];
 
+export default function WeeklyEmployeesSummaryPage() {
   const [employees, setEmployees] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [weekTags, setWeekTags] = useState([]);
   const [selectedWeekTag, setSelectedWeekTag] = useState("");
   const [summaryByAirline, setSummaryByAirline] = useState({});
+  const [statusFilter, setStatusFilter] = useState("approved"); // "approved" | "draft" | "both"
   const [loading, setLoading] = useState(true);
 
-  // 🔎 Filtro por horas mínimas
-  const [minTotalHours, setMinTotalHours] = useState(0);
-
-  // Cargar empleados + schedules aprobados
+  // Cargar empleados + TODOS los schedules (cualquier status)
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const [empSnap, schSnap] = await Promise.all([
-          getDocs(collection(db, "employees")),
-          getDocs(
-            query(collection(db, "schedules"), where("status", "==", "approved"))
-          ),
-        ]);
+        const empSnap = await getDocs(collection(db, "employees"));
+        const schSnap = await getDocs(collection(db, "schedules"));
 
         const empList = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setEmployees(empList);
 
         const schList = schSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setSchedules(schList);
-
-        const tags = Array.from(
-          new Set(schList.map((s) => s.weekTag).filter(Boolean))
-        ).sort();
-
-        setWeekTags(tags);
-        if (tags.length > 0) {
-          setSelectedWeekTag((prev) => prev || tags[0]);
-        }
       } catch (err) {
         console.error("Error loading weekly summary data:", err);
       } finally {
@@ -65,20 +59,46 @@ export default function WeeklyEmployeesSummaryPage() {
     load().catch(console.error);
   }, []);
 
-  // Mapa rápido id -> nombre (para la parte de resumen por aerolínea)
+  // Helper: ¿el schedule pasa el filtro de status?
+  const scheduleMatchesStatus = (s) => {
+    if (!s.status) return false;
+    if (statusFilter === "both") {
+      return s.status === "approved" || s.status === "draft";
+    }
+    return s.status === statusFilter;
+  };
+
+  // Mapa rápido id -> nombre
   const employeeNameMap = {};
   employees.forEach((e) => {
     employeeNameMap[e.id] = e.name;
   });
 
-  // Recalcular resumen cuando cambie la semana seleccionada o schedules
+  // Recalcular weekTags cuando cambian schedules o statusFilter
+  useEffect(() => {
+    const filteredByStatus = schedules.filter(scheduleMatchesStatus);
+    const tags = Array.from(
+      new Set(filteredByStatus.map((s) => s.weekTag).filter(Boolean))
+    ).sort();
+
+    setWeekTags(tags);
+
+    // Si la semana seleccionada ya no existe con este filtro, movemos al primer tag
+    if (!tags.includes(selectedWeekTag)) {
+      setSelectedWeekTag(tags[0] || "");
+    }
+  }, [schedules, statusFilter, selectedWeekTag]);
+
+  // Recalcular resumen cuando cambian: semana seleccionada, schedules o filtro
   useEffect(() => {
     if (!selectedWeekTag || schedules.length === 0) {
       setSummaryByAirline({});
       return;
     }
 
-    const filtered = schedules.filter((s) => s.weekTag === selectedWeekTag);
+    const filtered = schedules.filter(
+      (s) => s.weekTag === selectedWeekTag && scheduleMatchesStatus(s)
+    );
 
     const summary = {};
 
@@ -97,11 +117,13 @@ export default function WeeklyEmployeesSummaryPage() {
     });
 
     setSummaryByAirline(summary);
-  }, [selectedWeekTag, schedules]);
+  }, [selectedWeekTag, schedules, statusFilter]);
 
-  // Texto bonito de la semana (usando el primer schedule que tenga ese weekTag)
+  // Texto bonito de la semana (usando el primer schedule que coincida con tag + filtro)
   const formatWeekLabel = (tag) => {
-    const sample = schedules.find((s) => s.weekTag === tag);
+    const sample = schedules.find(
+      (s) => s.weekTag === tag && scheduleMatchesStatus(s)
+    );
     if (!sample || !sample.days) return tag || "No week selected";
 
     return DAY_KEYS.map((key) => {
@@ -113,299 +135,207 @@ export default function WeeklyEmployeesSummaryPage() {
 
   const airlineKeys = Object.keys(summaryByAirline).sort();
 
-  // 🔁 Estados base de carga / falta de datos
+  const statusLabel =
+    statusFilter === "approved"
+      ? "Approved only"
+      : statusFilter === "draft"
+      ? "Draft only"
+      : "Approved + Draft";
+
   if (loading) {
     return (
-      <div className="p-4">
-        <button
-          className="btn btn-soft mb-3 text-xs"
-          type="button"
-          onClick={() => navigate("/dashboard")}
-        >
-          ← Back to Dashboard
-        </button>
-        <p className="text-sm text-slate-400">Loading weekly summary...</p>
+      <p className="text-sm text-slate-400 p-4">
+        Loading weekly summary...
+      </p>
+    );
+  }
+
+  const filteredSchedulesCount = schedules.filter(scheduleMatchesStatus).length;
+
+  if (filteredSchedulesCount === 0) {
+    return (
+      <div className="card p-4 text-sm text-slate-500">
+        There are no <b>{statusFilter}</b> schedules to build a weekly summary.
       </div>
     );
   }
 
-  if (!loading && weekTags.length === 0) {
+  if (weekTags.length === 0) {
     return (
-      <div className="p-4">
-        <button
-          className="btn btn-soft mb-3 text-xs"
-          type="button"
-          onClick={() => navigate("/dashboard")}
-        >
-          ← Back to Dashboard
-        </button>
-        <p className="text-sm text-slate-500">
-          There are no approved schedules yet to build a weekly summary.
-        </p>
+      <div className="card p-4 text-sm text-slate-500">
+        There are no schedules with week tags for the selected filter.
       </div>
     );
   }
+
+  const totalAllAirlines = Object.values(summaryByAirline)
+    .flatMap((air) => Object.values(air))
+    .reduce((a, b) => a + b, 0);
 
   return (
-    <div className="space-y-4 p-4">
-      {/* Back + selector de semana */}
-      <div className="flex items-center justify-between mb-2">
-        <button
-          className="btn btn-soft text-xs"
-          type="button"
-          onClick={() => navigate("/dashboard")}
-        >
-          ← Back to Dashboard
-        </button>
-
-        <div className="flex items-center gap-2 text-xs">
-          <span className="font-semibold">Week:</span>
-          <select
-            className="border rounded px-2 py-1 text-xs"
-            value={selectedWeekTag}
-            onChange={(e) => setSelectedWeekTag(e.target.value)}
-          >
-            {weekTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {formatWeekLabel(tag)}
-              </option>
-            ))}
-          </select>
+    <div className="space-y-4">
+      {/* HEADER + FILTROS */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">
+            Weekly Employees Summary
+          </h1>
+          <p className="text-xs text-slate-500">
+            View total hours per employee and per airline for a given week.
+          </p>
         </div>
-      </div>
 
-      {/* CARD PRINCIPAL CON TABLA TIPO EXCEL */}
-      <div className="card p-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-md font-semibold">
-            Week of: {formatWeekLabel(selectedWeekTag)}
-          </h2>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          {/* Filtro de status */}
+          <div className="flex items-center gap-1">
+            <span className="font-semibold text-slate-700">Status:</span>
+            <select
+              className="border rounded px-2 py-1"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="approved">Approved</option>
+              <option value="draft">Draft</option>
+              <option value="both">Approved + Draft</option>
+            </select>
+          </div>
 
-          {/* 🔎 Filtro por horas mínimas */}
-          <div className="flex items-center gap-2 text-xs">
-            <label className="font-semibold">
-              Min weekly hours filter:
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={minTotalHours}
-              onChange={(e) => setMinTotalHours(Number(e.target.value || 0))}
-              className="border rounded px-2 py-1 w-20 text-right text-xs"
-            />
-            <span className="text-[11px] text-slate-500">
-              Employees with less than this total will be hidden.
-            </span>
+          {/* Selector de semana */}
+          <div className="flex items-center gap-1">
+            <span className="font-semibold text-slate-700">Week:</span>
+            <select
+              className="border rounded px-2 py-1"
+              value={selectedWeekTag}
+              onChange={(e) => setSelectedWeekTag(e.target.value)}
+            >
+              {weekTags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {formatWeekLabel(tag)}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
-
-        <div className="overflow-auto">
-          <table className="min-w-[900px] border text-xs">
-            <thead>
-              <tr className="bg-gray-100 border">
-                <th className="border px-2 py-1">Employee Name</th>
-
-                {/* Columnas fijas de aerolíneas en orden estándar */}
-                {[
-                  "WL Havana Air",
-                  "WL Invicta",
-                  "AV",
-                  "AA-BSO",
-                  "CABIN",
-                  "WCHR",
-                  "SY",
-                  "OTHER",
-                ].map((air) => (
-                  <th key={air} className="border px-2 py-1 text-center">
-                    {air}
-                  </th>
-                ))}
-
-                <th className="border px-2 py-1 text-center">
-                  Total weekly hours
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {/* FILAS POR EMPLEADO */}
-              {employees
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((emp) => {
-                  const rowHours = summaryByAirline
-                    ? {
-                        "WL Havana Air":
-                          summaryByAirline["WL Havana Air"]?.[emp.id] || 0,
-                        "WL Invicta":
-                          summaryByAirline["WL Invicta"]?.[emp.id] || 0,
-                        AV: summaryByAirline["AV"]?.[emp.id] || 0,
-                        "AA-BSO": summaryByAirline["AA-BSO"]?.[emp.id] || 0,
-                        CABIN: summaryByAirline["CABIN"]?.[emp.id] || 0,
-                        WCHR: summaryByAirline["WCHR"]?.[emp.id] || 0,
-                        SY: summaryByAirline["SY"]?.[emp.id] || 0,
-                        OTHER: summaryByAirline["OTHER"]?.[emp.id] || 0,
-                      }
-                    : {};
-
-                  const total = Object.values(rowHours).reduce(
-                    (a, b) => a + b,
-                    0
-                  );
-
-                  // Ocultar empleados sin horas
-                  if (total === 0) return null;
-
-                  // Aplicar filtro de horas mínimas
-                  if (total < minTotalHours) return null;
-
-                  const overLimit = total > 40; // 🔴 más de 40 horas
-
-                  return (
-                    <tr
-                      key={emp.id}
-                      className={
-                        "border" + (overLimit ? " bg-red-50" : "")
-                      }
-                    >
-                      <td className="border px-2 py-1">{emp.name}</td>
-
-                      {Object.values(rowHours).map((h, i) => (
-                        <td
-                          key={i}
-                          className="border px-2 py-1 text-center"
-                        >
-                          {h === 0 ? "" : h.toFixed(2)}
-                        </td>
-                      ))}
-
-                      <td
-                        className={
-                          "border px-2 py-1 text-center font-semibold " +
-                          (overLimit ? "text-red-700" : "")
-                        }
-                      >
-                        {total.toFixed(2)}
-                      </td>
-                    </tr>
-                  );
-                })}
-
-              {/* TOTAL POR AEROLÍNEA */}
-              <tr className="bg-gray-100 border font-semibold">
-                <td className="border px-2 py-1">
-                  TOTAL HOURS PER AIRLINE
-                </td>
-
-                {[
-                  "WL Havana Air",
-                  "WL Invicta",
-                  "AV",
-                  "AA-BSO",
-                  "CABIN",
-                  "WCHR",
-                  "SY",
-                  "OTHER",
-                ].map((air, i) => {
-                  const total = Object.values(summaryByAirline[air] || {}).reduce(
-                    (sum, h) => sum + (typeof h === "number" ? h : Number(h || 0)),
-                    0
-                  );
-                  return (
-                    <td key={i} className="border px-2 py-1 text-center">
-                      {total === 0 ? "" : total.toFixed(2)}
-                    </td>
-                  );
-                })}
-
-                <td className="border px-2 py-1 text-center">
-                  {Object.values(summaryByAirline)
-                    .flatMap((air) => Object.values(air))
-                    .reduce((a, b) => a + b, 0)
-                    .toFixed(2)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
       </div>
 
-      {/* OPCIONAL: Resumen por aerolínea debajo (lo mantenemos) */}
-      {airlineKeys.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          No data for the selected week.
-        </p>
-      ) : (
-        <div className="space-y-4">
-          {airlineKeys.map((airline) => {
-            const empTotals = summaryByAirline[airline];
-            const totalHoursAirline = Object.values(empTotals).reduce(
-              (sum, h) => sum + (typeof h === "number" ? h : Number(h || 0)),
-              0
-            );
+      {/* TABLA PRINCIPAL */}
+      <div className="card p-4">
+        <h2 className="text-md font-semibold mb-2">
+          Week of: {formatWeekLabel(selectedWeekTag)}
+          <span className="ml-2 text-[11px] text-slate-500">
+            ({statusLabel})
+          </span>
+        </h2>
 
-            return (
-              <div key={airline} className="card">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-800">
-                      {airline}
-                    </h2>
-                    <p className="text-[11px] text-slate-500">
-                      Total hours (all employees):{" "}
-                      {totalHoursAirline.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
+        {airlineKeys.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No data for the selected week and status filter.
+          </p>
+        ) : (
+          <div className="overflow-auto">
+            <table className="min-w-[900px] border text-xs">
+              <thead>
+                <tr className="bg-gray-100 border">
+                  <th className="border px-2 py-1">Employee Name</th>
 
-                <div className="overflow-auto">
-                  <table className="table min-w-[320px] text-xs">
-                    <thead>
-                      <tr className="bg-slate-50">
-                        <th className="text-left">Employee</th>
-                        <th className="text-right">Total hours (week)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(empTotals)
-                        .sort((a, b) => {
-                          const nameA =
-                            employeeNameMap[a[0]] || a[0] || "";
-                          const nameB =
-                            employeeNameMap[b[0]] || b[0] || "";
-                          return nameA.localeCompare(nameB);
-                        })
-                        .map(([employeeId, hours]) => {
-                          const h = Number(hours || 0);
-                          const overLimit = h > 40;
+                  {AIRLINES_ORDER.map((air) => (
+                    <th
+                      key={air}
+                      className="border px-2 py-1 text-center"
+                    >
+                      {air}
+                    </th>
+                  ))}
 
+                  <th className="border px-2 py-1 text-center">
+                    Total weekly hours
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {/* FILAS POR EMPLEADO */}
+                {employees
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((emp) => {
+                    const rowHours = {
+                      "WL Havana Air":
+                        summaryByAirline["WL Havana Air"]?.[emp.id] || 0,
+                      "WL Invicta":
+                        summaryByAirline["WL Invicta"]?.[emp.id] || 0,
+                      AV: summaryByAirline["AV"]?.[emp.id] || 0,
+                      "AA-BSO":
+                        summaryByAirline["AA-BSO"]?.[emp.id] || 0,
+                      CABIN: summaryByAirline["CABIN"]?.[emp.id] || 0,
+                      WCHR: summaryByAirline["WCHR"]?.[emp.id] || 0,
+                      SY: summaryByAirline["SY"]?.[emp.id] || 0,
+                      OTHER: summaryByAirline["OTHER"]?.[emp.id] || 0,
+                    };
+
+                    const total = Object.values(rowHours).reduce(
+                      (a, b) => a + b,
+                      0
+                    );
+
+                    if (total === 0) return null; // ocultar empleados sin horas
+
+                    return (
+                      <tr key={emp.id} className="border">
+                        <td className="border px-2 py-1">{emp.name}</td>
+
+                        {AIRLINES_ORDER.map((air, i) => {
+                          const h = rowHours[air] || 0;
                           return (
-                            <tr
-                              key={employeeId}
-                              className={overLimit ? "bg-red-50" : ""}
+                            <td
+                              key={i}
+                              className="border px-2 py-1 text-center"
                             >
-                              <td>
-                                {employeeNameMap[employeeId] || employeeId}
-                              </td>
-                              <td
-                                className={
-                                  "text-right " +
-                                  (overLimit ? "text-red-700 font-semibold" : "")
-                                }
-                              >
-                                {h.toFixed(2)}
-                              </td>
-                            </tr>
+                              {h === 0 ? "" : h.toFixed(2)}
+                            </td>
                           );
                         })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+
+                        <td className="border px-2 py-1 text-center font-semibold">
+                          {total.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                {/* TOTAL POR AEROLÍNEA */}
+                <tr className="bg-gray-100 border font-semibold">
+                  <td className="border px-2 py-1">
+                    TOTAL HOURS PER AIRLINE
+                  </td>
+
+                  {AIRLINES_ORDER.map((air, i) => {
+                    const total = Object.values(
+                      summaryByAirline[air] || {}
+                    ).reduce((sum, h) => sum + h, 0);
+                    return (
+                      <td
+                        key={i}
+                        className="border px-2 py-1 text-center"
+                      >
+                        {total === 0 ? "" : total.toFixed(2)}
+                      </td>
+                    );
+                  })}
+
+                  <td className="border px-2 py-1 text-center">
+                    {totalAllAirlines.toFixed(2)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-[11px] text-slate-500 mt-2">
+          Empty cells mean the employee has 0 hours for that airline in the
+          selected week and status filter.
+        </p>
+      </div>
     </div>
   );
 }
