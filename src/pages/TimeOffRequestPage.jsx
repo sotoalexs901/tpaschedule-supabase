@@ -13,8 +13,9 @@ export default function TimeOffRequestPage() {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  // Cargar lista de empleados
+  // Cargar nombres desde "employees"
   useEffect(() => {
     async function loadEmployees() {
       try {
@@ -24,7 +25,7 @@ export default function TimeOffRequestPage() {
           .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         setEmployees(list);
       } catch (err) {
-        console.error("Error loading employees for day off request:", err);
+        console.error("Error loading employees for time off form:", err);
       }
     }
     loadEmployees().catch(console.error);
@@ -32,40 +33,48 @@ export default function TimeOffRequestPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
     setMessage("");
 
-    if (!employeeId || !reasonType || !startDate || !endDate || pin.length !== 4) {
-      setMessage("Please complete all required fields and use a 4-digit PIN.");
+    if (!employeeId || !reasonType || !startDate || !endDate) {
+      setError("Please complete all required fields.");
       return;
     }
 
-    const selectedEmp = employees.find((e) => e.id === employeeId);
-    const employeeName = selectedEmp?.name || "";
+    if (pin.length !== 4) {
+      setError("PIN must be 4 digits.");
+      return;
+    }
+
+    const emp = employees.find((e) => e.id === employeeId);
+    const employeeName = emp?.name || "";
 
     try {
       setSubmitting(true);
+
       await addDoc(collection(db, "timeOffRequests"), {
         employeeId,
         employeeName,
         reasonType,
         startDate,
         endDate,
-        notes: notes.trim() || null,
         pin,
+        notes: notes || "",
         status: "pending",
         createdAt: serverTimestamp(),
+        createdVia: "public_form",
       });
 
+      setMessage("Your request has been submitted successfully.");
       setEmployeeId("");
       setReasonType("");
       setStartDate("");
       setEndDate("");
       setPin("");
       setNotes("");
-      setMessage("Your request has been submitted successfully.");
     } catch (err) {
       console.error("Error submitting time off request:", err);
-      setMessage("Error submitting request. Please try again.");
+      setError("There was an error submitting your request. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -76,11 +85,11 @@ export default function TimeOffRequestPage() {
       className="min-h-screen flex items-center justify-center bg-cover bg-center"
       style={{ backgroundImage: "url('/tpa-flamingo-bw.jpg')" }}
     >
-      <div className="bg-white/85 backdrop-blur-md rounded-2xl shadow-2xl px-8 py-7 w-[340px] sm:w-[420px] border border-white/40">
-        <h1 className="text-xl font-bold text-center mb-1 text-slate-900">
+      <div className="bg-slate-900/90 backdrop-blur-lg rounded-2xl shadow-2xl px-8 py-7 w-[340px] sm:w-[420px] border border-white/20 text-white">
+        <h1 className="text-xl font-bold text-center mb-1">
           Day Off Request
         </h1>
-        <p className="text-[11px] text-center text-slate-600 mb-5">
+        <p className="text-[11px] text-center text-slate-200 mb-5">
           Please complete this form to request PTO, Sick, or other time off.
         </p>
 
@@ -91,7 +100,7 @@ export default function TimeOffRequestPage() {
               Employee Name
             </label>
             <select
-              className="w-full border rounded px-2 py-2 text-sm"
+              className="w-full border rounded px-2 py-2 text-sm text-slate-900"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
             >
@@ -110,14 +119,14 @@ export default function TimeOffRequestPage() {
               Reason Type
             </label>
             <select
-              className="w-full border rounded px-2 py-2 text-sm"
+              className="w-full border rounded px-2 py-2 text-sm text-slate-900"
               value={reasonType}
               onChange={(e) => setReasonType(e.target.value)}
             >
               <option value="">Select reason</option>
               <option value="PTO">PTO</option>
               <option value="Sick">Sick</option>
-              <option value="Emergency">Emergency</option>
+              <option value="Personal">Personal</option>
               <option value="Other">Other</option>
             </select>
           </div>
@@ -130,7 +139,7 @@ export default function TimeOffRequestPage() {
               </label>
               <input
                 type="date"
-                className="w-full border rounded px-2 py-2 text-sm"
+                className="w-full border rounded px-2 py-2 text-sm text-slate-900"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
@@ -141,7 +150,7 @@ export default function TimeOffRequestPage() {
               </label>
               <input
                 type="date"
-                className="w-full border rounded px-2 py-2 text-sm"
+                className="w-full border rounded px-2 py-2 text-sm text-slate-900"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
@@ -151,13 +160,13 @@ export default function TimeOffRequestPage() {
           {/* PIN */}
           <div>
             <label className="block text-xs font-semibold mb-1">
-              4-digit PIN <span className="font-normal text-[11px]">(to check your request status)</span>
+              4-digit PIN (to check your request status)
             </label>
             <input
               type="password"
               maxLength={4}
               inputMode="numeric"
-              className="w-full border rounded px-2 py-2 text-sm tracking-[0.3em]"
+              className="w-full border rounded px-2 py-2 text-sm tracking-[0.3em] text-slate-900"
               value={pin}
               onChange={(e) =>
                 setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
@@ -168,34 +177,37 @@ export default function TimeOffRequestPage() {
           {/* Notes */}
           <div>
             <label className="block text-xs font-semibold mb-1">
-              Notes <span className="font-normal text-[11px]">(optional)</span>
+              Notes (optional)
             </label>
             <textarea
-              rows={2}
-              className="w-full border rounded px-2 py-2 text-sm"
+              rows={3}
+              className="w-full border rounded px-2 py-2 text-sm text-slate-900"
+              placeholder="Additional details (flight, doctor appointment, etc.)"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Additional details (flight, doctor appointment, etc.)"
             />
           </div>
 
           {/* Info 72h */}
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p className="text-[11px] text-slate-200 mt-1">
             HR and Management team may take up to <b>72 hours</b> to approve or
             reject your request.
           </p>
 
-          {/* Mensaje */}
+          {error && (
+            <p className="text-[11px] text-red-300 mt-1 text-center">
+              {error}
+            </p>
+          )}
           {message && (
-            <p className="text-[11px] text-center mt-1 text-slate-700">
+            <p className="text-[11px] text-emerald-300 mt-1 text-center">
               {message}
             </p>
           )}
 
-          {/* Botón */}
           <button
             type="submit"
-            className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md text-sm font-semibold shadow-md transition"
+            className="w-full mt-2 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-md text-sm font-semibold shadow-md transition"
             disabled={submitting}
           >
             {submitting ? "Submitting..." : "Submit Request"}
