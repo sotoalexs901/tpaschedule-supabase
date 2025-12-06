@@ -15,7 +15,7 @@ export default function TimeOffRequestPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  // Cargar nombres desde "employees"
+  // Cargar empleados desde "employees"
   useEffect(() => {
     async function loadEmployees() {
       try {
@@ -80,27 +80,80 @@ export default function TimeOffRequestPage() {
     }
   };
 
+  // --- ESTILOS INLINE PARA QUE SE VEA COMO EL LOGIN ---
+  const outerStyle = {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundImage: "url('/tpa-flamingo-bw.jpg')",
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+  };
+
+  const cardStyle = {
+    background: "rgba(15,23,42,0.88)",
+    backdropFilter: "blur(10px)",
+    borderRadius: "18px",
+    boxShadow: "0 18px 45px rgba(0,0,0,0.6)",
+    border: "1px solid rgba(148,163,184,0.45)",
+    padding: "24px 28px",
+    width: "340px",
+    maxWidth: "92vw",
+    color: "#f9fafb",
+  };
+
+  const inputStyle = {
+    width: "100%",
+    borderRadius: "8px",
+    border: "1px solid #d1d5db",
+    padding: "7px 9px",
+    fontSize: "0.85rem",
+    color: "#0f172a",
+  };
+
+  const labelStyle = {
+    fontSize: "11px",
+    fontWeight: 600,
+    marginBottom: "3px",
+    display: "block",
+  };
+
+  const smallTextStyle = {
+    fontSize: "11px",
+    color: "#e5e7eb",
+  };
+
   return (
-    <div
-      className="min-h-screen flex items-center justify-center bg-cover bg-center"
-      style={{ backgroundImage: "url('/tpa-flamingo-bw.jpg')" }}
-    >
-      <div className="bg-slate-900/90 backdrop-blur-lg rounded-2xl shadow-2xl px-8 py-7 w-[340px] sm:w-[420px] border border-white/20 text-white">
-        <h1 className="text-xl font-bold text-center mb-1">
+    <div style={outerStyle}>
+      <div style={cardStyle}>
+        <h1
+          style={{
+            fontSize: "18px",
+            fontWeight: 700,
+            textAlign: "center",
+            marginBottom: "4px",
+          }}
+        >
           Day Off Request
         </h1>
-        <p className="text-[11px] text-center text-slate-200 mb-5">
+        <p
+          style={{
+            ...smallTextStyle,
+            textAlign: "center",
+            marginBottom: "14px",
+            color: "#cbd5f5",
+          }}
+        >
           Please complete this form to request PTO, Sick, or other time off.
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-3 text-sm">
+        <form onSubmit={handleSubmit} style={{ display: "grid", gap: "10px" }}>
           {/* Employee Name */}
           <div>
-            <label className="block text-xs font-semibold mb-1">
-              Employee Name
-            </label>
+            <label style={labelStyle}>Employee Name</label>
             <select
-              className="w-full border rounded px-2 py-2 text-sm text-slate-900"
+              style={inputStyle}
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
             >
@@ -115,11 +168,9 @@ export default function TimeOffRequestPage() {
 
           {/* Reason */}
           <div>
-            <label className="block text-xs font-semibold mb-1">
-              Reason Type
-            </label>
+            <label style={labelStyle}>Reason Type</label>
             <select
-              className="w-full border rounded px-2 py-2 text-sm text-slate-900"
+              style={inputStyle}
               value={reasonType}
               onChange={(e) => setReasonType(e.target.value)}
             >
@@ -132,25 +183,21 @@ export default function TimeOffRequestPage() {
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
             <div>
-              <label className="block text-xs font-semibold mb-1">
-                Start Date
-              </label>
+              <label style={labelStyle}>Start Date</label>
               <input
                 type="date"
-                className="w-full border rounded px-2 py-2 text-sm text-slate-900"
+                style={inputStyle}
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold mb-1">
-                End Date
-              </label>
+              <label style={labelStyle}>End Date</label>
               <input
                 type="date"
-                className="w-full border rounded px-2 py-2 text-sm text-slate-900"
+                style={inputStyle}
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
@@ -159,14 +206,12 @@ export default function TimeOffRequestPage() {
 
           {/* PIN */}
           <div>
-            <label className="block text-xs font-semibold mb-1">
-              4-digit PIN (to check your request status)
-            </label>
+            <label style={labelStyle}>4-digit PIN (to check your request status)</label>
             <input
               type="password"
               maxLength={4}
               inputMode="numeric"
-              className="w-full border rounded px-2 py-2 text-sm tracking-[0.3em] text-slate-900"
+              style={{ ...inputStyle, letterSpacing: "0.3em" }}
               value={pin}
               onChange={(e) =>
                 setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
@@ -176,12 +221,10 @@ export default function TimeOffRequestPage() {
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-semibold mb-1">
-              Notes (optional)
-            </label>
+            <label style={labelStyle}>Notes (optional)</label>
             <textarea
               rows={3}
-              className="w-full border rounded px-2 py-2 text-sm text-slate-900"
+              style={{ ...inputStyle, resize: "vertical" }}
               placeholder="Additional details (flight, doctor appointment, etc.)"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -189,26 +232,51 @@ export default function TimeOffRequestPage() {
           </div>
 
           {/* Info 72h */}
-          <p className="text-[11px] text-slate-200 mt-1">
+          <p style={{ ...smallTextStyle, marginTop: "2px" }}>
             HR and Management team may take up to <b>72 hours</b> to approve or
             reject your request.
           </p>
 
           {error && (
-            <p className="text-[11px] text-red-300 mt-1 text-center">
+            <p
+              style={{
+                fontSize: "11px",
+                color: "#fecaca",
+                textAlign: "center",
+              }}
+            >
               {error}
             </p>
           )}
           {message && (
-            <p className="text-[11px] text-emerald-300 mt-1 text-center">
+            <p
+              style={{
+                fontSize: "11px",
+                color: "#bbf7d0",
+                textAlign: "center",
+              }}
+            >
               {message}
             </p>
           )}
 
           <button
             type="submit"
-            className="w-full mt-2 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-md text-sm font-semibold shadow-md transition"
             disabled={submitting}
+            style={{
+              marginTop: "4px",
+              width: "100%",
+              background:
+                "linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)",
+              borderRadius: "999px",
+              border: "none",
+              padding: "8px 0",
+              color: "#ffffff",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              cursor: "pointer",
+              boxShadow: "0 12px 25px rgba(37,99,235,0.55)",
+            }}
           >
             {submitting ? "Submitting..." : "Submit Request"}
           </button>
