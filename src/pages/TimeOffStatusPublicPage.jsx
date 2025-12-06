@@ -1,85 +1,69 @@
 // src/pages/TimeOffStatusPublicPage.jsx
 import React, { useEffect, useState } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  orderBy,
+} from "firebase/firestore";
 import { db } from "../firebase";
 
 export default function TimeOffStatusPublicPage() {
   const [employees, setEmployees] = useState([]);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [pin, setPin] = useState("");
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [statusMsg, setStatusMsg] = useState("");
+  const [message, setMessage] = useState("");
 
-  // Cargar lista de empleados
+  // Cargar empleados (igual que en la solicitud)
   useEffect(() => {
     async function loadEmployees() {
       try {
         const snap = await getDocs(collection(db, "employees"));
-        const list = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
-        list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         setEmployees(list);
       } catch (err) {
-        console.error("Error loading employees:", err);
+        console.error("Error loading employees for status page:", err);
       }
     }
-
     loadEmployees().catch(console.error);
   }, []);
 
-  const handleCheckStatus = async (e) => {
+  const handleCheck = async (e) => {
     e.preventDefault();
-    setStatusMsg("");
+    setMessage("");
     setRequests([]);
 
-    if (!selectedEmployeeId || !pin) {
-      setStatusMsg("Please select your name and enter your 4-digit PIN.");
+    if (!employeeId || pin.length !== 4) {
+      setMessage("Please select your name and enter your 4-digit PIN.");
       return;
     }
-
-    if (!/^\d{4}$/.test(pin)) {
-      setStatusMsg("PIN must be exactly 4 digits.");
-      return;
-    }
-
-    const employee = employees.find((e) => e.id === selectedEmployeeId);
-    if (!employee) {
-      setStatusMsg("Employee not found.");
-      return;
-    }
-
-    setLoading(true);
 
     try {
+      setLoading(true);
+
       const qReq = query(
         collection(db, "timeOffRequests"),
-        where("employeeName", "==", employee.name),
-        where("pin", "==", pin)
+        where("employeeId", "==", employeeId),
+        where("pin", "==", pin),
+        orderBy("createdAt", "desc")
       );
 
       const snap = await getDocs(qReq);
-      const list = snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
-
-      list.sort(
-        (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-      );
-
-      setRequests(list);
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       if (list.length === 0) {
-        setStatusMsg(
-          "No requests found for this name and PIN. Please check your PIN or contact your supervisor."
-        );
+        setMessage("No requests found for this employee and PIN.");
+      } else {
+        setRequests(list);
       }
     } catch (err) {
-      console.error("Error loading status:", err);
-      setStatusMsg("Error loading status. Please try again.");
+      console.error("Error checking time off status:", err);
+      setMessage("Error loading status. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -87,32 +71,28 @@ export default function TimeOffStatusPublicPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center bg-cover bg-center p-4"
-      style={{ backgroundImage: "url('/flamingo-bg.jpg')" }}
+      className="min-h-screen flex items-center justify-center bg-cover bg-center"
+      style={{ backgroundImage: "url('/tpa-flamingo-bw.jpg')" }}
     >
-      <div
-        className="bg-white/75 backdrop-blur-md shadow-2xl border border-white/60"
-        style={{ maxWidth: 520, width: "100%", borderRadius: 20, padding: "1.75rem" }}
-      >
-        <h1 className="text-xl font-bold mb-1 text-center text-gray-800">
+      <div className="bg-white/85 backdrop-blur-md rounded-2xl shadow-2xl px-8 py-7 w-[340px] sm:w-[420px] border border-white/40">
+        <h1 className="text-xl font-bold text-center mb-1 text-slate-900">
           Check Day Off Request Status
         </h1>
-        <p className="text-[11px] text-gray-600 text-center mb-4">
+        <p className="text-[11px] text-center text-slate-600 mb-5">
           Select your name, enter your 4-digit PIN, and view the status of your
           requests.
         </p>
 
-        {/* FORM DE BÚSQUEDA */}
-        <form onSubmit={handleCheckStatus} className="space-y-3 text-sm">
-          {/* Nombre desde SELECT */}
+        <form onSubmit={handleCheck} className="space-y-3 text-sm">
+          {/* Employee Name */}
           <div>
-            <label className="font-medium text-xs block mb-1">
+            <label className="block text-xs font-semibold mb-1">
               Employee Name
             </label>
             <select
-              className="border rounded w-full px-2 py-2 text-sm"
-              value={selectedEmployeeId}
-              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+              className="w-full border rounded px-2 py-2 text-sm"
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
             >
               <option value="">Select your name</option>
               {employees.map((emp) => (
@@ -125,69 +105,74 @@ export default function TimeOffStatusPublicPage() {
 
           {/* PIN */}
           <div>
-            <label className="font-medium text-xs block mb-1">4-digit PIN</label>
+            <label className="block text-xs font-semibold mb-1">
+              4-digit PIN
+            </label>
             <input
               type="password"
-              className="border rounded w-full px-2 py-2 text-sm"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
               maxLength={4}
-              placeholder="XXXX"
+              inputMode="numeric"
+              className="w-full border rounded px-2 py-2 text-sm tracking-[0.3em]"
+              value={pin}
+              onChange={(e) =>
+                setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+              }
             />
           </div>
 
-          <button
-            type="submit"
-            className="w-full bg-blue-700 hover:bg-blue-800 text-white py-2 rounded mt-2 text-sm font-semibold shadow"
-          >
-            {loading ? "Searching..." : "Check Status"}
-          </button>
-
-          {/* Nota 72 horas */}
-          <p className="text-[11px] text-gray-600 text-center mt-2">
-            HR and Management team may take up to 72 hours to approve or reject
-            your request.
+          {/* Info 72h */}
+          <p className="text-[11px] text-slate-500 mt-1">
+            HR and Management team may take up to <b>72 hours</b> to approve or
+            reject your request.
           </p>
 
-          {statusMsg && (
-            <p className="text-[11px] text-center mt-2 text-gray-700">
-              {statusMsg}
+          {/* Mensajes */}
+          {message && (
+            <p className="text-[11px] text-center mt-1 text-slate-700">
+              {message}
             </p>
           )}
+
+          <button
+            type="submit"
+            className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md text-sm font-semibold shadow-md transition"
+            disabled={loading}
+          >
+            {loading ? "Checking..." : "Check Status"}
+          </button>
         </form>
 
-        {/* RESULTADOS */}
-        <div className="mt-4 text-sm">
-          {requests.length > 0 && (
-            <div className="space-y-2">
-              {requests.map((req) => (
-                <div key={req.id} className="border rounded px-3 py-2 bg-white">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-semibold text-[13px]">
-                      {req.reasonType} — {req.startDate} → {req.endDate}
-                    </span>
-                    <span
-                      className={`text-[11px] font-semibold ${
-                        req.status === "approved"
-                          ? "text-green-700"
-                          : req.status === "rejected"
-                          ? "text-red-700"
-                          : "text-gray-700"
-                      }`}
-                    >
-                      {req.status?.toUpperCase() || "PENDING"}
-                    </span>
-                  </div>
-                  {req.notes && (
-                    <p className="text-[11px] text-gray-600">
-                      Notes: {req.notes}
-                    </p>
-                  )}
+        {/* Resultados */}
+        {requests.length > 0 && (
+          <div className="mt-4 border-t border-slate-200 pt-3 max-h-52 overflow-auto text-[11px]">
+            {requests.map((r) => (
+              <div key={r.id} className="mb-2">
+                <div className="font-semibold">
+                  {r.reasonType || "Reason"} — {r.startDate} → {r.endDate}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <div>
+                  Status:{" "}
+                  <span
+                    className={
+                      r.status === "approved"
+                        ? "text-green-700 font-semibold"
+                        : r.status === "rejected"
+                        ? "text-red-700 font-semibold"
+                        : "text-yellow-700 font-semibold"
+                    }
+                  >
+                    {r.status?.toUpperCase()}
+                  </span>
+                </div>
+                {r.notes && (
+                  <div className="text-slate-600">
+                    Notes: <span>{r.notes}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
