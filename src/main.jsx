@@ -24,9 +24,10 @@ import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
 import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx";
 import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 
-// ⭐ NUEVO
+// ⭐ NUEVOS
 import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
 import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx";
+import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx"; // ✅ AÑADIDO
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
@@ -46,8 +47,9 @@ function AppRouter() {
         {/* LOGIN */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* 🔓 RUTA PÚBLICA PARA EMPLEADOS (no requiere login) */}
+        {/* 🔓 RUTAS PÚBLICAS (no requieren login) */}
         <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
+        <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} /> {/* ✅ AÑADIDO */}
 
         {/* RUTAS PROTEGIDAS */}
         <Route
@@ -126,7 +128,7 @@ function AppRouter() {
             }
           />
 
-          {/* ⭐ NUEVA PÁGINA PARA APROBAR DAY OFF */}
+          {/* ⭐ PÁGINA ADMIN PARA APROBAR DAY OFF */}
           <Route
             path="timeoff-requests"
             element={
