@@ -1,154 +1,194 @@
-// src/pages/AppLayout.jsx
-import React from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { useUser } from "../UserContext.jsx";
+// src/pages/TimeOffStatusPublicPage.jsx
+import React, { useEffect, useState } from "react";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "../firebase";
 
-export default function AppLayout() {
-  const { user, setUser } = useUser();
-  const navigate = useNavigate();
+export default function TimeOffStatusPublicPage() {
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [pin, setPin] = useState("");
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [statusMsg, setStatusMsg] = useState("");
 
-  const logout = () => {
-    setUser(null);
-    navigate("/login");
-  };
-
-  // Estilos base del sidebar
-  const sidebarStyle = {
-    width: 230,
-    background: "#020617",
-    color: "#ffffff",
-    display: "flex",
-    flexDirection: "column",
-    minHeight: "100vh",
-  };
-
-  const sidebarHeaderStyle = {
-    padding: "20px 16px",
-    borderBottom: "1px solid rgba(148,163,184,0.35)",
-  };
-
-  const loggedTextStyle = {
-    fontSize: 11,
-    marginTop: 4,
-    color: "#ffffff",
-    opacity: 1,
-  };
-
-  const navStyle = {
-    flex: 1,
-    padding: "12px 10px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-  };
-
-  const logoutStyle = {
-    borderTop: "1px solid rgba(148,163,184,0.35)",
-    padding: "10px 14px",
-    background: "transparent",
-    color: "#ffffff",
-    textAlign: "left",
-    fontSize: 13,
-    cursor: "pointer",
-  };
-
-  return (
-    <div className="min-h-screen flex bg-slate-100">
-      {/* SIDEBAR */}
-      <aside style={sidebarStyle}>
-        {/* Header */}
-        <div style={sidebarHeaderStyle}>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: 16,
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-            }}
-          >
-            TPA OPS SYSTEM
-          </h1>
-          <p style={loggedTextStyle}>
-            Logged as: <b>{user?.username}</b> ({user?.role})
-          </p>
-        </div>
-
-        {/* Menú */}
-        <nav style={navStyle}>
-          {/* Común para todos los usuarios logueados */}
-          <NavItem to="/dashboard" label="Dashboard" />
-          <NavItem to="/schedule" label="Create Schedule" />
-
-          {/* 🔵 SOLO STATION MANAGER */}
-          {user?.role === "station_manager" && (
-            <>
-              <NavItem to="/approvals" label="Approvals" />
-              <NavItem to="/timeoff-requests" label="Day Off Requests" />
-              <NavItem to="/dashboard-editor" label="Dashboard Editor" />
-              <NavItem to="/budgets" label="Budgets" />
-              <NavItem to="/create-user" label="Create User" />
-              <NavItem to="/edit-users" label="Manage Users" />
-            </>
-          )}
-
-          {/* 🔵 STATION + DUTY */}
-          {(user?.role === "station_manager" ||
-            user?.role === "duty_manager") && (
-            <>
-              <NavItem to="/employees" label="Employees" />
-              <NavItem to="/blocked" label="Blocked Employees" />
-              <NavItem to="/drafts" label="Draft Schedules" />
-              <NavItem to="/approved" label="Approved Schedules" />
-              <NavItem to="/returned" label="Returned Schedules" />
-              <NavItem to="/weekly-summary" label="Weekly Summary" />
-            </>
-          )}
-        </nav>
-
-        {/* Logout */}
-        <button style={logoutStyle} onClick={logout}>
-          Logout
-        </button>
-      </aside>
-
-      {/* CONTENIDO PRINCIPAL */}
-      <main className="flex-1 p-6 overflow-auto">
-        <Outlet />
-      </main>
-    </div>
-  );
-}
-
-// Componente de link del menú lateral
-function NavItem({ to, label }) {
-  const baseStyle = {
-    display: "block",
-    padding: "8px 10px",
-    borderRadius: 6,
-    fontSize: 13,
-    textDecoration: "none",
-    color: "#ffffff",
-    opacity: 1,
-    transition: "background 0.15s, color 0.15s",
-  };
-
-  return (
-    <NavLink
-      to={to}
-      style={({ isActive }) =>
-        isActive
-          ? {
-              ...baseStyle,
-              background: "#1d4ed8",
-              color: "#ffffff",
-            }
-          : {
-              ...baseStyle,
-              background: "transparent",
-            }
+  // Cargar lista de empleados
+  useEffect(() => {
+    async function loadEmployees() {
+      try {
+        const snap = await getDocs(collection(db, "employees"));
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        setEmployees(list);
+      } catch (err) {
+        console.error("Error loading employees:", err);
       }
+    }
+
+    loadEmployees().catch(console.error);
+  }, []);
+
+  const handleCheckStatus = async (e) => {
+    e.preventDefault();
+    setStatusMsg("");
+    setRequests([]);
+
+    if (!selectedEmployeeId || !pin) {
+      setStatusMsg("Please select your name and enter your 4-digit PIN.");
+      return;
+    }
+
+    if (!/^\d{4}$/.test(pin)) {
+      setStatusMsg("PIN must be exactly 4 digits.");
+      return;
+    }
+
+    const employee = employees.find((e) => e.id === selectedEmployeeId);
+    if (!employee) {
+      setStatusMsg("Employee not found.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const qReq = query(
+        collection(db, "timeOffRequests"),
+        where("employeeName", "==", employee.name),
+        where("pin", "==", pin)
+      );
+
+      const snap = await getDocs(qReq);
+      const list = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+
+      list.sort(
+        (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
+      );
+
+      setRequests(list);
+
+      if (list.length === 0) {
+        setStatusMsg(
+          "No requests found for this name and PIN. Please check your PIN or contact your supervisor."
+        );
+      }
+    } catch (err) {
+      console.error("Error loading status:", err);
+      setStatusMsg("Error loading status. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center bg-cover bg-center p-4"
+      style={{ backgroundImage: "url('/flamingo-bg.jpg')" }}
     >
-      {label}
-    </NavLink>
+      <div
+        className="bg-white/75 backdrop-blur-md shadow-2xl border border-white/60"
+        style={{ maxWidth: 520, width: "100%", borderRadius: 20, padding: "1.75rem" }}
+      >
+        <h1 className="text-xl font-bold mb-1 text-center text-gray-800">
+          Check Day Off Request Status
+        </h1>
+        <p className="text-[11px] text-gray-600 text-center mb-4">
+          Select your name, enter your 4-digit PIN, and view the status of your
+          requests.
+        </p>
+
+        {/* FORM DE BÚSQUEDA */}
+        <form onSubmit={handleCheckStatus} className="space-y-3 text-sm">
+          {/* Nombre desde SELECT */}
+          <div>
+            <label className="font-medium text-xs block mb-1">
+              Employee Name
+            </label>
+            <select
+              className="border rounded w-full px-2 py-2 text-sm"
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+            >
+              <option value="">Select your name</option>
+              {employees.map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* PIN */}
+          <div>
+            <label className="font-medium text-xs block mb-1">4-digit PIN</label>
+            <input
+              type="password"
+              className="border rounded w-full px-2 py-2 text-sm"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              maxLength={4}
+              placeholder="XXXX"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-blue-700 hover:bg-blue-800 text-white py-2 rounded mt-2 text-sm font-semibold shadow"
+          >
+            {loading ? "Searching..." : "Check Status"}
+          </button>
+
+          {/* Nota 72 horas */}
+          <p className="text-[11px] text-gray-600 text-center mt-2">
+            HR and Management team may take up to 72 hours to approve or reject
+            your request.
+          </p>
+
+          {statusMsg && (
+            <p className="text-[11px] text-center mt-2 text-gray-700">
+              {statusMsg}
+            </p>
+          )}
+        </form>
+
+        {/* RESULTADOS */}
+        <div className="mt-4 text-sm">
+          {requests.length > 0 && (
+            <div className="space-y-2">
+              {requests.map((req) => (
+                <div key={req.id} className="border rounded px-3 py-2 bg-white">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-semibold text-[13px]">
+                      {req.reasonType} — {req.startDate} → {req.endDate}
+                    </span>
+                    <span
+                      className={`text-[11px] font-semibold ${
+                        req.status === "approved"
+                          ? "text-green-700"
+                          : req.status === "rejected"
+                          ? "text-red-700"
+                          : "text-gray-700"
+                      }`}
+                    >
+                      {req.status?.toUpperCase() || "PENDING"}
+                    </span>
+                  </div>
+                  {req.notes && (
+                    <p className="text-[11px] text-gray-600">
+                      Notes: {req.notes}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
