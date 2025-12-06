@@ -11,7 +11,7 @@ export default function TimeOffStatusPublicPage() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
 
-  // Cargar lista de empleados para el SELECT
+  // Cargar lista de empleados
   useEffect(() => {
     async function loadEmployees() {
       try {
@@ -20,7 +20,6 @@ export default function TimeOffStatusPublicPage() {
           id: d.id,
           ...d.data(),
         }));
-        // orden por nombre
         list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         setEmployees(list);
       } catch (err) {
@@ -67,7 +66,6 @@ export default function TimeOffStatusPublicPage() {
         ...d.data(),
       }));
 
-      // ordenar por fecha de creación (más reciente primero)
       list.sort(
         (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
       );
@@ -88,15 +86,18 @@ export default function TimeOffStatusPublicPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+    <div
+      className="min-h-screen flex items-center justify-center bg-cover bg-center p-4"
+      style={{ backgroundImage: "url('/flamingo-bg.jpg')" }}
+    >
       <div
-        className="card"
-        style={{ maxWidth: 520, width: "100%", borderRadius: 16 }}
+        className="bg-white/75 backdrop-blur-md shadow-2xl border border-white/60"
+        style={{ maxWidth: 520, width: "100%", borderRadius: 20, padding: "1.75rem" }}
       >
-        <h1 className="text-lg font-semibold mb-1 text-center">
+        <h1 className="text-xl font-bold mb-1 text-center text-gray-800">
           Check Day Off Request Status
         </h1>
-        <p className="text-[11px] text-gray-600 text-center mb-3">
+        <p className="text-[11px] text-gray-600 text-center mb-4">
           Select your name, enter your 4-digit PIN, and view the status of your
           requests.
         </p>
@@ -109,7 +110,7 @@ export default function TimeOffStatusPublicPage() {
               Employee Name
             </label>
             <select
-              className="border rounded w-full px-2 py-1 text-sm"
+              className="border rounded w-full px-2 py-2 text-sm"
               value={selectedEmployeeId}
               onChange={(e) => setSelectedEmployeeId(e.target.value)}
             >
@@ -127,7 +128,7 @@ export default function TimeOffStatusPublicPage() {
             <label className="font-medium text-xs block mb-1">4-digit PIN</label>
             <input
               type="password"
-              className="border rounded w-full px-2 py-1 text-sm"
+              className="border rounded w-full px-2 py-2 text-sm"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
               maxLength={4}
@@ -149,7 +150,7 @@ export default function TimeOffStatusPublicPage() {
           </p>
 
           {statusMsg && (
-            <p className="text-[11px] text-center mt-2 text-gray-600">
+            <p className="text-[11px] text-center mt-2 text-gray-700">
               {statusMsg}
             </p>
           )}
