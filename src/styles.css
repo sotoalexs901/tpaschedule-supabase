@@ -414,13 +414,13 @@ textarea:focus {
 }
 
 .excel-logo {
-  height: 80px;
+  height: 70px;
   object-fit: contain;
   margin-bottom: 6px;
 }
 
 .excel-title {
-  font-size: 28px;          /* título grande y claro */
+  font-size: 30px;
   font-weight: 800;
   margin: 0;
   text-transform: uppercase;
@@ -431,35 +431,35 @@ textarea:focus {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;      /* columnas parejitas */
-  font-size: 12px;          /* ⬆ letras un poco más grandes */
+  font-size: 14px;          /* letras/números más grandes */
   font-family: Arial, sans-serif;
 }
 
 /* Celdas y encabezados */
 .excel-table th,
 .excel-table td {
-  border: 1px solid #111;   /* ⬆ bordes bien oscuros */
-  padding: 3px 4px;         /* ⬇ filas más estrechas */
+  border: 2px solid #000;  /* bordes bien oscuros y gruesos */
+  padding: 3px 2px;        /* filas y columnas compactas */
   text-align: center;
   vertical-align: middle;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 
 /* Encabezados de columnas */
 .excel-table thead th {
-  background: #e5e7eb;      /* gris claro */
-  color: #111827;
+  background: #d9d9d9;
+  color: #111;
   font-weight: 700;
 }
 
 /* Columna de EMPLOYEE más ancha y alineada a la izquierda */
 .excel-header-employee,
 .excel-employee-cell {
-  background: #d1d5db;      /* gris un poco más fuerte */
+  background: #cfcfcf;
   font-weight: 700;
   text-align: left;
   padding-left: 8px;
-  width: 190px;
+  width: 150px;
 }
 
 /* Celdas de empleado (filas) */
@@ -468,8 +468,12 @@ textarea:focus {
 }
 
 /* Alternar color de filas para que se sigan mejor con la vista */
-.excel-table tbody tr:nth-child(2n) td {
-  background-color: #f9fafb;
+.excel-table tbody tr:nth-child(odd) td {
+  background-color: #f7f7f7;
+}
+
+.excel-table tbody tr:nth-child(even) td {
+  background-color: #ffffff;
 }
 
 /* OFF vs WORK – misma legibilidad, pero leve diferencia de fondo */
@@ -478,7 +482,7 @@ textarea:focus {
 }
 
 .excel-cell-work {
-  background-color: #eef2ff; /* azul-gris muy clarito */
+  background-color: #eef0ff; /* azul-gris muy clarito */
 }
 
 /* Texto de las celdas del horario aprobado */
@@ -486,23 +490,28 @@ textarea:focus {
 .excel-cell,
 .excel-cell-work,
 .excel-cell-off {
-  color: #111827;            /* gris muy oscuro / casi negro */
+  color: #111827;
   opacity: 1;
-  font-weight: 500;          /* un poco más grueso para que se lea mejor */
+  font-weight: 600;
 }
 
-/* Versión especial para IMPRESIÓN / PDF (html2canvas lo respeta bastante) */
+/* Versión especial para IMPRESIÓN / PDF */
 @media print {
   .excel-table {
-    font-size: 11px;         /* un pelín más pequeño para que quepa más */
+    font-size: 13px;
   }
 
   .excel-table th,
   .excel-table td {
-    padding: 2px 3px;        /* aún más compacta en PDF */
-    border: 1px solid #000;  /* negro negro en impresión */
+    padding: 2px 1px;
+    border: 2px solid #000;
   }
 }
+
+/* =========================================================
+   FIX DEFINITIVO DE SIDEBAR (colores)
+========================================================= */
+
 /* Forzar texto blanco sin opacidad en todo el sidebar */
 aside.w-64 * {
   color: #ffffff !important;
@@ -531,22 +540,4 @@ aside.w-64 * {
 aside.w-64 p {
   color: #ffffff !important;
   opacity: 1 !important;
-}
-/* Texto de las celdas del horario aprobado */
-.excel-table td,
-.excel-cell,
-.excel-cell-work,
-.excel-cell-off {
-  color: #111827 !important;   /* gris muy oscuro / casi negro */
-  opacity: 1 !important;       /* nada de transparencia */
-  font-weight: 500;            /* un poco más grueso para que se lea mejor */
-}
-
-/* Opcional: diferencia visual entre OFF y turno con horas */
-.excel-cell-work {
-  background-color: #f1f5f9;   /* azul-gris muy claro */
-}
-
-.excel-cell-off {
-  background-color: #ffffff;   /* fondo blanco, pero texto igual de visible */
 }
