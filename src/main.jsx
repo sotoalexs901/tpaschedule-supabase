@@ -26,8 +26,7 @@ import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 
 // ⭐ NUEVO
 import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
-import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx";
-import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx"; // por si no estaba
+import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx";
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
@@ -182,42 +181,6 @@ function AppRouter() {
             }
           />
         </Route>
-        function AppRouter() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        {/* PUBLIC LINKS */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/dayoff-request" element={<TimeOffRequestPublicPage />} />
-        <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
-
-        {/* RUTAS PROTEGIDAS */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }
-        >
-          {/* ...tus rutas internas... */}
-
-          <Route
-            path="timeoff-requests"
-            element={
-              <ProtectedRoute roles={["station_manager"]}>
-                <TimeOffRequestsAdminPage />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* resto de rutas: dashboard, schedule, etc */}
-        </Route>
-      </Routes>
-    </BrowserRouter>
-  );
-}
-
       </Routes>
     </BrowserRouter>
   );
