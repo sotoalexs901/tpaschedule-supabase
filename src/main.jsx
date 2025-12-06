@@ -11,46 +11,43 @@ import AppLayout from "./pages/AppLayout.jsx";
 
 import DashboardPage from "./pages/DashboardPage.jsx";
 import DashboardEditorPage from "./pages/DashboardEditorPage.jsx";
-
 import SchedulePage from "./pages/SchedulePage.jsx";
-
 import BlockedEmployeesPage from "./pages/BlockedEmployeesPage.jsx";
 import EmployeesPage from "./pages/EmployeesPage.jsx";
-
 import ApprovalsPage from "./pages/ApprovalsPage.jsx";
 import ApprovedSchedulesPage from "./pages/ApprovedSchedulesPage.jsx";
 import ApprovedScheduleView from "./pages/ApprovedScheduleView.jsx";
-
 import BudgetsPage from "./pages/BudgetsPage.jsx";
-
 import CreateUserPage from "./pages/CreateUserPage.jsx";
 import EditUsersPage from "./pages/EditUsersPage.jsx";
-
-// ⭐ NUEVOS
 import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
 import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx";
 import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 
-// 🔒 Protección de rutas
+// ⭐ NUEVO
+import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
+import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx";
+
+// -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser();
 
-  // No logueado → login
   if (!user) return <Navigate to="/login" replace />;
 
-  // Rol no permitido
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
   return children;
 }
 
-// 🔵 Sistema de rutas principal
 function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
         {/* LOGIN */}
         <Route path="/login" element={<LoginPage />} />
+
+        {/* 🔓 RUTA PÚBLICA PARA EMPLEADOS (no requiere login) */}
+        <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
 
         {/* RUTAS PROTEGIDAS */}
         <Route
@@ -61,11 +58,9 @@ function AppRouter() {
             </ProtectedRoute>
           }
         >
-          {/* Dashboard */}
           <Route index element={<DashboardPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
 
-          {/* Dashboard Editor (solo Station Manager) */}
           <Route
             path="dashboard-editor"
             element={
@@ -75,10 +70,8 @@ function AppRouter() {
             }
           />
 
-          {/* Crear horario */}
           <Route path="schedule" element={<SchedulePage />} />
 
-          {/* Employees blocked */}
           <Route
             path="blocked"
             element={
@@ -88,7 +81,6 @@ function AppRouter() {
             }
           />
 
-          {/* Employees */}
           <Route
             path="employees"
             element={
@@ -98,7 +90,6 @@ function AppRouter() {
             }
           />
 
-          {/* Approvals (solo Station Manager) */}
           <Route
             path="approvals"
             element={
@@ -108,7 +99,6 @@ function AppRouter() {
             }
           />
 
-          {/* Approved schedules */}
           <Route
             path="approved"
             element={
@@ -118,7 +108,6 @@ function AppRouter() {
             }
           />
 
-          {/* Ver un schedule aprobado */}
           <Route
             path="approved/:id"
             element={
@@ -128,7 +117,6 @@ function AppRouter() {
             }
           />
 
-          {/* Returned schedules */}
           <Route
             path="returned"
             element={
@@ -138,7 +126,16 @@ function AppRouter() {
             }
           />
 
-          {/* Weekly Employees Summary */}
+          {/* ⭐ NUEVA PÁGINA PARA APROBAR DAY OFF */}
+          <Route
+            path="timeoff-requests"
+            element={
+              <ProtectedRoute roles={["station_manager"]}>
+                <TimeOffRequestsAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
           <Route
             path="weekly-summary"
             element={
@@ -148,7 +145,6 @@ function AppRouter() {
             }
           />
 
-          {/* Budgets (solo Station Manager) */}
           <Route
             path="budgets"
             element={
@@ -158,7 +154,6 @@ function AppRouter() {
             }
           />
 
-          {/* Crear usuario (solo Station Manager) */}
           <Route
             path="create-user"
             element={
@@ -168,7 +163,6 @@ function AppRouter() {
             }
           />
 
-          {/* Editar usuarios (solo Station Manager) */}
           <Route
             path="edit-users"
             element={
@@ -178,7 +172,6 @@ function AppRouter() {
             }
           />
 
-          {/* Draft schedules (Station + Duty) */}
           <Route
             path="drafts"
             element={
@@ -193,7 +186,6 @@ function AppRouter() {
   );
 }
 
-// 🔵 Render principal
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <UserProvider>
