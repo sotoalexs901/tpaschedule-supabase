@@ -1,171 +1,172 @@
-// src/pages/TimeOffRequestPage.jsx
-import React, { useEffect, useState } from "react";
-import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+// src/pages/TimeOffStatusPublicPage.jsx
+import React, { useState } from "react";
+import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 
-const REASON_OPTIONS = ["PTO / Vacation", "Sick", "Personal", "Family", "Other"];
+export default function TimeOffStatusPublicPage() {
+  const [employeeName, setEmployeeName] = useState("");
+  const [pin, setPin] = useState("");
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-export default function TimeOffRequestPage() {
-  const [employees, setEmployees] = useState([]);
-  const [employeeId, setEmployeeId] = useState("");
-  const [reasonType, setReasonType] = useState("PTO / Vacation");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [notes, setNotes] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
+  const validatePin = (value) => {
+    const sanitized = value.replace(/\D/g, "").slice(0, 4);
+    setPin(sanitized);
+  };
 
-  useEffect(() => {
-    // Opcional: mostrar lista de empleados para evitar errores de nombre
-    getDocs(collection(db, "employees"))
-      .then((snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        // orden alfabético
-        list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-        setEmployees(list);
-      })
-      .catch((err) => {
-        console.error("Error loading employees for time off:", err);
-      });
-  }, []);
+  const handleSearch = async (e) => {
+    e?.preventDefault();
+    setError("");
+    setRequests([]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setStatusMessage("");
-
-    if (!employeeId || !startDate || !endDate) {
-      setStatusMessage("Please select employee and dates.");
+    if (!employeeName || pin.length !== 4) {
+      setError("Please enter your full name and 4-digit PIN.");
       return;
     }
 
+    setLoading(true);
     try {
-      const employee = employees.find((e) => e.id === employeeId);
+      // 🔍 Buscamos por nombre + pin
+      const qRef = query(
+        collection(db, "timeOffRequests"),
+        where("employeeName", "==", employeeName.trim()),
+        where("pin", "==", pin)
+      );
 
-      await addDoc(collection(db, "timeOffRequests"), {
-        employeeId,
-        employeeName: employee?.name || "",
-        reasonType,
-        startDate,
-        endDate,
-        notes: notes.trim(),
-        status: "pending",
-        createdAt: serverTimestamp(),
-      });
+      const snap = await getDocs(qRef);
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      setStatusMessage("Request sent. Thank you!");
-      setReasonType("PTO / Vacation");
-      setStartDate("");
-      setEndDate("");
-      setNotes("");
+      // ordenar por fecha creación (si existe)
+      list.sort(
+        (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
+      );
+
+      if (list.length === 0) {
+        setError(
+          "No requests found with this name and PIN. Please check the information."
+        );
+      } else {
+        setRequests(list);
+      }
     } catch (err) {
-      console.error(err);
-      setStatusMessage("Error sending request. Please try again.");
+      console.error("Error loading time off status:", err);
+      setError("Error loading requests. Please try again.");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const getStatusColor = (status) => {
+    if (status === "approved") return "text-green-700";
+    if (status === "rejected") return "text-red-700";
+    return "text-yellow-700";
+  };
+
+  const getStatusLabel = (status) => {
+    if (status === "approved") return "Approved";
+    if (status === "rejected") return "Rejected";
+    return "Pending";
   };
 
   return (
     <div
       className="min-h-screen flex items-center justify-center bg-cover bg-center"
       style={{
-        backgroundImage: "url('/flamingo-tpa.jpg')", // misma imagen que login si quieres
+        backgroundImage:
+          "url('/images/tpa-night-ramp.jpg')", // puedes usar la misma del login o otra
       }}
     >
-      <div className="login-overlay" />
+      <div className="bg-white/85 backdrop-blur-lg p-6 rounded-2xl shadow-2xl w-full max-w-md border border-white/60">
+        <h1 className="text-xl font-bold text-center mb-2 text-gray-800">
+          Day Off Request Status
+        </h1>
+        <p className="text-xs text-center text-gray-600 mb-4">
+          Enter your name and the 4-digit PIN you used when you submitted your
+          request.
+        </p>
 
-      <div className="login-content">
-        <form className="login-card" onSubmit={handleSubmit}>
-          <h1 className="login-title">Day Off Request</h1>
-          <p className="login-subtitle text-center">
-            TPA Schedule · Employee access
-          </p>
-
-          {/* Employee */}
-          <div className="login-field">
-            <label className="login-label">Employee</label>
-            <select
-              className="login-input"
-              value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
-            >
-              <option value="">Select your name</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Reason Type */}
-          <div className="login-field">
-            <label className="login-label">Reason</label>
-            <select
-              className="login-input"
-              value={reasonType}
-              onChange={(e) => setReasonType(e.target.value)}
-            >
-              {REASON_OPTIONS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Dates */}
-          <div className="login-field">
-            <label className="login-label">From</label>
+        <form onSubmit={handleSearch} className="space-y-3 text-sm mb-4">
+          <div>
+            <label className="font-medium block mb-1">
+              Full Name (exactly as submitted)
+            </label>
             <input
-              type="date"
-              className="login-input"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              type="text"
+              className="border w-full p-2 rounded"
+              value={employeeName}
+              onChange={(e) => setEmployeeName(e.target.value)}
             />
           </div>
 
-          <div className="login-field">
-            <label className="login-label">To</label>
+          <div>
+            <label className="font-medium block mb-1">4-digit PIN</label>
             <input
-              type="date"
-              className="login-input"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              className="border w-full p-2 rounded tracking-widest text-center"
+              placeholder="••••"
+              value={pin}
+              onChange={(e) => validatePin(e.target.value)}
             />
           </div>
 
-          {/* Notes */}
-          <div className="login-field">
-            <label className="login-label">Notes (optional)</label>
-            <textarea
-              className="login-input"
-              rows={3}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Short explanation (ex. family event, doctor, etc.)"
-            />
-          </div>
-
-          {statusMessage && (
-            <p
-              style={{
-                marginTop: "0.25rem",
-                marginBottom: "0.5rem",
-                fontSize: "0.75rem",
-                textAlign: "center",
-                color: statusMessage.includes("Error") ? "#fecaca" : "#bbf7d0",
-              }}
-            >
-              {statusMessage}
-            </p>
+          {error && (
+            <p className="text-xs text-red-600 text-center mt-1">{error}</p>
           )}
 
-          <button type="submit" className="login-button">
-            Submit request
+          <button
+            type="submit"
+            className="w-full bg-blue-700 hover:bg-blue-800 text-white py-2 rounded mt-1 text-sm font-semibold shadow"
+            disabled={loading}
+          >
+            {loading ? "Searching..." : "Check Status"}
           </button>
-
-          <p className="login-footer">
-            If you made a mistake, please contact Duty or Station Manager.
-          </p>
         </form>
+
+        {/* RESULTADOS */}
+        {requests.length > 0 && (
+          <div className="space-y-2 max-h-64 overflow-auto text-sm">
+            {requests.map((req) => (
+              <div key={req.id} className="border rounded-lg p-3 bg-white">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-gray-500">
+                    {req.startDate} → {req.endDate}
+                  </span>
+                  <span
+                    className={
+                      "text-xs font-semibold px-2 py-1 rounded-full " +
+                      (req.status === "approved"
+                        ? "bg-green-100 text-green-700"
+                        : req.status === "rejected"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-yellow-100 text-yellow-700")
+                    }
+                  >
+                    {getStatusLabel(req.status)}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-700">
+                  <span className="font-semibold">Reason:</span>{" "}
+                  {req.reasonType}
+                </p>
+                {req.notes && (
+                  <p className="text-xs text-gray-600 mt-1">
+                    <span className="font-semibold">Notes: </span>
+                    {req.notes}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {requests.length === 0 && !error && !loading && (
+          <p className="text-[11px] text-gray-500 text-center">
+            No results yet. Enter your data and click &quot;Check Status&quot;.
+          </p>
+        )}
       </div>
     </div>
   );
