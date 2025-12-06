@@ -8,6 +8,8 @@ import {
   serverTimestamp,
   query,
   where,
+  updateDoc,
+  doc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -66,7 +68,8 @@ const normalizeInterval = (start, end) => {
   const eRaw = toMinutes(end);
   if (s == null || eRaw == null) return null;
   let e = eRaw;
-  if (e <= s) e += 24 * 60; // cruza medianoche
+  // Si el fin es menor o igual que el inicio, asumimos que cruza medianoche
+  if (e <= s) e += 24 * 60;
   return [s, e];
 };
 
@@ -76,7 +79,7 @@ const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
   if (!a || !b) return false;
   const [s1, e1] = a;
   const [s2, e2] = b;
-  return s1 < e2 && s2 < e1;
+  return s1 < e2 && s2 < e1; // solapamiento estándar de intervalos
 };
 
 // Crea un “tag” de semana basado en los números de días
@@ -87,6 +90,9 @@ export default function SchedulePage() {
   const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // ⚠️ Si venimos desde ReturnedSchedulesPage, esto tendrá el ID del schedule que estamos corrigiendo
+  const returnedIdFromState = location.state?.returnedId || null;
 
   const [airline, setAirline] = useState("");
   const [department, setDepartment] = useState("");
@@ -104,7 +110,7 @@ export default function SchedulePage() {
   const [rows, setRows] = useState([]);
   const [airlineBudgets, setAirlineBudgets] = useState({});
 
-  // 🔁 Si venimos desde un ApprovedScheduleView con plantilla:
+  // 🔁 Si venimos desde un ApprovedScheduleView o ReturnedSchedulesPage con plantilla:
   useEffect(() => {
     if (location.state?.template) {
       const { airline, department, days, grid } = location.state.template;
@@ -136,7 +142,7 @@ export default function SchedulePage() {
   }, []);
 
   // ========= CÁLCULO DE HORAS (con lunch) =========
-  // Regla: si un shift dura más de 6h 1min, se descuenta 0.5h
+  // Regla: si un shift dura más de 6h 1min, se descuenta 0.5h de lunch
   const diffHours = (start, end) => {
     if (!start || !end || start === "OFF") return 0;
     const s = toMinutes(start);
@@ -146,6 +152,7 @@ export default function SchedulePage() {
     if (e < s) e += 24 * 60;
 
     let hours = (e - s) / 60;
+    // Más de 6 horas y 1 minuto => -0.5h lunch
     if (hours > 6 + 1 / 60) {
       hours -= 0.5;
     }
@@ -264,35 +271,7 @@ export default function SchedulePage() {
     return { conflicts, weekTag };
   };
 
-  // ✅ Guardar como DRAFT
-  const handleSaveDraft = async () => {
-    if (!airline || !department) {
-      alert("Please select airline and department.");
-      return;
-    }
-
-    const weekTagToSave = buildWeekTag(dayNumbers);
-
-    await addDoc(collection(db, "schedules"), {
-      createdAt: serverTimestamp(),
-      airline,
-      department,
-      days: dayNumbers,
-      weekTag: weekTagToSave,
-      grid: rows,
-      totals: employeeTotals,
-      airlineWeeklyHours: airlineTotal,
-      airlineDailyHours: dailyTotals,
-      budget: airlineBudgets[airline] || 0,
-      status: "draft",
-      createdBy: user?.username || null,
-      role: user?.role || null,
-    });
-
-    alert("Schedule saved as draft.");
-  };
-
-  // Guardar schedule (PENDING → para approval)
+  // Guardar schedule (nuevo o FIX de returned)
   const handleSaveSchedule = async () => {
     if (!airline || !department) {
       alert("Please select airline and department.");
@@ -330,8 +309,8 @@ export default function SchedulePage() {
 
     const weekTagToSave = weekTag || buildWeekTag(dayNumbers);
 
-    await addDoc(collection(db, "schedules"), {
-      createdAt: serverTimestamp(),
+    // Datos base comunes (nuevo o returned)
+    const baseData = {
       airline,
       department,
       days: dayNumbers,
@@ -341,12 +320,38 @@ export default function SchedulePage() {
       airlineWeeklyHours: airlineTotal,
       airlineDailyHours: dailyTotals,
       budget: airlineBudgets[airline] || 0,
-      status: "pending",
-      createdBy: user?.username || null,
-      role: user?.role || null,
-    });
+    };
 
-    alert("Schedule submitted for approval!");
+    try {
+      if (returnedIdFromState) {
+        // ✅ Estamos corrigiendo un schedule devuelto: actualizar ese mismo doc
+        await updateDoc(doc(db, "schedules", returnedIdFromState), {
+          ...baseData,
+          status: "pending",
+          returnReason: null,
+          returnComment: null,
+          updatedAt: serverTimestamp(),
+          lastUpdatedBy: user?.username || null,
+        });
+
+        alert("Returned schedule fixed and resubmitted for approval.");
+        navigate("/returned");
+      } else {
+        // ✅ Schedule nuevo (flujo normal)
+        await addDoc(collection(db, "schedules"), {
+          ...baseData,
+          status: "pending",
+          createdAt: serverTimestamp(),
+          createdBy: user?.username || null,
+          role: user?.role || null,
+        });
+
+        alert("Schedule submitted for approval!");
+      }
+    } catch (err) {
+      console.error("Error saving schedule:", err);
+      alert("Error saving schedule. Check console for details.");
+    }
   };
 
   // EXPORT PDF
@@ -387,12 +392,6 @@ export default function SchedulePage() {
     pdf.save(`Schedule_${airline}_${department}.pdf`);
   };
 
-  // Mapa id → nombre para el resumen
-  const employeeNameMap = {};
-  employees.forEach((e) => {
-    employeeNameMap[e.id] = e.name;
-  });
-
   // RENDER
   return (
     <div className="p-4 space-y-4">
@@ -406,7 +405,11 @@ export default function SchedulePage() {
         ← Back to Dashboard
       </button>
 
-      <h1 className="text-lg font-semibold">Create Weekly Schedule</h1>
+      <h1 className="text-lg font-semibold">
+        {returnedIdFromState
+          ? "Fix Returned Schedule"
+          : "Create Weekly Schedule"}
+      </h1>
 
       {/* Airline + Department */}
       <div className="grid grid-cols-3 gap-4">
@@ -476,7 +479,6 @@ export default function SchedulePage() {
           airline={airline}
           department={department}
           onSave={handleSaveSchedule}
-          onSaveDraft={handleSaveDraft} // ✅ NUEVO
         />
       </div>
 
@@ -497,44 +499,6 @@ export default function SchedulePage() {
             </div>
           ))}
         </div>
-
-        {/* 🔍 Horas por empleado en ESTE schedule */}
-        <h3 className="font-semibold mt-3 mb-1 text-xs">
-          Employee weekly hours (this schedule)
-        </h3>
-        <div className="grid md:grid-cols-2 gap-2 text-[11px]">
-          {rows.map((r, idx) => {
-            if (!r.employeeId) return null;
-            const total = employeeTotals[r.employeeId] || 0;
-            const over = total > 40;
-            const name = employeeNameMap[r.employeeId] || "Unknown";
-
-            return (
-              <div
-                key={idx}
-                className={
-                  "flex items-center justify-between border rounded px-2 py-1 " +
-                  (over ? "bg-red-50" : "bg-gray-50")
-                }
-              >
-                <span
-                  className={
-                    over ? "font-semibold text-red-700" : "font-semibold"
-                  }
-                >
-                  {name}
-                </span>
-                <span className={over ? "font-semibold text-red-700" : ""}>
-                  {total.toFixed(2)} hrs
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <p className="text-[11px] text-slate-500 mt-1">
-          Employees with more than 40 hrs in this schedule are highlighted in
-          red.
-        </p>
       </div>
 
       {/* Botón PDF */}
