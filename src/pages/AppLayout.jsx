@@ -2,44 +2,37 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 
 export default function AppLayout() {
   const { user, setUser } = useUser();
   const navigate = useNavigate();
 
-  const [timeOffPendingCount, setTimeOffPendingCount] = useState(0);
+  const [pendingTimeOff, setPendingTimeOff] = useState(0);
 
   const logout = () => {
     setUser(null);
     navigate("/login");
   };
 
-  // 🔴 Escuchar solicitudes de day off pendientes (solo Station Manager)
+  // 🔔 Escuchar en tiempo real cuántos time-off pendientes hay
   useEffect(() => {
-    if (!user || user.role !== "station_manager") {
-      setTimeOffPendingCount(0);
-      return;
-    }
-
     const q = query(
       collection(db, "timeOffRequests"),
       where("status", "==", "pending")
     );
-
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setTimeOffPendingCount(snap.size || 0);
+        setPendingTimeOff(snap.size);
       },
       (err) => {
         console.error("Error listening timeOffRequests:", err);
       }
     );
-
     return () => unsub();
-  }, [user]);
+  }, []);
 
   // Estilos base del sidebar
   const sidebarStyle = {
@@ -108,14 +101,14 @@ export default function AppLayout() {
           <NavItem to="/dashboard" label="Dashboard" />
           <NavItem to="/schedule" label="Create Schedule" />
 
-          {/* 🔵 SOLO STATION MANAGER */}
+          {/* SOLO STATION MANAGER */}
           {user?.role === "station_manager" && (
             <>
               <NavItem to="/approvals" label="Approvals" />
               <NavItem
                 to="/timeoff-requests"
                 label="Day Off Requests"
-                badgeCount={timeOffPendingCount} // 🔴 badge de notificaciones
+                showDot={pendingTimeOff > 0}
               />
               <NavItem to="/dashboard-editor" label="Dashboard Editor" />
               <NavItem to="/budgets" label="Budgets" />
@@ -124,7 +117,7 @@ export default function AppLayout() {
             </>
           )}
 
-          {/* 🔵 STATION + DUTY */}
+          {/* STATION + DUTY */}
           {(user?.role === "station_manager" ||
             user?.role === "duty_manager") && (
             <>
@@ -152,10 +145,12 @@ export default function AppLayout() {
   );
 }
 
-// Componente de link del menú lateral
-function NavItem({ to, label, badgeCount }) {
+// Link del menú lateral (con posible puntico rojo)
+function NavItem({ to, label, showDot }) {
   const baseStyle = {
-    display: "block",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: "8px 10px",
     borderRadius: 6,
     fontSize: 13,
@@ -165,22 +160,20 @@ function NavItem({ to, label, badgeCount }) {
     transition: "background 0.15s, color 0.15s",
   };
 
-  const badgeStyle = {
-    position: "absolute",
-    right: 8,
-    top: "50%",
-    transform: "translateY(-50%)",
-    minWidth: 16,
-    height: 16,
-    borderRadius: 999,
-    background: "#dc2626", // rojo
-    color: "#ffffff",
-    fontSize: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "0 4px",
-  };
+  const labelStyle = { display: "inline-block" };
+
+  const dot =
+    showDot && (
+      <span
+        style={{
+          width: 9,
+          height: 9,
+          borderRadius: "999px",
+          backgroundColor: "#ef4444",
+          boxShadow: "0 0 0 3px rgba(248,113,113,0.35)",
+        }}
+      ></span>
+    );
 
   return (
     <NavLink
@@ -198,21 +191,8 @@ function NavItem({ to, label, badgeCount }) {
             }
       }
     >
-      <div
-        style={{
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <span>{label}</span>
-        {badgeCount > 0 && (
-          <span style={badgeStyle}>
-            {badgeCount > 9 ? "9+" : badgeCount}
-          </span>
-        )}
-      </div>
+      <span style={labelStyle}>{label}</span>
+      {dot}
     </NavLink>
   );
 }
