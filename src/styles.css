@@ -404,6 +404,7 @@ textarea:focus {
 
 /* =========================================================
    EXCEL STYLE TABLE (ApprovedScheduleView)
+   (Usada para el horario que se publica / exporta)
 ========================================================= */
 
 /* Header con logo y título */
@@ -419,54 +420,89 @@ textarea:focus {
 }
 
 .excel-title {
-  font-size: 32px;
+  font-size: 28px;          /* título grande y claro */
   font-weight: 800;
   margin: 0;
   text-transform: uppercase;
 }
 
-/* Tabla estilo Excel */
+/* Tabla estilo Excel para el horario */
 .excel-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
-  table-layout: fixed;
+  table-layout: fixed;      /* columnas parejitas */
+  font-size: 12px;          /* ⬆ letras un poco más grandes */
+  font-family: Arial, sans-serif;
 }
 
+/* Celdas y encabezados */
 .excel-table th,
 .excel-table td {
-  border: 1px solid black;
-  padding: 6px;
+  border: 1px solid #111;   /* ⬆ bordes bien oscuros */
+  padding: 3px 4px;         /* ⬇ filas más estrechas */
   text-align: center;
+  vertical-align: middle;
+  line-height: 1.2;
 }
 
-.excel-header-employee {
-  background: #ddd;
+/* Encabezados de columnas */
+.excel-table thead th {
+  background: #e5e7eb;      /* gris claro */
+  color: #111827;
+  font-weight: 700;
+}
+
+/* Columna de EMPLOYEE más ancha y alineada a la izquierda */
+.excel-header-employee,
+.excel-employee-cell {
+  background: #d1d5db;      /* gris un poco más fuerte */
   font-weight: 700;
   text-align: left;
   padding-left: 8px;
+  width: 190px;
 }
 
+/* Celdas de empleado (filas) */
 .excel-employee-cell {
-  background: #ddd;
-  font-weight: bold;
-  text-align: left;
-  padding-left: 8px;
+  background: #e5e7eb;
 }
 
-/* OFF cells */
+/* Alternar color de filas para que se sigan mejor con la vista */
+.excel-table tbody tr:nth-child(2n) td {
+  background-color: #f9fafb;
+}
+
+/* OFF vs WORK – misma legibilidad, pero leve diferencia de fondo */
 .excel-cell-off {
-  background: white;
+  background-color: #ffffff;
 }
 
-/* Por si decides usar un fondo de color por aerolínea */
 .excel-cell-work {
-  color: #ffffff;
+  background-color: #eef2ff; /* azul-gris muy clarito */
 }
-/* =======================
-   FIX DEFINITIVO DE SIDEBAR
-   ======================= */
 
+/* Texto de las celdas del horario aprobado */
+.excel-table td,
+.excel-cell,
+.excel-cell-work,
+.excel-cell-off {
+  color: #111827;            /* gris muy oscuro / casi negro */
+  opacity: 1;
+  font-weight: 500;          /* un poco más grueso para que se lea mejor */
+}
+
+/* Versión especial para IMPRESIÓN / PDF (html2canvas lo respeta bastante) */
+@media print {
+  .excel-table {
+    font-size: 11px;         /* un pelín más pequeño para que quepa más */
+  }
+
+  .excel-table th,
+  .excel-table td {
+    padding: 2px 3px;        /* aún más compacta en PDF */
+    border: 1px solid #000;  /* negro negro en impresión */
+  }
+}
 /* Forzar texto blanco sin opacidad en todo el sidebar */
 aside.w-64 * {
   color: #ffffff !important;
