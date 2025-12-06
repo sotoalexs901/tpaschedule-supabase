@@ -1,172 +1,193 @@
-// src/pages/TimeOffStatusPublicPage.jsx
+// src/pages/TimeOffRequestPage.jsx
 import React, { useState } from "react";
-import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 
-export default function TimeOffStatusPublicPage() {
+export default function TimeOffRequestPage() {
   const [employeeName, setEmployeeName] = useState("");
+  const [reasonType, setReasonType] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [notes, setNotes] = useState("");
   const [pin, setPin] = useState("");
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [statusMsg, setStatusMsg] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const validatePin = (value) => {
-    const sanitized = value.replace(/\D/g, "").slice(0, 4);
-    setPin(sanitized);
-  };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatusMsg("");
 
-  const handleSearch = async (e) => {
-    e?.preventDefault();
-    setError("");
-    setRequests([]);
-
-    if (!employeeName || pin.length !== 4) {
-      setError("Please enter your full name and 4-digit PIN.");
+    if (!employeeName || !reasonType || !startDate || !endDate || !pin) {
+      setStatusMsg("Please complete all required fields.");
       return;
     }
 
-    setLoading(true);
+    if (!/^\d{4}$/.test(pin)) {
+      setStatusMsg("PIN must be exactly 4 digits.");
+      return;
+    }
+
+    if (endDate < startDate) {
+      setStatusMsg("End date cannot be earlier than start date.");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      // 🔍 Buscamos por nombre + pin
-      const qRef = query(
-        collection(db, "timeOffRequests"),
-        where("employeeName", "==", employeeName.trim()),
-        where("pin", "==", pin)
+      await addDoc(collection(db, "timeOffRequests"), {
+        employeeName: employeeName.trim(),
+        reasonType,
+        startDate,
+        endDate,
+        notes: notes.trim() || "",
+        pin, // se usará luego para verificar el status
+        status: "pending",
+        createdAt: serverTimestamp(),
+      });
+
+      setStatusMsg(
+        "Your request has been submitted successfully. Please keep your 4-digit PIN to check the status."
       );
 
-      const snap = await getDocs(qRef);
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      // ordenar por fecha creación (si existe)
-      list.sort(
-        (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-      );
-
-      if (list.length === 0) {
-        setError(
-          "No requests found with this name and PIN. Please check the information."
-        );
-      } else {
-        setRequests(list);
-      }
+      // limpiar formulario
+      setEmployeeName("");
+      setReasonType("");
+      setStartDate("");
+      setEndDate("");
+      setNotes("");
+      setPin("");
     } catch (err) {
-      console.error("Error loading time off status:", err);
-      setError("Error loading requests. Please try again.");
+      console.error("Error sending time off request:", err);
+      setStatusMsg("Error sending request. Please try again.");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const getStatusColor = (status) => {
-    if (status === "approved") return "text-green-700";
-    if (status === "rejected") return "text-red-700";
-    return "text-yellow-700";
-  };
-
-  const getStatusLabel = (status) => {
-    if (status === "approved") return "Approved";
-    if (status === "rejected") return "Rejected";
-    return "Pending";
-  };
-
   return (
-    <div
-      className="min-h-screen flex items-center justify-center bg-cover bg-center"
-      style={{
-        backgroundImage:
-          "url('/images/tpa-night-ramp.jpg')", // puedes usar la misma del login o otra
-      }}
-    >
-      <div className="bg-white/85 backdrop-blur-lg p-6 rounded-2xl shadow-2xl w-full max-w-md border border-white/60">
-        <h1 className="text-xl font-bold text-center mb-2 text-gray-800">
-          Day Off Request Status
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+      <div
+        className="card"
+        style={{ maxWidth: 480, width: "100%", borderRadius: 16 }}
+      >
+        <h1 className="text-lg font-semibold mb-1 text-center">
+          Day Off Request
         </h1>
-        <p className="text-xs text-center text-gray-600 mb-4">
-          Enter your name and the 4-digit PIN you used when you submitted your
-          request.
+        <p className="text-[11px] text-gray-600 text-center mb-3">
+          Please complete this form to request PTO, Sick, or other time off.
         </p>
 
-        <form onSubmit={handleSearch} className="space-y-3 text-sm mb-4">
+        <form onSubmit={handleSubmit} className="space-y-3 text-sm">
+          {/* Employee name (texto libre, como acordamos) */}
           <div>
-            <label className="font-medium block mb-1">
-              Full Name (exactly as submitted)
+            <label className="font-medium text-xs block mb-1">
+              Employee Name
             </label>
             <input
               type="text"
-              className="border w-full p-2 rounded"
+              className="border rounded w-full px-2 py-1 text-sm"
               value={employeeName}
               onChange={(e) => setEmployeeName(e.target.value)}
+              placeholder="Full name"
             />
           </div>
 
+          {/* Reason type */}
           <div>
-            <label className="font-medium block mb-1">4-digit PIN</label>
+            <label className="font-medium text-xs block mb-1">
+              Reason Type
+            </label>
+            <select
+              className="border rounded w-full px-2 py-1 text-sm"
+              value={reasonType}
+              onChange={(e) => setReasonType(e.target.value)}
+            >
+              <option value="">Select reason</option>
+              <option value="PTO">PTO</option>
+              <option value="Sick">Sick</option>
+              <option value="Personal">Personal</option>
+              <option value="Emergency">Emergency</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="font-medium text-xs block mb-1">
+                Start Date
+              </label>
+              <input
+                type="date"
+                className="border rounded w-full px-2 py-1 text-sm"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="font-medium text-xs block mb-1">
+                End Date
+              </label>
+              <input
+                type="date"
+                className="border rounded w-full px-2 py-1 text-sm"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* PIN */}
+          <div>
+            <label className="font-medium text-xs block mb-1">
+              4-digit PIN (to check your request status)
+            </label>
             <input
               type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              className="border w-full p-2 rounded tracking-widest text-center"
-              placeholder="••••"
+              className="border rounded w-full px-2 py-1 text-sm"
               value={pin}
-              onChange={(e) => validatePin(e.target.value)}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="XXXX"
+              maxLength={4}
             />
           </div>
 
-          {error && (
-            <p className="text-xs text-red-600 text-center mt-1">{error}</p>
+          {/* Notes */}
+          <div>
+            <label className="font-medium text-xs block mb-1">
+              Notes (optional)
+            </label>
+            <textarea
+              className="border rounded w-full px-2 py-1 text-sm"
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Additional details (flight, doctor appointment, etc.)"
+            />
+          </div>
+
+          {/* Mensaje de estado */}
+          {statusMsg && (
+            <p className="text-[11px] text-center mt-1 text-gray-600">
+              {statusMsg}
+            </p>
           )}
 
+          {/* Botón submit */}
           <button
             type="submit"
-            className="w-full bg-blue-700 hover:bg-blue-800 text-white py-2 rounded mt-1 text-sm font-semibold shadow"
-            disabled={loading}
+            disabled={submitting}
+            className="w-full bg-blue-700 hover:bg-blue-800 text-white py-2 rounded mt-2 text-sm font-semibold shadow"
           >
-            {loading ? "Searching..." : "Check Status"}
+            {submitting ? "Sending..." : "Submit Request"}
           </button>
-        </form>
 
-        {/* RESULTADOS */}
-        {requests.length > 0 && (
-          <div className="space-y-2 max-h-64 overflow-auto text-sm">
-            {requests.map((req) => (
-              <div key={req.id} className="border rounded-lg p-3 bg-white">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-gray-500">
-                    {req.startDate} → {req.endDate}
-                  </span>
-                  <span
-                    className={
-                      "text-xs font-semibold px-2 py-1 rounded-full " +
-                      (req.status === "approved"
-                        ? "bg-green-100 text-green-700"
-                        : req.status === "rejected"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-yellow-100 text-yellow-700")
-                    }
-                  >
-                    {getStatusLabel(req.status)}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-700">
-                  <span className="font-semibold">Reason:</span>{" "}
-                  {req.reasonType}
-                </p>
-                {req.notes && (
-                  <p className="text-xs text-gray-600 mt-1">
-                    <span className="font-semibold">Notes: </span>
-                    {req.notes}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {requests.length === 0 && !error && !loading && (
-          <p className="text-[11px] text-gray-500 text-center">
-            No results yet. Enter your data and click &quot;Check Status&quot;.
+          {/* Nota 72 horas */}
+          <p className="text-[11px] text-gray-600 text-center mt-2">
+            HR and Management team may take up to 72 hours to approve or reject
+            your request.
           </p>
-        )}
+        </form>
       </div>
     </div>
   );
