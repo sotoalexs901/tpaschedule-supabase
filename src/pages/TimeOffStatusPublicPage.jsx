@@ -96,7 +96,7 @@ export default function TimeOffStatusPublicPage() {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    backgroundImage: "url('/tpa-flamingo-bw.jpg')",
+    backgroundImage: "url('/flamingo-tpa.jpg')",
     backgroundSize: "cover",
     backgroundPosition: "center",
   };
