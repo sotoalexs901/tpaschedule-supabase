@@ -1,7 +1,6 @@
-// src/components/ScheduleGrid.jsx
 import React from "react";
 
-// 🎨 Colores por aerolínea
+// 🎨 Colores por aerolínea (igual que antes)
 const AIRLINE_COLORS = {
   SY: "#F28C28",
   "WL Havana Air": "#3A7BD5",
@@ -14,7 +13,7 @@ const AIRLINE_COLORS = {
   OTHER: "#555555",
 };
 
-// ⏰ Opciones de hora (cada 30 min + OFF)
+// ⏰ Opciones de hora (cada 15 min + OFF)
 const TIME_OPTIONS = (() => {
   const arr = ["OFF"];
   for (let h = 0; h < 24; h++) {
@@ -46,7 +45,7 @@ export default function ScheduleGrid({
   department,
   dayNumbers,
   onSave,
-  onSaveDraft,  // ✅ NUEVO
+  onSaveDraft,   // ✅ para drafts
   approved = false,
 }) {
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -253,18 +252,14 @@ export default function ScheduleGrid({
         </button>
       )}
 
-      {/* BOTONES DRAFT + SUBMIT */}
-      {!readonly && (onSave || onSaveDraft) && !approved && (
+      {/* BOTONES SUBMIT / DRAFT */}
+      {!readonly && !approved && (
         <div className="sch-submit-row">
           {onSaveDraft && (
             <button
+              type="button"
               onClick={onSaveDraft}
-              className="sch-submit-btn"
-              style={{
-                backgroundColor: "#e5e7eb",
-                color: "#111827",
-                marginRight: 8,
-              }}
+              className="sch-draft-btn"
             >
               Save as Draft
             </button>
