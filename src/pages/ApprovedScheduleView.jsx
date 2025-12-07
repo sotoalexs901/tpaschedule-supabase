@@ -223,6 +223,7 @@ export default function ApprovedScheduleView() {
   const [schedule, setSchedule] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [deleting, setDeleting] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false); // 👈 NUEVO
 
   useEffect(() => {
     async function load() {
@@ -341,93 +342,146 @@ export default function ApprovedScheduleView() {
   };
 
   return (
-    <div className="p-6 space-y-4 approved-page">
-      <button
-        onClick={() => navigate("/approved")}
-        className="btn btn-soft"
-        style={{ marginBottom: "0.75rem" }}
-        type="button"
-      >
-        ← Back to Approved Schedules
-      </button>
-
-      <div id="approved-print-area">
-        <ExcelScheduleTable schedule={schedule} employees={employees} />
-      </div>
-
-      <div className="card text-sm mt-4 space-y-1">
-        <h2 className="font-semibold mb-2">Weekly Summary</h2>
-        <p>
-          <b>Total Hours:</b>{" "}
-          {schedule.airlineWeeklyHours?.toFixed(2) ?? "0.00"}
-        </p>
-        <p>
-          <b>Budget:</b> {schedule.budget}
-        </p>
-        <p
-          className={
-            schedule.airlineWeeklyHours > schedule.budget
-              ? "text-red-600 font-bold"
-              : "text-green-700 font-bold"
-          }
-        >
-          {schedule.airlineWeeklyHours > schedule.budget
-            ? "Over budget"
-            : "Within budget"}
-        </p>
-      </div>
-
-      {/* BOTONES DE ACCIÓN */}
-      <div className="grid md:grid-cols-3 gap-3 mt-2">
-        {/* Template */}
+    <>
+      {/* VISTA NORMAL */}
+      <div className="p-2 md:p-4 lg:p-6 space-y-4 approved-page">
         <button
+          onClick={() => navigate("/approved")}
+          className="btn btn-soft"
+          style={{ marginBottom: "0.75rem" }}
           type="button"
-          onClick={handleUseAsTemplate}
-          className="btn w-full text-sm"
-          style={{
-            backgroundColor: "#2563eb",
-            color: "#ffffff",
-            fontWeight: 600,
-            opacity: 1,
-          }}
         >
-          Use this schedule as template for new week
+          ← Back to Approved Schedules
         </button>
 
-        {/* Export PDF */}
-        <button
-          type="button"
-          onClick={exportPDF}
-          className="btn w-full text-sm"
-          style={{
-            backgroundColor: "#16a34a",
-            color: "#ffffff",
-            fontWeight: 600,
-            opacity: 1,
-          }}
+        {/* Área principal del horario, con scroll horizontal y ancho cómodo */}
+        <div
+          id="approved-print-area"
+          className="overflow-x-auto -mx-2 md:mx-0"
         >
-          Export PDF
-        </button>
+          <div className="inline-block min-w-[900px] md:min-w-[1100px] w-full">
+            <ExcelScheduleTable schedule={schedule} employees={employees} />
+          </div>
+        </div>
 
-        {/* Delete */}
-        {user?.role === "station_manager" && (
+        <div className="card text-sm mt-4 space-y-1">
+          <h2 className="font-semibold mb-2">Weekly Summary</h2>
+          <p>
+            <b>Total Hours:</b>{" "}
+            {schedule.airlineWeeklyHours?.toFixed(2) ?? "0.00"}
+          </p>
+          <p>
+            <b>Budget:</b> {schedule.budget}
+          </p>
+          <p
+            className={
+              schedule.airlineWeeklyHours > schedule.budget
+                ? "text-red-600 font-bold"
+                : "text-green-700 font-bold"
+            }
+          >
+            {schedule.airlineWeeklyHours > schedule.budget
+              ? "Over budget"
+              : "Within budget"}
+          </p>
+        </div>
+
+        {/* BOTONES DE ACCIÓN */}
+        <div className="grid md:grid-cols-4 gap-3 mt-2">
+          {/* Template */}
           <button
             type="button"
-            onClick={handleDeleteSchedule}
-            disabled={deleting}
+            onClick={handleUseAsTemplate}
             className="btn w-full text-sm"
             style={{
-              backgroundColor: "#dc2626",
+              backgroundColor: "#2563eb",
               color: "#ffffff",
               fontWeight: 600,
-              opacity: deleting ? 0.6 : 1,
-              cursor: deleting ? "not-allowed" : "pointer",
+              opacity: 1,
             }}
           >
-            {deleting ? "Deleting..." : "Delete this schedule"}
+            Use this schedule as template for new week
           </button>
-        )}
+
+          {/* Export PDF */}
+          <button
+            type="button"
+            onClick={exportPDF}
+            className="btn w-full text-sm"
+            style={{
+              backgroundColor: "#16a34a",
+              color: "#ffffff",
+              fontWeight: 600,
+              opacity: 1,
+            }}
+          >
+            Export PDF
+          </button>
+
+          {/* FULL SCREEN VIEW */}
+          <button
+            type="button"
+            onClick={() => setFullscreen(true)}
+            className="btn w-full text-sm"
+            style={{
+              backgroundColor: "#0f172a",
+              color: "#ffffff",
+              fontWeight: 600,
+              opacity: 1,
+            }}
+          >
+            Open full-screen schedule view
+          </button>
+
+          {/* Delete */}
+          {user?.role === "station_manager" && (
+            <button
+              type="button"
+              onClick={handleDeleteSchedule}
+              disabled={deleting}
+              className="btn w-full text-sm"
+              style={{
+                backgroundColor: "#dc2626",
+                color: "#ffffff",
+                fontWeight: 600,
+                opacity: deleting ? 0.6 : 1,
+                cursor: deleting ? "not-allowed" : "pointer",
+              }}
+            >
+              {deleting ? "Deleting..." : "Delete this schedule"}
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
+      {fullscreen && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
+          <div className="flex items-center justify-between p-3 md:p-4 text-white">
+            <span className="text-xs md:text-sm">
+              {schedule.airline} — {schedule.department} · Full-screen view
+            </span>
+            <button
+              type="button"
+              onClick={() => setFullscreen(false)}
+              className="px-3 py-1 rounded-md bg-white/10 border border-white/40 text-xs md:text-sm"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-auto p-2 md:p-4 flex justify-center items-start md:items-center">
+            <div className="bg-white rounded-lg shadow-lg max-w-full overflow-x-auto">
+              <div className="inline-block min-w-[900px] md:min-w-[1100px]">
+                <ExcelScheduleTable
+                  schedule={schedule}
+                  employees={employees}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
