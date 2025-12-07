@@ -454,24 +454,67 @@ export default function ApprovedScheduleView() {
         </div>
       </div>
 
-      {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
+            {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
       {fullscreen && (
-        <div className="fixed inset-0 z-50 bg-black flex flex-col">
-          {/* Botón cerrar arriba a la derecha */}
-          <div className="flex justify-end p-2 md:p-3">
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "#000",
+            zIndex: 9999,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          {/* Botón cerrar, arriba a la derecha */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              padding: "8px",
+            }}
+          >
             <button
               type="button"
               onClick={() => setFullscreen(false)}
-              className="px-3 py-1 rounded-md bg-white/10 border border-white/40 text-xs md:text-sm text-white"
+              style={{
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "1px solid rgba(255,255,255,0.5)",
+                backgroundColor: "rgba(255,255,255,0.1)",
+                color: "#fff",
+                fontSize: 12,
+              }}
             >
               Close
             </button>
           </div>
 
           {/* Horario ocupando casi toda la pantalla */}
-          <div className="flex-1 overflow-auto flex items-center justify-center p-0 md:p-4">
-            <div className="bg-white max-w-full max-h-full overflow-auto">
-              <div className="inline-block min-w-[900px] md:min-w-[1100px]">
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              overflow: "auto",
+              padding: 0,
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: "#fff",
+                maxWidth: "100%",
+                maxHeight: "100%",
+                overflow: "auto",
+              }}
+            >
+              <div
+                style={{
+                  display: "inline-block",
+                  minWidth: 900,
+                }}
+              >
                 <ExcelScheduleTable
                   schedule={schedule}
                   employees={employees}
@@ -481,6 +524,3 @@ export default function ApprovedScheduleView() {
           </div>
         </div>
       )}
-    </>
-  );
-}
