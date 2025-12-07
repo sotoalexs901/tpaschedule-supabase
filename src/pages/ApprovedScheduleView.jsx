@@ -223,7 +223,7 @@ export default function ApprovedScheduleView() {
   const [schedule, setSchedule] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [deleting, setDeleting] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false); // 👈 NUEVO
+  const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -454,10 +454,10 @@ export default function ApprovedScheduleView() {
         </div>
       </div>
 
-       {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
+      {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
       {fullscreen && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col">
-          {/* Botón cerrar, pegado arriba a la derecha */}
+          {/* Botón cerrar arriba a la derecha */}
           <div className="flex justify-end p-2 md:p-3">
             <button
               type="button"
@@ -481,3 +481,6 @@ export default function ApprovedScheduleView() {
           </div>
         </div>
       )}
+    </>
+  );
+}
