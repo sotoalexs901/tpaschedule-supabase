@@ -454,24 +454,23 @@ export default function ApprovedScheduleView() {
         </div>
       </div>
 
-      {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
+       {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
       {fullscreen && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
-          <div className="flex items-center justify-between p-3 md:p-4 text-white">
-            <span className="text-xs md:text-sm">
-              {schedule.airline} — {schedule.department} · Full-screen view
-            </span>
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          {/* Botón cerrar, pegado arriba a la derecha */}
+          <div className="flex justify-end p-2 md:p-3">
             <button
               type="button"
               onClick={() => setFullscreen(false)}
-              className="px-3 py-1 rounded-md bg-white/10 border border-white/40 text-xs md:text-sm"
+              className="px-3 py-1 rounded-md bg-white/10 border border-white/40 text-xs md:text-sm text-white"
             >
               Close
             </button>
           </div>
 
-          <div className="flex-1 overflow-auto p-2 md:p-4 flex justify-center items-start md:items-center">
-            <div className="bg-white rounded-lg shadow-lg max-w-full overflow-x-auto">
+          {/* Horario ocupando casi toda la pantalla */}
+          <div className="flex-1 overflow-auto flex items-center justify-center p-0 md:p-4">
+            <div className="bg-white max-w-full max-h-full overflow-auto">
               <div className="inline-block min-w-[900px] md:min-w-[1100px]">
                 <ExcelScheduleTable
                   schedule={schedule}
@@ -482,6 +481,3 @@ export default function ApprovedScheduleView() {
           </div>
         </div>
       )}
-    </>
-  );
-}
