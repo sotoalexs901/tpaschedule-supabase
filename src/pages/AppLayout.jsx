@@ -10,6 +10,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
 
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // 👈 NUEVO
 
   const logout = () => {
     setUser(null);
@@ -76,8 +77,23 @@ export default function AppLayout() {
 
   return (
     <div className="min-h-screen flex bg-slate-100">
+      {/* OVERLAY en móvil cuando el sidebar está abierto */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* SIDEBAR */}
-      <aside style={sidebarStyle}>
+      <aside
+        style={sidebarStyle}
+        className={`
+          fixed inset-y-0 left-0 z-40 transform transition-transform duration-200
+          md:static md:translate-x-0
+          ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+        `}
+      >
         {/* Header */}
         <div style={sidebarHeaderStyle}>
           <h1
@@ -138,9 +154,32 @@ export default function AppLayout() {
       </aside>
 
       {/* CONTENIDO PRINCIPAL */}
-      <main className="flex-1 p-6 overflow-auto">
-        <Outlet />
-      </main>
+      <div className="flex-1 flex flex-col min-h-screen">
+        {/* HEADER solo en móvil: botón de menú */}
+        <header className="flex items-center justify-between px-4 py-3 border-b bg-white shadow-sm md:hidden">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-800 bg-slate-50"
+          >
+            <span className="mr-2">
+              <span className="block w-4 h-0.5 bg-slate-800 mb-1" />
+              <span className="block w-4 h-0.5 bg-slate-800 mb-1" />
+              <span className="block w-4 h-0.5 bg-slate-800" />
+            </span>
+            Menu
+          </button>
+          <div className="text-right">
+            <p className="text-xs text-slate-500 leading-tight">TPA OPS SYSTEM</p>
+            <p className="text-[11px] text-slate-700 leading-tight">
+              {user?.username} · {user?.role}
+            </p>
+          </div>
+        </header>
+
+        <main className="flex-1 p-4 md:p-6 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
@@ -190,6 +229,10 @@ function NavItem({ to, label, showDot }) {
               background: "transparent",
             }
       }
+      onClick={() => {
+        // En móvil, al hacer clic en un item normalmente el sidebar se cerrará
+        // gracias al overlay + navegación; no necesitamos nada extra aquí.
+      }}
     >
       <span style={labelStyle}>{label}</span>
       {dot}
