@@ -12,7 +12,7 @@ export default function EmployeeDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   // 🔔 Cargamos anuncios/eventos para empleados
-  // Colección sugerida en Firestore: "employeeAnnouncements"
+  // Colección en Firestore: "employeeAnnouncements"
   useEffect(() => {
     async function loadAnnouncements() {
       try {
@@ -55,6 +55,7 @@ export default function EmployeeDashboardPage() {
 
       {/* Acciones rápidas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* My Schedule */}
         <button
           type="button"
           onClick={() => goTo("/my-schedule")}
@@ -71,9 +72,10 @@ export default function EmployeeDashboardPage() {
           </p>
         </button>
 
+        {/* Request Day Off / PTO (versión interna ligada al usuario) */}
         <button
           type="button"
-          onClick={() => goTo("/request-dayoff")}
+          onClick={() => goTo("/request-dayoff-internal")}
           className="card p-3 text-left hover:shadow-md transition-shadow cursor-pointer"
         >
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -83,13 +85,14 @@ export default function EmployeeDashboardPage() {
             Send a new request
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Fill out the form to request time off. HR/Management will review it.
+            This request will be linked to your employee profile.
           </p>
         </button>
 
+        {/* Status Day Off / PTO (solo sus solicitudes) */}
         <button
           type="button"
-          onClick={() => goTo("/dayoff-status")}
+          onClick={() => goTo("/dayoff-status-internal")}
           className="card p-3 text-left hover:shadow-md transition-shadow cursor-pointer"
         >
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
