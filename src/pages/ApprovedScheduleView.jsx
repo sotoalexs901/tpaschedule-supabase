@@ -55,6 +55,21 @@ const loadImage = (src) =>
     img.src = src;
   });
 
+// Helper: hex -> rgba con alpha
+function hexToRgba(hex, alpha) {
+  let h = hex.replace("#", "");
+  if (h.length === 3) {
+    h = h
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  }
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // Orden de días
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
@@ -95,6 +110,12 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     return num ? `${label} ${num}` : label;
   }).join("  |  ");
 
+  // Colores para filas alternadas según aerolínea
+  const stripeBg = hexToRgba(headerColor, 0.18); // fila con trabajo
+  const stripeOffBg = hexToRgba(headerColor, 0.32); // OFF más oscuro
+  const defaultWorkBg = "#ffffff";
+  const defaultOffBg = "#f3f4f6";
+
   // Estilo base del contenedor, con opción compact
   const wrapperStyle = {
     background: "#ffffff",
@@ -102,7 +123,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     border: "1px solid #e5e7eb",
     boxShadow: "0 8px 18px rgba(15,23,42,0.12)",
     padding: compact ? "10px" : "16px",
-    transform: compact ? "scale(0.7)" : "none",
+    transform: compact ? "scale(0.7)" : "none", // 👈 escala reducida en full-screen
     transformOrigin: "top left",
   };
 
@@ -165,25 +186,61 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
           {grid.map((row, idx) => {
             const name = empMap[row.employeeId] || "Unknown";
 
+            // Fila alternada: una sí, una no
+            const isStriped = idx % 2 === 0;
+
+            const employeeCellStyle = isStriped
+              ? { backgroundColor: stripeBg }
+              : {};
+
             return (
               <React.Fragment key={idx}>
                 {/* Fila 1: Primer turno */}
                 <tr>
-                  <td className="excel-employee-cell" rowSpan={2}>
+                  <td
+                    className="excel-employee-cell"
+                    rowSpan={2}
+                    style={employeeCellStyle}
+                  >
                     {name}
                   </td>
                   {DAY_KEYS.map((dKey) => {
-                    const text = getShiftText(row[dKey], 0);
-                    const hasWork = text !== "OFF";
+                    const shiftObj = (row[dKey] && row[dKey][0]) || null;
+                    const baseText = getShiftText(row[dKey], 0);
+                    const isOff = baseText === "OFF";
+                    const isTraining = !!shiftObj?.training;
+
+                    const displayText =
+                      isTraining && !isOff
+                        ? `${baseText} (TRN)`
+                        : baseText;
+
+                    const bgColor = isStriped
+                      ? isOff
+                        ? stripeOffBg
+                        : stripeBg
+                      : isOff
+                      ? defaultOffBg
+                      : defaultWorkBg;
+
+                    const cellStyle = {
+                      backgroundColor: bgColor,
+                      border:
+                        isTraining && !isOff
+                          ? `2px solid ${headerColor}`
+                          : undefined,
+                    };
+
                     return (
                       <td
                         key={dKey}
                         className={
                           "excel-cell " +
-                          (hasWork ? "excel-cell-work" : "excel-cell-off")
+                          (isOff ? "excel-cell-off" : "excel-cell-work")
                         }
+                        style={cellStyle}
                       >
-                        {text}
+                        {displayText}
                       </td>
                     );
                   })}
@@ -192,17 +249,42 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
                 {/* Fila 2: Segundo turno */}
                 <tr>
                   {DAY_KEYS.map((dKey) => {
-                    const text = getShiftText(row[dKey], 1);
-                    const hasWork = text !== "OFF";
+                    const shiftObj = (row[dKey] && row[dKey][1]) || null;
+                    const baseText = getShiftText(row[dKey], 1);
+                    const isOff = baseText === "OFF";
+                    const isTraining = !!shiftObj?.training;
+
+                    const displayText =
+                      isTraining && !isOff
+                        ? `${baseText} (TRN)`
+                        : baseText;
+
+                    const bgColor = isStriped
+                      ? isOff
+                        ? stripeOffBg
+                        : stripeBg
+                      : isOff
+                      ? defaultOffBg
+                      : defaultWorkBg;
+
+                    const cellStyle = {
+                      backgroundColor: bgColor,
+                      border:
+                        isTraining && !isOff
+                          ? `2px solid ${headerColor}`
+                          : undefined,
+                    };
+
                     return (
                       <td
                         key={dKey}
                         className={
                           "excel-cell " +
-                          (hasWork ? "excel-cell-work" : "excel-cell-off")
+                          (isOff ? "excel-cell-off" : "excel-cell-work")
                         }
+                        style={cellStyle}
                       >
-                        {text}
+                        {displayText}
                       </td>
                     );
                   })}
@@ -520,7 +602,7 @@ export default function ApprovedScheduleView() {
                 <ExcelScheduleTable
                   schedule={schedule}
                   employees={employees}
-                  compact={true} // 👈 versión reducida para que quepa más en pantalla
+                  compact={true} // 👈 versión reducida para screenshot
                 />
               </div>
             </div>
