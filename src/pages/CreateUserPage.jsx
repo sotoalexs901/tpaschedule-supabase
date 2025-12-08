@@ -88,27 +88,34 @@ export default function CreateUserPage() {
         createdAt: serverTimestamp(),
       };
 
-      // Seguimos guardando employeeId en el user si se seleccionó
       if (employeeId) {
         payload.employeeId = employeeId;
       }
 
-      // 1) Crear usuario en colección "users"
+      // 1) Crear usuario
       const userRef = await addDoc(collection(db, "users"), payload);
+      console.log("User created with id:", userRef.id);
 
-      // 2) Si se seleccionó un empleado y el rol es Agent/Supervisor,
-      //    actualizar el empleado con loginUsername + linkedUserId
-      if (
-        employeeId &&
-        (role === "agent" || role === "supervisor")
-      ) {
-        const empRef = doc(db, "employees", employeeId);
-        await updateDoc(empRef, {
-          loginUsername: cleanUsername,
-          linkedUserId: userRef.id,
-        });
+      // 2) Si se seleccionó un empleado, actualizar doc del empleado
+      if (employeeId) {
+        try {
+          const empRef = doc(db, "employees", employeeId);
+          await updateDoc(empRef, {
+            loginUsername: cleanUsername,
+            linkedUserId: userRef.id,
+          });
+          console.log(
+            "Employee linked/updated:",
+            employeeId,
+            "loginUsername:",
+            cleanUsername
+          );
+        } catch (linkErr) {
+          console.error("Error updating linked employee:", linkErr);
+        }
       }
 
+      // Reset form
       setUsername("");
       setPin("");
       setRole("agent");
@@ -116,7 +123,7 @@ export default function CreateUserPage() {
 
       setMessage("User created successfully!");
     } catch (error) {
-      console.error(error);
+      console.error("Error creating user:", error);
       setMessage("Error creating user.");
     } finally {
       setLoading(false);
@@ -187,8 +194,8 @@ export default function CreateUserPage() {
           </select>
           <p className="text-xs text-slate-500 mt-1">
             When linked, the employee record is updated with{" "}
-            <code>loginUsername</code> and <code>linkedUserId</code>, so
-            the user can see their personal schedule in <b>My Schedule</b>.
+            <code>loginUsername</code> and <code>linkedUserId</code>, so the
+            user can see their personal schedule in <b>My Schedule</b>.
           </p>
         </div>
 
