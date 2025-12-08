@@ -144,6 +144,7 @@ export default function AppLayout() {
                     label="Day Off Requests"
                     showDot={pendingTimeOff > 0}
                   />
+                 <NavItem to="/employee-announcements" label="Crew Announcements" /> {/* 👈 NUEVO */}
                   <NavItem to="/dashboard-editor" label="Dashboard Editor" />
                   <NavItem to="/budgets" label="Budgets" />
                   <NavItem to="/create-user" label="Create User" />
