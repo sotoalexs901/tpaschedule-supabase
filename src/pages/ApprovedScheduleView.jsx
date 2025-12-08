@@ -111,10 +111,8 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
   }).join("  |  ");
 
   // Colores para filas alternadas según aerolínea
-  const stripeBg = hexToRgba(headerColor, 0.18); // fila con trabajo
-  const stripeOffBg = hexToRgba(headerColor, 0.32); // OFF más oscuro
-  const defaultWorkBg = "#ffffff";
-  const defaultOffBg = "#f3f4f6";
+  const stripeBg = hexToRgba(headerColor, 0.18); // fila alternada
+  const defaultRowBg = "#ffffff";
 
   // Estilo base del contenedor, con opción compact
   const wrapperStyle = {
@@ -123,8 +121,26 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     border: "1px solid #e5e7eb",
     boxShadow: "0 8px 18px rgba(15,23,42,0.12)",
     padding: compact ? "10px" : "16px",
-    transform: compact ? "scale(0.7)" : "none", // 👈 escala reducida en full-screen
+    transform: compact ? "scale(0.7)" : "none",
     transformOrigin: "top left",
+  };
+
+  // 🔹 Columnas más estrechas
+  const baseCellStyle = {
+    padding: compact ? "4px 5px" : "5px 7px",
+    fontSize: compact ? "10px" : "11px",
+    lineHeight: 1.2,
+    whiteSpace: "nowrap",
+  };
+
+  const headerCellStyle = {
+    ...baseCellStyle,
+    fontWeight: 700,
+  };
+
+  const employeeHeaderCellStyle = {
+    ...headerCellStyle,
+    minWidth: 130,
   };
 
   return (
@@ -171,12 +187,28 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
       </div>
 
       {/* TABLA PRINCIPAL */}
-      <table className="excel-table">
+      <table
+        className="excel-table"
+        style={{
+          borderCollapse: "collapse",
+          width: "100%",
+          tableLayout: "fixed", // columnas más compactas
+        }}
+      >
         <thead>
           <tr>
-            <th className="excel-header-employee">EMPLOYEE</th>
+            <th
+              className="excel-header-employee"
+              style={employeeHeaderCellStyle}
+            >
+              EMPLOYEE
+            </th>
             {DAY_KEYS.map((key) => (
-              <th key={key} className="excel-header-day">
+              <th
+                key={key}
+                className="excel-header-day"
+                style={headerCellStyle}
+              >
                 {DAY_LABELS[key]} {days?.[key] ? `/ ${days[key]}` : ""}
               </th>
             ))}
@@ -188,10 +220,13 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
 
             // Fila alternada: una sí, una no
             const isStriped = idx % 2 === 0;
+            const rowBg = isStriped ? stripeBg : defaultRowBg;
 
-            const employeeCellStyle = isStriped
-              ? { backgroundColor: stripeBg }
-              : {};
+            const employeeCellStyle = {
+              ...baseCellStyle,
+              backgroundColor: rowBg,
+              fontWeight: 600,
+            };
 
             return (
               <React.Fragment key={idx}>
@@ -215,20 +250,13 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
                         ? `${baseText} (TRN)`
                         : baseText;
 
-                    const bgColor = isStriped
-                      ? isOff
-                        ? stripeOffBg
-                        : stripeBg
-                      : isOff
-                      ? defaultOffBg
-                      : defaultWorkBg;
-
                     const cellStyle = {
-                      backgroundColor: bgColor,
+                      ...baseCellStyle,
+                      backgroundColor: rowBg, // ✅ igual color tenga OFF o no
                       border:
                         isTraining && !isOff
                           ? `2px solid ${headerColor}`
-                          : undefined,
+                          : "1px solid #111",
                     };
 
                     return (
@@ -259,20 +287,13 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
                         ? `${baseText} (TRN)`
                         : baseText;
 
-                    const bgColor = isStriped
-                      ? isOff
-                        ? stripeOffBg
-                        : stripeBg
-                      : isOff
-                      ? defaultOffBg
-                      : defaultWorkBg;
-
                     const cellStyle = {
-                      backgroundColor: bgColor,
+                      ...baseCellStyle,
+                      backgroundColor: rowBg, // ✅ igual color tenga OFF o no
                       border:
                         isTraining && !isOff
                           ? `2px solid ${headerColor}`
-                          : undefined,
+                          : "1px solid #111",
                     };
 
                     return (
