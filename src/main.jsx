@@ -66,10 +66,7 @@ function AppRouter() {
 
         {/* 🔓 RUTAS PÚBLICAS (no requieren login) */}
         <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
-        <Route
-          path="/dayoff-status"
-          element={<TimeOffStatusPublicPage />}
-        />
+        <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
 
         {/* RUTAS PROTEGIDAS */}
         <Route
@@ -93,23 +90,34 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
-<Route
-  path="request-dayoff-internal"
-  element={
-    <ProtectedRoute roles={["agent", "supervisor"]}>
-      <EmployeeTimeOffRequestPage />
-    </ProtectedRoute>
-  }
-/>
 
-<Route
-  path="dayoff-status-internal"
-  element={
-    <ProtectedRoute roles={["agent", "supervisor"]}>
-      <EmployeeTimeOffStatusPage />
-    </ProtectedRoute>
-  }
-/>
+          <Route
+            path="request-dayoff-internal"
+            element={
+              <ProtectedRoute roles={["agent", "supervisor"]}>
+                <EmployeeTimeOffRequestPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="dayoff-status-internal"
+            element={
+              <ProtectedRoute roles={["agent", "supervisor"]}>
+                <EmployeeTimeOffStatusPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* SOLO STATION MANAGER: anuncios para empleados */}
+          <Route
+            path="employee-announcements"
+            element={
+              <ProtectedRoute roles={["station_manager"]}>
+                <CrewAnnouncementsPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="dashboard-editor"
@@ -231,15 +239,6 @@ function AppRouter() {
             }
           />
         </Route>
-        <Route
-  path="employee-announcements"
-  element={
-    <ProtectedRoute roles={["station_manager"]}>
-      <CrewAnnouncementsPage />
-    </ProtectedRoute>
-  }
-/>
-
       </Routes>
     </BrowserRouter>
   );
