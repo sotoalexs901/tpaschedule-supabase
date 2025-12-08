@@ -27,7 +27,8 @@ import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 // ⭐ NUEVOS
 import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
 import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx";
-import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx"; // ✅ AÑADIDO
+import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx";
+import EmployeeDashboardPage from "./pages/EmployeeDashboardPage.jsx";
 import MySchedulePage from "./pages/MySchedulePage.jsx";
 
 // -------- protección de rutas ----------
@@ -41,6 +42,18 @@ function ProtectedRoute({ children, roles }) {
   return children;
 }
 
+// Decide qué dashboard mostrar según rol
+function DashboardEntry() {
+  const { user } = useUser();
+
+  if (user?.role === "agent" || user?.role === "supervisor") {
+    return <EmployeeDashboardPage />;
+  }
+
+  // station_manager / duty_manager (o cualquier otro rol)
+  return <DashboardPage />;
+}
+
 function AppRouter() {
   return (
     <BrowserRouter>
@@ -50,7 +63,10 @@ function AppRouter() {
 
         {/* 🔓 RUTAS PÚBLICAS (no requieren login) */}
         <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
-        <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} /> {/* ✅ AÑADIDO */}
+        <Route
+          path="/dayoff-status"
+          element={<TimeOffStatusPublicPage />}
+        />
 
         {/* RUTAS PROTEGIDAS */}
         <Route
@@ -61,8 +77,19 @@ function AppRouter() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<DashboardPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
+          {/* Dashboard según rol */}
+          <Route index element={<DashboardEntry />} />
+          <Route path="dashboard" element={<DashboardEntry />} />
+
+          {/* SOLO AGENT / SUPERVISOR */}
+          <Route
+            path="my-schedule"
+            element={
+              <ProtectedRoute roles={["agent", "supervisor"]}>
+                <MySchedulePage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="dashboard-editor"
@@ -184,11 +211,6 @@ function AppRouter() {
             }
           />
         </Route>
-       <Route path="my-schedule" element={
-  <ProtectedRoute roles={["agent", "supervisor"]}>
-    <MySchedulePage />
-  </ProtectedRoute>
-} /> 
       </Routes>
     </BrowserRouter>
   );
