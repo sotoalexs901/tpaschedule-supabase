@@ -31,6 +31,8 @@ import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx";
 import EmployeeDashboardPage from "./pages/EmployeeDashboardPage.jsx";
 import MySchedulePage from "./pages/MySchedulePage.jsx";
 import CrewAnnouncementsPage from "./pages/CrewAnnouncementsPage.jsx";
+import EmployeeTimeOffRequestPage from "./pages/EmployeeTimeOffRequestPage.jsx";
+import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
@@ -91,6 +93,23 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+<Route
+  path="request-dayoff-internal"
+  element={
+    <ProtectedRoute roles={["agent", "supervisor"]}>
+      <EmployeeTimeOffRequestPage />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="dayoff-status-internal"
+  element={
+    <ProtectedRoute roles={["agent", "supervisor"]}>
+      <EmployeeTimeOffStatusPage />
+    </ProtectedRoute>
+  }
+/>
 
           <Route
             path="dashboard-editor"
