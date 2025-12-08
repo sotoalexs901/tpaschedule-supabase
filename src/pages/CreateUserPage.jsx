@@ -1,6 +1,13 @@
 // src/pages/CreateUserPage.jsx
 import React, { useState, useEffect } from "react";
-import { addDoc, collection, serverTimestamp, getDocs } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  serverTimestamp,
+  getDocs,
+  doc,
+  updateDoc,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -51,20 +58,23 @@ export default function CreateUserPage() {
       }
     }
 
-    loadEmployees();
+    loadEmployees().catch(console.error);
   }, []);
 
   const createUser = async (e) => {
     e.preventDefault();
     setMessage("");
 
-    if (!username || !pin || !role) {
+    const cleanUsername = username.trim();
+    const cleanPin = pin.trim();
+
+    if (!cleanUsername || !cleanPin || !role) {
       setMessage("All fields are required (username, PIN, role).");
       return;
     }
 
-    if (pin.length < 4) {
-      setMessage("PIN should be at least 4 digits.");
+    if (cleanPin.length !== 4) {
+      setMessage("PIN must be exactly 4 digits.");
       return;
     }
 
@@ -72,18 +82,32 @@ export default function CreateUserPage() {
       setLoading(true);
 
       const payload = {
-        username: username.trim(),
-        pin: pin.trim(),
+        username: cleanUsername,
+        pin: cleanPin,
         role,
         createdAt: serverTimestamp(),
       };
 
-      // Solo agregamos employeeId si se seleccionó alguno
+      // Seguimos guardando employeeId en el user si se seleccionó
       if (employeeId) {
         payload.employeeId = employeeId;
       }
 
-      await addDoc(collection(db, "users"), payload);
+      // 1) Crear usuario en colección "users"
+      const userRef = await addDoc(collection(db, "users"), payload);
+
+      // 2) Si se seleccionó un empleado y el rol es Agent/Supervisor,
+      //    actualizar el empleado con loginUsername + linkedUserId
+      if (
+        employeeId &&
+        (role === "agent" || role === "supervisor")
+      ) {
+        const empRef = doc(db, "employees", employeeId);
+        await updateDoc(empRef, {
+          loginUsername: cleanUsername,
+          linkedUserId: userRef.id,
+        });
+      }
 
       setUsername("");
       setPin("");
@@ -120,7 +144,10 @@ export default function CreateUserPage() {
             type="password"
             className="border rounded w-full px-2 py-1"
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
+            maxLength={4}
+            onChange={(e) =>
+              setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+            }
             placeholder="4-digit PIN"
           />
         </div>
@@ -159,8 +186,9 @@ export default function CreateUserPage() {
             ))}
           </select>
           <p className="text-xs text-slate-500 mt-1">
-            For Agents and Supervisors, linking to an employee profile lets them
-            see only their own schedule in <b>My Schedule</b>.
+            When linked, the employee record is updated with{" "}
+            <code>loginUsername</code> and <code>linkedUserId</code>, so
+            the user can see their personal schedule in <b>My Schedule</b>.
           </p>
         </div>
 
