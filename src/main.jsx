@@ -30,6 +30,7 @@ import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx";
 import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx";
 import EmployeeDashboardPage from "./pages/EmployeeDashboardPage.jsx";
 import MySchedulePage from "./pages/MySchedulePage.jsx";
+import CrewAnnouncementsPage from "./pages/CrewAnnouncementsPage.jsx";
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
@@ -211,6 +212,15 @@ function AppRouter() {
             }
           />
         </Route>
+        <Route
+  path="employee-announcements"
+  element={
+    <ProtectedRoute roles={["station_manager"]}>
+      <CrewAnnouncementsPage />
+    </ProtectedRoute>
+  }
+/>
+
       </Routes>
     </BrowserRouter>
   );
