@@ -28,6 +28,7 @@ import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
 import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx";
 import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx"; // ✅ AÑADIDO
+import MySchedulePage from "./pages/MySchedulePage.jsx";
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
@@ -183,6 +184,11 @@ function AppRouter() {
             }
           />
         </Route>
+       <Route path="my-schedule" element={
+  <ProtectedRoute roles={["agent", "supervisor"]}>
+    <MySchedulePage />
+  </ProtectedRoute>
+} /> 
       </Routes>
     </BrowserRouter>
   );
