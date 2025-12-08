@@ -4,11 +4,10 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
-// mismos días que usamos en ApprovedScheduleView
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
-  tue: "TUES",
+  tue: "TUE",
   wed: "WED",
   thu: "THU",
   fri: "FRI",
@@ -23,152 +22,257 @@ function getShiftText(shifts, idx) {
   return `${s.start} - ${s.end}`;
 }
 
-// combina máximo 2 turnos en un texto corto
-function formatDayShifts(dayArray) {
-  const first = getShiftText(dayArray, 0);
-  const second = getShiftText(dayArray, 1);
-
-  if (first === "OFF" && second === "OFF") return "OFF";
-  if (second === "OFF") return first;
-  if (first === "OFF") return second;
-  if (first === second) return first;
-  return `${first} / ${second}`;
-}
-
 export default function MySchedulePage() {
   const { user } = useUser();
+
+  const [employees, setEmployees] = useState([]);
+  const [currentEmployee, setCurrentEmployee] = useState(null);
+  const [mySchedules, setMySchedules] = useState([]);
+  const [teamEmployees, setTeamEmployees] = useState([]); // agentes para supervisor
   const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState([]); // lista de semanas donde trabaja
+
+  const isSupervisor = user?.role === "supervisor";
 
   useEffect(() => {
-    async function load() {
-      if (!user || !user.employeeId) {
-        setLoading(false);
-        return;
-      }
-
+    async function loadData() {
       try {
-        // traemos sólo schedules aprobados
-        const q = query(
-          collection(db, "schedules"),
-          where("status", "==", "approved")
+        setLoading(true);
+
+        // 1) Cargar empleados
+        const empSnap = await getDocs(collection(db, "employees"));
+        const empList = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setEmployees(empList);
+
+        // 2) Identificar el empleado vinculado a este usuario
+        //    Aquí asumimos que `user.username` coincide con `employees.name`
+        const me =
+          empList.find(
+            (e) =>
+              e.name?.toLowerCase().trim() ===
+              (user?.username || "").toLowerCase().trim()
+          ) || null;
+
+        setCurrentEmployee(me);
+
+        if (!me) {
+          setMySchedules([]);
+          setTeamEmployees([]);
+          return;
+        }
+
+        // 3) Cargar schedules aprobados
+        const schSnap = await getDocs(
+          query(collection(db, "schedules"), where("status", "==", "approved"))
         );
-        const snap = await getDocs(q);
+        const allApproved = schSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
 
-        const result = [];
-        snap.forEach((docSnap) => {
-          const data = docSnap.data();
-          const grid = data.grid || [];
+        // 4) Filtrar los horarios donde aparece este empleado
+        const mine = allApproved.filter((sch) =>
+          (sch.grid || []).some((row) => row.employeeId === me.id)
+        );
+        setMySchedules(mine);
 
-          // buscamos la fila de ESTE empleado
-          const row = grid.find((r) => r.employeeId === user.employeeId);
-          if (!row) return;
-
-          result.push({
-            id: docSnap.id,
-            airline: data.airline,
-            department: data.department,
-            days: data.days || {},
-            row,
-          });
-        });
-
-        // opcional: podríamos ordenar por fecha si lo necesitas más adelante
-        setItems(result);
+        // 5) Si es supervisor, cargar agentes que reportan a él
+        if (isSupervisor) {
+          const team = empList.filter((e) => e.supervisorId === me.id);
+          setTeamEmployees(team);
+        } else {
+          setTeamEmployees([]);
+        }
       } catch (err) {
-        console.error("Error loading my schedules:", err);
+        console.error("Error loading my schedule:", err);
+        setMySchedules([]);
+        setTeamEmployees([]);
       } finally {
         setLoading(false);
       }
     }
 
-    load();
-  }, [user]);
+    if (user) {
+      loadData();
+    }
+  }, [user, isSupervisor]);
 
-  if (!user?.employeeId) {
+  if (!user) {
     return (
-      <div className="p-6 space-y-3">
-        <h1 className="text-xl font-semibold mb-2">My Schedule</h1>
-        <p className="text-sm">
-          Your user is not linked to an <b>employee profile</b> yet. Please ask
-          your Station Manager or HR to link your account to your employee
-          record.
+      <div className="p-6">
+        <p className="text-sm">Please log in to see your schedule.</p>
+      </div>
+    );
+  }
+
+  if (!currentEmployee && !loading) {
+    return (
+      <div className="p-6">
+        <h1 className="text-lg font-semibold mb-2">My Schedule</h1>
+        <p className="text-sm text-slate-600">
+          We could not match your user with any employee profile.  
+          Please contact your station manager.
         </p>
       </div>
     );
   }
 
-  if (loading) {
-    return <div className="p-6">Loading your schedules...</div>;
-  }
+  const mySupervisor =
+    !isSupervisor && currentEmployee?.supervisorId
+      ? employees.find((e) => e.id === currentEmployee.supervisorId)
+      : null;
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <h1 className="text-xl font-semibold mb-2">My Schedule</h1>
-      <p className="text-sm text-slate-600 mb-4">
-        Here you can see your weekly schedules that have been approved.
-      </p>
+      <div>
+        <h1 className="text-xl font-semibold">My Schedule</h1>
+        <p className="text-sm text-slate-600">
+          {currentEmployee?.name} · {user.role}
+        </p>
+        {mySupervisor && (
+          <p className="text-xs text-slate-500 mt-1">
+            Supervisor: <b>{mySupervisor.name}</b>
+          </p>
+        )}
+        {isSupervisor && (
+          <p className="text-xs text-slate-500 mt-1">
+            Agents linked to you will appear under each schedule where they are
+            assigned.
+          </p>
+        )}
+      </div>
 
-      {items.length === 0 && (
-        <div className="card p-4 text-sm">
-          No approved schedules found for your profile yet.
-        </div>
+      {loading && (
+        <p className="text-sm text-slate-500">Loading your schedules...</p>
       )}
 
-      {items.map((item) => {
-        const { airline, department, days, row } = item;
+      {!loading && mySchedules.length === 0 && (
+        <p className="text-sm text-slate-500">
+          No approved schedules found for your profile.
+        </p>
+      )}
 
-        const weekText = DAY_KEYS.map((k) => {
-          const num = days?.[k];
-          return num ? `${DAY_LABELS[k]} ${num}` : DAY_LABELS[k];
-        }).join(" · ");
+      {!loading &&
+        mySchedules.map((sch) => {
+          const myRow = (sch.grid || []).find(
+            (row) => row.employeeId === currentEmployee.id
+          );
 
-        return (
-          <div key={item.id} className="card p-4 space-y-3">
-            {/* Encabezado de la semana */}
-            <div className="flex flex-col md:flex-row md:items-baseline md:justify-between gap-1">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-wider">
-                  {airline} — {department}
-                </div>
-                <div className="text-xs text-slate-500">
-                  WEEKLY SCHEDULE · {weekText}
+          // Para supervisores: agentes asignados en ESTE schedule
+          let agentsInThisSchedule = [];
+          if (isSupervisor && teamEmployees.length > 0) {
+            const teamIds = new Set(teamEmployees.map((t) => t.id));
+            const rows = sch.grid || [];
+            const idsInSchedule = new Set(
+              rows.map((r) => r.employeeId).filter(Boolean)
+            );
+            agentsInThisSchedule = teamEmployees.filter((t) =>
+              idsInSchedule.has(t.id)
+            );
+          }
+
+          return (
+            <div
+              key={sch.id}
+              className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    {sch.airline} — {sch.department}
+                  </h2>
+                  <p className="text-[11px] text-slate-500">
+                    WEEKLY SCHEDULE •{" "}
+                    {sch.days
+                      ? Object.keys(DAY_LABELS)
+                          .map(
+                            (key) =>
+                              `${DAY_LABELS[key]} ${
+                                sch.days?.[key] ? `/ ${sch.days[key]}` : ""
+                              }`
+                          )
+                          .join(" | ")
+                      : ""}
+                  </p>
                 </div>
               </div>
-            </div>
 
-            {/* Tabla compacta con solo este empleado */}
-            <div className="overflow-x-auto">
-              <table className="min-w-full border border-slate-300 text-xs md:text-sm">
-                <thead>
-                  <tr className="bg-slate-100">
-                    {DAY_KEYS.map((k) => (
-                      <th
-                        key={k}
-                        className="border border-slate-300 px-2 py-1 text-center"
-                      >
-                        {DAY_LABELS[k]}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {DAY_KEYS.map((k) => (
-                      <td
-                        key={k}
-                        className="border border-slate-300 px-2 py-1 text-center"
-                      >
-                        {formatDayShifts(row[k])}
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
+              {/* Tabla compacta sólo con mi fila */}
+              {myRow ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-[11px] border border-slate-200">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="px-2 py-1 border border-slate-200 text-left">
+                          EMPLOYEE
+                        </th>
+                        {DAY_KEYS.map((key) => (
+                          <th
+                            key={key}
+                            className="px-2 py-1 border border-slate-200 text-center"
+                          >
+                            {DAY_LABELS[key]}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Fila 1: primer turno */}
+                      <tr className="bg-slate-50">
+                        <td
+                          className="px-2 py-1 border border-slate-200 font-semibold"
+                          rowSpan={2}
+                        >
+                          {currentEmployee.name}
+                        </td>
+                        {DAY_KEYS.map((key) => (
+                          <td
+                            key={key}
+                            className="px-2 py-1 border border-slate-200 text-center"
+                          >
+                            {getShiftText(myRow[key], 0)}
+                          </td>
+                        ))}
+                      </tr>
+                      {/* Fila 2: segundo turno */}
+                      <tr className="bg-slate-50">
+                        {DAY_KEYS.map((key) => (
+                          <td
+                            key={key}
+                            className="px-2 py-1 border border-slate-200 text-center"
+                          >
+                            {getShiftText(myRow[key], 1)}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Could not find your row in this schedule.
+                </p>
+              )}
+
+              {/* Lista de agentes para supervisores */}
+              {isSupervisor && agentsInThisSchedule.length > 0 && (
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-[11px] font-semibold text-slate-700 mb-1">
+                    Agents in this schedule:
+                  </p>
+                  <p className="text-[11px] text-slate-600">
+                    {agentsInThisSchedule.map((a) => a.name).join(", ")}
+                  </p>
+                </div>
+              )}
+
+              {isSupervisor && agentsInThisSchedule.length === 0 && (
+                <p className="text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+                  No agents linked to you in this schedule.
+                </p>
+              )}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
     </div>
   );
 }
