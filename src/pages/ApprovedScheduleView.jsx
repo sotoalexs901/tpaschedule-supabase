@@ -144,8 +144,8 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
   // 🔹 Columna EMPLOYEE más ancha
   const employeeHeaderCellStyle = {
     ...headerCellStyle,
-    width: "30%",        // 👈 ~30% de la tabla
-    minWidth: 260,       // por si los nombres son largos
+    width: "20%",        //
+    minWidth: 180,       // por si los nombres son largos
     textAlign: "left",
     whiteSpace: "normal",
   };
@@ -229,15 +229,18 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
             const isStriped = idx % 2 === 0;
             const rowBg = isStriped ? stripeBg : plainBg;
 
-            const employeeCellStyle = {
-              ...baseCellStyle,
-              backgroundColor: rowBg,
-              fontWeight: 600,
-              textAlign: "left",
-              whiteSpace: "normal",
-              borderTop: "2px solid #111",
-              borderBottom: "2px solid #111",
-            };
+    const employeeCellStyle = {
+  ...baseCellStyle,
+  backgroundColor: rowBg,
+  fontWeight: 600,
+  textAlign: "left",
+  whiteSpace: "normal",
+  width: "20%",         // 👈 asegurar que también aplique en filas
+  minWidth: 180,
+  borderTop: "2px solid #111",
+  borderBottom: "2px solid #111",
+};
+
 
             return (
               <React.Fragment key={idx}>
