@@ -7,9 +7,9 @@ import { useUser } from "../UserContext.jsx";
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
-  tue: "TUE",
+  tue: "TUES",
   wed: "WED",
-  thu: "THU",
+  thu: "THURS",
   fri: "FRI",
   sat: "SAT",
   sun: "SUN",
@@ -22,6 +22,11 @@ function getShiftText(shifts, idx) {
   return `${s.start} - ${s.end}`;
 }
 
+// helper para comparar strings
+function norm(v) {
+  return (v || "").toString().trim().toLowerCase();
+}
+
 export default function MySchedulePage() {
   const { user } = useUser();
 
@@ -32,6 +37,8 @@ export default function MySchedulePage() {
 
   useEffect(() => {
     async function loadData() {
+      if (!user) return;
+
       try {
         setLoading(true);
 
@@ -40,21 +47,32 @@ export default function MySchedulePage() {
         const empList = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setEmployees(empList);
 
-        // 2) Identificar el empleado vinculado a este usuario
-        //    Aquí asumimos que user.username coincide con employees.name
-        const me =
-          empList.find(
-            (e) =>
-              (e.name || "").toLowerCase().trim() ===
-              (user?.username || "").toLowerCase().trim()
-          ) || null;
+        const uName = norm(user.username);
 
-        setCurrentEmployee(me);
+        // 2) Buscar el empleado asociado al usuario
+        //    PRIORIDAD:
+        //    - loginUsername  (recomendado)
+        //    - username
+        //    - code
+        //    - name (solo como último recurso)
+        const me =
+          empList.find((e) => norm(e.loginUsername) === uName) ||
+          empList.find((e) => norm(e.username) === uName) ||
+          empList.find((e) => norm(e.code) === uName) ||
+          empList.find((e) => norm(e.name) === uName) ||
+          null;
 
         if (!me) {
+          console.warn(
+            "[MySchedule] No se encontró empleado para el usuario:",
+            user.username
+          );
+          setCurrentEmployee(null);
           setMySchedules([]);
           return;
         }
+
+        setCurrentEmployee(me);
 
         // 3) Cargar schedules aprobados
         const schSnap = await getDocs(
@@ -79,9 +97,7 @@ export default function MySchedulePage() {
       }
     }
 
-    if (user) {
-      loadData();
-    }
+    loadData();
   }, [user]);
 
   if (!user) {
@@ -100,6 +116,10 @@ export default function MySchedulePage() {
           We could not match your user with any employee profile.
           <br />
           Please contact your station manager or HR.
+        </p>
+        <p className="text-xs text-slate-500 mt-2">
+          Tip: agrega un campo <code>loginUsername</code> en el empleado con el
+          valor <b>{user.username}</b>.
         </p>
       </div>
     );
@@ -163,14 +183,12 @@ export default function MySchedulePage() {
                   <p className="text-[11px] text-slate-500">
                     WEEKLY SCHEDULE •{" "}
                     {sch.days
-                      ? Object.keys(DAY_LABELS)
-                          .map(
-                            (key) =>
-                              `${DAY_LABELS[key]}${
-                                sch.days?.[key] ? ` / ${sch.days[key]}` : ""
-                              }`
-                          )
-                          .join(" | ")
+                      ? DAY_KEYS.map(
+                          (key) =>
+                            `${DAY_LABELS[key]}${
+                              sch.days?.[key] ? ` / ${sch.days[key]}` : ""
+                            }`
+                        ).join(" | ")
                       : ""}
                   </p>
                 </div>
