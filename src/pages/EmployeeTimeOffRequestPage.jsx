@@ -1,144 +1,269 @@
 // src/pages/EmployeeTimeOffRequestPage.jsx
-import React, { useEffect, useState } from "react";
-import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
+import React, { useState } from "react";
+import {
+  addDoc,
+  collection,
+  serverTimestamp,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
 export default function EmployeeTimeOffRequestPage() {
   const { user } = useUser();
-  const [employee, setEmployee] = useState(null);
-  const [dates, setDates] = useState("");
-  const [reason, setReason] = useState("");
-  const [notes, setNotes] = useState("");
-  const [sending, setSending] = useState(false);
-  const [message, setMessage] = useState("");
 
-  // Cargar info del empleado vinculado
-  useEffect(() => {
-    async function loadEmployee() {
-      if (!user?.employeeId) return;
-      try {
-        const snap = await getDoc(doc(db, "employees", user.employeeId));
-        if (snap.exists()) {
-          setEmployee({ id: snap.id, ...snap.data() });
-        }
-      } catch (err) {
-        console.error("Error loading employee profile:", err);
-      }
+  const [requestType, setRequestType] = useState("pto"); // pto | day_off | sick
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState(null); // { type: 'success' | 'error', text: string }
+
+  if (!user) {
+    return (
+      <div className="p-4 text-sm text-slate-200">
+        You must be logged in to submit a request.
+      </div>
+    );
+  }
+
+  const normalizeRange = () => {
+    if (!startDate && !endDate) return null;
+    if (!startDate && endDate) return null;
+
+    const start = startDate;
+    const end = endDate || startDate;
+    if (end < start) return null;
+
+    return { start, end };
+  };
+
+  const getDatesInRange = (startStr, endStr) => {
+    const dates = [];
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+
+    const d = new Date(start);
+    while (d <= end) {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      dates.push(`${year}-${month}-${day}`);
+      d.setDate(d.getDate() + 1);
     }
-    loadEmployee();
-  }, [user?.employeeId]);
+    return dates;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage("");
+    setMessage(null);
 
-    if (!dates || !reason) {
-      setMessage("Please fill in the dates and reason.");
+    const range = normalizeRange();
+    if (!range) {
+      setMessage({
+        type: "error",
+        text: "Please select a valid start/end date.",
+      });
       return;
     }
 
+    const { start, end } = range;
+    const newRequestDates = getDatesInRange(start, end);
+
     try {
-      setSending(true);
+      setSubmitting(true);
+
+      // 🔎 Buscar solicitudes anteriores del mismo usuario
+      const qRef = query(
+        collection(db, "timeOffRequests"),
+        where("userId", "==", user.id || user.uid || user.username)
+      );
+      const snap = await getDocs(qRef);
+
+      const existing = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const blockingStatuses = ["pending", "approved"];
+      const conflictDates = new Set();
+
+      for (const req of existing) {
+        if (!blockingStatuses.includes(req.status || "pending")) continue;
+
+        const existingStart = req.startDate || req.date;
+        const existingEnd = req.endDate || req.date || req.startDate;
+
+        if (!existingStart) continue;
+
+        const existingRangeDates = getDatesInRange(
+          existingStart,
+          existingEnd || existingStart
+        );
+
+        for (const d of newRequestDates) {
+          if (existingRangeDates.includes(d)) {
+            conflictDates.add(d);
+          }
+        }
+      }
+
+      if (conflictDates.size > 0) {
+        const list = Array.from(conflictDates).sort().join(", ");
+        setMessage({
+          type: "error",
+          text: `You already have a pending/approved request for: ${list}. Adjust your dates or contact your manager.`,
+        });
+        setSubmitting(false);
+        return;
+      }
 
       await addDoc(collection(db, "timeOffRequests"), {
-        source: "internal", // diferencia vs formulario público
+        userId: user.id || user.uid || user.username,
+        username: user.username || "",
+        fullName: user.name || user.fullName || "",
+        role: user.role || "",
+        requestType, // pto | day_off | sick
+        startDate: start,
+        endDate: end,
+        notes: notes || "",
         status: "pending",
         createdAt: serverTimestamp(),
-        employeeId: user?.employeeId || null,
-        employeeName: employee?.name || user?.username,
-        employeeAirline: employee?.airline || "",
-        employeeDepartment: employee?.department || "",
-        userId: user?.id || null,
-        username: user?.username || "",
-        dates,
-        reason,
-        notes,
+        source: "internal-portal",
       });
 
-      setDates("");
-      setReason("");
+      setMessage({
+        type: "success",
+        text: "Your request has been sent successfully and is now pending review.",
+      });
+      setStartDate("");
+      setEndDate("");
       setNotes("");
-      setMessage("Request sent successfully!");
+      setRequestType("pto");
     } catch (err) {
-      console.error(err);
-      setMessage("Error sending request.");
+      console.error("Error sending request:", err);
+      setMessage({
+        type: "error",
+        text: "There was an error sending your request. Please try again.",
+      });
     } finally {
-      setSending(false);
+      setSubmitting(false);
     }
   };
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   return (
-    <div className="max-w-xl mx-auto p-4 md:p-6 space-y-4">
-      <h1 className="text-xl font-semibold">Request Day Off / PTO</h1>
-      <p className="text-sm text-slate-600">
-        This request will be linked to your employee profile and reviewed by Management/HR.
-      </p>
-
-      <div className="card p-3 text-sm bg-slate-50">
-        <p>
-          <b>Employee:</b> {employee?.name || user?.username}
+    <div
+      className="min-h-screen p-4 md:p-6"
+      style={{
+        background: "radial-gradient(circle at top, #0a0f24 0%, #020617 70%)",
+        color: "white",
+        fontFamily: "Poppins, sans-serif",
+      }}
+    >
+      <div className="max-w-xl mx-auto">
+        <h1 className="text-xl md:text-2xl font-semibold mb-1">
+          PTO / Day Off / Sick Request
+        </h1>
+        <p className="text-xs text-slate-300 mb-4">
+          Logged in as <span className="font-semibold">{user.username}</span>{" "}
+          · {user.role}
         </p>
-        {employee?.airline && (
-          <p>
-            <b>Airline:</b> {employee.airline}
-          </p>
-        )}
-        {employee?.department && (
-          <p>
-            <b>Department:</b> {employee.department}
-          </p>
-        )}
-      </div>
 
-      <form onSubmit={handleSubmit} className="card p-4 space-y-3">
-        <div>
-          <label className="text-sm font-medium">Dates</label>
-          <input
-            className="border rounded w-full px-2 py-1 text-sm"
-            value={dates}
-            onChange={(e) => setDates(e.target.value)}
-            placeholder="Example: Dec 24–26, 2025"
-          />
-        </div>
-
-        <div>
-          <label className="text-sm font-medium">Reason</label>
-          <input
-            className="border rounded w-full px-2 py-1 text-sm"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Vacation, medical, personal, etc."
-          />
-        </div>
-
-        <div>
-          <label className="text-sm font-medium">Notes for manager (optional)</label>
-          <textarea
-            className="border rounded w-full px-2 py-1 text-sm min-h-[70px]"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={sending}
-          className="bg-blue-600 text-white w-full py-2 rounded font-semibold disabled:opacity-70"
+        <form
+          onSubmit={handleSubmit}
+          className="bg-[#020617]/80 backdrop-blur-lg border border-white/10 rounded-2xl p-4 md:p-5 shadow-lg space-y-4"
         >
-          {sending ? "Sending..." : "Submit request"}
-        </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] uppercase tracking-widest text-blue-300 mb-1 font-semibold">
+                Request Type
+              </label>
+              <select
+                value={requestType}
+                onChange={(e) => setRequestType(e.target.value)}
+                className="w-full text-sm rounded-lg bg-slate-900/70 border border-slate-600 text-slate-100 px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="pto">PTO</option>
+                <option value="day_off">Day Off</option>
+                <option value="sick">Sick Day</option>
+              </select>
+            </div>
 
-        {message && (
-          <p className="text-sm text-center mt-2">
-            {message.includes("successfully") ? (
-              <span className="text-green-600">{message}</span>
-            ) : (
-              <span className="text-red-600">{message}</span>
-            )}
-          </p>
-        )}
-      </form>
+            <div>
+              <label className="block text-[11px] uppercase tracking-widest text-blue-300 mb-1 font-semibold">
+                Start Date
+              </label>
+              <input
+                type="date"
+                className="w-full text-sm rounded-lg bg-slate-900/70 border border-slate-600 text-slate-100 px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  if (!endDate || e.target.value > endDate) {
+                    setEndDate(e.target.value);
+                  }
+                }}
+                min={todayStr}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] uppercase tracking-widest text-blue-300 mb-1 font-semibold">
+                End Date
+              </label>
+              <input
+                type="date"
+                className="w-full text-sm rounded-lg bg-slate-900/70 border border-slate-600 text-slate-100 px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                min={startDate || todayStr}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                If empty, it will use the same as the start date.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] uppercase tracking-widest text-blue-300 mb-1 font-semibold">
+                Notes (optional)
+              </label>
+              <textarea
+                className="w-full text-sm rounded-lg bg-slate-900/70 border border-slate-600 text-slate-100 px-2 py-2 h-[72px] resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Reason, flight details, or extra context (optional)"
+              />
+            </div>
+          </div>
+
+          {message && (
+            <div
+              className={`text-xs px-3 py-2 rounded-lg ${
+                message.type === "success"
+                  ? "bg-emerald-500/10 border border-emerald-400/60 text-emerald-200"
+                  : "bg-rose-500/10 border border-rose-400/60 text-rose-200"
+              }`}
+            >
+              {message.text}
+            </div>
+          )}
+
+          <div className="flex justify-end mt-2">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-500 text-white shadow-md
+                         hover:bg-blue-400 disabled:opacity-60 disabled:cursor-not-allowed transition"
+            >
+              {submitting ? "Sending..." : "Submit Request"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
