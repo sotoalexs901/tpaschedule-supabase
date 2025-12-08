@@ -48,13 +48,11 @@ export default function LoginPage() {
 
       setUser(userData);
 
-      // 🔀 Redirección según rol
-      const role = userData.role;
-      if (role === "agent" || role === "supervisor") {
-        navigate("/my-schedule");
-      } else {
-        navigate("/dashboard");
-      }
+      // 🔀 Siempre mandamos a /dashboard.
+      // DashboardEntry (en main.jsx) se encarga de mostrar
+      // EmployeeDashboardPage para agent/supervisor
+      // y DashboardPage para managers.
+      navigate("/dashboard");
     } catch (err) {
       console.error(err);
       setError("Login error. Try again.");
@@ -135,3 +133,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
