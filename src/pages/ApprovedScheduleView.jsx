@@ -102,7 +102,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     border: "1px solid #e5e7eb",
     boxShadow: "0 8px 18px rgba(15,23,42,0.12)",
     padding: compact ? "10px" : "16px",
-    transform: compact ? "scale(0.8)" : "none",
+    transform: compact ? "scale(0.7)" : "none",
     transformOrigin: "top left",
   };
 
