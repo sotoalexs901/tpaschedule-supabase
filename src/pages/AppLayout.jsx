@@ -7,17 +7,24 @@ import { db } from "../firebase";
 
 export default function AppLayout() {
   const { user, setUser } = useUser();
+
+  const isManager =
+    user?.role === "station_manager" || user?.role === "duty_manager";
+
+  const isEmployee =
+    user?.role === "agent" || user?.role === "supervisor";
+
   const navigate = useNavigate();
 
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // 👈 NUEVO
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const logout = () => {
     setUser(null);
     navigate("/login");
   };
 
-  // 🔔 Escuchar en tiempo real cuántos time-off pendientes hay
+  // 🔔 Escuchar en tiempo real cuántos time-off pendientes hay (solo relevante para managers)
   useEffect(() => {
     const q = query(
       collection(db, "timeOffRequests"),
@@ -113,36 +120,48 @@ export default function AppLayout() {
 
         {/* Menú */}
         <nav style={navStyle}>
-          {/* Común para todos los usuarios logueados */}
-          <NavItem to="/dashboard" label="Dashboard" />
-          <NavItem to="/schedule" label="Create Schedule" />
-
-          {/* SOLO STATION MANAGER */}
-          {user?.role === "station_manager" && (
+          {isEmployee ? (
             <>
-              <NavItem to="/approvals" label="Approvals" />
-              <NavItem
-                to="/timeoff-requests"
-                label="Day Off Requests"
-                showDot={pendingTimeOff > 0}
-              />
-              <NavItem to="/dashboard-editor" label="Dashboard Editor" />
-              <NavItem to="/budgets" label="Budgets" />
-              <NavItem to="/create-user" label="Create User" />
-              <NavItem to="/edit-users" label="Manage Users" />
+              {/* MENÚ PARA EMPLEADOS (AGENT / SUPERVISOR) */}
+              <NavItem to="/dashboard" label="Dashboard" />
+              <NavItem to="/my-schedule" label="My Schedule" />
+              <NavItem to="/request-dayoff" label="Request Day Off" />
+              <NavItem to="/dayoff-status" label="My Day Off Status" />
             </>
-          )}
-
-          {/* STATION + DUTY */}
-          {(user?.role === "station_manager" ||
-            user?.role === "duty_manager") && (
+          ) : (
             <>
-              <NavItem to="/employees" label="Employees" />
-              <NavItem to="/blocked" label="Blocked Employees" />
-              <NavItem to="/drafts" label="Draft Schedules" />
-              <NavItem to="/approved" label="Approved Schedules" />
-              <NavItem to="/returned" label="Returned Schedules" />
-              <NavItem to="/weekly-summary" label="Weekly Summary" />
+              {/* MENÚ PARA MANAGEMENT (STATION / DUTY) */}
+              {/* Común para managers */}
+              <NavItem to="/dashboard" label="Dashboard" />
+              <NavItem to="/schedule" label="Create Schedule" />
+
+              {/* SOLO STATION MANAGER */}
+              {user?.role === "station_manager" && (
+                <>
+                  <NavItem to="/approvals" label="Approvals" />
+                  <NavItem
+                    to="/timeoff-requests"
+                    label="Day Off Requests"
+                    showDot={pendingTimeOff > 0}
+                  />
+                  <NavItem to="/dashboard-editor" label="Dashboard Editor" />
+                  <NavItem to="/budgets" label="Budgets" />
+                  <NavItem to="/create-user" label="Create User" />
+                  <NavItem to="/edit-users" label="Manage Users" />
+                </>
+              )}
+
+              {/* STATION + DUTY */}
+              {isManager && (
+                <>
+                  <NavItem to="/employees" label="Employees" />
+                  <NavItem to="/blocked" label="Blocked Employees" />
+                  <NavItem to="/drafts" label="Draft Schedules" />
+                  <NavItem to="/approved" label="Approved Schedules" />
+                  <NavItem to="/returned" label="Returned Schedules" />
+                  <NavItem to="/weekly-summary" label="Weekly Summary" />
+                </>
+              )}
             </>
           )}
         </nav>
@@ -229,10 +248,6 @@ function NavItem({ to, label, showDot }) {
               background: "transparent",
             }
       }
-      onClick={() => {
-        // En móvil, al hacer clic en un item normalmente el sidebar se cerrará
-        // gracias al overlay + navegación; no necesitamos nada extra aquí.
-      }}
     >
       <span style={labelStyle}>{label}</span>
       {dot}
