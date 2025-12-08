@@ -76,7 +76,7 @@ function getShiftText(shifts, idx) {
 }
 
 // ============= TABLA ESTILO EXCEL =============
-function ExcelScheduleTable({ schedule, employees }) {
+function ExcelScheduleTable({ schedule, employees, compact = false }) {
   const { days, grid, airline, department } = schedule;
 
   const logo = AIRLINE_LOGOS[airline];
@@ -95,17 +95,19 @@ function ExcelScheduleTable({ schedule, employees }) {
     return num ? `${label} ${num}` : label;
   }).join("  |  ");
 
+  // Estilo base del contenedor, con opción compact
+  const wrapperStyle = {
+    background: "#ffffff",
+    borderRadius: "10px",
+    border: "1px solid #e5e7eb",
+    boxShadow: "0 8px 18px rgba(15,23,42,0.12)",
+    padding: compact ? "10px" : "16px",
+    transform: compact ? "scale(0.8)" : "none",
+    transformOrigin: "top left",
+  };
+
   return (
-    <div
-      className="excel-schedule-wrapper"
-      style={{
-        background: "#ffffff",
-        borderRadius: "10px",
-        border: "1px solid #e5e7eb",
-        boxShadow: "0 8px 18px rgba(15,23,42,0.12)",
-        padding: "16px",
-      }}
-    >
+    <div className="excel-schedule-wrapper" style={wrapperStyle}>
       {/* HEADER */}
       <div
         className="excel-header"
@@ -518,6 +520,7 @@ export default function ApprovedScheduleView() {
                 <ExcelScheduleTable
                   schedule={schedule}
                   employees={employees}
+                  compact={true} // 👈 versión reducida para que quepa más en pantalla
                 />
               </div>
             </div>
