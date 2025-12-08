@@ -1,6 +1,13 @@
 // src/pages/TimeOffRequestPage.jsx
 import React, { useEffect, useState } from "react";
-import { collection, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "../firebase";
 
 export default function TimeOffRequestPage() {
@@ -31,13 +38,45 @@ export default function TimeOffRequestPage() {
     loadEmployees().catch(console.error);
   }, []);
 
+  // 🔧 Helper: normalizar rango
+  const normalizeRange = () => {
+    if (!startDate) return null;
+    const start = startDate;
+    const end = endDate || startDate;
+    if (end < start) return null;
+    return { start, end };
+  };
+
+  // 🔧 Helper: generar lista de fechas entre start y end (YYYY-MM-DD)
+  const getDatesInRange = (startStr, endStr) => {
+    const dates = [];
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+
+    const d = new Date(start);
+    while (d <= end) {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      dates.push(`${year}-${month}-${day}`);
+      d.setDate(d.getDate() + 1);
+    }
+    return dates;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setMessage("");
 
-    if (!employeeId || !reasonType || !startDate || !endDate) {
+    if (!employeeId || !reasonType || !startDate) {
       setError("Please complete all required fields.");
+      return;
+    }
+
+    const range = normalizeRange();
+    if (!range) {
+      setError("Please select a valid start/end date.");
       return;
     }
 
@@ -49,15 +88,58 @@ export default function TimeOffRequestPage() {
     const emp = employees.find((e) => e.id === employeeId);
     const employeeName = emp?.name || "";
 
+    const { start, end } = range;
+    const newRequestDates = getDatesInRange(start, end);
+
     try {
       setSubmitting(true);
+
+      // 🔎 Buscar solicitudes anteriores del mismo empleado
+      const qRef = query(
+        collection(db, "timeOffRequests"),
+        where("employeeId", "==", employeeId)
+      );
+      const snap = await getDocs(qRef);
+      const existing = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const blockingStatuses = ["pending", "approved"];
+      const conflictDates = new Set();
+
+      for (const req of existing) {
+        if (!blockingStatuses.includes(req.status || "pending")) continue;
+
+        const existingStart = req.startDate || req.date;
+        const existingEnd = req.endDate || req.date || req.startDate;
+
+        if (!existingStart) continue;
+
+        const existingRangeDates = getDatesInRange(
+          existingStart,
+          existingEnd || existingStart
+        );
+
+        for (const d of newRequestDates) {
+          if (existingRangeDates.includes(d)) {
+            conflictDates.add(d);
+          }
+        }
+      }
+
+      if (conflictDates.size > 0) {
+        const list = Array.from(conflictDates).sort().join(", ");
+        setError(
+          `There is already a pending/approved request for: ${list}. Please adjust your dates or contact your manager.`
+        );
+        setSubmitting(false);
+        return;
+      }
 
       await addDoc(collection(db, "timeOffRequests"), {
         employeeId,
         employeeName,
         reasonType,
-        startDate,
-        endDate,
+        startDate: start,
+        endDate: end,
         pin,
         notes: notes || "",
         status: "pending",
@@ -101,6 +183,7 @@ export default function TimeOffRequestPage() {
     width: "340px",
     maxWidth: "92vw",
     color: "#f9fafb",
+    fontFamily: "Poppins, system-ui, -apple-system, BlinkMacSystemFont",
   };
 
   const inputStyle = {
@@ -123,6 +206,8 @@ export default function TimeOffRequestPage() {
     fontSize: "11px",
     color: "#e5e7eb",
   };
+
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   return (
     <div style={outerStyle}>
@@ -183,14 +268,26 @@ export default function TimeOffRequestPage() {
           </div>
 
           {/* Dates */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "10px",
+            }}
+          >
             <div>
               <label style={labelStyle}>Start Date</label>
               <input
                 type="date"
                 style={inputStyle}
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  if (!endDate || e.target.value > endDate) {
+                    setEndDate(e.target.value);
+                  }
+                }}
+                min={todayStr}
               />
             </div>
             <div>
@@ -200,13 +297,16 @@ export default function TimeOffRequestPage() {
                 style={inputStyle}
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
+                min={startDate || todayStr}
               />
             </div>
           </div>
 
           {/* PIN */}
           <div>
-            <label style={labelStyle}>4-digit PIN (to check your request status)</label>
+            <label style={labelStyle}>
+              4-digit PIN (to check your request status)
+            </label>
             <input
               type="password"
               maxLength={4}
