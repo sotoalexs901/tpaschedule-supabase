@@ -454,7 +454,7 @@ export default function ApprovedScheduleView() {
         </div>
       </div>
 
-            {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
+      {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
       {fullscreen && (
         <div
           style={{
@@ -524,3 +524,6 @@ export default function ApprovedScheduleView() {
           </div>
         </div>
       )}
+    </>
+  );
+}
