@@ -125,10 +125,10 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     transformOrigin: "top left",
   };
 
-  // 🔹 Columnas más estrechas, filas un poco más altas y texto más grande
+  // 🔹 Columnas finas, filas algo altas, números más grandes
   const baseCellStyle = {
-    padding: compact ? "6px 2px" : "9px 2px", // poco ancho, más alto
-    fontSize: compact ? "11px" : "14px",
+    padding: compact ? "6px 1px" : "9px 1px", // casi sin padding horizontal
+    fontSize: compact ? "12px" : "15px",     // números/letras más grandes
     lineHeight: 1.25,
     whiteSpace: "nowrap",
     textAlign: "center",
@@ -137,13 +137,15 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
   const headerCellStyle = {
     ...baseCellStyle,
     fontWeight: 700,
-    fontSize: compact ? "11px" : "13px",
+    fontSize: compact ? "12px" : "14px",
+    width: "10%", // 👈 cada día ~10%
   };
 
-  // 🔹 Columna de EMPLOYEE más ancha y con wrap
+  // 🔹 Columna EMPLOYEE más ancha
   const employeeHeaderCellStyle = {
     ...headerCellStyle,
-    minWidth: 220, // 👈 más espacio para nombres
+    width: "30%",        // 👈 ~30% de la tabla
+    minWidth: 260,       // por si los nombres son largos
     textAlign: "left",
     whiteSpace: "normal",
   };
@@ -197,6 +199,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
         style={{
           borderCollapse: "collapse",
           width: "100%",
+          tableLayout: "fixed", // 👈 respeta los width%
         }}
       >
         <thead>
