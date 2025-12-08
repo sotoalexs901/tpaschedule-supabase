@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+// src/pages/CreateUserPage.jsx
+import React, { useState, useEffect } from "react";
+import { addDoc, collection, serverTimestamp, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -20,31 +21,74 @@ export default function CreateUserPage() {
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
   const [role, setRole] = useState("agent");
+  const [employeeId, setEmployeeId] = useState("");
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  // Cargar empleados para poder vincular el usuario con un employeeId
+  useEffect(() => {
+    async function loadEmployees() {
+      try {
+        const snap = await getDocs(collection(db, "employees"));
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
+        // Ordenamos por nombre para que sea más fácil buscar
+        list.sort((a, b) => {
+          const na = (a.name || "").toLowerCase();
+          const nb = (b.name || "").toLowerCase();
+          if (na < nb) return -1;
+          if (na > nb) return 1;
+          return 0;
+        });
+
+        setEmployees(list);
+      } catch (err) {
+        console.error("Error loading employees:", err);
+      }
+    }
+
+    loadEmployees();
+  }, []);
 
   const createUser = async (e) => {
     e.preventDefault();
     setMessage("");
 
     if (!username || !pin || !role) {
-      setMessage("All fields are required.");
+      setMessage("All fields are required (username, PIN, role).");
+      return;
+    }
+
+    if (pin.length < 4) {
+      setMessage("PIN should be at least 4 digits.");
       return;
     }
 
     try {
       setLoading(true);
 
-      await addDoc(collection(db, "users"), {
-        username,
-        pin,
+      const payload = {
+        username: username.trim(),
+        pin: pin.trim(),
         role,
         createdAt: serverTimestamp(),
-      });
+      };
+
+      // Solo agregamos employeeId si se seleccionó alguno
+      if (employeeId) {
+        payload.employeeId = employeeId;
+      }
+
+      await addDoc(collection(db, "users"), payload);
 
       setUsername("");
       setPin("");
       setRole("agent");
+      setEmployeeId("");
 
       setMessage("User created successfully!");
     } catch (error) {
@@ -89,15 +133,41 @@ export default function CreateUserPage() {
             onChange={(e) => setRole(e.target.value)}
           >
             <option value="agent">Agent</option>
+            <option value="supervisor">Supervisor</option>
             <option value="duty_manager">Duty Manager</option>
             <option value="station_manager">Station Manager</option>
           </select>
         </div>
 
+        <div>
+          <label className="text-sm font-medium">
+            Link to Employee (optional, recommended for Agents/Supervisors)
+          </label>
+          <select
+            className="border rounded w-full px-2 py-1"
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+          >
+            <option value="">— No employee profile linked —</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name || "Unnamed"}{" "}
+                {emp.airline || emp.department
+                  ? `· ${emp.airline || ""} ${emp.department || ""}`
+                  : ""}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-500 mt-1">
+            For Agents and Supervisors, linking to an employee profile lets them
+            see only their own schedule in <b>My Schedule</b>.
+          </p>
+        </div>
+
         <button
           type="submit"
           disabled={loading}
-          className="bg-blue-600 text-white w-full py-2 rounded font-semibold"
+          className="bg-blue-600 text-white w-full py-2 rounded font-semibold disabled:opacity-70"
         >
           {loading ? "Saving..." : "Create User"}
         </button>
