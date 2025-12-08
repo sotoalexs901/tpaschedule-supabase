@@ -29,31 +29,29 @@ export default function EmployeeTimeOffRequestPage() {
     );
   }
 
+  // 🔧 Normaliza rango (si no hay endDate, usa startDate)
   const normalizeRange = () => {
-    if (!startDate && !endDate) return null;
-    if (!startDate && endDate) return null;
-
+    if (!startDate) return null;
     const start = startDate;
     const end = endDate || startDate;
     if (end < start) return null;
-
     return { start, end };
   };
 
-  const getDatesInRange = (startStr, endStr) => {
-    const dates = [];
-    const start = new Date(startStr);
-    const end = new Date(endStr);
+  // 🔧 Convierte lo que venga (string, Timestamp, Date) en Date
+  const toDateSafe = (value) => {
+    if (!value) return null;
+    if (typeof value === "string") return new Date(value);
+    if (value.toDate) return value.toDate(); // Firestore Timestamp
+    return new Date(value);
+  };
 
-    const d = new Date(start);
-    while (d <= end) {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      dates.push(`${year}-${month}-${day}`);
-      d.setDate(d.getDate() + 1);
-    }
-    return dates;
+  // 🔧 Pone la fecha a medianoche para comparar solo por día
+  const normalizeMidnight = (date) => {
+    if (!date) return null;
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
   };
 
   const handleSubmit = async (e) => {
@@ -70,55 +68,66 @@ export default function EmployeeTimeOffRequestPage() {
     }
 
     const { start, end } = range;
-    const newRequestDates = getDatesInRange(start, end);
+    const newStartDate = normalizeMidnight(toDateSafe(start));
+    const newEndDate = normalizeMidnight(toDateSafe(end));
 
     try {
       setSubmitting(true);
 
       // 🔎 Buscar solicitudes anteriores del mismo usuario
+      const userKey = user.id || user.uid || user.username;
       const qRef = query(
         collection(db, "timeOffRequests"),
-        where("userId", "==", user.id || user.uid || user.username)
+        where("userId", "==", userKey)
       );
       const snap = await getDocs(qRef);
-
       const existing = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       const blockingStatuses = ["pending", "approved"];
-      const conflictDates = new Set();
+      const conflicts = [];
 
       for (const req of existing) {
         if (!blockingStatuses.includes(req.status || "pending")) continue;
 
-        const existingStart = req.startDate || req.date;
-        const existingEnd = req.endDate || req.date || req.startDate;
+        const existingStartRaw = req.startDate || req.date;
+        const existingEndRaw = req.endDate || req.date || req.startDate;
 
-        if (!existingStart) continue;
-
-        const existingRangeDates = getDatesInRange(
-          existingStart,
-          existingEnd || existingStart
+        const existingStartDate = normalizeMidnight(
+          toDateSafe(existingStartRaw)
+        );
+        const existingEndDate = normalizeMidnight(
+          toDateSafe(existingEndRaw || existingStartRaw)
         );
 
-        for (const d of newRequestDates) {
-          if (existingRangeDates.includes(d)) {
-            conflictDates.add(d);
-          }
+        if (!existingStartDate || !existingEndDate) continue;
+
+        // ❗ Rango se solapa si (nuevoInicio <= viejoFin) y (viejoInicio <= nuevoFin)
+        if (
+          newStartDate <= existingEndDate &&
+          existingStartDate <= newEndDate
+        ) {
+          const format = (d) => d.toISOString().slice(0, 10);
+          conflicts.push(
+            `${format(existingStartDate)} → ${format(existingEndDate)}`
+          );
         }
       }
 
-      if (conflictDates.size > 0) {
-        const list = Array.from(conflictDates).sort().join(", ");
+      if (conflicts.length > 0) {
         setMessage({
           type: "error",
-          text: `You already have a pending/approved request for: ${list}. Adjust your dates or contact your manager.`,
+          text:
+            "You already have a pending/approved request overlapping these dates:\n" +
+            conflicts.join(" | ") +
+            "\nPlease adjust your dates or contact your manager.",
         });
         setSubmitting(false);
         return;
       }
 
+      // ✅ Si llegamos aquí NO hay conflicto; guardamos la nueva solicitud
       await addDoc(collection(db, "timeOffRequests"), {
-        userId: user.id || user.uid || user.username,
+        userId: userKey,
         username: user.username || "",
         fullName: user.name || user.fullName || "",
         role: user.role || "",
@@ -133,7 +142,8 @@ export default function EmployeeTimeOffRequestPage() {
 
       setMessage({
         type: "success",
-        text: "Your request has been sent successfully and is now pending review.",
+        text:
+          "Your request has been sent successfully and is now pending review.",
       });
       setStartDate("");
       setEndDate("");
@@ -242,7 +252,7 @@ export default function EmployeeTimeOffRequestPage() {
 
           {message && (
             <div
-              className={`text-xs px-3 py-2 rounded-lg ${
+              className={`text-xs px-3 py-2 rounded-lg whitespace-pre-line ${
                 message.type === "success"
                   ? "bg-emerald-500/10 border border-emerald-400/60 text-emerald-200"
                   : "bg-rose-500/10 border border-rose-400/60 text-rose-200"
