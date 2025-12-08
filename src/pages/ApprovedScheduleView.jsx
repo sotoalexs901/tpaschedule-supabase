@@ -142,13 +142,16 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
   };
 
   // 🔹 Columna EMPLOYEE más ancha
-  const employeeHeaderCellStyle = {
-    ...headerCellStyle,
-    width: "20%",        //
-    minWidth: 180,       // por si los nombres son largos
-    textAlign: "left",
-    whiteSpace: "normal",
-  };
+ const employeeHeaderCellStyle = {
+  ...headerCellStyle,
+  width: "12%",       // 🟦 más estrecho
+  minWidth: 120,      // 🟪 limite reducido
+  maxWidth: 150,      // 🟩 no crecerá mas de esto
+  textAlign: "left",
+  paddingLeft: "8px",
+  paddingRight: "4px",
+  whiteSpace: "normal",
+};
 
   return (
     <div className="excel-schedule-wrapper" style={wrapperStyle}>
@@ -231,15 +234,19 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
 
     const employeeCellStyle = {
   ...baseCellStyle,
+  width: "12%",       // 🟦 igual que header  
+  minWidth: 120,
+  maxWidth: 150,
   backgroundColor: rowBg,
   fontWeight: 600,
   textAlign: "left",
   whiteSpace: "normal",
-  width: "20%",         // 👈 asegurar que también aplique en filas
-  minWidth: 180,
+  paddingLeft: "8px",
+  paddingRight: "4px",
   borderTop: "2px solid #111",
   borderBottom: "2px solid #111",
 };
+
 
 
             return (
