@@ -110,11 +110,11 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     return num ? `${label} ${num}` : label;
   }).join("  |  ");
 
-  // 🔹 Colores para filas alternadas según aerolínea
-  const stripeBg = hexToRgba(headerColor, 0.35);   // fila “oscura”
-  const plainBg = "#ffffff";                       // fila clara
+  // Colores para filas alternadas según aerolínea
+  const stripeBg = hexToRgba(headerColor, 0.35); // fila “oscura”
+  const plainBg = "#ffffff";
 
-  // 🔹 Estilo base del contenedor, con opción compact (full-screen)
+  // Contenedor (incluye escala para full-screen "compact")
   const wrapperStyle = {
     background: "#ffffff",
     borderRadius: "10px",
@@ -125,12 +125,13 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     transformOrigin: "top left",
   };
 
-  // 🔹 Columnas MÁS FINAS pero filas MÁS ALTAS
+  // 🔹 Columnas más estrechas, filas un poco más altas y texto más grande
   const baseCellStyle = {
-    padding: compact ? "6px 4px" : "8px 4px", // más alto (vertical), muy poco ancho (horizontal)
-    fontSize: compact ? "10px" : "13px",
+    padding: compact ? "6px 2px" : "9px 2px", // poco ancho, más alto
+    fontSize: compact ? "11px" : "14px",
     lineHeight: 1.25,
     whiteSpace: "nowrap",
+    textAlign: "center",
   };
 
   const headerCellStyle = {
@@ -139,9 +140,12 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     fontSize: compact ? "11px" : "13px",
   };
 
+  // 🔹 Columna de EMPLOYEE más ancha y con wrap
   const employeeHeaderCellStyle = {
     ...headerCellStyle,
-    minWidth: 150,
+    minWidth: 220, // 👈 más espacio para nombres
+    textAlign: "left",
+    whiteSpace: "normal",
   };
 
   return (
@@ -218,17 +222,18 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
           {grid.map((row, idx) => {
             const name = empMap[row.employeeId] || "Unknown";
 
-            // Fila alternada: una oscura, una clara
+            // Fila alternada por empleado
             const isStriped = idx % 2 === 0;
             const rowBg = isStriped ? stripeBg : plainBg;
 
-            // Estilo de la celda de empleado (lado izquierdo)
             const employeeCellStyle = {
               ...baseCellStyle,
               backgroundColor: rowBg,
               fontWeight: 600,
+              textAlign: "left",
+              whiteSpace: "normal",
               borderTop: "2px solid #111",
-              borderBottom: "2px solid #111", // separa bloques de empleados
+              borderBottom: "2px solid #111",
             };
 
             return (
@@ -255,7 +260,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
 
                     const cellStyle = {
                       ...baseCellStyle,
-                      backgroundColor: rowBg, // 👈 mismo color tenga OFF o no
+                      backgroundColor: rowBg,
                       borderTop: "2px solid #111",
                       borderLeft: "1px solid #111",
                       borderRight: "1px solid #111",
@@ -292,7 +297,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
                     const cellStyle = {
                       ...baseCellStyle,
                       backgroundColor: rowBg,
-                      borderBottom: "2px solid #111", // 👈 línea fuerte para dividir empleados
+                      borderBottom: "2px solid #111",
                       borderLeft: "1px solid #111",
                       borderRight: "1px solid #111",
                     };
