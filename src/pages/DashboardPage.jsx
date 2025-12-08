@@ -191,14 +191,24 @@ export default function DashboardPage() {
 
   // --------- RENDER --------- //
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div
+      className="min-h-screen p-6"
+      style={{
+        background:
+          "radial-gradient(circle at top, #0a0f24 0%, #020617 55%, #020617 100%)",
+        fontFamily: "Poppins, sans-serif",
+      }}
+    >
       {/* HEADER */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-blue-400/80 mb-1">
+            TPA OPS · STATION CONTROL
+          </p>
+          <h1 className="text-2xl md:text-3xl font-semibold text-white drop-shadow">
             Welcome back, {user?.username || "Station Manager"} 👋
           </h1>
-          <p className="text-sm text-slate-600 mt-1">
+          <p className="text-sm text-slate-300 mt-1">
             Here&apos;s a quick overview of what&apos;s happening this week.
           </p>
         </div>
@@ -206,7 +216,9 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={reloadAll}
-          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800"
+          className="px-3 py-1.5 text-xs font-medium rounded-lg 
+                     bg-white/10 text-white border border-white/20
+                     shadow-sm hover:bg-white/20 hover:border-white/40 transition"
         >
           Refresh dashboard
         </button>
