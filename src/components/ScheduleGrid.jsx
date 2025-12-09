@@ -46,12 +46,10 @@ export default function ScheduleGrid({
   department,
   dayNumbers,
   onSave,
-  onSaveDraft, // ✅ para drafts
+  onSaveDraft,
   approved = false,
-
-  // ✅ NUEVO: bloqueos
-  restrictions = [],
-  isEmployeeBlockedForDay = () => false,
+  // 👇 NUEVO: mapa employeeId → { mon:true, tue:true, ... }
+  blockedByEmployee = {},
 }) {
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   const headerColor = AIRLINE_COLORS[airline] || "#e5e7eb";
@@ -90,15 +88,17 @@ export default function ScheduleGrid({
     const hasData = shift.start || shift.end;
     const isOff = shift.start === "OFF";
 
-    // 🟥 detectar si este empleado está bloqueado en este día
-    const dayNumber = dayNumbers?.[day];
-    const blocked =
-      row.employeeId &&
-      dayNumber &&
-      isEmployeeBlockedForDay(restrictions, row.employeeId, dayNumber);
+    // 🔎 ver si el empleado está bloqueado ese día (solo por día de semana)
+    const empBlockedDays = blockedByEmployee[row.employeeId] || {};
+    const isBlockedDay = !!empBlockedDays[day];
 
-    const baseBg = hasData || isOff ? headerColor : "#ffffff";
-    const bgColor = blocked ? "#fee2e2" : baseBg; // rojo claro si está bloqueado
+    let bgColor = hasData || isOff ? headerColor : "#ffffff";
+    let extraClass = "";
+
+    if (isBlockedDay) {
+      bgColor = "#fee2e2"; // rojo muy suave para llamar la atención
+      extraClass = " sch-cell-blocked";
+    }
 
     const text = shift.start
       ? shift.start === "OFF"
@@ -106,34 +106,28 @@ export default function ScheduleGrid({
         : `${shift.start}${shift.end ? ` - ${shift.end}` : ""}`
       : "";
 
-    // Sólo lectura (por ejemplo ApprovedView)
     if (readonly) {
       return (
         <td
           key={`${day}-${shiftIndex}`}
-          className={
-            "sch-cell" + (blocked ? " sch-cell-blocked" : "")
-          }
+          className={`sch-cell${extraClass}`}
           style={{ backgroundColor: bgColor, position: "relative" }}
         >
-          {text}
-          {blocked && shiftIndex === 0 && (
+          {isBlockedDay && shiftIndex === 0 && (
             <span className="sch-blocked-tag">BLOCKED</span>
           )}
+          {text}
         </td>
       );
     }
 
-    // Editable (Create Schedule)
     return (
       <td
         key={`${day}-${shiftIndex}`}
-        className={
-          "sch-cell" + (blocked ? " sch-cell-blocked" : "")
-        }
+        className={`sch-cell${extraClass}`}
         style={{ backgroundColor: bgColor, position: "relative" }}
       >
-        {blocked && shiftIndex === 0 && (
+        {isBlockedDay && shiftIndex === 0 && (
           <span className="sch-blocked-tag">BLOCKED</span>
         )}
 
@@ -258,16 +252,12 @@ export default function ScheduleGrid({
                     </td>
 
                     {/* Celdas día – shift 1 */}
-                    {days.map((day) =>
-                      renderShiftCell(row, rowIndex, day, 0)
-                    )}
+                    {days.map((day) => renderShiftCell(row, rowIndex, day, 0))}
                   </tr>
 
                   {/* Fila 2 – Segundo turno */}
                   <tr>
-                    {days.map((day) =>
-                      renderShiftCell(row, rowIndex, day, 1)
-                    )}
+                    {days.map((day) => renderShiftCell(row, rowIndex, day, 1))}
                   </tr>
                 </React.Fragment>
               );
