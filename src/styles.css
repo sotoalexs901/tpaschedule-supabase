@@ -882,3 +882,94 @@ aside.w-64 p {
 
   /* El contenido ya ocupa todo el ancho porque el sidebar está fuera de pantalla */
 }
+/* =========================================================
+   MOBILE SIDEBAR / HEADER SUPPORT (sin Tailwind)
+========================================================= */
+
+/* posiciones básicas */
+.fixed { position: fixed; }
+.inset-0 { top: 0; right: 0; bottom: 0; left: 0; }
+.inset-y-0 { top: 0; bottom: 0; }
+.left-0 { left: 0; }
+
+.z-30 { z-index: 30; }
+.z-40 { z-index: 40; }
+
+.transform { transform: translateX(0); }
+.translate-x-0 { transform: translateX(0); }
+.-translate-x-full { transform: translateX(-100%); }
+
+.transition-transform {
+  transition: transform 0.2s ease-in-out;
+}
+.duration-200 { transition-duration: 0.2s; }
+
+/* Header móvil */
+.mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.06);
+}
+
+.mobile-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5f5;
+  background: #e5edff;
+  color: #1d4ed8;
+}
+
+.mobile-menu-icon {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.mobile-menu-icon span {
+  width: 14px;
+  height: 2px;
+  background: #1f2937;
+  border-radius: 999px;
+}
+
+.mobile-header-right {
+  text-align: right;
+}
+
+.mobile-header-title {
+  font-size: 0.7rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.mobile-header-user {
+  font-size: 0.7rem;
+  color: #111827;
+  margin: 0;
+}
+
+/* botón X dentro del sidebar en móvil */
+.sidebar-close {
+  border: none;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Breakpoint "md" ~ 768px */
+@media (min-width: 768px) {
+  .md\:hidden { display: none !important; }
+  .md\:static { position: static !important; }
+  .md\:translate-x-0 { transform: translateX(0) !important; }
+}
