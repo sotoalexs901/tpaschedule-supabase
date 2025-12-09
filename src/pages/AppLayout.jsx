@@ -24,7 +24,7 @@ export default function AppLayout() {
     navigate("/login");
   };
 
-  // 🔔 Escuchar en tiempo real cuántos time-off pendientes hay (solo relevante para managers)
+  // 🔔 Escuchar en tiempo real cuántos time-off pendientes hay (para Station Manager)
   useEffect(() => {
     const q = query(
       collection(db, "timeOffRequests"),
@@ -120,19 +120,27 @@ export default function AppLayout() {
 
         {/* Menú */}
         <nav style={navStyle}>
-          {isEmployee ? (
+          {/* Siempre */}
+          <NavItem to="/dashboard" label="Dashboard" />
+
+          {/* ========= MENÚ PARA AGENTS / SUPERVISORS ========= */}
+          {isEmployee && (
             <>
-              {/* MENÚ PARA EMPLEADOS (AGENT / SUPERVISOR) */}
-              <NavItem to="/dashboard" label="Dashboard" />
               <NavItem to="/my-schedule" label="My Schedule" />
-              <NavItem to="/request-dayoff" label="Request Day Off" />
-              <NavItem to="/dayoff-status" label="My Day Off Status" />
+              <NavItem
+                to="/request-dayoff-internal"
+                label="Request Day Off"
+              />
+              <NavItem
+                to="/dayoff-status-internal"
+                label="My Day Off Status"
+              />
             </>
-          ) : (
+          )}
+
+          {/* ========= MENÚ PARA STATION / DUTY ========= */}
+          {!isEmployee && (
             <>
-              {/* MENÚ PARA MANAGEMENT (STATION / DUTY) */}
-              {/* Común para managers */}
-              <NavItem to="/dashboard" label="Dashboard" />
               <NavItem to="/schedule" label="Create Schedule" />
 
               {/* SOLO STATION MANAGER */}
@@ -144,23 +152,33 @@ export default function AppLayout() {
                     label="Day Off Requests"
                     showDot={pendingTimeOff > 0}
                   />
-                 <NavItem to="/employee-announcements" label="Crew Announcements" /> {/* 👈 NUEVO */}
-                  <NavItem to="/dashboard-editor" label="Dashboard Editor" />
+                  <NavItem
+                    to="/dashboard-editor"
+                    label="Dashboard Editor"
+                  />
                   <NavItem to="/budgets" label="Budgets" />
                   <NavItem to="/create-user" label="Create User" />
                   <NavItem to="/edit-users" label="Manage Users" />
+                  <NavItem
+                    to="/employee-announcements"
+                    label="Crew Announcements"
+                  />
                 </>
               )}
 
               {/* STATION + DUTY */}
-              {isManager && (
+              {(user?.role === "station_manager" ||
+                user?.role === "duty_manager") && (
                 <>
                   <NavItem to="/employees" label="Employees" />
                   <NavItem to="/blocked" label="Blocked Employees" />
                   <NavItem to="/drafts" label="Draft Schedules" />
                   <NavItem to="/approved" label="Approved Schedules" />
                   <NavItem to="/returned" label="Returned Schedules" />
-                  <NavItem to="/weekly-summary" label="Weekly Summary" />
+                  <NavItem
+                    to="/weekly-summary"
+                    label="Weekly Summary"
+                  />
                 </>
               )}
             </>
@@ -189,7 +207,9 @@ export default function AppLayout() {
             Menu
           </button>
           <div className="text-right">
-            <p className="text-xs text-slate-500 leading-tight">TPA OPS SYSTEM</p>
+            <p className="text-xs text-slate-500 leading-tight">
+              TPA OPS SYSTEM
+            </p>
             <p className="text-[11px] text-slate-700 leading-tight">
               {user?.username} · {user?.role}
             </p>
