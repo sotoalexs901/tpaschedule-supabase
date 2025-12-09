@@ -6,19 +6,48 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  updateDoc,
+  query,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
+
+// 🔗 Sincroniza empleado ↔ users.username
+async function syncUserLink(employeeId, loginUsername) {
+  if (!loginUsername) return;
+  try {
+    const q = query(
+      collection(db, "users"),
+      where("username", "==", loginUsername)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return;
+
+    // Si hay varios, los actualizamos todos por seguridad
+    const updates = snap.docs.map((u) =>
+      updateDoc(u.ref, {
+        employeeId,
+      })
+    );
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Error syncing user link:", err);
+  }
+}
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
 
   // formulario manual
   const [name, setName] = useState("");
-  const [username, setUsername] = useState(""); // ✅ NEW
+  const [username, setUsername] = useState(""); // ✅ NEW (loginUsername)
   const [department, setDepartment] = useState("");
   const [position, setPosition] = useState("");
   const [status, setStatus] = useState("Active");
   const [notes, setNotes] = useState("");
+
+  const [editingId, setEditingId] = useState(null); // ✅ estamos editando un empleado?
+  const [formMessage, setFormMessage] = useState("");
 
   // importación por pegar texto
   const [bulkText, setBulkText] = useState("");
@@ -34,30 +63,94 @@ export default function EmployeesPage() {
     loadEmployees().catch(console.error);
   }, []);
 
-  // Crear empleado manualmente
-  const handleAddEmployee = async (e) => {
+  // =========================
+  //  CREAR / EDITAR EMPLEADO
+  // =========================
+  const handleAddOrUpdateEmployee = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    setFormMessage("");
 
-    await addDoc(collection(db, "employees"), {
-      name: name.trim(),
-      loginUsername: username.trim() || null, // ✅ NEW
-      department: department.trim() || null,
-      position: position.trim() || null,
-      status,
-      active: status.toLowerCase() === "active",
-      notes: notes.trim() || null,
-      createdAt: new Date().toISOString(),
-    });
+    const cleanName = name.trim();
+    const cleanUsername = username.trim();
 
+    if (!cleanName) {
+      setFormMessage("Name is required.");
+      return;
+    }
+
+    // 🚫 Chequeo de username duplicado (entre empleados)
+    if (cleanUsername) {
+      const exists = employees.some(
+        (emp) =>
+          (emp.loginUsername || "").toLowerCase() ===
+            cleanUsername.toLowerCase() && emp.id !== editingId
+      );
+      if (exists) {
+        setFormMessage(
+          "This username is already linked to another employee. Please use a different one."
+        );
+        return;
+      }
+    }
+
+    try {
+      if (editingId) {
+        // ✏️ UPDATE
+        const ref = doc(db, "employees", editingId);
+        await updateDoc(ref, {
+          name: cleanName,
+          loginUsername: cleanUsername || null,
+          department: department.trim() || null,
+          position: position.trim() || null,
+          status,
+          active: status.toLowerCase() === "active",
+          notes: notes.trim() || null,
+        });
+
+        await syncUserLink(editingId, cleanUsername);
+        setFormMessage("Employee updated successfully.");
+      } else {
+        // ➕ CREATE
+        const ref = await addDoc(collection(db, "employees"), {
+          name: cleanName,
+          loginUsername: cleanUsername || null,
+          department: department.trim() || null,
+          position: position.trim() || null,
+          status,
+          active: status.toLowerCase() === "active",
+          notes: notes.trim() || null,
+          createdAt: new Date().toISOString(),
+        });
+
+        await syncUserLink(ref.id, cleanUsername);
+        setFormMessage("Employee created successfully.");
+      }
+
+      // Limpiar formulario
+      setName("");
+      setUsername("");
+      setDepartment("");
+      setPosition("");
+      setStatus("Active");
+      setNotes("");
+      setEditingId(null);
+
+      await loadEmployees();
+    } catch (err) {
+      console.error(err);
+      setFormMessage("Error saving employee. Check console for details.");
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
     setName("");
-    setUsername(""); // clear field
+    setUsername("");
     setDepartment("");
     setPosition("");
     setStatus("Active");
     setNotes("");
-
-    await loadEmployees();
+    setFormMessage("");
   };
 
   // Borrar empleado
@@ -67,10 +160,21 @@ export default function EmployeesPage() {
     setEmployees((prev) => prev.filter((e) => e.id !== id));
   };
 
+  const handleStartEdit = (emp) => {
+    setEditingId(emp.id);
+    setName(emp.name || "");
+    setUsername(emp.loginUsername || "");
+    setDepartment(emp.department || "");
+    setPosition(emp.position || "");
+    setStatus(emp.status || (emp.active ? "Active" : "Inactive"));
+    setNotes(emp.notes || "");
+    setFormMessage("");
+  };
+
   // =========================
-  // IMPORTAR PEGANDO TEXTO
-  // Formato sugerido:
-  // Name, Username(optional), Dept, Position, Status, Notes
+  //  IMPORTAR PEGANDO TEXTO
+  //  Formato recomendado:
+  //  Name, Username(optional), Department, Position, Status, Notes
   // =========================
   const handleBulkImport = async () => {
     if (!bulkText.trim()) {
@@ -97,16 +201,26 @@ export default function EmployeesPage() {
 
       const startIndex = hasHeader ? 1 : 0;
 
+      // Set de usernames ya existentes para evitar duplicados
+      const existingUsernames = new Set(
+        employees
+          .map((e) => (e.loginUsername || "").toLowerCase())
+          .filter(Boolean)
+      );
+      const batchUsernames = new Set();
+
       let createdCount = 0;
+      let skippedDuplicates = 0;
 
       for (let i = startIndex; i < lines.length; i++) {
         const row = lines[i];
-        const cells = row.split(/[\t,;]+/).map((c) => c.trim());
 
-        if (!cells[0]) continue; // sin nombre
+        // acepta separado por coma, tab o punto y coma
+        const cells = row.split(/[\t,;]+/).map((c) => c.trim());
+        if (!cells[0]) continue; // sin nombre, ignoramos
 
         const employeeName = cells[0];
-        const loginUsername = cells[1] || ""; // username opcional
+        const loginUsername = cells[1] || "";
         const dept = cells[2] || "";
         const pos = cells[3] || "";
         const statusRaw = cells[4] || "Active";
@@ -115,9 +229,19 @@ export default function EmployeesPage() {
         const normalizedStatus =
           statusRaw.toLowerCase() === "inactive" ? "Inactive" : "Active";
 
-        await addDoc(collection(db, "employees"), {
+        // 🚫 Evitar duplicados de username
+        if (loginUsername) {
+          const key = loginUsername.toLowerCase();
+          if (existingUsernames.has(key) || batchUsernames.has(key)) {
+            skippedDuplicates++;
+            continue;
+          }
+          batchUsernames.add(key);
+        }
+
+        const ref = await addDoc(collection(db, "employees"), {
           name: employeeName,
-          loginUsername: loginUsername || null, // ❗ IMPORTANTE
+          loginUsername: loginUsername || null,
           department: dept || null,
           position: pos || null,
           status: normalizedStatus,
@@ -126,10 +250,16 @@ export default function EmployeesPage() {
           createdAt: new Date().toISOString(),
         });
 
+        await syncUserLink(ref.id, loginUsername);
         createdCount++;
       }
 
-      setImportStatus(`Imported ${createdCount} employees successfully.`);
+      let msg = `Imported ${createdCount} employees successfully.`;
+      if (skippedDuplicates > 0) {
+        msg += ` Skipped ${skippedDuplicates} line(s) because username was already used.`;
+      }
+
+      setImportStatus(msg);
       setBulkText("");
       await loadEmployees();
     } catch (err) {
@@ -144,10 +274,12 @@ export default function EmployeesPage() {
 
       {/* FORMULARIO MANUAL */}
       <div className="card space-y-2">
-        <h2 className="text-sm font-semibold">Add Employee</h2>
+        <h2 className="text-sm font-semibold">
+          {editingId ? "Edit Employee" : "Add Employee"}
+        </h2>
 
         <form
-          onSubmit={handleAddEmployee}
+          onSubmit={handleAddOrUpdateEmployee}
           className="grid md:grid-cols-6 gap-2 text-xs items-end"
         >
           {/* Name */}
@@ -218,26 +350,39 @@ export default function EmployeesPage() {
             />
           </div>
 
-          <div className="md:col-span-1">
+          {/* Botones */}
+          <div className="md:col-span-1 flex gap-2 mt-2 md:mt-0">
             <button
               type="submit"
-              className="btn btn-primary w-full text-xs mt-2 md:mt-0"
+              className="btn btn-primary w-full text-xs"
             >
-              Save
+              {editingId ? "Update" : "Save"}
             </button>
+            {editingId && (
+              <button
+                type="button"
+                className="btn text-xs"
+                onClick={handleCancelEdit}
+              >
+                Cancel
+              </button>
+            )}
           </div>
         </form>
+
+        {formMessage && (
+          <p className="text-[11px] text-gray-700 mt-1">{formMessage}</p>
+        )}
       </div>
 
-      {/* IMPORTATION */}
+      {/* IMPORTACIÓN MASIVA POR PEGAR TEXTO */}
       <div className="card space-y-2">
         <h2 className="text-sm font-semibold">Import employees (paste data)</h2>
-
         <p className="text-[11px] text-gray-600">
-          Format (comma or tab separated):
-          <br />
-          <code>Name, Username(optional), Department, Position, Status,
-            Notes</code>
+          Format (comma / tab separated):<br />
+          <code>
+            Name, Username(optional), Department, Position, Status, Notes
+          </code>
         </p>
 
         <textarea
@@ -262,10 +407,9 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
         )}
       </div>
 
-      {/* LISTA */}
+      {/* LISTA DE EMPLEADOS */}
       <div className="card">
         <h2 className="text-sm font-semibold mb-2">Current Employees</h2>
-
         <div className="overflow-auto">
           <table className="table text-xs">
             <thead>
@@ -279,7 +423,6 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
                 <th></th>
               </tr>
             </thead>
-
             <tbody>
               {employees.map((e) => (
                 <tr key={e.id}>
@@ -289,7 +432,14 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
                   <td>{e.position}</td>
                   <td>{e.status || (e.active ? "Active" : "Inactive")}</td>
                   <td>{e.notes}</td>
-                  <td>
+                  <td className="space-x-1">
+                    <button
+                      type="button"
+                      className="btn text-xs"
+                      onClick={() => handleStartEdit(e)}
+                    >
+                      Edit
+                    </button>
                     <button
                       type="button"
                       className="btn text-xs"
@@ -300,7 +450,6 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
                   </td>
                 </tr>
               ))}
-
               {employees.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center text-[11px] py-2">
