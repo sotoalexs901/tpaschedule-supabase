@@ -12,6 +12,11 @@ export default function AppLayout() {
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  const isManager =
+    user?.role === "station_manager" || user?.role === "duty_manager";
+  const isEmployee =
+    user?.role === "agent" || user?.role === "supervisor";
+
   const logout = () => {
     setUser(null);
     navigate("/login");
@@ -46,7 +51,7 @@ export default function AppLayout() {
   };
 
   const sidebarHeaderStyle = {
-    padding: "16px 14px",
+    padding: "20px 16px 14px",
     borderBottom: "1px solid rgba(148,163,184,0.35)",
   };
 
@@ -75,6 +80,11 @@ export default function AppLayout() {
     cursor: "pointer",
   };
 
+  const handleNavClick = () => {
+    // Cerrar sidebar en móvil al hacer click en un item
+    setIsSidebarOpen(false);
+  };
+
   return (
     <div className="min-h-screen flex bg-slate-100">
       {/* OVERLAY en móvil cuando el sidebar está abierto */}
@@ -92,61 +102,116 @@ export default function AppLayout() {
           fixed inset-y-0 left-0 z-40 transform transition-transform duration-200
           md:static md:translate-x-0
           ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-          overflow-y-auto
         `}
       >
         {/* Header */}
         <div style={sidebarHeaderStyle}>
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h1
-                style={{
-                  margin: 0,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  letterSpacing: "0.04em",
-                }}
-              >
-                TPA OPS SYSTEM
-              </h1>
-              <p style={loggedTextStyle}>
-                Logged as: <b>{user?.username}</b> ({user?.role})
-              </p>
-            </div>
-
-            {/* Botón cerrar SOLO móvil */}
+          {/* Botón cerrar SOLO en móvil */}
+          <div className="flex items-center justify-between md:hidden mb-2">
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+              }}
+            >
+              TPA OPS
+            </span>
             <button
-              type="button"
-              className="md:hidden text-xs px-2 py-1 rounded-md border border-slate-500/70 bg-slate-800/70"
               onClick={() => setIsSidebarOpen(false)}
+              style={{
+                border: "1px solid rgba(148,163,184,0.5)",
+                borderRadius: 999,
+                padding: "2px 8px",
+                fontSize: 11,
+                background: "rgba(15,23,42,0.9)",
+                color: "#e5e7eb",
+              }}
             >
               ✕
             </button>
           </div>
+
+          {/* Título / logged info */}
+          <h1
+            className="hidden md:block"
+            style={{
+              margin: 0,
+              fontSize: 16,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+            }}
+          >
+            TPA OPS SYSTEM
+          </h1>
+          <p style={loggedTextStyle}>
+            Logged as: <b>{user?.username}</b> ({user?.role})
+          </p>
         </div>
 
         {/* Menú */}
         <nav style={navStyle}>
           {/* Común para todos los usuarios logueados */}
-          <NavItem to="/dashboard" label="Dashboard" onClick={() => setIsSidebarOpen(false)} />
+          <NavItem to="/dashboard" label="Dashboard" onClick={handleNavClick} />
 
-          {/* Rutas de agentes / supervisores */}
-          {(user?.role === "agent" || user?.role === "supervisor") && (
+          {/* Rutas para agentes / supervisores */}
+          {isEmployee && (
             <>
               <NavItem
                 to="/my-schedule"
                 label="My Schedule"
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={handleNavClick}
               />
               <NavItem
                 to="/request-dayoff-internal"
                 label="Request Day Off"
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={handleNavClick}
               />
               <NavItem
                 to="/dayoff-status-internal"
                 label="My Day Off Status"
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={handleNavClick}
+              />
+            </>
+          )}
+
+          {/* Rutas para station_manager / duty_manager */}
+          {isManager && (
+            <>
+              <NavItem
+                to="/schedule"
+                label="Create Schedule"
+                onClick={handleNavClick}
+              />
+              <NavItem
+                to="/employees"
+                label="Employees"
+                onClick={handleNavClick}
+              />
+              <NavItem
+                to="/blocked"
+                label="Blocked Employees"
+                onClick={handleNavClick}
+              />
+              <NavItem
+                to="/drafts"
+                label="Draft Schedules"
+                onClick={handleNavClick}
+              />
+              <NavItem
+                to="/approved"
+                label="Approved Schedules"
+                onClick={handleNavClick}
+              />
+              <NavItem
+                to="/returned"
+                label="Returned Schedules"
+                onClick={handleNavClick}
+              />
+              <NavItem
+                to="/weekly-summary"
+                label="Weekly Summary"
+                onClick={handleNavClick}
               />
             </>
           )}
@@ -157,65 +222,33 @@ export default function AppLayout() {
               <NavItem
                 to="/approvals"
                 label="Approvals"
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={handleNavClick}
               />
               <NavItem
                 to="/timeoff-requests"
                 label="Day Off Requests"
                 showDot={pendingTimeOff > 0}
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={handleNavClick}
               />
               <NavItem
                 to="/dashboard-editor"
                 label="Dashboard Editor"
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={handleNavClick}
               />
-              <NavItem to="/budgets" label="Budgets" onClick={() => setIsSidebarOpen(false)} />
+              <NavItem
+                to="/budgets"
+                label="Budgets"
+                onClick={handleNavClick}
+              />
               <NavItem
                 to="/create-user"
                 label="Create User"
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={handleNavClick}
               />
               <NavItem
                 to="/edit-users"
                 label="Manage Users"
-                onClick={() => setIsSidebarOpen(false)}
-              />
-            </>
-          )}
-
-          {/* STATION + DUTY */}
-          {(user?.role === "station_manager" || user?.role === "duty_manager") && (
-            <>
-              <NavItem
-                to="/employees"
-                label="Employees"
-                onClick={() => setIsSidebarOpen(false)}
-              />
-              <NavItem
-                to="/blocked"
-                label="Blocked Employees"
-                onClick={() => setIsSidebarOpen(false)}
-              />
-              <NavItem
-                to="/drafts"
-                label="Draft Schedules"
-                onClick={() => setIsSidebarOpen(false)}
-              />
-              <NavItem
-                to="/approved"
-                label="Approved Schedules"
-                onClick={() => setIsSidebarOpen(false)}
-              />
-              <NavItem
-                to="/returned"
-                label="Returned Schedules"
-                onClick={() => setIsSidebarOpen(false)}
-              />
-              <NavItem
-                to="/weekly-summary"
-                label="Weekly Summary"
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={handleNavClick}
               />
             </>
           )}
@@ -285,12 +318,13 @@ function NavItem({ to, label, showDot, onClick }) {
           backgroundColor: "#ef4444",
           boxShadow: "0 0 0 3px rgba(248,113,113,0.35)",
         }}
-      />
+      ></span>
     );
 
   return (
     <NavLink
       to={to}
+      onClick={onClick}
       style={({ isActive }) =>
         isActive
           ? {
@@ -303,7 +337,6 @@ function NavItem({ to, label, showDot, onClick }) {
               background: "transparent",
             }
       }
-      onClick={onClick}
     >
       <span style={labelStyle}>{label}</span>
       {dot}
