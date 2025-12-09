@@ -17,6 +17,7 @@ export default function AppLayout() {
     navigate("/login");
   };
 
+  // 🔔 time off pendientes
   useEffect(() => {
     const q = query(
       collection(db, "timeOffRequests"),
@@ -30,6 +31,13 @@ export default function AppLayout() {
     return () => unsub();
   }, []);
 
+  // 🔒 cerrar sidebar cuando un NavItem dispara el evento
+  useEffect(() => {
+    const handler = () => setIsSidebarOpen(false);
+    window.addEventListener("close-sidebar", handler);
+    return () => window.removeEventListener("close-sidebar", handler);
+  }, []);
+
   // estilos base
   const sidebarStyle = {
     width: 230,
@@ -38,6 +46,7 @@ export default function AppLayout() {
     display: "flex",
     flexDirection: "column",
     minHeight: "100vh",
+    overflowY: "auto",     // 👈 permite hacer scroll y ver el Logout
   };
 
   const sidebarHeaderStyle = {
@@ -169,7 +178,7 @@ export default function AppLayout() {
           )}
         </nav>
 
-        {/* Logout */}
+        {/* Logout en sidebar (desktop + móvil con scroll) */}
         <button style={logoutStyle} onClick={logout}>
           Logout
         </button>
@@ -177,7 +186,7 @@ export default function AppLayout() {
 
       {/* CONTENIDO PRINCIPAL */}
       <div className="flex-1 flex flex-col min-h-screen">
-        {/* Header móvil (botón menú) */}
+        {/* Header móvil (botón menú + logout pequeño) */}
         <header className="mobile-header md:hidden">
           <button
             onClick={() => setIsSidebarOpen(true)}
@@ -190,11 +199,21 @@ export default function AppLayout() {
             </span>
             Menu
           </button>
+
           <div className="mobile-header-right">
             <p className="mobile-header-title">TPA OPS SYSTEM</p>
-            <p className="mobile-header-user">
-              {user?.username} · {user?.role}
-            </p>
+            <div className="mobile-header-user-row">
+              <span className="mobile-header-user">
+                {user?.username} · {user?.role}
+              </span>
+              <button
+                type="button"
+                className="mobile-logout-btn"
+                onClick={logout}
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </header>
 
@@ -252,7 +271,6 @@ function NavItem({ to, label, showDot }) {
             }
       }
       onClick={() => {
-        // En móvil, al navegar cerramos el sidebar
         const evt = new Event("close-sidebar");
         window.dispatchEvent(evt);
       }}
