@@ -7,12 +7,6 @@ import { db } from "../firebase";
 
 export default function AppLayout() {
   const { user, setUser } = useUser();
-
-  const isManager =
-    user?.role === "station_manager" || user?.role === "duty_manager";
-
-  const isEmployee = user?.role === "agent" || user?.role === "supervisor";
-
   const navigate = useNavigate();
 
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
@@ -23,7 +17,7 @@ export default function AppLayout() {
     navigate("/login");
   };
 
-  // 🔔 Escuchar en tiempo real cuántos time-off pendientes hay (para Station Manager)
+  // 🔔 Escuchar en tiempo real cuántos time-off pendientes hay
   useEffect(() => {
     const q = query(
       collection(db, "timeOffRequests"),
@@ -52,7 +46,7 @@ export default function AppLayout() {
   };
 
   const sidebarHeaderStyle = {
-    padding: "20px 16px",
+    padding: "16px 14px",
     borderBottom: "1px solid rgba(148,163,184,0.35)",
   };
 
@@ -86,95 +80,143 @@ export default function AppLayout() {
       {/* OVERLAY en móvil cuando el sidebar está abierto */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-30"
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* SIDEBAR (off-canvas en móvil) */}
+      {/* SIDEBAR */}
       <aside
         style={sidebarStyle}
-        className={`app-sidebar ${isSidebarOpen ? "app-sidebar-open" : ""}`}
+        className={`
+          fixed inset-y-0 left-0 z-40 transform transition-transform duration-200
+          md:static md:translate-x-0
+          ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+          overflow-y-auto
+        `}
       >
         {/* Header */}
         <div style={sidebarHeaderStyle}>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: 16,
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-            }}
-          >
-            TPA OPS SYSTEM
-          </h1>
-          <p style={loggedTextStyle}>
-            Logged as: <b>{user?.username}</b> ({user?.role})
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 16,
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                }}
+              >
+                TPA OPS SYSTEM
+              </h1>
+              <p style={loggedTextStyle}>
+                Logged as: <b>{user?.username}</b> ({user?.role})
+              </p>
+            </div>
+
+            {/* Botón cerrar SOLO móvil */}
+            <button
+              type="button"
+              className="md:hidden text-xs px-2 py-1 rounded-md border border-slate-500/70 bg-slate-800/70"
+              onClick={() => setIsSidebarOpen(false)}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Menú */}
         <nav style={navStyle}>
-          {/* Siempre */}
-          <NavItem to="/dashboard" label="Dashboard" />
+          {/* Común para todos los usuarios logueados */}
+          <NavItem to="/dashboard" label="Dashboard" onClick={() => setIsSidebarOpen(false)} />
 
-          {/* ========= MENÚ PARA AGENTS / SUPERVISORS ========= */}
-          {isEmployee && (
+          {/* Rutas de agentes / supervisores */}
+          {(user?.role === "agent" || user?.role === "supervisor") && (
             <>
-              <NavItem to="/my-schedule" label="My Schedule" />
+              <NavItem
+                to="/my-schedule"
+                label="My Schedule"
+                onClick={() => setIsSidebarOpen(false)}
+              />
               <NavItem
                 to="/request-dayoff-internal"
                 label="Request Day Off"
+                onClick={() => setIsSidebarOpen(false)}
               />
               <NavItem
                 to="/dayoff-status-internal"
                 label="My Day Off Status"
+                onClick={() => setIsSidebarOpen(false)}
               />
             </>
           )}
 
-          {/* ========= MENÚ PARA STATION / DUTY ========= */}
-          {!isEmployee && (
+          {/* SOLO STATION MANAGER */}
+          {user?.role === "station_manager" && (
             <>
-              <NavItem to="/schedule" label="Create Schedule" />
+              <NavItem
+                to="/approvals"
+                label="Approvals"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem
+                to="/timeoff-requests"
+                label="Day Off Requests"
+                showDot={pendingTimeOff > 0}
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem
+                to="/dashboard-editor"
+                label="Dashboard Editor"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem to="/budgets" label="Budgets" onClick={() => setIsSidebarOpen(false)} />
+              <NavItem
+                to="/create-user"
+                label="Create User"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem
+                to="/edit-users"
+                label="Manage Users"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+            </>
+          )}
 
-              {/* SOLO STATION MANAGER */}
-              {user?.role === "station_manager" && (
-                <>
-                  <NavItem to="/approvals" label="Approvals" />
-                  <NavItem
-                    to="/timeoff-requests"
-                    label="Day Off Requests"
-                    showDot={pendingTimeOff > 0}
-                  />
-                  <NavItem
-                    to="/dashboard-editor"
-                    label="Dashboard Editor"
-                  />
-                  <NavItem to="/budgets" label="Budgets" />
-                  <NavItem to="/create-user" label="Create User" />
-                  <NavItem to="/edit-users" label="Manage Users" />
-                  <NavItem
-                    to="/employee-announcements"
-                    label="Crew Announcements"
-                  />
-                </>
-              )}
-
-              {/* STATION + DUTY */}
-              {isManager && (
-                <>
-                  <NavItem to="/employees" label="Employees" />
-                  <NavItem to="/blocked" label="Blocked Employees" />
-                  <NavItem to="/drafts" label="Draft Schedules" />
-                  <NavItem to="/approved" label="Approved Schedules" />
-                  <NavItem to="/returned" label="Returned Schedules" />
-                  <NavItem
-                    to="/weekly-summary"
-                    label="Weekly Summary"
-                  />
-                </>
-              )}
+          {/* STATION + DUTY */}
+          {(user?.role === "station_manager" || user?.role === "duty_manager") && (
+            <>
+              <NavItem
+                to="/employees"
+                label="Employees"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem
+                to="/blocked"
+                label="Blocked Employees"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem
+                to="/drafts"
+                label="Draft Schedules"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem
+                to="/approved"
+                label="Approved Schedules"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem
+                to="/returned"
+                label="Returned Schedules"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              <NavItem
+                to="/weekly-summary"
+                label="Weekly Summary"
+                onClick={() => setIsSidebarOpen(false)}
+              />
             </>
           )}
         </nav>
@@ -187,22 +229,22 @@ export default function AppLayout() {
 
       {/* CONTENIDO PRINCIPAL */}
       <div className="flex-1 flex flex-col min-h-screen">
-        {/* HEADER móvil: botón de menú */}
-        <header className="app-mobile-header">
+        {/* HEADER solo en móvil: botón de menú */}
+        <header className="flex items-center justify-between px-4 py-3 border-b bg-white shadow-sm md:hidden">
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="app-mobile-menu-btn"
+            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 bg-slate-50"
           >
-            <span className="app-mobile-menu-icon">
-              <span />
-              <span />
-              <span />
+            <span className="mr-2">
+              <span className="block w-4 h-0.5 bg-slate-800 mb-1" />
+              <span className="block w-4 h-0.5 bg-slate-800 mb-1" />
+              <span className="block w-4 h-0.5 bg-slate-800" />
             </span>
             Menu
           </button>
-          <div className="app-mobile-header-right">
-            <p className="app-mobile-header-title">TPA OPS SYSTEM</p>
-            <p className="app-mobile-header-user">
+          <div className="text-right">
+            <p className="text-xs text-slate-500 leading-tight">TPA OPS SYSTEM</p>
+            <p className="text-[11px] text-slate-700 leading-tight">
               {user?.username} · {user?.role}
             </p>
           </div>
@@ -216,8 +258,8 @@ export default function AppLayout() {
   );
 }
 
-// Link del menú lateral (con posible puntito rojo)
-function NavItem({ to, label, showDot }) {
+// Link del menú lateral (con posible puntico rojo)
+function NavItem({ to, label, showDot, onClick }) {
   const baseStyle = {
     display: "flex",
     alignItems: "center",
@@ -243,7 +285,7 @@ function NavItem({ to, label, showDot }) {
           backgroundColor: "#ef4444",
           boxShadow: "0 0 0 3px rgba(248,113,113,0.35)",
         }}
-      ></span>
+      />
     );
 
   return (
@@ -261,6 +303,7 @@ function NavItem({ to, label, showDot }) {
               background: "transparent",
             }
       }
+      onClick={onClick}
     >
       <span style={labelStyle}>{label}</span>
       {dot}
