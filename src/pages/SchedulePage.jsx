@@ -31,7 +31,7 @@ const AIRLINE_LOGOS = {
   "AA-BSO":
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_25%20p.m..png?alt=media&token=09862a10-d237-43e9-a373-8bd07c30ce62",
   OTHER:
-    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4b5f-b126-9c6a69f6dcc6",
 };
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -83,24 +83,8 @@ const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
 const buildWeekTag = (days) =>
   DAY_KEYS.map((k) => days?.[k]?.toString().trim() || "").join("|");
 
-// 🔴 Helper: ¿está bloqueado este empleado en este día (por número)?
-// Asume que en "restrictions" tienes campos start_date y end_date
-// que son números de día o strings "8", "9", etc.
-const isEmployeeBlockedForDay = (restrictions, employeeId, dayNumber) => {
-  if (!employeeId || !dayNumber) return false;
-  const dayNum = Number(dayNumber);
-  if (!dayNum) return false;
-
-  return restrictions.some((r) => {
-    if (r.employeeId !== employeeId) return false;
-
-    const start = Number(r.start_date);
-    const end = Number(r.end_date);
-    if (!start || !end) return false;
-
-    return dayNum >= start && dayNum <= end;
-  });
-};
+// 🔁 map de getDay() JS → dayKey
+const JS_DAY_TO_KEY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 export default function SchedulePage() {
   const { user } = useUser();
@@ -122,7 +106,9 @@ export default function SchedulePage() {
   const [employees, setEmployees] = useState([]);
   const [rows, setRows] = useState([]);
   const [airlineBudgets, setAirlineBudgets] = useState({});
-  const [restrictions, setRestrictions] = useState([]); // 👈 NUEVO
+
+  // 👇 NUEVO: mapa employeeId → { mon:true, tue:true, ... }
+  const [blockedByEmployee, setBlockedByEmployee] = useState({});
 
   // 🔁 Si venimos desde un ApprovedScheduleView con plantilla:
   useEffect(() => {
@@ -155,18 +141,41 @@ export default function SchedulePage() {
     });
   }, []);
 
-  // 🔴 Cargar restricciones (blocked employees)
+  // 👇 NUEVO: cargar restricciones y convertirlas a días de la semana
   useEffect(() => {
     async function loadRestrictions() {
       try {
         const snap = await getDocs(collection(db, "restrictions"));
-        const list = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
-        setRestrictions(list);
+        const byEmp = {};
+
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const empId = data.employeeId || data.employee_id;
+          const startStr = data.start_date || data.startDate;
+          const endStr = data.end_date || data.endDate || startStr;
+
+          if (!empId || !startStr) return;
+
+          const start = new Date(startStr);
+          const end = new Date(endStr);
+
+          if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
+
+          let current = new Date(start);
+          while (current <= end) {
+            const jsDay = current.getDay(); // 0 (Sun) - 6 (Sat)
+            const dayKey = JS_DAY_TO_KEY[jsDay]; // "sun", "mon", etc.
+            if (dayKey) {
+              if (!byEmp[empId]) byEmp[empId] = {};
+              byEmp[empId][dayKey] = true;
+            }
+            current.setDate(current.getDate() + 1);
+          }
+        });
+
+        setBlockedByEmployee(byEmp);
       } catch (err) {
-        console.error("Error loading restrictions (blocked employees):", err);
+        console.error("Error loading restrictions:", err);
       }
     }
 
@@ -515,9 +524,7 @@ export default function SchedulePage() {
           department={department}
           onSave={handleSaveSchedule}
           onSaveDraft={handleSaveDraft}
-          // 👇 NUEVO: info de bloqueos
-          restrictions={restrictions}
-          isEmployeeBlockedForDay={isEmployeeBlockedForDay}
+          blockedByEmployee={blockedByEmployee} // 👈 NUEVO
         />
       </div>
 
