@@ -973,3 +973,24 @@ aside.w-64 p {
   .md\:static { position: static !important; }
   .md\:translate-x-0 { transform: translateX(0) !important; }
 }
+.mobile-header-user-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.mobile-logout-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: #fee2e2;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.mobile-logout-btn:hover {
+  background: #fecaca;
+}
