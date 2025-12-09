@@ -11,8 +11,7 @@ export default function AppLayout() {
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
 
-  const isEmployee =
-    user?.role === "agent" || user?.role === "supervisor";
+  const isEmployee = user?.role === "agent" || user?.role === "supervisor";
 
   const navigate = useNavigate();
 
@@ -87,19 +86,15 @@ export default function AppLayout() {
       {/* OVERLAY en móvil cuando el sidebar está abierto */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          className="fixed inset-0 bg-black/40 z-30"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* SIDEBAR */}
+      {/* SIDEBAR (off-canvas en móvil) */}
       <aside
         style={sidebarStyle}
-        className={`
-          fixed inset-y-0 left-0 z-40 transform transition-transform duration-200
-          md:static md:translate-x-0
-          ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-        `}
+        className={`app-sidebar ${isSidebarOpen ? "app-sidebar-open" : ""}`}
       >
         {/* Header */}
         <div style={sidebarHeaderStyle}>
@@ -167,8 +162,7 @@ export default function AppLayout() {
               )}
 
               {/* STATION + DUTY */}
-              {(user?.role === "station_manager" ||
-                user?.role === "duty_manager") && (
+              {isManager && (
                 <>
                   <NavItem to="/employees" label="Employees" />
                   <NavItem to="/blocked" label="Blocked Employees" />
@@ -193,24 +187,22 @@ export default function AppLayout() {
 
       {/* CONTENIDO PRINCIPAL */}
       <div className="flex-1 flex flex-col min-h-screen">
-        {/* HEADER solo en móvil: botón de menú */}
-        <header className="flex items-center justify-between px-4 py-3 border-b bg-white shadow-sm md:hidden">
+        {/* HEADER móvil: botón de menú */}
+        <header className="app-mobile-header">
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="inline-flex items-center justify-center rounded-md border border-slate-300 px-2 py-1 text-sm font-medium text-slate-800 bg-slate-50"
+            className="app-mobile-menu-btn"
           >
-            <span className="mr-2">
-              <span className="block w-4 h-0.5 bg-slate-800 mb-1" />
-              <span className="block w-4 h-0.5 bg-slate-800 mb-1" />
-              <span className="block w-4 h-0.5 bg-slate-800" />
+            <span className="app-mobile-menu-icon">
+              <span />
+              <span />
+              <span />
             </span>
             Menu
           </button>
-          <div className="text-right">
-            <p className="text-xs text-slate-500 leading-tight">
-              TPA OPS SYSTEM
-            </p>
-            <p className="text-[11px] text-slate-700 leading-tight">
+          <div className="app-mobile-header-right">
+            <p className="app-mobile-header-title">TPA OPS SYSTEM</p>
+            <p className="app-mobile-header-user">
               {user?.username} · {user?.role}
             </p>
           </div>
@@ -224,7 +216,7 @@ export default function AppLayout() {
   );
 }
 
-// Link del menú lateral (con posible puntico rojo)
+// Link del menú lateral (con posible puntito rojo)
 function NavItem({ to, label, showDot }) {
   const baseStyle = {
     display: "flex",
