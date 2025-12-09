@@ -700,3 +700,97 @@ aside.w-64 p {
   text-transform: uppercase;
   pointer-events: none;
 }
+/* =========================================================
+   RESPONSIVE MOBILE / TABLET ENHANCEMENTS
+   (Agregar al final de styles.css)
+========================================================= */
+
+/* 📱 Ajustes generales para pantallas pequeñas */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+
+  main {
+    padding: 0.75rem;
+  }
+
+  .card {
+    padding: 0.75rem;
+  }
+
+  h1.text-lg,
+  main h1 {
+    font-size: 1.05rem;
+  }
+
+  main h2 {
+    font-size: 0.95rem;
+  }
+
+  /* Botones ocupan todo el ancho en secciones importantes */
+  .btn-block-mobile {
+    width: 100%;
+  }
+}
+
+/* 📲 Tablas: que hagan scroll horizontal en móvil en lugar de apretarse */
+.table-wrapper,
+.sch-table-container,
+.excel-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Si envuelves una tabla en un div con estas clases, ya será “scrollable” */
+.table-wrapper table,
+.sch-table-container table,
+.excel-table-wrapper table {
+  width: 100%;
+}
+
+/* Ajuste específico para el ScheduleGrid (edición) */
+.sch-table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sch-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.8rem;
+}
+
+.sch-table th,
+.sch-table td {
+  padding: 3px 2px;
+}
+
+/* En móvil, permitimos que la tabla sea más ancha que la pantalla
+   y el usuario la mueve con scroll horizontal */
+@media (max-width: 768px) {
+  .sch-table {
+    min-width: 720px; /* ancho mínimo para que no se aplaste todo */
+  }
+}
+
+/* Excel table (ApprovedScheduleView) también con scroll en móviles */
+.excel-schedule-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.excel-table {
+  min-width: 720px;
+}
+
+/* 🔴 Ya lo teníamos, pero reforzamos la visibilidad del bloqueado en cualquier viewport */
+.sch-cell-blocked {
+  background-color: #fee2e2 !important; /* rojo claro */
+  color: #b91c1c !important;           /* rojo fuerte texto */
+  font-weight: 700 !important;
+}
