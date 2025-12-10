@@ -9,7 +9,7 @@ import {
   where,
   orderBy,
   serverTimestamp,
-  writeBatch,          // 👈 NUEVO
+  writeBatch, // 👈 para marcar como leídos
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -30,14 +30,14 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
 
-  // Cargar lista de usuarios
+  // Cargar lista de usuarios (para elegir destinatario)
   useEffect(() => {
     async function loadUsers() {
       try {
         const snap = await getDocs(collection(db, "users"));
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((u) => u.id !== user?.id);
+          .filter((u) => u.id !== user?.id); // no mostrarme a mí mismo
 
         list.sort((a, b) =>
           (a.username || "").localeCompare(b.username || "")
@@ -49,6 +49,7 @@ export default function MessagesPage() {
         setLoadingUsers(false);
       }
     }
+
     if (user) loadUsers();
   }, [user]);
 
@@ -75,7 +76,7 @@ export default function MessagesPage() {
         setMessages(list);
         setLoadingMessages(false);
 
-        // ✅ Marcar como leídos todos los mensajes dirigidos a mí en este chat
+        // ✅ Marcar como LEÍDOS todos los mensajes dirigidos a mí en este chat
         (async () => {
           const batch = writeBatch(db);
           let hasUpdates = false;
@@ -136,7 +137,7 @@ export default function MessagesPage() {
           selectedUser?.username || selectedUser?.loginUsername || "",
         text: text.trim(),
         createdAt: serverTimestamp(),
-        read: false, // 👈 se queda igual, el receptor lo verá como "no leído"
+        read: false, // 🔴 se crea como NO LEÍDO
       });
 
       setText("");
