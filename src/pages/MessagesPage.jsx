@@ -1,6 +1,5 @@
 // src/pages/MessagesPage.jsx
-import React, { useEffect, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   collection,
   getDocs,
@@ -10,49 +9,51 @@ import {
   where,
   orderBy,
   serverTimestamp,
-  setDoc,
+  deleteDoc,
   doc,
-  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
-
-// Clave única para cada conversación (2 usuarios)
-function buildConversationKey(a, b) {
-  return [a, b].sort().join("_");
-}
+import { useNavigate } from "react-router-dom";
 
 export default function MessagesPage() {
-  const navigate = useNavigate();
   const { user } = useUser();
+  const navigate = useNavigate();
 
   const [allUsers, setAllUsers] = useState([]);
+  const [conversations, setConversations] = useState([]); // lista de chats
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
 
   const [messages, setMessages] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
-
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
 
-  const [conversations, setConversations] = useState([]);
-  const [loadingConversations, setLoadingConversations] = useState(true);
-
   const bottomRef = useRef(null);
 
-  // 🔹 Cargar lista de usuarios
+  const myId = user?.id; // usamos el id del documento del usuario
+
+  const isManager =
+    user?.role === "station_manager" || user?.role === "duty_manager";
+
+  // ──────────────────────────────
+  // 1) Cargar lista de usuarios
+  // ──────────────────────────────
   useEffect(() => {
     async function loadUsers() {
+      if (!user) return;
       try {
         const snap = await getDocs(collection(db, "users"));
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((u) => u.id !== user?.id);
+          .filter((u) => u.id !== user.id); // no nos incluimos
 
         list.sort((a, b) =>
-          (a.username || "").localeCompare(b.username || "")
+          (a.username || a.loginUsername || "")
+            .toLowerCase()
+            .localeCompare((b.username || b.loginUsername || "").toLowerCase())
         );
         setAllUsers(list);
       } catch (err) {
@@ -61,146 +62,255 @@ export default function MessagesPage() {
         setLoadingUsers(false);
       }
     }
-    if (user) loadUsers();
+    loadUsers();
   }, [user]);
 
-  // 🔹 Lista de conversaciones activas (colección conversations)
+  // ──────────────────────────────
+  // 2) Cargar RESUMEN de conversaciones
+  //    (último mensaje con cada usuario)
+  // ──────────────────────────────
+  const loadConversations = useCallback(async () => {
+    if (!myId) return;
+
+    try {
+      const baseRef = collection(db, "messages");
+      const [sentSnap, receivedSnap] = await Promise.all([
+        getDocs(query(baseRef, where("fromUserId", "==", myId))),
+        getDocs(query(baseRef, where("toUserId", "==", myId))),
+      ]);
+
+      const map = {};
+
+      const handleDoc = (d) => {
+        const m = d.data();
+        const otherId = m.fromUserId === myId ? m.toUserId : m.fromUserId;
+        if (!otherId) return;
+        const createdAtMs = m.createdAt?.toMillis?.() || 0;
+
+        const existing = map[otherId];
+        if (!existing || createdAtMs > existing.lastTime) {
+          map[otherId] = {
+            otherUserId: otherId,
+            lastText: m.text || "",
+            lastFromMe: m.fromUserId === myId,
+            lastTime: createdAtMs,
+          };
+        }
+      };
+
+      sentSnap.forEach(handleDoc);
+      receivedSnap.forEach(handleDoc);
+
+      const list = Object.values(map).sort(
+        (a, b) => b.lastTime - a.lastTime
+      );
+      setConversations(list);
+    } catch (err) {
+      console.error("Error loading conversations:", err);
+    }
+  }, [myId]);
+
   useEffect(() => {
-    if (!user?.id) return;
+    loadConversations();
+  }, [loadConversations]);
 
-    setLoadingConversations(true);
-
-    const qConvs = query(
-      collection(db, "conversations"),
-      where("participants", "array-contains", user.id),
-      orderBy("lastMessageAt", "desc")
-    );
-
-    const unsub = onSnapshot(
-      qConvs,
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setConversations(list);
-        setLoadingConversations(false);
-      },
-      (err) => {
-        console.error("Error loading conversations:", err);
-        setLoadingConversations(false);
-      }
-    );
-
-    return () => unsub();
-  }, [user?.id]);
-
-  // 🔹 Escuchar mensajes de la conversación seleccionada
+  // ──────────────────────────────
+  // 3) Listener de mensajes de la conversación actual
+  //    (dos queries: enviados y recibidos)
+  // ──────────────────────────────
   useEffect(() => {
-    if (!user || !selectedUserId) {
+    if (!myId || !selectedUserId) {
       setMessages([]);
       return;
     }
 
-    const convKey = buildConversationKey(user.id, selectedUserId);
-    setLoadingMessages(true);
+    const baseRef = collection(db, "messages");
 
-    const qMsgs = query(
-      collection(db, "messages"),
-      where("conversationKey", "==", convKey),
+    const qSent = query(
+      baseRef,
+      where("fromUserId", "==", myId),
+      where("toUserId", "==", selectedUserId),
       orderBy("createdAt", "asc")
     );
 
-    const unsub = onSnapshot(
-      qMsgs,
-      async (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setMessages(list);
-        setLoadingMessages(false);
+    const qReceived = query(
+      baseRef,
+      where("fromUserId", "==", selectedUserId),
+      where("toUserId", "==", myId),
+      orderBy("createdAt", "asc")
+    );
 
-        // ✅ marcar como leídos los mensajes recibidos en esta conversación
-        const unread = snap.docs.filter(
-          (d) =>
-            d.data().toUserId === user.id && d.data().read === false
-        );
+    setLoadingMessages(true);
 
-        try {
-          await Promise.all(
-            unread.map((d) =>
-              updateDoc(doc(db, "messages", d.id), { read: true })
-            )
-          );
-        } catch (err) {
-          console.error("Error marking messages as read:", err);
-        }
+    // guardamos los snapshots por separado y luego los combinamos
+    let sentMsgs = [];
+    let receivedMsgs = [];
+
+    const mergeAndSet = () => {
+      const all = [...sentMsgs, ...receivedMsgs].sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() || 0;
+        const tb = b.createdAt?.toMillis?.() || 0;
+        return ta - tb;
+      });
+      setMessages(all);
+      setLoadingMessages(false);
+    };
+
+    const unsubSent = onSnapshot(
+      qSent,
+      (snap) => {
+        sentMsgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        mergeAndSet();
       },
       (err) => {
-        console.error("Error loading messages:", err);
+        console.error("Error listening sent messages:", err);
         setLoadingMessages(false);
       }
     );
 
-    return () => unsub();
-  }, [user, selectedUserId]);
+    const unsubReceived = onSnapshot(
+      qReceived,
+      (snap) => {
+        receivedMsgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        mergeAndSet();
+      },
+      (err) => {
+        console.error("Error listening received messages:", err);
+        setLoadingMessages(false);
+      }
+    );
 
-  // 🔹 Scroll al último mensaje
+    return () => {
+      unsubSent();
+      unsubReceived();
+    };
+  }, [myId, selectedUserId]);
+
+  // ──────────────────────────────
+  // 4) Scroll al último mensaje
+  // ──────────────────────────────
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
+  // ──────────────────────────────
+  // 5) Marcar recibidos como leídos
+  // ──────────────────────────────
+  useEffect(() => {
+    if (!myId || !selectedUserId || messages.length === 0) return;
+
+    const unread = messages.filter(
+      (m) => m.toUserId === myId && m.read === false
+    );
+    if (unread.length === 0) return;
+
+    // se marcan en segundo plano, sin bloquear la UI
+    unread.forEach(async (m) => {
+      try {
+        await addDoc(
+          collection(db, "messages_read_logs"),
+          {
+            messageId: m.id,
+            toUserId: myId,
+            readAt: serverTimestamp(),
+          }
+        );
+      } catch (e) {
+        console.error("Error logging read event:", e);
+      }
+    });
+  }, [myId, selectedUserId, messages]);
+
+  // ──────────────────────────────
+  // Handlers
+  // ──────────────────────────────
   const handleChangeUser = (id) => {
-    setSelectedUserId(id);
+    setSelectedUserId(id || "");
     const found = allUsers.find((u) => u.id === id) || null;
     setSelectedUser(found);
   };
 
-  const handleSelectConversation = (conv) => {
-    // buscar el otro participante
-    const otherId = (conv.participants || []).find((p) => p !== user.id);
-    if (!otherId) return;
-    handleChangeUser(otherId);
-  };
-
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!user || !selectedUserId || !text.trim()) return;
+    if (!user || !myId || !selectedUserId || !text.trim()) return;
 
-    try {
+    const trimmed = text.trim();
+
+    try:
       setSending(true);
-      const convKey = buildConversationKey(user.id, selectedUserId);
-      const cleanText = text.trim();
 
-      // 🔸 1) Guardar mensaje
       await addDoc(collection(db, "messages"), {
-        conversationKey: convKey,
-        fromUserId: user.id,
+        fromUserId: myId,
         toUserId: selectedUserId,
         fromUsername: user.username || user.loginUsername || "",
         toUsername:
           selectedUser?.username || selectedUser?.loginUsername || "",
-        text: cleanText,
+        text: trimmed,
         createdAt: serverTimestamp(),
         read: false,
       });
 
-      // 🔸 2) Actualizar / crear documento de conversación
-      await setDoc(
-        doc(db, "conversations", convKey),
-        {
-          participants: [user.id, selectedUserId],
-          lastMessageText: cleanText,
-          lastMessageAt: serverTimestamp(),
-          lastSenderId: user.id,
-          lastSenderName: user.username || user.loginUsername || "",
-        },
-        { merge: true }
-      );
-
       setText("");
+      // refrescamos lista de conversaciones
+      loadConversations();
     } catch (err) {
       console.error("Error sending message:", err);
       alert("Error sending message. Please try again.");
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleOpenConversation = (otherUserId) => {
+    handleChangeUser(otherUserId);
+  };
+
+  // Borrar conversación (solo Station / Duty)
+  const handleDeleteConversation = async () => {
+    if (!myId || !selectedUserId) return;
+    if (!isManager) return;
+
+    const other = selectedUser;
+    const name = other?.username || other?.loginUsername || "this user";
+
+    const ok = window.confirm(
+      `Delete entire conversation with ${name}? This cannot be undone.`
+    );
+    if (!ok) return;
+
+    try {
+      const baseRef = collection(db, "messages");
+      const [snap1, snap2] = await Promise.all([
+        getDocs(
+          query(
+            baseRef,
+            where("fromUserId", "==", myId),
+            where("toUserId", "==", selectedUserId)
+          )
+        ),
+        getDocs(
+          query(
+            baseRef,
+            where("fromUserId", "==", selectedUserId),
+            where("toUserId", "==", myId)
+          )
+        ),
+      ]);
+
+      const allDocs = [...snap1.docs, ...snap2.docs];
+      for (const d of allDocs) {
+        await deleteDoc(doc(db, "messages", d.id));
+      }
+
+      setMessages([]);
+      setSelectedUserId("");
+      setSelectedUser(null);
+      await loadConversations();
+    } catch (err) {
+      console.error("Error deleting conversation:", err);
+      alert("Error deleting conversation. Please try again.");
     }
   };
 
@@ -212,19 +322,10 @@ export default function MessagesPage() {
     );
   }
 
-  // helper para nombre de usuario por id
-  const getUserDisplayName = (id) => {
-    const u =
-      allUsers.find((x) => x.id === id) ||
-      (id === user.id ? user : null);
-    if (!u) return "Unknown";
-    return u.username || u.loginUsername || "(no username)";
-  };
-
   return (
     <div className="space-y-4">
       {/* Header con botón Back */}
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex items-center gap-3 mb-1">
         <button
           type="button"
           className="btn btn-soft text-xs"
@@ -232,184 +333,182 @@ export default function MessagesPage() {
         >
           ← Back
         </button>
-        <h1 className="text-lg font-semibold">Messages</h1>
+        <h1 className="text-lg font-semibold mb-0">Messages</h1>
       </div>
 
-      {/* Layout 2 columnas en desktop: conversaciones + chat */}
-      <div className="grid md:grid-cols-3 gap-4">
-        {/* 🔹 Panel de conversaciones recientes */}
-        <div className="md:col-span-1 card space-y-2">
-          <h2 className="text-sm font-semibold mb-1">
-            Conversations
-          </h2>
-          {loadingConversations ? (
-            <p className="text-xs text-gray-600">Loading…</p>
-          ) : conversations.length === 0 ? (
-            <p className="text-xs text-gray-600">
-              No active conversations yet.
-            </p>
-          ) : (
-            <div className="space-y-1 max-h-[320px] overflow-auto">
-              {conversations.map((c) => {
-                const otherId = (c.participants || []).find(
-                  (p) => p !== user.id
-                );
-                const otherName = getUserDisplayName(otherId);
-                const isActive =
-                  otherId && otherId === selectedUserId;
+      {/* Lista de conversaciones activas */}
+      <div className="card space-y-2">
+        <h2 className="text-sm font-semibold mb-1">Conversations</h2>
+        {conversations.length === 0 ? (
+          <p className="text-xs text-gray-600">
+            No conversations yet. Start by sending a message.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {conversations.map((c) => {
+              const other =
+                allUsers.find((u) => u.id === c.otherUserId) || {};
+              const name =
+                other.username ||
+                other.loginUsername ||
+                "(unknown user)";
+              const preview = c.lastFromMe
+                ? `You: ${c.lastText}`
+                : c.lastText;
 
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => handleSelectConversation(c)}
-                    className={`w-full text-left px-2 py-2 rounded border text-xs ${
-                      isActive
-                        ? "bg-blue-50 border-blue-300"
-                        : "bg-white border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="font-semibold text-[13px]">
-                      {otherName}
-                    </div>
-                    {c.lastMessageText && (
-                      <div className="text-[11px] text-gray-600 truncate">
-                        {c.lastSenderId === user.id ? "You: " : ""}
-                        {c.lastMessageText}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+              const isActive = selectedUserId === c.otherUserId;
 
-        {/* 🔹 Panel de chat / selección de usuario */}
-        <div className="md:col-span-2 space-y-3">
-          {/* Selector de usuario */}
-          <div className="card space-y-2">
-            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-              <div className="flex-1">
-                <label className="text-sm font-medium block mb-1">
-                  Send message to:
-                </label>
-                {loadingUsers ? (
-                  <p className="text-xs text-gray-600">
-                    Loading users…
-                  </p>
-                ) : (
-                  <select
-                    className="border rounded w-full px-2 py-1 text-sm"
-                    value={selectedUserId}
-                    onChange={(e) => handleChangeUser(e.target.value)}
-                  >
-                    <option value="">Select a user</option>
-                    {allUsers.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.username || u.loginUsername || "(no username)"} ·{" "}
-                        {u.role}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {selectedUser && (
-                <div className="text-xs text-gray-600 md:text-right">
-                  <div>
-                    Chatting with{" "}
-                    <span className="font-semibold">
-                      {selectedUser.username ||
-                        selectedUser.loginUsername}
-                    </span>
+              return (
+                <button
+                  key={c.otherUserId}
+                  type="button"
+                  onClick={() => handleOpenConversation(c.otherUserId)}
+                  className={`px-3 py-2 rounded-lg text-xs border shadow-sm text-left ${
+                    isActive
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-gray-100 text-gray-900 border-gray-200"
+                  }`}
+                >
+                  <div className="font-semibold text-[12px] truncate">
+                    {name}
                   </div>
-                  <div className="text-[11px]">
-                    Role: {selectedUser.role || "N/A"}
-                  </div>
-                </div>
-              )}
-            </div>
+                  <div className="text-[11px] truncate">{preview}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Selector de usuario */}
+      <div className="card space-y-2">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div className="flex-1">
+            <label className="text-sm font-medium block mb-1">
+              Send message to:
+            </label>
+            {loadingUsers ? (
+              <p className="text-xs text-gray-600">Loading users…</p>
+            ) : (
+              <select
+                className="border rounded w-full px-2 py-1 text-sm"
+                value={selectedUserId}
+                onChange={(e) => handleChangeUser(e.target.value)}
+              >
+                <option value="">Select a user</option>
+                {allUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username || u.loginUsername || "(no username)"} ·{" "}
+                    {u.role}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          {/* Área de conversación */}
-          {selectedUserId ? (
-            <div className="card flex flex-col h-[60vh] max-h-[500px]">
-              {/* mensajes */}
-              <div className="flex-1 overflow-auto pr-1 mb-2">
-                {loadingMessages ? (
-                  <p className="text-xs text-gray-600">
-                    Loading messages…
-                  </p>
-                ) : messages.length === 0 ? (
-                  <p className="text-xs text-gray-600">
-                    No messages yet. Start the conversation.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {messages.map((m) => {
-                      const isMine = m.fromUserId === user.id;
-                      return (
-                        <div
-                          key={m.id}
-                          className={`flex ${
-                            isMine ? "justify-end" : "justify-start"
-                          }`}
-                        >
-                          <div
-                            className={`max-w-[75%] rounded-lg px-3 py-2 text-xs shadow-sm ${
-                              isMine
-                                ? "bg-blue-600 text-white"
-                                : "bg-gray-100 text-gray-900"
-                            }`}
-                          >
-                            {!isMine && (
-                              <div className="font-semibold mb-0.5 text-[11px]">
-                                {m.fromUsername || "User"}
-                              </div>
-                            )}
-                            <div className="whitespace-pre-wrap break-words">
-                              {m.text}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div ref={bottomRef} />
-                  </div>
-                )}
+          {selectedUser && (
+            <div className="text-xs text-gray-600 md:text-right">
+              <div>
+                Chatting with{" "}
+                <span className="font-semibold">
+                  {selectedUser.username || selectedUser.loginUsername}
+                </span>
               </div>
-
-              {/* caja de texto / reply */}
-              <form onSubmit={handleSend} className="border-t pt-2 mt-1">
-                <label className="text-[11px] text-gray-600 block mb-1">
-                  Write a message
-                </label>
-                <div className="flex gap-2">
-                  <textarea
-                    className="flex-1 border rounded px-2 py-1 text-xs resize-none"
-                    rows={2}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    placeholder="Type your message…"
-                  />
-                  <button
-                    type="submit"
-                    disabled={sending || !text.trim()}
-                    className="btn btn-primary text-xs h-fit self-end"
-                  >
-                    {sending ? "Sending…" : "Send"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          ) : (
-            <div className="card text-xs text-gray-600">
-              Select a user to start a conversation.
+              <div className="text-[11px]">
+                Role: {selectedUser.role || "N/A"}
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Área de conversación */}
+      {selectedUserId ? (
+        <div className="card flex flex-col h-[60vh] max-h-[500px]">
+          {/* Botón borrar conversación (solo Station / Duty) */}
+          {isManager && (
+            <div className="flex justify-end mb-2">
+              <button
+                type="button"
+                className="btn btn-danger text-[11px]"
+                onClick={handleDeleteConversation}
+              >
+                Delete conversation
+              </button>
+            </div>
+          )}
+
+          {/* mensajes */}
+          <div className="flex-1 overflow-auto pr-1 mb-2">
+            {loadingMessages ? (
+              <p className="text-xs text-gray-600">Loading messages…</p>
+            ) : messages.length === 0 ? (
+              <p className="text-xs text-gray-600">
+                No messages yet. Start the conversation.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {messages.map((m) => {
+                  const isMine = m.fromUserId === myId;
+                  return (
+                    <div
+                      key={m.id}
+                      className={`flex ${
+                        isMine ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[75%] rounded-lg px-3 py-2 text-xs shadow-sm ${
+                          isMine
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-900"
+                        }`}
+                      >
+                        {!isMine && (
+                          <div className="font-semibold mb-0.5 text-[11px]">
+                            {m.fromUsername || "User"}
+                          </div>
+                        )}
+                        <div className="whitespace-pre-wrap break-words">
+                          {m.text}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={bottomRef} />
+              </div>
+            )}
+          </div>
+
+          {/* caja de texto / reply */}
+          <form onSubmit={handleSend} className="border-t pt-2 mt-1">
+            <label className="text-[11px] text-gray-600 block mb-1">
+              Write a message
+            </label>
+            <div className="flex gap-2">
+              <textarea
+                className="flex-1 border rounded px-2 py-1 text-xs resize-none"
+                rows={2}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Type your message…"
+              />
+              <button
+                type="submit"
+                disabled={sending || !text.trim()}
+                className="btn btn-primary text-xs h-fit self-end"
+              >
+                {sending ? "Sending…" : "Send"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : (
+        <div className="card text-xs text-gray-600">
+          Select a user to start a conversation.
+        </div>
+      )}
     </div>
   );
 }
