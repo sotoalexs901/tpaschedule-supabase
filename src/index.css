@@ -17,7 +17,7 @@ html, body {
 }
 
 /* --------------------------------------------------------- */
-/* FIX: NAVLINK SIN DECORACIÓN                                */
+/* FIX: NAVLINK SIN DECORACIÓN                               */
 /* --------------------------------------------------------- */
 a {
   text-decoration: none;
@@ -35,7 +35,7 @@ a {
 }
 
 /* --------------------------------------------------------- */
-/* TABLAS                                                     */
+/* TABLAS                                                    */
 /* --------------------------------------------------------- */
 table {
   width: 100%;
@@ -55,7 +55,7 @@ td {
 }
 
 /* --------------------------------------------------------- */
-/* BOTONES UNIVERSALES                                        */
+/* BOTONES UNIVERSALES                                       */
 /* --------------------------------------------------------- */
 .btn {
   padding: 8px 12px;
@@ -92,4 +92,66 @@ header, nav {
 /* Pero restauramos estilos correctos para AppLayout */
 header, nav {
   display: block;
+}
+
+/* --------------------------------------------------------- */
+/*  TIPOGRAFÍA GLOBAL MEJORADA                               */
+/*  (letras más grandes, oscuras y legibles)                 */
+/* --------------------------------------------------------- */
+
+/* Tamaño base más grande y color más oscuro */
+body {
+  font-size: 16px !important;
+  color: #0f172a !important; /* slate-900 */
+}
+
+/* Títulos principales */
+h1 {
+  font-size: 2rem !important;          /* ~32px */
+  font-weight: 700 !important;
+  color: #0f172a !important;
+}
+
+/* Subtítulos */
+h2 {
+  font-size: 1.25rem !important;       /* ~20px */
+  font-weight: 600 !important;
+  color: #111827 !important;           /* gris muy oscuro */
+}
+
+/* Títulos pequeños dentro de tarjetas */
+.card h2 {
+  font-size: 1.2rem !important;
+}
+
+/* Texto normal (p, labels, etc.) */
+p,
+span,
+label,
+li {
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+  color: #111827 !important;           /* slate-900 */
+}
+
+/* Inputs y selects más claros */
+input,
+textarea,
+select {
+  font-size: 15px !important;
+  color: #111827 !important;
+}
+
+/* Botones con texto un poquito más grande */
+button {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+/* Overwrite de la clase Tailwind .text-xs para que no sea tan chiquita */
+.text-xs,
+.text-\[11px\],
+.text-\[12px\] {
+  font-size: 0.85rem !important;       /* ~13.6px */
+  color: #374151 !important;           /* slate-700 */
 }
