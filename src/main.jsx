@@ -34,6 +34,7 @@ import CrewAnnouncementsPage from "./pages/CrewAnnouncementsPage.jsx";
 import EmployeeTimeOffRequestPage from "./pages/EmployeeTimeOffRequestPage.jsx";
 import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
+import ProfilePage from "./pages/ProfilePage.jsx"; // 👈 NUEVO
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
@@ -69,7 +70,7 @@ function AppRouter() {
         <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
         <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
 
-        {/* RUTAS PROTEGIDAS */}
+        {/* RUTAS PROTEGIDAS (todo lo que va dentro del layout) */}
         <Route
           path="/"
           element={
@@ -116,6 +117,26 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["station_manager"]}>
                 <CrewAnnouncementsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* MENSAJES (todos los roles, pero dentro del layout) */}
+          <Route
+            path="messages"
+            element={
+              <ProtectedRoute>
+                <MessagesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* PERFIL (todos los roles, para cambiar PIN / foto) */}
+          <Route
+            path="profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />
@@ -240,15 +261,6 @@ function AppRouter() {
             }
           />
         </Route>
-        <Route
-  path="messages"
-  element={
-    <ProtectedRoute>
-      <MessagesPage />
-    </ProtectedRoute>
-  }
-/>
-
       </Routes>
     </BrowserRouter>
   );
