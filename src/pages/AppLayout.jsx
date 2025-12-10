@@ -46,7 +46,7 @@ export default function AppLayout() {
     display: "flex",
     flexDirection: "column",
     minHeight: "100vh",
-    overflowY: "auto",     // 👈 permite hacer scroll y ver el Logout
+    overflowY: "auto", // 👈 permite hacer scroll y ver el Logout
   };
 
   const sidebarHeaderStyle = {
@@ -135,6 +135,9 @@ export default function AppLayout() {
         <nav style={navStyle}>
           {/* Común a todos los usuarios logueados */}
           <NavItem to="/dashboard" label="Dashboard" />
+          {/* 🔵 NUEVO: mensajes entre usuarios */}
+          <NavItem to="/messages" label="Messages" />
+
           {isManager && <NavItem to="/schedule" label="Create Schedule" />}
 
           {/* SOLO STATION MANAGER */}
