@@ -10,7 +10,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
 
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
-  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0); // 👈 NUEVO
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const logout = () => {
@@ -20,17 +20,36 @@ export default function AppLayout() {
 
   // 🔔 time off pendientes
   useEffect(() => {
-    const q = query(
+    const qTimeoff = query(
       collection(db, "timeOffRequests"),
       where("status", "==", "pending")
     );
     const unsub = onSnapshot(
-      q,
+      qTimeoff,
       (snap) => setPendingTimeOff(snap.size),
       (err) => console.error("Error listening timeOffRequests:", err)
     );
     return () => unsub();
   }, []);
+
+  // 🔔 mensajes no leídos para este usuario
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const qMsgs = query(
+      collection(db, "messages"),
+      where("toUserId", "==", user.id),
+      where("read", "==", false)
+    );
+
+    const unsub = onSnapshot(
+      qMsgs,
+      (snap) => setUnreadMessages(snap.size),
+      (err) => console.error("Error listening unread messages:", err)
+    );
+
+    return () => unsub();
+  }, [user?.id]);
 
   // 🔒 cerrar sidebar cuando un NavItem dispara el evento
   useEffect(() => {
@@ -47,7 +66,7 @@ export default function AppLayout() {
     display: "flex",
     flexDirection: "column",
     minHeight: "100vh",
-    overflowY: "auto", // 👈 permite hacer scroll y ver el Logout
+    overflowY: "auto", // permite ver el Logout
   };
 
   const sidebarHeaderStyle = {
@@ -136,8 +155,13 @@ export default function AppLayout() {
         <nav style={navStyle}>
           {/* Común a todos los usuarios logueados */}
           <NavItem to="/dashboard" label="Dashboard" />
-          {/* 🔵 NUEVO: mensajes entre usuarios */}
-          <NavItem to="/messages" label="Messages" />
+
+          {/* 🔔 Mensajes con notificación si hay no leídos */}
+          <NavItem
+            to="/messages"
+            label="Messages"
+            showDot={unreadMessages > 0}
+          />
 
           {isManager && <NavItem to="/schedule" label="Create Schedule" />}
 
@@ -173,7 +197,10 @@ export default function AppLayout() {
           {(user?.role === "agent" || user?.role === "supervisor") && (
             <>
               <NavItem to="/my-schedule" label="My Schedule" />
-              <NavItem to="/request-dayoff-internal" label="Request Day Off" />
+              <NavItem
+                to="/request-dayoff-internal"
+                label="Request Day Off"
+              />
               <NavItem
                 to="/dayoff-status-internal"
                 label="My Day Off Status"
@@ -182,7 +209,7 @@ export default function AppLayout() {
           )}
         </nav>
 
-        {/* Logout en sidebar (desktop + móvil con scroll) */}
+        {/* Logout en sidebar */}
         <button style={logoutStyle} onClick={logout}>
           Logout
         </button>
