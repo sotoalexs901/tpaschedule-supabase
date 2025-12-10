@@ -70,7 +70,7 @@ function AppRouter() {
         <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
         <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
 
-        {/* RUTAS PROTEGIDAS (todo lo que va dentro del layout) */}
+        {/* RUTAS PROTEGIDAS */}
         <Route
           path="/"
           element={
@@ -82,6 +82,12 @@ function AppRouter() {
           {/* Dashboard según rol */}
           <Route index element={<DashboardEntry />} />
           <Route path="dashboard" element={<DashboardEntry />} />
+
+          {/* PERFIL – TODOS LOS USUARIOS LOGUEADOS */}
+          <Route path="profile" element={<ProfilePage />} />
+
+          {/* MENSAJES – TODOS LOS USUARIOS LOGUEADOS */}
+          <Route path="messages" element={<MessagesPage />} />
 
           {/* SOLO AGENT / SUPERVISOR */}
           <Route
@@ -117,26 +123,6 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["station_manager"]}>
                 <CrewAnnouncementsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* MENSAJES (todos los roles, pero dentro del layout) */}
-          <Route
-            path="messages"
-            element={
-              <ProtectedRoute>
-                <MessagesPage />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* PERFIL (todos los roles, para cambiar PIN / foto) */}
-          <Route
-            path="profile"
-            element={
-              <ProtectedRoute>
-                <ProfilePage />
               </ProtectedRoute>
             }
           />
