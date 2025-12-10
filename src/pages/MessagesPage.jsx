@@ -9,6 +9,7 @@ import {
   where,
   orderBy,
   serverTimestamp,
+  writeBatch,          // 👈 NUEVO
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -61,18 +62,40 @@ export default function MessagesPage() {
     const convKey = buildConversationKey(user.id, selectedUserId);
     setLoadingMessages(true);
 
-    const q = query(
+    const qMsgs = query(
       collection(db, "messages"),
       where("conversationKey", "==", convKey),
       orderBy("createdAt", "asc")
     );
 
     const unsub = onSnapshot(
-      q,
+      qMsgs,
       (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setMessages(list);
         setLoadingMessages(false);
+
+        // ✅ Marcar como leídos todos los mensajes dirigidos a mí en este chat
+        (async () => {
+          const batch = writeBatch(db);
+          let hasUpdates = false;
+
+          snap.docs.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (data.toUserId === user.id && data.read === false) {
+              batch.update(docSnap.ref, { read: true });
+              hasUpdates = true;
+            }
+          });
+
+          if (hasUpdates) {
+            try {
+              await batch.commit();
+            } catch (e) {
+              console.error("Error marking messages as read:", e);
+            }
+          }
+        })();
       },
       (err) => {
         console.error("Error loading messages:", err);
@@ -113,7 +136,7 @@ export default function MessagesPage() {
           selectedUser?.username || selectedUser?.loginUsername || "",
         text: text.trim(),
         createdAt: serverTimestamp(),
-        read: false,
+        read: false, // 👈 se queda igual, el receptor lo verá como "no leído"
       });
 
       setText("");
