@@ -33,6 +33,7 @@ import MySchedulePage from "./pages/MySchedulePage.jsx";
 import CrewAnnouncementsPage from "./pages/CrewAnnouncementsPage.jsx";
 import EmployeeTimeOffRequestPage from "./pages/EmployeeTimeOffRequestPage.jsx";
 import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
+import MessagesPage from "./pages/MessagesPage.jsx";
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
@@ -239,6 +240,15 @@ function AppRouter() {
             }
           />
         </Route>
+        <Route
+  path="messages"
+  element={
+    <ProtectedRoute>
+      <MessagesPage />
+    </ProtectedRoute>
+  }
+/>
+
       </Routes>
     </BrowserRouter>
   );
