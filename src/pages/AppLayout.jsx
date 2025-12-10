@@ -5,12 +5,16 @@ import { useUser } from "../UserContext.jsx";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 
+// 🔑 misma lógica de identidad que en MessagesPage
+const getIdentityKey = (u) =>
+  (u && (u.loginUsername || u.username || u.id)) || "";
+
 export default function AppLayout() {
   const { user, setUser } = useUser();
   const navigate = useNavigate();
 
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
-  const [unreadMessages, setUnreadMessages] = useState(0); // 👈 NUEVO
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const logout = () => {
@@ -32,13 +36,16 @@ export default function AppLayout() {
     return () => unsub();
   }, []);
 
-  // 🔔 mensajes no leídos para este usuario
+  // 🔔 mensajes no leídos para este usuario (usando identityKey)
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user) return;
+
+    const meKey = getIdentityKey(user);
+    if (!meKey) return;
 
     const qMsgs = query(
       collection(db, "messages"),
-      where("toUserId", "==", user.id),
+      where("toUserId", "==", meKey),
       where("read", "==", false)
     );
 
@@ -49,7 +56,7 @@ export default function AppLayout() {
     );
 
     return () => unsub();
-  }, [user?.id]);
+  }, [user]);
 
   // 🔒 cerrar sidebar cuando un NavItem dispara el evento
   useEffect(() => {
@@ -106,6 +113,8 @@ export default function AppLayout() {
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
 
+  const displayUsername = user?.username || user?.loginUsername || "user";
+
   return (
     <div className="min-h-screen flex bg-slate-100">
       {/* overlay negro cuando el menú está abierto en móvil */}
@@ -137,7 +146,7 @@ export default function AppLayout() {
               TPA OPS SYSTEM
             </h1>
             <p style={loggedTextStyle}>
-              Logged as: <b>{user?.username}</b> ({user?.role})
+              Logged as: <b>{displayUsername}</b> ({user?.role})
             </p>
           </div>
 
@@ -235,7 +244,7 @@ export default function AppLayout() {
             <p className="mobile-header-title">TPA OPS SYSTEM</p>
             <div className="mobile-header-user-row">
               <span className="mobile-header-user">
-                {user?.username} · {user?.role}
+                {displayUsername} · {user?.role}
               </span>
               <button
                 type="button"
