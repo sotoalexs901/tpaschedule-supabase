@@ -9,10 +9,16 @@ import {
   where,
   orderBy,
   serverTimestamp,
-  writeBatch, // 👈 para marcar como leídos
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { useNavigate } from "react-router-dom";
+
+// 🔑 Siempre usamos la misma "llave" de identidad
+function getIdentityKey(u) {
+  if (!u) return "";
+  return u.loginUsername || u.username || u.id || "";
+}
 
 function buildConversationKey(a, b) {
   return [a, b].sort().join("_");
@@ -20,6 +26,8 @@ function buildConversationKey(a, b) {
 
 export default function MessagesPage() {
   const { user } = useUser();
+  const navigate = useNavigate();
+
   const [allUsers, setAllUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
@@ -30,14 +38,14 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
 
-  // Cargar lista de usuarios (para elegir destinatario)
+  // 🔹 Cargar lista de usuarios
   useEffect(() => {
     async function loadUsers() {
       try {
         const snap = await getDocs(collection(db, "users"));
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((u) => u.id !== user?.id); // no mostrarme a mí mismo
+          .filter((u) => u.id !== user?.id);
 
         list.sort((a, b) =>
           (a.username || "").localeCompare(b.username || "")
@@ -53,14 +61,25 @@ export default function MessagesPage() {
     if (user) loadUsers();
   }, [user]);
 
-  // Escuchar mensajes de la conversación seleccionada
+  // 🔹 Escuchar mensajes de la conversación seleccionada
   useEffect(() => {
     if (!user || !selectedUserId) {
       setMessages([]);
       return;
     }
 
-    const convKey = buildConversationKey(user.id, selectedUserId);
+    const meKey = getIdentityKey(user);
+    const otherUser = allUsers.find((u) => u.id === selectedUserId);
+
+    if (!meKey || !otherUser) {
+      setMessages([]);
+      return;
+    }
+
+    const otherKey = getIdentityKey(otherUser);
+    const convKey = buildConversationKey(meKey, otherKey);
+
+    setSelectedUser(otherUser);
     setLoadingMessages(true);
 
     const qMsgs = query(
@@ -75,28 +94,6 @@ export default function MessagesPage() {
         const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setMessages(list);
         setLoadingMessages(false);
-
-        // ✅ Marcar como LEÍDOS todos los mensajes dirigidos a mí en este chat
-        (async () => {
-          const batch = writeBatch(db);
-          let hasUpdates = false;
-
-          snap.docs.forEach((docSnap) => {
-            const data = docSnap.data();
-            if (data.toUserId === user.id && data.read === false) {
-              batch.update(docSnap.ref, { read: true });
-              hasUpdates = true;
-            }
-          });
-
-          if (hasUpdates) {
-            try {
-              await batch.commit();
-            } catch (e) {
-              console.error("Error marking messages as read:", e);
-            }
-          }
-        })();
       },
       (err) => {
         console.error("Error loading messages:", err);
@@ -105,9 +102,9 @@ export default function MessagesPage() {
     );
 
     return () => unsub();
-  }, [user, selectedUserId]);
+  }, [user, selectedUserId, allUsers]);
 
-  // Scroll al último mensaje
+  // 🔹 Scroll al último mensaje
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
@@ -116,28 +113,32 @@ export default function MessagesPage() {
 
   const handleChangeUser = (id) => {
     setSelectedUserId(id);
-    const found = allUsers.find((u) => u.id === id) || null;
-    setSelectedUser(found);
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
     if (!user || !selectedUserId || !text.trim()) return;
 
+    const otherUser = allUsers.find((u) => u.id === selectedUserId);
+    if (!otherUser) return;
+
+    const meKey = getIdentityKey(user);
+    const otherKey = getIdentityKey(otherUser);
+    const convKey = buildConversationKey(meKey, otherKey);
+
     try {
       setSending(true);
-      const convKey = buildConversationKey(user.id, selectedUserId);
 
       await addDoc(collection(db, "messages"), {
         conversationKey: convKey,
-        fromUserId: user.id,
-        toUserId: selectedUserId,
-        fromUsername: user.username || user.loginUsername || "",
+        fromUserId: meKey,
+        toUserId: otherKey,
+        fromUsername: user.username || user.loginUsername || meKey,
         toUsername:
-          selectedUser?.username || selectedUser?.loginUsername || "",
+          otherUser.username || otherUser.loginUsername || otherKey,
         text: text.trim(),
         createdAt: serverTimestamp(),
-        read: false, // 🔴 se crea como NO LEÍDO
+        read: false,
       });
 
       setText("");
@@ -159,6 +160,15 @@ export default function MessagesPage() {
 
   return (
     <div className="space-y-4">
+      {/* 🔙 Back to Dashboard */}
+      <button
+        type="button"
+        className="btn btn-soft text-xs"
+        onClick={() => navigate("/dashboard")}
+      >
+        ← Back to Dashboard
+      </button>
+
       <h1 className="text-lg font-semibold">Messages</h1>
 
       {/* Selector de usuario */}
@@ -217,7 +227,8 @@ export default function MessagesPage() {
             ) : (
               <div className="space-y-2">
                 {messages.map((m) => {
-                  const isMine = m.fromUserId === user.id;
+                  const meKey = getIdentityKey(user);
+                  const isMine = m.fromUserId === meKey;
                   return (
                     <div
                       key={m.id}
