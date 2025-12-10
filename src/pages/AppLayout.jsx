@@ -10,6 +10,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
 
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const logout = () => {
