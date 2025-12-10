@@ -31,6 +31,7 @@ export default function DashboardPage() {
   // Empleados no disponibles / bloqueados
   const [blockedEmployees, setBlockedEmployees] = useState([]);
   const [loadingBlocked, setLoadingBlocked] = useState(false);
+  const [showBlockedList, setShowBlockedList] = useState(false); // 👈 toggle de lista
 
   // Schedules pendientes
   const [pendingSchedules, setPendingSchedules] = useState([]);
@@ -192,11 +193,11 @@ export default function DashboardPage() {
   // --------- RENDER --------- //
   return (
     <div
-      className="min-h-screen p-6"
+      className="min-h-screen p-4 md:p-6"
       style={{
         background:
           "radial-gradient(circle at top, #0a0f24 0%, #020617 55%, #020617 100%)",
-        fontFamily: "Poppins, sans-serif",
+        fontFamily: "Poppins, system-ui, sans-serif",
       }}
     >
       {/* HEADER */}
@@ -205,20 +206,20 @@ export default function DashboardPage() {
           <p className="text-[11px] uppercase tracking-[0.28em] text-blue-400/80 mb-1">
             TPA OPS · STATION CONTROL
           </p>
-          <h1 className="text-2xl md:text-3xl font-semibold text-white drop-shadow">
-            Welcome back, {user?.username || "Station Manager"} 👋
+          <h1 className="text-2xl md:text-3xl font-bold text-white drop-shadow-sm">
+            Welcome back, {user?.username || "Team"} 👋
           </h1>
           <p className="text-sm text-slate-300 mt-1">
-            Here&apos;s a quick overview of what&apos;s happening this week.
+            Quick view of today&apos;s updates, events and restrictions.
           </p>
         </div>
 
         <button
           type="button"
           onClick={reloadAll}
-          className="px-3 py-1.5 text-xs font-medium rounded-lg 
-                     bg-white/10 text-white border border-white/20
-                     shadow-sm hover:bg-white/20 hover:border-white/40 transition"
+          className="px-3 py-1.5 text-xs font-semibold rounded-lg 
+                     bg-white/10 text-white border border-white/25
+                     shadow-sm hover:bg-white/20 hover:border-white/50 transition"
         >
           Refresh dashboard
         </button>
@@ -227,13 +228,13 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* MESSAGE CARD */}
         <div className="xl:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2 mb-2">
+          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2 mb-2">
             <span role="img" aria-label="message">
               📢
             </span>
             Station Manager Message
           </h2>
-          <p className="text-sm text-slate-800 whitespace-pre-line">
+          <p className="text-sm leading-relaxed text-slate-800 whitespace-pre-line">
             {mainMessage || "No message posted yet."}
           </p>
           {mainMeta?.updatedAt && (
@@ -244,10 +245,10 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* STATION HIGHLIGHTS (FOTOS) */}
+        {/* STATION HIGHLIGHTS (FOTOS) – CARRUSEL COMPACTO */}
         <div className="xl:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
               <span role="img" aria-label="highlights">
                 ✈️
               </span>
@@ -267,11 +268,11 @@ export default function DashboardPage() {
               No station highlights yet. Upload photos from Dashboard Editor.
             </p>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="flex gap-3 overflow-x-auto pb-1">
               {photos.map((p) => (
                 <div
                   key={p.id}
-                  className="bg-slate-50 border border-slate-100 rounded-xl overflow-hidden shadow-xs"
+                  className="flex-none w-40 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden shadow-xs"
                 >
                   <div className="aspect-[4/3] bg-slate-100 overflow-hidden">
                     <img
@@ -293,7 +294,7 @@ export default function DashboardPage() {
 
         {/* UPCOMING EVENTS */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <h2 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+          <h2 className="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
             <span role="img" aria-label="events">
               📅
             </span>
@@ -330,7 +331,7 @@ export default function DashboardPage() {
 
         {/* NOTICES / INVITATIONS */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <h2 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+          <h2 className="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
             <span role="img" aria-label="notices">
               📌
             </span>
@@ -370,43 +371,81 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* EMPLOYEES NOT AVAILABLE */}
+        {/* EMPLOYEES NOT AVAILABLE – RESUMEN + TOGGLE */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <h2 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-            <span role="img" aria-label="blocked">
-              🚫
-            </span>
-            Employees Not Available
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <span role="img" aria-label="blocked">
+                🚫
+              </span>
+              Employees Not Available
+            </h2>
+
+            {blockedEmployees.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowBlockedList((v) => !v)}
+                className="px-3 py-1 text-[11px] rounded-lg border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100"
+              >
+                {showBlockedList ? "Hide list" : "View list"}
+              </button>
+            )}
+          </div>
 
           {loadingBlocked ? (
             <p className="text-sm text-slate-400">Loading employees...</p>
           ) : blockedEmployees.length === 0 ? (
             <p className="text-sm text-slate-500">No employees blocked.</p>
           ) : (
-            <div className="space-y-3">
-              {blockedEmployees.map((b) => (
-                <div
-                  key={b.id}
-                  className="p-3 bg-rose-50 rounded-lg border border-rose-100"
-                >
-                  <p className="font-semibold text-rose-900 text-sm">
+            <>
+              {/* Línea de “chips” con nombres (siempre visible) */}
+              <div className="flex flex-wrap gap-1 mb-2">
+                {blockedEmployees.slice(0, 6).map((b) => (
+                  <span
+                    key={b.id}
+                    className="px-2 py-0.5 rounded-full bg-rose-50 border border-rose-100 text-[11px] text-rose-800"
+                  >
                     {b.employeeName || b.name || b.employeeId}
-                  </p>
-                  <p className="text-xs text-slate-700">{b.reason}</p>
-                  <p className="text-[11px] text-slate-500">
-                    {b.start_date || "N/A"} → {b.end_date || "N/A"}
-                  </p>
+                  </span>
+                ))}
+                {blockedEmployees.length > 6 && (
+                  <span className="text-[11px] text-slate-500 ml-1">
+                    +{blockedEmployees.length - 6} more
+                  </span>
+                )}
+              </div>
+
+              {/* Lista completa sólo cuando se hace click */}
+              {showBlockedList && (
+                <div className="mt-2 max-h-56 overflow-auto space-y-3">
+                  {blockedEmployees.map((b) => (
+                    <div
+                      key={b.id}
+                      className="p-3 bg-rose-50 rounded-lg border border-rose-100"
+                    >
+                      <p className="font-semibold text-rose-900 text-sm">
+                        {b.employeeName || b.name || b.employeeId}
+                      </p>
+                      {b.reason && (
+                        <p className="text-xs text-slate-700 mt-0.5">
+                          {b.reason}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {b.start_date || "N/A"} → {b.end_date || "N/A"}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
 
         {/* PENDING SCHEDULES (para Station Manager) */}
         <div className="xl:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
               <span role="img" aria-label="pending">
                 📥
               </span>
