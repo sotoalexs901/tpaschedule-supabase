@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   deleteDoc,
   doc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -21,7 +22,7 @@ export default function MessagesPage() {
   const navigate = useNavigate();
 
   const [allUsers, setAllUsers] = useState([]);
-  const [conversations, setConversations] = useState([]); // lista de chats
+  const [conversations, setConversations] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
 
@@ -32,15 +33,14 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
 
   const bottomRef = useRef(null);
-
-  const myId = user?.id; // usamos el id del documento del usuario
+  const myId = user?.id;
 
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
 
-  // ──────────────────────────────
+  // =========================
   // 1) Cargar lista de usuarios
-  // ──────────────────────────────
+  // =========================
   useEffect(() => {
     async function loadUsers() {
       if (!user) return;
@@ -48,7 +48,7 @@ export default function MessagesPage() {
         const snap = await getDocs(collection(db, "users"));
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((u) => u.id !== user.id); // no nos incluimos
+          .filter((u) => u.id !== user.id);
 
         list.sort((a, b) =>
           (a.username || a.loginUsername || "")
@@ -65,10 +65,9 @@ export default function MessagesPage() {
     loadUsers();
   }, [user]);
 
-  // ──────────────────────────────
+  // =========================
   // 2) Cargar RESUMEN de conversaciones
-  //    (último mensaje con cada usuario)
-  // ──────────────────────────────
+  // =========================
   const loadConversations = useCallback(async () => {
     if (!myId) return;
 
@@ -85,9 +84,10 @@ export default function MessagesPage() {
         const m = d.data();
         const otherId = m.fromUserId === myId ? m.toUserId : m.fromUserId;
         if (!otherId) return;
-        const createdAtMs = m.createdAt?.toMillis?.() || 0;
 
+        const createdAtMs = m.createdAt?.toMillis?.() || 0;
         const existing = map[otherId];
+
         if (!existing || createdAtMs > existing.lastTime) {
           map[otherId] = {
             otherUserId: otherId,
@@ -101,9 +101,7 @@ export default function MessagesPage() {
       sentSnap.forEach(handleDoc);
       receivedSnap.forEach(handleDoc);
 
-      const list = Object.values(map).sort(
-        (a, b) => b.lastTime - a.lastTime
-      );
+      const list = Object.values(map).sort((a, b) => b.lastTime - a.lastTime);
       setConversations(list);
     } catch (err) {
       console.error("Error loading conversations:", err);
@@ -114,10 +112,9 @@ export default function MessagesPage() {
     loadConversations();
   }, [loadConversations]);
 
-  // ──────────────────────────────
-  // 3) Listener de mensajes de la conversación actual
-  //    (dos queries: enviados y recibidos)
-  // ──────────────────────────────
+  // =========================
+  // 3) Listener mensajes (ida y vuelta)
+  // =========================
   useEffect(() => {
     if (!myId || !selectedUserId) {
       setMessages([]);
@@ -142,7 +139,6 @@ export default function MessagesPage() {
 
     setLoadingMessages(true);
 
-    // guardamos los snapshots por separado y luego los combinamos
     let sentMsgs = [];
     let receivedMsgs = [];
 
@@ -186,18 +182,18 @@ export default function MessagesPage() {
     };
   }, [myId, selectedUserId]);
 
-  // ──────────────────────────────
+  // =========================
   // 4) Scroll al último mensaje
-  // ──────────────────────────────
+  // =========================
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
-  // ──────────────────────────────
-  // 5) Marcar recibidos como leídos
-  // ──────────────────────────────
+  // =========================
+  // 5) Marcar mensajes recibidos como leídos
+  // =========================
   useEffect(() => {
     if (!myId || !selectedUserId || messages.length === 0) return;
 
@@ -206,26 +202,18 @@ export default function MessagesPage() {
     );
     if (unread.length === 0) return;
 
-    // se marcan en segundo plano, sin bloquear la UI
     unread.forEach(async (m) => {
       try {
-        await addDoc(
-          collection(db, "messages_read_logs"),
-          {
-            messageId: m.id,
-            toUserId: myId,
-            readAt: serverTimestamp(),
-          }
-        );
+        await updateDoc(doc(db, "messages", m.id), { read: true });
       } catch (e) {
-        console.error("Error logging read event:", e);
+        console.error("Error marking message as read:", e);
       }
     });
   }, [myId, selectedUserId, messages]);
 
-  // ──────────────────────────────
+  // =========================
   // Handlers
-  // ──────────────────────────────
+  // =========================
   const handleChangeUser = (id) => {
     setSelectedUserId(id || "");
     const found = allUsers.find((u) => u.id === id) || null;
@@ -238,7 +226,7 @@ export default function MessagesPage() {
 
     const trimmed = text.trim();
 
-    try:
+    try {
       setSending(true);
 
       await addDoc(collection(db, "messages"), {
@@ -253,8 +241,7 @@ export default function MessagesPage() {
       });
 
       setText("");
-      // refrescamos lista de conversaciones
-      loadConversations();
+      await loadConversations();
     } catch (err) {
       console.error("Error sending message:", err);
       alert("Error sending message. Please try again.");
@@ -267,7 +254,7 @@ export default function MessagesPage() {
     handleChangeUser(otherUserId);
   };
 
-  // Borrar conversación (solo Station / Duty)
+  // borrar conversación (solo station / duty)
   const handleDeleteConversation = async () => {
     if (!myId || !selectedUserId) return;
     if (!isManager) return;
@@ -324,7 +311,7 @@ export default function MessagesPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header con botón Back */}
+      {/* Header con Back */}
       <div className="flex items-center gap-3 mb-1">
         <button
           type="button"
@@ -336,7 +323,7 @@ export default function MessagesPage() {
         <h1 className="text-lg font-semibold mb-0">Messages</h1>
       </div>
 
-      {/* Lista de conversaciones activas */}
+      {/* Conversaciones activas */}
       <div className="card space-y-2">
         <h2 className="text-sm font-semibold mb-1">Conversations</h2>
         {conversations.length === 0 ? (
@@ -349,9 +336,7 @@ export default function MessagesPage() {
               const other =
                 allUsers.find((u) => u.id === c.otherUserId) || {};
               const name =
-                other.username ||
-                other.loginUsername ||
-                "(unknown user)";
+                other.username || other.loginUsername || "(unknown user)";
               const preview = c.lastFromMe
                 ? `You: ${c.lastText}`
                 : c.lastText;
@@ -425,7 +410,7 @@ export default function MessagesPage() {
       {/* Área de conversación */}
       {selectedUserId ? (
         <div className="card flex flex-col h-[60vh] max-h-[500px]">
-          {/* Botón borrar conversación (solo Station / Duty) */}
+          {/* Borrar conversación (solo Station / Duty) */}
           {isManager && (
             <div className="flex justify-end mb-2">
               <button
@@ -438,7 +423,7 @@ export default function MessagesPage() {
             </div>
           )}
 
-          {/* mensajes */}
+          {/* Mensajes */}
           <div className="flex-1 overflow-auto pr-1 mb-2">
             {loadingMessages ? (
               <p className="text-xs text-gray-600">Loading messages…</p>
@@ -481,7 +466,7 @@ export default function MessagesPage() {
             )}
           </div>
 
-          {/* caja de texto / reply */}
+          {/* Caja de texto / reply */}
           <form onSubmit={handleSend} className="border-t pt-2 mt-1">
             <label className="text-[11px] text-gray-600 block mb-1">
               Write a message
