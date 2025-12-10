@@ -5,10 +5,6 @@ import { useUser } from "../UserContext.jsx";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 
-// 🔑 misma lógica de identidad que en MessagesPage
-const getIdentityKey = (u) =>
-  (u && (u.loginUsername || u.username || u.id)) || "";
-
 export default function AppLayout() {
   const { user, setUser } = useUser();
   const navigate = useNavigate();
@@ -36,16 +32,13 @@ export default function AppLayout() {
     return () => unsub();
   }, []);
 
-  // 🔔 mensajes no leídos para este usuario (usando identityKey)
+  // 🔔 mensajes no leídos para este usuario
   useEffect(() => {
-    if (!user) return;
-
-    const meKey = getIdentityKey(user);
-    if (!meKey) return;
+    if (!user?.id) return;
 
     const qMsgs = query(
       collection(db, "messages"),
-      where("toUserId", "==", meKey),
+      where("toUserId", "==", user.id),
       where("read", "==", false)
     );
 
@@ -56,7 +49,7 @@ export default function AppLayout() {
     );
 
     return () => unsub();
-  }, [user]);
+  }, [user?.id]);
 
   // 🔒 cerrar sidebar cuando un NavItem dispara el evento
   useEffect(() => {
@@ -73,7 +66,7 @@ export default function AppLayout() {
     display: "flex",
     flexDirection: "column",
     minHeight: "100vh",
-    overflowY: "auto", // permite ver el Logout
+    overflowY: "auto",
   };
 
   const sidebarHeaderStyle = {
@@ -113,8 +106,6 @@ export default function AppLayout() {
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
 
-  const displayUsername = user?.username || user?.loginUsername || "user";
-
   return (
     <div className="min-h-screen flex bg-slate-100">
       {/* overlay negro cuando el menú está abierto en móvil */}
@@ -146,7 +137,7 @@ export default function AppLayout() {
               TPA OPS SYSTEM
             </h1>
             <p style={loggedTextStyle}>
-              Logged as: <b>{displayUsername}</b> ({user?.role})
+              Logged as: <b>{user?.username}</b> ({user?.role})
             </p>
           </div>
 
@@ -184,6 +175,11 @@ export default function AppLayout() {
                 showDot={pendingTimeOff > 0}
               />
               <NavItem to="/dashboard-editor" label="Dashboard Editor" />
+              {/* 👇 NUEVO: editor de anuncios para crew */}
+              <NavItem
+                to="/employee-announcements"
+                label="Crew Announcements"
+              />
               <NavItem to="/budgets" label="Budgets" />
               <NavItem to="/create-user" label="Create User" />
               <NavItem to="/edit-users" label="Manage Users" />
@@ -206,10 +202,7 @@ export default function AppLayout() {
           {(user?.role === "agent" || user?.role === "supervisor") && (
             <>
               <NavItem to="/my-schedule" label="My Schedule" />
-              <NavItem
-                to="/request-dayoff-internal"
-                label="Request Day Off"
-              />
+              <NavItem to="/request-dayoff-internal" label="Request Day Off" />
               <NavItem
                 to="/dayoff-status-internal"
                 label="My Day Off Status"
@@ -244,7 +237,7 @@ export default function AppLayout() {
             <p className="mobile-header-title">TPA OPS SYSTEM</p>
             <div className="mobile-header-user-row">
               <span className="mobile-header-user">
-                {displayUsername} · {user?.role}
+                {user?.username} · {user?.role}
               </span>
               <button
                 type="button"
