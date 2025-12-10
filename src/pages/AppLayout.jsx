@@ -156,6 +156,9 @@ export default function AppLayout() {
           {/* Común a todos los usuarios logueados */}
           <NavItem to="/dashboard" label="Dashboard" />
 
+          {/* Perfil (todos) */}
+          <NavItem to="/profile" label="My Profile" />
+
           {/* 🔔 Mensajes con notificación si hay no leídos */}
           <NavItem
             to="/messages"
@@ -175,7 +178,6 @@ export default function AppLayout() {
                 showDot={pendingTimeOff > 0}
               />
               <NavItem to="/dashboard-editor" label="Dashboard Editor" />
-              {/* 👇 NUEVO: editor de anuncios para crew */}
               <NavItem
                 to="/employee-announcements"
                 label="Crew Announcements"
