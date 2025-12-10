@@ -9,27 +9,26 @@ import {
   where,
   orderBy,
   serverTimestamp,
+  writeBatch,
+  doc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
-import { useNavigate } from "react-router-dom";
 
-// 🔑 Siempre usamos la misma "llave" de identidad
+// ✅ misma clave de identidad que usamos en AppLayout
 function getIdentityKey(u) {
-  if (!u) return "";
-  return u.loginUsername || u.username || u.id || "";
+  return (u && (u.loginUsername || u.username || u.id)) || "";
 }
 
-function buildConversationKey(a, b) {
-  return [a, b].sort().join("_");
+// 🔑 clave de conversación entre 2 usuarios
+function buildConversationKey(aKey, bKey) {
+  return [aKey, bKey].sort().join("_");
 }
 
 export default function MessagesPage() {
   const { user } = useUser();
-  const navigate = useNavigate();
-
   const [allUsers, setAllUsers] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedUserKey, setSelectedUserKey] = useState(""); // usamos identityKey
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -38,19 +37,45 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
 
-  // 🔹 Cargar lista de usuarios
+  const myKey = getIdentityKey(user);
+
+  // ⛔ si no hay usuario logueado
+  if (!user) {
+    return (
+      <div className="p-4">
+        <p>You must be logged in to see messages.</p>
+      </div>
+    );
+  }
+
+  // =========================
+  //   CARGAR LISTA DE USUARIOS
+  // =========================
   useEffect(() => {
     async function loadUsers() {
       try {
         const snap = await getDocs(collection(db, "users"));
-        const list = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((u) => u.id !== user?.id);
+        const list = snap.docs.map((d) => {
+          const data = d.data();
+          const u = {
+            id: d.id,
+            ...data,
+          };
+          // guardamos también su identityKey para usarla en mensajes
+          u.identityKey = getIdentityKey(u);
+          return u;
+        });
 
-        list.sort((a, b) =>
-          (a.username || "").localeCompare(b.username || "")
+        // excluimos al usuario actual
+        const filtered = list.filter((u) => u.identityKey && u.identityKey !== myKey);
+
+        filtered.sort((a, b) =>
+          (a.username || a.loginUsername || "")
+            .toLowerCase()
+            .localeCompare((b.username || b.loginUsername || "").toLowerCase())
         );
-        setAllUsers(list);
+
+        setAllUsers(filtered);
       } catch (err) {
         console.error("Error loading users for messages:", err);
       } finally {
@@ -58,28 +83,21 @@ export default function MessagesPage() {
       }
     }
 
-    if (user) loadUsers();
-  }, [user]);
+    if (myKey) {
+      loadUsers();
+    }
+  }, [myKey]);
 
-  // 🔹 Escuchar mensajes de la conversación seleccionada
+  // =========================
+  //   ESCUCHAR MENSAJES
+  // =========================
   useEffect(() => {
-    if (!user || !selectedUserId) {
+    if (!myKey || !selectedUserKey) {
       setMessages([]);
       return;
     }
 
-    const meKey = getIdentityKey(user);
-    const otherUser = allUsers.find((u) => u.id === selectedUserId);
-
-    if (!meKey || !otherUser) {
-      setMessages([]);
-      return;
-    }
-
-    const otherKey = getIdentityKey(otherUser);
-    const convKey = buildConversationKey(meKey, otherKey);
-
-    setSelectedUser(otherUser);
+    const convKey = buildConversationKey(myKey, selectedUserKey);
     setLoadingMessages(true);
 
     const qMsgs = query(
@@ -90,10 +108,30 @@ export default function MessagesPage() {
 
     const unsub = onSnapshot(
       qMsgs,
-      (snap) => {
+      async (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setMessages(list);
         setLoadingMessages(false);
+
+        // ✅ marcar como leídos los mensajes que me llegan
+        try {
+          const batch = writeBatch(db);
+          let hasChanges = false;
+
+          snap.docs.forEach((docSnap) => {
+            const m = docSnap.data();
+            if (m.toUserId === myKey && m.read === false) {
+              batch.update(doc(db, "messages", docSnap.id), { read: true });
+              hasChanges = true;
+            }
+          });
+
+          if (hasChanges) {
+            await batch.commit();
+          }
+        } catch (err) {
+          console.error("Error marking messages as read:", err);
+        }
       },
       (err) => {
         console.error("Error loading messages:", err);
@@ -102,40 +140,42 @@ export default function MessagesPage() {
     );
 
     return () => unsub();
-  }, [user, selectedUserId, allUsers]);
+  }, [myKey, selectedUserKey]);
 
-  // 🔹 Scroll al último mensaje
+  // Scroll al último mensaje
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
-  const handleChangeUser = (id) => {
-    setSelectedUserId(id);
+  // =========================
+  //   CAMBIO DE USUARIO
+  // =========================
+  const handleChangeUser = (identityKey) => {
+    setSelectedUserKey(identityKey);
+    const found = allUsers.find((u) => u.identityKey === identityKey) || null;
+    setSelectedUser(found);
   };
 
+  // =========================
+  //   ENVIAR MENSAJE
+  // =========================
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!user || !selectedUserId || !text.trim()) return;
-
-    const otherUser = allUsers.find((u) => u.id === selectedUserId);
-    if (!otherUser) return;
-
-    const meKey = getIdentityKey(user);
-    const otherKey = getIdentityKey(otherUser);
-    const convKey = buildConversationKey(meKey, otherKey);
+    if (!myKey || !selectedUserKey || !text.trim()) return;
 
     try {
       setSending(true);
+      const convKey = buildConversationKey(myKey, selectedUserKey);
 
       await addDoc(collection(db, "messages"), {
         conversationKey: convKey,
-        fromUserId: meKey,
-        toUserId: otherKey,
-        fromUsername: user.username || user.loginUsername || meKey,
+        fromUserId: myKey,
+        toUserId: selectedUserKey,
+        fromUsername: user.username || user.loginUsername || "",
         toUsername:
-          otherUser.username || otherUser.loginUsername || otherKey,
+          selectedUser?.username || selectedUser?.loginUsername || "",
         text: text.trim(),
         createdAt: serverTimestamp(),
         read: false,
@@ -150,26 +190,22 @@ export default function MessagesPage() {
     }
   };
 
-  if (!user) {
-    return (
-      <div className="p-4">
-        <p>You must be logged in to see messages.</p>
-      </div>
-    );
-  }
-
+  // =========================
+  //   UI
+  // =========================
   return (
     <div className="space-y-4">
-      {/* 🔙 Back to Dashboard */}
-      <button
-        type="button"
-        className="btn btn-soft text-xs"
-        onClick={() => navigate("/dashboard")}
-      >
-        ← Back to Dashboard
-      </button>
-
-      <h1 className="text-lg font-semibold">Messages</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-lg font-semibold">Messages</h1>
+        {/* Botón simple para volver al dashboard */}
+        <button
+          type="button"
+          onClick={() => window.history.back()}
+          className="btn text-xs"
+        >
+          ← Back
+        </button>
+      </div>
 
       {/* Selector de usuario */}
       <div className="card space-y-2">
@@ -183,12 +219,12 @@ export default function MessagesPage() {
             ) : (
               <select
                 className="border rounded w-full px-2 py-1 text-sm"
-                value={selectedUserId}
+                value={selectedUserKey}
                 onChange={(e) => handleChangeUser(e.target.value)}
               >
                 <option value="">Select a user</option>
                 {allUsers.map((u) => (
-                  <option key={u.id} value={u.id}>
+                  <option key={u.identityKey} value={u.identityKey}>
                     {u.username || u.loginUsername || "(no username)"} ·{" "}
                     {u.role}
                   </option>
@@ -214,7 +250,7 @@ export default function MessagesPage() {
       </div>
 
       {/* Área de conversación */}
-      {selectedUserId ? (
+      {selectedUserKey ? (
         <div className="card flex flex-col h-[60vh] max-h-[500px]">
           {/* mensajes */}
           <div className="flex-1 overflow-auto pr-1 mb-2">
@@ -227,8 +263,7 @@ export default function MessagesPage() {
             ) : (
               <div className="space-y-2">
                 {messages.map((m) => {
-                  const meKey = getIdentityKey(user);
-                  const isMine = m.fromUserId === meKey;
+                  const isMine = m.fromUserId === myKey;
                   return (
                     <div
                       key={m.id}
