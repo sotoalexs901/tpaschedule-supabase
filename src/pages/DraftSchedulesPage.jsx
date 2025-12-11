@@ -134,121 +134,131 @@ export default function DraftSchedulesPage() {
     });
   };
 
-// 🧾 Exportar un draft a PDF usando la tabla "excel" pero ocupando bien la página
-const handleExportDraft = async (draft) => {
+// Exportar un draft a PDF como tabla legible (similar a Approved)
+const handleExportDraft = (draft) => {
   try {
-    const printContainer = document.createElement("div");
-    printContainer.style.position = "fixed";
-    printContainer.style.left = "-10000px";
-    printContainer.style.top = "0";
-    printContainer.style.backgroundColor = "#ffffff";
-    printContainer.style.zIndex = "-1";
-
-    const logoUrl =
-      AIRLINE_LOGOS[draft.airline] || AIRLINE_LOGOS["OTHER"] || "";
-
-    const weekLabel = formatWeekLabelFromSchedule(draft);
-
-    // ---- construimos header + tabla ----
-    let theadHtml = `
-      <thead>
-        <tr>
-          <th class="excel-header-employee">EMPLOYEE</th>
-    `;
-
-    DAY_KEYS.forEach((dKey) => {
-      const dayNum = draft.days?.[dKey] || "";
-      theadHtml += `<th>${DAY_LABELS[dKey]}${dayNum ? " " + dayNum : ""}</th>`;
-    });
-
-    theadHtml += `</tr></thead>`;
-
-    let tbodyHtml = "<tbody>";
-
-    (draft.grid || []).forEach((row) => {
-      const empName =
-        employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
-
-      tbodyHtml += `<tr>`;
-      tbodyHtml += `<td class="excel-employee-cell">${empName}</td>`;
-
-      DAY_KEYS.forEach((dKey) => {
-        const cellText = dayShiftsToText(row[dKey]);
-        const isOff = cellText === "OFF";
-        const cellClass = isOff ? "excel-cell-off" : "excel-cell-work";
-        tbodyHtml += `<td class="${cellClass}">${cellText}</td>`;
-      });
-
-      tbodyHtml += `</tr>`;
-    });
-
-    tbodyHtml += "</tbody>";
-
-    const logoHtml = logoUrl
-      ? `<img src="${logoUrl}" class="excel-logo" />`
-      : "";
-
-    printContainer.innerHTML = `
-      <div id="draft-excel-print">
-        <div class="excel-header">
-          ${logoHtml}
-          <h1 class="excel-title">
-            ${draft.airline || "AIRLINE"} - ${draft.department || "Department"}
-          </h1>
-          <div style="font-size:12px;margin-top:4px;">${weekLabel}</div>
-        </div>
-
-        <table class="excel-table">
-          ${theadHtml}
-          ${tbodyHtml}
-        </table>
-      </div>
-    `;
-
-    document.body.appendChild(printContainer);
-
-    const target = printContainer.querySelector("#draft-excel-print");
-    const canvas = await html2canvas(target, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-    });
-
-    // 🔍 Ajustar la imagen para que use ALTO y ANCHO de la página
-    const pdf = new jsPDF("landscape", "pt", "a4");
+    const pdf = new jsPDF("landscape", "pt", "letter");
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
 
-    const imgData = canvas.toDataURL("image/png");
+    const margin = 40;
+    let y = margin;
 
-    const margin = 20;
-    const maxWidth = pageWidth - margin * 2;
-    const maxHeight = pageHeight - margin * 2;
+    // ====== HEADER ======
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(14);
+    pdf.text(
+      `Draft Schedule: ${draft.airline || "AIRLINE"} — ${
+        draft.department || "Department"
+      }`,
+      margin,
+      y
+    );
+    y += 18;
 
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    const weekLabel = formatWeekLabelFromSchedule(draft);
+    pdf.text(`Week of: ${weekLabel}`, margin, y);
+    y += 24;
 
-    const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+    // ====== CONFIG TABLA ======
+    const empColWidth = 130; // ancho columna empleado
+    const availableWidth = pageWidth - margin * 2 - empColWidth;
+    const dayColWidth = availableWidth / DAY_KEYS.length;
+    const headerRowHeight = 20;
+    const rowHeight = 18;
 
-    const renderWidth = imgWidth * scale;
-    const renderHeight = imgHeight * scale;
+    // Función para dibujar header de la tabla (por página)
+    const drawTableHeader = () => {
+      let x = margin;
 
-    const x = (pageWidth - renderWidth) / 2;
-    const y = (pageHeight - renderHeight) / 2;
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
 
-    pdf.addImage(imgData, "PNG", x, y, renderWidth, renderHeight);
+      // celda EMPLOYEE
+      pdf.rect(x, y, empColWidth, headerRowHeight);
+      pdf.text("EMPLOYEE", x + 4, y + 13);
+      x += empColWidth;
+
+      // celdas días
+      DAY_KEYS.forEach((dKey) => {
+        const label = DAY_LABELS[dKey];
+        pdf.rect(x, y, dayColWidth, headerRowHeight);
+        pdf.text(label, x + 4, y + 13);
+        x += dayColWidth;
+      });
+
+      y += headerRowHeight;
+    };
+
+    // Dibujar header inicial
+    drawTableHeader();
+
+    // ====== FILAS DE EMPLEADOS ======
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+
+    const rows = draft.grid || [];
+
+    rows.forEach((row, index) => {
+      // salto de página si no cabe la siguiente fila
+      if (y + rowHeight > pageHeight - margin) {
+        pdf.addPage("letter", "landscape");
+        y = margin;
+
+        // volvemos a dibujar título pequeño arriba
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(11);
+        pdf.text(
+          `${draft.airline || "AIRLINE"} — ${
+            draft.department || "Department"
+          } (cont.)`,
+          margin,
+          y
+        );
+        y += 20;
+
+        drawTableHeader();
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+      }
+
+      let x = margin;
+
+      // celda empleado
+      const empName =
+        employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
+      pdf.rect(x, y, empColWidth, rowHeight);
+      pdf.text(empName, x + 4, y + 12);
+      x += empColWidth;
+
+      // celdas días
+      DAY_KEYS.forEach((dKey) => {
+        const txt = dayShiftsToText(row[dKey]); // "08:00-16:00, 17:00-19:00" o "OFF"
+        pdf.rect(x, y, dayColWidth, rowHeight);
+
+        // si el texto es muy largo, lo cortamos un poco para que quepa
+        let display = txt;
+        if (display.length > 14) {
+          display = display.slice(0, 13) + "…";
+        }
+
+        pdf.text(display, x + 3, y + 12);
+        x += dayColWidth;
+      });
+
+      y += rowHeight;
+    });
 
     pdf.save(
       `Draft_${draft.airline || "AIRLINE"}_${draft.department || "DEPT"}.pdf`
     );
-
-    document.body.removeChild(printContainer);
   } catch (err) {
     console.error("Error exporting draft PDF:", err);
     alert("Error exporting draft PDF. Check console for details.");
   }
 };
-
 
   // ❌ Borrar draft
   const handleDeleteDraft = async (draftId) => {
