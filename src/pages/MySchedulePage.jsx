@@ -50,6 +50,16 @@ export default function MySchedulePage() {
   const [mySchedules, setMySchedules] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // estado para expandir/colapsar coworkers por horario
+  const [openCoworkers, setOpenCoworkers] = useState({});
+
+  const toggleCoworkers = (scheduleId) => {
+    setOpenCoworkers((prev) => ({
+      ...prev,
+      [scheduleId]: !prev[scheduleId],
+    }));
+  };
+
   useEffect(() => {
     async function loadData() {
       if (!user) return;
@@ -121,7 +131,9 @@ export default function MySchedulePage() {
   if (!currentEmployee && !loading) {
     return (
       <div className="p-6">
-        <h1 className="text-lg font-semibold mb-2">My Schedule</h1>
+        <h1 className="text-xl font-semibold mb-2 text-slate-900">
+          My Schedule
+        </h1>
         <p className="text-sm text-slate-600">
           We could not match your user with any employee profile.
           <br />
@@ -137,14 +149,20 @@ export default function MySchedulePage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">My Schedule</h1>
-        <p className="text-sm text-slate-700">
+      {/* HEADER */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5">
+        <p className="text-[11px] tracking-[0.25em] uppercase text-blue-500 mb-1">
+          Crew Portal
+        </p>
+        <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
+          My Schedule
+        </h1>
+        <p className="text-sm text-slate-700 mt-1">
           {currentEmployee?.name || user.username} · {user.role}
         </p>
-        <p className="text-xs text-slate-500 mt-1">
-          View your approved schedules and see who is on duty with you each
-          day.
+        <p className="text-xs md:text-sm text-slate-500 mt-2 max-w-xl">
+          Review your approved weekly schedules and, when needed, expand the
+          panel to see which coworkers are on duty with you each day.
         </p>
       </div>
 
@@ -175,7 +193,6 @@ export default function MySchedulePage() {
             const myDayShifts = myRow ? myRow[dayKey] : null;
             if (!hasWork(myDayShifts)) return null; // tú estás OFF ese día
 
-            // Empleados (distintos a ti) que tienen algún shift ese día
             const names = Array.from(
               new Set(
                 (sch.grid || [])
@@ -192,19 +209,21 @@ export default function MySchedulePage() {
             };
           }).filter(Boolean);
 
+          const isOpen = !!openCoworkers[sch.id];
+
           return (
             <div
               key={sch.id}
-              className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3"
+              className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5 space-y-4"
             >
-              {/* Encabezado del schedule */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* ENCABEZADO DEL SCHEDULE */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">
                     {sch.airline} · {sch.department}
                   </h2>
-                  <p className="text-[11px] text-slate-500">
-                    WEEKLY SCHEDULE •{" "}
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    WEEKLY SCHEDULE ·{" "}
                     {sch.days
                       ? DAY_KEYS.map(
                           (key) =>
@@ -217,19 +236,19 @@ export default function MySchedulePage() {
                 </div>
               </div>
 
-              {/* Tabla compacta SOLO con tu horario */}
+              {/* TU HORARIO PERSONAL */}
               {myRow ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-[11px] border border-slate-200">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/60">
+                  <table className="min-w-full text-xs">
                     <thead>
-                      <tr className="bg-slate-100">
-                        <th className="px-2 py-1 border border-slate-200 text-left">
-                          YOUR SCHEDULE
+                      <tr className="bg-slate-100/80">
+                        <th className="px-3 py-2 border border-slate-200 text-left font-semibold text-slate-700">
+                          Your schedule
                         </th>
                         {DAY_KEYS.map((key) => (
                           <th
                             key={key}
-                            className="px-2 py-1 border border-slate-200 text-center"
+                            className="px-3 py-2 border border-slate-200 text-center font-semibold text-slate-700"
                           >
                             {DAY_LABELS[key]}
                           </th>
@@ -238,9 +257,9 @@ export default function MySchedulePage() {
                     </thead>
                     <tbody>
                       {/* 1ra fila: primer turno */}
-                      <tr className="bg-slate-50">
+                      <tr className="bg-white">
                         <td
-                          className="px-2 py-1 border border-slate-200 font-semibold"
+                          className="px-3 py-2 border border-slate-200 font-semibold text-slate-800"
                           rowSpan={2}
                         >
                           {currentEmployee.name}
@@ -248,18 +267,18 @@ export default function MySchedulePage() {
                         {DAY_KEYS.map((key) => (
                           <td
                             key={key}
-                            className="px-2 py-1 border border-slate-200 text-center"
+                            className="px-2 py-1.5 border border-slate-200 text-center text-slate-800"
                           >
                             {getShiftText(myRow[key], 0)}
                           </td>
                         ))}
                       </tr>
                       {/* 2da fila: segundo turno (si aplica) */}
-                      <tr className="bg-slate-50">
+                      <tr className="bg-slate-50/70">
                         {DAY_KEYS.map((key) => (
                           <td
                             key={key}
-                            className="px-2 py-1 border border-slate-200 text-center"
+                            className="px-2 py-1.5 border border-slate-200 text-center text-slate-800"
                           >
                             {getShiftText(myRow[key], 1)}
                           </td>
@@ -274,29 +293,52 @@ export default function MySchedulePage() {
                 </p>
               )}
 
-              {/* Cuadro: Employees on duty with you */}
-              <div className="pt-3 border-t border-slate-100">
-                <p className="text-sm font-semibold text-slate-800 mb-1">
-                  Employees on duty with you
-                </p>
+              {/* PANEL DESPLEGABLE: EMPLOYEES ON DUTY WITH YOU */}
+              <div className="border-t border-slate-100 pt-3">
+                <button
+                  type="button"
+                  onClick={() => toggleCoworkers(sch.id)}
+                  className="flex items-center justify-between w-full px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition text-xs md:text-sm text-slate-800"
+                >
+                  <span className="font-semibold">
+                    Employees on duty with you
+                  </span>
+                  <span className="flex items-center gap-2 text-[11px] text-slate-500">
+                    {coworkersByDay.length > 0
+                      ? `${coworkersByDay.length} day${
+                          coworkersByDay.length !== 1 ? "s" : ""
+                        } listed`
+                      : "No coworkers listed"}
+                    <span className="text-slate-500">
+                      {isOpen ? "▲" : "▼"}
+                    </span>
+                  </span>
+                </button>
 
-                {coworkersByDay.length === 0 ? (
-                  <p className="text-[11px] text-slate-500">
-                    No coworkers assigned with you in this schedule.
-                  </p>
-                ) : (
-                  <div className="space-y-1 text-[11px] text-slate-700">
-                    {coworkersByDay.map(({ key, names }) => (
-                      <div key={key}>
-                        <span className="font-semibold">
-                          {sch.airline} {sch.department} · {DAY_FULL[key]}
-                          {sch.days?.[key] ? ` ${sch.days[key]}` : ""}:
-                        </span>{" "}
-                        {names.length > 0
-                          ? names.join(", ")
-                          : "No coworkers scheduled."}
-                      </div>
-                    ))}
+                {isOpen && (
+                  <div className="mt-2 rounded-lg border border-slate-100 bg-white px-3 py-2 space-y-1 text-[11px] md:text-xs text-slate-700">
+                    {coworkersByDay.length === 0 ? (
+                      <p className="text-slate-500">
+                        No coworkers assigned with you in this schedule.
+                      </p>
+                    ) : (
+                      coworkersByDay.map(({ key, names }) => (
+                        <div
+                          key={key}
+                          className="flex flex-col sm:flex-row sm:items-baseline sm:gap-1"
+                        >
+                          <span className="font-semibold min-w-[130px]">
+                            {sch.airline} {sch.department} · {DAY_FULL[key]}
+                            {sch.days?.[key] ? ` ${sch.days[key]}` : ""}:
+                          </span>
+                          <span className="text-slate-700">
+                            {names.length > 0
+                              ? names.join(", ")
+                              : "No coworkers scheduled."}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
