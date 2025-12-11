@@ -8,11 +8,9 @@ import {
   query,
   serverTimestamp,
 } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db } from "../firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "../firebase";   // 👈 usamos storage desde firebase.js
 import { useUser } from "../UserContext.jsx";
-
-const storage = getStorage(); // usa el app por defecto ya inicializado
 
 export default function CrewAnnouncementsPage() {
   const { user } = useUser();
@@ -30,7 +28,7 @@ export default function CrewAnnouncementsPage() {
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [body, setBody] = useState("");
-  const [imageFile, setImageFile] = useState(null); // 👈 NUEVO
+  const [imageFile, setImageFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState([]);
@@ -48,6 +46,7 @@ export default function CrewAnnouncementsPage() {
         setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (err) {
         console.error("Error loading announcements:", err);
+        setMessage("Error loading announcements. Check console.");
       } finally {
         setLoading(false);
       }
@@ -67,16 +66,24 @@ export default function CrewAnnouncementsPage() {
     try {
       setSaving(true);
 
-      // 1) Si hay imagen, subirla primero
+      // 1) Subir imagen (si existe). Si falla, solo mostramos aviso pero seguimos.
       let imageUrl = "";
       if (imageFile) {
-        const safeName = imageFile.name.replace(/\s+/g, "_");
-        const storageRef = ref(
-          storage,
-          `employeeAnnouncements/${Date.now()}_${safeName}`
-        );
-        const snap = await uploadBytes(storageRef, imageFile);
-        imageUrl = await getDownloadURL(snap.ref);
+        try {
+          const safeName = imageFile.name.replace(/\s+/g, "_");
+          const storageRef = ref(
+            storage,
+            `employeeAnnouncements/${Date.now()}_${safeName}`
+          );
+          const snap = await uploadBytes(storageRef, imageFile);
+          imageUrl = await getDownloadURL(snap.ref);
+        } catch (uploadErr) {
+          console.error("Error uploading image:", uploadErr);
+          setMessage(
+            "Image upload failed (check storage rules). Posting announcement without image."
+          );
+          imageUrl = "";
+        }
       }
 
       // 2) Guardar anuncio en Firestore
@@ -84,7 +91,7 @@ export default function CrewAnnouncementsPage() {
         title: title || "Announcement",
         subtitle: subtitle || "",
         body: body || "",
-        imageUrl: imageUrl || "",
+        imageUrl,
         createdAt: serverTimestamp(),
         createdBy: user.username || user.id,
       });
@@ -103,8 +110,8 @@ export default function CrewAnnouncementsPage() {
       const snap = await getDocs(qAnn);
       setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (err) {
-      console.error(err);
-      setMessage("Error posting announcement.");
+      console.error("Error posting announcement:", err);
+      setMessage("Error posting announcement. Check console for details.");
     } finally {
       setSaving(false);
     }
@@ -116,7 +123,6 @@ export default function CrewAnnouncementsPage() {
       setImageFile(null);
       return;
     }
-    // opcional: limitar a imágenes
     if (!file.type.startsWith("image/")) {
       alert("Please select an image file (jpg, png, etc).");
       return;
@@ -241,7 +247,6 @@ export default function CrewAnnouncementsPage() {
                 </p>
               )}
 
-              {/* Mostrar imagen si existe */}
               {a.imageUrl && (
                 <div className="mt-2">
                   <img
