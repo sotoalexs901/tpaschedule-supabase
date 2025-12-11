@@ -14,12 +14,27 @@ const DAY_LABELS = {
   sat: "SAT",
   sun: "SUN",
 };
+const DAY_FULL = {
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+  sun: "Sunday",
+};
 
 function getShiftText(shifts, idx) {
   const s = (shifts && shifts[idx]) || null;
   if (!s || !s.start || s.start === "OFF") return "OFF";
   if (!s.end) return s.start;
   return `${s.start} - ${s.end}`;
+}
+
+// ¿Ese arreglo de shifts tiene trabajo real?
+function hasWork(shifts) {
+  if (!Array.isArray(shifts)) return false;
+  return shifts.some((s) => s && s.start && s.start !== "OFF");
 }
 
 // helper para comparar strings
@@ -50,11 +65,6 @@ export default function MySchedulePage() {
         const uName = norm(user.username);
 
         // 2) Buscar el empleado asociado al usuario
-        //    PRIORIDAD:
-        //    - loginUsername  (recomendado)
-        //    - username
-        //    - code
-        //    - name (solo como último recurso)
         const me =
           empList.find((e) => norm(e.loginUsername) === uName) ||
           empList.find((e) => norm(e.username) === uName) ||
@@ -128,13 +138,13 @@ export default function MySchedulePage() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">My Schedule</h1>
-        <p className="text-sm text-slate-600">
+        <h1 className="text-2xl font-semibold text-slate-900">My Schedule</h1>
+        <p className="text-sm text-slate-700">
           {currentEmployee?.name || user.username} · {user.role}
         </p>
         <p className="text-xs text-slate-500 mt-1">
-          View your approved schedules and see the operational crew assigned to
-          each airline schedule.
+          View your approved schedules and see who is on duty with you each
+          day.
         </p>
       </div>
 
@@ -160,14 +170,27 @@ export default function MySchedulePage() {
             return acc;
           }, {});
 
-          // Crew operativo de este schedule (todos los empleados en grid)
-          const crewNames = Array.from(
-            new Set(
-              (sch.grid || [])
-                .map((row) => empMap[row.employeeId])
-                .filter(Boolean)
-            )
-          );
+          // Para cada día en el que tú trabajas, buscar quién más trabaja
+          const coworkersByDay = DAY_KEYS.map((dayKey) => {
+            const myDayShifts = myRow ? myRow[dayKey] : null;
+            if (!hasWork(myDayShifts)) return null; // tú estás OFF ese día
+
+            // Empleados (distintos a ti) que tienen algún shift ese día
+            const names = Array.from(
+              new Set(
+                (sch.grid || [])
+                  .filter((row) => row.employeeId !== currentEmployee.id)
+                  .filter((row) => hasWork(row[dayKey]))
+                  .map((row) => empMap[row.employeeId])
+                  .filter(Boolean)
+              )
+            );
+
+            return {
+              key: dayKey,
+              names,
+            };
+          }).filter(Boolean);
 
           return (
             <div
@@ -177,8 +200,8 @@ export default function MySchedulePage() {
               {/* Encabezado del schedule */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold text-slate-900">
-                    {sch.airline} — {sch.department}
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {sch.airline} · {sch.department}
                   </h2>
                   <p className="text-[11px] text-slate-500">
                     WEEKLY SCHEDULE •{" "}
@@ -194,14 +217,14 @@ export default function MySchedulePage() {
                 </div>
               </div>
 
-              {/* Tabla compacta con la fila del usuario */}
+              {/* Tabla compacta SOLO con tu horario */}
               {myRow ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-[11px] border border-slate-200">
                     <thead>
                       <tr className="bg-slate-100">
                         <th className="px-2 py-1 border border-slate-200 text-left">
-                          EMPLOYEE
+                          YOUR SCHEDULE
                         </th>
                         {DAY_KEYS.map((key) => (
                           <th
@@ -214,7 +237,7 @@ export default function MySchedulePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {/* Fila 1: primer turno */}
+                      {/* 1ra fila: primer turno */}
                       <tr className="bg-slate-50">
                         <td
                           className="px-2 py-1 border border-slate-200 font-semibold"
@@ -231,7 +254,7 @@ export default function MySchedulePage() {
                           </td>
                         ))}
                       </tr>
-                      {/* Fila 2: segundo turno */}
+                      {/* 2da fila: segundo turno (si aplica) */}
                       <tr className="bg-slate-50">
                         {DAY_KEYS.map((key) => (
                           <td
@@ -251,19 +274,30 @@ export default function MySchedulePage() {
                 </p>
               )}
 
-              {/* Crew operacional por aerolínea (todo el grid) */}
-              <div className="pt-2 border-t border-slate-100">
-                <p className="text-[11px] font-semibold text-slate-700 mb-1">
-                  Crew in this schedule (operational team):
+              {/* Cuadro: Employees on duty with you */}
+              <div className="pt-3 border-t border-slate-100">
+                <p className="text-sm font-semibold text-slate-800 mb-1">
+                  Employees on duty with you
                 </p>
-                {crewNames.length > 0 ? (
-                  <p className="text-[11px] text-slate-600">
-                    {crewNames.join(", ")}
+
+                {coworkersByDay.length === 0 ? (
+                  <p className="text-[11px] text-slate-500">
+                    No coworkers assigned with you in this schedule.
                   </p>
                 ) : (
-                  <p className="text-[11px] text-slate-400">
-                    No employees found in this schedule.
-                  </p>
+                  <div className="space-y-1 text-[11px] text-slate-700">
+                    {coworkersByDay.map(({ key, names }) => (
+                      <div key={key}>
+                        <span className="font-semibold">
+                          {sch.airline} {sch.department} · {DAY_FULL[key]}
+                          {sch.days?.[key] ? ` ${sch.days[key]}` : ""}:
+                        </span>{" "}
+                        {names.length > 0
+                          ? names.join(", ")
+                          : "No coworkers scheduled."}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
