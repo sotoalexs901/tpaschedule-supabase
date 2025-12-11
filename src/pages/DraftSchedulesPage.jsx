@@ -12,6 +12,7 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
@@ -22,6 +23,25 @@ const DAY_LABELS = {
   fri: "FRIDAY",
   sat: "SATURD",
   sun: "SUND",
+};
+
+// 🔵 Logos oficiales (mismo mapping que usas en Schedule/Approved)
+const AIRLINE_LOGOS = {
+  SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
+  "WL Havana Air":
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2006_28_07%20p.m..png?alt=media&token=7bcf90fd-c854-400e-a28a-f838adca89f4",
+  "WL Invicta":
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_49%20p.m..png?alt=media&token=092a1deb-3285-41e1-ab0c-2e48a8faab92",
+  AV: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_37%20p.m..png?alt=media&token=f133d1c8-51f9-4513-96df-8a75c6457b5b",
+  EA: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_41%20p.m..png?alt=media&token=13fe584f-078f-4073-8d92-763ac549e5eb",
+  WCHR:
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_32%20p.m..png?alt=media&token=4f7e9ddd-692b-4288-af0a-8027a1fc6e1c",
+  CABIN:
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_28%20p.m..png?alt=media&token=b269ad02-0761-4b6b-b2f1-b510365cce49",
+  "AA-BSO":
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_25%20p.m..png?alt=media&token=09862a10-d237-43e9-a373-8bd07c30ce62",
+  OTHER:
+    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
 };
 
 // Helper: convierte los shifts de un día a texto
@@ -114,62 +134,105 @@ export default function DraftSchedulesPage() {
     });
   };
 
-  // Exportar un draft a PDF (simple, legible)
-  const handleExportDraft = (draft) => {
+  // 🧾 Exportar un draft a PDF con la MISMA tabla "excel" que Approved
+  const handleExportDraft = async (draft) => {
     try {
-      const pdf = new jsPDF("portrait", "pt", "letter");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const marginX = 40;
-      let y = 50;
+      const printContainer = document.createElement("div");
+      printContainer.style.position = "fixed";
+      printContainer.style.left = "-10000px";
+      printContainer.style.top = "0";
+      printContainer.style.backgroundColor = "#ffffff";
+      printContainer.style.zIndex = "-1";
 
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(14);
-      pdf.text(
-        `Draft Schedule: ${draft.airline || "AIRLINE"} — ${
-          draft.department || "Department"
-        }`,
-        marginX,
-        y
-      );
-      y += 20;
+      const logoUrl =
+        AIRLINE_LOGOS[draft.airline] || AIRLINE_LOGOS["OTHER"] || "";
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
       const weekLabel = formatWeekLabelFromSchedule(draft);
-      pdf.text(`Week of: ${weekLabel}`, marginX, y);
-      y += 20;
 
-      pdf.setFontSize(9);
+      // Construimos header + tabla "excel-table"
+      let theadHtml = `
+        <thead>
+          <tr>
+            <th class="excel-header-employee">EMPLOYEE</th>
+      `;
 
-      // Por cada empleado: 1 línea con todos los días
+      DAY_KEYS.forEach((dKey) => {
+        const dayNum = draft.days?.[dKey] || "";
+        theadHtml += `<th>${DAY_LABELS[dKey]}${
+          dayNum ? " " + dayNum : ""
+        }</th>`;
+      });
+
+      theadHtml += `</tr></thead>`;
+
+      let tbodyHtml = "<tbody>";
+
       (draft.grid || []).forEach((row) => {
         const empName =
           employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
 
-        const parts = DAY_KEYS.map((dKey) => {
-          const dayText = dayShiftsToText(row[dKey]);
-          return `${DAY_LABELS[dKey]}: ${dayText}`;
+        tbodyHtml += `<tr>`;
+        tbodyHtml += `<td class="excel-employee-cell">${empName}</td>`;
+
+        DAY_KEYS.forEach((dKey) => {
+          const cellText = dayShiftsToText(row[dKey]);
+          const isOff = cellText === "OFF";
+          const cellClass = isOff ? "excel-cell-off" : "excel-cell-work";
+          tbodyHtml += `<td class="${cellClass}">${cellText}</td>`;
         });
 
-        const line = `${empName}  |  ${parts.join("  |  ")}`;
-
-        const lines = pdf.splitTextToSize(line, pageWidth - marginX * 2);
-
-        lines.forEach((ln) => {
-          if (y > pdf.internal.pageSize.getHeight() - 40) {
-            pdf.addPage();
-            y = 40;
-          }
-          pdf.text(ln, marginX, y);
-          y += 12;
-        });
-
-        y += 6; // espacio entre empleados
+        tbodyHtml += `</tr>`;
       });
 
+      tbodyHtml += "</tbody>";
+
+      const logoHtml = logoUrl
+        ? `<img src="${logoUrl}" class="excel-logo" />`
+        : "";
+
+      printContainer.innerHTML = `
+        <div id="draft-excel-print">
+          <div class="excel-header">
+            ${logoHtml}
+            <h1 class="excel-title">
+              ${draft.airline || "AIRLINE"} - ${draft.department || "Department"}
+            </h1>
+            <div style="font-size:12px;margin-top:4px;">${weekLabel}</div>
+          </div>
+
+          <table class="excel-table">
+            ${theadHtml}
+            ${tbodyHtml}
+          </table>
+        </div>
+      `;
+
+      document.body.appendChild(printContainer);
+
+      const target = printContainer.querySelector("#draft-excel-print");
+      const canvas = await html2canvas(target, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
+
+      const pdf = new jsPDF("landscape", "pt", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const imgData = canvas.toDataURL("image/png");
+      const imgWidth = pageWidth - 40; // márgenes
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      const x = 20;
+      const y = 20;
+
+      pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight);
       pdf.save(
         `Draft_${draft.airline || "AIRLINE"}_${draft.department || "DEPT"}.pdf`
       );
+
+      document.body.removeChild(printContainer);
     } catch (err) {
       console.error("Error exporting draft PDF:", err);
       alert("Error exporting draft PDF. Check console for details.");
