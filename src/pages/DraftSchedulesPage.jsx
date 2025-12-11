@@ -134,110 +134,121 @@ export default function DraftSchedulesPage() {
     });
   };
 
-  // 🧾 Exportar un draft a PDF con la MISMA tabla "excel" que Approved
-  const handleExportDraft = async (draft) => {
-    try {
-      const printContainer = document.createElement("div");
-      printContainer.style.position = "fixed";
-      printContainer.style.left = "-10000px";
-      printContainer.style.top = "0";
-      printContainer.style.backgroundColor = "#ffffff";
-      printContainer.style.zIndex = "-1";
+// 🧾 Exportar un draft a PDF usando la tabla "excel" pero ocupando bien la página
+const handleExportDraft = async (draft) => {
+  try {
+    const printContainer = document.createElement("div");
+    printContainer.style.position = "fixed";
+    printContainer.style.left = "-10000px";
+    printContainer.style.top = "0";
+    printContainer.style.backgroundColor = "#ffffff";
+    printContainer.style.zIndex = "-1";
 
-      const logoUrl =
-        AIRLINE_LOGOS[draft.airline] || AIRLINE_LOGOS["OTHER"] || "";
+    const logoUrl =
+      AIRLINE_LOGOS[draft.airline] || AIRLINE_LOGOS["OTHER"] || "";
 
-      const weekLabel = formatWeekLabelFromSchedule(draft);
+    const weekLabel = formatWeekLabelFromSchedule(draft);
 
-      // Construimos header + tabla "excel-table"
-      let theadHtml = `
-        <thead>
-          <tr>
-            <th class="excel-header-employee">EMPLOYEE</th>
-      `;
+    // ---- construimos header + tabla ----
+    let theadHtml = `
+      <thead>
+        <tr>
+          <th class="excel-header-employee">EMPLOYEE</th>
+    `;
+
+    DAY_KEYS.forEach((dKey) => {
+      const dayNum = draft.days?.[dKey] || "";
+      theadHtml += `<th>${DAY_LABELS[dKey]}${dayNum ? " " + dayNum : ""}</th>`;
+    });
+
+    theadHtml += `</tr></thead>`;
+
+    let tbodyHtml = "<tbody>";
+
+    (draft.grid || []).forEach((row) => {
+      const empName =
+        employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
+
+      tbodyHtml += `<tr>`;
+      tbodyHtml += `<td class="excel-employee-cell">${empName}</td>`;
 
       DAY_KEYS.forEach((dKey) => {
-        const dayNum = draft.days?.[dKey] || "";
-        theadHtml += `<th>${DAY_LABELS[dKey]}${
-          dayNum ? " " + dayNum : ""
-        }</th>`;
+        const cellText = dayShiftsToText(row[dKey]);
+        const isOff = cellText === "OFF";
+        const cellClass = isOff ? "excel-cell-off" : "excel-cell-work";
+        tbodyHtml += `<td class="${cellClass}">${cellText}</td>`;
       });
 
-      theadHtml += `</tr></thead>`;
+      tbodyHtml += `</tr>`;
+    });
 
-      let tbodyHtml = "<tbody>";
+    tbodyHtml += "</tbody>";
 
-      (draft.grid || []).forEach((row) => {
-        const empName =
-          employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
+    const logoHtml = logoUrl
+      ? `<img src="${logoUrl}" class="excel-logo" />`
+      : "";
 
-        tbodyHtml += `<tr>`;
-        tbodyHtml += `<td class="excel-employee-cell">${empName}</td>`;
-
-        DAY_KEYS.forEach((dKey) => {
-          const cellText = dayShiftsToText(row[dKey]);
-          const isOff = cellText === "OFF";
-          const cellClass = isOff ? "excel-cell-off" : "excel-cell-work";
-          tbodyHtml += `<td class="${cellClass}">${cellText}</td>`;
-        });
-
-        tbodyHtml += `</tr>`;
-      });
-
-      tbodyHtml += "</tbody>";
-
-      const logoHtml = logoUrl
-        ? `<img src="${logoUrl}" class="excel-logo" />`
-        : "";
-
-      printContainer.innerHTML = `
-        <div id="draft-excel-print">
-          <div class="excel-header">
-            ${logoHtml}
-            <h1 class="excel-title">
-              ${draft.airline || "AIRLINE"} - ${draft.department || "Department"}
-            </h1>
-            <div style="font-size:12px;margin-top:4px;">${weekLabel}</div>
-          </div>
-
-          <table class="excel-table">
-            ${theadHtml}
-            ${tbodyHtml}
-          </table>
+    printContainer.innerHTML = `
+      <div id="draft-excel-print">
+        <div class="excel-header">
+          ${logoHtml}
+          <h1 class="excel-title">
+            ${draft.airline || "AIRLINE"} - ${draft.department || "Department"}
+          </h1>
+          <div style="font-size:12px;margin-top:4px;">${weekLabel}</div>
         </div>
-      `;
 
-      document.body.appendChild(printContainer);
+        <table class="excel-table">
+          ${theadHtml}
+          ${tbodyHtml}
+        </table>
+      </div>
+    `;
 
-      const target = printContainer.querySelector("#draft-excel-print");
-      const canvas = await html2canvas(target, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-      });
+    document.body.appendChild(printContainer);
 
-      const pdf = new jsPDF("landscape", "pt", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
+    const target = printContainer.querySelector("#draft-excel-print");
+    const canvas = await html2canvas(target, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+    });
 
-      const imgData = canvas.toDataURL("image/png");
-      const imgWidth = pageWidth - 40; // márgenes
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    // 🔍 Ajustar la imagen para que use ALTO y ANCHO de la página
+    const pdf = new jsPDF("landscape", "pt", "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
 
-      const x = 20;
-      const y = 20;
+    const imgData = canvas.toDataURL("image/png");
 
-      pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight);
-      pdf.save(
-        `Draft_${draft.airline || "AIRLINE"}_${draft.department || "DEPT"}.pdf`
-      );
+    const margin = 20;
+    const maxWidth = pageWidth - margin * 2;
+    const maxHeight = pageHeight - margin * 2;
 
-      document.body.removeChild(printContainer);
-    } catch (err) {
-      console.error("Error exporting draft PDF:", err);
-      alert("Error exporting draft PDF. Check console for details.");
-    }
-  };
+    const imgWidth = canvas.width;
+    const imgHeight = canvas.height;
+
+    const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+
+    const renderWidth = imgWidth * scale;
+    const renderHeight = imgHeight * scale;
+
+    const x = (pageWidth - renderWidth) / 2;
+    const y = (pageHeight - renderHeight) / 2;
+
+    pdf.addImage(imgData, "PNG", x, y, renderWidth, renderHeight);
+
+    pdf.save(
+      `Draft_${draft.airline || "AIRLINE"}_${draft.department || "DEPT"}.pdf`
+    );
+
+    document.body.removeChild(printContainer);
+  } catch (err) {
+    console.error("Error exporting draft PDF:", err);
+    alert("Error exporting draft PDF. Check console for details.");
+  }
+};
+
 
   // ❌ Borrar draft
   const handleDeleteDraft = async (draftId) => {
