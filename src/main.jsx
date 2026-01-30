@@ -36,6 +36,11 @@ import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx"; // 👈 NUEVO
 
+// ✅ WCHR PAGES (NUEVO)
+import WCHRScan from "./pages/WCHRScan.jsx";
+import MyWCHRReports from "./pages/MyWCHRReports.jsx";
+import WCHRFlights from "./pages/WCHRFlights.jsx";
+
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser();
@@ -116,6 +121,38 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+
+          {/* ✅ WCHR – AGENT / SUPERVISOR */}
+          <Route
+            path="wchr/scan"
+            element={
+              <ProtectedRoute roles={["agent", "supervisor"]}>
+                <WCHRScan />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="wchr/my-reports"
+            element={
+              <ProtectedRoute roles={["agent", "supervisor"]}>
+                <MyWCHRReports />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ✅ WCHR – ADMIN / MANAGERS */}
+          <Route
+            path="wchr/admin/flights"
+            element={
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+                <WCHRFlights />
+              </ProtectedRoute>
+            }
+          />
+          {/* Si quieres que supervisor también pueda cerrar vuelos, usa:
+              roles={["station_manager", "duty_manager", "supervisor"]}
+          */}
 
           {/* SOLO STATION MANAGER: anuncios para empleados */}
           <Route
@@ -263,10 +300,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
 // ✅ Registro del Service Worker para PWA (no rompe nada si falla)
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/sw.js")
-      .catch((err) => {
-        console.error("Error registrando el service worker:", err);
-      });
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.error("Error registrando el service worker:", err);
+    });
   });
 }
