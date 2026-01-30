@@ -106,6 +106,9 @@ export default function AppLayout() {
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
 
+  const isAgentOrSupervisor =
+    user?.role === "agent" || user?.role === "supervisor";
+
   return (
     <div className="min-h-screen flex bg-slate-100">
       {/* overlay negro cuando el menú está abierto en móvil */}
@@ -168,6 +171,21 @@ export default function AppLayout() {
 
           {isManager && <NavItem to="/schedule" label="Create Schedule" />}
 
+          {/* ✅ WCHR REPORTS — AGENT / SUPERVISOR */}
+          {isAgentOrSupervisor && (
+            <>
+              <NavItem to="/wchr/scan" label="WCHR: Scan Boarding Pass" />
+              <NavItem to="/wchr/my-reports" label="WCHR: My Reports" />
+            </>
+          )}
+
+          {/* ✅ WCHR ADMIN — STATION / DUTY */}
+          {isManager && (
+            <>
+              <NavItem to="/wchr/admin/flights" label="WCHR: Close Flight" />
+            </>
+          )}
+
           {/* SOLO STATION MANAGER */}
           {user?.role === "station_manager" && (
             <>
@@ -201,7 +219,7 @@ export default function AppLayout() {
           )}
 
           {/* SOLO AGENT / SUPERVISOR */}
-          {(user?.role === "agent" || user?.role === "supervisor") && (
+          {isAgentOrSupervisor && (
             <>
               <NavItem to="/my-schedule" label="My Schedule" />
               <NavItem to="/request-dayoff-internal" label="Request Day Off" />
