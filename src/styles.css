@@ -994,3 +994,38 @@ aside.w-64 p {
 .mobile-logout-btn:hover {
   background: #fecaca;
 }
+/* =========================================================
+   AIRLINE THEMES (por código, NO por nombre fijo)
+   Usa variables para color por aerolínea
+========================================================= */
+
+:root {
+  --airline-sy: #F28C28;
+  --airline-wl: #3A7BD5;   /* ✅ WL genérico (Havana / lo que sea) */
+  --airline-av: #D22630;
+  --airline-ea: #003E7E;
+  --airline-wchr: #7D39C7;
+  --airline-cabin: #1FA86A;
+  --airline-aa-bso: #A8A8A8;
+  --airline-other: #555555;
+}
+
+/* Para el título del ScheduleGrid */
+.sch-title.airline-sy    { color: var(--airline-sy) !important; }
+.sch-title.airline-wl    { color: var(--airline-wl) !important; }
+.sch-title.airline-av    { color: var(--airline-av) !important; }
+.sch-title.airline-ea    { color: var(--airline-ea) !important; }
+.sch-title.airline-wchr  { color: var(--airline-wchr) !important; }
+.sch-title.airline-cabin { color: var(--airline-cabin) !important; }
+.sch-title.airline-aa-bso{ color: var(--airline-aa-bso) !important; }
+.sch-title.airline-other { color: var(--airline-other) !important; }
+
+/* Para los headers de días (la fila de arriba) */
+.sch-header.airline-sy     { background-color: var(--airline-sy) !important; }
+.sch-header.airline-wl     { background-color: var(--airline-wl) !important; }
+.sch-header.airline-av     { background-color: var(--airline-av) !important; }
+.sch-header.airline-ea     { background-color: var(--airline-ea) !important; }
+.sch-header.airline-wchr   { background-color: var(--airline-wchr) !important; }
+.sch-header.airline-cabin  { background-color: var(--airline-cabin) !important; }
+.sch-header.airline-aa-bso { background-color: var(--airline-aa-bso) !important; }
+.sch-header.airline-other  { background-color: var(--airline-other) !important; }
