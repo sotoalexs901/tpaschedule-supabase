@@ -15,7 +15,7 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// 🔵 Logos oficiales desde Firebase
+// 🔵 Logos oficiales desde Firebase (mantener llaves internas estables)
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
   "WL Havana Air":
@@ -91,7 +91,11 @@ export default function SchedulePage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [airline, setAirline] = useState("");
+  // ✅ airlineKey = llave interna (para budgets/logos/DB)
+  const [airlineKey, setAirlineKey] = useState("");
+  // ✅ airlineDisplayName = texto visible/editable (solo WL Havana Air)
+  const [airlineDisplayName, setAirlineDisplayName] = useState("");
+
   const [department, setDepartment] = useState("");
   const [dayNumbers, setDayNumbers] = useState({
     mon: "",
@@ -113,9 +117,15 @@ export default function SchedulePage() {
   // 🔁 Si venimos desde un ApprovedScheduleView con plantilla:
   useEffect(() => {
     if (location.state?.template) {
-      const { airline, department, days, grid } = location.state.template;
+      const { airline, airlineDisplayName, department, days, grid } =
+        location.state.template;
 
-      if (airline) setAirline(airline);
+      // airline = llave interna
+      if (airline) setAirlineKey(airline);
+      // airlineDisplayName = visible
+      if (airlineDisplayName) setAirlineDisplayName(airlineDisplayName);
+      else if (airline) setAirlineDisplayName(airline);
+
       if (department) setDepartment(department);
       if (days) setDayNumbers(days);
       if (grid) setRows(grid);
@@ -129,7 +139,7 @@ export default function SchedulePage() {
     );
   }, []);
 
-  // Cargar budgets por aerolínea
+  // Cargar budgets por aerolínea (usa llave interna)
   useEffect(() => {
     getDocs(collection(db, "airlineBudgets")).then((snap) => {
       const map = {};
@@ -297,7 +307,7 @@ export default function SchedulePage() {
                     dayKey,
                     newShift: ns,
                     existingShift: os,
-                    otherAirline: sch.airline,
+                    otherAirline: sch.airlineDisplayName || sch.airline, // ✅ mostrar nombre si existe
                     otherDept: sch.department,
                   });
                 }
@@ -313,7 +323,7 @@ export default function SchedulePage() {
 
   // ✅ Guardar como DRAFT
   const handleSaveDraft = async () => {
-    if (!airline || !department) {
+    if (!airlineKey || !department) {
       alert("Please select airline and department.");
       return;
     }
@@ -322,7 +332,11 @@ export default function SchedulePage() {
 
     await addDoc(collection(db, "schedules"), {
       createdAt: serverTimestamp(),
-      airline,
+
+      // ✅ llave interna + nombre visible
+      airline: airlineKey,
+      airlineDisplayName: airlineDisplayName || airlineKey,
+
       department,
       days: dayNumbers,
       weekTag: weekTagToSave,
@@ -330,7 +344,10 @@ export default function SchedulePage() {
       totals: employeeTotals,
       airlineWeeklyHours: airlineTotal,
       airlineDailyHours: dailyTotals,
-      budget: airlineBudgets[airline] || 0,
+
+      // ✅ budget lookup por llave interna
+      budget: airlineBudgets[airlineKey] || 0,
+
       status: "draft",
       createdBy: user?.username || null,
       role: user?.role || null,
@@ -341,7 +358,7 @@ export default function SchedulePage() {
 
   // Guardar schedule (PENDING → para approval)
   const handleSaveSchedule = async () => {
-    if (!airline || !department) {
+    if (!airlineKey || !department) {
       alert("Please select airline and department.");
       return;
     }
@@ -379,7 +396,11 @@ export default function SchedulePage() {
 
     await addDoc(collection(db, "schedules"), {
       createdAt: serverTimestamp(),
-      airline,
+
+      // ✅ llave interna + nombre visible
+      airline: airlineKey,
+      airlineDisplayName: airlineDisplayName || airlineKey,
+
       department,
       days: dayNumbers,
       weekTag: weekTagToSave,
@@ -387,7 +408,10 @@ export default function SchedulePage() {
       totals: employeeTotals,
       airlineWeeklyHours: airlineTotal,
       airlineDailyHours: dailyTotals,
-      budget: airlineBudgets[airline] || 0,
+
+      // ✅ budget lookup por llave interna
+      budget: airlineBudgets[airlineKey] || 0,
+
       status: "pending",
       createdBy: user?.username || null,
       role: user?.role || null,
@@ -404,7 +428,8 @@ export default function SchedulePage() {
       return;
     }
 
-    const logoUrl = AIRLINE_LOGOS[airline];
+    // ✅ logo lookup por llave interna
+    const logoUrl = AIRLINE_LOGOS[airlineKey];
     let logoImg = null;
 
     if (logoUrl) {
@@ -431,7 +456,14 @@ export default function SchedulePage() {
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
     pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
-    pdf.save(`Schedule_${airline}_${department}.pdf`);
+
+    // ✅ nombre del archivo con displayName (no fijo)
+    const safeAirline = (airlineDisplayName || airlineKey || "AIRLINE")
+      .replace(/\s+/g, "_")
+      .replace(/[^\w-]/g, "");
+    const safeDept = (department || "DEPT").replace(/\s+/g, "_");
+
+    pdf.save(`Schedule_${safeAirline}_${safeDept}.pdf`);
   };
 
   // Mapa id → nombre para el resumen
@@ -440,7 +472,9 @@ export default function SchedulePage() {
     employeeNameMap[e.id] = e.name;
   });
 
-  // RENDER
+  // ✅ Solo WL Havana Air es editable (como pediste)
+  const canEditWlHavanaName = airlineKey === "WL Havana Air";
+
   return (
     <div className="p-4 space-y-4">
       {/* 🔙 Back to Dashboard */}
@@ -461,8 +495,16 @@ export default function SchedulePage() {
           <label className="font-medium text-sm">Airline</label>
           <select
             className="border p-1 rounded w-full"
-            value={airline}
-            onChange={(e) => setAirline(e.target.value)}
+            value={airlineKey}
+            onChange={(e) => {
+              const key = e.target.value;
+              setAirlineKey(key);
+
+              // ✅ default visible name
+              // - si es WL Havana Air => dejamos editable y puedes cambiarlo
+              // - si no => el nombre visible sigue el key
+              setAirlineDisplayName(key);
+            }}
           >
             <option value="">Select airline</option>
             <option value="SY">SY</option>
@@ -475,6 +517,27 @@ export default function SchedulePage() {
             <option value="AA-BSO">AA-BSO</option>
             <option value="OTHER">Other</option>
           </select>
+
+          {/* ✅ Editable SOLO para WL Havana Air */}
+          <div style={{ marginTop: 8 }}>
+            <label className="font-medium text-sm">
+              Airline display name{" "}
+              {canEditWlHavanaName ? "(editable)" : "(locked)"}
+            </label>
+            <input
+              className="border p-1 rounded w-full"
+              value={airlineDisplayName}
+              disabled={!canEditWlHavanaName}
+              onChange={(e) => setAirlineDisplayName(e.target.value)}
+              placeholder="Example: WL Havana, WL Charter, etc."
+            />
+            {canEditWlHavanaName && (
+              <div className="text-[11px] text-slate-500" style={{ marginTop: 4 }}>
+                This only changes what you see/print. Budgets & logo stay linked to
+                “WL Havana Air”.
+              </div>
+            )}
+          </div>
         </div>
 
         <div>
@@ -520,11 +583,11 @@ export default function SchedulePage() {
           dayNumbers={dayNumbers}
           rows={rows}
           setRows={setRows}
-          airline={airline}
+          airline={airlineDisplayName || airlineKey} // ✅ visible name
           department={department}
           onSave={handleSaveSchedule}
           onSaveDraft={handleSaveDraft}
-          blockedByEmployee={blockedByEmployee} // 👈 NUEVO
+          blockedByEmployee={blockedByEmployee}
         />
       </div>
 
@@ -532,7 +595,7 @@ export default function SchedulePage() {
       <div className="card text-sm">
         <h2 className="font-semibold mb-1">Weekly Summary</h2>
         <p>Total Hours (with lunch): {airlineTotal.toFixed(2)}</p>
-        <p>Budget: {airlineBudgets[airline] || 0}</p>
+        <p>Budget: {airlineBudgets[airlineKey] || 0}</p>
 
         <h3 className="font-semibold mt-3 mb-1 text-xs">
           Daily Hours (All employees)
@@ -546,7 +609,6 @@ export default function SchedulePage() {
           ))}
         </div>
 
-        {/* 🔍 Horas por empleado en ESTE schedule */}
         <h3 className="font-semibold mt-3 mb-1 text-xs">
           Employee weekly hours (this schedule)
         </h3>
@@ -566,9 +628,7 @@ export default function SchedulePage() {
                 }
               >
                 <span
-                  className={
-                    over ? "font-semibold text-red-700" : "font-semibold"
-                  }
+                  className={over ? "font-semibold text-red-700" : "font-semibold"}
                 >
                   {name}
                 </span>
@@ -580,8 +640,7 @@ export default function SchedulePage() {
           })}
         </div>
         <p className="text-[11px] text-slate-500 mt-1">
-          Employees with more than 40 hrs in this schedule are highlighted in
-          red.
+          Employees with more than 40 hrs in this schedule are highlighted in red.
         </p>
       </div>
 
