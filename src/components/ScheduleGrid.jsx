@@ -1,11 +1,13 @@
 // src/components/ScheduleGrid.jsx
 import React from "react";
 
-// 🎨 Colores por aerolínea (igual que antes)
+// 🎨 Colores por aerolínea
+// ✅ Importante: NO amarramos el color a "WL Havana Air" como texto fijo.
+// Usamos claves genéricas (SY, WL, AV, EA, etc.)
 const AIRLINE_COLORS = {
   SY: "#F28C28",
-  "WL Havana Air": "#3A7BD5",
-  "WL Invicta": "#0057B8",
+  WL: "#3A7BD5", // ✅ WL genérico (antes estaba "WL Havana Air")
+  "WL Invicta": "#0057B8", // si quieres mantener dos tonos, lo dejamos
   AV: "#D22630",
   EA: "#003E7E",
   WCHR: "#7D39C7",
@@ -37,6 +39,20 @@ const DAY_LABELS = {
   sun: "SUN",
 };
 
+function getAirlineColor(airline) {
+  const a = String(airline || "").trim();
+
+  // ✅ Si coincide exacto con alguno, úsalo
+  if (AIRLINE_COLORS[a]) return AIRLINE_COLORS[a];
+
+  // ✅ WL: cualquier variante "WL ..." usa el color WL genérico
+  // Ejemplos: "WL Havana Air", "WL Charter", "WL Something"
+  if (/^WL\b/i.test(a)) return AIRLINE_COLORS.WL;
+
+  // fallback
+  return "#e5e7eb";
+}
+
 export default function ScheduleGrid({
   employees,
   rows,
@@ -48,11 +64,26 @@ export default function ScheduleGrid({
   onSave,
   onSaveDraft,
   approved = false,
-  // 👇 NUEVO: mapa employeeId → { mon:true, tue:true, ... }
   blockedByEmployee = {},
 }) {
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-  const headerColor = AIRLINE_COLORS[airline] || "#e5e7eb";
+  const headerColor = getAirlineColor(airline);
+
+  // ✅ Remover fila completa
+  const removeRow = (rowIndex) => {
+    if (readonly || approved) return;
+
+    const empId = rows?.[rowIndex]?.employeeId;
+    const emp = employees.find((e) => e.id === empId);
+    const empName = emp?.name ? ` (${emp.name})` : "";
+
+    const ok = window.confirm(
+      `Remove this employee row${empName}?\n\nThis cannot be undone.`
+    );
+    if (!ok) return;
+
+    setRows((prev) => prev.filter((_, i) => i !== rowIndex));
+  };
 
   // 🔧 Actualizar una celda (día + shiftIndex)
   const updateShift = (rowIndex, day, shiftIndex, field, value) => {
@@ -88,7 +119,6 @@ export default function ScheduleGrid({
     const hasData = shift.start || shift.end;
     const isOff = shift.start === "OFF";
 
-    // 🔎 ver si el empleado está bloqueado ese día (solo por día de semana)
     const empBlockedDays = blockedByEmployee[row.employeeId] || {};
     const isBlockedDay = !!empBlockedDays[day];
 
@@ -96,7 +126,7 @@ export default function ScheduleGrid({
     let extraClass = "";
 
     if (isBlockedDay) {
-      bgColor = "#fee2e2"; // rojo muy suave para llamar la atención
+      bgColor = "#fee2e2";
       extraClass = " sch-cell-blocked";
     }
 
@@ -132,7 +162,6 @@ export default function ScheduleGrid({
         )}
 
         <div className="sch-cell-select-row">
-          {/* START */}
           <select
             className="sch-select"
             value={shift.start || ""}
@@ -148,7 +177,6 @@ export default function ScheduleGrid({
             ))}
           </select>
 
-          {/* END (solo si no es OFF) */}
           {shift.start !== "OFF" && (
             <select
               className="sch-select"
@@ -189,13 +217,11 @@ export default function ScheduleGrid({
 
   return (
     <div className={`sch-wrapper ${approved ? "sch-wrapper-approved" : ""}`}>
-      {/* TÍTULO TIPO EXCEL */}
       <div className="sch-title" style={{ color: headerColor }}>
         {airline || "AIRLINE"}
       </div>
       <div className="sch-subtitle">{department || "Department"}</div>
 
-      {/* TABLA ESTILO EXCEL */}
       <div className="sch-table-container">
         <table className="sch-table">
           <thead>
@@ -212,6 +238,7 @@ export default function ScheduleGrid({
               ))}
             </tr>
           </thead>
+
           <tbody>
             {rows.map((row, rowIndex) => {
               const emp = employees.find((e) => e.id === row.employeeId);
@@ -219,43 +246,67 @@ export default function ScheduleGrid({
 
               return (
                 <React.Fragment key={rowIndex}>
-                  {/* Fila 1 – Primer turno */}
                   <tr>
-                    {/* Celda de empleado con rowSpan=2 */}
                     <td className="sch-employee-cell" rowSpan={2}>
-                      {!readonly ? (
-                        <select
-                          className="sch-employee-select"
-                          value={row.employeeId || ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setRows((prev) => {
-                              const copy = [...prev];
-                              copy[rowIndex] = {
-                                ...copy[rowIndex],
-                                employeeId: value,
-                              };
-                              return copy;
-                            });
-                          }}
-                        >
-                          <option value="">Select</option>
-                          {employees.map((emp) => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        empName
-                      )}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        {!readonly ? (
+                          <select
+                            className="sch-employee-select"
+                            value={row.employeeId || ""}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setRows((prev) => {
+                                const copy = [...prev];
+                                copy[rowIndex] = { ...copy[rowIndex], employeeId: value };
+                                return copy;
+                              });
+                            }}
+                          >
+                            <option value="">Select</option>
+                            {employees.map((emp) => (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span>{empName}</span>
+                        )}
+
+                        {!readonly && !approved && (
+                          <button
+                            type="button"
+                            onClick={() => removeRow(rowIndex)}
+                            title="Remove this row"
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: 8,
+                              border: "1px solid rgba(255,255,255,0.18)",
+                              background: "rgba(255,0,0,0.12)",
+                              color: "inherit",
+                              cursor: "pointer",
+                              fontWeight: 800,
+                              lineHeight: 1,
+                              flexShrink: 0,
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                     </td>
 
-                    {/* Celdas día – shift 1 */}
                     {days.map((day) => renderShiftCell(row, rowIndex, day, 0))}
                   </tr>
 
-                  {/* Fila 2 – Segundo turno */}
                   <tr>
                     {days.map((day) => renderShiftCell(row, rowIndex, day, 1))}
                   </tr>
@@ -266,22 +317,16 @@ export default function ScheduleGrid({
         </table>
       </div>
 
-      {/* BOTÓN ADD ROW */}
       {!readonly && !approved && (
         <button onClick={addRow} className="sch-add-row-btn">
           + Add employee row
         </button>
       )}
 
-      {/* BOTONES SUBMIT / DRAFT */}
       {!readonly && !approved && (
         <div className="sch-submit-row">
           {onSaveDraft && (
-            <button
-              type="button"
-              onClick={onSaveDraft}
-              className="sch-draft-btn"
-            >
+            <button type="button" onClick={onSaveDraft} className="sch-draft-btn">
               Save as Draft
             </button>
           )}
