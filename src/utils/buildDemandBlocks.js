@@ -1,14 +1,16 @@
 // src/utils/buildDemandBlocks.js
 
 function toMinutes(hhmm) {
-  if (!hhmm || !hhmm.includes(":")) return null;
-  const [h, m] = hhmm.split(":").map(Number);
+  if (!hhmm || !String(hhmm).includes(":")) return null;
+  const [h, m] = String(hhmm).split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
 }
 
 function toTimeString(totalMinutes) {
   let mins = totalMinutes % (24 * 60);
   if (mins < 0) mins += 24 * 60;
+
   const h = String(Math.floor(mins / 60)).padStart(2, "0");
   const m = String(mins % 60).padStart(2, "0");
   return `${h}:${m}`;
@@ -29,7 +31,32 @@ function recommendAgents(score) {
   return 7;
 }
 
-export function buildDemandBlocks(flights) {
+function normalizeActivityWindow(start, end) {
+  let s = start;
+  let e = end;
+
+  while (s < 0) {
+    s += 24 * 60;
+    e += 24 * 60;
+  }
+
+  if (e <= s) {
+    e += 24 * 60;
+  }
+
+  return [s, e];
+}
+
+function blockIntersectsWindow(blockStart, blockEnd, activeStart, activeEnd) {
+  const [s, e] = normalizeActivityWindow(activeStart, activeEnd);
+
+  if (intersects(blockStart, blockEnd, s, e)) return true;
+  if (intersects(blockStart + 24 * 60, blockEnd + 24 * 60, s, e)) return true;
+
+  return false;
+}
+
+export function buildDemandBlocks(flights = []) {
   const blocks = [];
 
   for (let start = 0; start < 24 * 60; start += 30) {
@@ -48,7 +75,7 @@ export function buildDemandBlocks(flights) {
   }
 
   for (const flight of flights) {
-    const flightMinutes = toMinutes(flight.scheduledTime);
+    const flightMinutes = toMinutes(flight?.scheduledTime);
     if (flightMinutes == null) continue;
 
     let activeStart = flightMinutes - 120;
@@ -61,7 +88,7 @@ export function buildDemandBlocks(flights) {
 
     for (const block of blocks) {
       if (
-        intersects(
+        blockIntersectsWindow(
           block.startMinutes,
           block.endMinutes,
           activeStart,
