@@ -30,6 +30,16 @@ const DAY_LABELS = {
   sunday: "Sunday",
 };
 
+const DAY_SHORT_LABELS = {
+  monday: "MON",
+  tuesday: "TUE",
+  wednesday: "WED",
+  thursday: "THU",
+  friday: "FRI",
+  saturday: "SAT",
+  sunday: "SUN",
+};
+
 export default function CabinScheduleViewPage() {
   const { id } = useParams();
 
@@ -39,6 +49,7 @@ export default function CabinScheduleViewPage() {
   const [demandByDay, setDemandByDay] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [viewMode, setViewMode] = useState("detail");
 
   useEffect(() => {
     async function loadScheduleView() {
@@ -112,7 +123,8 @@ export default function CabinScheduleViewPage() {
   }, [id]);
 
   const totalFlights = useMemo(
-    () => Object.values(flightsByDay).reduce((sum, items) => sum + items.length, 0),
+    () =>
+      Object.values(flightsByDay).reduce((sum, items) => sum + items.length, 0),
     [flightsByDay]
   );
 
@@ -155,9 +167,7 @@ export default function CabinScheduleViewPage() {
       <div style={headerRowStyle}>
         <div>
           <h1 style={pageTitleStyle}>Cabin Schedule View</h1>
-          <p style={pageSubStyle}>
-            Weekly Cabin Service schedule details
-          </p>
+          <p style={pageSubStyle}>Weekly Cabin Service schedule details</p>
         </div>
 
         <Link to="/cabin-saved-schedules" style={backButtonStyle}>
@@ -182,135 +192,295 @@ export default function CabinScheduleViewPage() {
 
       <div style={{ height: 16 }} />
 
-      {DAY_KEYS.map((dayKey) => {
-        const slots = slotsByDay[dayKey] || [];
-        const flights = flightsByDay[dayKey] || [];
-        const demandBlocks = demandByDay[dayKey] || [];
+      <div style={cardStyle}>
+        <div style={viewToggleWrapStyle}>
+          <button
+            type="button"
+            onClick={() => setViewMode("detail")}
+            style={viewMode === "detail" ? toggleButtonActiveStyle : toggleButtonStyle}
+          >
+            Detail View
+          </button>
 
-        if (!slots.length && !flights.length && !demandBlocks.length) return null;
+          <button
+            type="button"
+            onClick={() => setViewMode("roster")}
+            style={viewMode === "roster" ? toggleButtonActiveStyle : toggleButtonStyle}
+          >
+            Roster View
+          </button>
+        </div>
+      </div>
 
-        const arrivals = flights.filter((f) => f.movementType === "arrival").length;
-        const departures = flights.filter((f) => f.movementType !== "arrival").length;
-        const peakAgents =
-          demandBlocks.length > 0
-            ? Math.max(...demandBlocks.map((b) => b.recommendedAgents || 0))
-            : 0;
+      <div style={{ height: 16 }} />
 
-        const shiftSummary = summarizeShifts(slots);
+      {viewMode === "roster" ? (
+        <CabinRosterWeeklyView slotsByDay={slotsByDay} />
+      ) : (
+        <>
+          {DAY_KEYS.map((dayKey) => {
+            const slots = slotsByDay[dayKey] || [];
+            const flights = flightsByDay[dayKey] || [];
+            const demandBlocks = demandByDay[dayKey] || [];
+
+            if (!slots.length && !flights.length && !demandBlocks.length) return null;
+
+            const arrivals = flights.filter((f) => f.movementType === "arrival").length;
+            const departures = flights.filter((f) => f.movementType !== "arrival").length;
+            const peakAgents =
+              demandBlocks.length > 0
+                ? Math.max(...demandBlocks.map((b) => b.recommendedAgents || 0))
+                : 0;
+
+            const shiftSummary = summarizeShifts(slots);
+
+            return (
+              <div key={dayKey} style={{ marginBottom: 16 }}>
+                <div style={cardStyle}>
+                  <h2 style={sectionTitleStyle}>{DAY_LABELS[dayKey]}</h2>
+
+                  <div style={dayStatsStyle}>
+                    <span>
+                      Flights: <b>{flights.length}</b>
+                    </span>
+                    <span>
+                      Arrivals: <b>{arrivals}</b>
+                    </span>
+                    <span>
+                      Departures: <b>{departures}</b>
+                    </span>
+                    <span>
+                      Peak Agents: <b>{peakAgents}</b>
+                    </span>
+                  </div>
+
+                  <div style={{ marginTop: 16 }}>
+                    <h3 style={subTitleStyle}>Generated Shifts</h3>
+                    {shiftSummary.length ? (
+                      <div style={chipWrapStyle}>
+                        {shiftSummary.map((item) => (
+                          <div
+                            key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
+                            style={chipStyle}
+                          >
+                            {item.start}–{item.end} | {item.role} x{item.count}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={emptyTextStyle}>No shifts found</div>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: 20 }}>
+                    <h3 style={subTitleStyle}>Assigned Schedule</h3>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={tableStyle}>
+                        <thead>
+                          <tr>
+                            <th style={thTdStyle}>Start</th>
+                            <th style={thTdStyle}>End</th>
+                            <th style={thTdStyle}>Role</th>
+                            <th style={thTdStyle}>Paid Hours</th>
+                            <th style={thTdStyle}>Employee</th>
+                            <th style={thTdStyle}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {slots.map((slot) => (
+                            <tr key={slot.id}>
+                              <td style={thTdStyle}>{slot.start || "-"}</td>
+                              <td style={thTdStyle}>{slot.end || "-"}</td>
+                              <td style={thTdStyle}>{slot.role || "-"}</td>
+                              <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
+                              <td style={thTdStyle}>
+                                {slot.employeeName || slot.employeeId || "Open"}
+                              </td>
+                              <td style={thTdStyle}>
+                                <span
+                                  style={
+                                    slot.employeeId || slot.employeeName
+                                      ? assignedChipStyle
+                                      : openChipStyle
+                                  }
+                                >
+                                  {slot.employeeId || slot.employeeName
+                                    ? "Assigned"
+                                    : "Open"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 20 }}>
+                    <h3 style={subTitleStyle}>Flights</h3>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={tableStyle}>
+                        <thead>
+                          <tr>
+                            <th style={thTdStyle}>Type</th>
+                            <th style={thTdStyle}>Flight</th>
+                            <th style={thTdStyle}>Time</th>
+                            <th style={thTdStyle}>Route</th>
+                            <th style={thTdStyle}>Aircraft</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {flights.map((flight) => (
+                            <tr key={flight.id}>
+                              <td style={thTdStyle}>{flight.movementType || "-"}</td>
+                              <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
+                              <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
+                              <td style={thTdStyle}>{flight.route || "-"}</td>
+                              <td style={thTdStyle}>{flight.aircraft || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
+function CabinRosterWeeklyView({ slotsByDay }) {
+  const groupedRoster = useMemo(() => buildRosterGroups(slotsByDay), [slotsByDay]);
+
+  const orderedGroups = [
+    "SUPERVISOR",
+    "LAV",
+    "TEAM 1",
+    "TEAM 2",
+    "TEAM 3",
+    "NIGHT SHIFT",
+  ];
+
+  return (
+    <div>
+      {orderedGroups.map((groupName) => {
+        const employees = groupedRoster[groupName] || [];
+        if (!employees.length) return null;
 
         return (
-          <div key={dayKey} style={{ marginBottom: 16 }}>
-            <div style={cardStyle}>
-              <h2 style={sectionTitleStyle}>{DAY_LABELS[dayKey]}</h2>
+          <div key={groupName} style={{ marginBottom: 24 }}>
+            <div style={rosterSectionHeaderStyle}>{groupName}</div>
 
-              <div style={dayStatsStyle}>
-                <span>
-                  Flights: <b>{flights.length}</b>
-                </span>
-                <span>
-                  Arrivals: <b>{arrivals}</b>
-                </span>
-                <span>
-                  Departures: <b>{departures}</b>
-                </span>
-                <span>
-                  Peak Agents: <b>{peakAgents}</b>
-                </span>
-              </div>
-
-              <div style={{ marginTop: 16 }}>
-                <h3 style={subTitleStyle}>Generated Shifts</h3>
-                {shiftSummary.length ? (
-                  <div style={chipWrapStyle}>
-                    {shiftSummary.map((item) => (
-                      <div
-                        key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
-                        style={chipStyle}
-                      >
-                        {item.start}–{item.end} | {item.role} x{item.count}
-                      </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={rosterTableStyle}>
+                <thead>
+                  <tr>
+                    <th style={rosterHeaderCellStyle}>Employee</th>
+                    {DAY_KEYS.map((dayKey) => (
+                      <th key={dayKey} style={rosterHeaderCellStyle}>
+                        {DAY_SHORT_LABELS[dayKey]}
+                      </th>
                     ))}
-                  </div>
-                ) : (
-                  <div style={emptyTextStyle}>No shifts found</div>
-                )}
-              </div>
+                  </tr>
+                </thead>
 
-              <div style={{ marginTop: 20 }}>
-                <h3 style={subTitleStyle}>Assigned Schedule</h3>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thTdStyle}>Start</th>
-                        <th style={thTdStyle}>End</th>
-                        <th style={thTdStyle}>Role</th>
-                        <th style={thTdStyle}>Paid Hours</th>
-                        <th style={thTdStyle}>Employee</th>
-                        <th style={thTdStyle}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {slots.map((slot) => (
-                        <tr key={slot.id}>
-                          <td style={thTdStyle}>{slot.start || "-"}</td>
-                          <td style={thTdStyle}>{slot.end || "-"}</td>
-                          <td style={thTdStyle}>{slot.role || "-"}</td>
-                          <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
-                          <td style={thTdStyle}>
-                            {slot.employeeName || slot.employeeId || "Open"}
-                          </td>
-                          <td style={thTdStyle}>
-                            <span
-                              style={
-                                slot.employeeId || slot.employeeName
-                                  ? assignedChipStyle
-                                  : openChipStyle
-                              }
-                            >
-                              {slot.employeeId || slot.employeeName ? "Assigned" : "Open"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                <tbody>
+                  {employees.map((employee, index) => (
+                    <tr key={`${groupName}-${employee.name}-${index}`}>
+                      <td style={rosterNameCellStyle}>{employee.name}</td>
 
-              <div style={{ marginTop: 20 }}>
-                <h3 style={subTitleStyle}>Flights</h3>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thTdStyle}>Type</th>
-                        <th style={thTdStyle}>Flight</th>
-                        <th style={thTdStyle}>Time</th>
-                        <th style={thTdStyle}>Route</th>
-                        <th style={thTdStyle}>Aircraft</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {flights.map((flight) => (
-                        <tr key={flight.id}>
-                          <td style={thTdStyle}>{flight.movementType || "-"}</td>
-                          <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
-                          <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
-                          <td style={thTdStyle}>{flight.route || "-"}</td>
-                          <td style={thTdStyle}>{flight.aircraft || "-"}</td>
-                        </tr>
+                      {DAY_KEYS.map((dayKey) => (
+                        <td key={dayKey} style={rosterCellStyle}>
+                          {employee.days[dayKey] || "OFF"}
+                        </td>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         );
       })}
     </div>
   );
+}
+
+function buildRosterGroups(slotsByDay) {
+  const grouped = {};
+
+  Object.entries(slotsByDay || {}).forEach(([dayKey, slots]) => {
+    slots.forEach((slot) => {
+      const employeeName = slot.employeeName || slot.employeeId || "Open";
+      const groupName = getShiftGroup(slot);
+      const shiftLabel = buildShiftLabel(slot);
+
+      if (!grouped[groupName]) {
+        grouped[groupName] = [];
+      }
+
+      let employeeRow = grouped[groupName].find((item) => item.name === employeeName);
+
+      if (!employeeRow) {
+        employeeRow = {
+          name: employeeName,
+          days: {},
+        };
+        grouped[groupName].push(employeeRow);
+      }
+
+      employeeRow.days[dayKey] = shiftLabel;
+    });
+  });
+
+  Object.keys(grouped).forEach((groupName) => {
+    grouped[groupName] = grouped[groupName].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  });
+
+  return grouped;
+}
+
+function getShiftGroup(slot) {
+  const start = normalizeTimeForCompare(slot.start || "");
+  const role = slot.role || "";
+
+  if (role === "Supervisor") return "SUPERVISOR";
+  if (role === "LAV") return "LAV";
+
+  if (start >= "04:00" && start < "07:00") return "TEAM 1";
+  if (start >= "07:00" && start < "11:00") return "TEAM 2";
+  if (start >= "11:00" && start < "15:00") return "TEAM 3";
+  return "NIGHT SHIFT";
+}
+
+function buildShiftLabel(slot) {
+  const start = compactTime(slot.start || "");
+  const end = compactTime(slot.end || "");
+
+  if (!start || !end) return "SHIFT";
+  return `${start}-${end}`;
+}
+
+function compactTime(timeValue) {
+  if (!timeValue || !String(timeValue).includes(":")) return String(timeValue || "");
+  const [hh, mm] = String(timeValue).split(":");
+  return `${hh}${mm}`;
+}
+
+function normalizeTimeForCompare(value) {
+  if (!value) return "";
+  const str = String(value);
+  if (/^\d{1,2}:\d{2}$/.test(str)) {
+    const [h, m] = str.split(":");
+    return `${h.padStart(2, "0")}:${m}`;
+  }
+  return str;
 }
 
 function groupByDay(items, sorter) {
@@ -532,4 +702,65 @@ const linkStyle = {
   color: "#1d4ed8",
   textDecoration: "none",
   fontWeight: 600,
+};
+
+const viewToggleWrapStyle = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const toggleButtonStyle = {
+  background: "#e5e7eb",
+  color: "#111827",
+  padding: "8px 14px",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const toggleButtonActiveStyle = {
+  ...toggleButtonStyle,
+  background: "#1d4ed8",
+  color: "#ffffff",
+};
+
+const rosterSectionHeaderStyle = {
+  background: "#1d4ed8",
+  color: "#ffffff",
+  padding: "8px 12px",
+  fontWeight: 700,
+  fontSize: 14,
+  borderTopLeftRadius: 8,
+  borderTopRightRadius: 8,
+};
+
+const rosterTableStyle = {
+  width: "100%",
+  borderCollapse: "collapse",
+  background: "#ffffff",
+};
+
+const rosterHeaderCellStyle = {
+  border: "1px solid #cbd5e1",
+  padding: "8px 10px",
+  textAlign: "center",
+  fontSize: 13,
+  fontWeight: 700,
+  background: "#eff6ff",
+};
+
+const rosterCellStyle = {
+  border: "1px solid #cbd5e1",
+  padding: "8px 10px",
+  textAlign: "center",
+  fontSize: 13,
+  background: "#ffffff",
+};
+
+const rosterNameCellStyle = {
+  ...rosterCellStyle,
+  textAlign: "left",
+  fontWeight: 700,
 };
