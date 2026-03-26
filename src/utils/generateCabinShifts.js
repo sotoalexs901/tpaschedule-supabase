@@ -11,17 +11,10 @@ const SHIFT_TEMPLATES = [
 ];
 
 function toMinutes(hhmm) {
-  if (!hhmm || !hhmm.includes(":")) return null;
-  const [h, m] = hhmm.split(":").map(Number);
+  if (!hhmm || !String(hhmm).includes(":")) return null;
+  const [h, m] = String(hhmm).split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
-}
-
-function toTimeString(totalMinutes) {
-  let mins = totalMinutes % (24 * 60);
-  if (mins < 0) mins += 24 * 60;
-  const h = String(Math.floor(mins / 60)).padStart(2, "0");
-  const m = String(mins % 60).padStart(2, "0");
-  return `${h}:${m}`;
 }
 
 function normalizeRange(start, end) {
@@ -54,7 +47,7 @@ function overlaps(shiftStart, shiftEnd, blockStart, blockEnd) {
 function diffCalendarHours(start, end) {
   const range = normalizeRange(start, end);
   if (!range) return 0;
-  return (range[1] - range[0]) / 60;
+  return Number(((range[1] - range[0]) / 60).toFixed(2));
 }
 
 function diffPaidHours(start, end) {
@@ -63,12 +56,12 @@ function diffPaidHours(start, end) {
 
   let totalMinutes = range[1] - range[0];
 
-  // break de 30 min si dura 6h 1m o más
+  // Break de 30 min si dura 6h 1m o más
   if (totalMinutes >= 361) {
     totalMinutes -= 30;
   }
 
-  return totalMinutes / 60;
+  return Number((totalMinutes / 60).toFixed(2));
 }
 
 function getCoveredBlocks(template, demandBlocks) {
@@ -86,8 +79,6 @@ function getTemplateStats(template, demandBlocks) {
       activeBlocks: 0,
       maxAgents: 0,
       totalScore: 0,
-      firstCoveredActivity: null,
-      lastCoveredActivity: null,
     };
   }
 
@@ -101,33 +92,11 @@ function getTemplateStats(template, demandBlocks) {
     0
   );
 
-  const firstCoveredActivity =
-    activeBlocks.length > 0 ? activeBlocks[0].startMinutes : null;
-  const lastCoveredActivity =
-    activeBlocks.length > 0
-      ? activeBlocks[activeBlocks.length - 1].endMinutes
-      : null;
-
   return {
     coveredBlocks: covered.length,
     activeBlocks: activeBlocks.length,
     maxAgents,
     totalScore,
-    firstCoveredActivity,
-    lastCoveredActivity,
-  };
-}
-
-function makeSlot(dayKey, uniqueIndex, start, end, role, slotNumber) {
-  return {
-    id: `${dayKey}-${role}-${uniqueIndex}-${slotNumber}`,
-    start,
-    end,
-    role,
-    slotNumber,
-    calendarHours: diffCalendarHours(start, end),
-    paidHours: diffPaidHours(start, end),
-    employeeId: "",
   };
 }
 
@@ -150,7 +119,6 @@ function chooseTemplates(demandBlocks) {
 
   const chosen = [];
 
-  // 1. Template temprano principal
   const earlyCandidates = templatesWithStats
     .filter((t) => toMinutes(t.start) <= toMinutes("06:00"))
     .filter((t) => isTemplateRelevant(t, t.stats))
@@ -165,7 +133,6 @@ function chooseTemplates(demandBlocks) {
     chosen.push(earlyCandidates[0]);
   }
 
-  // 2. Template medio del día
   const midCandidates = templatesWithStats
     .filter((t) => {
       const start = toMinutes(t.start);
@@ -186,7 +153,6 @@ function chooseTemplates(demandBlocks) {
     }
   }
 
-  // 3. Template tarde/noche
   const lateCandidates = templatesWithStats
     .filter((t) => toMinutes(t.start) >= toMinutes("16:00"))
     .filter((t) => isTemplateRelevant(t, t.stats))
@@ -204,7 +170,6 @@ function chooseTemplates(demandBlocks) {
     }
   }
 
-  // 4. Si no eligió nada suficiente, agarrar el mejor template general
   if (!chosen.length) {
     const bestOverall = templatesWithStats
       .filter((t) => t.stats.totalScore > 0)
@@ -218,7 +183,6 @@ function chooseTemplates(demandBlocks) {
     if (bestOverall) chosen.push(bestOverall);
   }
 
-  // 5. Agregar short template como refuerzo si realmente hay pico de medio día
   const shortTemplate = templatesWithStats.find(
     (t) => t.start === "11:00" && t.end === "14:00"
   );
@@ -252,7 +216,7 @@ function getAgentsForTemplate(template, demandBlocks) {
   let agents = Math.max(maxAgents - 1, Math.round(avgAgents));
 
   if (template.type === "short") {
-    agents = Math.max(1, Math.min(4, maxAgents));
+    agents = Math.max(1, Math.min(4, agents));
   } else {
     agents = Math.max(1, Math.min(7, agents));
   }
@@ -260,7 +224,31 @@ function getAgentsForTemplate(template, demandBlocks) {
   return agents;
 }
 
-export function generateCabinShifts(demandBlocks, dayKey) {
+function makeSlot(dayKey, uniqueIndex, start, end, role, slotNumber) {
+  return {
+    id: `${dayKey}-${role}-${uniqueIndex}-${slotNumber}`,
+    start,
+    end,
+    role,
+    slotNumber,
+    calendarHours: diffCalendarHours(start, end),
+    paidHours: diffPaidHours(start, end),
+    employeeId: "",
+  };
+}
+
+function dedupeSlots(slots) {
+  const seen = new Set();
+
+  return slots.filter((slot) => {
+    const key = `${slot.start}-${slot.end}-${slot.role}-${slot.slotNumber}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function generateCabinShifts(demandBlocks = [], dayKey = "day") {
   const activeBlocks = demandBlocks.filter((b) => b.activityScore > 0);
   if (!activeBlocks.length) return [];
 
@@ -270,7 +258,6 @@ export function generateCabinShifts(demandBlocks, dayKey) {
   const slots = [];
   let uniqueIndex = 1;
 
-  // Supervisor y LAV siempre fijos en el primer template principal
   const primaryTemplate = chosenTemplates[0];
 
   slots.push(
@@ -313,15 +300,4 @@ export function generateCabinShifts(demandBlocks, dayKey) {
   }
 
   return dedupeSlots(slots);
-}
-
-function dedupeSlots(slots) {
-  const seen = new Set();
-
-  return slots.filter((slot) => {
-    const key = `${slot.start}-${slot.end}-${slot.role}-${slot.slotNumber}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
