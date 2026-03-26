@@ -53,24 +53,66 @@ function parseCsvText(text) {
   return rows;
 }
 
+function normalizeHeaderName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[._-]+/g, " ");
+}
+
+function normalizeRowKeys(row) {
+  const normalized = {};
+
+  Object.entries(row || {}).forEach(([key, value]) => {
+    normalized[normalizeHeaderName(key)] = value;
+  });
+
+  return normalized;
+}
+
+function pickFirst(row, keys) {
+  for (const key of keys) {
+    const normalizedKey = normalizeHeaderName(key);
+    const value = row[normalizedKey];
+
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+  return "";
+}
+
 function normalizeTime(value) {
   if (!value) return "";
 
   const raw = String(value).trim();
 
-  // 7:06 -> 07:06
-  const matchStandard = raw.match(/^(\d{1,2}):(\d{2})$/);
-  if (matchStandard) {
-    const hh = matchStandard[1].padStart(2, "0");
-    const mm = matchStandard[2];
+  const ampmMatch = raw.match(/^(\d{1,2}):(\d{2})\s*([ap]m)$/i);
+  if (ampmMatch) {
+    let hh = Number(ampmMatch[1]);
+    const mm = ampmMatch[2];
+    const ap = ampmMatch[3].toLowerCase();
+
+    if (ap === "pm" && hh !== 12) hh += 12;
+    if (ap === "am" && hh === 12) hh = 0;
+
+    return `${String(hh).padStart(2, "0")}:${mm}`;
+  }
+
+  const standardMatch = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (standardMatch) {
+    const hh = standardMatch[1].padStart(2, "0");
+    const mm = standardMatch[2];
     return `${hh}:${mm}`;
   }
 
-  // 706 -> 07:06 / 1530 -> 15:30
   const onlyDigits = raw.replace(/\D/g, "");
+
   if (onlyDigits.length === 3) {
     return `0${onlyDigits[0]}:${onlyDigits.slice(1)}`;
   }
+
   if (onlyDigits.length === 4) {
     return `${onlyDigits.slice(0, 2)}:${onlyDigits.slice(2)}`;
   }
@@ -78,76 +120,154 @@ function normalizeTime(value) {
   return raw;
 }
 
-function pickFirst(row, keys) {
-  for (const key of keys) {
-    if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== "") {
-      return String(row[key]).trim();
-    }
-  }
-  return "";
+function inferMovementType(row) {
+  const explicitType = pickFirst(row, [
+    "movement type",
+    "movement",
+    "type",
+    "operation type",
+  ]).toLowerCase();
+
+  if (explicitType.includes("arrival")) return "arrival";
+  if (explicitType.includes("departure")) return "departure";
+
+  const hasArrivalColumns =
+    !!pickFirst(row, ["skd eta", "eta", "arrival time", "arr time", "sta"]) ||
+    !!pickFirst(row, ["origin", "from", "routing"]);
+
+  const hasDepartureColumns =
+    !!pickFirst(row, ["dptr", "std", "departure time", "dep time"]) ||
+    !!pickFirst(row, ["destination", "dest", "to"]);
+
+  if (hasArrivalColumns && !hasDepartureColumns) return "arrival";
+  if (hasDepartureColumns && !hasArrivalColumns) return "departure";
+
+  return "departure";
 }
 
-function normalizeFlightRow(row) {
-  const flightNumber = pickFirst(row, [
-    "FLT",
-    "Flight",
-    "Flight Number",
-    "flight",
-    "flight_number",
-  ]);
+function getScheduledTime(row, movementType) {
+  if (movementType === "arrival") {
+    return normalizeTime(
+      pickFirst(row, [
+        "skd eta",
+        "eta",
+        "arrival time",
+        "arr time",
+        "sta",
+        "time",
+      ])
+    );
+  }
 
-  const scheduledTime = normalizeTime(
+  return normalizeTime(
     pickFirst(row, [
-      "DPTR",
-      "Departure",
-      "Departure Time",
-      "STD",
-      "Time",
+      "dptr",
+      "std",
+      "departure time",
+      "dep time",
       "time",
     ])
   );
+}
 
-  const route = pickFirst(row, [
-    "ROUTE",
-    "Route",
-    "DEST",
-    "Destination",
-    "To",
+function getRoute(row, movementType) {
+  if (movementType === "arrival") {
+    return pickFirst(row, [
+      "origin",
+      "from",
+      "routing",
+      "route",
+      "station",
+    ]);
+  }
+
+  return pickFirst(row, [
+    "destination",
+    "dest",
     "to",
+    "route",
+    "routing",
+  ]);
+}
+
+function normalizeFlightNumber(value, airline) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (airline && !raw.toLowerCase().startsWith(String(airline).toLowerCase())) {
+    return `${airline}${raw}`;
+  }
+
+  return raw;
+}
+
+function normalizeFlightRow(rawRow) {
+  const row = normalizeRowKeys(rawRow);
+  const movementType = inferMovementType(row);
+
+  const airline = pickFirst(row, [
+    "airline",
+    "carrier",
+    "al",
+    "code",
   ]);
 
+  const flightNumberRaw = pickFirst(row, [
+    "flt",
+    "flight",
+    "flight number",
+    "flt no",
+    "flight no",
+  ]);
+
+  const flightNumber = normalizeFlightNumber(flightNumberRaw, airline);
+  const scheduledTime = getScheduledTime(row, movementType);
+  const route = getRoute(row, movementType);
+
   const aircraft = pickFirst(row, [
-    "A/C",
-    "Aircraft",
-    "EQPTS",
-    "Equipment",
+    "a/c",
+    "ac",
+    "aircraft",
+    "eqpts",
     "equipment",
   ]);
 
   const gate = pickFirst(row, [
-    "Gate",
-    "GATE",
     "gate",
+    "to gate",
+    "from gate",
   ]);
 
-  const airline = pickFirst(row, [
-    "Airline",
-    "AIRLINE",
-    "carrier",
-  ]);
+  if (!flightNumber && !scheduledTime && !route) {
+    return null;
+  }
 
-  if (!flightNumber && !scheduledTime) return null;
+  if (!scheduledTime) {
+    return null;
+  }
 
   return {
-    movementType: "departure",
+    movementType,
     airline,
     flightNumber,
     route,
     scheduledTime,
     aircraft,
     gate,
-    rawRow: row,
+    rawRow,
   };
+}
+
+function sortFlights(a, b) {
+  if (a.scheduledTime !== b.scheduledTime) {
+    return a.scheduledTime.localeCompare(b.scheduledTime);
+  }
+
+  if (a.movementType !== b.movementType) {
+    return a.movementType.localeCompare(b.movementType);
+  }
+
+  return (a.flightNumber || "").localeCompare(b.flightNumber || "");
 }
 
 export async function parseCabinFlights(file) {
@@ -163,5 +283,5 @@ export async function parseCabinFlights(file) {
   return rows
     .map(normalizeFlightRow)
     .filter(Boolean)
-    .sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
+    .sort(sortFlights);
 }
