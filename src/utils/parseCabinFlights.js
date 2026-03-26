@@ -127,7 +127,40 @@ function normalizeTime(value) {
   return "";
 }
 
+function normalizeFlightNumber(value, airline) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (
+    airline &&
+    !raw.toLowerCase().startsWith(String(airline).toLowerCase())
+  ) {
+    return `${airline}${raw}`;
+  }
+
+  return raw;
+}
+
+function looksLikeTpaDepartureRow(row) {
+  return !!(
+    row["flight no"] &&
+    row["local dep time"] &&
+    (row["arr airport code"] || row["published carrier code"])
+  );
+}
+
+function looksLikeTpaArrivalRow(row) {
+  return !!(
+    row["flight no"] &&
+    (row["local arr time"] || row["eta"] || row["skd eta"]) &&
+    (row["dep airport code"] || row["origin"] || row["from"])
+  );
+}
+
 function inferMovementType(row) {
+  if (looksLikeTpaArrivalRow(row)) return "arrival";
+  if (looksLikeTpaDepartureRow(row)) return "departure";
+
   const explicitType = pickFirst(row, [
     "movement type",
     "movement",
@@ -139,12 +172,23 @@ function inferMovementType(row) {
   if (explicitType.includes("departure")) return "departure";
 
   const hasArrivalColumns =
-    !!pickFirst(row, ["skd eta", "eta", "arrival time", "arr time", "sta"]) ||
-    !!pickFirst(row, ["origin", "from", "routing"]);
+    !!pickFirst(row, [
+      "skd eta",
+      "eta",
+      "arrival time",
+      "arr time",
+      "sta",
+      "local arr time",
+    ]) || !!pickFirst(row, ["origin", "from", "routing", "dep airport code"]);
 
   const hasDepartureColumns =
-    !!pickFirst(row, ["dptr", "std", "departure time", "dep time"]) ||
-    !!pickFirst(row, ["destination", "dest", "to"]);
+    !!pickFirst(row, [
+      "dptr",
+      "std",
+      "departure time",
+      "dep time",
+      "local dep time",
+    ]) || !!pickFirst(row, ["destination", "dest", "to", "arr airport code"]);
 
   if (hasArrivalColumns && !hasDepartureColumns) return "arrival";
   if (hasDepartureColumns && !hasArrivalColumns) return "departure";
@@ -156,6 +200,7 @@ function getScheduledTime(row, movementType) {
   if (movementType === "arrival") {
     return normalizeTime(
       pickFirst(row, [
+        "local arr time",
         "skd eta",
         "eta",
         "arrival time",
@@ -168,6 +213,7 @@ function getScheduledTime(row, movementType) {
 
   return normalizeTime(
     pickFirst(row, [
+      "local dep time",
       "dptr",
       "std",
       "departure time",
@@ -180,6 +226,7 @@ function getScheduledTime(row, movementType) {
 function getRoute(row, movementType) {
   if (movementType === "arrival") {
     return pickFirst(row, [
+      "dep airport code",
       "origin",
       "from",
       "routing",
@@ -189,6 +236,7 @@ function getRoute(row, movementType) {
   }
 
   return pickFirst(row, [
+    "arr airport code",
     "destination",
     "dest",
     "to",
@@ -197,22 +245,81 @@ function getRoute(row, movementType) {
   ]);
 }
 
-function normalizeFlightNumber(value, airline) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-
-  if (airline && !raw.toLowerCase().startsWith(String(airline).toLowerCase())) {
-    return `${airline}${raw}`;
-  }
-
-  return raw;
-}
-
 function normalizeFlightRow(rawRow) {
   const row = normalizeRowKeys(rawRow);
+
+  if (looksLikeTpaDepartureRow(row)) {
+    const airline =
+      pickFirst(row, ["published carrier code", "airline", "carrier"]) || "";
+
+    const flightNumberRaw =
+      pickFirst(row, ["flight no", "flight number", "flt", "flight"]) || "";
+
+    const flightNumber = normalizeFlightNumber(flightNumberRaw, airline);
+    const scheduledTime = normalizeTime(row["local dep time"]);
+    const route =
+      pickFirst(row, ["arr airport code", "destination", "dest", "to"]) || "";
+    const aircraft =
+      pickFirst(row, [
+        "specific aircraft code",
+        "equipment group",
+        "aircraft",
+        "eqpts",
+      ]) || "";
+
+    if (!scheduledTime) return null;
+
+    return {
+      movementType: "departure",
+      airline,
+      flightNumber,
+      route,
+      scheduledTime,
+      aircraft,
+      gate: "",
+      rawRow,
+    };
+  }
+
+  if (looksLikeTpaArrivalRow(row)) {
+    const airline =
+      pickFirst(row, ["published carrier code", "airline", "carrier"]) || "";
+
+    const flightNumberRaw =
+      pickFirst(row, ["flight no", "flight number", "flt", "flight"]) || "";
+
+    const flightNumber = normalizeFlightNumber(flightNumberRaw, airline);
+    const scheduledTime = normalizeTime(
+      pickFirst(row, ["local arr time", "eta", "skd eta"])
+    );
+    const route =
+      pickFirst(row, ["dep airport code", "origin", "from", "routing"]) || "";
+    const aircraft =
+      pickFirst(row, [
+        "specific aircraft code",
+        "equipment group",
+        "aircraft",
+        "eqpts",
+      ]) || "";
+
+    if (!scheduledTime) return null;
+
+    return {
+      movementType: "arrival",
+      airline,
+      flightNumber,
+      route,
+      scheduledTime,
+      aircraft,
+      gate: "",
+      rawRow,
+    };
+  }
+
   const movementType = inferMovementType(row);
 
   const airline = pickFirst(row, [
+    "published carrier code",
     "airline",
     "carrier",
     "al",
@@ -220,11 +327,11 @@ function normalizeFlightRow(rawRow) {
   ]);
 
   const flightNumberRaw = pickFirst(row, [
+    "flight no",
+    "flight number",
     "flt",
     "flight",
-    "flight number",
     "flt no",
-    "flight no",
   ]);
 
   const flightNumber = normalizeFlightNumber(flightNumberRaw, airline);
@@ -232,6 +339,8 @@ function normalizeFlightRow(rawRow) {
   const route = getRoute(row, movementType);
 
   const aircraft = pickFirst(row, [
+    "specific aircraft code",
+    "equipment group",
     "a/c",
     "ac",
     "aircraft",
@@ -298,17 +407,16 @@ function textLinesToRows(lines) {
     const clean = line.replace(/\s+/g, " ").trim();
     if (!clean) continue;
 
-    const timeMatch = clean.match(/(\d{1,2}:\d{2}|\d{3,4})/);
-    if (!timeMatch) continue;
+    const match = clean.match(/(\d{3,4})\s+(\d{3,4})\s+(\d{3,4})\s+(\d{3,4})/);
+    if (!match) continue;
 
-    const tokens = clean.split(" ");
-    const flightToken = tokens.find((t) => /[A-Z]{1,3}\d{2,4}/i.test(t)) || "";
-    const timeToken = timeMatch[1];
+    const flight = match[1];
+    const timeRaw = match[3];
 
     rows.push({
-      FLT: flightToken,
-      DPTR: timeToken,
-      Route: clean,
+      FLT: flight,
+      DPTR: timeRaw,
+      Route: "UNKNOWN",
     });
   }
 
@@ -326,7 +434,7 @@ async function parsePdfFile(file) {
     const content = await page.getTextContent();
     const pageText = content.items.map((item) => item.str).join(" ");
     const splitLines = pageText
-      .split(/(?=(?:[A-Z]{1,3}\d{2,4}\s))/g)
+      .split(/(?=(?:\d{3,4}\s+\d{3,4}\s+\d{3,4}\s+\d{3,4}))/g)
       .map((s) => s.trim())
       .filter(Boolean);
 
@@ -355,6 +463,9 @@ export async function parseCabinFlights(file) {
     .map(normalizeFlightRow)
     .filter(Boolean)
     .sort(sortFlights);
+
+  console.log("RAW ROWS:", rows);
+  console.log("PARSED FLIGHTS:", flights);
 
   if (!flights.length) {
     throw new Error(
