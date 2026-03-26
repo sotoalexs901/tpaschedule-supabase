@@ -15,6 +15,7 @@ import {
   deleteCabinSlot,
   deleteManyCabinSlots,
 } from "../services/cabinScheduleEditService.js";
+import { exportCabinSchedulePdf } from "../utils/exportCabinSchedulePdf.js";
 
 const DAY_KEYS = [
   "monday",
@@ -61,6 +62,7 @@ export default function CabinScheduleViewPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [viewMode, setViewMode] = useState("detail");
   const [editMode, setEditMode] = useState(false);
@@ -344,6 +346,28 @@ export default function CabinScheduleViewPage() {
     }
   }
 
+  async function handleExportPdf() {
+    try {
+      setExporting(true);
+
+      const safeWeek = schedule?.weekStartDate || "week";
+      const fileName =
+        viewMode === "roster"
+          ? `cabin-roster-${safeWeek}.pdf`
+          : `cabin-detail-${safeWeek}.pdf`;
+
+      await exportCabinSchedulePdf({
+        elementId: viewMode === "roster" ? "cabin-roster-export" : "cabin-detail-export",
+        fileName,
+      });
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Error exporting PDF.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div style={{ padding: 20 }}>
@@ -374,6 +398,15 @@ export default function CabinScheduleViewPage() {
         </div>
 
         <div style={headerActionsStyle}>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            style={exportButtonStyle}
+            disabled={exporting || editMode}
+          >
+            {exporting ? "Exporting..." : "Export PDF"}
+          </button>
+
           <button
             type="button"
             onClick={handleDeleteSchedule}
@@ -470,19 +503,28 @@ export default function CabinScheduleViewPage() {
             You have unsaved changes.
           </div>
         )}
+
+        {editMode && (
+          <div style={exportHintStyle}>
+            Disable Edit Mode before exporting the PDF.
+          </div>
+        )}
       </div>
 
       <div style={{ height: 16 }} />
 
       {viewMode === "roster" ? (
-        <CabinRosterWeeklyView
-          slotsByDay={slotsByDay}
-          editMode={editMode}
-          deleting={deleting}
-          onDeleteRow={handleDeleteRosterRow}
-        />
+        <div id="cabin-roster-export">
+          <CabinRosterWeeklyView
+            slotsByDay={slotsByDay}
+            editMode={editMode}
+            deleting={deleting}
+            onDeleteRow={handleDeleteRosterRow}
+            weekStartDate={schedule?.weekStartDate}
+          />
+        </div>
       ) : (
-        <>
+        <div id="cabin-detail-export">
           {DAY_KEYS.map((dayKey) => {
             const slots = slotsByDay[dayKey] || [];
             const flights = flightsByDay[dayKey] || [];
@@ -697,13 +739,19 @@ export default function CabinScheduleViewPage() {
               </div>
             );
           })}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-function CabinRosterWeeklyView({ slotsByDay, editMode, deleting, onDeleteRow }) {
+function CabinRosterWeeklyView({
+  slotsByDay,
+  editMode,
+  deleting,
+  onDeleteRow,
+  weekStartDate,
+}) {
   const groupedRoster = useMemo(() => buildRosterGroups(slotsByDay), [slotsByDay]);
 
   const orderedGroups = [
@@ -717,6 +765,13 @@ function CabinRosterWeeklyView({ slotsByDay, editMode, deleting, onDeleteRow }) 
 
   return (
     <div>
+      <div style={cardStyle}>
+        <div style={rosterTitleStyle}>CABIN SERVICE WEEKLY ROSTER</div>
+        <div style={rosterSubTitleStyle}>Week Start: {weekStartDate || "-"}</div>
+      </div>
+
+      <div style={{ height: 16 }} />
+
       {orderedGroups.map((groupName) => {
         const employees = groupedRoster[groupName] || [];
         if (!employees.length) return null;
@@ -1113,6 +1168,16 @@ const backButtonStyle = {
   fontWeight: 600,
 };
 
+const exportButtonStyle = {
+  background: "#7c3aed",
+  color: "#ffffff",
+  padding: "8px 14px",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
 const deleteScheduleButtonStyle = {
   background: "#b91c1c",
   color: "#ffffff",
@@ -1234,6 +1299,27 @@ const pendingBannerStyle = {
   color: "#92400e",
   fontSize: 14,
   fontWeight: 600,
+};
+
+const exportHintStyle = {
+  marginTop: 10,
+  padding: "10px 12px",
+  borderRadius: 8,
+  background: "#f8fafc",
+  color: "#475569",
+  fontSize: 13,
+};
+
+const rosterTitleStyle = {
+  fontSize: 20,
+  fontWeight: 700,
+  color: "#0f172a",
+};
+
+const rosterSubTitleStyle = {
+  marginTop: 6,
+  fontSize: 14,
+  color: "#475569",
 };
 
 const rosterSectionHeaderStyle = {
