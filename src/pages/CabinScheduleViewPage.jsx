@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   collection,
   getDocs,
@@ -9,7 +9,12 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase";
-import { bulkUpdateCabinSlots } from "../services/cabinScheduleEditService.js";
+import {
+  bulkUpdateCabinSlots,
+  deleteCabinSchedule,
+  deleteCabinSlot,
+  deleteManyCabinSlots,
+} from "../services/cabinScheduleEditService.js";
 
 const DAY_KEYS = [
   "monday",
@@ -45,6 +50,7 @@ const ROLE_OPTIONS = ["Supervisor", "LAV", "Agent"];
 
 export default function CabinScheduleViewPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
 
   const [schedule, setSchedule] = useState(null);
   const [slotsByDay, setSlotsByDay] = useState({});
@@ -54,6 +60,7 @@ export default function CabinScheduleViewPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [viewMode, setViewMode] = useState("detail");
   const [editMode, setEditMode] = useState(false);
@@ -167,7 +174,7 @@ export default function CabinScheduleViewPage() {
     [slotsByDay]
   );
 
-  const originalSlotsSignature = useMemo(
+  const currentSlotsSignature = useMemo(
     () => JSON.stringify(Object.values(slotsByDay).flat().map(minifySlotForCompare)),
     [slotsByDay]
   );
@@ -176,11 +183,11 @@ export default function CabinScheduleViewPage() {
 
   useEffect(() => {
     if (!loading) {
-      setBaselineSignature(originalSlotsSignature);
+      setBaselineSignature(currentSlotsSignature);
     }
-  }, [loading, originalSlotsSignature]);
+  }, [loading, currentSlotsSignature]);
 
-  const hasUnsavedChanges = baselineSignature !== originalSlotsSignature;
+  const hasUnsavedChanges = baselineSignature !== currentSlotsSignature;
 
   function handleSlotFieldChange(dayKey, slotId, field, value) {
     setSlotsByDay((prev) => {
@@ -254,6 +261,89 @@ export default function CabinScheduleViewPage() {
     }
   }
 
+  async function handleDeleteSlot(dayKey, slotId) {
+    const confirmed = window.confirm("Delete this shift?");
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      await deleteCabinSlot(slotId);
+
+      setSlotsByDay((prev) => ({
+        ...prev,
+        [dayKey]: (prev[dayKey] || []).filter((slot) => slot.id !== slotId),
+      }));
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Error deleting slot.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteSchedule() {
+    const confirmed = window.confirm(
+      "Delete this entire Cabin schedule? This action cannot be undone."
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      await deleteCabinSchedule(id);
+      alert("Schedule deleted successfully.");
+      navigate("/cabin-saved-schedules");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Error deleting schedule.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteRosterRow(groupName, employeeName) {
+    const confirmed = window.confirm(
+      `Delete all shifts for ${employeeName} in ${groupName}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+
+      const slotIdsToDelete = [];
+
+      Object.values(slotsByDay)
+        .flat()
+        .forEach((slot) => {
+          const slotGroup = getShiftGroup(slot);
+          const slotEmployee = slot.employeeName || slot.employeeId || "Open";
+
+          if (slotGroup === groupName && slotEmployee === employeeName) {
+            slotIdsToDelete.push(slot.id);
+          }
+        });
+
+      if (!slotIdsToDelete.length) {
+        setDeleting(false);
+        return;
+      }
+
+      await deleteManyCabinSlots(slotIdsToDelete);
+
+      setSlotsByDay((prev) => {
+        const next = {};
+        Object.entries(prev).forEach(([dayKey, slots]) => {
+          next[dayKey] = slots.filter((slot) => !slotIdsToDelete.includes(slot.id));
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Error deleting row.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div style={{ padding: 20 }}>
@@ -283,9 +373,20 @@ export default function CabinScheduleViewPage() {
           <p style={pageSubStyle}>Weekly Cabin Service schedule details</p>
         </div>
 
-        <Link to="/cabin-saved-schedules" style={backButtonStyle}>
-          Back to Saved Schedules
-        </Link>
+        <div style={headerActionsStyle}>
+          <button
+            type="button"
+            onClick={handleDeleteSchedule}
+            style={deleteScheduleButtonStyle}
+            disabled={deleting || saving}
+          >
+            {deleting ? "Deleting..." : "Delete Schedule"}
+          </button>
+
+          <Link to="/cabin-saved-schedules" style={backButtonStyle}>
+            Back to Saved Schedules
+          </Link>
+        </div>
       </div>
 
       <div style={{ height: 16 }} />
@@ -374,7 +475,12 @@ export default function CabinScheduleViewPage() {
       <div style={{ height: 16 }} />
 
       {viewMode === "roster" ? (
-        <CabinRosterWeeklyView slotsByDay={slotsByDay} />
+        <CabinRosterWeeklyView
+          slotsByDay={slotsByDay}
+          editMode={editMode}
+          deleting={deleting}
+          onDeleteRow={handleDeleteRosterRow}
+        />
       ) : (
         <>
           {DAY_KEYS.map((dayKey) => {
@@ -443,6 +549,7 @@ export default function CabinScheduleViewPage() {
                             <th style={thTdStyle}>Paid Hours</th>
                             <th style={thTdStyle}>Employee</th>
                             <th style={thTdStyle}>Status</th>
+                            {editMode && <th style={thTdStyle}>Delete</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -539,6 +646,19 @@ export default function CabinScheduleViewPage() {
                                     : "Open"}
                                 </span>
                               </td>
+
+                              {editMode && (
+                                <td style={thTdStyle}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSlot(dayKey, slot.id)}
+                                    style={deleteSlotButtonStyle}
+                                    disabled={deleting}
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -583,7 +703,7 @@ export default function CabinScheduleViewPage() {
   );
 }
 
-function CabinRosterWeeklyView({ slotsByDay }) {
+function CabinRosterWeeklyView({ slotsByDay, editMode, deleting, onDeleteRow }) {
   const groupedRoster = useMemo(() => buildRosterGroups(slotsByDay), [slotsByDay]);
 
   const orderedGroups = [
@@ -615,6 +735,7 @@ function CabinRosterWeeklyView({ slotsByDay }) {
                         {DAY_SHORT_LABELS[dayKey]}
                       </th>
                     ))}
+                    {editMode && <th style={rosterHeaderCellStyle}>Delete</th>}
                   </tr>
                 </thead>
 
@@ -628,6 +749,19 @@ function CabinRosterWeeklyView({ slotsByDay }) {
                           {employee.days[dayKey] || "OFF"}
                         </td>
                       ))}
+
+                      {editMode && (
+                        <td style={rosterCellStyle}>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteRow(groupName, employee.name)}
+                            style={deleteRowButtonStyle}
+                            disabled={deleting}
+                          >
+                            Delete Row
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -839,6 +973,12 @@ const headerRowStyle = {
   flexWrap: "wrap",
 };
 
+const headerActionsStyle = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
 const pageTitleStyle = {
   margin: 0,
   fontSize: 24,
@@ -971,6 +1111,37 @@ const backButtonStyle = {
   borderRadius: 6,
   textDecoration: "none",
   fontWeight: 600,
+};
+
+const deleteScheduleButtonStyle = {
+  background: "#b91c1c",
+  color: "#ffffff",
+  padding: "8px 14px",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const deleteSlotButtonStyle = {
+  background: "#fee2e2",
+  color: "#b91c1c",
+  padding: "6px 10px",
+  border: "1px solid #fecaca",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const deleteRowButtonStyle = {
+  background: "#fee2e2",
+  color: "#b91c1c",
+  padding: "6px 10px",
+  border: "1px solid #fecaca",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 600,
+  fontSize: 12,
 };
 
 const linkStyle = {
