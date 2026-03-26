@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { parseCabinFlights } from "../utils/parseCabinFlights.js";
+import { buildDemandBlocks } from "../utils/buildDemandBlocks.js";
+import { generateCabinShifts } from "../utils/generateCabinShifts.js";
 
 const DAY_KEYS = [
   "monday",
@@ -37,6 +39,7 @@ export default function CabinServicePage() {
   });
 
   const [weeklyFlights, setWeeklyFlights] = useState({});
+  const [weeklyDemandBlocks, setWeeklyDemandBlocks] = useState({});
   const [weeklySlots, setWeeklySlots] = useState({});
   const [step, setStep] = useState("upload");
 
@@ -88,6 +91,7 @@ export default function CabinServicePage() {
       setError("");
 
       const parsedByDay = {};
+      const demandByDay = {};
       const slotsByDay = {};
 
       for (const dayKey of DAY_KEYS) {
@@ -95,11 +99,16 @@ export default function CabinServicePage() {
         if (!file) continue;
 
         const flights = await parseCabinFlights(file);
+        const demandBlocks = buildDemandBlocks(flights);
+        const slots = generateCabinShifts(demandBlocks, dayKey);
+
         parsedByDay[dayKey] = flights;
-        slotsByDay[dayKey] = buildSampleShiftsFromFlights(flights, dayKey);
+        demandByDay[dayKey] = demandBlocks;
+        slotsByDay[dayKey] = slots;
       }
 
       setWeeklyFlights(parsedByDay);
+      setWeeklyDemandBlocks(demandByDay);
       setWeeklySlots(slotsByDay);
       setStep("assignment");
     } catch (err) {
@@ -130,6 +139,7 @@ export default function CabinServicePage() {
   function handleBackToUpload() {
     setStep("upload");
     setWeeklyFlights({});
+    setWeeklyDemandBlocks({});
     setWeeklySlots({});
     setError("");
   }
@@ -141,71 +151,69 @@ export default function CabinServicePage() {
       </h1>
 
       {step === "upload" && (
-        <>
-          <div style={cardStyle}>
-            <h2 style={titleStyle}>Create Weekly Schedule</h2>
+        <div style={cardStyle}>
+          <h2 style={titleStyle}>Create Weekly Schedule</h2>
 
-            <div style={fieldBlockStyle}>
-              <label style={labelStyle}>Week Start Date</label>
-              <input
-                type="date"
-                value={weekStartDate}
-                onChange={(e) => setWeekStartDate(e.target.value)}
-                style={inputStyle}
-              />
-            </div>
+          <div style={fieldBlockStyle}>
+            <label style={labelStyle}>Week Start Date</label>
+            <input
+              type="date"
+              value={weekStartDate}
+              onChange={(e) => setWeekStartDate(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
 
-            <div style={{ marginTop: 20 }}>
-              <h3 style={{ marginBottom: 12 }}>Upload Daily Flight Files</h3>
+          <div style={{ marginTop: 20 }}>
+            <h3 style={{ marginBottom: 12 }}>Upload Daily Flight Files</h3>
 
-              <div style={uploadGridStyle}>
-                {DAY_KEYS.map((dayKey) => (
-                  <div key={dayKey} style={uploadBoxStyle}>
-                    <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                      {DAY_LABELS[dayKey]}
-                    </div>
-
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={(e) =>
-                        handleFileChange(dayKey, e.target.files?.[0] || null)
-                      }
-                    />
-
-                    <div style={{ marginTop: 8, fontSize: 13, color: "#334155" }}>
-                      {dayFiles[dayKey] ? (
-                        <>
-                          <b>Uploaded:</b> {dayFiles[dayKey].name}
-                        </>
-                      ) : (
-                        "No file uploaded"
-                      )}
-                    </div>
+            <div style={uploadGridStyle}>
+              {DAY_KEYS.map((dayKey) => (
+                <div key={dayKey} style={uploadBoxStyle}>
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                    {DAY_LABELS[dayKey]}
                   </div>
-                ))}
-              </div>
-            </div>
 
-            <div style={{ marginTop: 18 }}>
-              <div style={summaryMiniStyle}>
-                Uploaded days: <b>{uploadedDaysCount}/7</b>
-              </div>
-            </div>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) =>
+                      handleFileChange(dayKey, e.target.files?.[0] || null)
+                    }
+                  />
 
-            {error && <div style={errorStyle}>{error}</div>}
-
-            <div style={{ marginTop: 18 }}>
-              <button
-                style={btnPrimary}
-                onClick={handleGenerateWeeklySchedule}
-                disabled={loading}
-              >
-                {loading ? "Generating..." : "Generate Weekly Schedule"}
-              </button>
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#334155" }}>
+                    {dayFiles[dayKey] ? (
+                      <>
+                        <b>Uploaded:</b> {dayFiles[dayKey].name}
+                      </>
+                    ) : (
+                      "No file uploaded"
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        </>
+
+          <div style={{ marginTop: 18 }}>
+            <div style={summaryMiniStyle}>
+              Uploaded days: <b>{uploadedDaysCount}/7</b>
+            </div>
+          </div>
+
+          {error && <div style={errorStyle}>{error}</div>}
+
+          <div style={{ marginTop: 18 }}>
+            <button
+              style={btnPrimary}
+              onClick={handleGenerateWeeklySchedule}
+              disabled={loading}
+            >
+              {loading ? "Generating..." : "Generate Weekly Schedule"}
+            </button>
+          </div>
+        </div>
       )}
 
       {step === "assignment" && (
@@ -225,7 +233,10 @@ export default function CabinServicePage() {
                   )
                 )}
               />
-              <SummaryBox label="Assigned Slots" value={`${assignedCount}/${totalSlots}`} />
+              <SummaryBox
+                label="Assigned Slots"
+                value={`${assignedCount}/${totalSlots}`}
+              />
             </div>
           </div>
 
@@ -233,9 +244,16 @@ export default function CabinServicePage() {
 
           {DAY_KEYS.map((dayKey) => {
             const flights = weeklyFlights[dayKey] || [];
+            const demandBlocks = weeklyDemandBlocks[dayKey] || [];
             const slots = weeklySlots[dayKey] || [];
 
             if (!flights.length && !slots.length) return null;
+
+            const shiftSummary = summarizeShifts(slots);
+            const peakAgents =
+              demandBlocks.length > 0
+                ? Math.max(...demandBlocks.map((b) => b.recommendedAgents || 0))
+                : 0;
 
             return (
               <div key={dayKey} style={{ marginBottom: 16 }}>
@@ -249,6 +267,27 @@ export default function CabinServicePage() {
                     <span>
                       Slots: <b>{slots.length}</b>
                     </span>
+                    <span>
+                      Peak Agents: <b>{peakAgents}</b>
+                    </span>
+                  </div>
+
+                  <div style={{ marginTop: 16 }}>
+                    <h3 style={subTitleStyle}>Generated Shifts</h3>
+                    {shiftSummary.length ? (
+                      <div style={chipWrapStyle}>
+                        {shiftSummary.map((item) => (
+                          <div
+                            key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
+                            style={chipStyle}
+                          >
+                            {item.start}–{item.end} | {item.role} x{item.count}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={emptyTextStyle}>No shifts generated</div>
+                    )}
                   </div>
 
                   <div style={{ marginTop: 16 }}>
@@ -257,21 +296,23 @@ export default function CabinServicePage() {
                       <table style={tableStyle}>
                         <thead>
                           <tr>
-                            <th>Flight</th>
-                            <th>Time</th>
-                            <th>Route</th>
-                            <th>Aircraft</th>
-                            <th>Gate</th>
+                            <th style={thTdStyle}>Flight</th>
+                            <th style={thTdStyle}>Time</th>
+                            <th style={thTdStyle}>Route</th>
+                            <th style={thTdStyle}>Aircraft</th>
+                            <th style={thTdStyle}>Gate</th>
                           </tr>
                         </thead>
                         <tbody>
                           {flights.map((flight, index) => (
-                            <tr key={`${dayKey}-${flight.flightNumber}-${flight.scheduledTime}-${index}`}>
-                              <td>{flight.flightNumber || "-"}</td>
-                              <td>{flight.scheduledTime || "-"}</td>
-                              <td>{flight.route || "-"}</td>
-                              <td>{flight.aircraft || "-"}</td>
-                              <td>{flight.gate || "-"}</td>
+                            <tr
+                              key={`${dayKey}-${flight.flightNumber}-${flight.scheduledTime}-${index}`}
+                            >
+                              <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
+                              <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
+                              <td style={thTdStyle}>{flight.route || "-"}</td>
+                              <td style={thTdStyle}>{flight.aircraft || "-"}</td>
+                              <td style={thTdStyle}>{flight.gate || "-"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -285,19 +326,21 @@ export default function CabinServicePage() {
                       <table style={tableStyle}>
                         <thead>
                           <tr>
-                            <th>Start</th>
-                            <th>End</th>
-                            <th>Role</th>
-                            <th>Employee</th>
+                            <th style={thTdStyle}>Start</th>
+                            <th style={thTdStyle}>End</th>
+                            <th style={thTdStyle}>Role</th>
+                            <th style={thTdStyle}>Paid Hours</th>
+                            <th style={thTdStyle}>Employee</th>
                           </tr>
                         </thead>
                         <tbody>
                           {slots.map((slot) => (
                             <tr key={`${dayKey}-${slot.id}`}>
-                              <td>{slot.start}</td>
-                              <td>{slot.end}</td>
-                              <td>{slot.role}</td>
-                              <td>
+                              <td style={thTdStyle}>{slot.start}</td>
+                              <td style={thTdStyle}>{slot.end}</td>
+                              <td style={thTdStyle}>{slot.role}</td>
+                              <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
+                              <td style={thTdStyle}>
                                 <select
                                   value={slot.employeeId}
                                   onChange={(e) =>
@@ -347,84 +390,35 @@ export default function CabinServicePage() {
 function SummaryBox({ label, value }) {
   return (
     <div style={summaryBoxStyle}>
-      <div style={{ fontSize: 12, color: "#475569", marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "#475569", marginBottom: 6 }}>
+        {label}
+      </div>
       <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
     </div>
   );
 }
 
-function buildSampleShiftsFromFlights(flights, dayKey) {
-  if (!flights.length) return [];
+function summarizeShifts(slots) {
+  const map = new Map();
 
-  const firstFlight = flights[0]?.scheduledTime || "07:00";
-  const lastFlight = flights[flights.length - 1]?.scheduledTime || "19:00";
+  for (const slot of slots) {
+    const key = `${slot.start}|${slot.end}|${slot.role}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        start: slot.start,
+        end: slot.end,
+        role: slot.role,
+        count: 0,
+      });
+    }
+    map.get(key).count += 1;
+  }
 
-  return [
-    {
-      id: `${dayKey}-1`,
-      start: subtractTwoHours(firstFlight),
-      end: addEightAndHalfHours(subtractTwoHours(firstFlight)),
-      role: "Supervisor",
-      employeeId: "",
-    },
-    {
-      id: `${dayKey}-2`,
-      start: subtractTwoHours(firstFlight),
-      end: addEightAndHalfHours(subtractTwoHours(firstFlight)),
-      role: "LAV",
-      employeeId: "",
-    },
-    {
-      id: `${dayKey}-3`,
-      start: subtractTwoHours(firstFlight),
-      end: addEightAndHalfHours(subtractTwoHours(firstFlight)),
-      role: "Agent",
-      employeeId: "",
-    },
-    {
-      id: `${dayKey}-4`,
-      start: firstFlight,
-      end: addEightAndHalfHours(firstFlight),
-      role: "Agent",
-      employeeId: "",
-    },
-    {
-      id: `${dayKey}-5`,
-      start: subtractFourHours(lastFlight),
-      end: addFourHours(subtractFourHours(lastFlight)),
-      role: "Agent",
-      employeeId: "",
-    },
-  ];
-}
-
-function toMinutes(hhmm) {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function toTimeString(totalMinutes) {
-  let mins = totalMinutes % (24 * 60);
-  if (mins < 0) mins += 24 * 60;
-  const h = String(Math.floor(mins / 60)).padStart(2, "0");
-  const m = String(mins % 60).padStart(2, "0");
-  return `${h}:${m}`;
-}
-
-function subtractTwoHours(hhmm) {
-  return toTimeString(toMinutes(hhmm) - 120);
-}
-
-function subtractFourHours(hhmm) {
-  return toTimeString(toMinutes(hhmm) - 240);
-}
-
-function addFourHours(hhmm) {
-  return toTimeString(toMinutes(hhmm) + 240);
-}
-
-function addEightAndHalfHours(hhmm) {
-  return toTimeString(toMinutes(hhmm) + 510);
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.start !== b.start) return a.start.localeCompare(b.start);
+    if (a.end !== b.end) return a.end.localeCompare(b.end);
+    return a.role.localeCompare(b.role);
+  });
 }
 
 const cardStyle = {
@@ -478,6 +472,13 @@ const tableStyle = {
   borderCollapse: "collapse",
 };
 
+const thTdStyle = {
+  borderBottom: "1px solid #e2e8f0",
+  padding: "8px 10px",
+  textAlign: "left",
+  fontSize: 14,
+};
+
 const selectStyle = {
   minWidth: 180,
 };
@@ -487,6 +488,28 @@ const dayStatsStyle = {
   gap: 20,
   fontSize: 14,
   color: "#334155",
+  flexWrap: "wrap",
+};
+
+const chipWrapStyle = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+};
+
+const chipStyle = {
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  border: "1px solid #bfdbfe",
+  borderRadius: 999,
+  padding: "6px 10px",
+  fontSize: 13,
+  fontWeight: 600,
+};
+
+const emptyTextStyle = {
+  fontSize: 14,
+  color: "#64748b",
 };
 
 const btnPrimary = {
