@@ -1,4 +1,3 @@
-// src/pages/AppLayout.jsx
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
@@ -124,7 +123,11 @@ export default function AppLayout() {
         style={sidebarStyle}
         className={`sidebar-base fixed inset-y-0 left-0 z-40 transform transition-transform duration-200
                     md:static md:translate-x-0
-                    ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+                    ${
+                      isSidebarOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full md:translate-x-0"
+                    }`}
       >
         {/* Header sidebar */}
         <div style={sidebarHeaderStyle}>
@@ -169,10 +172,17 @@ export default function AppLayout() {
             showDot={unreadMessages > 0}
           />
 
-         {isManager && <NavItem to="/schedule" label="Create Schedule" />}
+          {isManager && <NavItem to="/schedule" label="Create Schedule" />}
 
-{/* ✅ CABIN SERVICE */}
-{isManager && <NavItem to="/cabin-service" label="Cabin Service" />}
+          {/* ✅ CABIN SERVICE */}
+          {isManager && <NavItem to="/cabin-service" label="Cabin Service" />}
+
+          {isManager && (
+            <NavItem
+              to="/cabin-saved-schedules"
+              label="Cabin Saved Schedules"
+            />
+          )}
 
           {/* ✅ WCHR REPORTS — AGENT / SUPERVISOR */}
           {isAgentOrSupervisor && (
