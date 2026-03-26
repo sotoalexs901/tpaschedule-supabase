@@ -169,7 +169,10 @@ export default function AppLayout() {
             showDot={unreadMessages > 0}
           />
 
-          {isManager && <NavItem to="/schedule" label="Create Schedule" />}
+         {isManager && <NavItem to="/schedule" label="Create Schedule" />}
+
+{/* ✅ CABIN SERVICE */}
+{isManager && <NavItem to="/cabin-service" label="Cabin Service" />}
 
           {/* ✅ WCHR REPORTS — AGENT / SUPERVISOR */}
           {isAgentOrSupervisor && (
