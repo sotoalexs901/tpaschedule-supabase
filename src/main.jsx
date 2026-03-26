@@ -1,4 +1,3 @@
-// src/main.jsx
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -43,6 +42,8 @@ import WCHRFlights from "./pages/WCHRFlights.jsx";
 
 // ✅ CABIN SERVICE
 import CabinServicePage from "./pages/CabinServicePage.jsx";
+import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
+import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
@@ -179,6 +180,24 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["station_manager", "duty_manager"]}>
                 <CabinServicePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="cabin-saved-schedules"
+            element={
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+                <CabinSavedSchedulesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="cabin-saved-schedules/:id"
+            element={
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+                <CabinScheduleViewPage />
               </ProtectedRoute>
             }
           />
