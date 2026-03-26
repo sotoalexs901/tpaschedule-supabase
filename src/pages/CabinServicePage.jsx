@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from "react";
+import { useUser } from "../UserContext.jsx";
 import { parseCabinFlights } from "../utils/parseCabinFlights.js";
 import { buildDemandBlocks } from "../utils/buildDemandBlocks.js";
 import { generateCabinShifts } from "../utils/generateCabinShifts.js";
+import { saveCabinWeeklySchedule } from "../services/cabinSchedulesService.js";
 
 const DAY_KEYS = [
   "monday",
@@ -24,8 +26,11 @@ const DAY_LABELS = {
 };
 
 export default function CabinServicePage() {
+  const { user } = useUser();
+
   const [weekStartDate, setWeekStartDate] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const [dayFiles, setDayFiles] = useState({
@@ -142,6 +147,27 @@ export default function CabinServicePage() {
     setWeeklyDemandBlocks({});
     setWeeklySlots({});
     setError("");
+  }
+
+  async function handleSaveWeeklySchedule() {
+    try {
+      setSaving(true);
+
+      const scheduleId = await saveCabinWeeklySchedule({
+        weekStartDate,
+        weeklyFlights,
+        weeklyDemandBlocks,
+        weeklySlots,
+        createdBy: user?.username || user?.id || "",
+      });
+
+      alert(`Weekly schedule saved successfully. ID: ${scheduleId}`);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Error saving weekly schedule.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -375,9 +401,10 @@ export default function CabinServicePage() {
 
               <button
                 style={btnPrimary}
-                onClick={() => alert("Next step: save weekly schedule to Firebase")}
+                onClick={handleSaveWeeklySchedule}
+                disabled={saving}
               >
-                Save Weekly Schedule
+                {saving ? "Saving..." : "Save Weekly Schedule"}
               </button>
             </div>
           </div>
