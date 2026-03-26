@@ -34,19 +34,21 @@ import CrewAnnouncementsPage from "./pages/CrewAnnouncementsPage.jsx";
 import EmployeeTimeOffRequestPage from "./pages/EmployeeTimeOffRequestPage.jsx";
 import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
-import ProfilePage from "./pages/ProfilePage.jsx"; // 👈 NUEVO
+import ProfilePage from "./pages/ProfilePage.jsx";
 
-// ✅ WCHR PAGES (NUEVO)
+// ✅ WCHR PAGES
 import WCHRScan from "./pages/WCHRScan.jsx";
 import MyWCHRReports from "./pages/MyWCHRReports.jsx";
 import WCHRFlights from "./pages/WCHRFlights.jsx";
+
+// ✅ CABIN SERVICE
+import CabinServicePage from "./pages/CabinServicePage.jsx";
 
 // -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser();
 
   if (!user) return <Navigate to="/login" replace />;
-
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
   return children;
@@ -60,7 +62,6 @@ function DashboardEntry() {
     return <EmployeeDashboardPage />;
   }
 
-  // station_manager / duty_manager (o cualquier otro rol)
   return <DashboardPage />;
 }
 
@@ -71,7 +72,7 @@ function AppRouter() {
         {/* LOGIN */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* 🔓 RUTAS PÚBLICAS (no requieren login) */}
+        {/* 🔓 RUTAS PÚBLICAS */}
         <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
         <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
 
@@ -150,9 +151,6 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
-          {/* Si quieres que supervisor también pueda cerrar vuelos, usa:
-              roles={["station_manager", "duty_manager", "supervisor"]}
-          */}
 
           {/* SOLO STATION MANAGER: anuncios para empleados */}
           <Route
@@ -174,6 +172,16 @@ function AppRouter() {
           />
 
           <Route path="schedule" element={<SchedulePage />} />
+
+          {/* ✅ CABIN SERVICE */}
+          <Route
+            path="cabin-service"
+            element={
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+                <CabinServicePage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="blocked"
@@ -229,7 +237,7 @@ function AppRouter() {
             }
           />
 
-          {/* ⭐ PÁGINA ADMIN PARA APROBAR DAY OFF */}
+          {/* ADMIN PARA APROBAR DAY OFF */}
           <Route
             path="timeoff-requests"
             element={
@@ -297,7 +305,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </React.StrictMode>
 );
 
-// ✅ Registro del Service Worker para PWA (no rompe nada si falla)
+// ✅ Registro del Service Worker para PWA
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch((err) => {
