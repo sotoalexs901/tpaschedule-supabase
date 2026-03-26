@@ -9,6 +9,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { bulkUpdateCabinSlots } from "../services/cabinScheduleEditService.js";
 
 const DAY_KEYS = [
   "monday",
@@ -40,6 +41,8 @@ const DAY_SHORT_LABELS = {
   sunday: "SUN",
 };
 
+const ROLE_OPTIONS = ["Supervisor", "LAV", "Agent"];
+
 export default function CabinScheduleViewPage() {
   const { id } = useParams();
 
@@ -47,9 +50,13 @@ export default function CabinScheduleViewPage() {
   const [slotsByDay, setSlotsByDay] = useState({});
   const [flightsByDay, setFlightsByDay] = useState({});
   const [demandByDay, setDemandByDay] = useState({});
+  const [employees, setEmployees] = useState([]);
+
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [viewMode, setViewMode] = useState("detail");
+  const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
     async function loadScheduleView() {
@@ -70,7 +77,7 @@ export default function CabinScheduleViewPage() {
         };
         setSchedule(scheduleData);
 
-        const [slotsSnap, flightsSnap, demandSnap] = await Promise.all([
+        const [slotsSnap, flightsSnap, demandSnap, employeesSnap] = await Promise.all([
           getDocs(
             query(
               collection(db, "cabinScheduleSlots"),
@@ -89,6 +96,7 @@ export default function CabinScheduleViewPage() {
               where("scheduleId", "==", id)
             )
           ),
+          getDocs(collection(db, "employees")),
         ]);
 
         const slots = slotsSnap.docs.map((d) => ({
@@ -106,6 +114,24 @@ export default function CabinScheduleViewPage() {
           ...d.data(),
         }));
 
+        const employeeList = employeesSnap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
+          .filter((emp) => emp.active !== false)
+          .map((emp) => ({
+            id: emp.id,
+            name:
+              emp.name ||
+              emp.fullName ||
+              emp.employeeName ||
+              emp.username ||
+              "Unnamed Employee",
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setEmployees(employeeList);
         setSlotsByDay(groupByDay(slots, sortSlots));
         setFlightsByDay(groupByDay(flights, sortFlights));
         setDemandByDay(groupByDay(demandBlocks, sortDemandBlocks));
@@ -140,6 +166,93 @@ export default function CabinScheduleViewPage() {
         .filter((slot) => slot.employeeId || slot.employeeName).length,
     [slotsByDay]
   );
+
+  const originalSlotsSignature = useMemo(
+    () => JSON.stringify(Object.values(slotsByDay).flat().map(minifySlotForCompare)),
+    [slotsByDay]
+  );
+
+  const [baselineSignature, setBaselineSignature] = useState("");
+
+  useEffect(() => {
+    if (!loading) {
+      setBaselineSignature(originalSlotsSignature);
+    }
+  }, [loading, originalSlotsSignature]);
+
+  const hasUnsavedChanges = baselineSignature !== originalSlotsSignature;
+
+  function handleSlotFieldChange(dayKey, slotId, field, value) {
+    setSlotsByDay((prev) => {
+      const daySlots = prev[dayKey] || [];
+      return {
+        ...prev,
+        [dayKey]: daySlots.map((slot) => {
+          if (slot.id !== slotId) return slot;
+
+          const updated = { ...slot };
+
+          if (field === "employeeId") {
+            const selectedEmployee = employees.find((emp) => emp.id === value);
+            updated.employeeId = value;
+            updated.employeeName = selectedEmployee?.name || "";
+            updated.status = value ? "assigned" : "open";
+          } else {
+            updated[field] = value;
+          }
+
+          if (field === "start" || field === "end") {
+            updated.calendarHours = calcCalendarHours(
+              field === "start" ? value : updated.start,
+              field === "end" ? value : updated.end
+            );
+            updated.paidHours = calcPaidHours(
+              field === "start" ? value : updated.start,
+              field === "end" ? value : updated.end
+            );
+          }
+
+          return updated;
+        }),
+      };
+    });
+  }
+
+  function handleCancelEdit() {
+    window.location.reload();
+  }
+
+  async function handleSaveChanges() {
+    try {
+      setSaving(true);
+
+      const allSlots = Object.values(slotsByDay).flat();
+
+      const updates = allSlots.map((slot) => ({
+        id: slot.id,
+        updates: {
+          start: slot.start || "",
+          end: slot.end || "",
+          role: slot.role || "",
+          employeeId: slot.employeeId || "",
+          employeeName: slot.employeeName || "",
+          status: slot.employeeId || slot.employeeName ? "assigned" : "open",
+          calendarHours: calcCalendarHours(slot.start, slot.end),
+          paidHours: calcPaidHours(slot.start, slot.end),
+        },
+      }));
+
+      await bulkUpdateCabinSlots(updates);
+      setBaselineSignature(JSON.stringify(allSlots.map(minifySlotForCompare)));
+      setEditMode(false);
+      alert("Changes saved successfully.");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Error saving changes.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -193,23 +306,69 @@ export default function CabinScheduleViewPage() {
       <div style={{ height: 16 }} />
 
       <div style={cardStyle}>
-        <div style={viewToggleWrapStyle}>
-          <button
-            type="button"
-            onClick={() => setViewMode("detail")}
-            style={viewMode === "detail" ? toggleButtonActiveStyle : toggleButtonStyle}
-          >
-            Detail View
-          </button>
+        <div style={toolbarWrapStyle}>
+          <div style={viewToggleWrapStyle}>
+            <button
+              type="button"
+              onClick={() => setViewMode("detail")}
+              style={viewMode === "detail" ? toggleButtonActiveStyle : toggleButtonStyle}
+            >
+              Detail View
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setViewMode("roster")}
-            style={viewMode === "roster" ? toggleButtonActiveStyle : toggleButtonStyle}
-          >
-            Roster View
-          </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("roster")}
+              style={viewMode === "roster" ? toggleButtonActiveStyle : toggleButtonStyle}
+            >
+              Roster View
+            </button>
+          </div>
+
+          <div style={editActionsWrapStyle}>
+            {!editMode ? (
+              <button
+                type="button"
+                onClick={() => setEditMode(true)}
+                style={actionButtonStyle}
+              >
+                Edit Mode
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSaveChanges}
+                  style={saveButtonStyle}
+                  disabled={saving}
+                >
+                  {saving ? "Saving..." : "Save Changes"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  style={cancelButtonStyle}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        {editMode && (
+          <div style={editModeBannerStyle}>
+            Edit Mode is ON. You can change employee, start time, end time, and role directly in the table.
+          </div>
+        )}
+
+        {hasUnsavedChanges && editMode && (
+          <div style={pendingBannerStyle}>
+            You have unsaved changes.
+          </div>
+        )}
       </div>
 
       <div style={{ height: 16 }} />
@@ -289,13 +448,84 @@ export default function CabinScheduleViewPage() {
                         <tbody>
                           {slots.map((slot) => (
                             <tr key={slot.id}>
-                              <td style={thTdStyle}>{slot.start || "-"}</td>
-                              <td style={thTdStyle}>{slot.end || "-"}</td>
-                              <td style={thTdStyle}>{slot.role || "-"}</td>
-                              <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
                               <td style={thTdStyle}>
-                                {slot.employeeName || slot.employeeId || "Open"}
+                                {editMode ? (
+                                  <input
+                                    type="time"
+                                    value={slot.start || ""}
+                                    onChange={(e) =>
+                                      handleSlotFieldChange(dayKey, slot.id, "start", e.target.value)
+                                    }
+                                    style={timeInputStyle}
+                                  />
+                                ) : (
+                                  slot.start || "-"
+                                )}
                               </td>
+
+                              <td style={thTdStyle}>
+                                {editMode ? (
+                                  <input
+                                    type="time"
+                                    value={slot.end || ""}
+                                    onChange={(e) =>
+                                      handleSlotFieldChange(dayKey, slot.id, "end", e.target.value)
+                                    }
+                                    style={timeInputStyle}
+                                  />
+                                ) : (
+                                  slot.end || "-"
+                                )}
+                              </td>
+
+                              <td style={thTdStyle}>
+                                {editMode ? (
+                                  <select
+                                    value={slot.role || ""}
+                                    onChange={(e) =>
+                                      handleSlotFieldChange(dayKey, slot.id, "role", e.target.value)
+                                    }
+                                    style={selectStyle}
+                                  >
+                                    {ROLE_OPTIONS.map((role) => (
+                                      <option key={role} value={role}>
+                                        {role}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  slot.role || "-"
+                                )}
+                              </td>
+
+                              <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
+
+                              <td style={thTdStyle}>
+                                {editMode ? (
+                                  <select
+                                    value={slot.employeeId || ""}
+                                    onChange={(e) =>
+                                      handleSlotFieldChange(
+                                        dayKey,
+                                        slot.id,
+                                        "employeeId",
+                                        e.target.value
+                                      )
+                                    }
+                                    style={selectStyle}
+                                  >
+                                    <option value="">Open</option>
+                                    {employees.map((emp) => (
+                                      <option key={emp.id} value={emp.id}>
+                                        {emp.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  slot.employeeName || slot.employeeId || "Open"
+                                )}
+                              </td>
+
                               <td style={thTdStyle}>
                                 <span
                                   style={
@@ -547,6 +777,51 @@ function sortDemandBlocks(a, b) {
   return (a.startTime || "").localeCompare(b.startTime || "");
 }
 
+function minifySlotForCompare(slot) {
+  return {
+    id: slot.id,
+    start: slot.start || "",
+    end: slot.end || "",
+    role: slot.role || "",
+    employeeId: slot.employeeId || "",
+    employeeName: slot.employeeName || "",
+  };
+}
+
+function toMinutes(hhmm) {
+  if (!hhmm || !String(hhmm).includes(":")) return 0;
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function calcCalendarHours(start, end) {
+  if (!start || !end) return 0;
+
+  let s = toMinutes(start);
+  let e = toMinutes(end);
+
+  if (e <= s) e += 24 * 60;
+
+  return Number(((e - s) / 60).toFixed(2));
+}
+
+function calcPaidHours(start, end) {
+  if (!start || !end) return 0;
+
+  let s = toMinutes(start);
+  let e = toMinutes(end);
+
+  if (e <= s) e += 24 * 60;
+
+  let minutes = e - s;
+
+  if (minutes >= 361) {
+    minutes -= 30;
+  }
+
+  return Number((minutes / 60).toFixed(2));
+}
+
 function SummaryBox({ label, value }) {
   return (
     <div style={summaryBoxStyle}>
@@ -704,7 +979,21 @@ const linkStyle = {
   fontWeight: 600,
 };
 
+const toolbarWrapStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
 const viewToggleWrapStyle = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const editActionsWrapStyle = {
   display: "flex",
   gap: 10,
   flexWrap: "wrap",
@@ -724,6 +1013,56 @@ const toggleButtonActiveStyle = {
   ...toggleButtonStyle,
   background: "#1d4ed8",
   color: "#ffffff",
+};
+
+const actionButtonStyle = {
+  background: "#0f172a",
+  color: "#ffffff",
+  padding: "8px 14px",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const saveButtonStyle = {
+  background: "#047857",
+  color: "#ffffff",
+  padding: "8px 14px",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const cancelButtonStyle = {
+  background: "#e5e7eb",
+  color: "#111827",
+  padding: "8px 14px",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const editModeBannerStyle = {
+  marginTop: 12,
+  padding: "10px 12px",
+  borderRadius: 8,
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const pendingBannerStyle = {
+  marginTop: 10,
+  padding: "10px 12px",
+  borderRadius: 8,
+  background: "#fef3c7",
+  color: "#92400e",
+  fontSize: 14,
+  fontWeight: 600,
 };
 
 const rosterSectionHeaderStyle = {
@@ -763,4 +1102,14 @@ const rosterNameCellStyle = {
   ...rosterCellStyle,
   textAlign: "left",
   fontWeight: 700,
+};
+
+const selectStyle = {
+  minWidth: 160,
+  padding: "6px 8px",
+};
+
+const timeInputStyle = {
+  minWidth: 110,
+  padding: "6px 8px",
 };
