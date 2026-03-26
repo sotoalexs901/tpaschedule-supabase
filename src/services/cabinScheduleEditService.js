@@ -31,6 +31,17 @@ export async function deleteCabinSlot(slotId) {
   await deleteDoc(ref);
 }
 
+export async function deleteManyCabinSlots(slotIds = []) {
+  const batch = writeBatch(db);
+
+  slotIds.forEach((slotId) => {
+    const ref = doc(db, "cabinScheduleSlots", slotId);
+    batch.delete(ref);
+  });
+
+  await batch.commit();
+}
+
 export async function deleteCabinSchedule(scheduleId) {
   const scheduleRef = doc(db, "cabinSchedules", scheduleId);
 
