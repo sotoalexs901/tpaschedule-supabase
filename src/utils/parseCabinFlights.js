@@ -1,4 +1,11 @@
 // src/utils/parseCabinFlights.js
+import * as XLSX from "xlsx";
+import * as pdfjsLib from "pdfjs-dist";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 function parseCsvLine(line) {
   const result = [];
@@ -117,7 +124,7 @@ function normalizeTime(value) {
     return `${onlyDigits.slice(0, 2)}:${onlyDigits.slice(2)}`;
   }
 
-  return raw;
+  return "";
 }
 
 function inferMovementType(row) {
@@ -238,13 +245,8 @@ function normalizeFlightRow(rawRow) {
     "from gate",
   ]);
 
-  if (!flightNumber && !scheduledTime && !route) {
-    return null;
-  }
-
-  if (!scheduledTime) {
-    return null;
-  }
+  if (!flightNumber && !scheduledTime && !route) return null;
+  if (!scheduledTime) return null;
 
   return {
     movementType,
@@ -270,18 +272,95 @@ function sortFlights(a, b) {
   return (a.flightNumber || "").localeCompare(b.flightNumber || "");
 }
 
+async function parseCsvFile(file) {
+  const text = await file.text();
+  return parseCsvText(text);
+}
+
+async function parseExcelFile(file) {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const rows = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    rows.push(...jsonRows);
+  }
+
+  return rows;
+}
+
+function textLinesToRows(lines) {
+  const rows = [];
+
+  for (const line of lines) {
+    const clean = line.replace(/\s+/g, " ").trim();
+    if (!clean) continue;
+
+    const timeMatch = clean.match(/(\d{1,2}:\d{2}|\d{3,4})/);
+    if (!timeMatch) continue;
+
+    const tokens = clean.split(" ");
+    const flightToken = tokens.find((t) => /[A-Z]{1,3}\d{2,4}/i.test(t)) || "";
+    const timeToken = timeMatch[1];
+
+    rows.push({
+      FLT: flightToken,
+      DPTR: timeToken,
+      Route: clean,
+    });
+  }
+
+  return rows;
+}
+
+async function parsePdfFile(file) {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+  const lines = [];
+
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => item.str).join(" ");
+    const splitLines = pageText
+      .split(/(?=(?:[A-Z]{1,3}\d{2,4}\s))/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    lines.push(...splitLines);
+  }
+
+  return textLinesToRows(lines);
+}
+
 export async function parseCabinFlights(file) {
   const fileName = file?.name?.toLowerCase() || "";
 
-  if (!fileName.endsWith(".csv")) {
-    throw new Error("Por ahora este MVP solo soporta archivos CSV.");
+  let rows = [];
+
+  if (fileName.endsWith(".csv")) {
+    rows = await parseCsvFile(file);
+  } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+    rows = await parseExcelFile(file);
+  } else if (fileName.endsWith(".pdf")) {
+    rows = await parsePdfFile(file);
+  } else {
+    throw new Error("Unsupported file type. Use CSV, Excel, or PDF.");
   }
 
-  const text = await file.text();
-  const rows = parseCsvText(text);
-
-  return rows
+  const flights = rows
     .map(normalizeFlightRow)
     .filter(Boolean)
     .sort(sortFlights);
+
+  if (!flights.length) {
+    throw new Error(
+      "No flights were detected in the file. Check the column names or file layout."
+    );
+  }
+
+  return flights;
 }
