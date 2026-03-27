@@ -15,6 +15,10 @@ export async function exportCabinSchedulePdf({
     scale: 2,
     useCORS: true,
     backgroundColor: "#ffffff",
+    scrollX: 0,
+    scrollY: -window.scrollY,
+    windowWidth: element.scrollWidth,
+    windowHeight: element.scrollHeight,
   });
 
   const imgData = canvas.toDataURL("image/png");
@@ -28,16 +32,47 @@ export async function exportCabinSchedulePdf({
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
 
+  const margin = 20;
+  const usableWidth = pageWidth - margin * 2;
+  const usableHeight = pageHeight - margin * 2;
+
   const imgWidth = canvas.width;
   const imgHeight = canvas.height;
 
-  const ratio = Math.min(pageWidth / imgWidth, pageHeight / imgHeight);
-  const renderWidth = imgWidth * ratio;
-  const renderHeight = imgHeight * ratio;
+  const scale = usableWidth / imgWidth;
+  const scaledHeight = imgHeight * scale;
 
-  const x = (pageWidth - renderWidth) / 2;
-  const y = 20;
+  let remainingHeight = scaledHeight;
+  let yOffset = 0;
 
-  pdf.addImage(imgData, "PNG", x, y, renderWidth, renderHeight);
+  pdf.addImage(
+    imgData,
+    "PNG",
+    margin,
+    margin,
+    usableWidth,
+    scaledHeight,
+    undefined,
+    "FAST"
+  );
+
+  remainingHeight -= usableHeight;
+
+  while (remainingHeight > 0) {
+    yOffset += usableHeight / scale;
+    pdf.addPage();
+    pdf.addImage(
+      imgData,
+      "PNG",
+      margin,
+      margin - yOffset * scale,
+      usableWidth,
+      scaledHeight,
+      undefined,
+      "FAST"
+    );
+    remainingHeight -= usableHeight;
+  }
+
   pdf.save(fileName);
 }
