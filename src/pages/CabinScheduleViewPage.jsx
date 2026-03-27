@@ -109,18 +109,18 @@ export default function CabinScheduleViewPage() {
         ]);
 
         const slots = slotsSnap.docs.map((d) => ({
-          id: d.id,
           ...d.data(),
+          firestoreId: d.id,
         }));
 
         const flights = flightsSnap.docs.map((d) => ({
-          id: d.id,
           ...d.data(),
+          firestoreId: d.id,
         }));
 
         const demandBlocks = demandSnap.docs.map((d) => ({
-          id: d.id,
           ...d.data(),
+          firestoreId: d.id,
         }));
 
         const employeeList = employeesSnap.docs
@@ -177,7 +177,10 @@ export default function CabinScheduleViewPage() {
   );
 
   const currentSlotsSignature = useMemo(
-    () => JSON.stringify(Object.values(slotsByDay).flat().map(minifySlotForCompare)),
+    () =>
+      JSON.stringify(
+        Object.values(slotsByDay).flat().map(minifySlotForCompare)
+      ),
     [slotsByDay]
   );
 
@@ -237,19 +240,21 @@ export default function CabinScheduleViewPage() {
 
       const allSlots = Object.values(slotsByDay).flat();
 
-      const updates = allSlots.map((slot) => ({
-        id: slot.id,
-        updates: {
-          start: slot.start || "",
-          end: slot.end || "",
-          role: slot.role || "",
-          employeeId: slot.employeeId || "",
-          employeeName: slot.employeeName || "",
-          status: slot.employeeId || slot.employeeName ? "assigned" : "open",
-          calendarHours: calcCalendarHours(slot.start, slot.end),
-          paidHours: calcPaidHours(slot.start, slot.end),
-        },
-      }));
+      const updates = allSlots
+        .filter((slot) => slot.firestoreId)
+        .map((slot) => ({
+          id: slot.firestoreId,
+          updates: {
+            start: slot.start || "",
+            end: slot.end || "",
+            role: slot.role || "",
+            employeeId: slot.employeeId || "",
+            employeeName: slot.employeeName || "",
+            status: slot.employeeId || slot.employeeName ? "assigned" : "open",
+            calendarHours: calcCalendarHours(slot.start, slot.end),
+            paidHours: calcPaidHours(slot.start, slot.end),
+          },
+        }));
 
       await bulkUpdateCabinSlots(updates);
       setBaselineSignature(JSON.stringify(allSlots.map(minifySlotForCompare)));
@@ -263,17 +268,19 @@ export default function CabinScheduleViewPage() {
     }
   }
 
-  async function handleDeleteSlot(dayKey, slotId) {
+  async function handleDeleteSlot(dayKey, firestoreId) {
     const confirmed = window.confirm("Delete this shift?");
     if (!confirmed) return;
 
     try {
       setDeleting(true);
-      await deleteCabinSlot(slotId);
+      await deleteCabinSlot(firestoreId);
 
       setSlotsByDay((prev) => ({
         ...prev,
-        [dayKey]: (prev[dayKey] || []).filter((slot) => slot.id !== slotId),
+        [dayKey]: (prev[dayKey] || []).filter(
+          (slot) => slot.firestoreId !== firestoreId
+        ),
       }));
     } catch (err) {
       console.error(err);
@@ -319,8 +326,12 @@ export default function CabinScheduleViewPage() {
           const slotGroup = getShiftGroup(slot);
           const slotEmployee = slot.employeeName || slot.employeeId || "Open";
 
-          if (slotGroup === groupName && slotEmployee === employeeName) {
-            slotIdsToDelete.push(slot.id);
+          if (
+            slotGroup === groupName &&
+            slotEmployee === employeeName &&
+            slot.firestoreId
+          ) {
+            slotIdsToDelete.push(slot.firestoreId);
           }
         });
 
@@ -334,7 +345,9 @@ export default function CabinScheduleViewPage() {
       setSlotsByDay((prev) => {
         const next = {};
         Object.entries(prev).forEach(([dayKey, slots]) => {
-          next[dayKey] = slots.filter((slot) => !slotIdsToDelete.includes(slot.id));
+          next[dayKey] = slots.filter(
+            (slot) => !slotIdsToDelete.includes(slot.firestoreId)
+          );
         });
         return next;
       });
@@ -357,7 +370,10 @@ export default function CabinScheduleViewPage() {
           : `cabin-detail-${safeWeek}.pdf`;
 
       await exportCabinSchedulePdf({
-        elementId: viewMode === "roster" ? "cabin-roster-export" : "cabin-detail-export",
+        elementId:
+          viewMode === "roster"
+            ? "cabin-roster-export"
+            : "cabin-detail-export",
         fileName,
       });
     } catch (err) {
@@ -445,7 +461,11 @@ export default function CabinScheduleViewPage() {
             <button
               type="button"
               onClick={() => setViewMode("detail")}
-              style={viewMode === "detail" ? toggleButtonActiveStyle : toggleButtonStyle}
+              style={
+                viewMode === "detail"
+                  ? toggleButtonActiveStyle
+                  : toggleButtonStyle
+              }
             >
               Detail View
             </button>
@@ -453,7 +473,11 @@ export default function CabinScheduleViewPage() {
             <button
               type="button"
               onClick={() => setViewMode("roster")}
-              style={viewMode === "roster" ? toggleButtonActiveStyle : toggleButtonStyle}
+              style={
+                viewMode === "roster"
+                  ? toggleButtonActiveStyle
+                  : toggleButtonStyle
+              }
             >
               Roster View
             </button>
@@ -494,14 +518,13 @@ export default function CabinScheduleViewPage() {
 
         {editMode && (
           <div style={editModeBannerStyle}>
-            Edit Mode is ON. You can change employee, start time, end time, and role directly in the table.
+            Edit Mode is ON. You can change employee, start time, end time, and
+            role directly in the table.
           </div>
         )}
 
         {hasUnsavedChanges && editMode && (
-          <div style={pendingBannerStyle}>
-            You have unsaved changes.
-          </div>
+          <div style={pendingBannerStyle}>You have unsaved changes.</div>
         )}
 
         {editMode && (
@@ -530,10 +553,16 @@ export default function CabinScheduleViewPage() {
             const flights = flightsByDay[dayKey] || [];
             const demandBlocks = demandByDay[dayKey] || [];
 
-            if (!slots.length && !flights.length && !demandBlocks.length) return null;
+            if (!slots.length && !flights.length && !demandBlocks.length) {
+              return null;
+            }
 
-            const arrivals = flights.filter((f) => f.movementType === "arrival").length;
-            const departures = flights.filter((f) => f.movementType !== "arrival").length;
+            const arrivals = flights.filter(
+              (f) => f.movementType === "arrival"
+            ).length;
+            const departures = flights.filter(
+              (f) => f.movementType !== "arrival"
+            ).length;
             const peakAgents =
               demandBlocks.length > 0
                 ? Math.max(...demandBlocks.map((b) => b.recommendedAgents || 0))
@@ -596,14 +625,19 @@ export default function CabinScheduleViewPage() {
                         </thead>
                         <tbody>
                           {slots.map((slot) => (
-                            <tr key={slot.id}>
+                            <tr key={slot.id || slot.firestoreId}>
                               <td style={thTdStyle}>
                                 {editMode ? (
                                   <input
                                     type="time"
                                     value={slot.start || ""}
                                     onChange={(e) =>
-                                      handleSlotFieldChange(dayKey, slot.id, "start", e.target.value)
+                                      handleSlotFieldChange(
+                                        dayKey,
+                                        slot.id,
+                                        "start",
+                                        e.target.value
+                                      )
                                     }
                                     style={timeInputStyle}
                                   />
@@ -618,7 +652,12 @@ export default function CabinScheduleViewPage() {
                                     type="time"
                                     value={slot.end || ""}
                                     onChange={(e) =>
-                                      handleSlotFieldChange(dayKey, slot.id, "end", e.target.value)
+                                      handleSlotFieldChange(
+                                        dayKey,
+                                        slot.id,
+                                        "end",
+                                        e.target.value
+                                      )
                                     }
                                     style={timeInputStyle}
                                   />
@@ -632,7 +671,12 @@ export default function CabinScheduleViewPage() {
                                   <select
                                     value={slot.role || ""}
                                     onChange={(e) =>
-                                      handleSlotFieldChange(dayKey, slot.id, "role", e.target.value)
+                                      handleSlotFieldChange(
+                                        dayKey,
+                                        slot.id,
+                                        "role",
+                                        e.target.value
+                                      )
                                     }
                                     style={selectStyle}
                                   >
@@ -693,7 +737,9 @@ export default function CabinScheduleViewPage() {
                                 <td style={thTdStyle}>
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteSlot(dayKey, slot.id)}
+                                    onClick={() =>
+                                      handleDeleteSlot(dayKey, slot.firestoreId)
+                                    }
                                     style={deleteSlotButtonStyle}
                                     disabled={deleting}
                                   >
@@ -723,7 +769,7 @@ export default function CabinScheduleViewPage() {
                         </thead>
                         <tbody>
                           {flights.map((flight) => (
-                            <tr key={flight.id}>
+                            <tr key={flight.firestoreId || flight.id}>
                               <td style={thTdStyle}>{flight.movementType || "-"}</td>
                               <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
                               <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
@@ -968,7 +1014,8 @@ function sortDemandBlocks(a, b) {
 
 function minifySlotForCompare(slot) {
   return {
-    id: slot.id,
+    firestoreId: slot.firestoreId || "",
+    id: slot.id || "",
     start: slot.start || "",
     end: slot.end || "",
     role: slot.role || "",
