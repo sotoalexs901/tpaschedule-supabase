@@ -810,33 +810,38 @@ function CabinRosterWeeklyView({
   ];
 
   return (
-    <div>
-      <div style={cardStyle}>
-        <div style={rosterTitleStyle}>CABIN SERVICE WEEKLY ROSTER</div>
-        <div style={rosterSubTitleStyle}>Week Start: {weekStartDate || "-"}</div>
+    <div style={rosterExportWrapStyle}>
+      <div style={rosterTopHeaderStyle}>
+        <div style={rosterTopTitleStyle}>CABIN SERVICE WEEKLY SCHEDULE</div>
+        <div style={rosterTopSubTitleStyle}>Week Start: {weekStartDate || "-"}</div>
       </div>
-
-      <div style={{ height: 16 }} />
 
       {orderedGroups.map((groupName) => {
         const employees = groupedRoster[groupName] || [];
         if (!employees.length) return null;
 
         return (
-          <div key={groupName} style={{ marginBottom: 24 }}>
+          <div key={groupName} style={rosterSectionWrapStyle}>
             <div style={rosterSectionHeaderStyle}>{groupName}</div>
 
             <div style={{ overflowX: "auto" }}>
               <table style={rosterTableStyle}>
                 <thead>
                   <tr>
-                    <th style={rosterHeaderCellStyle}>Employee</th>
+                    <th
+                      style={{
+                        ...rosterHeaderCellStyle,
+                        ...rosterEmployeeHeaderStyle,
+                      }}
+                    >
+                      EMPLOYEE
+                    </th>
                     {DAY_KEYS.map((dayKey) => (
                       <th key={dayKey} style={rosterHeaderCellStyle}>
                         {DAY_SHORT_LABELS[dayKey]}
                       </th>
                     ))}
-                    {editMode && <th style={rosterHeaderCellStyle}>Delete</th>}
+                    {editMode && <th style={rosterHeaderCellStyle}>DELETE</th>}
                   </tr>
                 </thead>
 
@@ -845,11 +850,22 @@ function CabinRosterWeeklyView({
                     <tr key={`${groupName}-${employee.name}-${index}`}>
                       <td style={rosterNameCellStyle}>{employee.name}</td>
 
-                      {DAY_KEYS.map((dayKey) => (
-                        <td key={dayKey} style={rosterCellStyle}>
-                          {employee.days[dayKey] || "OFF"}
-                        </td>
-                      ))}
+                      {DAY_KEYS.map((dayKey) => {
+                        const value = employee.days[dayKey] || "OFF";
+                        const isOff = value === "OFF";
+
+                        return (
+                          <td
+                            key={dayKey}
+                            style={{
+                              ...rosterCellStyle,
+                              ...(isOff ? rosterOffCellStyle : {}),
+                            }}
+                          >
+                            {value}
+                          </td>
+                        );
+                      })}
 
                       {editMode && (
                         <td style={rosterCellStyle}>
@@ -1248,12 +1264,12 @@ const deleteSlotButtonStyle = {
 const deleteRowButtonStyle = {
   background: "#fee2e2",
   color: "#b91c1c",
-  padding: "6px 10px",
+  padding: "4px 8px",
   border: "1px solid #fecaca",
   borderRadius: 6,
   cursor: "pointer",
-  fontWeight: 600,
-  fontSize: 12,
+  fontWeight: 700,
+  fontSize: 11,
 };
 
 const linkStyle = {
@@ -1357,54 +1373,96 @@ const exportHintStyle = {
   fontSize: 13,
 };
 
-const rosterTitleStyle = {
-  fontSize: 20,
-  fontWeight: 700,
-  color: "#0f172a",
+const rosterExportWrapStyle = {
+  background: "#ffffff",
+  padding: 12,
+  borderRadius: 10,
 };
 
-const rosterSubTitleStyle = {
-  marginTop: 6,
+const rosterTopHeaderStyle = {
+  marginBottom: 14,
+  border: "2px solid #1d4ed8",
+  borderRadius: 8,
+  overflow: "hidden",
+};
+
+const rosterTopTitleStyle = {
+  background: "#1d4ed8",
+  color: "#ffffff",
+  textAlign: "center",
+  fontSize: 20,
+  fontWeight: 800,
+  padding: "10px 12px",
+  letterSpacing: "0.04em",
+};
+
+const rosterTopSubTitleStyle = {
+  background: "#eff6ff",
+  color: "#0f172a",
+  textAlign: "center",
   fontSize: 14,
-  color: "#475569",
+  fontWeight: 600,
+  padding: "8px 12px",
+  borderTop: "1px solid #bfdbfe",
+};
+
+const rosterSectionWrapStyle = {
+  marginBottom: 18,
 };
 
 const rosterSectionHeaderStyle = {
   background: "#1d4ed8",
   color: "#ffffff",
   padding: "8px 12px",
-  fontWeight: 700,
-  fontSize: 14,
+  fontWeight: 800,
+  fontSize: 15,
   borderTopLeftRadius: 8,
   borderTopRightRadius: 8,
+  letterSpacing: "0.02em",
 };
 
 const rosterTableStyle = {
   width: "100%",
   borderCollapse: "collapse",
+  tableLayout: "fixed",
   background: "#ffffff",
 };
 
 const rosterHeaderCellStyle = {
-  border: "1px solid #cbd5e1",
-  padding: "8px 10px",
+  border: "2px solid #1e293b",
+  padding: "8px 6px",
   textAlign: "center",
   fontSize: 13,
-  fontWeight: 700,
-  background: "#eff6ff",
+  fontWeight: 800,
+  background: "#1d4ed8",
+  color: "#ffffff",
+};
+
+const rosterEmployeeHeaderStyle = {
+  width: 220,
 };
 
 const rosterCellStyle = {
-  border: "1px solid #cbd5e1",
-  padding: "8px 10px",
+  border: "1px solid #1e293b",
+  padding: "7px 6px",
   textAlign: "center",
   fontSize: 13,
+  fontWeight: 600,
   background: "#ffffff",
+  color: "#111827",
 };
 
 const rosterNameCellStyle = {
   ...rosterCellStyle,
   textAlign: "left",
+  fontWeight: 700,
+  paddingLeft: 10,
+  width: 220,
+};
+
+const rosterOffCellStyle = {
+  background: "#e5e7eb",
+  color: "#374151",
   fontWeight: 700,
 };
 
