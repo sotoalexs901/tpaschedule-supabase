@@ -36,6 +36,7 @@ function toMMDDYYYY(dateObj) {
 function startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
 }
+
 function endOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 }
@@ -47,6 +48,22 @@ function tsToDate(val) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function safeUpper(v) {
+  return String(v || "").trim().toUpperCase();
+}
+
+function safeText(v) {
+  return String(v || "").trim();
+}
+
+function formatTimeAtGate(v) {
+  const raw = String(v || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return raw;
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
 function downloadCSV(filename, rows) {
   const headers = [
     "Report ID",
@@ -55,12 +72,15 @@ function downloadCSV(filename, rows) {
     "Passenger",
     "Airline",
     "Flight",
-    "Date",
+    "Flight Date",
     "Origin",
     "Destination",
     "Seat",
     "Gate",
+    "Time At Gate",
+    "Boarding Group",
     "PNR",
+    "Operator",
     "WCHR Type",
     "Wheelchair #",
     "Status",
@@ -85,7 +105,10 @@ function downloadCSV(filename, rows) {
         r.destination || "",
         r.seat || "",
         r.gate || "",
+        r.time_at_gate || "",
+        r.boarding_group || "",
         r.pnr || "",
+        r.operator || "",
         r.wch_type || "",
         r.wheelchair_number || "",
         r.status || "",
@@ -226,6 +249,30 @@ function statusBadge(kind) {
   };
 }
 
+function ImageThumb({ src, alt = "Boarding pass" }) {
+  if (!src) {
+    return <span style={{ color: "#94a3b8" }}>—</span>;
+  }
+
+  return (
+    <a href={src} target="_blank" rel="noreferrer">
+      <img
+        src={src}
+        alt={alt}
+        style={{
+          width: 56,
+          height: 56,
+          objectFit: "cover",
+          borderRadius: 12,
+          border: "1px solid #dbeafe",
+          background: "#fff",
+          display: "block",
+        }}
+      />
+    </a>
+  );
+}
+
 export default function WCHRFlights() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -270,17 +317,20 @@ export default function WCHRFlights() {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
         const map = new Map();
+
         for (const r of rows) {
           const fk = r.flight_key || "UNKNOWN";
+          const reportFlightDate = tsToDate(r.flight_date);
 
           if (!map.has(fk)) {
             map.set(fk, {
               flight_key: fk,
-              airline: r.airline || "—",
-              flight_number: r.flight_number || "—",
-              flight_date: tsToDate(r.flight_date),
-              origin: r.origin || "",
-              destination: r.destination || "",
+              airline: safeUpper(r.airline) || "—",
+              flight_number: safeUpper(r.flight_number) || "—",
+              flight_date: reportFlightDate,
+              origin: safeUpper(r.origin) || "",
+              destination: safeUpper(r.destination) || "",
+              operator: safeUpper(r.operator) || "",
               total_reports: 0,
               new_reports: 0,
               late_reports: 0,
@@ -291,6 +341,19 @@ export default function WCHRFlights() {
 
           const item = map.get(fk);
           item.total_reports += 1;
+
+          if (!item.flight_date && reportFlightDate) {
+            item.flight_date = reportFlightDate;
+          }
+          if (!item.operator && r.operator) {
+            item.operator = safeUpper(r.operator);
+          }
+          if (!item.origin && r.origin) {
+            item.origin = safeUpper(r.origin);
+          }
+          if (!item.destination && r.destination) {
+            item.destination = safeUpper(r.destination);
+          }
 
           if (String(r.status || "").toUpperCase() === "LATE") {
             item.late_reports += 1;
@@ -359,12 +422,27 @@ export default function WCHRFlights() {
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const rows = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          airline: safeUpper(d.data().airline),
+          flight_number: safeUpper(d.data().flight_number),
+          origin: safeUpper(d.data().origin),
+          destination: safeUpper(d.data().destination),
+          gate: safeUpper(d.data().gate),
+          seat: safeUpper(d.data().seat),
+          boarding_group: safeUpper(d.data().boarding_group),
+          operator: safeUpper(d.data().operator),
+          time_at_gate: formatTimeAtGate(d.data().time_at_gate),
+          pnr: safeText(d.data().pnr).toUpperCase(),
+        }));
 
         if (mounted) setReports(rows);
       } catch (e) {
         console.error(e);
-        if (mounted) setError(e?.message || "Failed to load reports for this flight.");
+        if (mounted) {
+          setError(e?.message || "Failed to load reports for this flight.");
+        }
       } finally {
         if (mounted) setReportsLoading(false);
       }
@@ -402,6 +480,7 @@ export default function WCHRFlights() {
         flight_date: flight.flight_date || null,
         origin: flight.origin || "",
         destination: flight.destination || "",
+        operator: flight.operator || "",
         closed_at: Timestamp.now(),
         closed_by_employee_id: user?.id || "",
         closed_by_name: user?.username || "",
@@ -693,6 +772,7 @@ export default function WCHRFlights() {
                   <th style={thStyle({ textAlign: "left" })}>Flight</th>
                   <th style={thStyle({ textAlign: "left" })}>Date</th>
                   <th style={thStyle({ textAlign: "left" })}>Route</th>
+                  <th style={thStyle({ textAlign: "left" })}>Operator</th>
                   <th style={thStyle({ textAlign: "left" })}>Reports</th>
                   <th style={thStyle({ textAlign: "left" })}>Status</th>
                   <th style={thStyle({ textAlign: "center" })}>Actions</th>
@@ -746,6 +826,8 @@ export default function WCHRFlights() {
                     <td style={tdStyle}>
                       {(f.origin || "—") + " → " + (f.destination || "—")}
                     </td>
+
+                    <td style={tdStyle}>{f.operator || "—"}</td>
 
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 700 }}>
@@ -958,17 +1040,22 @@ export default function WCHRFlights() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 980,
+                  minWidth: 1480,
                   background: "#fff",
                 }}
               >
                 <thead>
                   <tr style={{ background: "#f8fbff" }}>
+                    <th style={thStyle({ textAlign: "left" })}>Photo</th>
                     <th style={thStyle({ textAlign: "left" })}>Report ID</th>
                     <th style={thStyle({ textAlign: "left" })}>Passenger</th>
+                    <th style={thStyle({ textAlign: "left" })}>Flight Date</th>
                     <th style={thStyle({ textAlign: "left" })}>Seat</th>
                     <th style={thStyle({ textAlign: "left" })}>Gate</th>
+                    <th style={thStyle({ textAlign: "left" })}>Time at Gate</th>
+                    <th style={thStyle({ textAlign: "left" })}>Group</th>
                     <th style={thStyle({ textAlign: "left" })}>PNR</th>
+                    <th style={thStyle({ textAlign: "left" })}>Operator</th>
                     <th style={thStyle({ textAlign: "left" })}>WCHR</th>
                     <th style={thStyle({ textAlign: "left" })}>Wheelchair #</th>
                     <th style={thStyle({ textAlign: "left" })}>Submitted By</th>
@@ -983,11 +1070,23 @@ export default function WCHRFlights() {
                         background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                       }}
                     >
+                      <td style={tdStyle}>
+                        <ImageThumb
+                          src={r.image_url}
+                          alt={r.passenger_name || "Boarding pass"}
+                        />
+                      </td>
                       <td style={tdStyle}>{r.report_id || r.id}</td>
                       <td style={tdStyle}>{r.passenger_name || "—"}</td>
+                      <td style={tdStyle}>
+                        {formatReportFlightDate(r.flight_date)}
+                      </td>
                       <td style={tdStyle}>{r.seat || "—"}</td>
                       <td style={tdStyle}>{r.gate || "—"}</td>
+                      <td style={tdStyle}>{r.time_at_gate || "—"}</td>
+                      <td style={tdStyle}>{r.boarding_group || "—"}</td>
                       <td style={tdStyle}>{r.pnr || "—"}</td>
+                      <td style={tdStyle}>{r.operator || "—"}</td>
                       <td style={tdStyle}>{r.wch_type || "—"}</td>
                       <td style={tdStyle}>{r.wheelchair_number || "—"}</td>
                       <td style={tdStyle}>{r.employee_name || "—"}</td>
@@ -1020,6 +1119,11 @@ export default function WCHRFlights() {
   );
 }
 
+function formatReportFlightDate(val) {
+  const d = tsToDate(val);
+  return d ? toMMDDYYYY(d) : "—";
+}
+
 function thStyle(extra = {}) {
   return {
     padding: "14px 14px",
@@ -1037,7 +1141,7 @@ function thStyle(extra = {}) {
 const tdStyle = {
   padding: "14px",
   borderBottom: "1px solid #eef2f7",
-  verticalAlign: "top",
+  verticalAlign: "middle",
   fontSize: 14,
   color: "#0f172a",
 };
