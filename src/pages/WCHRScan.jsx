@@ -20,8 +20,6 @@ function pad2(n) {
 }
 
 function formatMMDDYYYY(dateLike) {
-  // dateLike puede venir como string del scanner o Date
-  // Intentamos convertir con robustez.
   try {
     const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
     if (Number.isNaN(d.getTime())) return "";
@@ -36,8 +34,6 @@ function yyyymmdd(d = new Date()) {
 }
 
 function buildFlightKey({ airline, flight_number, flight_date }) {
-  // flight_date se guarda internamente como Date (o string ISO).
-  // Para flight_key usamos YYYY-MM-DD (estable para keys)
   const d = flight_date instanceof Date ? flight_date : new Date(flight_date);
   const iso = Number.isNaN(d.getTime())
     ? "unknown-date"
@@ -56,23 +52,143 @@ async function isFlightClosed(flight_key) {
   return Boolean(data?.closed_at);
 }
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "secondary",
+  type = "button",
+  disabled = false,
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+        opacity: disabled ? 0.65 : 1,
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#475569",
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+function Field({ label, value }) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 14,
+        border: "1px solid #dbeafe",
+        background: "#f8fbff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 14,
+          color: "#0f172a",
+          fontWeight: 700,
+          lineHeight: 1.45,
+        }}
+      >
+        {String(value || "").trim() ? (
+          value
+        ) : (
+          <span style={{ color: "#94a3b8" }}>—</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function WCHRScan() {
   const navigate = useNavigate();
   const { user } = useUser();
 
-  const [step, setStep] = useState("upload"); // upload | scanning | preview | submitting
+  const [step, setStep] = useState("upload");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [wchType, setWchType] = useState("WCHR");
-
   const [parsed, setParsed] = useState(null);
-  // parsed esperado:
-  // {
-  //   passenger_name, airline, flight_number, flight_date, origin, destination, seat, gate, pnr
-  // }
 
-  const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL; // ej: https://.../api/wchr/scan  ó /api/wchr/scan
+  const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
 
   const canScan = useMemo(() => Boolean(imageFile), [imageFile]);
 
@@ -97,23 +213,23 @@ export default function WCHRScan() {
 
   const handlePickFile = (file) => {
     setError("");
+    setMessage("");
     setParsed(null);
     setImageUrl("");
     setImageFile(file || null);
   };
 
   const uploadToStorage = async (file) => {
-    // guardamos por usuario/fecha para trazabilidad
     const safeUser = (user?.username || user?.id || "unknown").toString();
     const path = `wch_reports/${safeUser}/${yyyymmdd()}/${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file, { contentType: file.type || "image/jpeg" });
+    await uploadBytes(storageRef, file, {
+      contentType: file.type || "image/jpeg",
+    });
     return await getDownloadURL(storageRef);
   };
 
   const callScanService = async (url) => {
-    // Servicio externo/backend que hace PDF417 + OCR fallback
-    // Espera recibir { image_url } y devolver { fields... }
     if (!scanUrl) {
       throw new Error(
         "Missing VITE_WCHR_SCAN_URL. Configure your scan endpoint to enable parsing."
@@ -130,11 +246,14 @@ export default function WCHRScan() {
       const txt = await res.text().catch(() => "");
       throw new Error(`Scan failed (${res.status}). ${txt}`.trim());
     }
+
     return await res.json();
   };
 
   const handleScan = async () => {
     setError("");
+    setMessage("");
+
     if (!imageFile) {
       setError("Please select a boarding pass photo.");
       return;
@@ -143,17 +262,17 @@ export default function WCHRScan() {
     try {
       setStep("scanning");
 
-      // 1) upload
       const url = await uploadToStorage(imageFile);
       setImageUrl(url);
 
-      // 2) scan/parse
       const scanResult = await callScanService(url);
 
-      // Normalizamos nombres de campos (por si backend devuelve algo ligeramente distinto)
       const normalized = {
         passenger_name:
-          scanResult.passenger_name || scanResult.passenger || scanResult.name || "",
+          scanResult.passenger_name ||
+          scanResult.passenger ||
+          scanResult.name ||
+          "",
         airline: scanResult.airline || "",
         flight_number: scanResult.flight_number || scanResult.flight || "",
         flight_date: scanResult.flight_date || scanResult.date || "",
@@ -161,7 +280,11 @@ export default function WCHRScan() {
         destination: scanResult.destination || scanResult.to || "",
         seat: scanResult.seat || "",
         gate: scanResult.gate || "",
-        pnr: scanResult.pnr || scanResult.record_locator || scanResult.locator || "",
+        pnr:
+          scanResult.pnr ||
+          scanResult.record_locator ||
+          scanResult.locator ||
+          "",
       };
 
       setParsed(normalized);
@@ -175,10 +298,13 @@ export default function WCHRScan() {
 
   const handleSubmit = async () => {
     setError("");
+    setMessage("");
+
     if (!user) {
       setError("You must be logged in.");
       return;
     }
+
     if (!canSubmit) {
       setError("Missing required fields from scan. Please rescan a clearer photo.");
       return;
@@ -197,9 +323,8 @@ export default function WCHRScan() {
       const closed = await isFlightClosed(flight_key);
       const status = closed ? "LATE" : "NEW";
 
-      // 1) crear doc
       const docRef = await addDoc(collection(db, "wch_reports"), {
-        report_id: "", // lo llenamos después
+        report_id: "",
         employee_id: user.id || "",
         employee_name: user.username || "",
         submitted_at: serverTimestamp(),
@@ -207,7 +332,7 @@ export default function WCHRScan() {
         passenger_name: parsed.passenger_name,
         airline: parsed.airline,
         flight_number: parsed.flight_number,
-        flight_date: flightDateObj, // Firestore lo guarda como Timestamp
+        flight_date: flightDateObj,
         origin: parsed.origin,
         destination: parsed.destination,
         seat: parsed.seat,
@@ -220,13 +345,12 @@ export default function WCHRScan() {
         image_url: imageUrl,
       });
 
-      // 2) report_id humano (simple y único)
       const short = docRef.id.slice(-6).toUpperCase();
       const report_id = `WCHR-${yyyymmdd()}-${short}`;
 
       await updateDoc(doc(db, "wch_reports", docRef.id), { report_id });
 
-      // 3) navegar a una pantalla “My Reports” o detalle (ajusta ruta según tu app)
+      setMessage("Report submitted successfully.");
       navigate("/wchr/my-reports");
     } catch (e) {
       console.error(e);
@@ -235,155 +359,301 @@ export default function WCHRScan() {
     }
   };
 
-  return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "1rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <h2 style={{ margin: 0 }}>WCHR Reports</h2>
-          <p style={{ marginTop: 6, opacity: 0.8 }}>
-            Scan a boarding pass and submit a WCHR report.
-          </p>
-        </div>
-
-        <button
-          onClick={() => navigate("/dashboard")}
+  // ✅ AQUÍ dejamos explícito que SOLO se requiere estar logueado
+  if (!user) {
+    return (
+      <PageCard style={{ padding: 22, maxWidth: 900, margin: "0 auto" }}>
+        <p
           style={{
-            height: 36,
-            padding: "0 12px",
-            borderRadius: 8,
-            border: "1px solid rgba(255,255,255,0.2)",
-            background: "transparent",
-            color: "inherit",
-            cursor: "pointer",
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
           }}
         >
-          Back
-        </button>
+          You must be logged in to scan and submit a WCHR report.
+        </p>
+      </PageCard>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        maxWidth: 980,
+        margin: "0 auto",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              TPA OPS · WCHR
+            </p>
+
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              WCHR Scan
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Scan a boarding pass, review the parsed details and submit a WCHR
+              report. Any logged-in user can access this screen.
+            </p>
+          </div>
+
+          <ActionButton
+            onClick={() => navigate("/dashboard")}
+            variant="secondary"
+          >
+            Back
+          </ActionButton>
+        </div>
       </div>
 
       {error && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 10,
-            background: "rgba(255,0,0,0.12)",
-            border: "1px solid rgba(255,0,0,0.25)",
-          }}
-        >
-          <div style={{ fontSize: 14 }}>{error}</div>
-        </div>
+        <PageCard style={{ padding: 16 }}>
+          <div
+            style={{
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#9f1239",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        </PageCard>
       )}
 
-      {/* UPLOAD */}
-      <div
-        style={{
-          marginTop: 16,
-          padding: 14,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,0.12)",
-          background: "rgba(255,255,255,0.04)",
-        }}
-      >
-        <div style={{ display: "grid", gap: 10 }}>
-          <label style={{ fontSize: 13, opacity: 0.9 }}>
-            Boarding Pass Photo
-          </label>
+      {message && (
+        <PageCard style={{ padding: 16 }}>
+          <div
+            style={{
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#065f46",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {message}
+          </div>
+        </PageCard>
+      )}
 
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => handlePickFile(e.target.files?.[0])}
-          />
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ marginBottom: 16 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Scan Boarding Pass
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Upload a boarding pass image and select the wheelchair service type.
+          </p>
+        </div>
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 220 }}>
-              <label style={{ fontSize: 13, opacity: 0.9 }}>WCHR Type</label>
-              <select
-                value={wchType}
-                onChange={(e) => setWchType(e.target.value)}
-                style={{
-                  width: "100%",
-                  height: 38,
-                  marginTop: 6,
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.16)",
-                  background: "rgba(0,0,0,0.25)",
-                  color: "inherit",
-                  padding: "0 10px",
-                }}
-              >
-                <option value="WCHR">WCHR</option>
-                <option value="WCHS">WCHS</option>
-                <option value="WCHC">WCHC</option>
-              </select>
-            </div>
+        <div
+          style={{
+            display: "grid",
+            gap: 14,
+          }}
+        >
+          <div>
+            <FieldLabel>Boarding Pass Photo</FieldLabel>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => handlePickFile(e.target.files?.[0])}
+              style={{
+                width: "100%",
+                border: "1px solid #dbeafe",
+                background: "#ffffff",
+                borderRadius: 14,
+                padding: "12px 14px",
+                fontSize: 14,
+                color: "#0f172a",
+              }}
+            />
+          </div>
 
-            <div style={{ flex: 1, minWidth: 220, display: "flex", alignItems: "end" }}>
-              <button
-                onClick={handleScan}
-                disabled={!canScan || step === "scanning" || step === "submitting"}
-                style={{
-                  width: "100%",
-                  height: 40,
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.16)",
-                  background:
-                    !canScan || step === "scanning" || step === "submitting"
-                      ? "rgba(255,255,255,0.08)"
-                      : "rgba(255,255,255,0.14)",
-                  color: "inherit",
-                  cursor:
-                    !canScan || step === "scanning" || step === "submitting"
-                      ? "not-allowed"
-                      : "pointer",
-                }}
-              >
-                {step === "scanning" ? "Scanning..." : "Scan & Preview"}
-              </button>
-            </div>
+          <div style={{ maxWidth: 260 }}>
+            <FieldLabel>WCHR Type</FieldLabel>
+            <select
+              value={wchType}
+              onChange={(e) => setWchType(e.target.value)}
+              style={{
+                width: "100%",
+                border: "1px solid #dbeafe",
+                background: "#ffffff",
+                borderRadius: 14,
+                padding: "12px 14px",
+                fontSize: 14,
+                color: "#0f172a",
+                outline: "none",
+              }}
+            >
+              <option value="WCHR">WCHR</option>
+              <option value="WCHS">WCHS</option>
+              <option value="WCHC">WCHC</option>
+            </select>
           </div>
 
           {imageFile && (
-            <div style={{ fontSize: 12, opacity: 0.8 }}>
-              Selected: {imageFile.name}
-            </div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                color: "#64748b",
+              }}
+            >
+              Selected: <b>{imageFile.name}</b>
+            </p>
           )}
 
           {!scanUrl && (
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              ⚠️ Scan endpoint not configured. Add <b>VITE_WCHR_SCAN_URL</b> to enable parsing.
+            <div
+              style={{
+                background: "#fff7ed",
+                border: "1px solid #fed7aa",
+                borderRadius: 16,
+                padding: "14px 16px",
+                color: "#9a3412",
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
+              Scan endpoint not configured. Add <b>VITE_WCHR_SCAN_URL</b> to
+              enable parsing.
             </div>
           )}
-        </div>
-      </div>
 
-      {/* PREVIEW */}
+          <div>
+            <ActionButton
+              onClick={handleScan}
+              variant="primary"
+              disabled={!canScan || step === "scanning" || step === "submitting"}
+            >
+              {step === "scanning" ? "Scanning..." : "Scan & Preview"}
+            </ActionButton>
+          </div>
+        </div>
+      </PageCard>
+
       {step === "preview" && parsed && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: 14,
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(255,255,255,0.04)",
-          }}
-        >
-          <h3 style={{ marginTop: 0 }}>Preview</h3>
+        <PageCard style={{ padding: 22 }}>
+          <div style={{ marginBottom: 16 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Preview
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Confirm the scan details before submitting the report.
+            </p>
+          </div>
 
           {imageUrl && (
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 16 }}>
               <img
                 src={imageUrl}
                 alt="Boarding pass"
                 style={{
                   width: "100%",
-                  maxHeight: 320,
+                  maxHeight: 340,
                   objectFit: "contain",
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(0,0,0,0.2)",
+                  borderRadius: 18,
+                  border: "1px solid #e2e8f0",
+                  background: "#f8fbff",
                 }}
               />
             </div>
@@ -392,87 +662,67 @@ export default function WCHRScan() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 10,
-              fontSize: 13,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
             }}
           >
             <Field label="Passenger" value={parsed.passenger_name} />
             <Field label="Airline" value={parsed.airline} />
             <Field label="Flight" value={parsed.flight_number} />
-            <Field label="Date (MM-DD-YYYY)" value={formatMMDDYYYY(parsed.flight_date)} />
+            <Field
+              label="Date (MM-DD-YYYY)"
+              value={formatMMDDYYYY(parsed.flight_date)}
+            />
             <Field label="Origin" value={parsed.origin} />
             <Field label="Destination" value={parsed.destination} />
             <Field label="Seat" value={parsed.seat} />
             <Field label="Gate" value={parsed.gate} />
-            <Field label="PNR/Record Locator" value={parsed.pnr} />
+            <Field label="PNR / Record Locator" value={parsed.pnr} />
             <Field label="WCHR Type" value={wchType} />
           </div>
 
-          <div style={{ display: "flex", gap: 12, marginTop: 14 }}>
-            <button
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              marginTop: 16,
+              flexWrap: "wrap",
+            }}
+          >
+            <ActionButton
               onClick={() => {
                 setParsed(null);
                 setImageUrl("");
                 setStep("upload");
               }}
-              style={{
-                flex: 1,
-                height: 40,
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.16)",
-                background: "transparent",
-                color: "inherit",
-                cursor: "pointer",
-              }}
+              variant="secondary"
             >
               Retake / Upload Again
-            </button>
+            </ActionButton>
 
-            <button
+            <ActionButton
               onClick={handleSubmit}
+              variant="success"
               disabled={!canSubmit || step === "submitting"}
-              style={{
-                flex: 1,
-                height: 40,
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.16)",
-                background:
-                  !canSubmit || step === "submitting"
-                    ? "rgba(255,255,255,0.08)"
-                    : "rgba(255,255,255,0.18)",
-                color: "inherit",
-                cursor:
-                  !canSubmit || step === "submitting" ? "not-allowed" : "pointer",
-              }}
             >
               {step === "submitting" ? "Submitting..." : "Submit Report"}
-            </button>
+            </ActionButton>
           </div>
 
-          <p style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
-            After submission, Duty Managers and Station Manager will be notified automatically.
+          <p
+            style={{
+              marginTop: 12,
+              marginBottom: 0,
+              fontSize: 12,
+              color: "#64748b",
+              lineHeight: 1.6,
+            }}
+          >
+            After submission, Duty Managers and Station Manager will be notified
+            automatically.
           </p>
-        </div>
+        </PageCard>
       )}
-    </div>
-  );
-}
-
-function Field({ label, value }) {
-  return (
-    <div
-      style={{
-        padding: 10,
-        borderRadius: 10,
-        border: "1px solid rgba(255,255,255,0.10)",
-        background: "rgba(0,0,0,0.18)",
-      }}
-    >
-      <div style={{ fontSize: 11, opacity: 0.75 }}>{label}</div>
-      <div style={{ marginTop: 4, fontSize: 13 }}>
-        {String(value || "").trim() ? value : <span style={{ opacity: 0.6 }}>—</span>}
-      </div>
     </div>
   );
 }
