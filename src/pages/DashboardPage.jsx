@@ -29,12 +29,11 @@ function StatCard({ title, value, subtitle, accent, icon }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.88)",
-        backdropFilter: "blur(14px)",
-        border: "1px solid rgba(255,255,255,0.95)",
-        borderRadius: 24,
-        padding: 20,
-        boxShadow: "0 18px 40px rgba(23,105,170,0.08)",
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 22,
+        padding: 18,
+        boxShadow: "0 16px 36px rgba(23,105,170,0.08)",
         position: "relative",
         overflow: "hidden",
       }}
@@ -43,56 +42,70 @@ function StatCard({ title, value, subtitle, accent, icon }) {
         style={{
           position: "absolute",
           inset: 0,
-          background: `linear-gradient(135deg, ${accent}18 0%, transparent 55%)`,
+          background: `linear-gradient(135deg, ${accent}16 0%, transparent 58%)`,
           pointerEvents: "none",
         }}
       />
+
       <div
         style={{
-          width: 46,
-          height: 46,
-          borderRadius: 14,
-          background: `${accent}18`,
           display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 20,
-          marginBottom: 14,
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          position: "relative",
         }}
       >
-        {icon}
+        <div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#64748b",
+            }}
+          >
+            {title}
+          </p>
+          <h3
+            style={{
+              margin: "8px 0 4px",
+              fontSize: 28,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.03em",
+            }}
+          >
+            {value}
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              color: "#475569",
+            }}
+          >
+            {subtitle}
+          </p>
+        </div>
+
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 14,
+            background: `${accent}18`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 20,
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </div>
       </div>
-      <p
-        style={{
-          margin: 0,
-          fontSize: 13,
-          fontWeight: 700,
-          color: "#64748b",
-        }}
-      >
-        {title}
-      </p>
-      <h3
-        style={{
-          margin: "6px 0 4px",
-          fontSize: 30,
-          lineHeight: 1.05,
-          fontWeight: 800,
-          color: "#0f172a",
-          letterSpacing: "-0.03em",
-        }}
-      >
-        {value}
-      </h3>
-      <p
-        style={{
-          margin: 0,
-          fontSize: 12,
-          color: "#475569",
-        }}
-      >
-        {subtitle}
-      </p>
     </div>
   );
 }
@@ -101,12 +114,11 @@ function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.9)",
-        backdropFilter: "blur(14px)",
-        border: "1px solid rgba(255,255,255,0.95)",
-        borderRadius: 26,
-        padding: 22,
-        boxShadow: "0 18px 45px rgba(15,23,42,0.06)",
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        padding: 20,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
       }}
     >
       <div
@@ -115,14 +127,15 @@ function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
           alignItems: "center",
           justifyContent: "space-between",
           gap: 12,
-          marginBottom: 16,
+          marginBottom: 14,
+          flexWrap: "wrap",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div
             style={{
-              width: 42,
-              height: 42,
+              width: 40,
+              height: 40,
               borderRadius: 14,
               background: `${accent}16`,
               color: accent,
@@ -138,10 +151,10 @@ function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: 19,
               fontWeight: 800,
               color: "#0f172a",
-              letterSpacing: "-0.03em",
+              letterSpacing: "-0.02em",
             }}
           >
             {title}
@@ -149,6 +162,7 @@ function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
         </div>
         {action}
       </div>
+
       {children}
     </div>
   );
@@ -181,6 +195,7 @@ export default function DashboardPage() {
     try {
       const ref = doc(db, "dashboard", "main");
       const snap = await getDoc(ref);
+
       if (snap.exists()) {
         const data = snap.data();
         setMainMessage(data.message || "");
@@ -334,7 +349,7 @@ export default function DashboardPage() {
       {
         title: "Blocked Employees",
         value: blockedEmployees.length,
-        subtitle: "Restrictions currently active",
+        subtitle: "Restrictions active",
         accent: "#ef4444",
         icon: "🚫",
       },
@@ -360,35 +375,35 @@ export default function DashboardPage() {
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 30,
-          padding: 28,
+          borderRadius: 28,
+          padding: 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
           overflow: "hidden",
-          marginBottom: 22,
+          marginBottom: 18,
         }}
       >
         <div
           style={{
             position: "absolute",
-            width: 260,
-            height: 260,
+            width: 240,
+            height: 240,
             borderRadius: "999px",
             background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -70,
+            top: -90,
+            right: -50,
           }}
         />
         <div
           style={{
             position: "absolute",
-            width: 180,
-            height: 180,
+            width: 160,
+            height: 160,
             borderRadius: "999px",
             background: "rgba(255,255,255,0.06)",
-            bottom: -60,
-            right: 170,
+            bottom: -50,
+            right: 160,
           }}
         />
 
@@ -398,7 +413,7 @@ export default function DashboardPage() {
             display: "flex",
             alignItems: "flex-start",
             justifyContent: "space-between",
-            gap: 18,
+            gap: 16,
             flexWrap: "wrap",
           }}
         >
@@ -408,7 +423,7 @@ export default function DashboardPage() {
                 margin: 0,
                 fontSize: 12,
                 textTransform: "uppercase",
-                letterSpacing: "0.24em",
+                letterSpacing: "0.22em",
                 color: "rgba(255,255,255,0.76)",
                 fontWeight: 700,
               }}
@@ -418,8 +433,8 @@ export default function DashboardPage() {
 
             <h1
               style={{
-                margin: "10px 0 8px",
-                fontSize: 38,
+                margin: "10px 0 6px",
+                fontSize: 34,
                 lineHeight: 1.05,
                 fontWeight: 800,
                 letterSpacing: "-0.04em",
@@ -431,12 +446,12 @@ export default function DashboardPage() {
             <p
               style={{
                 margin: 0,
-                maxWidth: 760,
-                fontSize: 15,
-                color: "rgba(255,255,255,0.84)",
+                maxWidth: 720,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.86)",
               }}
             >
-              Quick overview of station updates, photo highlights, crew notices,
+              Quick overview of station updates, highlights, notices,
               restrictions and schedules pending decision.
             </p>
           </div>
@@ -448,12 +463,11 @@ export default function DashboardPage() {
               border: "1px solid rgba(255,255,255,0.22)",
               background: "rgba(255,255,255,0.16)",
               color: "#fff",
-              borderRadius: 18,
-              padding: "14px 18px",
+              borderRadius: 16,
+              padding: "13px 16px",
               fontWeight: 700,
               cursor: "pointer",
               backdropFilter: "blur(10px)",
-              boxShadow: "0 12px 24px rgba(15,23,42,0.10)",
             }}
           >
             Refresh dashboard
@@ -465,8 +479,8 @@ export default function DashboardPage() {
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 18,
-          marginBottom: 22,
+          gap: 14,
+          marginBottom: 18,
         }}
       >
         {stats.map((item) => (
@@ -477,11 +491,11 @@ export default function DashboardPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "2fr 1.1fr",
-          gap: 22,
+          gridTemplateColumns: "minmax(0, 1.8fr) minmax(320px, 1fr)",
+          gap: 18,
         }}
       >
-        <div style={{ display: "grid", gap: 22 }}>
+        <div style={{ display: "grid", gap: 18 }}>
           <GlassCard
             title="Station Manager Message"
             icon="📢"
@@ -491,8 +505,8 @@ export default function DashboardPage() {
               style={{
                 background: "linear-gradient(135deg, #edf7ff 0%, #f8fcff 100%)",
                 border: "1px solid #d6ebff",
-                borderRadius: 20,
-                padding: 18,
+                borderRadius: 18,
+                padding: 16,
               }}
             >
               <p
@@ -500,7 +514,7 @@ export default function DashboardPage() {
                   margin: 0,
                   whiteSpace: "pre-line",
                   color: "#1e293b",
-                  fontSize: 15,
+                  fontSize: 14,
                   lineHeight: 1.7,
                 }}
               >
@@ -510,7 +524,7 @@ export default function DashboardPage() {
               {mainMeta?.updatedAt && (
                 <p
                   style={{
-                    marginTop: 12,
+                    marginTop: 10,
                     marginBottom: 0,
                     fontSize: 12,
                     color: "#64748b",
@@ -545,14 +559,14 @@ export default function DashboardPage() {
               <p style={{ margin: 0, color: "#94a3b8" }}>Loading photos...</p>
             ) : photos.length === 0 ? (
               <p style={{ margin: 0, color: "#64748b" }}>
-                No station highlights yet. Upload photos from Dashboard Editor.
+                No station highlights yet.
               </p>
             ) : (
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                  gap: 14,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                  gap: 12,
                 }}
               >
                 {photos.slice(0, 6).map((p) => (
@@ -561,9 +575,9 @@ export default function DashboardPage() {
                     style={{
                       background: "#fff",
                       border: "1px solid #e0f2fe",
-                      borderRadius: 20,
+                      borderRadius: 18,
                       overflow: "hidden",
-                      boxShadow: "0 12px 26px rgba(15,23,42,0.05)",
+                      boxShadow: "0 12px 24px rgba(15,23,42,0.05)",
                     }}
                   >
                     <div
@@ -637,16 +651,16 @@ export default function DashboardPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                  gap: 14,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+                  gap: 12,
                 }}
               >
                 {pendingSchedules.map((sch) => (
                   <div
                     key={sch.id}
                     style={{
-                      borderRadius: 20,
-                      padding: 18,
+                      borderRadius: 18,
+                      padding: 16,
                       background:
                         "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)",
                       border: "1px solid #d1fae5",
@@ -690,7 +704,7 @@ export default function DashboardPage() {
           </GlassCard>
         </div>
 
-        <div style={{ display: "grid", gap: 22 }}>
+        <div style={{ display: "grid", gap: 18 }}>
           <GlassCard title="Upcoming Events" icon="📅" accent="#3b82f6">
             {loadingEvents ? (
               <p style={{ margin: 0, color: "#94a3b8" }}>Loading events...</p>
@@ -699,13 +713,13 @@ export default function DashboardPage() {
                 No events scheduled.
               </p>
             ) : (
-              <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 10 }}>
                 {events.map((ev) => (
                   <div
                     key={ev.id}
                     style={{
-                      borderRadius: 18,
-                      padding: 16,
+                      borderRadius: 16,
+                      padding: 14,
                       background:
                         "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
                       border: "1px solid #dbeafe",
@@ -756,13 +770,13 @@ export default function DashboardPage() {
                 No notices posted.
               </p>
             ) : (
-              <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 10 }}>
                 {notices.map((n) => (
                   <div
                     key={n.id}
                     style={{
-                      borderRadius: 18,
-                      padding: 16,
+                      borderRadius: 16,
+                      padding: 14,
                       background:
                         "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
                       border: "1px solid #fde68a",
@@ -851,7 +865,7 @@ export default function DashboardPage() {
                     display: "flex",
                     flexWrap: "wrap",
                     gap: 8,
-                    marginBottom: showBlockedList ? 16 : 0,
+                    marginBottom: showBlockedList ? 14 : 0,
                   }}
                 >
                   {blockedEmployees.slice(0, 8).map((b) => (
@@ -888,13 +902,13 @@ export default function DashboardPage() {
                 </div>
 
                 {showBlockedList && (
-                  <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ display: "grid", gap: 10 }}>
                     {blockedEmployees.map((b) => (
                       <div
                         key={b.id}
                         style={{
-                          borderRadius: 18,
-                          padding: 16,
+                          borderRadius: 16,
+                          padding: 14,
                           background:
                             "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)",
                           border: "1px solid #fecdd3",
