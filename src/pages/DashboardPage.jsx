@@ -34,7 +34,7 @@ function StatCard({ title, value, subtitle, accent, icon }) {
         border: "1px solid rgba(255,255,255,0.95)",
         borderRadius: 24,
         padding: 20,
-        boxShadow: "0 18px 40px rgba(79,70,229,0.08)",
+        boxShadow: "0 18px 40px rgba(23,105,170,0.08)",
         position: "relative",
         overflow: "hidden",
       }}
@@ -97,7 +97,7 @@ function StatCard({ title, value, subtitle, accent, icon }) {
   );
 }
 
-function GlassCard({ title, icon, action, children, accent = "#6366f1" }) {
+function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
   return (
     <div
       style={{
@@ -321,7 +321,7 @@ export default function DashboardPage() {
         title: "Upcoming Events",
         value: events.length,
         subtitle: "Scheduled items ahead",
-        accent: "#6366f1",
+        accent: "#1f7cc1",
         icon: "📅",
       },
       {
@@ -359,11 +359,11 @@ export default function DashboardPage() {
       <div
         style={{
           background:
-            "linear-gradient(135deg, #4338ca 0%, #6366f1 38%, #7c3aed 100%)",
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
           borderRadius: 30,
           padding: 28,
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(79,70,229,0.22)",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
           overflow: "hidden",
           marginBottom: 22,
@@ -485,12 +485,12 @@ export default function DashboardPage() {
           <GlassCard
             title="Station Manager Message"
             icon="📢"
-            accent="#6366f1"
+            accent="#1f7cc1"
           >
             <div
               style={{
-                background: "linear-gradient(135deg, #eef2ff 0%, #f8faff 100%)",
-                border: "1px solid #e0e7ff",
+                background: "linear-gradient(135deg, #edf7ff 0%, #f8fcff 100%)",
+                border: "1px solid #d6ebff",
                 borderRadius: 20,
                 padding: 18,
               }}
@@ -526,7 +526,7 @@ export default function DashboardPage() {
           <GlassCard
             title="Station Highlights"
             icon="✈️"
-            accent="#8b5cf6"
+            accent="#5aa9e6"
             action={
               photos.length > 0 ? (
                 <span
@@ -560,7 +560,7 @@ export default function DashboardPage() {
                     key={p.id}
                     style={{
                       background: "#fff",
-                      border: "1px solid #eef2ff",
+                      border: "1px solid #e0f2fe",
                       borderRadius: 20,
                       overflow: "hidden",
                       boxShadow: "0 12px 26px rgba(15,23,42,0.05)",
@@ -611,9 +611,9 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => navigate("/approvals")}
                   style={{
-                    border: "1px solid #dbeafe",
-                    background: "#eff6ff",
-                    color: "#1d4ed8",
+                    border: "1px solid #cfe7fb",
+                    background: "#edf7ff",
+                    color: "#1769aa",
                     borderRadius: 14,
                     padding: "10px 14px",
                     fontWeight: 700,
