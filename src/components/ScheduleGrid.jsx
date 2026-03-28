@@ -474,7 +474,7 @@ export default function ScheduleGrid({
                   fontWeight: 900,
                   padding: "16px 14px",
                   borderBottom: `1px solid ${borderSoft}`,
-                  minWidth: 220,
+                  minWidth: 320,
                   textAlign: "left",
                   fontSize: 13,
                   letterSpacing: "0.04em",
@@ -535,7 +535,7 @@ export default function ScheduleGrid({
                         borderRight: `1px solid ${borderSoft}`,
                         borderBottom: `1px solid ${borderSoft}`,
                         padding: 14,
-                        minWidth: 220,
+                        minWidth: 320,
                         verticalAlign: "middle",
                       }}
                     >
@@ -565,12 +565,14 @@ export default function ScheduleGrid({
                               className="sch-employee-select"
                               style={{
                                 width: "100%",
+                                minWidth: 0,
                                 background: "rgba(255,255,255,0.96)",
                                 border: `1px solid ${borderSoft}`,
                                 borderRadius: 12,
                                 padding: "10px 12px",
                                 color: "#111827",
                                 fontWeight: 800,
+                                fontSize: 15,
                                 outline: "none",
                               }}
                               value={row.employeeId || ""}
