@@ -10,7 +10,7 @@ export default function LoginPage() {
   const { setUser } = useUser();
 
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -18,31 +18,34 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
-    if (userData.pin !== password) {
-  setError("Invalid username or PIN.");
-  return;
-}
+    const cleanUsername = username.trim();
+    const cleanPin = pin.trim();
+
+    if (!cleanUsername || !cleanPin) {
+      setError("Please enter your username and PIN.");
+      return;
+    }
 
     try {
       setLoading(true);
 
       const q = query(
         collection(db, "users"),
-        where("username", "==", username.trim())
+        where("username", "==", cleanUsername)
       );
 
       const snap = await getDocs(q);
 
       if (snap.empty) {
-        setError("Invalid username or password.");
+        setError("Invalid username or PIN.");
         return;
       }
 
       const userDoc = snap.docs[0];
       const userData = { id: userDoc.id, ...userDoc.data() };
 
-      if (userData.password !== password) {
-        setError("Invalid username or password.");
+      if (String(userData.pin || "") !== cleanPin) {
+        setError("Invalid username or PIN.");
         return;
       }
 
@@ -111,13 +114,16 @@ export default function LoginPage() {
             </div>
 
             <div className="login-field">
-              <label htmlFor="password">Password</label>
+              <label htmlFor="pin">PIN</label>
               <input
-                id="password"
+                id="pin"
                 type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your 4-digit PIN"
+                value={pin}
+                maxLength={4}
+                onChange={(e) =>
+                  setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
                 autoComplete="current-password"
               />
             </div>
