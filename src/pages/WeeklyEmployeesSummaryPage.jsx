@@ -17,7 +17,7 @@ const DAY_LABELS = {
 
 // Orden fijo de aerolíneas en la tabla
 const AIRLINES_ORDER = [
-  "WL Havana Air",
+  "WestJet",
   "WL Invicta",
   "AV",
   "AA-BSO",
@@ -26,6 +26,21 @@ const AIRLINES_ORDER = [
   "SY",
   "OTHER",
 ];
+
+const normalizeAirlineName = (value) => {
+  const airline = String(value || "").trim();
+
+  if (
+    airline.toUpperCase() === "WL HAVANA AIR" ||
+    airline.toUpperCase() === "WAL HAVANA AIR" ||
+    airline.toUpperCase() === "WAL HAVANA" ||
+    airline.toUpperCase() === "WESTJET"
+  ) {
+    return "WestJet";
+  }
+
+  return airline;
+};
 
 export default function WeeklyEmployeesSummaryPage() {
   const [employees, setEmployees] = useState([]);
@@ -103,7 +118,7 @@ export default function WeeklyEmployeesSummaryPage() {
     const summary = {};
 
     filtered.forEach((sch) => {
-      const airline = sch.airline || "Unknown";
+      const airline = normalizeAirlineName(sch.airlineDisplayName || sch.airline || "Unknown");
       if (!summary[airline]) summary[airline] = {};
 
       const totals = sch.totals || {};
@@ -259,8 +274,8 @@ export default function WeeklyEmployeesSummaryPage() {
                   .sort((a, b) => a.name.localeCompare(b.name))
                   .map((emp) => {
                     const rowHours = {
-                      "WL Havana Air":
-                        summaryByAirline["WL Havana Air"]?.[emp.id] || 0,
+                      WestJet:
+                        summaryByAirline["WestJet"]?.[emp.id] || 0,
                       "WL Invicta":
                         summaryByAirline["WL Invicta"]?.[emp.id] || 0,
                       AV: summaryByAirline["AV"]?.[emp.id] || 0,
@@ -310,7 +325,7 @@ export default function WeeklyEmployeesSummaryPage() {
 
                   {AIRLINES_ORDER.map((air, i) => {
                     const total = Object.values(
-                      summaryByAirline[air] || {}
+                      summaryByAirline[normalizeAirlineName(air)] || summaryByAirline[air] || {}
                     ).reduce((sum, h) => sum + h, 0);
                     return (
                       <td
