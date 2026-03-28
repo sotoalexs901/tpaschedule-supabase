@@ -1,5 +1,8 @@
-import React, { useMemo, useState } from "react";
+// src/pages/CabinServicePage.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { collection, getDocs } from "firebase/firestore";
 import { useUser } from "../UserContext.jsx";
+import { db } from "../firebase";
 import { parseCabinFlights } from "../utils/parseCabinFlights.js";
 import { buildDemandBlocks } from "../utils/buildDemandBlocks.js";
 import { generateCabinShifts } from "../utils/generateCabinShifts.js";
@@ -25,12 +28,79 @@ const DAY_LABELS = {
   sunday: "Sunday",
 };
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "secondary",
+  type = "button",
+  disabled = false,
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    dark: {
+      background: "#0f172a",
+      color: "#ffffff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(15,23,42,0.14)",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+        opacity: disabled ? 0.65 : 1,
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function CabinServicePage() {
   const { user } = useUser();
 
   const [weekStartDate, setWeekStartDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [error, setError] = useState("");
 
   const [dayFiles, setDayFiles] = useState({
@@ -47,17 +117,42 @@ export default function CabinServicePage() {
   const [weeklyDemandBlocks, setWeeklyDemandBlocks] = useState({});
   const [weeklySlots, setWeeklySlots] = useState({});
   const [step, setStep] = useState("upload");
+  const [employees, setEmployees] = useState([]);
 
-  const [employees] = useState([
-    { id: "1", name: "John Smith" },
-    { id: "2", name: "Maria Lopez" },
-    { id: "3", name: "Carlos Perez" },
-    { id: "4", name: "Ana Torres" },
-    { id: "5", name: "Luis Gomez" },
-    { id: "6", name: "Daniel Ruiz" },
-    { id: "7", name: "Sofia Martinez" },
-    { id: "8", name: "Miguel Rivera" },
-  ]);
+  useEffect(() => {
+    async function loadEmployees() {
+      try {
+        setLoadingEmployees(true);
+
+        const snap = await getDocs(collection(db, "employees"));
+        const list = snap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
+          .filter((emp) => emp.active !== false)
+          .map((emp) => ({
+            id: emp.id,
+            name:
+              emp.name ||
+              emp.fullName ||
+              emp.employeeName ||
+              emp.username ||
+              "Unnamed Employee",
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setEmployees(list);
+      } catch (err) {
+        console.error("Error loading employees:", err);
+        setError("Error loading employees.");
+      } finally {
+        setLoadingEmployees(false);
+      }
+    }
+
+    loadEmployees().catch(console.error);
+  }, []);
 
   const uploadedDaysCount = useMemo(() => {
     return DAY_KEYS.filter((day) => !!dayFiles[day]).length;
@@ -171,16 +266,92 @@ export default function CabinServicePage() {
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1 style={{ fontSize: 24, fontWeight: "bold", marginBottom: 20 }}>
-        Cabin Service Weekly Schedule
-      </h1>
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
+
+        <div style={{ position: "relative" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 700,
+            }}
+          >
+            TPA OPS · Cabin Service
+          </p>
+
+          <h1
+            style={{
+              margin: "10px 0 6px",
+              fontSize: 32,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Cabin Service Weekly Schedule
+          </h1>
+
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 760,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.88)",
+            }}
+          >
+            Upload daily flight files, generate the weekly staffing plan and
+            assign employees before saving the final schedule.
+          </p>
+        </div>
+      </div>
 
       {step === "upload" && (
-        <div style={cardStyle}>
-          <h2 style={titleStyle}>Create Weekly Schedule</h2>
+        <PageCard style={{ padding: 20 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Create Weekly Schedule
+          </h2>
 
-          <div style={fieldBlockStyle}>
+          <div style={{ marginTop: 18 }}>
             <label style={labelStyle}>Week Start Date</label>
             <input
               type="date"
@@ -190,13 +361,20 @@ export default function CabinServicePage() {
             />
           </div>
 
-          <div style={{ marginTop: 20 }}>
-            <h3 style={{ marginBottom: 12 }}>Upload Daily Flight Files</h3>
+          <div style={{ marginTop: 22 }}>
+            <h3 style={subTitleStyle}>Upload Daily Flight Files</h3>
 
             <div style={uploadGridStyle}>
               {DAY_KEYS.map((dayKey) => (
                 <div key={dayKey} style={uploadBoxStyle}>
-                  <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      marginBottom: 10,
+                      color: "#0f172a",
+                      fontSize: 14,
+                    }}
+                  >
                     {DAY_LABELS[dayKey]}
                   </div>
 
@@ -206,9 +384,17 @@ export default function CabinServicePage() {
                     onChange={(e) =>
                       handleFileChange(dayKey, e.target.files?.[0] || null)
                     }
+                    style={{ fontSize: 13 }}
                   />
 
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#334155" }}>
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontSize: 13,
+                      color: "#475569",
+                      lineHeight: 1.4,
+                    }}
+                  >
                     {dayFiles[dayKey] ? (
                       <>
                         <b>Uploaded:</b> {dayFiles[dayKey].name}
@@ -222,30 +408,85 @@ export default function CabinServicePage() {
             </div>
           </div>
 
-          <div style={{ marginTop: 18 }}>
-            <div style={summaryMiniStyle}>
+          <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                background: "#edf7ff",
+                border: "1px solid #cfe7fb",
+                borderRadius: 999,
+                padding: "8px 12px",
+                fontSize: 13,
+                color: "#1769aa",
+                fontWeight: 700,
+              }}
+            >
               Uploaded days: <b>{uploadedDaysCount}/7</b>
+            </div>
+
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 999,
+                padding: "8px 12px",
+                fontSize: 13,
+                color: "#475569",
+                fontWeight: 700,
+              }}
+            >
+              Employees loaded: <b>{loadingEmployees ? "..." : employees.length}</b>
             </div>
           </div>
 
-          {error && <div style={errorStyle}>{error}</div>}
+          {error && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: 14,
+                borderRadius: 16,
+                background: "#fff1f2",
+                border: "1px solid #fecdd3",
+                color: "#9f1239",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              {error}
+            </div>
+          )}
 
-          <div style={{ marginTop: 18 }}>
-            <button
-              style={btnPrimary}
+          <div style={{ marginTop: 20 }}>
+            <ActionButton
               onClick={handleGenerateWeeklySchedule}
-              disabled={loading}
+              variant="primary"
+              disabled={loading || loadingEmployees}
             >
               {loading ? "Generating..." : "Generate Weekly Schedule"}
-            </button>
+            </ActionButton>
           </div>
-        </div>
+        </PageCard>
       )}
 
       {step === "assignment" && (
         <>
-          <div style={cardStyle}>
-            <h2 style={titleStyle}>Weekly Summary</h2>
+          <PageCard style={{ padding: 20 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Weekly Summary
+            </h2>
 
             <div style={summaryGridStyle}>
               <SummaryBox label="Week Start" value={weekStartDate || "-"} />
@@ -264,9 +505,7 @@ export default function CabinServicePage() {
                 value={`${assignedCount}/${totalSlots}`}
               />
             </div>
-          </div>
-
-          <div style={{ height: 16 }} />
+          </PageCard>
 
           {DAY_KEYS.map((dayKey) => {
             const flights = weeklyFlights[dayKey] || [];
@@ -282,132 +521,140 @@ export default function CabinServicePage() {
                 : 0;
 
             return (
-              <div key={dayKey} style={{ marginBottom: 16 }}>
-                <div style={cardStyle}>
-                  <h2 style={titleStyle}>{DAY_LABELS[dayKey]}</h2>
+              <PageCard key={dayKey} style={{ padding: 20 }}>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {DAY_LABELS[dayKey]}
+                </h2>
 
-                  <div style={dayStatsStyle}>
-                    <span>
-                      Flights: <b>{flights.length}</b>
-                    </span>
-                    <span>
-                      Slots: <b>{slots.length}</b>
-                    </span>
-                    <span>
-                      Peak Agents: <b>{peakAgents}</b>
-                    </span>
-                  </div>
+                <div style={dayStatsStyle}>
+                  <span>
+                    Flights: <b>{flights.length}</b>
+                  </span>
+                  <span>
+                    Slots: <b>{slots.length}</b>
+                  </span>
+                  <span>
+                    Peak Agents: <b>{peakAgents}</b>
+                  </span>
+                </div>
 
-                  <div style={{ marginTop: 16 }}>
-                    <h3 style={subTitleStyle}>Generated Shifts</h3>
-                    {shiftSummary.length ? (
-                      <div style={chipWrapStyle}>
-                        {shiftSummary.map((item) => (
-                          <div
-                            key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
-                            style={chipStyle}
+                <div style={{ marginTop: 18 }}>
+                  <h3 style={subTitleStyle}>Generated Shifts</h3>
+                  {shiftSummary.length ? (
+                    <div style={chipWrapStyle}>
+                      {shiftSummary.map((item) => (
+                        <div
+                          key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
+                          style={chipStyle}
+                        >
+                          {item.start}–{item.end} | {item.role} x{item.count}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={emptyTextStyle}>No shifts generated</div>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 20 }}>
+                  <h3 style={subTitleStyle}>Flights</h3>
+                  <div style={tableWrapStyle}>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr style={theadRowStyle}>
+                          <th style={thTdStyle}>Flight</th>
+                          <th style={thTdStyle}>Time</th>
+                          <th style={thTdStyle}>Route</th>
+                          <th style={thTdStyle}>Aircraft</th>
+                          <th style={thTdStyle}>Gate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {flights.map((flight, index) => (
+                          <tr
+                            key={`${dayKey}-${flight.flightNumber}-${flight.scheduledTime}-${index}`}
                           >
-                            {item.start}–{item.end} | {item.role} x{item.count}
-                          </div>
+                            <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
+                            <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
+                            <td style={thTdStyle}>{flight.route || "-"}</td>
+                            <td style={thTdStyle}>{flight.aircraft || "-"}</td>
+                            <td style={thTdStyle}>{flight.gate || "-"}</td>
+                          </tr>
                         ))}
-                      </div>
-                    ) : (
-                      <div style={emptyTextStyle}>No shifts generated</div>
-                    )}
-                  </div>
-
-                  <div style={{ marginTop: 16 }}>
-                    <h3 style={subTitleStyle}>Flights</h3>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={tableStyle}>
-                        <thead>
-                          <tr>
-                            <th style={thTdStyle}>Flight</th>
-                            <th style={thTdStyle}>Time</th>
-                            <th style={thTdStyle}>Route</th>
-                            <th style={thTdStyle}>Aircraft</th>
-                            <th style={thTdStyle}>Gate</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {flights.map((flight, index) => (
-                            <tr
-                              key={`${dayKey}-${flight.flightNumber}-${flight.scheduledTime}-${index}`}
-                            >
-                              <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
-                              <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
-                              <td style={thTdStyle}>{flight.route || "-"}</td>
-                              <td style={thTdStyle}>{flight.aircraft || "-"}</td>
-                              <td style={thTdStyle}>{flight.gate || "-"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: 20 }}>
-                    <h3 style={subTitleStyle}>Assign Employees</h3>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={tableStyle}>
-                        <thead>
-                          <tr>
-                            <th style={thTdStyle}>Start</th>
-                            <th style={thTdStyle}>End</th>
-                            <th style={thTdStyle}>Role</th>
-                            <th style={thTdStyle}>Paid Hours</th>
-                            <th style={thTdStyle}>Employee</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {slots.map((slot) => (
-                            <tr key={`${dayKey}-${slot.id}`}>
-                              <td style={thTdStyle}>{slot.start}</td>
-                              <td style={thTdStyle}>{slot.end}</td>
-                              <td style={thTdStyle}>{slot.role}</td>
-                              <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
-                              <td style={thTdStyle}>
-                                <select
-                                  value={slot.employeeId}
-                                  onChange={(e) =>
-                                    handleAssign(dayKey, slot.id, e.target.value)
-                                  }
-                                  style={selectStyle}
-                                >
-                                  <option value="">Select employee</option>
-                                  {employees.map((emp) => (
-                                    <option key={emp.id} value={emp.id}>
-                                      {emp.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              </div>
+
+                <div style={{ marginTop: 22 }}>
+                  <h3 style={subTitleStyle}>Assign Employees</h3>
+                  <div style={tableWrapStyle}>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr style={theadRowStyle}>
+                          <th style={thTdStyle}>Start</th>
+                          <th style={thTdStyle}>End</th>
+                          <th style={thTdStyle}>Role</th>
+                          <th style={thTdStyle}>Paid Hours</th>
+                          <th style={thTdStyle}>Employee</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {slots.map((slot) => (
+                          <tr key={`${dayKey}-${slot.id}`}>
+                            <td style={thTdStyle}>{slot.start}</td>
+                            <td style={thTdStyle}>{slot.end}</td>
+                            <td style={thTdStyle}>{slot.role}</td>
+                            <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
+                            <td style={thTdStyle}>
+                              <select
+                                value={slot.employeeId}
+                                onChange={(e) =>
+                                  handleAssign(dayKey, slot.id, e.target.value)
+                                }
+                                style={selectStyle}
+                              >
+                                <option value="">Select employee</option>
+                                {employees.map((emp) => (
+                                  <option key={emp.id} value={emp.id}>
+                                    {emp.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </PageCard>
             );
           })}
 
-          <div style={cardStyle}>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button style={btnSecondary} onClick={handleBackToUpload}>
+          <PageCard style={{ padding: 20 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <ActionButton onClick={handleBackToUpload} variant="secondary">
                 Back
-              </button>
+              </ActionButton>
 
-              <button
-                style={btnPrimary}
+              <ActionButton
                 onClick={handleSaveWeeklySchedule}
+                variant="primary"
                 disabled={saving}
               >
                 {saving ? "Saving..." : "Save Weekly Schedule"}
-              </button>
+              </ActionButton>
             </div>
-          </div>
+          </PageCard>
         </>
       )}
     </div>
@@ -417,10 +664,8 @@ export default function CabinServicePage() {
 function SummaryBox({ label, value }) {
   return (
     <div style={summaryBoxStyle}>
-      <div style={{ fontSize: 12, color: "#475569", marginBottom: 6 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
+      <div style={summaryLabelStyle}>{label}</div>
+      <div style={summaryValueStyle}>{value}</div>
     </div>
   );
 }
@@ -448,37 +693,29 @@ function summarizeShifts(slots) {
   });
 }
 
-const cardStyle = {
-  background: "#ffffff",
-  padding: 20,
-  borderRadius: 10,
-  boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-};
-
-const titleStyle = {
-  fontSize: 18,
-  marginBottom: 15,
-};
-
 const subTitleStyle = {
-  fontSize: 15,
-  marginBottom: 10,
-};
-
-const fieldBlockStyle = {
-  marginBottom: 14,
+  fontSize: 16,
+  margin: "0 0 12px",
+  color: "#0f172a",
+  fontWeight: 800,
 };
 
 const labelStyle = {
   display: "block",
-  marginBottom: 6,
-  fontSize: 14,
-  fontWeight: 600,
+  marginBottom: 8,
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#475569",
 };
 
 const inputStyle = {
   width: "100%",
   maxWidth: 280,
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid #dbeafe",
+  background: "#ffffff",
+  fontSize: 14,
 };
 
 const uploadGridStyle = {
@@ -488,26 +725,44 @@ const uploadGridStyle = {
 };
 
 const uploadBoxStyle = {
+  border: "1px solid #dbeafe",
+  borderRadius: 16,
+  padding: 14,
+  background: "#f8fbff",
+};
+
+const tableWrapStyle = {
+  overflowX: "auto",
+  borderRadius: 18,
   border: "1px solid #e2e8f0",
-  borderRadius: 8,
-  padding: 12,
-  background: "#f8fafc",
 };
 
 const tableStyle = {
   width: "100%",
-  borderCollapse: "collapse",
+  borderCollapse: "separate",
+  borderSpacing: 0,
+  minWidth: 760,
+  background: "#fff",
+};
+
+const theadRowStyle = {
+  background: "#f8fbff",
 };
 
 const thTdStyle = {
   borderBottom: "1px solid #e2e8f0",
-  padding: "8px 10px",
+  padding: "10px 12px",
   textAlign: "left",
   fontSize: 14,
 };
 
 const selectStyle = {
   minWidth: 180,
+  padding: "8px 10px",
+  borderRadius: 10,
+  border: "1px solid #dbeafe",
+  background: "#ffffff",
+  fontSize: 14,
 };
 
 const dayStatsStyle = {
@@ -516,6 +771,7 @@ const dayStatsStyle = {
   fontSize: 14,
   color: "#334155",
   flexWrap: "wrap",
+  marginTop: 12,
 };
 
 const chipWrapStyle = {
@@ -525,45 +781,18 @@ const chipWrapStyle = {
 };
 
 const chipStyle = {
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  border: "1px solid #bfdbfe",
+  background: "#edf7ff",
+  color: "#1769aa",
+  border: "1px solid #cfe7fb",
   borderRadius: 999,
-  padding: "6px 10px",
-  fontSize: 13,
-  fontWeight: 600,
+  padding: "7px 12px",
+  fontSize: 12,
+  fontWeight: 700,
 };
 
 const emptyTextStyle = {
   fontSize: 14,
   color: "#64748b",
-};
-
-const btnPrimary = {
-  background: "#1d4ed8",
-  color: "#fff",
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-};
-
-const btnSecondary = {
-  background: "#e5e7eb",
-  color: "#111",
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-};
-
-const errorStyle = {
-  marginTop: 10,
-  padding: 10,
-  borderRadius: 6,
-  background: "#fee2e2",
-  color: "#991b1b",
-  fontSize: 14,
 };
 
 const summaryGridStyle = {
@@ -573,13 +802,25 @@ const summaryGridStyle = {
 };
 
 const summaryBoxStyle = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 8,
-  padding: 12,
+  background: "#f8fbff",
+  border: "1px solid #dbeafe",
+  borderRadius: 16,
+  padding: "14px 16px",
 };
 
-const summaryMiniStyle = {
-  fontSize: 14,
-  color: "#334155",
+const summaryLabelStyle = {
+  margin: 0,
+  fontSize: 11,
+  fontWeight: 800,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+};
+
+const summaryValueStyle = {
+  margin: "8px 0 0",
+  fontSize: 22,
+  fontWeight: 800,
+  color: "#0f172a",
+  letterSpacing: "-0.03em",
 };
