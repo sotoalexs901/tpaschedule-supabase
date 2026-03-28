@@ -25,14 +25,26 @@ function formatDateLabel(value) {
   }
 }
 
-function StatCard({ title, value, subtitle, accent, icon }) {
+function useIsMobile(breakpoint = 900) {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < breakpoint);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
+function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
   return (
     <div
       style={{
         background: "rgba(255,255,255,0.92)",
         border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 22,
-        padding: 18,
+        borderRadius: isMobile ? 18 : 22,
+        padding: isMobile ? 16 : 18,
         boxShadow: "0 16px 36px rgba(23,105,170,0.08)",
         position: "relative",
         overflow: "hidden",
@@ -56,7 +68,7 @@ function StatCard({ title, value, subtitle, accent, icon }) {
           position: "relative",
         }}
       >
-        <div>
+        <div style={{ minWidth: 0 }}>
           <p
             style={{
               margin: 0,
@@ -70,7 +82,7 @@ function StatCard({ title, value, subtitle, accent, icon }) {
           <h3
             style={{
               margin: "8px 0 4px",
-              fontSize: 28,
+              fontSize: isMobile ? 24 : 28,
               lineHeight: 1.05,
               fontWeight: 800,
               color: "#0f172a",
@@ -92,14 +104,14 @@ function StatCard({ title, value, subtitle, accent, icon }) {
 
         <div
           style={{
-            width: 44,
-            height: 44,
+            width: isMobile ? 40 : 44,
+            height: isMobile ? 40 : 44,
             borderRadius: 14,
             background: `${accent}18`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 20,
+            fontSize: isMobile ? 18 : 20,
             flexShrink: 0,
           }}
         >
@@ -110,28 +122,44 @@ function StatCard({ title, value, subtitle, accent, icon }) {
   );
 }
 
-function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
+function GlassCard({
+  title,
+  icon,
+  action,
+  children,
+  accent = "#1769aa",
+  isMobile,
+}) {
   return (
     <div
       style={{
         background: "rgba(255,255,255,0.92)",
         border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
-        padding: 20,
+        borderRadius: isMobile ? 20 : 24,
+        padding: isMobile ? 16 : 20,
         boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        minWidth: 0,
       }}
     >
       <div
         style={{
           display: "flex",
-          alignItems: "center",
+          alignItems: isMobile ? "flex-start" : "center",
           justifyContent: "space-between",
           gap: 12,
           marginBottom: 14,
           flexWrap: "wrap",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: isMobile ? "flex-start" : "center",
+            gap: 12,
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
           <div
             style={{
               width: 40,
@@ -144,6 +172,7 @@ function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
               justifyContent: "center",
               fontSize: 18,
               fontWeight: 700,
+              flexShrink: 0,
             }}
           >
             {icon}
@@ -151,10 +180,12 @@ function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
           <h2
             style={{
               margin: 0,
-              fontSize: 19,
+              fontSize: isMobile ? 17 : 19,
               fontWeight: 800,
               color: "#0f172a",
               letterSpacing: "-0.02em",
+              lineHeight: 1.15,
+              wordBreak: "break-word",
             }}
           >
             {title}
@@ -171,6 +202,7 @@ function GlassCard({ title, icon, action, children, accent = "#1769aa" }) {
 export default function DashboardPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const isMobile = useIsMobile(900);
 
   const [mainMessage, setMainMessage] = useState("");
   const [mainMeta, setMainMeta] = useState(null);
@@ -361,7 +393,12 @@ export default function DashboardPage() {
         icon: "📥",
       },
     ],
-    [events.length, notices.length, blockedEmployees.length, pendingSchedules.length]
+    [
+      events.length,
+      notices.length,
+      blockedEmployees.length,
+      pendingSchedules.length,
+    ]
   );
 
   return (
@@ -375,8 +412,8 @@ export default function DashboardPage() {
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 22 : 28,
+          padding: isMobile ? 18 : 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
@@ -387,23 +424,23 @@ export default function DashboardPage() {
         <div
           style={{
             position: "absolute",
-            width: 240,
-            height: 240,
+            width: isMobile ? 180 : 240,
+            height: isMobile ? 180 : 240,
             borderRadius: "999px",
             background: "rgba(255,255,255,0.08)",
-            top: -90,
-            right: -50,
+            top: isMobile ? -80 : -90,
+            right: isMobile ? -60 : -50,
           }}
         />
         <div
           style={{
             position: "absolute",
-            width: 160,
-            height: 160,
+            width: isMobile ? 120 : 160,
+            height: isMobile ? 120 : 160,
             borderRadius: "999px",
             background: "rgba(255,255,255,0.06)",
             bottom: -50,
-            right: 160,
+            right: isMobile ? 60 : 160,
           }}
         />
 
@@ -417,7 +454,7 @@ export default function DashboardPage() {
             flexWrap: "wrap",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p
               style={{
                 margin: 0,
@@ -434,7 +471,7 @@ export default function DashboardPage() {
             <h1
               style={{
                 margin: "10px 0 6px",
-                fontSize: 34,
+                fontSize: isMobile ? 26 : 34,
                 lineHeight: 1.05,
                 fontWeight: 800,
                 letterSpacing: "-0.04em",
@@ -447,7 +484,7 @@ export default function DashboardPage() {
               style={{
                 margin: 0,
                 maxWidth: 720,
-                fontSize: 14,
+                fontSize: isMobile ? 13 : 14,
                 color: "rgba(255,255,255,0.86)",
               }}
             >
@@ -468,6 +505,7 @@ export default function DashboardPage() {
               fontWeight: 700,
               cursor: "pointer",
               backdropFilter: "blur(10px)",
+              width: isMobile ? "100%" : "auto",
             }}
           >
             Refresh dashboard
@@ -478,28 +516,33 @@ export default function DashboardPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : "repeat(auto-fit, minmax(220px, 1fr))",
           gap: 14,
           marginBottom: 18,
         }}
       >
         {stats.map((item) => (
-          <StatCard key={item.title} {...item} />
+          <StatCard key={item.title} {...item} isMobile={isMobile} />
         ))}
       </div>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1.8fr) minmax(320px, 1fr)",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : "minmax(0, 1.8fr) minmax(320px, 1fr)",
           gap: 18,
         }}
       >
-        <div style={{ display: "grid", gap: 18 }}>
+        <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
           <GlassCard
             title="Station Manager Message"
             icon="📢"
             accent="#1f7cc1"
+            isMobile={isMobile}
           >
             <div
               style={{
@@ -514,8 +557,9 @@ export default function DashboardPage() {
                   margin: 0,
                   whiteSpace: "pre-line",
                   color: "#1e293b",
-                  fontSize: 14,
+                  fontSize: isMobile ? 13 : 14,
                   lineHeight: 1.7,
+                  wordBreak: "break-word",
                 }}
               >
                 {mainMessage || "No message posted yet."}
@@ -541,6 +585,7 @@ export default function DashboardPage() {
             title="Station Highlights"
             icon="✈️"
             accent="#5aa9e6"
+            isMobile={isMobile}
             action={
               photos.length > 0 ? (
                 <span
@@ -565,7 +610,9 @@ export default function DashboardPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                  gridTemplateColumns: isMobile
+                    ? "1fr"
+                    : "repeat(auto-fit, minmax(170px, 1fr))",
                   gap: 12,
                 }}
               >
@@ -578,6 +625,7 @@ export default function DashboardPage() {
                       borderRadius: 18,
                       overflow: "hidden",
                       boxShadow: "0 12px 24px rgba(15,23,42,0.05)",
+                      minWidth: 0,
                     }}
                   >
                     <div
@@ -604,6 +652,7 @@ export default function DashboardPage() {
                           fontSize: 12,
                           fontWeight: 600,
                           color: "#475569",
+                          wordBreak: "break-word",
                         }}
                       >
                         {p.caption || "Station highlight"}
@@ -619,6 +668,7 @@ export default function DashboardPage() {
             title="Pending Schedules for Approval"
             icon="📥"
             accent="#10b981"
+            isMobile={isMobile}
             action={
               user?.role === "station_manager" ? (
                 <button
@@ -632,6 +682,7 @@ export default function DashboardPage() {
                     padding: "10px 14px",
                     fontWeight: 700,
                     cursor: "pointer",
+                    width: isMobile ? "100%" : "auto",
                   }}
                 >
                   Go to Approvals
@@ -651,7 +702,9 @@ export default function DashboardPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+                  gridTemplateColumns: isMobile
+                    ? "1fr"
+                    : "repeat(auto-fit, minmax(230px, 1fr))",
                   gap: 12,
                 }}
               >
@@ -664,6 +717,7 @@ export default function DashboardPage() {
                       background:
                         "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)",
                       border: "1px solid #d1fae5",
+                      minWidth: 0,
                     }}
                   >
                     <p
@@ -672,6 +726,7 @@ export default function DashboardPage() {
                         fontSize: 15,
                         fontWeight: 800,
                         color: "#0f172a",
+                        wordBreak: "break-word",
                       }}
                     >
                       {sch.airline} — {sch.department}
@@ -693,6 +748,7 @@ export default function DashboardPage() {
                         margin: "6px 0 0",
                         fontSize: 12,
                         color: "#64748b",
+                        wordBreak: "break-word",
                       }}
                     >
                       Sent by: {sch.createdBy || "unknown"}
@@ -704,8 +760,13 @@ export default function DashboardPage() {
           </GlassCard>
         </div>
 
-        <div style={{ display: "grid", gap: 18 }}>
-          <GlassCard title="Upcoming Events" icon="📅" accent="#3b82f6">
+        <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
+          <GlassCard
+            title="Upcoming Events"
+            icon="📅"
+            accent="#3b82f6"
+            isMobile={isMobile}
+          >
             {loadingEvents ? (
               <p style={{ margin: 0, color: "#94a3b8" }}>Loading events...</p>
             ) : events.length === 0 ? (
@@ -723,6 +784,7 @@ export default function DashboardPage() {
                       background:
                         "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
                       border: "1px solid #dbeafe",
+                      minWidth: 0,
                     }}
                   >
                     <p
@@ -730,6 +792,7 @@ export default function DashboardPage() {
                         margin: 0,
                         fontWeight: 800,
                         color: "#0f172a",
+                        wordBreak: "break-word",
                       }}
                     >
                       {ev.title}
@@ -751,6 +814,7 @@ export default function DashboardPage() {
                           margin: "8px 0 0",
                           fontSize: 13,
                           color: "#475569",
+                          wordBreak: "break-word",
                         }}
                       >
                         {ev.details}
@@ -762,7 +826,12 @@ export default function DashboardPage() {
             )}
           </GlassCard>
 
-          <GlassCard title="Notices / Invitations" icon="📌" accent="#f59e0b">
+          <GlassCard
+            title="Notices / Invitations"
+            icon="📌"
+            accent="#f59e0b"
+            isMobile={isMobile}
+          >
             {loadingNotices ? (
               <p style={{ margin: 0, color: "#94a3b8" }}>Loading notices...</p>
             ) : notices.length === 0 ? (
@@ -780,6 +849,7 @@ export default function DashboardPage() {
                       background:
                         "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
                       border: "1px solid #fde68a",
+                      minWidth: 0,
                     }}
                   >
                     <p
@@ -787,6 +857,7 @@ export default function DashboardPage() {
                         margin: 0,
                         fontWeight: 800,
                         color: "#0f172a",
+                        wordBreak: "break-word",
                       }}
                     >
                       {n.title}
@@ -798,6 +869,7 @@ export default function DashboardPage() {
                           fontSize: 13,
                           color: "#475569",
                           lineHeight: 1.55,
+                          wordBreak: "break-word",
                         }}
                       >
                         {n.body}
@@ -830,6 +902,7 @@ export default function DashboardPage() {
             title="Employees Not Available"
             icon="🚫"
             accent="#ef4444"
+            isMobile={isMobile}
             action={
               blockedEmployees.length > 0 ? (
                 <button
@@ -843,6 +916,7 @@ export default function DashboardPage() {
                     padding: "10px 14px",
                     fontWeight: 700,
                     cursor: "pointer",
+                    width: isMobile ? "100%" : "auto",
                   }}
                 >
                   {showBlockedList ? "Hide list" : "View list"}
@@ -879,6 +953,7 @@ export default function DashboardPage() {
                         fontSize: 12,
                         fontWeight: 700,
                         color: "#9f1239",
+                        wordBreak: "break-word",
                       }}
                     >
                       {b.employeeName || b.name || b.employeeId}
@@ -912,6 +987,7 @@ export default function DashboardPage() {
                           background:
                             "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)",
                           border: "1px solid #fecdd3",
+                          minWidth: 0,
                         }}
                       >
                         <p
@@ -919,6 +995,7 @@ export default function DashboardPage() {
                             margin: 0,
                             fontWeight: 800,
                             color: "#881337",
+                            wordBreak: "break-word",
                           }}
                         >
                           {b.employeeName || b.name || b.employeeId}
@@ -929,6 +1006,7 @@ export default function DashboardPage() {
                               margin: "7px 0 0",
                               fontSize: 13,
                               color: "#475569",
+                              wordBreak: "break-word",
                             }}
                           >
                             {b.reason}
@@ -939,6 +1017,7 @@ export default function DashboardPage() {
                             margin: "7px 0 0",
                             fontSize: 12,
                             color: "#64748b",
+                            wordBreak: "break-word",
                           }}
                         >
                           {b.start_date || "N/A"} → {b.end_date || "N/A"}
