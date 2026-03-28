@@ -15,11 +15,11 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// 🔵 Logos oficiales desde Firebase (mantener llaves internas estables)
+// Logos por aerolínea
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
-  "WL Havana Air":
-    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2006_28_07%20p.m..png?alt=media&token=7bcf90fd-c854-400e-a28a-f838adca89f4",
+  WestJet: "/logos/westjet.png",
+  "WL Havana Air": "/logos/westjet.png",
   "WL Invicta":
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_49%20p.m..png?alt=media&token=092a1deb-3285-41e1-ab0c-2e48a8faab92",
   AV: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_37%20p.m..png?alt=media&token=f133d1c8-51f9-4513-96df-8a75c6457b5b",
@@ -86,6 +86,23 @@ const buildWeekTag = (days) =>
 // 🔁 map de getDay() JS → dayKey
 const JS_DAY_TO_KEY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
+const normalizeAirlineName = (value) => {
+  const airline = String(value || "").trim();
+
+  if (
+    airline.toUpperCase() === "WL HAVANA AIR" ||
+    airline.toUpperCase() === "WAL HAVANA AIR" ||
+    airline.toUpperCase() === "WAL HAVANA" ||
+    airline.toUpperCase() === "WESTJET"
+  ) {
+    return "WestJet";
+  }
+
+  return airline;
+};
+
+const getAirlineLogo = (value) => AIRLINE_LOGOS[normalizeAirlineName(value)] || AIRLINE_LOGOS[value] || null;
+
 export default function SchedulePage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -93,7 +110,7 @@ export default function SchedulePage() {
 
   // ✅ airlineKey = llave interna (para budgets/logos/DB)
   const [airlineKey, setAirlineKey] = useState("");
-  // ✅ airlineDisplayName = texto visible/editable (solo WL Havana Air)
+  // ✅ airlineDisplayName = texto visible/editable
   const [airlineDisplayName, setAirlineDisplayName] = useState("");
 
   const [department, setDepartment] = useState("");
@@ -121,10 +138,10 @@ export default function SchedulePage() {
         location.state.template;
 
       // airline = llave interna
-      if (airline) setAirlineKey(airline);
+      if (airline) setAirlineKey(normalizeAirlineName(airline));
       // airlineDisplayName = visible
-      if (airlineDisplayName) setAirlineDisplayName(airlineDisplayName);
-      else if (airline) setAirlineDisplayName(airline);
+      if (airlineDisplayName) setAirlineDisplayName(normalizeAirlineName(airlineDisplayName));
+      else if (airline) setAirlineDisplayName(normalizeAirlineName(airline));
 
       if (department) setDepartment(department);
       if (days) setDayNumbers(days);
@@ -334,8 +351,8 @@ export default function SchedulePage() {
       createdAt: serverTimestamp(),
 
       // ✅ llave interna + nombre visible
-      airline: airlineKey,
-      airlineDisplayName: airlineDisplayName || airlineKey,
+      airline: normalizeAirlineName(airlineKey),
+      airlineDisplayName: normalizeAirlineName(airlineDisplayName || airlineKey),
 
       department,
       days: dayNumbers,
@@ -346,7 +363,7 @@ export default function SchedulePage() {
       airlineDailyHours: dailyTotals,
 
       // ✅ budget lookup por llave interna
-      budget: airlineBudgets[airlineKey] || 0,
+      budget: airlineBudgets[normalizeAirlineName(airlineKey)] || airlineBudgets[airlineKey] || 0,
 
       status: "draft",
       createdBy: user?.username || null,
@@ -398,8 +415,8 @@ export default function SchedulePage() {
       createdAt: serverTimestamp(),
 
       // ✅ llave interna + nombre visible
-      airline: airlineKey,
-      airlineDisplayName: airlineDisplayName || airlineKey,
+      airline: normalizeAirlineName(airlineKey),
+      airlineDisplayName: normalizeAirlineName(airlineDisplayName || airlineKey),
 
       department,
       days: dayNumbers,
@@ -410,7 +427,7 @@ export default function SchedulePage() {
       airlineDailyHours: dailyTotals,
 
       // ✅ budget lookup por llave interna
-      budget: airlineBudgets[airlineKey] || 0,
+      budget: airlineBudgets[normalizeAirlineName(airlineKey)] || airlineBudgets[airlineKey] || 0,
 
       status: "pending",
       createdBy: user?.username || null,
@@ -429,7 +446,7 @@ export default function SchedulePage() {
     }
 
     // ✅ logo lookup por llave interna
-    const logoUrl = AIRLINE_LOGOS[airlineKey];
+    const logoUrl = getAirlineLogo(airlineKey);
     let logoImg = null;
 
     if (logoUrl) {
@@ -472,8 +489,8 @@ export default function SchedulePage() {
     employeeNameMap[e.id] = e.name;
   });
 
-  // ✅ Solo WL Havana Air es editable (como pediste)
-  const canEditWlHavanaName = airlineKey === "WL Havana Air";
+  // ✅ Solo WestJet es editable
+  const canEditWestJetName = normalizeAirlineName(airlineKey) === "WestJet";
 
   return (
     <div className="p-4 space-y-4">
@@ -497,18 +514,14 @@ export default function SchedulePage() {
             className="border p-1 rounded w-full"
             value={airlineKey}
             onChange={(e) => {
-              const key = e.target.value;
-              setAirlineKey(key);
-
-              // ✅ default visible name
-              // - si es WL Havana Air => dejamos editable y puedes cambiarlo
-              // - si no => el nombre visible sigue el key
-              setAirlineDisplayName(key);
+              const normalizedKey = normalizeAirlineName(e.target.value);
+              setAirlineKey(normalizedKey);
+              setAirlineDisplayName(normalizedKey);
             }}
           >
             <option value="">Select airline</option>
             <option value="SY">SY</option>
-            <option value="WL Havana Air">WL Havana Air</option>
+            <option value="WestJet">WestJet</option>
             <option value="WL Invicta">WL Invicta</option>
             <option value="AV">AV</option>
             <option value="EA">EA</option>
@@ -522,19 +535,19 @@ export default function SchedulePage() {
           <div style={{ marginTop: 8 }}>
             <label className="font-medium text-sm">
               Airline display name{" "}
-              {canEditWlHavanaName ? "(editable)" : "(locked)"}
+              {canEditWestJetName ? "(editable)" : "(locked)"}
             </label>
             <input
               className="border p-1 rounded w-full"
               value={airlineDisplayName}
-              disabled={!canEditWlHavanaName}
+              disabled={!canEditWestJetName}
               onChange={(e) => setAirlineDisplayName(e.target.value)}
-              placeholder="Example: WL Havana, WL Charter, etc."
+              placeholder="Example: WestJet"
             />
-            {canEditWlHavanaName && (
+            {canEditWestJetName && (
               <div className="text-[11px] text-slate-500" style={{ marginTop: 4 }}>
                 This only changes what you see/print. Budgets & logo stay linked to
-                “WL Havana Air”.
+                “WestJet”.
               </div>
             )}
           </div>
@@ -583,7 +596,7 @@ export default function SchedulePage() {
           dayNumbers={dayNumbers}
           rows={rows}
           setRows={setRows}
-          airline={airlineDisplayName || airlineKey} // ✅ visible name
+          airline={normalizeAirlineName(airlineDisplayName || airlineKey)}
           department={department}
           onSave={handleSaveSchedule}
           onSaveDraft={handleSaveDraft}
@@ -595,7 +608,7 @@ export default function SchedulePage() {
       <div className="card text-sm">
         <h2 className="font-semibold mb-1">Weekly Summary</h2>
         <p>Total Hours (with lunch): {airlineTotal.toFixed(2)}</p>
-        <p>Budget: {airlineBudgets[airlineKey] || 0}</p>
+        <p>Budget: {airlineBudgets[normalizeAirlineName(airlineKey)] || airlineBudgets[airlineKey] || 0}</p>
 
         <h3 className="font-semibold mt-3 mb-1 text-xs">
           Daily Hours (All employees)
@@ -654,3 +667,4 @@ export default function SchedulePage() {
     </div>
   );
 }
+
