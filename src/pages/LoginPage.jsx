@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
-import "./login.css";
+import "./LoginPage.css";
 
 export default function LoginPage() {
   const navigate = useNavigate();
