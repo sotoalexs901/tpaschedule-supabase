@@ -10,6 +10,98 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.96)",
+        border: "1px solid rgba(255,255,255,0.98)",
+        borderRadius: 28,
+        boxShadow: "0 24px 60px rgba(15,23,42,0.18)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#475569",
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+function TextInput(props) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        resize: "vertical",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 export default function TimeOffRequestPage() {
   const [employees, setEmployees] = useState([]);
   const [employeeId, setEmployeeId] = useState("");
@@ -22,7 +114,6 @@ export default function TimeOffRequestPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  // Cargar empleados desde "employees"
   useEffect(() => {
     async function loadEmployees() {
       try {
@@ -38,7 +129,6 @@ export default function TimeOffRequestPage() {
     loadEmployees().catch(console.error);
   }, []);
 
-  // 🔧 Normaliza rango (si no hay endDate, usa startDate)
   const normalizeRange = () => {
     if (!startDate) return null;
     const start = startDate;
@@ -47,15 +137,13 @@ export default function TimeOffRequestPage() {
     return { start, end };
   };
 
-  // 🔧 Convierte lo que venga (string, Timestamp, Date) en Date
   const toDateSafe = (value) => {
     if (!value) return null;
     if (typeof value === "string") return new Date(value);
-    if (value.toDate) return value.toDate(); // Firestore Timestamp
+    if (value.toDate) return value.toDate();
     return new Date(value);
   };
 
-  // 🔧 Pone la fecha a medianoche para comparar solo por día
   const normalizeMidnight = (date) => {
     if (!date) return null;
     const d = new Date(date);
@@ -93,7 +181,6 @@ export default function TimeOffRequestPage() {
     try {
       setSubmitting(true);
 
-      // 🔎 Buscar solicitudes anteriores del mismo empleado
       const qRef = query(
         collection(db, "timeOffRequests"),
         where("employeeId", "==", employeeId)
@@ -119,7 +206,6 @@ export default function TimeOffRequestPage() {
 
         if (!existingStartDate || !existingEndDate) continue;
 
-        // ❗ Rango se solapa si (nuevoInicio <= viejoFin) y (viejoInicio <= nuevoFin)
         if (
           newStartDate <= existingEndDate &&
           existingStartDate <= newEndDate
@@ -141,7 +227,6 @@ export default function TimeOffRequestPage() {
         return;
       }
 
-      // ✅ Si llegamos aquí NO hay conflicto; guardamos la nueva solicitud
       await addDoc(collection(db, "timeOffRequests"), {
         employeeId,
         employeeName,
@@ -170,226 +255,280 @@ export default function TimeOffRequestPage() {
     }
   };
 
-  // --- ESTILOS INLINE PARA QUE SE VEA COMO EL LOGIN ---
-  const outerStyle = {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundImage: "url('/flamingo-tpa.jpg')",
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-  };
-
-  const cardStyle = {
-    background: "rgba(15,23,42,0.88)",
-    backdropFilter: "blur(10px)",
-    borderRadius: "18px",
-    boxShadow: "0 18px 45px rgba(0,0,0,0.6)",
-    border: "1px solid rgba(148,163,184,0.45)",
-    padding: "24px 28px",
-    width: "340px",
-    maxWidth: "92vw",
-    color: "#f9fafb",
-    fontFamily: "Poppins, system-ui, -apple-system, BlinkMacSystemFont",
-  };
-
-  const inputStyle = {
-    width: "100%",
-    borderRadius: "8px",
-    border: "1px solid #d1d5db",
-    padding: "7px 9px",
-    fontSize: "0.85rem",
-    color: "#0f172a",
-  };
-
-  const labelStyle = {
-    fontSize: "11px",
-    fontWeight: 600,
-    marginBottom: "3px",
-    display: "block",
-  };
-
-  const smallTextStyle = {
-    fontSize: "11px",
-    color: "#e5e7eb",
-  };
-
   const todayStr = new Date().toISOString().slice(0, 10);
 
   return (
-    <div style={outerStyle}>
-      <div style={cardStyle}>
-        <h1
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "linear-gradient(135deg, rgba(15,92,145,0.92) 0%, rgba(31,124,193,0.86) 42%, rgba(110,198,232,0.82) 100%), url('/flamingo-tpa.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "28px 16px",
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 760,
+          display: "grid",
+          gap: 18,
+        }}
+      >
+        <div
           style={{
-            fontSize: "18px",
-            fontWeight: 700,
+            color: "#fff",
             textAlign: "center",
-            marginBottom: "4px",
           }}
         >
-          Day Off Request
-        </h1>
-        <p
-          style={{
-            ...smallTextStyle,
-            textAlign: "center",
-            marginBottom: "14px",
-            color: "#cbd5f5",
-          }}
-        >
-          Please complete this form to request PTO, Sick, or other time off.
-        </p>
-
-        <form onSubmit={handleSubmit} style={{ display: "grid", gap: "10px" }}>
-          {/* Employee Name */}
-          <div>
-            <label style={labelStyle}>Employee Name</label>
-            <select
-              style={inputStyle}
-              value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
-            >
-              <option value="">Select your name</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Reason */}
-          <div>
-            <label style={labelStyle}>Reason Type</label>
-            <select
-              style={inputStyle}
-              value={reasonType}
-              onChange={(e) => setReasonType(e.target.value)}
-            >
-              <option value="">Select reason</option>
-              <option value="PTO">PTO</option>
-              <option value="Sick">Sick</option>
-              <option value="Personal">Personal</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          {/* Dates */}
-          <div
+          <p
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "10px",
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.82)",
+              fontWeight: 700,
             }}
           >
-            <div>
-              <label style={labelStyle}>Start Date</label>
-              <input
-                type="date"
-                style={inputStyle}
-                value={startDate}
-                onChange={(e) => {
-                  setStartDate(e.target.value);
-                  if (!endDate || e.target.value > endDate) {
-                    setEndDate(e.target.value);
-                  }
-                }}
-                min={todayStr}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>End Date</label>
-              <input
-                type="date"
-                style={inputStyle}
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                min={startDate || todayStr}
-              />
-            </div>
-          </div>
-
-          {/* PIN */}
-          <div>
-            <label style={labelStyle}>
-              4-digit PIN (to check your request status)
-            </label>
-            <input
-              type="password"
-              maxLength={4}
-              inputMode="numeric"
-              style={{ ...inputStyle, letterSpacing: "0.3em" }}
-              value={pin}
-              onChange={(e) =>
-                setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-            />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label style={labelStyle}>Notes (optional)</label>
-            <textarea
-              rows={3}
-              style={{ ...inputStyle, resize: "vertical" }}
-              placeholder="Additional details (flight, doctor appointment, etc.)"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-
-          {/* Info 72h */}
-          <p style={{ ...smallTextStyle, marginTop: "2px" }}>
-            HR and Management team may take up to <b>72 hours</b> to approve or
-            reject your request.
+            TPA OPS · Time Off
           </p>
 
-          {error && (
-            <p
-              style={{
-                whiteSpace: "pre-line",
-                fontSize: "11px",
-                color: "#fecaca",
-                textAlign: "center",
-              }}
-            >
-              {error}
-            </p>
-          )}
-          {message && (
-            <p
-              style={{
-                fontSize: "11px",
-                color: "#bbf7d0",
-                textAlign: "center",
-              }}
-            >
-              {message}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={submitting}
+          <h1
             style={{
-              marginTop: "4px",
-              width: "100%",
-              background:
-                "linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)",
-              borderRadius: "999px",
-              border: "none",
-              padding: "8px 0",
-              color: "#ffffff",
-              fontSize: "0.85rem",
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: "0 12px 25px rgba(37,99,235,0.55)",
+              margin: "10px 0 8px",
+              fontSize: 34,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
             }}
           >
-            {submitting ? "Submitting..." : "Submit Request"}
-          </button>
-        </form>
+            Day Off Request
+          </h1>
+
+          <p
+            style={{
+              margin: 0,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.90)",
+              maxWidth: 620,
+              marginInline: "auto",
+            }}
+          >
+            Submit PTO, Sick, Personal or other time off requests for review by
+            HR and Management.
+          </p>
+        </div>
+
+        <PageCard style={{ padding: 26 }}>
+          <div style={{ marginBottom: 16 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Request Details
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Complete the form below to submit your request.
+            </p>
+          </div>
+
+          <form
+            onSubmit={handleSubmit}
+            style={{
+              display: "grid",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>Employee Name</FieldLabel>
+              <SelectInput
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+              >
+                <option value="">Select your name</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Reason Type</FieldLabel>
+              <SelectInput
+                value={reasonType}
+                onChange={(e) => setReasonType(e.target.value)}
+              >
+                <option value="">Select reason</option>
+                <option value="PTO">PTO</option>
+                <option value="Sick">Sick</option>
+                <option value="Personal">Personal</option>
+                <option value="Other">Other</option>
+              </SelectInput>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 14,
+              }}
+            >
+              <div>
+                <FieldLabel>Start Date</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    if (!endDate || e.target.value > endDate) {
+                      setEndDate(e.target.value);
+                    }
+                  }}
+                  min={todayStr}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>End Date</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  min={startDate || todayStr}
+                />
+              </div>
+            </div>
+
+            <div>
+              <FieldLabel>4-digit PIN</FieldLabel>
+              <TextInput
+                type="password"
+                maxLength={4}
+                inputMode="numeric"
+                value={pin}
+                onChange={(e) =>
+                  setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                style={{ letterSpacing: "0.25em" }}
+                placeholder="Enter 4-digit PIN"
+              />
+              <p
+                style={{
+                  marginTop: 8,
+                  marginBottom: 0,
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.6,
+                }}
+              >
+                This PIN is used to check the status of your request later.
+              </p>
+            </div>
+
+            <div>
+              <FieldLabel>Notes (optional)</FieldLabel>
+              <TextArea
+                rows={4}
+                placeholder="Additional details (flight, doctor appointment, etc.)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: "14px 16px",
+                fontSize: 13,
+                color: "#334155",
+                lineHeight: 1.7,
+              }}
+            >
+              HR and Management may take up to <b>72 hours</b> to approve or
+              reject your request.
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  whiteSpace: "pre-line",
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                  color: "#9f1239",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textAlign: "center",
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            {message && (
+              <div
+                style={{
+                  background: "#ecfdf5",
+                  border: "1px solid #a7f3d0",
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                  color: "#065f46",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textAlign: "center",
+                }}
+              >
+                {message}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{
+                marginTop: 4,
+                width: "100%",
+                background: submitting
+                  ? "#94a3b8"
+                  : "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                borderRadius: 14,
+                border: "none",
+                padding: "13px 16px",
+                color: "#ffffff",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: submitting ? "not-allowed" : "pointer",
+                boxShadow: submitting
+                  ? "none"
+                  : "0 12px 25px rgba(23,105,170,0.28)",
+              }}
+            >
+              {submitting ? "Submitting..." : "Submit Request"}
+            </button>
+          </form>
+        </PageCard>
       </div>
     </div>
   );
