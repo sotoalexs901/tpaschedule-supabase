@@ -13,11 +13,11 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { useUser } from "../UserContext.jsx";
 
-// 🔵 Logos oficiales desde Firebase
+// Logos por aerolínea
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
-  "WL Havana Air":
-    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2006_28_07%20p.m..png?alt=media&token=7bcf90fd-c854-400e-a28a-f838adca89f4",
+  WestJet: "/logos/westjet.png",
+  "WL Havana Air": "/logos/westjet.png",
   "WL Invicta":
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_49%20p.m..png?alt=media&token=092a1deb-3285-41e1-ab0c-2e48a8faab92",
   AV: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_37%20p.m..png?alt=media&token=f133d1c8-51f9-4513-96df-8a75c6457b5b",
@@ -35,7 +35,8 @@ const AIRLINE_LOGOS = {
 // 🔵 Colores por aerolínea
 const AIRLINE_COLORS = {
   SY: "#F28C28",
-  "WL Havana Air": "#3A7BD5",
+  WestJet: "#22B8B0",
+  "WL Havana Air": "#22B8B0",
   "WL Invicta": "#0057B8",
   AV: "#D22630",
   EA: "#003E7E",
@@ -71,6 +72,21 @@ function hexToRgba(hex, alpha) {
 }
 
 // Orden de días
+const normalizeAirlineName = (value) => {
+  const airline = String(value || "").trim();
+
+  if (
+    airline.toUpperCase() === "WL HAVANA AIR" ||
+    airline.toUpperCase() === "WAL HAVANA AIR" ||
+    airline.toUpperCase() === "WAL HAVANA" ||
+    airline.toUpperCase() === "WESTJET"
+  ) {
+    return "WestJet";
+  }
+
+  return airline;
+};
+
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
@@ -93,9 +109,10 @@ function getShiftText(shifts, idx) {
 // ============= TABLA ESTILO EXCEL =============
 function ExcelScheduleTable({ schedule, employees, compact = false }) {
   const { days, grid, airline, department } = schedule;
+  const displayAirline = normalizeAirlineName(schedule.airlineDisplayName || airline);
 
-  const logo = AIRLINE_LOGOS[airline];
-  const headerColor = AIRLINE_COLORS[airline] || "#0f172a";
+  const logo = AIRLINE_LOGOS[displayAirline] || AIRLINE_LOGOS[airline];
+  const headerColor = AIRLINE_COLORS[displayAirline] || AIRLINE_COLORS[airline] || "#0f172a";
 
   // Mapa id => nombre
   const empMap = {};
@@ -371,7 +388,7 @@ export default function ApprovedScheduleView() {
     navigate("/schedule", {
       state: {
         template: {
-          airline: schedule.airline,
+          airline: normalizeAirlineName(schedule.airlineDisplayName || schedule.airline),
           department: schedule.department,
           days: schedule.days,
           grid: schedule.grid,
@@ -409,7 +426,8 @@ export default function ApprovedScheduleView() {
         return;
       }
 
-      const logoUrl = AIRLINE_LOGOS[schedule.airline];
+      const displayAirline = normalizeAirlineName(schedule.airlineDisplayName || schedule.airline);
+      const logoUrl = AIRLINE_LOGOS[displayAirline] || AIRLINE_LOGOS[schedule.airline];
       let logoImg = null;
       if (logoUrl) {
         try {
@@ -458,7 +476,8 @@ export default function ApprovedScheduleView() {
       }
 
       pdf.addImage(imgData, "PNG", marginX, y, imgWidth, imgHeight);
-      pdf.save(`Approved_${schedule.airline}_${schedule.department}.pdf`);
+      const safeAirline = normalizeAirlineName(schedule.airlineDisplayName || schedule.airline).replace(/\s+/g, "_");
+      pdf.save(`Approved_${safeAirline}_${schedule.department}.pdf`);
     } catch (err) {
       console.error("Error exporting PDF:", err);
       alert("Error exporting PDF. Check the console for details.");
