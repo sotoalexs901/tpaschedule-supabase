@@ -68,10 +68,8 @@ export default function AppLayout() {
   const isAgentOrSupervisor =
     user?.role === "agent" || user?.role === "supervisor";
 
-  const navSections = useMemo(() => {
-    const sections = [];
-
-    const general = [
+  const navItems = useMemo(() => {
+    const items = [
       { to: "/dashboard", label: "Dashboard", icon: "🏠" },
       { to: "/profile", label: "My Profile", icon: "👤" },
       {
@@ -82,13 +80,8 @@ export default function AppLayout() {
       },
     ];
 
-    const schedules = [];
-    const timeoff = [];
-    const wchr = [];
-    const admin = [];
-
     if (isManager) {
-      schedules.push(
+      items.push(
         { to: "/schedule", label: "Create Schedule", icon: "🗓️" },
         { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
         {
@@ -100,26 +93,15 @@ export default function AppLayout() {
         { to: "/drafts", label: "Draft Schedules", icon: "📝" },
         { to: "/approved", label: "Approved Schedules", icon: "📌" },
         { to: "/returned", label: "Returned Schedules", icon: "↩️" },
-        { to: "/weekly-summary", label: "Weekly Summary", icon: "📊" }
-      );
-
-      timeoff.push(
+        { to: "/weekly-summary", label: "Weekly Summary", icon: "📊" },
         {
           to: "/timeoff-requests",
           label: "Day Off Requests",
           icon: "🌴",
           showDot: pendingTimeOff > 0,
         },
-        { to: "/blocked", label: "Blocked Employees", icon: "🚫" }
-      );
-
-      wchr.push({
-        to: "/wchr/admin/flights",
-        label: "Close Flight",
-        icon: "♿",
-      });
-
-      admin.push(
+        { to: "/blocked", label: "Blocked Employees", icon: "🚫" },
+        { to: "/wchr/admin/flights", label: "WCHR: Close Flight", icon: "♿" },
         {
           to: "/employee-announcements",
           label: "Crew Announcements",
@@ -131,7 +113,7 @@ export default function AppLayout() {
     }
 
     if (user?.role === "station_manager") {
-      admin.push(
+      items.push(
         { to: "/create-user", label: "Create User", icon: "➕" },
         { to: "/edit-users", label: "Manage Users", icon: "⚙️" },
         { to: "/employees", label: "Employees", icon: "👥" }
@@ -139,9 +121,8 @@ export default function AppLayout() {
     }
 
     if (isAgentOrSupervisor) {
-      schedules.push({ to: "/my-schedule", label: "My Schedule", icon: "📅" });
-
-      timeoff.push(
+      items.push(
+        { to: "/my-schedule", label: "My Schedule", icon: "📅" },
         {
           to: "/request-dayoff-internal",
           label: "Request Day Off",
@@ -151,29 +132,14 @@ export default function AppLayout() {
           to: "/dayoff-status-internal",
           label: "My Day Off Status",
           icon: "📍",
-        }
-      );
-
-      wchr.push(
-        { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
-        { to: "/wchr/my-reports", label: "My Reports", icon: "📄" }
+        },
+        { to: "/wchr/scan", label: "WCHR: Scan Boarding Pass", icon: "🎫" },
+        { to: "/wchr/my-reports", label: "WCHR: My Reports", icon: "📄" }
       );
     }
 
-    if (general.length) sections.push({ title: "General", items: general });
-    if (schedules.length) sections.push({ title: "Schedules", items: schedules });
-    if (timeoff.length) sections.push({ title: "Time Off", items: timeoff });
-    if (wchr.length) sections.push({ title: "WCHR", items: wchr });
-    if (admin.length) sections.push({ title: "Admin", items: admin });
-
-    return sections;
-  }, [
-    isManager,
-    isAgentOrSupervisor,
-    unreadMessages,
-    pendingTimeOff,
-    user?.role,
-  ]);
+    return items;
+  }, [isManager, isAgentOrSupervisor, unreadMessages, pendingTimeOff, user?.role]);
 
   return (
     <div
@@ -194,11 +160,11 @@ export default function AppLayout() {
       >
         <div
           style={{
-            background: "rgba(255,255,255,0.84)",
-            border: "1px solid rgba(255,255,255,0.96)",
-            boxShadow: "0 16px 40px rgba(15,23,42,0.08)",
-            borderRadius: 30,
-            padding: 16,
+            background: "rgba(255,255,255,0.82)",
+            border: "1px solid rgba(255,255,255,0.95)",
+            boxShadow: "0 14px 40px rgba(15,23,42,0.08)",
+            borderRadius: 28,
+            padding: 14,
           }}
         >
           <div
@@ -213,9 +179,9 @@ export default function AppLayout() {
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               <div
                 style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: 18,
+                  width: 48,
+                  height: 48,
+                  borderRadius: 16,
                   background:
                     "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
                   display: "flex",
@@ -245,7 +211,7 @@ export default function AppLayout() {
                 </p>
                 <p
                   style={{
-                    margin: "4px 0 0",
+                    margin: "3px 0 0",
                     fontSize: 13,
                     color: "#475569",
                     fontWeight: 600,
@@ -269,7 +235,6 @@ export default function AppLayout() {
                     padding: "11px 14px",
                     fontWeight: 700,
                     cursor: "pointer",
-                    boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
                   }}
                 >
                   {menuOpen ? "Close" : "Menu"}
@@ -310,52 +275,33 @@ export default function AppLayout() {
           {!isMobile && (
             <div
               style={{
-                marginTop: 16,
-                display: "grid",
-                gap: 14,
+                marginTop: 14,
+                overflowX: "auto",
+                paddingBottom: 2,
               }}
             >
-              {navSections.map((section) => (
-                <div key={section.title}>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                      marginBottom: 8,
-                      paddingLeft: 4,
-                    }}
-                  >
-                    {section.title}
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      flexWrap: "nowrap",
-                      overflowX: "auto",
-                      paddingBottom: 2,
-                    }}
-                  >
-                    {section.items.map((item) => (
-                      <TopNavItem key={item.to} {...item} />
-                    ))}
-                  </div>
-                </div>
-              ))}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "nowrap",
+                  minWidth: "max-content",
+                }}
+              >
+                {navItems.map((item) => (
+                  <TopNavItem key={item.to} {...item} />
+                ))}
+              </div>
             </div>
           )}
 
           {isMobile && menuOpen && (
             <div
               style={{
-                marginTop: 16,
+                marginTop: 14,
                 display: "grid",
-                gap: 12,
-                paddingTop: 12,
+                gap: 10,
+                paddingTop: 10,
                 borderTop: "1px solid #e2e8f0",
               }}
             >
@@ -370,28 +316,11 @@ export default function AppLayout() {
                 <StatusPill label="Pending Day Off" value={pendingTimeOff} />
               </div>
 
-              {navSections.map((section) => (
-                <div key={section.title} style={{ display: "grid", gap: 8 }}>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                      paddingLeft: 4,
-                    }}
-                  >
-                    {section.title}
-                  </div>
-
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {section.items.map((item) => (
-                      <TopNavItem key={item.to} {...item} mobile />
-                    ))}
-                  </div>
-                </div>
-              ))}
+              <div style={{ display: "grid", gap: 8 }}>
+                {navItems.map((item) => (
+                  <TopNavItem key={item.to} {...item} mobile />
+                ))}
+              </div>
 
               <button
                 onClick={logout}
@@ -416,8 +345,6 @@ export default function AppLayout() {
       <main
         style={{
           padding: "16px",
-          maxWidth: 1600,
-          margin: "0 auto",
         }}
       >
         <Outlet />
