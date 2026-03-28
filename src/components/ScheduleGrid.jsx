@@ -12,9 +12,17 @@ const AIRLINE_COLORS = {
   CABIN: "#1FA86A",
   "AA-BSO": "#A8A8A8",
   OTHER: "#555555",
+
+  // ✅ Nuevo color WestJet: verde-azul claro
+  WestJet: "#22B8B0",
 };
 
-// ⏰ Opciones de hora (cada 15 min + OFF)
+// 🖼️ Logos por aerolínea
+const AIRLINE_LOGOS = {
+  WestJet: "/logos/westjet.png",
+};
+
+// ⏰ Opciones de hora
 const TIME_OPTIONS = (() => {
   const arr = ["OFF"];
   for (let h = 0; h < 24; h++) {
@@ -37,13 +45,32 @@ const DAY_LABELS = {
   sun: "SUN",
 };
 
-function getAirlineColor(airline) {
-  const a = String(airline || "").trim();
+function normalizeAirlineName(name) {
+  const value = String(name || "").trim();
 
-  if (AIRLINE_COLORS[a]) return AIRLINE_COLORS[a];
-  if (/^WL\b/i.test(a)) return AIRLINE_COLORS.WL;
+  if (
+    value.toUpperCase() === "WAL HAVANA AIR" ||
+    value.toUpperCase() === "WAL" ||
+    value.toUpperCase() === "WAL HAVANA"
+  ) {
+    return "WestJet";
+  }
+
+  return value;
+}
+
+function getAirlineColor(airline) {
+  const normalized = normalizeAirlineName(airline);
+
+  if (AIRLINE_COLORS[normalized]) return AIRLINE_COLORS[normalized];
+  if (/^WL\b/i.test(normalized)) return AIRLINE_COLORS.WL;
 
   return "#6b7280";
+}
+
+function getAirlineLogo(airline) {
+  const normalized = normalizeAirlineName(airline);
+  return AIRLINE_LOGOS[normalized] || null;
 }
 
 function hexToRgb(hex) {
@@ -92,10 +119,13 @@ export default function ScheduleGrid({
 }) {
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
+  const displayAirline = normalizeAirlineName(airline);
+  const airlineLogo = getAirlineLogo(airline);
+
   const headerColor = getAirlineColor(airline);
-  const headerSoft = lightenColor(headerColor, 0.18);
-  const rowSoft = lightenColor(headerColor, 0.88);
-  const employeeSoft = lightenColor(headerColor, 0.8);
+  const headerSoft = lightenColor(headerColor, 0.78);
+  const rowSoft = lightenColor(headerColor, 0.9);
+  const employeeSoft = lightenColor(headerColor, 0.84);
   const borderSoft = transparentize(headerColor, 0.28);
   const accentSoft = transparentize(headerColor, 0.16);
 
@@ -155,7 +185,7 @@ export default function ScheduleGrid({
     const empBlockedDays = blockedByEmployee[row.employeeId] || {};
     const isBlockedDay = !!empBlockedDays[day];
 
-    let bgColor = hasData || isOff ? accentSoft : "rgba(255,255,255,0.72)";
+    let bgColor = hasData || isOff ? accentSoft : "rgba(255,255,255,0.78)";
     let borderColor = borderSoft;
     let extraClass = "";
 
@@ -179,6 +209,7 @@ export default function ScheduleGrid({
             textAlign: "center",
             fontWeight: 600,
             color: "#1f2937",
+            padding: "10px 8px",
           }}
         >
           {isBlockedDay && shiftIndex === 0 && (
@@ -217,12 +248,12 @@ export default function ScheduleGrid({
           <select
             className="sch-select"
             style={{
-              background: "rgba(255,255,255,0.9)",
+              background: "rgba(255,255,255,0.92)",
               border: "1px solid rgba(209,213,219,0.95)",
               borderRadius: 10,
               padding: "8px 10px",
               color: "#111827",
-              fontWeight: 500,
+              fontWeight: 600,
               outline: "none",
             }}
             value={shift.start || ""}
@@ -242,12 +273,12 @@ export default function ScheduleGrid({
             <select
               className="sch-select"
               style={{
-                background: "rgba(255,255,255,0.9)",
+                background: "rgba(255,255,255,0.92)",
                 border: "1px solid rgba(209,213,219,0.95)",
                 borderRadius: 10,
                 padding: "8px 10px",
                 color: "#111827",
-                fontWeight: 500,
+                fontWeight: 600,
                 outline: "none",
               }}
               value={shift.end || ""}
@@ -298,16 +329,39 @@ export default function ScheduleGrid({
       }}
     >
       <div
-        className="sch-title"
         style={{
-          color: headerColor,
-          fontWeight: 800,
-          fontSize: 24,
-          letterSpacing: 0.4,
-          marginBottom: 4,
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          marginBottom: 8,
+          flexWrap: "wrap",
         }}
       >
-        {airline || "AIRLINE"}
+        {airlineLogo && (
+          <img
+            src={airlineLogo}
+            alt={displayAirline}
+            style={{
+              height: 42,
+              width: "auto",
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+        )}
+
+        <div
+          className="sch-title"
+          style={{
+            color: headerColor,
+            fontWeight: 800,
+            fontSize: 24,
+            letterSpacing: 0.4,
+            marginBottom: 0,
+          }}
+        >
+          {displayAirline || "AIRLINE"}
+        </div>
       </div>
 
       <div
@@ -435,7 +489,7 @@ export default function ScheduleGrid({
                               className="sch-employee-select"
                               style={{
                                 width: "100%",
-                                background: "rgba(255,255,255,0.92)",
+                                background: "rgba(255,255,255,0.94)",
                                 border: `1px solid ${borderSoft}`,
                                 borderRadius: 12,
                                 padding: "10px 12px",
