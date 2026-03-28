@@ -16,15 +16,14 @@ import jsPDF from "jspdf";
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
-  tue: "TUESD",
+  tue: "TUE",
   wed: "WED",
-  thu: "THURSD",
-  fri: "FRIDAY",
-  sat: "SATURD",
-  sun: "SUND",
+  thu: "THU",
+  fri: "FRI",
+  sat: "SAT",
+  sun: "SUN",
 };
 
-// Convierte shifts de un día a texto legible
 function dayShiftsToText(shifts) {
   if (!Array.isArray(shifts) || shifts.length === 0) return "OFF";
 
@@ -38,7 +37,6 @@ function dayShiftsToText(shifts) {
   return parts.length ? parts.join(", ") : "OFF";
 }
 
-// Texto tipo "MON 03 | TUESD 04 ..."
 function formatWeekLabelFromSchedule(schedule) {
   if (!schedule?.days) return "Week not defined";
 
@@ -49,6 +47,68 @@ function formatWeekLabelFromSchedule(schedule) {
   }).join("  |  ");
 }
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "secondary",
+  type = "button",
+}) {
+  const styles = {
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+    danger: {
+      background: "#dc2626",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(220,38,38,0.18)",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function ReturnedSchedulesPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -56,18 +116,18 @@ export default function ReturnedSchedulesPage() {
   const [returned, setReturned] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [statusMessage, setStatusMessage] = useState("");
 
-  // Cargar schedules devueltos + empleados
   useEffect(() => {
     async function load() {
       setLoading(true);
+      setStatusMessage("");
+
       try {
-        // Empleados para mostrar nombres
         const empSnap = await getDocs(collection(db, "employees"));
         const empList = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setEmployees(empList);
 
-        // Schedules con status "returned" creados por este usuario
         const qReturned = query(
           collection(db, "schedules"),
           where("status", "==", "returned"),
@@ -86,6 +146,7 @@ export default function ReturnedSchedulesPage() {
         setReturned(list);
       } catch (err) {
         console.error("Error loading returned schedules:", err);
+        setStatusMessage("Could not load returned schedules.");
       } finally {
         setLoading(false);
       }
@@ -94,13 +155,11 @@ export default function ReturnedSchedulesPage() {
     load().catch(console.error);
   }, [user?.username]);
 
-  // Mapa rápido id -> nombre
   const employeeNameMap = {};
   employees.forEach((e) => {
     employeeNameMap[e.id] = e.name;
   });
 
-  // Abrir schedule devuelto en /schedule para corregirlo
   const handleOpenReturned = (sch) => {
     navigate("/schedule", {
       state: {
@@ -110,13 +169,11 @@ export default function ReturnedSchedulesPage() {
           days: sch.days,
           grid: sch.grid,
         },
-        // Opcional: si luego quieres que SchedulePage actualice este mismo doc:
         returnedId: sch.id,
       },
     });
   };
 
-  // Exportar schedule devuelto a PDF
   const handleExportReturned = (sch) => {
     try {
       const pdf = new jsPDF("portrait", "pt", "letter");
@@ -141,17 +198,23 @@ export default function ReturnedSchedulesPage() {
       pdf.text(`Week of: ${weekLabel}`, marginX, y);
       y += 16;
 
-      if (sch.returnReason || sch.returnComment) {
+      if (sch.returnReason || sch.returnComment || sch.reviewNotes) {
         pdf.setFont("helvetica", "bold");
         pdf.text("Return reason:", marginX, y);
         y += 12;
+
         pdf.setFont("helvetica", "normal");
         const reasonText =
-          sch.returnReason || sch.returnComment || "(no reason provided)";
+          sch.returnReason ||
+          sch.returnComment ||
+          sch.reviewNotes ||
+          "(no reason provided)";
+
         const linesReason = pdf.splitTextToSize(
           reasonText,
           pageWidth - marginX * 2
         );
+
         linesReason.forEach((ln) => {
           if (y > pdf.internal.pageSize.getHeight() - 40) {
             pdf.addPage();
@@ -165,7 +228,6 @@ export default function ReturnedSchedulesPage() {
 
       pdf.setFontSize(9);
 
-      // Una línea por empleado con sus días
       (sch.grid || []).forEach((row) => {
         const empName =
           employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
@@ -176,7 +238,6 @@ export default function ReturnedSchedulesPage() {
         });
 
         const line = `${empName}  |  ${parts.join("  |  ")}`;
-
         const lines = pdf.splitTextToSize(line, pageWidth - marginX * 2);
 
         lines.forEach((ln) => {
@@ -200,7 +261,6 @@ export default function ReturnedSchedulesPage() {
     }
   };
 
-  // ❌ Eliminar schedule devuelto
   const handleDeleteReturned = async (id) => {
     const ok = window.confirm(
       "Are you sure you want to delete this returned schedule? This cannot be undone."
@@ -210,103 +270,368 @@ export default function ReturnedSchedulesPage() {
     try {
       await deleteDoc(doc(collection(db, "schedules"), id));
       setReturned((prev) => prev.filter((s) => s.id !== id));
+      setStatusMessage("Returned schedule deleted.");
     } catch (err) {
       console.error("Error deleting returned schedule:", err);
-      alert("Error deleting returned schedule. Check console for details.");
+      setStatusMessage("Error deleting returned schedule.");
     }
   };
 
-  return (
-    <div className="p-4 space-y-4">
-      {/* Back */}
-      <button
-        type="button"
-        className="btn btn-soft mb-2"
-        onClick={() => navigate("/dashboard")}
-      >
-        ← Back to Dashboard
-      </button>
-
-      <h1 className="text-lg font-semibold mb-1">Returned Schedules</h1>
-      <p className="text-xs text-slate-500 mb-3">
-        These schedules were returned by the Station Manager. You can open them
-        to fix the issues, export a copy, or delete them if you won&apos;t use
-        them anymore.
-      </p>
-
-      {loading ? (
-        <p className="text-sm text-slate-400">Loading returned schedules...</p>
-      ) : returned.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          You don&apos;t have any returned schedules at the moment.
+  if (loading) {
+    return (
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Loading returned schedules...
         </p>
-      ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {returned.map((sch) => (
-            <div
-              key={sch.id}
-              className="card border border-amber-200 bg-white shadow-sm text-sm flex flex-col justify-between"
+      </PageCard>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
             >
-              <div>
-                <p className="font-semibold text-slate-800">
-                  {sch.airline} — {sch.department}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Week: {formatWeekLabelFromSchedule(sch)}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Total hours:{" "}
-                  {typeof sch.airlineWeeklyHours === "number"
-                    ? sch.airlineWeeklyHours.toFixed(2)
-                    : "N/A"}
-                </p>
+              TPA OPS · Scheduling
+            </p>
 
-                {sch.returnReason || sch.returnComment ? (
-                  <p className="text-[11px] text-red-600 mt-2">
-                    <span className="font-semibold">Reason:</span>{" "}
-                    {sch.returnReason || sch.returnComment}
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-slate-400 mt-2">
-                    No reason text was provided.
-                  </p>
-                )}
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              Returned Schedules
+            </h1>
 
-                {sch.createdAt?.seconds && (
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Sent on:{" "}
-                    {new Date(
-                      sch.createdAt.seconds * 1000
-                    ).toLocaleString()}
-                  </p>
-                )}
-              </div>
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Review schedules returned by the Station Manager, fix them,
+              export a copy or delete what you no longer need.
+            </p>
+          </div>
 
-              <div className="flex gap-2 mt-3">
-                <button
-                  type="button"
-                  className="flex-1 btn btn-soft text-xs"
-                  onClick={() => handleOpenReturned(sch)}
+          <ActionButton
+            type="button"
+            variant="secondary"
+            onClick={() => navigate("/dashboard")}
+          >
+            ← Back to Dashboard
+          </ActionButton>
+        </div>
+      </div>
+
+      {statusMessage && (
+        <PageCard style={{ padding: 16 }}>
+          <div
+            style={{
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#1769aa",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {statusMessage}
+          </div>
+        </PageCard>
+      )}
+
+      {returned.length === 0 ? (
+        <PageCard style={{ padding: 22 }}>
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            You don&apos;t have any returned schedules at the moment.
+          </p>
+        </PageCard>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: 16,
+          }}
+        >
+          {returned.map((sch) => {
+            const reason =
+              sch.returnReason || sch.returnComment || sch.reviewNotes || "";
+
+            return (
+              <PageCard key={sch.id} style={{ padding: 20 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 14,
+                  }}
                 >
-                  Open to Fix
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded px-2 py-1"
-                  onClick={() => handleExportReturned(sch)}
-                >
-                  Export PDF
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded px-2 py-1"
-                  onClick={() => handleDeleteReturned(sch.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))}
+                  <div>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {sch.airline} — {sch.department}
+                    </p>
+
+                    <p
+                      style={{
+                        margin: "6px 0 0",
+                        fontSize: 12,
+                        color: "#64748b",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Week: {formatWeekLabelFromSchedule(sch)}
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        Total Hours
+                      </p>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 22,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          letterSpacing: "-0.03em",
+                        }}
+                      >
+                        {typeof sch.airlineWeeklyHours === "number"
+                          ? sch.airlineWeeklyHours.toFixed(2)
+                          : "N/A"}
+                      </p>
+                    </div>
+
+                    <div
+                      style={{
+                        background: "#fff7ed",
+                        border: "1px solid #fed7aa",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#9a3412",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        Status
+                      </p>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 18,
+                          fontWeight: 800,
+                          color: "#b45309",
+                          letterSpacing: "-0.02em",
+                        }}
+                      >
+                        Returned
+                      </p>
+                    </div>
+                  </div>
+
+                  {reason ? (
+                    <div
+                      style={{
+                        background: "#fff1f2",
+                        border: "1px solid #fecdd3",
+                        borderRadius: 16,
+                        padding: "14px 16px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: "#9f1239",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                        }}
+                      >
+                        Reason
+                      </p>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 13,
+                          color: "#881337",
+                          lineHeight: 1.55,
+                        }}
+                      >
+                        {reason}
+                      </p>
+                    </div>
+                  ) : (
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 12,
+                        color: "#64748b",
+                      }}
+                    >
+                      No reason text was provided.
+                    </p>
+                  )}
+
+                  {sch.createdAt?.seconds && (
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 12,
+                        color: "#64748b",
+                      }}
+                    >
+                      Sent on:{" "}
+                      {new Date(
+                        sch.createdAt.seconds * 1000
+                      ).toLocaleString()}
+                    </p>
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <ActionButton
+                      type="button"
+                      variant="secondary"
+                      onClick={() => handleOpenReturned(sch)}
+                    >
+                      Open to Fix
+                    </ActionButton>
+
+                    <ActionButton
+                      type="button"
+                      variant="success"
+                      onClick={() => handleExportReturned(sch)}
+                    >
+                      Export PDF
+                    </ActionButton>
+
+                    <ActionButton
+                      type="button"
+                      variant="danger"
+                      onClick={() => handleDeleteReturned(sch.id)}
+                    >
+                      Delete
+                    </ActionButton>
+                  </div>
+                </div>
+              </PageCard>
+            );
+          })}
         </div>
       )}
     </div>
