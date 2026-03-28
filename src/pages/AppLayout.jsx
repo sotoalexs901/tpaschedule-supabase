@@ -65,7 +65,7 @@ export default function AppLayout() {
       className="min-h-screen flex"
       style={{
         background:
-          "linear-gradient(135deg, #f4f3ff 0%, #eef4ff 45%, #f7fbff 100%)",
+          "linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%)",
       }}
     >
       {isSidebarOpen && (
@@ -90,9 +90,9 @@ export default function AppLayout() {
           flexDirection: "column",
           overflowY: "auto",
           background:
-            "linear-gradient(180deg, #4f46e5 0%, #4338ca 30%, #1e1b4b 100%)",
+            "linear-gradient(180deg, #0f4c81 0%, #1769aa 35%, #0b2e4f 100%)",
           color: "#fff",
-          boxShadow: "18px 0 40px rgba(67, 56, 202, 0.18)",
+          boxShadow: "18px 0 40px rgba(23, 105, 170, 0.18)",
           borderTopRightRadius: 28,
           borderBottomRightRadius: 28,
         }}
@@ -201,11 +201,7 @@ export default function AppLayout() {
                 icon="📁"
               />
               <NavItem to="/approvals" label="Approvals" icon="✅" />
-              <NavItem
-                to="/drafts"
-                label="Draft Schedules"
-                icon="📝"
-              />
+              <NavItem to="/drafts" label="Draft Schedules" icon="📝" />
               <NavItem
                 to="/approved"
                 label="Approved Schedules"
@@ -343,7 +339,7 @@ export default function AppLayout() {
               onClick={() => setIsSidebarOpen(true)}
               style={{
                 border: "none",
-                background: "#4f46e5",
+                background: "#1769aa",
                 color: "#fff",
                 borderRadius: 12,
                 padding: "10px 12px",
@@ -360,7 +356,7 @@ export default function AppLayout() {
                   margin: 0,
                   fontSize: 12,
                   fontWeight: 800,
-                  color: "#312e81",
+                  color: "#0f4c81",
                 }}
               >
                 TPA OPS SYSTEM
