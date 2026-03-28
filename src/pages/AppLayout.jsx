@@ -17,7 +17,6 @@ export default function AppLayout() {
     navigate("/login");
   };
 
-  // 🔔 time off pendientes
   useEffect(() => {
     const qTimeoff = query(
       collection(db, "timeOffRequests"),
@@ -31,7 +30,6 @@ export default function AppLayout() {
     return () => unsub();
   }, []);
 
-  // 🔔 mensajes no leídos para este usuario
   useEffect(() => {
     if (!user?.id) return;
 
@@ -50,57 +48,11 @@ export default function AppLayout() {
     return () => unsub();
   }, [user?.id]);
 
-  // 🔒 cerrar sidebar cuando un NavItem dispara el evento
   useEffect(() => {
     const handler = () => setIsSidebarOpen(false);
     window.addEventListener("close-sidebar", handler);
     return () => window.removeEventListener("close-sidebar", handler);
   }, []);
-
-  // estilos base
-  const sidebarStyle = {
-    width: 230,
-    background: "#020617",
-    color: "#ffffff",
-    display: "flex",
-    flexDirection: "column",
-    minHeight: "100vh",
-    overflowY: "auto",
-  };
-
-  const sidebarHeaderStyle = {
-    padding: "16px 16px 12px",
-    borderBottom: "1px solid rgba(148,163,184,0.35)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-  };
-
-  const loggedTextStyle = {
-    fontSize: 11,
-    marginTop: 2,
-    color: "#ffffff",
-    opacity: 1,
-  };
-
-  const navStyle = {
-    flex: 1,
-    padding: "12px 10px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-  };
-
-  const logoutStyle = {
-    borderTop: "1px solid rgba(148,163,184,0.35)",
-    padding: "10px 14px",
-    background: "transparent",
-    color: "#ffffff",
-    textAlign: "left",
-    fontSize: 13,
-    cursor: "pointer",
-  };
 
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
@@ -109,181 +61,329 @@ export default function AppLayout() {
     user?.role === "agent" || user?.role === "supervisor";
 
   return (
-    <div className="min-h-screen flex bg-slate-100">
-      {/* overlay negro cuando el menú está abierto en móvil */}
+    <div
+      className="min-h-screen flex"
+      style={{
+        background:
+          "linear-gradient(135deg, #f4f3ff 0%, #eef4ff 45%, #f7fbff 100%)",
+      }}
+    >
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          className="fixed inset-0 bg-slate-950/35 backdrop-blur-[2px] z-30 md:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* SIDEBAR */}
       <aside
-        style={sidebarStyle}
-        className={`sidebar-base fixed inset-y-0 left-0 z-40 transform transition-transform duration-200
+        className={`fixed inset-y-0 left-0 z-40 transform transition-transform duration-200
                     md:static md:translate-x-0
                     ${
                       isSidebarOpen
                         ? "translate-x-0"
                         : "-translate-x-full md:translate-x-0"
                     }`}
+        style={{
+          width: 270,
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          overflowY: "auto",
+          background:
+            "linear-gradient(180deg, #4f46e5 0%, #4338ca 30%, #1e1b4b 100%)",
+          color: "#fff",
+          boxShadow: "18px 0 40px rgba(67, 56, 202, 0.18)",
+          borderTopRightRadius: 28,
+          borderBottomRightRadius: 28,
+        }}
       >
-        {/* Header sidebar */}
-        <div style={sidebarHeaderStyle}>
+        <div
+          style={{
+            padding: "22px 18px 16px",
+            borderBottom: "1px solid rgba(255,255,255,0.12)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
           <div>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                background: "rgba(255,255,255,0.16)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 20,
+                marginBottom: 12,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
+              }}
+            >
+              ✈️
+            </div>
+
             <h1
               style={{
                 margin: 0,
-                fontSize: 16,
-                fontWeight: 700,
-                letterSpacing: "0.04em",
+                fontSize: 24,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.03em",
               }}
             >
-              TPA OPS SYSTEM
+              TPA OPS
             </h1>
-            <p style={loggedTextStyle}>
-              Logged as: <b>{user?.username}</b> ({user?.role})
+            <p
+              style={{
+                marginTop: 6,
+                marginBottom: 0,
+                fontSize: 12,
+                color: "rgba(255,255,255,0.82)",
+                lineHeight: 1.4,
+              }}
+            >
+              Logged as <b>{user?.username}</b>
+              <br />
+              {user?.role}
             </p>
           </div>
 
-          {/* Botón X solo en móvil */}
           <button
             type="button"
-            className="sidebar-close md:hidden"
+            className="md:hidden"
             onClick={() => setIsSidebarOpen(false)}
+            style={{
+              border: "none",
+              background: "rgba(255,255,255,0.12)",
+              color: "#fff",
+              width: 34,
+              height: 34,
+              borderRadius: 10,
+              fontSize: 22,
+              lineHeight: 1,
+              cursor: "pointer",
+            }}
           >
             ×
           </button>
         </div>
 
-        {/* Menú */}
-        <nav style={navStyle}>
-          {/* Común a todos los usuarios logueados */}
-          <NavItem to="/dashboard" label="Dashboard" />
-
-          {/* Perfil (todos) */}
-          <NavItem to="/profile" label="My Profile" />
-
-          {/* 🔔 Mensajes con notificación si hay no leídos */}
+        <nav
+          style={{
+            flex: 1,
+            padding: "16px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <SidebarSection title="Overview" />
+          <NavItem to="/dashboard" label="Dashboard" icon="🏠" />
+          <NavItem to="/profile" label="My Profile" icon="👤" />
           <NavItem
             to="/messages"
             label="Messages"
+            icon="💬"
             showDot={unreadMessages > 0}
           />
 
-          {isManager && <NavItem to="/schedule" label="Create Schedule" />}
-
-          {/* ✅ CABIN SERVICE */}
-          {isManager && <NavItem to="/cabin-service" label="Cabin Service" />}
-
           {isManager && (
-            <NavItem
-              to="/cabin-saved-schedules"
-              label="Cabin Saved Schedules"
-            />
-          )}
-
-          {/* ✅ WCHR REPORTS — AGENT / SUPERVISOR */}
-          {isAgentOrSupervisor && (
             <>
-              <NavItem to="/wchr/scan" label="WCHR: Scan Boarding Pass" />
-              <NavItem to="/wchr/my-reports" label="WCHR: My Reports" />
+              <SidebarSection title="Scheduling" />
+              <NavItem to="/schedule" label="Create Schedule" icon="🗓️" />
+              <NavItem to="/cabin-service" label="Cabin Service" icon="🧳" />
+              <NavItem
+                to="/cabin-saved-schedules"
+                label="Cabin Saved Schedules"
+                icon="📁"
+              />
+              <NavItem to="/approvals" label="Approvals" icon="✅" />
+              <NavItem
+                to="/drafts"
+                label="Draft Schedules"
+                icon="📝"
+              />
+              <NavItem
+                to="/approved"
+                label="Approved Schedules"
+                icon="📌"
+              />
+              <NavItem
+                to="/returned"
+                label="Returned Schedules"
+                icon="↩️"
+              />
+              <NavItem
+                to="/weekly-summary"
+                label="Weekly Summary"
+                icon="📊"
+              />
             </>
           )}
 
-          {/* ✅ WCHR ADMIN — STATION / DUTY */}
           {isManager && (
             <>
-              <NavItem to="/wchr/admin/flights" label="WCHR: Close Flight" />
-            </>
-          )}
-
-          {/* SOLO STATION MANAGER */}
-          {user?.role === "station_manager" && (
-            <>
-              <NavItem to="/approvals" label="Approvals" />
+              <SidebarSection title="Operations" />
               <NavItem
                 to="/timeoff-requests"
                 label="Day Off Requests"
+                icon="🌴"
                 showDot={pendingTimeOff > 0}
               />
-              <NavItem to="/dashboard-editor" label="Dashboard Editor" />
+              <NavItem
+                to="/blocked"
+                label="Blocked Employees"
+                icon="🚫"
+              />
+              <NavItem
+                to="/wchr/admin/flights"
+                label="WCHR: Close Flight"
+                icon="♿"
+              />
               <NavItem
                 to="/employee-announcements"
                 label="Crew Announcements"
+                icon="📣"
               />
-              <NavItem to="/budgets" label="Budgets" />
-              <NavItem to="/create-user" label="Create User" />
-              <NavItem to="/edit-users" label="Manage Users" />
-              <NavItem to="/employees" label="Employees" />
+              <NavItem
+                to="/dashboard-editor"
+                label="Dashboard Editor"
+                icon="🎛️"
+              />
+              <NavItem to="/budgets" label="Budgets" icon="💰" />
             </>
           )}
 
-          {/* STATION + DUTY */}
-          {isManager && (
+          {user?.role === "station_manager" && (
             <>
-              <NavItem to="/blocked" label="Blocked Employees" />
-              <NavItem to="/drafts" label="Draft Schedules" />
-              <NavItem to="/approved" label="Approved Schedules" />
-              <NavItem to="/returned" label="Returned Schedules" />
-              <NavItem to="/weekly-summary" label="Weekly Summary" />
+              <SidebarSection title="Administration" />
+              <NavItem to="/create-user" label="Create User" icon="➕" />
+              <NavItem to="/edit-users" label="Manage Users" icon="⚙️" />
+              <NavItem to="/employees" label="Employees" icon="👥" />
             </>
           )}
 
-          {/* SOLO AGENT / SUPERVISOR */}
           {isAgentOrSupervisor && (
             <>
-              <NavItem to="/my-schedule" label="My Schedule" />
-              <NavItem to="/request-dayoff-internal" label="Request Day Off" />
+              <SidebarSection title="My Tools" />
+              <NavItem to="/my-schedule" label="My Schedule" icon="📅" />
+              <NavItem
+                to="/request-dayoff-internal"
+                label="Request Day Off"
+                icon="🛫"
+              />
               <NavItem
                 to="/dayoff-status-internal"
                 label="My Day Off Status"
+                icon="📍"
+              />
+              <NavItem
+                to="/wchr/scan"
+                label="WCHR: Scan Boarding Pass"
+                icon="🎫"
+              />
+              <NavItem
+                to="/wchr/my-reports"
+                label="WCHR: My Reports"
+                icon="📄"
               />
             </>
           )}
         </nav>
 
-        {/* Logout en sidebar */}
-        <button style={logoutStyle} onClick={logout}>
-          Logout
-        </button>
+        <div
+          style={{
+            padding: 14,
+            borderTop: "1px solid rgba(255,255,255,0.12)",
+          }}
+        >
+          <button
+            onClick={logout}
+            style={{
+              width: "100%",
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: "rgba(255,255,255,0.10)",
+              color: "#fff",
+              borderRadius: 14,
+              padding: "12px 14px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Logout
+          </button>
+        </div>
       </aside>
 
-      {/* CONTENIDO PRINCIPAL */}
       <div className="flex-1 flex flex-col min-h-screen">
-        {/* Header móvil (botón menú + logout pequeño) */}
-        <header className="mobile-header md:hidden">
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="mobile-menu-btn"
+        <header
+          className="md:hidden"
+          style={{
+            padding: "14px 14px 0",
+          }}
+        >
+          <div
+            style={{
+              background: "rgba(255,255,255,0.82)",
+              backdropFilter: "blur(12px)",
+              border: "1px solid rgba(255,255,255,0.9)",
+              borderRadius: 20,
+              padding: "12px 14px",
+              boxShadow: "0 10px 30px rgba(15,23,42,0.06)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
           >
-            <span className="mobile-menu-icon">
-              <span />
-              <span />
-              <span />
-            </span>
-            Menu
-          </button>
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              style={{
+                border: "none",
+                background: "#4f46e5",
+                color: "#fff",
+                borderRadius: 12,
+                padding: "10px 12px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Menu
+            </button>
 
-          <div className="mobile-header-right">
-            <p className="mobile-header-title">TPA OPS SYSTEM</p>
-            <div className="mobile-header-user-row">
-              <span className="mobile-header-user">
-                {user?.username} · {user?.role}
-              </span>
-              <button
-                type="button"
-                className="mobile-logout-btn"
-                onClick={logout}
+            <div style={{ textAlign: "right" }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: "#312e81",
+                }}
               >
-                Logout
-              </button>
+                TPA OPS SYSTEM
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 11,
+                  color: "#64748b",
+                }}
+              >
+                {user?.username} · {user?.role}
+              </p>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
+        <main
+          className="flex-1 overflow-auto"
+          style={{
+            padding: "18px",
+          }}
+        >
           <Outlet />
         </main>
       </div>
@@ -291,32 +391,34 @@ export default function AppLayout() {
   );
 }
 
-// Link del menú lateral (con posible puntico rojo)
-function NavItem({ to, label, showDot }) {
-  const baseStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "8px 10px",
-    borderRadius: 6,
-    fontSize: 13,
-    textDecoration: "none",
-    color: "#ffffff",
-    opacity: 1,
-    transition: "background 0.15s, color 0.15s",
-  };
+function SidebarSection({ title }) {
+  return (
+    <div
+      style={{
+        padding: "14px 10px 6px",
+        fontSize: 11,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.12em",
+        color: "rgba(255,255,255,0.58)",
+      }}
+    >
+      {title}
+    </div>
+  );
+}
 
-  const labelStyle = { display: "inline-block" };
-
+function NavItem({ to, label, showDot, icon }) {
   const dot =
     showDot && (
       <span
         style={{
           width: 9,
           height: 9,
-          borderRadius: "999px",
-          backgroundColor: "#ef4444",
-          boxShadow: "0 0 0 3px rgba(248,113,113,0.35)",
+          borderRadius: 999,
+          backgroundColor: "#fb7185",
+          boxShadow: "0 0 0 4px rgba(251,113,133,0.18)",
+          flexShrink: 0,
         }}
       />
     );
@@ -324,24 +426,42 @@ function NavItem({ to, label, showDot }) {
   return (
     <NavLink
       to={to}
-      style={({ isActive }) =>
-        isActive
-          ? {
-              ...baseStyle,
-              background: "#1d4ed8",
-              color: "#ffffff",
-            }
-          : {
-              ...baseStyle,
-              background: "transparent",
-            }
-      }
+      style={({ isActive }) => ({
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "11px 12px",
+        borderRadius: 14,
+        fontSize: 14,
+        fontWeight: isActive ? 700 : 600,
+        textDecoration: "none",
+        color: "#ffffff",
+        background: isActive
+          ? "linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.10))"
+          : "transparent",
+        border: isActive
+          ? "1px solid rgba(255,255,255,0.18)"
+          : "1px solid transparent",
+        boxShadow: isActive ? "0 10px 24px rgba(15,23,42,0.14)" : "none",
+        transition: "all 0.18s ease",
+      })}
       onClick={() => {
         const evt = new Event("close-sidebar");
         window.dispatchEvent(evt);
       }}
     >
-      <span style={labelStyle}>{label}</span>
+      <span
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          minWidth: 0,
+        }}
+      >
+        <span style={{ fontSize: 15, opacity: 0.95 }}>{icon}</span>
+        <span>{label}</span>
+      </span>
       {dot}
     </NavLink>
   );
