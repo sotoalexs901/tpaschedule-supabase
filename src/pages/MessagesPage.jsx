@@ -17,6 +17,111 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "secondary",
+  type = "button",
+  disabled = false,
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    danger: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecdd3",
+      boxShadow: "none",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+        opacity: disabled ? 0.65 : 1,
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        resize: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 export default function MessagesPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -31,6 +136,7 @@ export default function MessagesPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
   const bottomRef = useRef(null);
   const myId = user?.id;
@@ -38,9 +144,6 @@ export default function MessagesPage() {
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
 
-  // =========================
-  // 1) Cargar lista de usuarios
-  // =========================
   useEffect(() => {
     async function loadUsers() {
       if (!user) return;
@@ -58,6 +161,7 @@ export default function MessagesPage() {
         setAllUsers(list);
       } catch (err) {
         console.error("Error loading users for messages:", err);
+        setStatusMessage("Could not load users.");
       } finally {
         setLoadingUsers(false);
       }
@@ -65,9 +169,6 @@ export default function MessagesPage() {
     loadUsers();
   }, [user]);
 
-  // =========================
-  // 2) Cargar RESUMEN de conversaciones
-  // =========================
   const loadConversations = useCallback(async () => {
     if (!myId) return;
 
@@ -105,6 +206,7 @@ export default function MessagesPage() {
       setConversations(list);
     } catch (err) {
       console.error("Error loading conversations:", err);
+      setStatusMessage("Could not load conversations.");
     }
   }, [myId]);
 
@@ -112,9 +214,6 @@ export default function MessagesPage() {
     loadConversations();
   }, [loadConversations]);
 
-  // =========================
-  // 3) Listener mensajes (ida y vuelta)
-  // =========================
   useEffect(() => {
     if (!myId || !selectedUserId) {
       setMessages([]);
@@ -182,18 +281,12 @@ export default function MessagesPage() {
     };
   }, [myId, selectedUserId]);
 
-  // =========================
-  // 4) Scroll al último mensaje
-  // =========================
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
-  // =========================
-  // 5) Marcar mensajes recibidos como leídos
-  // =========================
   useEffect(() => {
     if (!myId || !selectedUserId || messages.length === 0) return;
 
@@ -211,9 +304,6 @@ export default function MessagesPage() {
     });
   }, [myId, selectedUserId, messages]);
 
-  // =========================
-  // Handlers
-  // =========================
   const handleChangeUser = (id) => {
     setSelectedUserId(id || "");
     const found = allUsers.find((u) => u.id === id) || null;
@@ -228,6 +318,7 @@ export default function MessagesPage() {
 
     try {
       setSending(true);
+      setStatusMessage("");
 
       await addDoc(collection(db, "messages"), {
         fromUserId: myId,
@@ -244,7 +335,7 @@ export default function MessagesPage() {
       await loadConversations();
     } catch (err) {
       console.error("Error sending message:", err);
-      alert("Error sending message. Please try again.");
+      setStatusMessage("Error sending message. Please try again.");
     } finally {
       setSending(false);
     }
@@ -254,7 +345,6 @@ export default function MessagesPage() {
     handleChangeUser(otherUserId);
   };
 
-  // borrar conversación (solo station / duty)
   const handleDeleteConversation = async () => {
     if (!myId || !selectedUserId) return;
     if (!isManager) return;
@@ -294,53 +384,188 @@ export default function MessagesPage() {
       setMessages([]);
       setSelectedUserId("");
       setSelectedUser(null);
+      setStatusMessage("Conversation deleted.");
       await loadConversations();
     } catch (err) {
       console.error("Error deleting conversation:", err);
-      alert("Error deleting conversation. Please try again.");
+      setStatusMessage("Error deleting conversation. Please try again.");
     }
   };
 
   if (!user) {
     return (
-      <div className="p-4">
-        <p>You must be logged in to see messages.</p>
-      </div>
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          You must be logged in to see messages.
+        </p>
+      </PageCard>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header con Back */}
-      <div className="flex items-center gap-3 mb-1">
-        <button
-          type="button"
-          className="btn btn-soft text-xs"
-          onClick={() => navigate(-1)}
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
         >
-          ← Back
-        </button>
-        <h1 className="text-lg font-semibold mb-0">Messages</h1>
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              TPA OPS · Communications
+            </p>
+
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              Messages
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Start direct conversations with users, review existing chats and
+              manage message threads.
+            </p>
+          </div>
+
+          <ActionButton
+            type="button"
+            variant="secondary"
+            onClick={() => navigate(-1)}
+          >
+            ← Back
+          </ActionButton>
+        </div>
       </div>
 
-      {/* Conversaciones activas */}
-      <div className="card space-y-2">
-        <h2 className="text-sm font-semibold mb-1">Conversations</h2>
+      {statusMessage && (
+        <PageCard style={{ padding: 16 }}>
+          <div
+            style={{
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#1769aa",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {statusMessage}
+          </div>
+        </PageCard>
+      )}
+
+      <PageCard style={{ padding: 20 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Conversations
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Open an existing thread or start a new one by selecting a user.
+          </p>
+        </div>
+
         {conversations.length === 0 ? (
-          <p className="text-xs text-gray-600">
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
             No conversations yet. Start by sending a message.
           </p>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 10,
+            }}
+          >
             {conversations.map((c) => {
-              const other =
-                allUsers.find((u) => u.id === c.otherUserId) || {};
+              const other = allUsers.find((u) => u.id === c.otherUserId) || {};
               const name =
                 other.username || other.loginUsername || "(unknown user)";
-              const preview = c.lastFromMe
-                ? `You: ${c.lastText}`
-                : c.lastText;
-
+              const preview = c.lastFromMe ? `You: ${c.lastText}` : c.lastText;
               const isActive = selectedUserId === c.otherUserId;
 
               return (
@@ -348,113 +573,263 @@ export default function MessagesPage() {
                   key={c.otherUserId}
                   type="button"
                   onClick={() => handleOpenConversation(c.otherUserId)}
-                  className={`px-3 py-2 rounded-lg text-xs border shadow-sm text-left ${
-                    isActive
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-gray-100 text-gray-900 border-gray-200"
-                  }`}
+                  style={{
+                    minWidth: 180,
+                    maxWidth: 260,
+                    textAlign: "left",
+                    padding: "12px 14px",
+                    borderRadius: 16,
+                    border: isActive
+                      ? "1px solid #1769aa"
+                      : "1px solid #e2e8f0",
+                    background: isActive ? "#1769aa" : "#f8fbff",
+                    color: isActive ? "#fff" : "#0f172a",
+                    cursor: "pointer",
+                    boxShadow: isActive
+                      ? "0 12px 24px rgba(23,105,170,0.18)"
+                      : "none",
+                  }}
                 >
-                  <div className="font-semibold text-[12px] truncate">
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      fontSize: 13,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
                     {name}
                   </div>
-                  <div className="text-[11px] truncate">{preview}</div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 11,
+                      opacity: isActive ? 0.92 : 0.7,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {preview}
+                  </div>
                 </button>
               );
             })}
           </div>
         )}
-      </div>
+      </PageCard>
 
-      {/* Selector de usuario */}
-      <div className="card space-y-2">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-          <div className="flex-1">
-            <label className="text-sm font-medium block mb-1">
-              Send message to:
+      <PageCard style={{ padding: 20 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.2fr auto",
+            gap: 14,
+            alignItems: "end",
+          }}
+        >
+          <div>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 6,
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#475569",
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+              }}
+            >
+              Send message to
             </label>
+
             {loadingUsers ? (
-              <p className="text-xs text-gray-600">Loading users…</p>
+              <p
+                style={{
+                  margin: 0,
+                  color: "#64748b",
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                Loading users...
+              </p>
             ) : (
-              <select
-                className="border rounded w-full px-2 py-1 text-sm"
+              <SelectInput
                 value={selectedUserId}
                 onChange={(e) => handleChangeUser(e.target.value)}
               >
                 <option value="">Select a user</option>
                 {allUsers.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.username || u.loginUsername || "(no username)"} ·{" "}
-                    {u.role}
+                    {u.username || u.loginUsername || "(no username)"} · {u.role}
                   </option>
                 ))}
-              </select>
+              </SelectInput>
             )}
           </div>
 
           {selectedUser && (
-            <div className="text-xs text-gray-600 md:text-right">
-              <div>
-                Chatting with{" "}
-                <span className="font-semibold">
-                  {selectedUser.username || selectedUser.loginUsername}
-                </span>
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 14,
+                padding: "12px 14px",
+                minWidth: 200,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#64748b",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Active chat
               </div>
-              <div className="text-[11px]">
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 14,
+                  color: "#0f172a",
+                  fontWeight: 800,
+                }}
+              >
+                {selectedUser.username || selectedUser.loginUsername}
+              </div>
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: 12,
+                  color: "#64748b",
+                }}
+              >
                 Role: {selectedUser.role || "N/A"}
               </div>
             </div>
           )}
         </div>
-      </div>
+      </PageCard>
 
-      {/* Área de conversación */}
       {selectedUserId ? (
-        <div className="card flex flex-col h-[60vh] max-h-[500px]">
-          {/* Borrar conversación (solo Station / Duty) */}
+        <PageCard
+          style={{
+            padding: 18,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 520,
+          }}
+        >
           {isManager && (
-            <div className="flex justify-end mb-2">
-              <button
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginBottom: 10,
+              }}
+            >
+              <ActionButton
                 type="button"
-                className="btn btn-danger text-[11px]"
+                variant="danger"
                 onClick={handleDeleteConversation}
               >
                 Delete conversation
-              </button>
+              </ActionButton>
             </div>
           )}
 
-          {/* Mensajes */}
-          <div className="flex-1 overflow-auto pr-1 mb-2">
+          <div
+            style={{
+              flex: 1,
+              overflow: "auto",
+              paddingRight: 4,
+              marginBottom: 12,
+              borderRadius: 18,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              padding: 14,
+              minHeight: 320,
+            }}
+          >
             {loadingMessages ? (
-              <p className="text-xs text-gray-600">Loading messages…</p>
+              <p
+                style={{
+                  margin: 0,
+                  color: "#64748b",
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                Loading messages...
+              </p>
             ) : messages.length === 0 ? (
-              <p className="text-xs text-gray-600">
+              <p
+                style={{
+                  margin: 0,
+                  color: "#64748b",
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
                 No messages yet. Start the conversation.
               </p>
             ) : (
-              <div className="space-y-2">
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
                 {messages.map((m) => {
                   const isMine = m.fromUserId === myId;
+
                   return (
                     <div
                       key={m.id}
-                      className={`flex ${
-                        isMine ? "justify-end" : "justify-start"
-                      }`}
+                      style={{
+                        display: "flex",
+                        justifyContent: isMine ? "flex-end" : "flex-start",
+                      }}
                     >
                       <div
-                        className={`max-w-[75%] rounded-lg px-3 py-2 text-xs shadow-sm ${
-                          isMine
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-100 text-gray-900"
-                        }`}
+                        style={{
+                          maxWidth: "78%",
+                          borderRadius: 18,
+                          padding: "12px 14px",
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                          boxShadow: "0 8px 18px rgba(15,23,42,0.06)",
+                          background: isMine ? "#1769aa" : "#ffffff",
+                          color: isMine ? "#ffffff" : "#0f172a",
+                          border: isMine
+                            ? "1px solid #1769aa"
+                            : "1px solid #e2e8f0",
+                        }}
                       >
                         {!isMine && (
-                          <div className="font-semibold mb-0.5 text-[11px]">
+                          <div
+                            style={{
+                              fontWeight: 800,
+                              marginBottom: 4,
+                              fontSize: 11,
+                              color: "#1769aa",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.05em",
+                            }}
+                          >
                             {m.fromUsername || "User"}
                           </div>
                         )}
-                        <div className="whitespace-pre-wrap break-words">
+                        <div
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
                           {m.text}
                         </div>
                       </div>
@@ -466,33 +841,58 @@ export default function MessagesPage() {
             )}
           </div>
 
-          {/* Caja de texto / reply */}
-          <form onSubmit={handleSend} className="border-t pt-2 mt-1">
-            <label className="text-[11px] text-gray-600 block mb-1">
+          <form onSubmit={handleSend}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 6,
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#475569",
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+              }}
+            >
               Write a message
             </label>
-            <div className="flex gap-2">
-              <textarea
-                className="flex-1 border rounded px-2 py-1 text-xs resize-none"
-                rows={2}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 10,
+                alignItems: "end",
+              }}
+            >
+              <TextArea
+                rows={3}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder="Type your message…"
+                placeholder="Type your message..."
               />
-              <button
+              <ActionButton
                 type="submit"
+                variant="primary"
                 disabled={sending || !text.trim()}
-                className="btn btn-primary text-xs h-fit self-end"
               >
-                {sending ? "Sending…" : "Send"}
-              </button>
+                {sending ? "Sending..." : "Send"}
+              </ActionButton>
             </div>
           </form>
-        </div>
+        </PageCard>
       ) : (
-        <div className="card text-xs text-gray-600">
-          Select a user to start a conversation.
-        </div>
+        <PageCard style={{ padding: 22 }}>
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Select a user to start a conversation.
+          </p>
+        </PageCard>
       )}
     </div>
   );
