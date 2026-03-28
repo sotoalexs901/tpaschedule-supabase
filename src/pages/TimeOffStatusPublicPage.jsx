@@ -3,6 +3,121 @@ import React, { useEffect, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.96)",
+        border: "1px solid rgba(255,255,255,0.98)",
+        borderRadius: 28,
+        boxShadow: "0 24px 60px rgba(15,23,42,0.18)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#475569",
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+function TextInput(props) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function getStatusIcon(status) {
+  if (status === "approved") return "😊";
+  if (status === "rejected") return "😞";
+  if (status === "needs_info") return "📝";
+  return "⏳";
+}
+
+function getStatusLabel(status) {
+  if (status === "approved") return "APPROVED";
+  if (status === "rejected") return "REJECTED";
+  if (status === "needs_info") return "MORE INFO NEEDED";
+  return (status || "pending").toUpperCase();
+}
+
+function getStatusStyles(status) {
+  if (status === "approved") {
+    return {
+      background: "#ecfdf5",
+      border: "1px solid #a7f3d0",
+      color: "#065f46",
+    };
+  }
+  if (status === "rejected") {
+    return {
+      background: "#fff1f2",
+      border: "1px solid #fecdd3",
+      color: "#9f1239",
+    };
+  }
+  if (status === "needs_info") {
+    return {
+      background: "#fff7ed",
+      border: "1px solid #fed7aa",
+      color: "#9a3412",
+    };
+  }
+  return {
+    background: "#edf7ff",
+    border: "1px solid #cfe7fb",
+    color: "#1769aa",
+  };
+}
+
 export default function TimeOffStatusPublicPage() {
   const [employees, setEmployees] = useState([]);
   const [employeeId, setEmployeeId] = useState("");
@@ -11,7 +126,6 @@ export default function TimeOffStatusPublicPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  // Cargar empleados
   useEffect(() => {
     async function loadEmployees() {
       try {
@@ -40,7 +154,6 @@ export default function TimeOffStatusPublicPage() {
     try {
       setLoading(true);
 
-      // 🔁 SIN orderBy, para evitar índice obligatorio y errores de carga
       const qReq = query(
         collection(db, "timeOffRequests"),
         where("employeeId", "==", employeeId),
@@ -50,11 +163,7 @@ export default function TimeOffStatusPublicPage() {
       const snap = await getDocs(qReq);
       let list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // Ordenamos en el cliente por fecha (si existe)
-      list.sort(
-        (a, b) =>
-          (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-      );
+      list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
       if (list.length === 0) {
         setMessage("No requests found for this employee and PIN.");
@@ -69,213 +178,316 @@ export default function TimeOffStatusPublicPage() {
     }
   };
 
-  const getStatusIcon = (status) => {
-    if (status === "approved") return "😊";
-    if (status === "rejected") return "😞";
-    if (status === "needs_info") return "📝";
-    return "";
-  };
-
-  const getStatusLabel = (status) => {
-    if (status === "approved") return "APPROVED";
-    if (status === "rejected") return "REJECTED";
-    if (status === "needs_info") return "MORE INFO NEEDED";
-    return (status || "").toUpperCase();
-  };
-
-  const getStatusColor = (status) => {
-    if (status === "approved") return "#bbf7d0";
-    if (status === "rejected") return "#fecaca";
-    if (status === "needs_info") return "#fed7aa";
-    return "#e5e7eb";
-  };
-
-  // Estilos reusados (igual que en la página de request)
-  const outerStyle = {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundImage: "url('/flamingo-tpa.jpg')",
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-  };
-
-  const cardStyle = {
-    background: "rgba(15,23,42,0.88)",
-    backdropFilter: "blur(10px)",
-    borderRadius: "18px",
-    boxShadow: "0 18px 45px rgba(0,0,0,0.6)",
-    border: "1px solid rgba(148,163,184,0.45)",
-    padding: "24px 28px",
-    width: "340px",
-    maxWidth: "92vw",
-    color: "#f9fafb",
-  };
-
-  const inputStyle = {
-    width: "100%",
-    borderRadius: "8px",
-    border: "1px solid #d1d5db",
-    padding: "7px 9px",
-    fontSize: "0.85rem",
-    color: "#0f172a",
-  };
-
-  const labelStyle = {
-    fontSize: "11px",
-    fontWeight: 600,
-    marginBottom: "3px",
-    display: "block",
-  };
-
-  const smallTextStyle = {
-    fontSize: "11px",
-    color: "#e5e7eb",
-  };
-
   return (
-    <div style={outerStyle}>
-      <div style={cardStyle}>
-        <h1
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "linear-gradient(135deg, rgba(15,92,145,0.92) 0%, rgba(31,124,193,0.86) 42%, rgba(110,198,232,0.82) 100%), url('/flamingo-tpa.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "28px 16px",
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 760,
+          display: "grid",
+          gap: 18,
+        }}
+      >
+        <div
           style={{
-            fontSize: "18px",
-            fontWeight: 700,
+            color: "#fff",
             textAlign: "center",
-            marginBottom: "4px",
           }}
         >
-          Check Day Off Request Status
-        </h1>
-        <p
-          style={{
-            ...smallTextStyle,
-            textAlign: "center",
-            marginBottom: "14px",
-            color: "#cbd5f5",
-          }}
-        >
-          Select your name, enter your 4-digit PIN, and view the status of your
-          requests.
-        </p>
-
-        <form onSubmit={handleCheck} style={{ display: "grid", gap: "10px" }}>
-          <div>
-            <label style={labelStyle}>Employee Name</label>
-            <select
-              style={inputStyle}
-              value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
-            >
-              <option value="">Select your name</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label style={labelStyle}>4-digit PIN</label>
-            <input
-              type="password"
-              maxLength={4}
-              inputMode="numeric"
-              style={{ ...inputStyle, letterSpacing: "0.3em" }}
-              value={pin}
-              onChange={(e) =>
-                setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-            />
-          </div>
-
-          <p style={{ ...smallTextStyle, marginTop: "2px" }}>
-            HR and Management team may take up to <b>72 hours</b> to approve or
-            reject your request.
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.82)",
+              fontWeight: 700,
+            }}
+          >
+            TPA OPS · Time Off
           </p>
 
-          {message && (
-            <p
+          <h1
+            style={{
+              margin: "10px 0 8px",
+              fontSize: 34,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Check Day Off Request Status
+          </h1>
+
+          <p
+            style={{
+              margin: 0,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.90)",
+              maxWidth: 620,
+              marginInline: "auto",
+            }}
+          >
+            Select your name and PIN to review the current status of your time
+            off requests.
+          </p>
+        </div>
+
+        <PageCard style={{ padding: 26 }}>
+          <div style={{ marginBottom: 16 }}>
+            <h2
               style={{
-                fontSize: "11px",
-                textAlign: "center",
-                color: "#fed7aa",
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
               }}
             >
-              {message}
+              Status Lookup
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Enter your information below to see submitted requests.
             </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              marginTop: "4px",
-              width: "100%",
-              background:
-                "linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)",
-              borderRadius: "999px",
-              border: "none",
-              padding: "8px 0",
-              color: "#ffffff",
-              fontSize: "0.85rem",
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: "0 12px 25px rgba(37,99,235,0.55)",
-            }}
-          >
-            {loading ? "Checking..." : "Check Status"}
-          </button>
-        </form>
-
-        {/* Resultados */}
-        {requests.length > 0 && (
-          <div
-            style={{
-              marginTop: "14px",
-              borderTop: "1px solid rgba(148,163,184,0.5)",
-              paddingTop: "10px",
-              maxHeight: "190px",
-              overflowY: "auto",
-              fontSize: "11px",
-            }}
-          >
-            {requests.map((r) => (
-              <div key={r.id} style={{ marginBottom: "10px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ fontSize: "20px" }}>{getStatusIcon(r.status)}</span>
-                  <div style={{ fontWeight: 600 }}>
-                    {r.reasonType || "Reason"} — {r.startDate} → {r.endDate}
-                  </div>
-                </div>
-                <div
-                  style={{
-                    color: getStatusColor(r.status),
-                    fontWeight: 600,
-                    marginTop: "2px",
-                  }}
-                >
-                  Status: {getStatusLabel(r.status)}
-                </div>
-                {r.managerNote && (
-                  <div style={{ marginTop: "3px", color: "#e5e7eb" }}>
-                    <span style={{ fontWeight: 600 }}>
-                      Message from Management:{" "}
-                    </span>
-                    <span>{r.managerNote}</span>
-                  </div>
-                )}
-                {r.notes && (
-                  <div style={{ marginTop: "2px", color: "#cbd5e1" }}>
-                    <span style={{ fontWeight: 600 }}>Your notes: </span>
-                    <span>{r.notes}</span>
-                  </div>
-                )}
-              </div>
-            ))}
           </div>
-        )}
+
+          <form
+            onSubmit={handleCheck}
+            style={{
+              display: "grid",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>Employee Name</FieldLabel>
+              <SelectInput
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+              >
+                <option value="">Select your name</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>4-digit PIN</FieldLabel>
+              <TextInput
+                type="password"
+                maxLength={4}
+                inputMode="numeric"
+                value={pin}
+                onChange={(e) =>
+                  setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                style={{ letterSpacing: "0.25em" }}
+                placeholder="Enter 4-digit PIN"
+              />
+            </div>
+
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: "14px 16px",
+                fontSize: 13,
+                color: "#334155",
+                lineHeight: 1.7,
+              }}
+            >
+              HR and Management may take up to <b>72 hours</b> to approve,
+              reject or request more information.
+            </div>
+
+            {message && (
+              <div
+                style={{
+                  background: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                  color: "#9a3412",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textAlign: "center",
+                }}
+              >
+                {message}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                marginTop: 4,
+                width: "100%",
+                background: loading
+                  ? "#94a3b8"
+                  : "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                borderRadius: 14,
+                border: "none",
+                padding: "13px 16px",
+                color: "#ffffff",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: loading ? "not-allowed" : "pointer",
+                boxShadow: loading
+                  ? "none"
+                  : "0 12px 25px rgba(23,105,170,0.28)",
+              }}
+            >
+              {loading ? "Checking..." : "Check Status"}
+            </button>
+          </form>
+
+          {requests.length > 0 && (
+            <div
+              style={{
+                marginTop: 18,
+                paddingTop: 18,
+                borderTop: "1px solid #e2e8f0",
+                display: "grid",
+                gap: 12,
+              }}
+            >
+              {requests.map((r) => {
+                const statusStyles = getStatusStyles(r.status);
+
+                return (
+                  <div
+                    key={r.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 20,
+                      padding: 16,
+                      background: "#ffffff",
+                      boxShadow: "0 8px 22px rgba(15,23,42,0.04)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 12,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 26,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {getStatusIcon(r.status)}
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: 15,
+                            fontWeight: 800,
+                            color: "#0f172a",
+                            lineHeight: 1.3,
+                          }}
+                        >
+                          {r.reasonType || "Reason"} — {r.startDate} → {r.endDate}
+                        </div>
+
+                        <div style={{ marginTop: 8 }}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              padding: "7px 12px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              ...statusStyles,
+                            }}
+                          >
+                            {getStatusLabel(r.status)}
+                          </span>
+                        </div>
+
+                        {r.managerNote && (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              background: "#f8fbff",
+                              border: "1px solid #dbeafe",
+                              borderRadius: 14,
+                              padding: "12px 14px",
+                            }}
+                          >
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: 12,
+                                fontWeight: 800,
+                                color: "#1769aa",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.05em",
+                              }}
+                            >
+                              Message from Management
+                            </p>
+                            <p
+                              style={{
+                                margin: "6px 0 0",
+                                fontSize: 13,
+                                color: "#334155",
+                                lineHeight: 1.6,
+                              }}
+                            >
+                              {r.managerNote}
+                            </p>
+                          </div>
+                        )}
+
+                        {r.notes && (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              fontSize: 13,
+                              color: "#64748b",
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            <span style={{ fontWeight: 700 }}>Your notes: </span>
+                            {r.notes}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </PageCard>
       </div>
     </div>
   );
