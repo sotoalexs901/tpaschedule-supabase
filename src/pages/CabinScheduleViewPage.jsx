@@ -1,3 +1,4 @@
+// src/pages/CabinScheduleViewPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -48,6 +49,139 @@ const DAY_SHORT_LABELS = {
 };
 
 const ROLE_OPTIONS = ["Supervisor", "LAV", "Agent"];
+
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "secondary",
+  type = "button",
+  disabled = false,
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    success: {
+      background: "#ecfdf5",
+      color: "#065f46",
+      border: "1px solid #a7f3d0",
+      boxShadow: "none",
+    },
+    warning: {
+      background: "#fff7ed",
+      color: "#9a3412",
+      border: "1px solid #fed7aa",
+      boxShadow: "none",
+    },
+    danger: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecdd3",
+      boxShadow: "none",
+    },
+    dark: {
+      background: "#0f172a",
+      color: "#ffffff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(15,23,42,0.14)",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+        opacity: disabled ? 0.6 : 1,
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function statusBadge(status) {
+  const s = String(status || "draft").toLowerCase();
+
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "7px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    border: "1px solid transparent",
+    textTransform: "capitalize",
+  };
+
+  if (s === "approved") {
+    return {
+      ...base,
+      background: "#ecfdf5",
+      color: "#065f46",
+      borderColor: "#a7f3d0",
+    };
+  }
+
+  if (s === "pending") {
+    return {
+      ...base,
+      background: "#fff7ed",
+      color: "#9a3412",
+      borderColor: "#fed7aa",
+    };
+  }
+
+  if (s === "rejected") {
+    return {
+      ...base,
+      background: "#fff1f2",
+      color: "#9f1239",
+      borderColor: "#fecdd3",
+    };
+  }
+
+  return {
+    ...base,
+    background: "#edf7ff",
+    color: "#1769aa",
+    borderColor: "#cfe7fb",
+  };
+}
 
 export default function CabinScheduleViewPage() {
   const { id } = useParams();
@@ -386,18 +520,57 @@ export default function CabinScheduleViewPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: 20 }}>
-        <div style={cardStyle}>Loading cabin schedule...</div>
-      </div>
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Loading cabin schedule...
+        </p>
+      </PageCard>
     );
   }
 
   if (error) {
     return (
-      <div style={{ padding: 20 }}>
-        <div style={errorStyle}>{error}</div>
-        <div style={{ marginTop: 16 }}>
-          <Link to="/cabin-saved-schedules" style={linkStyle}>
+      <div style={{ display: "grid", gap: 16 }}>
+        <PageCard style={{ padding: 18 }}>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              color: "#9f1239",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        </PageCard>
+
+        <div>
+          <Link
+            to="/cabin-saved-schedules"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: "#edf7ff",
+              color: "#1769aa",
+              border: "1px solid #cfe7fb",
+              textDecoration: "none",
+              fontSize: 13,
+              fontWeight: 800,
+            }}
+          >
             Back to Cabin Saved Schedules
           </Link>
         </div>
@@ -406,135 +579,253 @@ export default function CabinScheduleViewPage() {
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <div style={headerRowStyle}>
-        <div>
-          <h1 style={pageTitleStyle}>Cabin Schedule View</h1>
-          <p style={pageSubStyle}>Weekly Cabin Service schedule details</p>
-        </div>
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
 
-        <div style={headerActionsStyle}>
-          <button
-            type="button"
-            onClick={handleExportPdf}
-            style={exportButtonStyle}
-            disabled={exporting || editMode}
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              TPA OPS · Cabin Service
+            </p>
+
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              Cabin Schedule View
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Weekly Cabin Service schedule details, assignments, flights and
+              editable roster view.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
           >
-            {exporting ? "Exporting..." : "Export PDF"}
-          </button>
+            <ActionButton
+              onClick={handleExportPdf}
+              variant="secondary"
+              disabled={exporting || editMode}
+            >
+              {exporting ? "Exporting..." : "Export PDF"}
+            </ActionButton>
 
-          <button
-            type="button"
-            onClick={handleDeleteSchedule}
-            style={deleteScheduleButtonStyle}
-            disabled={deleting || saving}
-          >
-            {deleting ? "Deleting..." : "Delete Schedule"}
-          </button>
+            <ActionButton
+              onClick={handleDeleteSchedule}
+              variant="danger"
+              disabled={deleting || saving}
+            >
+              {deleting ? "Deleting..." : "Delete Schedule"}
+            </ActionButton>
 
-          <Link to="/cabin-saved-schedules" style={backButtonStyle}>
-            Back to Saved Schedules
-          </Link>
+            <Link
+              to="/cabin-saved-schedules"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "10px 14px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.18)",
+                color: "#ffffff",
+                border: "1px solid rgba(255,255,255,0.25)",
+                textDecoration: "none",
+                fontSize: 13,
+                fontWeight: 800,
+              }}
+            >
+              Back to Saved Schedules
+            </Link>
+          </div>
         </div>
       </div>
 
-      <div style={{ height: 16 }} />
-
-      <div style={cardStyle}>
-        <h2 style={sectionTitleStyle}>Schedule Summary</h2>
-
+      <PageCard style={{ padding: 20 }}>
         <div style={summaryGridStyle}>
           <SummaryBox label="Week Start" value={schedule?.weekStartDate || "-"} />
           <SummaryBox label="Created By" value={schedule?.createdBy || "-"} />
-          <SummaryBox label="Status" value={schedule?.status || "draft"} />
+          <SummaryBox
+            label="Status"
+            value={<span style={statusBadge(schedule?.status)}>{schedule?.status || "draft"}</span>}
+          />
           <SummaryBox label="Flights" value={String(totalFlights)} />
           <SummaryBox label="Slots" value={String(totalSlots)} />
           <SummaryBox label="Assigned" value={`${assignedSlots}/${totalSlots}`} />
         </div>
-      </div>
+      </PageCard>
 
-      <div style={{ height: 16 }} />
-
-      <div style={cardStyle}>
-        <div style={toolbarWrapStyle}>
-          <div style={viewToggleWrapStyle}>
-            <button
-              type="button"
+      <PageCard style={{ padding: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <ActionButton
               onClick={() => setViewMode("detail")}
-              style={
-                viewMode === "detail"
-                  ? toggleButtonActiveStyle
-                  : toggleButtonStyle
-              }
+              variant={viewMode === "detail" ? "primary" : "secondary"}
             >
               Detail View
-            </button>
+            </ActionButton>
 
-            <button
-              type="button"
+            <ActionButton
               onClick={() => setViewMode("roster")}
-              style={
-                viewMode === "roster"
-                  ? toggleButtonActiveStyle
-                  : toggleButtonStyle
-              }
+              variant={viewMode === "roster" ? "primary" : "secondary"}
             >
               Roster View
-            </button>
+            </ActionButton>
           </div>
 
-          <div style={editActionsWrapStyle}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {!editMode ? (
-              <button
-                type="button"
+              <ActionButton
                 onClick={() => setEditMode(true)}
-                style={actionButtonStyle}
+                variant="dark"
               >
                 Edit Mode
-              </button>
+              </ActionButton>
             ) : (
               <>
-                <button
-                  type="button"
+                <ActionButton
                   onClick={handleSaveChanges}
-                  style={saveButtonStyle}
+                  variant="success"
                   disabled={saving}
                 >
                   {saving ? "Saving..." : "Save Changes"}
-                </button>
+                </ActionButton>
 
-                <button
-                  type="button"
+                <ActionButton
                   onClick={handleCancelEdit}
-                  style={cancelButtonStyle}
+                  variant="secondary"
                   disabled={saving}
                 >
                   Cancel
-                </button>
+                </ActionButton>
               </>
             )}
           </div>
         </div>
 
         {editMode && (
-          <div style={editModeBannerStyle}>
+          <div
+            style={{
+              marginTop: 14,
+              padding: "12px 14px",
+              borderRadius: 16,
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
+              color: "#1769aa",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
             Edit Mode is ON. You can change employee, start time, end time, and
             role directly in the table.
           </div>
         )}
 
         {hasUnsavedChanges && editMode && (
-          <div style={pendingBannerStyle}>You have unsaved changes.</div>
+          <div
+            style={{
+              marginTop: 12,
+              padding: "12px 14px",
+              borderRadius: 16,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#9a3412",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            You have unsaved changes.
+          </div>
         )}
 
         {editMode && (
-          <div style={exportHintStyle}>
+          <div
+            style={{
+              marginTop: 12,
+              padding: "12px 14px",
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#475569",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
             Disable Edit Mode before exporting the PDF.
           </div>
         )}
-      </div>
-
-      <div style={{ height: 16 }} />
+      </PageCard>
 
       {viewMode === "roster" ? (
         <div id="cabin-roster-export">
@@ -547,7 +838,7 @@ export default function CabinScheduleViewPage() {
           />
         </div>
       ) : (
-        <div id="cabin-detail-export">
+        <div id="cabin-detail-export" style={{ display: "grid", gap: 16 }}>
           {DAY_KEYS.map((dayKey) => {
             const slots = slotsByDay[dayKey] || [];
             const flights = flightsByDay[dayKey] || [];
@@ -571,218 +862,218 @@ export default function CabinScheduleViewPage() {
             const shiftSummary = summarizeShifts(slots);
 
             return (
-              <div key={dayKey} style={{ marginBottom: 16 }}>
-                <div style={cardStyle}>
-                  <h2 style={sectionTitleStyle}>{DAY_LABELS[dayKey]}</h2>
+              <PageCard key={dayKey} style={{ padding: 20 }}>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {DAY_LABELS[dayKey]}
+                </h2>
 
-                  <div style={dayStatsStyle}>
-                    <span>
-                      Flights: <b>{flights.length}</b>
-                    </span>
-                    <span>
-                      Arrivals: <b>{arrivals}</b>
-                    </span>
-                    <span>
-                      Departures: <b>{departures}</b>
-                    </span>
-                    <span>
-                      Peak Agents: <b>{peakAgents}</b>
-                    </span>
-                  </div>
+                <div style={dayStatsStyle}>
+                  <span>Flights: <b>{flights.length}</b></span>
+                  <span>Arrivals: <b>{arrivals}</b></span>
+                  <span>Departures: <b>{departures}</b></span>
+                  <span>Peak Agents: <b>{peakAgents}</b></span>
+                </div>
 
-                  <div style={{ marginTop: 16 }}>
-                    <h3 style={subTitleStyle}>Generated Shifts</h3>
-                    {shiftSummary.length ? (
-                      <div style={chipWrapStyle}>
-                        {shiftSummary.map((item) => (
-                          <div
-                            key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
-                            style={chipStyle}
-                          >
-                            {item.start}–{item.end} | {item.role} x{item.count}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={emptyTextStyle}>No shifts found</div>
-                    )}
-                  </div>
+                <div style={{ marginTop: 20 }}>
+                  <h3 style={subTitleStyle}>Generated Shifts</h3>
+                  {shiftSummary.length ? (
+                    <div style={chipWrapStyle}>
+                      {shiftSummary.map((item) => (
+                        <div
+                          key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
+                          style={chipStyle}
+                        >
+                          {item.start}–{item.end} | {item.role} x{item.count}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={emptyTextStyle}>No shifts found</div>
+                  )}
+                </div>
 
-                  <div style={{ marginTop: 20 }}>
-                    <h3 style={subTitleStyle}>Assigned Schedule</h3>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={tableStyle}>
-                        <thead>
-                          <tr>
-                            <th style={thTdStyle}>Start</th>
-                            <th style={thTdStyle}>End</th>
-                            <th style={thTdStyle}>Role</th>
-                            <th style={thTdStyle}>Paid Hours</th>
-                            <th style={thTdStyle}>Employee</th>
-                            <th style={thTdStyle}>Status</th>
-                            {editMode && <th style={thTdStyle}>Delete</th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {slots.map((slot) => (
-                            <tr key={slot.id || slot.firestoreId}>
-                              <td style={thTdStyle}>
-                                {editMode ? (
-                                  <input
-                                    type="time"
-                                    value={slot.start || ""}
-                                    onChange={(e) =>
-                                      handleSlotFieldChange(
-                                        dayKey,
-                                        slot.id,
-                                        "start",
-                                        e.target.value
-                                      )
-                                    }
-                                    style={timeInputStyle}
-                                  />
-                                ) : (
-                                  slot.start || "-"
-                                )}
-                              </td>
-
-                              <td style={thTdStyle}>
-                                {editMode ? (
-                                  <input
-                                    type="time"
-                                    value={slot.end || ""}
-                                    onChange={(e) =>
-                                      handleSlotFieldChange(
-                                        dayKey,
-                                        slot.id,
-                                        "end",
-                                        e.target.value
-                                      )
-                                    }
-                                    style={timeInputStyle}
-                                  />
-                                ) : (
-                                  slot.end || "-"
-                                )}
-                              </td>
-
-                              <td style={thTdStyle}>
-                                {editMode ? (
-                                  <select
-                                    value={slot.role || ""}
-                                    onChange={(e) =>
-                                      handleSlotFieldChange(
-                                        dayKey,
-                                        slot.id,
-                                        "role",
-                                        e.target.value
-                                      )
-                                    }
-                                    style={selectStyle}
-                                  >
-                                    {ROLE_OPTIONS.map((role) => (
-                                      <option key={role} value={role}>
-                                        {role}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  slot.role || "-"
-                                )}
-                              </td>
-
-                              <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
-
-                              <td style={thTdStyle}>
-                                {editMode ? (
-                                  <select
-                                    value={slot.employeeId || ""}
-                                    onChange={(e) =>
-                                      handleSlotFieldChange(
-                                        dayKey,
-                                        slot.id,
-                                        "employeeId",
-                                        e.target.value
-                                      )
-                                    }
-                                    style={selectStyle}
-                                  >
-                                    <option value="">Open</option>
-                                    {employees.map((emp) => (
-                                      <option key={emp.id} value={emp.id}>
-                                        {emp.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  slot.employeeName || slot.employeeId || "Open"
-                                )}
-                              </td>
-
-                              <td style={thTdStyle}>
-                                <span
-                                  style={
-                                    slot.employeeId || slot.employeeName
-                                      ? assignedChipStyle
-                                      : openChipStyle
+                <div style={{ marginTop: 22 }}>
+                  <h3 style={subTitleStyle}>Assigned Schedule</h3>
+                  <div style={tableWrapStyle}>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr style={theadRowStyle}>
+                          <th style={thTdStyle}>Start</th>
+                          <th style={thTdStyle}>End</th>
+                          <th style={thTdStyle}>Role</th>
+                          <th style={thTdStyle}>Paid Hours</th>
+                          <th style={thTdStyle}>Employee</th>
+                          <th style={thTdStyle}>Status</th>
+                          {editMode && <th style={thTdStyle}>Delete</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {slots.map((slot) => (
+                          <tr key={slot.id || slot.firestoreId}>
+                            <td style={thTdStyle}>
+                              {editMode ? (
+                                <input
+                                  type="time"
+                                  value={slot.start || ""}
+                                  onChange={(e) =>
+                                    handleSlotFieldChange(
+                                      dayKey,
+                                      slot.id,
+                                      "start",
+                                      e.target.value
+                                    )
                                   }
-                                >
-                                  {slot.employeeId || slot.employeeName
-                                    ? "Assigned"
-                                    : "Open"}
-                                </span>
-                              </td>
-
-                              {editMode && (
-                                <td style={thTdStyle}>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleDeleteSlot(dayKey, slot.firestoreId)
-                                    }
-                                    style={deleteSlotButtonStyle}
-                                    disabled={deleting}
-                                  >
-                                    Delete
-                                  </button>
-                                </td>
+                                  style={timeInputStyle}
+                                />
+                              ) : (
+                                slot.start || "-"
                               )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                            </td>
 
-                  <div style={{ marginTop: 20 }}>
-                    <h3 style={subTitleStyle}>Flights</h3>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={tableStyle}>
-                        <thead>
-                          <tr>
-                            <th style={thTdStyle}>Type</th>
-                            <th style={thTdStyle}>Flight</th>
-                            <th style={thTdStyle}>Time</th>
-                            <th style={thTdStyle}>Route</th>
-                            <th style={thTdStyle}>Aircraft</th>
+                            <td style={thTdStyle}>
+                              {editMode ? (
+                                <input
+                                  type="time"
+                                  value={slot.end || ""}
+                                  onChange={(e) =>
+                                    handleSlotFieldChange(
+                                      dayKey,
+                                      slot.id,
+                                      "end",
+                                      e.target.value
+                                    )
+                                  }
+                                  style={timeInputStyle}
+                                />
+                              ) : (
+                                slot.end || "-"
+                              )}
+                            </td>
+
+                            <td style={thTdStyle}>
+                              {editMode ? (
+                                <select
+                                  value={slot.role || ""}
+                                  onChange={(e) =>
+                                    handleSlotFieldChange(
+                                      dayKey,
+                                      slot.id,
+                                      "role",
+                                      e.target.value
+                                    )
+                                  }
+                                  style={selectStyle}
+                                >
+                                  {ROLE_OPTIONS.map((role) => (
+                                    <option key={role} value={role}>
+                                      {role}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                slot.role || "-"
+                              )}
+                            </td>
+
+                            <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
+
+                            <td style={thTdStyle}>
+                              {editMode ? (
+                                <select
+                                  value={slot.employeeId || ""}
+                                  onChange={(e) =>
+                                    handleSlotFieldChange(
+                                      dayKey,
+                                      slot.id,
+                                      "employeeId",
+                                      e.target.value
+                                    )
+                                  }
+                                  style={selectStyle}
+                                >
+                                  <option value="">Open</option>
+                                  {employees.map((emp) => (
+                                    <option key={emp.id} value={emp.id}>
+                                      {emp.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                slot.employeeName || slot.employeeId || "Open"
+                              )}
+                            </td>
+
+                            <td style={thTdStyle}>
+                              <span
+                                style={
+                                  slot.employeeId || slot.employeeName
+                                    ? assignedChipStyle
+                                    : openChipStyle
+                                }
+                              >
+                                {slot.employeeId || slot.employeeName
+                                  ? "Assigned"
+                                  : "Open"}
+                              </span>
+                            </td>
+
+                            {editMode && (
+                              <td style={thTdStyle}>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleDeleteSlot(dayKey, slot.firestoreId)
+                                  }
+                                  style={deleteSlotButtonStyle}
+                                  disabled={deleting}
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            )}
                           </tr>
-                        </thead>
-                        <tbody>
-                          {flights.map((flight) => (
-                            <tr key={flight.firestoreId || flight.id}>
-                              <td style={thTdStyle}>{flight.movementType || "-"}</td>
-                              <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
-                              <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
-                              <td style={thTdStyle}>{flight.route || "-"}</td>
-                              <td style={thTdStyle}>{flight.aircraft || "-"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              </div>
+
+                <div style={{ marginTop: 22 }}>
+                  <h3 style={subTitleStyle}>Flights</h3>
+                  <div style={tableWrapStyle}>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr style={theadRowStyle}>
+                          <th style={thTdStyle}>Type</th>
+                          <th style={thTdStyle}>Flight</th>
+                          <th style={thTdStyle}>Time</th>
+                          <th style={thTdStyle}>Route</th>
+                          <th style={thTdStyle}>Aircraft</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {flights.map((flight) => (
+                          <tr key={flight.firestoreId || flight.id}>
+                            <td style={thTdStyle}>{flight.movementType || "-"}</td>
+                            <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
+                            <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
+                            <td style={thTdStyle}>{flight.route || "-"}</td>
+                            <td style={thTdStyle}>{flight.aircraft || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </PageCard>
             );
           })}
         </div>
@@ -810,7 +1101,7 @@ function CabinRosterWeeklyView({
   ];
 
   return (
-    <div style={rosterExportWrapStyle}>
+    <PageCard style={{ padding: 18 }}>
       <div style={rosterTopHeaderStyle}>
         <div style={rosterTopTitleStyle}>CABIN SERVICE WEEKLY SCHEDULE</div>
         <div style={rosterTopSubTitleStyle}>Week Start: {weekStartDate || "-"}</div>
@@ -824,7 +1115,7 @@ function CabinRosterWeeklyView({
           <div key={groupName} style={rosterSectionWrapStyle}>
             <div style={rosterSectionHeaderStyle}>{groupName}</div>
 
-            <div style={{ overflowX: "auto" }}>
+            <div style={tableWrapStyle}>
               <table style={rosterTableStyle}>
                 <thead>
                   <tr>
@@ -887,7 +1178,7 @@ function CabinRosterWeeklyView({
           </div>
         );
       })}
-    </div>
+    </PageCard>
   );
 }
 
@@ -1083,49 +1374,6 @@ function SummaryBox({ label, value }) {
   );
 }
 
-const headerRowStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 16,
-  flexWrap: "wrap",
-};
-
-const headerActionsStyle = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
-const pageTitleStyle = {
-  margin: 0,
-  fontSize: 24,
-  fontWeight: 700,
-};
-
-const pageSubStyle = {
-  marginTop: 6,
-  color: "#475569",
-  fontSize: 14,
-};
-
-const cardStyle = {
-  background: "#ffffff",
-  padding: 20,
-  borderRadius: 10,
-  boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-};
-
-const sectionTitleStyle = {
-  fontSize: 18,
-  marginBottom: 15,
-};
-
-const subTitleStyle = {
-  fontSize: 15,
-  marginBottom: 10,
-};
-
 const summaryGridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
@@ -1133,29 +1381,43 @@ const summaryGridStyle = {
 };
 
 const summaryBoxStyle = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  borderRadius: 8,
-  padding: 12,
+  background: "#f8fbff",
+  border: "1px solid #dbeafe",
+  borderRadius: 16,
+  padding: "14px 16px",
 };
 
 const summaryLabelStyle = {
-  fontSize: 12,
+  margin: 0,
+  fontSize: 11,
+  fontWeight: 800,
   color: "#64748b",
-  marginBottom: 6,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
 };
 
 const summaryValueStyle = {
-  fontSize: 18,
-  fontWeight: 700,
+  margin: "8px 0 0",
+  fontSize: 22,
+  fontWeight: 800,
+  color: "#0f172a",
+  letterSpacing: "-0.03em",
+};
+
+const subTitleStyle = {
+  fontSize: 16,
+  margin: "0 0 12px",
+  color: "#0f172a",
+  fontWeight: 800,
 };
 
 const dayStatsStyle = {
   display: "flex",
-  gap: 20,
+  gap: 18,
   fontSize: 14,
   color: "#334155",
   flexWrap: "wrap",
+  marginTop: 12,
 };
 
 const chipWrapStyle = {
@@ -1165,13 +1427,13 @@ const chipWrapStyle = {
 };
 
 const chipStyle = {
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  border: "1px solid #bfdbfe",
+  background: "#edf7ff",
+  color: "#1769aa",
+  border: "1px solid #cfe7fb",
   borderRadius: 999,
-  padding: "6px 10px",
-  fontSize: 13,
-  fontWeight: 600,
+  padding: "7px 12px",
+  fontSize: 12,
+  fontWeight: 700,
 };
 
 const emptyTextStyle = {
@@ -1179,231 +1441,100 @@ const emptyTextStyle = {
   color: "#64748b",
 };
 
+const tableWrapStyle = {
+  overflowX: "auto",
+  borderRadius: 18,
+  border: "1px solid #e2e8f0",
+};
+
 const tableStyle = {
   width: "100%",
-  borderCollapse: "collapse",
+  borderCollapse: "separate",
+  borderSpacing: 0,
+  minWidth: 760,
+  background: "#fff",
+};
+
+const theadRowStyle = {
+  background: "#f8fbff",
 };
 
 const thTdStyle = {
   borderBottom: "1px solid #e2e8f0",
-  padding: "8px 10px",
+  padding: "10px 12px",
   textAlign: "left",
   fontSize: 14,
 };
 
 const assignedChipStyle = {
   display: "inline-block",
-  padding: "4px 10px",
+  padding: "5px 10px",
   borderRadius: 999,
   background: "#ecfdf5",
   color: "#047857",
   border: "1px solid #a7f3d0",
   fontSize: 12,
-  fontWeight: 600,
+  fontWeight: 700,
 };
 
 const openChipStyle = {
   display: "inline-block",
-  padding: "4px 10px",
+  padding: "5px 10px",
   borderRadius: 999,
-  background: "#fef2f2",
+  background: "#fff1f2",
   color: "#b91c1c",
   border: "1px solid #fecaca",
   fontSize: 12,
-  fontWeight: 600,
-};
-
-const errorStyle = {
-  padding: 10,
-  borderRadius: 6,
-  background: "#fee2e2",
-  color: "#991b1b",
-  fontSize: 14,
-};
-
-const backButtonStyle = {
-  display: "inline-block",
-  background: "#1d4ed8",
-  color: "#fff",
-  padding: "8px 14px",
-  borderRadius: 6,
-  textDecoration: "none",
-  fontWeight: 600,
-};
-
-const exportButtonStyle = {
-  background: "#7c3aed",
-  color: "#ffffff",
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const deleteScheduleButtonStyle = {
-  background: "#b91c1c",
-  color: "#ffffff",
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: 600,
+  fontWeight: 700,
 };
 
 const deleteSlotButtonStyle = {
-  background: "#fee2e2",
+  background: "#fff1f2",
   color: "#b91c1c",
-  padding: "6px 10px",
+  padding: "7px 10px",
   border: "1px solid #fecaca",
-  borderRadius: 6,
+  borderRadius: 8,
   cursor: "pointer",
-  fontWeight: 600,
+  fontWeight: 700,
 };
 
 const deleteRowButtonStyle = {
-  background: "#fee2e2",
+  background: "#fff1f2",
   color: "#b91c1c",
-  padding: "4px 8px",
+  padding: "6px 10px",
   border: "1px solid #fecaca",
-  borderRadius: 6,
+  borderRadius: 8,
   cursor: "pointer",
   fontWeight: 700,
   fontSize: 11,
 };
 
-const linkStyle = {
-  color: "#1d4ed8",
-  textDecoration: "none",
-  fontWeight: 600,
-};
-
-const toolbarWrapStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12,
-  flexWrap: "wrap",
-};
-
-const viewToggleWrapStyle = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
-const editActionsWrapStyle = {
-  display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
-const toggleButtonStyle = {
-  background: "#e5e7eb",
-  color: "#111827",
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const toggleButtonActiveStyle = {
-  ...toggleButtonStyle,
-  background: "#1d4ed8",
-  color: "#ffffff",
-};
-
-const actionButtonStyle = {
-  background: "#0f172a",
-  color: "#ffffff",
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const saveButtonStyle = {
-  background: "#047857",
-  color: "#ffffff",
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const cancelButtonStyle = {
-  background: "#e5e7eb",
-  color: "#111827",
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const editModeBannerStyle = {
-  marginTop: 12,
-  padding: "10px 12px",
-  borderRadius: 8,
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontSize: 14,
-  fontWeight: 600,
-};
-
-const pendingBannerStyle = {
-  marginTop: 10,
-  padding: "10px 12px",
-  borderRadius: 8,
-  background: "#fef3c7",
-  color: "#92400e",
-  fontSize: 14,
-  fontWeight: 600,
-};
-
-const exportHintStyle = {
-  marginTop: 10,
-  padding: "10px 12px",
-  borderRadius: 8,
-  background: "#f8fafc",
-  color: "#475569",
-  fontSize: 13,
-};
-
-const rosterExportWrapStyle = {
-  background: "#ffffff",
-  padding: 12,
-  borderRadius: 10,
-};
-
 const rosterTopHeaderStyle = {
-  marginBottom: 14,
-  border: "2px solid #1d4ed8",
-  borderRadius: 8,
+  marginBottom: 16,
+  borderRadius: 18,
   overflow: "hidden",
+  border: "1px solid #dbeafe",
+  boxShadow: "0 12px 24px rgba(15,23,42,0.04)",
 };
 
 const rosterTopTitleStyle = {
-  background: "#1d4ed8",
+  background: "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
   color: "#ffffff",
   textAlign: "center",
   fontSize: 20,
   fontWeight: 800,
-  padding: "10px 12px",
+  padding: "14px 16px",
   letterSpacing: "0.04em",
 };
 
 const rosterTopSubTitleStyle = {
-  background: "#eff6ff",
+  background: "#f8fbff",
   color: "#0f172a",
   textAlign: "center",
   fontSize: 14,
-  fontWeight: 600,
-  padding: "8px 12px",
-  borderTop: "1px solid #bfdbfe",
+  fontWeight: 700,
+  padding: "10px 14px",
+  borderTop: "1px solid #dbeafe",
 };
 
 const rosterSectionWrapStyle = {
@@ -1411,13 +1542,13 @@ const rosterSectionWrapStyle = {
 };
 
 const rosterSectionHeaderStyle = {
-  background: "#1d4ed8",
+  background: "#1769aa",
   color: "#ffffff",
-  padding: "8px 12px",
+  padding: "10px 14px",
   fontWeight: 800,
   fontSize: 15,
-  borderTopLeftRadius: 8,
-  borderTopRightRadius: 8,
+  borderTopLeftRadius: 14,
+  borderTopRightRadius: 14,
   letterSpacing: "0.02em",
 };
 
@@ -1429,13 +1560,13 @@ const rosterTableStyle = {
 };
 
 const rosterHeaderCellStyle = {
-  border: "2px solid #1e293b",
-  padding: "8px 6px",
+  border: "1px solid #dbeafe",
+  padding: "10px 8px",
   textAlign: "center",
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 800,
-  background: "#1d4ed8",
-  color: "#ffffff",
+  background: "#f8fbff",
+  color: "#1769aa",
 };
 
 const rosterEmployeeHeaderStyle = {
@@ -1443,8 +1574,8 @@ const rosterEmployeeHeaderStyle = {
 };
 
 const rosterCellStyle = {
-  border: "1px solid #1e293b",
-  padding: "7px 6px",
+  border: "1px solid #e2e8f0",
+  padding: "9px 8px",
   textAlign: "center",
   fontSize: 13,
   fontWeight: 600,
@@ -1461,17 +1592,23 @@ const rosterNameCellStyle = {
 };
 
 const rosterOffCellStyle = {
-  background: "#e5e7eb",
-  color: "#374151",
+  background: "#f1f5f9",
+  color: "#475569",
   fontWeight: 700,
 };
 
 const selectStyle = {
   minWidth: 160,
-  padding: "6px 8px",
+  padding: "7px 10px",
+  borderRadius: 10,
+  border: "1px solid #dbeafe",
+  background: "#ffffff",
 };
 
 const timeInputStyle = {
   minWidth: 110,
-  padding: "6px 8px",
+  padding: "7px 10px",
+  borderRadius: 10,
+  border: "1px solid #dbeafe",
+  background: "#ffffff",
 };
