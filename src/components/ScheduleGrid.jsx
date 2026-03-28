@@ -125,7 +125,6 @@ export default function ScheduleGrid({
   const employeeSoft = lightenColor(headerColor, 0.84);
   const borderSoft = transparentize(headerColor, 0.28);
   const accentSoft = transparentize(headerColor, 0.12);
-  const hoverSoft = transparentize(headerColor, 0.18);
 
   const removeRow = (rowIndex) => {
     if (readonly || approved) return;
@@ -474,7 +473,9 @@ export default function ScheduleGrid({
                   fontWeight: 900,
                   padding: "16px 14px",
                   borderBottom: `1px solid ${borderSoft}`,
+                  width: 360,
                   minWidth: 360,
+                  maxWidth: 360,
                   textAlign: "left",
                   fontSize: 13,
                   letterSpacing: "0.04em",
@@ -535,27 +536,30 @@ export default function ScheduleGrid({
                         borderRight: `1px solid ${borderSoft}`,
                         borderBottom: `1px solid ${borderSoft}`,
                         padding: 14,
+                        width: 360,
                         minWidth: 360,
+                        maxWidth: 360,
                         verticalAlign: "middle",
                       }}
                     >
                       <div
                         style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          justifyContent: "space-between",
+                          display: "grid",
+                          gridTemplateColumns: "1fr 34px",
+                          alignItems: "start",
                           gap: 8,
+                          width: "100%",
                         }}
                       >
                         {!readonly ? (
                           <div style={{ width: "100%" }}>
                             <div
                               style={{
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: 800,
-                                letterSpacing: 0.5,
+                                letterSpacing: 0.4,
                                 color: "#6b7280",
-                                marginBottom: 8,
+                                marginBottom: 6,
                                 textTransform: "uppercase",
                               }}
                             >
@@ -569,10 +573,11 @@ export default function ScheduleGrid({
                                 background: "rgba(255,255,255,0.96)",
                                 border: `1px solid ${borderSoft}`,
                                 borderRadius: 12,
-                                padding: "10px 12px",
+                                padding: "8px 10px",
                                 color: "#111827",
                                 fontWeight: 800,
-                                fontSize: 15,
+                                fontSize: 14,
+                                lineHeight: 1.2,
                                 outline: "none",
                               }}
                               value={row.employeeId || ""}
@@ -606,9 +611,9 @@ export default function ScheduleGrid({
                           >
                             <span
                               style={{
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: 800,
-                                letterSpacing: 0.5,
+                                letterSpacing: 0.4,
                                 color: "#6b7280",
                                 textTransform: "uppercase",
                               }}
