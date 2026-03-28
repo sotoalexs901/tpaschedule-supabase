@@ -3,19 +3,17 @@ import React, { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 
-// Claves y etiquetas de días (igual que en otros archivos)
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
-  tue: "TUESD",
+  tue: "TUE",
   wed: "WED",
-  thu: "THURSD",
-  fri: "FRIDAY",
-  sat: "SATURD",
-  sun: "SUND",
+  thu: "THU",
+  fri: "FRI",
+  sat: "SAT",
+  sun: "SUN",
 };
 
-// Orden fijo de aerolíneas en la tabla
 const AIRLINES_ORDER = [
   "WestJet",
   "WL Invicta",
@@ -42,16 +40,49 @@ const normalizeAirlineName = (value) => {
   return airline;
 };
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 12,
+        padding: "10px 12px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 export default function WeeklyEmployeesSummaryPage() {
   const [employees, setEmployees] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [weekTags, setWeekTags] = useState([]);
   const [selectedWeekTag, setSelectedWeekTag] = useState("");
   const [summaryByAirline, setSummaryByAirline] = useState({});
-  const [statusFilter, setStatusFilter] = useState("approved"); // "approved" | "draft" | "both"
+  const [statusFilter, setStatusFilter] = useState("approved");
   const [loading, setLoading] = useState(true);
 
-  // Cargar empleados + TODOS los schedules (cualquier status)
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -74,7 +105,6 @@ export default function WeeklyEmployeesSummaryPage() {
     load().catch(console.error);
   }, []);
 
-  // Helper: ¿el schedule pasa el filtro de status?
   const scheduleMatchesStatus = (s) => {
     if (!s.status) return false;
     if (statusFilter === "both") {
@@ -83,13 +113,6 @@ export default function WeeklyEmployeesSummaryPage() {
     return s.status === statusFilter;
   };
 
-  // Mapa rápido id -> nombre
-  const employeeNameMap = {};
-  employees.forEach((e) => {
-    employeeNameMap[e.id] = e.name;
-  });
-
-  // Recalcular weekTags cuando cambian schedules o statusFilter
   useEffect(() => {
     const filteredByStatus = schedules.filter(scheduleMatchesStatus);
     const tags = Array.from(
@@ -98,13 +121,11 @@ export default function WeeklyEmployeesSummaryPage() {
 
     setWeekTags(tags);
 
-    // Si la semana seleccionada ya no existe con este filtro, movemos al primer tag
     if (!tags.includes(selectedWeekTag)) {
       setSelectedWeekTag(tags[0] || "");
     }
   }, [schedules, statusFilter, selectedWeekTag]);
 
-  // Recalcular resumen cuando cambian: semana seleccionada, schedules o filtro
   useEffect(() => {
     if (!selectedWeekTag || schedules.length === 0) {
       setSummaryByAirline({});
@@ -118,7 +139,9 @@ export default function WeeklyEmployeesSummaryPage() {
     const summary = {};
 
     filtered.forEach((sch) => {
-      const airline = normalizeAirlineName(sch.airlineDisplayName || sch.airline || "Unknown");
+      const airline = normalizeAirlineName(
+        sch.airlineDisplayName || sch.airline || "Unknown"
+      );
       if (!summary[airline]) summary[airline] = {};
 
       const totals = sch.totals || {};
@@ -134,7 +157,6 @@ export default function WeeklyEmployeesSummaryPage() {
     setSummaryByAirline(summary);
   }, [selectedWeekTag, schedules, statusFilter]);
 
-  // Texto bonito de la semana (usando el primer schedule que coincida con tag + filtro)
   const formatWeekLabel = (tag) => {
     const sample = schedules.find(
       (s) => s.weekTag === tag && scheduleMatchesStatus(s)
@@ -159,9 +181,18 @@ export default function WeeklyEmployeesSummaryPage() {
 
   if (loading) {
     return (
-      <p className="text-sm text-slate-400 p-4">
-        Loading weekly summary...
-      </p>
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Loading weekly summary...
+        </p>
+      </PageCard>
     );
   }
 
@@ -169,17 +200,35 @@ export default function WeeklyEmployeesSummaryPage() {
 
   if (filteredSchedulesCount === 0) {
     return (
-      <div className="card p-4 text-sm text-slate-500">
-        There are no <b>{statusFilter}</b> schedules to build a weekly summary.
-      </div>
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          There are no <b>{statusFilter}</b> schedules to build a weekly summary.
+        </p>
+      </PageCard>
     );
   }
 
   if (weekTags.length === 0) {
     return (
-      <div className="card p-4 text-sm text-slate-500">
-        There are no schedules with week tags for the selected filter.
-      </div>
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          There are no schedules with week tags for the selected filter.
+        </p>
+      </PageCard>
     );
   }
 
@@ -188,99 +237,306 @@ export default function WeeklyEmployeesSummaryPage() {
     .reduce((a, b) => a + b, 0);
 
   return (
-    <div className="space-y-4">
-      {/* HEADER + FILTROS */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-800">
-            Weekly Employees Summary
-          </h1>
-          <p className="text-xs text-slate-500">
-            View total hours per employee and per airline for a given week.
-          </p>
-        </div>
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
 
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          {/* Filtro de status */}
-          <div className="flex items-center gap-1">
-            <span className="font-semibold text-slate-700">Status:</span>
-            <select
-              className="border rounded px-2 py-1"
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              TPA OPS · Weekly Summary
+            </p>
+
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              Weekly Employees Summary
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              View total hours per employee and per airline for a selected week.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <SelectInput
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
+              style={{ minWidth: 160 }}
             >
               <option value="approved">Approved</option>
               <option value="draft">Draft</option>
               <option value="both">Approved + Draft</option>
-            </select>
-          </div>
+            </SelectInput>
 
-          {/* Selector de semana */}
-          <div className="flex items-center gap-1">
-            <span className="font-semibold text-slate-700">Week:</span>
-            <select
-              className="border rounded px-2 py-1"
+            <SelectInput
               value={selectedWeekTag}
               onChange={(e) => setSelectedWeekTag(e.target.value)}
+              style={{ minWidth: 280 }}
             >
               {weekTags.map((tag) => (
                 <option key={tag} value={tag}>
                   {formatWeekLabel(tag)}
                 </option>
               ))}
-            </select>
+            </SelectInput>
           </div>
         </div>
       </div>
 
-      {/* TABLA PRINCIPAL */}
-      <div className="card p-4">
-        <h2 className="text-md font-semibold mb-2">
-          Week of: {formatWeekLabel(selectedWeekTag)}
-          <span className="ml-2 text-[11px] text-slate-500">
-            ({statusLabel})
-          </span>
-        </h2>
+      <PageCard style={{ padding: 20 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 14,
+          }}
+        >
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 16,
+              padding: "16px 18px",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 800,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Selected Week
+            </p>
+            <p
+              style={{
+                margin: "6px 0 0",
+                fontSize: 14,
+                fontWeight: 700,
+                color: "#0f172a",
+                lineHeight: 1.5,
+              }}
+            >
+              {formatWeekLabel(selectedWeekTag)}
+            </p>
+          </div>
+
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 16,
+              padding: "16px 18px",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 800,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Status Filter
+            </p>
+            <p
+              style={{
+                margin: "6px 0 0",
+                fontSize: 18,
+                fontWeight: 800,
+                color: "#1769aa",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              {statusLabel}
+            </p>
+          </div>
+
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 16,
+              padding: "16px 18px",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 800,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Total Weekly Hours
+            </p>
+            <p
+              style={{
+                margin: "6px 0 0",
+                fontSize: 28,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.03em",
+              }}
+            >
+              {totalAllAirlines.toFixed(2)}
+            </p>
+          </div>
+        </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 20 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Week of: {formatWeekLabel(selectedWeekTag)}
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Empty cells mean the employee has 0 hours for that airline in the
+            selected week and status filter.
+          </p>
+        </div>
 
         {airlineKeys.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
             No data for the selected week and status filter.
           </p>
         ) : (
-          <div className="overflow-auto">
-            <table className="min-w-[900px] border text-xs">
+          <div
+            style={{
+              overflowX: "auto",
+              borderRadius: 18,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                minWidth: 980,
+                background: "#fff",
+              }}
+            >
               <thead>
-                <tr className="bg-gray-100 border">
-                  <th className="border px-2 py-1">Employee Name</th>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle({ textAlign: "left" })}>Employee Name</th>
 
                   {AIRLINES_ORDER.map((air) => (
-                    <th
-                      key={air}
-                      className="border px-2 py-1 text-center"
-                    >
+                    <th key={air} style={thStyle({ textAlign: "center" })}>
                       {air}
                     </th>
                   ))}
 
-                  <th className="border px-2 py-1 text-center">
-                    Total weekly hours
+                  <th style={thStyle({ textAlign: "center" })}>
+                    Total Weekly Hours
                   </th>
                 </tr>
               </thead>
 
               <tbody>
-                {/* FILAS POR EMPLEADO */}
                 {employees
                   .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((emp) => {
+                  .map((emp, rowIndex) => {
                     const rowHours = {
-                      WestJet:
-                        summaryByAirline["WestJet"]?.[emp.id] || 0,
+                      WestJet: summaryByAirline["WestJet"]?.[emp.id] || 0,
                       "WL Invicta":
                         summaryByAirline["WL Invicta"]?.[emp.id] || 0,
                       AV: summaryByAirline["AV"]?.[emp.id] || 0,
-                      "AA-BSO":
-                        summaryByAirline["AA-BSO"]?.[emp.id] || 0,
+                      "AA-BSO": summaryByAirline["AA-BSO"]?.[emp.id] || 0,
                       CABIN: summaryByAirline["CABIN"]?.[emp.id] || 0,
                       WCHR: summaryByAirline["WCHR"]?.[emp.id] || 0,
                       SY: summaryByAirline["SY"]?.[emp.id] || 0,
@@ -292,52 +548,82 @@ export default function WeeklyEmployeesSummaryPage() {
                       0
                     );
 
-                    if (total === 0) return null; // ocultar empleados sin horas
+                    if (total === 0) return null;
 
                     return (
-                      <tr key={emp.id} className="border">
-                        <td className="border px-2 py-1">{emp.name}</td>
+                      <tr
+                        key={emp.id}
+                        style={{
+                          background:
+                            rowIndex % 2 === 0 ? "#ffffff" : "#fbfdff",
+                        }}
+                      >
+                        <td style={tdStyle}>{emp.name}</td>
 
-                        {AIRLINES_ORDER.map((air, i) => {
+                        {AIRLINES_ORDER.map((air) => {
                           const h = rowHours[air] || 0;
                           return (
                             <td
-                              key={i}
-                              className="border px-2 py-1 text-center"
+                              key={air}
+                              style={{ ...tdStyle, textAlign: "center" }}
                             >
                               {h === 0 ? "" : h.toFixed(2)}
                             </td>
                           );
                         })}
 
-                        <td className="border px-2 py-1 text-center font-semibold">
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: "center",
+                            fontWeight: 800,
+                            color: "#0f172a",
+                          }}
+                        >
                           {total.toFixed(2)}
                         </td>
                       </tr>
                     );
                   })}
 
-                {/* TOTAL POR AEROLÍNEA */}
-                <tr className="bg-gray-100 border font-semibold">
-                  <td className="border px-2 py-1">
+                <tr
+                  style={{
+                    background: "#f8fbff",
+                    fontWeight: 800,
+                  }}
+                >
+                  <td style={{ ...tdStyle, fontWeight: 800 }}>
                     TOTAL HOURS PER AIRLINE
                   </td>
 
-                  {AIRLINES_ORDER.map((air, i) => {
+                  {AIRLINES_ORDER.map((air) => {
                     const total = Object.values(
-                      summaryByAirline[normalizeAirlineName(air)] || summaryByAirline[air] || {}
+                      summaryByAirline[normalizeAirlineName(air)] ||
+                        summaryByAirline[air] ||
+                        {}
                     ).reduce((sum, h) => sum + h, 0);
+
                     return (
                       <td
-                        key={i}
-                        className="border px-2 py-1 text-center"
+                        key={air}
+                        style={{
+                          ...tdStyle,
+                          textAlign: "center",
+                          fontWeight: 800,
+                        }}
                       >
                         {total === 0 ? "" : total.toFixed(2)}
                       </td>
                     );
                   })}
 
-                  <td className="border px-2 py-1 text-center">
+                  <td
+                    style={{
+                      ...tdStyle,
+                      textAlign: "center",
+                      fontWeight: 800,
+                    }}
+                  >
                     {totalAllAirlines.toFixed(2)}
                   </td>
                 </tr>
@@ -345,12 +631,29 @@ export default function WeeklyEmployeesSummaryPage() {
             </table>
           </div>
         )}
-
-        <p className="text-[11px] text-slate-500 mt-2">
-          Empty cells mean the employee has 0 hours for that airline in the
-          selected week and status filter.
-        </p>
-      </div>
+      </PageCard>
     </div>
   );
 }
+
+function thStyle(extra = {}) {
+  return {
+    padding: "14px 14px",
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    whiteSpace: "nowrap",
+    borderBottom: "1px solid #e2e8f0",
+    ...extra,
+  };
+}
+
+const tdStyle = {
+  padding: "14px",
+  borderBottom: "1px solid #eef2f7",
+  verticalAlign: "middle",
+  fontSize: 14,
+  color: "#0f172a",
+};
