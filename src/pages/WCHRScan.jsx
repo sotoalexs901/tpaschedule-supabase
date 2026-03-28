@@ -60,6 +60,78 @@ function normalizeUpper(value) {
   return String(value || "").trim().toUpperCase();
 }
 
+function titleCaseWords(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+function normalizePassengerName(value) {
+  const clean = normalizeText(value);
+  if (!clean) return "";
+
+  if (clean.includes("/")) {
+    return clean
+      .split("/")
+      .map((part) => titleCaseWords(part))
+      .join(" / ");
+  }
+
+  return titleCaseWords(clean);
+}
+
+function cleanPnr(value) {
+  const v = normalizeUpper(value).replace(/[^A-Z0-9]/g, "");
+
+  const blocked = [
+    "MEMBER",
+    "AVIANCA",
+    "OPERADO",
+    "BOOKING",
+    "RESERVA",
+    "FLIGHT",
+    "VUELO",
+    "ETKT",
+    "TICKET",
+  ];
+
+  if (!v) return "";
+  if (blocked.includes(v)) return "";
+  if (v.length < 5 || v.length > 8) return "";
+
+  return v;
+}
+
+function tryExtractPassengerFromText(rawText) {
+  const text = String(rawText || "");
+
+  const byNameLabel =
+    text.match(/(?:NAME|PASSENGER|PAX)[^\n:]*[:\s]+([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)/i) ||
+    text.match(/\b([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)\b/);
+
+  return byNameLabel?.[1] || "";
+}
+
+function tryExtractPnrFromText(rawText) {
+  const text = String(rawText || "");
+
+  const labeled =
+    text.match(/(?:RESERVA|RESERVATION|BOOKING|LOCATOR|PNR)[^\n:]*[:\s]+([A-Z0-9]{5,8})/i)?.[1] ||
+    "";
+
+  const cleanedLabeled = cleanPnr(labeled);
+  if (cleanedLabeled) return cleanedLabeled;
+
+  const candidates = text.match(/\b[A-Z0-9]{5,8}\b/g) || [];
+  for (const item of candidates) {
+    const cleaned = cleanPnr(item);
+    if (cleaned) return cleaned;
+  }
+
+  return "";
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -144,7 +216,47 @@ function FieldLabel({ children }) {
   );
 }
 
-function PreviewInput({ label, value, onChange, placeholder = "" }) {
+function PreviewField({ label, value }) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 14,
+        border: "1px solid #dbeafe",
+        background: "#f8fbff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 14,
+          color: "#0f172a",
+          fontWeight: 700,
+          lineHeight: 1.45,
+        }}
+      >
+        {String(value || "").trim() ? (
+          value
+        ) : (
+          <span style={{ color: "#94a3b8" }}>—</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditInput({ label, value, onChange, placeholder = "" }) {
   return (
     <div>
       <FieldLabel>{label}</FieldLabel>
@@ -183,12 +295,12 @@ export default function WCHRScan() {
 
   const canScan = useMemo(() => Boolean(imageFile), [imageFile]);
 
-  // ✅ Ahora permitimos submit con campos corregidos manualmente
   const canSubmit = useMemo(() => {
     if (!imageUrl) return false;
     if (!parsed) return false;
 
     const required = [
+      parsed.passenger_name,
       parsed.airline,
       parsed.flight_number,
       parsed.flight_date,
@@ -196,6 +308,7 @@ export default function WCHRScan() {
       parsed.destination,
       parsed.seat,
       parsed.gate,
+      parsed.pnr,
       wchType,
     ];
 
@@ -210,22 +323,13 @@ export default function WCHRScan() {
     setImageFile(file || null);
   };
 
-  const updateParsedField = (field, value) => {
-    setParsed((prev) => ({
-      ...(prev || {}),
-      [field]: value,
-    }));
-  };
-
   const uploadToStorage = async (file) => {
     const safeUser = (user?.username || user?.id || "unknown").toString();
     const path = `wch_reports/${safeUser}/${yyyymmdd()}/${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
-
     await uploadBytes(storageRef, file, {
       contentType: file.type || "image/jpeg",
     });
-
     return await getDownloadURL(storageRef);
   };
 
@@ -266,13 +370,44 @@ export default function WCHRScan() {
       setImageUrl(url);
 
       const scanResult = await callScanService(url);
+      console.log("scanResult:", scanResult);
+
+      const rawText = String(
+        scanResult.raw_text ||
+          scanResult.ocr_text ||
+          scanResult.text ||
+          scanResult.full_text ||
+          ""
+      );
+
+      const candidatePassenger =
+        scanResult.passenger_name ||
+        scanResult.passenger ||
+        scanResult.name ||
+        scanResult.full_name ||
+        scanResult.fullName ||
+        scanResult.pax_name ||
+        scanResult.passengerName ||
+        "";
+
+      const candidatePnr =
+        scanResult.pnr ||
+        scanResult.record_locator ||
+        scanResult.locator ||
+        scanResult.booking ||
+        scanResult.booking_number ||
+        scanResult.bookingNumber ||
+        scanResult.reservation ||
+        scanResult.reservation_booking ||
+        scanResult.reservationBooking ||
+        "";
+
+      const passengerFromText = tryExtractPassengerFromText(rawText);
+      const pnrFromText = tryExtractPnrFromText(rawText);
 
       const normalized = {
-        passenger_name: normalizeText(
-          scanResult.passenger_name ||
-            scanResult.passenger ||
-            scanResult.name ||
-            ""
+        passenger_name: normalizePassengerName(
+          candidatePassenger || passengerFromText || ""
         ),
         airline: normalizeUpper(scanResult.airline || ""),
         flight_number: normalizeUpper(
@@ -280,24 +415,40 @@ export default function WCHRScan() {
         ),
         flight_date: normalizeText(scanResult.flight_date || scanResult.date || ""),
         origin: normalizeUpper(scanResult.origin || scanResult.from || ""),
-        destination: normalizeUpper(
-          scanResult.destination || scanResult.to || ""
-        ),
+        destination: normalizeUpper(scanResult.destination || scanResult.to || ""),
         seat: normalizeUpper(scanResult.seat || ""),
         gate: normalizeUpper(scanResult.gate || ""),
-        time_at_gate: normalizeText(scanResult.time_at_gate || ""),
-        boarding_group: normalizeUpper(scanResult.boarding_group || ""),
-        pnr: normalizeUpper(
-          scanResult.pnr ||
-            scanResult.record_locator ||
-            scanResult.locator ||
-            scanResult.booking ||
-            scanResult.booking_number ||
-            scanResult.reservation ||
+        time_at_gate: normalizeText(
+          scanResult.time_at_gate ||
+            scanResult.timeAtGate ||
+            scanResult.gate_time ||
+            scanResult.boarding_time ||
             ""
         ),
-        operator: normalizeUpper(scanResult.operator || ""),
+        boarding_group: normalizeUpper(
+          scanResult.boarding_group || scanResult.group || ""
+        ),
+        pnr: cleanPnr(candidatePnr || pnrFromText),
+        operator: normalizeUpper(
+          scanResult.operator ||
+            scanResult.operated_by ||
+            scanResult.operatedBy ||
+            ""
+        ),
+        raw_text: rawText,
       };
+
+      if (normalized.destination === "BOGOTA") {
+        normalized.destination = "BOG";
+      }
+
+      if (
+        !normalized.flight_number &&
+        normalized.airline &&
+        scanResult.flight
+      ) {
+        normalized.flight_number = normalizeUpper(scanResult.flight);
+      }
 
       setParsed(normalized);
       setStep("preview");
@@ -306,6 +457,27 @@ export default function WCHRScan() {
       setStep("upload");
       setError(e?.message || "Unexpected error while scanning.");
     }
+  };
+
+  const handleParsedChange = (field, value) => {
+    setParsed((prev) => ({
+      ...prev,
+      [field]:
+        field === "airline" ||
+        field === "flight_number" ||
+        field === "origin" ||
+        field === "destination" ||
+        field === "seat" ||
+        field === "gate" ||
+        field === "boarding_group" ||
+        field === "operator"
+          ? normalizeUpper(value)
+          : field === "pnr"
+          ? cleanPnr(value)
+          : field === "passenger_name"
+          ? value
+          : value,
+    }));
   };
 
   const handleSubmit = async () => {
@@ -318,7 +490,9 @@ export default function WCHRScan() {
     }
 
     if (!canSubmit) {
-      setError("Please complete the required fields before submitting.");
+      setError(
+        "Missing required fields from scan. Please review passenger name, flight, date, gate and booking number."
+      );
       return;
     }
 
@@ -341,7 +515,7 @@ export default function WCHRScan() {
         employee_name: user.username || "",
         submitted_at: serverTimestamp(),
 
-        passenger_name: normalizeText(parsed.passenger_name),
+        passenger_name: normalizePassengerName(parsed.passenger_name),
         airline: normalizeUpper(parsed.airline),
         flight_number: normalizeUpper(parsed.flight_number),
         flight_date: flightDateObj,
@@ -351,13 +525,14 @@ export default function WCHRScan() {
         gate: normalizeUpper(parsed.gate),
         time_at_gate: normalizeText(parsed.time_at_gate),
         boarding_group: normalizeUpper(parsed.boarding_group),
-        pnr: normalizeUpper(parsed.pnr),
+        pnr: cleanPnr(parsed.pnr),
         operator: normalizeUpper(parsed.operator),
 
         wch_type: wchType,
         status,
         flight_key,
         image_url: imageUrl,
+        raw_text: parsed.raw_text || "",
       });
 
       const short = docRef.id.slice(-6).toUpperCase();
@@ -470,7 +645,7 @@ export default function WCHRScan() {
               }}
             >
               Scan a boarding pass, review the parsed details and submit a WCHR
-              report.
+              report. Any logged-in user can access this screen.
             </p>
           </div>
 
@@ -532,6 +707,15 @@ export default function WCHRScan() {
           >
             Scan Boarding Pass
           </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Upload a boarding pass image and select the wheelchair service type.
+          </p>
         </div>
 
         <div style={{ display: "grid", gap: 14 }}>
@@ -577,9 +761,32 @@ export default function WCHRScan() {
           </div>
 
           {imageFile && (
-            <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                color: "#64748b",
+              }}
+            >
               Selected: <b>{imageFile.name}</b>
             </p>
+          )}
+
+          {!scanUrl && (
+            <div
+              style={{
+                background: "#fff7ed",
+                border: "1px solid #fed7aa",
+                borderRadius: 16,
+                padding: "14px 16px",
+                color: "#9a3412",
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
+              Scan endpoint not configured. Add <b>VITE_WCHR_SCAN_URL</b> to
+              enable parsing.
+            </div>
           )}
 
           <div>
@@ -606,7 +813,7 @@ export default function WCHRScan() {
                 letterSpacing: "-0.02em",
               }}
             >
-              Preview / Edit
+              Preview
             </h2>
             <p
               style={{
@@ -641,80 +848,105 @@ export default function WCHRScan() {
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 12,
+              marginBottom: 16,
             }}
           >
-            <PreviewInput
+            <PreviewField label="Passenger" value={parsed.passenger_name} />
+            <PreviewField label="Airline" value={parsed.airline} />
+            <PreviewField label="Flight" value={parsed.flight_number} />
+            <PreviewField
+              label="Date (MM-DD-YYYY)"
+              value={formatMMDDYYYY(parsed.flight_date)}
+            />
+            <PreviewField label="Origin" value={parsed.origin} />
+            <PreviewField label="Destination" value={parsed.destination} />
+            <PreviewField label="Seat" value={parsed.seat} />
+            <PreviewField label="Gate" value={parsed.gate} />
+            <PreviewField label="Time at Gate" value={parsed.time_at_gate} />
+            <PreviewField label="Boarding Group" value={parsed.boarding_group} />
+            <PreviewField label="PNR / Booking" value={parsed.pnr} />
+            <PreviewField label="Operator" value={parsed.operator} />
+            <PreviewField label="WCHR Type" value={wchType} />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <EditInput
               label="Passenger Name"
               value={parsed.passenger_name}
-              onChange={(v) => updateParsedField("passenger_name", v)}
+              onChange={(value) => handleParsedChange("passenger_name", value)}
+              placeholder="Passenger name"
             />
-
-            <PreviewInput
+            <EditInput
               label="Airline"
               value={parsed.airline}
-              onChange={(v) => updateParsedField("airline", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("airline", value)}
+              placeholder="AV"
             />
-
-            <PreviewInput
+            <EditInput
               label="Flight Number"
               value={parsed.flight_number}
-              onChange={(v) => updateParsedField("flight_number", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("flight_number", value)}
+              placeholder="195"
             />
-
-            <PreviewInput
+            <EditInput
               label="Flight Date"
               value={parsed.flight_date}
-              onChange={(v) => updateParsedField("flight_date", v)}
-              placeholder="Mar 27, 2026"
+              onChange={(value) => handleParsedChange("flight_date", value)}
+              placeholder="2026-03-27"
             />
-
-            <PreviewInput
+            <EditInput
               label="Origin"
               value={parsed.origin}
-              onChange={(v) => updateParsedField("origin", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("origin", value)}
+              placeholder="TPA"
             />
-
-            <PreviewInput
+            <EditInput
               label="Destination"
               value={parsed.destination}
-              onChange={(v) => updateParsedField("destination", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("destination", value)}
+              placeholder="BOG"
             />
-
-            <PreviewInput
+            <EditInput
               label="Seat"
               value={parsed.seat}
-              onChange={(v) => updateParsedField("seat", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("seat", value)}
+              placeholder="2A"
             />
-
-            <PreviewInput
+            <EditInput
               label="Gate"
               value={parsed.gate}
-              onChange={(v) => updateParsedField("gate", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("gate", value)}
+              placeholder="F87"
             />
-
-            <PreviewInput
+            <EditInput
               label="Time at Gate"
               value={parsed.time_at_gate}
-              onChange={(v) => updateParsedField("time_at_gate", v)}
+              onChange={(value) => handleParsedChange("time_at_gate", value)}
               placeholder="14:55"
             />
-
-            <PreviewInput
+            <EditInput
               label="Boarding Group"
               value={parsed.boarding_group}
-              onChange={(v) => updateParsedField("boarding_group", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("boarding_group", value)}
+              placeholder="A"
             />
-
-            <PreviewInput
+            <EditInput
               label="PNR / Booking"
               value={parsed.pnr}
-              onChange={(v) => updateParsedField("pnr", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("pnr", value)}
+              placeholder="A7ILFB"
             />
-
-            <PreviewInput
+            <EditInput
               label="Operator"
               value={parsed.operator}
-              onChange={(v) => updateParsedField("operator", v.toUpperCase())}
+              onChange={(value) => handleParsedChange("operator", value)}
+              placeholder="AVIANCA"
             />
           </div>
 
@@ -755,8 +987,8 @@ export default function WCHRScan() {
               lineHeight: 1.6,
             }}
           >
-            Passenger name and PNR can now be corrected manually if the scan
-            misses them.
+            After submission, Duty Managers and Station Manager will be notified
+            automatically.
           </p>
         </PageCard>
       )}
