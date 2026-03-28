@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
@@ -7,10 +7,11 @@ import { db } from "../firebase";
 export default function AppLayout() {
   const { user, setUser } = useUser();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const logout = () => {
     setUser(null);
@@ -22,11 +23,13 @@ export default function AppLayout() {
       collection(db, "timeOffRequests"),
       where("status", "==", "pending")
     );
+
     const unsub = onSnapshot(
       qTimeoff,
       (snap) => setPendingTimeOff(snap.size),
       (err) => console.error("Error listening timeOffRequests:", err)
     );
+
     return () => unsub();
   }, []);
 
@@ -49,10 +52,8 @@ export default function AppLayout() {
   }, [user?.id]);
 
   useEffect(() => {
-    const handler = () => setIsSidebarOpen(false);
-    window.addEventListener("close-sidebar", handler);
-    return () => window.removeEventListener("close-sidebar", handler);
-  }, []);
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
@@ -60,365 +61,344 @@ export default function AppLayout() {
   const isAgentOrSupervisor =
     user?.role === "agent" || user?.role === "supervisor";
 
+  const navSections = useMemo(() => {
+    const sections = [
+      {
+        title: "Overview",
+        items: [
+          { to: "/dashboard", label: "Dashboard", icon: "🏠" },
+          { to: "/profile", label: "My Profile", icon: "👤" },
+          {
+            to: "/messages",
+            label: "Messages",
+            icon: "💬",
+            showDot: unreadMessages > 0,
+          },
+        ],
+      },
+    ];
+
+    if (isManager) {
+      sections.push({
+        title: "Scheduling",
+        items: [
+          { to: "/schedule", label: "Create Schedule", icon: "🗓️" },
+          { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
+          {
+            to: "/cabin-saved-schedules",
+            label: "Cabin Saved Schedules",
+            icon: "📁",
+          },
+          { to: "/approvals", label: "Approvals", icon: "✅" },
+          { to: "/drafts", label: "Draft Schedules", icon: "📝" },
+          { to: "/approved", label: "Approved Schedules", icon: "📌" },
+          { to: "/returned", label: "Returned Schedules", icon: "↩️" },
+          { to: "/weekly-summary", label: "Weekly Summary", icon: "📊" },
+        ],
+      });
+
+      sections.push({
+        title: "Operations",
+        items: [
+          {
+            to: "/timeoff-requests",
+            label: "Day Off Requests",
+            icon: "🌴",
+            showDot: pendingTimeOff > 0,
+          },
+          { to: "/blocked", label: "Blocked Employees", icon: "🚫" },
+          { to: "/wchr/admin/flights", label: "WCHR: Close Flight", icon: "♿" },
+          {
+            to: "/employee-announcements",
+            label: "Crew Announcements",
+            icon: "📣",
+          },
+          { to: "/dashboard-editor", label: "Dashboard Editor", icon: "🎛️" },
+          { to: "/budgets", label: "Budgets", icon: "💰" },
+        ],
+      });
+    }
+
+    if (user?.role === "station_manager") {
+      sections.push({
+        title: "Administration",
+        items: [
+          { to: "/create-user", label: "Create User", icon: "➕" },
+          { to: "/edit-users", label: "Manage Users", icon: "⚙️" },
+          { to: "/employees", label: "Employees", icon: "👥" },
+        ],
+      });
+    }
+
+    if (isAgentOrSupervisor) {
+      sections.push({
+        title: "My Tools",
+        items: [
+          { to: "/my-schedule", label: "My Schedule", icon: "📅" },
+          {
+            to: "/request-dayoff-internal",
+            label: "Request Day Off",
+            icon: "🛫",
+          },
+          {
+            to: "/dayoff-status-internal",
+            label: "My Day Off Status",
+            icon: "📍",
+          },
+          { to: "/wchr/scan", label: "WCHR: Scan Boarding Pass", icon: "🎫" },
+          { to: "/wchr/my-reports", label: "WCHR: My Reports", icon: "📄" },
+        ],
+      });
+    }
+
+    return sections;
+  }, [isManager, isAgentOrSupervisor, unreadMessages, pendingTimeOff, user?.role]);
+
   return (
     <div
-      className="min-h-screen flex"
+      className="min-h-screen"
       style={{
         background:
           "linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%)",
       }}
     >
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 bg-slate-950/35 backdrop-blur-[2px] z-30 md:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
-
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 transform transition-transform duration-200
-                    md:static md:translate-x-0
-                    ${
-                      isSidebarOpen
-                        ? "translate-x-0"
-                        : "-translate-x-full md:translate-x-0"
-                    }`}
+      <div
         style={{
-          width: 270,
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          overflowY: "auto",
-          background:
-            "linear-gradient(180deg, #0f4c81 0%, #1769aa 35%, #0b2e4f 100%)",
-          color: "#fff",
-          boxShadow: "18px 0 40px rgba(23, 105, 170, 0.18)",
-          borderTopRightRadius: 28,
-          borderBottomRightRadius: 28,
+          position: "sticky",
+          top: 0,
+          zIndex: 50,
+          padding: "14px 16px 0",
+          backdropFilter: "blur(8px)",
         }}
       >
         <div
           style={{
-            padding: "22px 18px 16px",
-            borderBottom: "1px solid rgba(255,255,255,0.12)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 10,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.16)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 20,
-                marginBottom: 12,
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15)",
-              }}
-            >
-              ✈️
-            </div>
-
-            <h1
-              style={{
-                margin: 0,
-                fontSize: 24,
-                lineHeight: 1.05,
-                fontWeight: 800,
-                letterSpacing: "-0.03em",
-              }}
-            >
-              TPA OPS
-            </h1>
-            <p
-              style={{
-                marginTop: 6,
-                marginBottom: 0,
-                fontSize: 12,
-                color: "rgba(255,255,255,0.82)",
-                lineHeight: 1.4,
-              }}
-            >
-              Logged as <b>{user?.username}</b>
-              <br />
-              {user?.role}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            className="md:hidden"
-            onClick={() => setIsSidebarOpen(false)}
-            style={{
-              border: "none",
-              background: "rgba(255,255,255,0.12)",
-              color: "#fff",
-              width: 34,
-              height: 34,
-              borderRadius: 10,
-              fontSize: 22,
-              lineHeight: 1,
-              cursor: "pointer",
-            }}
-          >
-            ×
-          </button>
-        </div>
-
-        <nav
-          style={{
-            flex: 1,
-            padding: "16px 12px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
-          <SidebarSection title="Overview" />
-          <NavItem to="/dashboard" label="Dashboard" icon="🏠" />
-          <NavItem to="/profile" label="My Profile" icon="👤" />
-          <NavItem
-            to="/messages"
-            label="Messages"
-            icon="💬"
-            showDot={unreadMessages > 0}
-          />
-
-          {isManager && (
-            <>
-              <SidebarSection title="Scheduling" />
-              <NavItem to="/schedule" label="Create Schedule" icon="🗓️" />
-              <NavItem to="/cabin-service" label="Cabin Service" icon="🧳" />
-              <NavItem
-                to="/cabin-saved-schedules"
-                label="Cabin Saved Schedules"
-                icon="📁"
-              />
-              <NavItem to="/approvals" label="Approvals" icon="✅" />
-              <NavItem to="/drafts" label="Draft Schedules" icon="📝" />
-              <NavItem
-                to="/approved"
-                label="Approved Schedules"
-                icon="📌"
-              />
-              <NavItem
-                to="/returned"
-                label="Returned Schedules"
-                icon="↩️"
-              />
-              <NavItem
-                to="/weekly-summary"
-                label="Weekly Summary"
-                icon="📊"
-              />
-            </>
-          )}
-
-          {isManager && (
-            <>
-              <SidebarSection title="Operations" />
-              <NavItem
-                to="/timeoff-requests"
-                label="Day Off Requests"
-                icon="🌴"
-                showDot={pendingTimeOff > 0}
-              />
-              <NavItem
-                to="/blocked"
-                label="Blocked Employees"
-                icon="🚫"
-              />
-              <NavItem
-                to="/wchr/admin/flights"
-                label="WCHR: Close Flight"
-                icon="♿"
-              />
-              <NavItem
-                to="/employee-announcements"
-                label="Crew Announcements"
-                icon="📣"
-              />
-              <NavItem
-                to="/dashboard-editor"
-                label="Dashboard Editor"
-                icon="🎛️"
-              />
-              <NavItem to="/budgets" label="Budgets" icon="💰" />
-            </>
-          )}
-
-          {user?.role === "station_manager" && (
-            <>
-              <SidebarSection title="Administration" />
-              <NavItem to="/create-user" label="Create User" icon="➕" />
-              <NavItem to="/edit-users" label="Manage Users" icon="⚙️" />
-              <NavItem to="/employees" label="Employees" icon="👥" />
-            </>
-          )}
-
-          {isAgentOrSupervisor && (
-            <>
-              <SidebarSection title="My Tools" />
-              <NavItem to="/my-schedule" label="My Schedule" icon="📅" />
-              <NavItem
-                to="/request-dayoff-internal"
-                label="Request Day Off"
-                icon="🛫"
-              />
-              <NavItem
-                to="/dayoff-status-internal"
-                label="My Day Off Status"
-                icon="📍"
-              />
-              <NavItem
-                to="/wchr/scan"
-                label="WCHR: Scan Boarding Pass"
-                icon="🎫"
-              />
-              <NavItem
-                to="/wchr/my-reports"
-                label="WCHR: My Reports"
-                icon="📄"
-              />
-            </>
-          )}
-        </nav>
-
-        <div
-          style={{
+            background: "rgba(255,255,255,0.78)",
+            border: "1px solid rgba(255,255,255,0.95)",
+            boxShadow: "0 14px 40px rgba(15,23,42,0.08)",
+            borderRadius: 28,
             padding: 14,
-            borderTop: "1px solid rgba(255,255,255,0.12)",
-          }}
-        >
-          <button
-            onClick={logout}
-            style={{
-              width: "100%",
-              border: "1px solid rgba(255,255,255,0.14)",
-              background: "rgba(255,255,255,0.10)",
-              color: "#fff",
-              borderRadius: 14,
-              padding: "12px 14px",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            Logout
-          </button>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col min-h-screen">
-        <header
-          className="md:hidden"
-          style={{
-            padding: "14px 14px 0",
           }}
         >
           <div
             style={{
-              background: "rgba(255,255,255,0.82)",
-              backdropFilter: "blur(12px)",
-              border: "1px solid rgba(255,255,255,0.9)",
-              borderRadius: 20,
-              padding: "12px 14px",
-              boxShadow: "0 10px 30px rgba(15,23,42,0.06)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              gap: 10,
+              gap: 14,
+              flexWrap: "wrap",
             }}
           >
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 16,
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#fff",
+                  fontSize: 22,
+                  boxShadow: "0 10px 24px rgba(23,105,170,0.25)",
+                }}
+              >
+                ✈️
+              </div>
+
+              <div>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: "#1769aa",
+                  }}
+                >
+                  TPA OPS SYSTEM
+                </p>
+                <p
+                  style={{
+                    margin: "3px 0 0",
+                    fontSize: 13,
+                    color: "#475569",
+                    fontWeight: 600,
+                  }}
+                >
+                  Logged as <b>{user?.username}</b> · {user?.role}
+                </p>
+              </div>
+            </div>
+
+            <div
+              className="hidden md:flex"
+              style={{
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+                justifyContent: "flex-end",
+              }}
+            >
+              <StatusPill label="Unread Messages" value={unreadMessages} />
+              <StatusPill label="Pending Day Off" value={pendingTimeOff} />
+              <button
+                onClick={logout}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                  color: "#fff",
+                  borderRadius: 14,
+                  padding: "11px 16px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
+                }}
+              >
+                Logout
+              </button>
+            </div>
+
             <button
-              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden"
+              onClick={() => setMenuOpen((v) => !v)}
               style={{
                 border: "none",
-                background: "#1769aa",
+                background:
+                  "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
                 color: "#fff",
-                borderRadius: 12,
-                padding: "10px 12px",
+                borderRadius: 14,
+                padding: "11px 14px",
                 fontWeight: 700,
                 cursor: "pointer",
               }}
             >
-              Menu
+              {menuOpen ? "Close" : "Menu"}
             </button>
-
-            <div style={{ textAlign: "right" }}>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 12,
-                  fontWeight: 800,
-                  color: "#0f4c81",
-                }}
-              >
-                TPA OPS SYSTEM
-              </p>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 11,
-                  color: "#64748b",
-                }}
-              >
-                {user?.username} · {user?.role}
-              </p>
-            </div>
           </div>
-        </header>
 
-        <main
-          className="flex-1 overflow-auto"
-          style={{
-            padding: "18px",
-          }}
-        >
-          <Outlet />
-        </main>
+          <div
+            className="hidden md:flex"
+            style={{
+              marginTop: 14,
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            {navSections.flatMap((section) =>
+              section.items.map((item) => (
+                <TopNavItem key={item.to} {...item} />
+              ))
+            )}
+          </div>
+
+          {menuOpen && (
+            <div
+              className="md:hidden"
+              style={{
+                marginTop: 14,
+                display: "grid",
+                gap: 16,
+                paddingTop: 10,
+                borderTop: "1px solid #e2e8f0",
+              }}
+            >
+              {navSections.map((section) => (
+                <div key={section.title}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.12em",
+                      color: "#64748b",
+                      marginBottom: 8,
+                    }}
+                  >
+                    {section.title}
+                  </div>
+
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {section.items.map((item) => (
+                      <TopNavItem key={item.to} {...item} mobile />
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <button
+                onClick={logout}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                  color: "#fff",
+                  borderRadius: 14,
+                  padding: "12px 16px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+
+      <main
+        style={{
+          padding: "16px",
+        }}
+      >
+        <Outlet />
+      </main>
     </div>
   );
 }
 
-function SidebarSection({ title }) {
+function StatusPill({ label, value }) {
   return (
     <div
       style={{
-        padding: "14px 10px 6px",
-        fontSize: 11,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.12em",
-        color: "rgba(255,255,255,0.58)",
+        background: "#f8fbff",
+        border: "1px solid #d7e9fb",
+        borderRadius: 14,
+        padding: "10px 12px",
+        minWidth: 130,
       }}
     >
-      {title}
+      <p
+        style={{
+          margin: 0,
+          fontSize: 11,
+          fontWeight: 700,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        style={{
+          margin: "4px 0 0",
+          fontSize: 18,
+          fontWeight: 800,
+          color: "#0f172a",
+        }}
+      >
+        {value}
+      </p>
     </div>
   );
 }
 
-function NavItem({ to, label, showDot, icon }) {
-  const dot =
-    showDot && (
-      <span
-        style={{
-          width: 9,
-          height: 9,
-          borderRadius: 999,
-          backgroundColor: "#fb7185",
-          boxShadow: "0 0 0 4px rgba(251,113,133,0.18)",
-          flexShrink: 0,
-        }}
-      />
-    );
-
+function TopNavItem({ to, label, showDot, icon, mobile = false }) {
   return (
     <NavLink
       to={to}
@@ -427,25 +407,19 @@ function NavItem({ to, label, showDot, icon }) {
         alignItems: "center",
         justifyContent: "space-between",
         gap: 10,
-        padding: "11px 12px",
+        padding: mobile ? "12px 14px" : "10px 14px",
         borderRadius: 14,
-        fontSize: 14,
-        fontWeight: isActive ? 700 : 600,
         textDecoration: "none",
-        color: "#ffffff",
+        fontSize: 14,
+        fontWeight: isActive ? 800 : 600,
+        color: isActive ? "#0f4c81" : "#334155",
         background: isActive
-          ? "linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.10))"
-          : "transparent",
-        border: isActive
-          ? "1px solid rgba(255,255,255,0.18)"
-          : "1px solid transparent",
-        boxShadow: isActive ? "0 10px 24px rgba(15,23,42,0.14)" : "none",
-        transition: "all 0.18s ease",
+          ? "linear-gradient(135deg, #dff0ff 0%, #eef8ff 100%)"
+          : "#ffffff",
+        border: isActive ? "1px solid #bfe0fb" : "1px solid #e2e8f0",
+        boxShadow: isActive ? "0 10px 22px rgba(23,105,170,0.10)" : "none",
+        minWidth: mobile ? "auto" : "fit-content",
       })}
-      onClick={() => {
-        const evt = new Event("close-sidebar");
-        window.dispatchEvent(evt);
-      }}
     >
       <span
         style={{
@@ -455,10 +429,22 @@ function NavItem({ to, label, showDot, icon }) {
           minWidth: 0,
         }}
       >
-        <span style={{ fontSize: 15, opacity: 0.95 }}>{icon}</span>
+        <span style={{ fontSize: 15 }}>{icon}</span>
         <span>{label}</span>
       </span>
-      {dot}
+
+      {showDot && (
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 999,
+            background: "#ef4444",
+            boxShadow: "0 0 0 4px rgba(239,68,68,0.12)",
+            flexShrink: 0,
+          }}
+        />
+      )}
     </NavLink>
   );
 }
