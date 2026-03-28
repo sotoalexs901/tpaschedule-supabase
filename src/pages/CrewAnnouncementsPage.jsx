@@ -140,6 +140,129 @@ function ActionButton({
 export default function CrewAnnouncementsPage() {
   const { user } = useUser();
 
+  const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
+  const [body, setBody] = useState("");
+  const [imageFile, setImageFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const loadAnnouncements = async () => {
+    try {
+      setLoading(true);
+      const qAnn = query(
+        collection(db, "employeeAnnouncements"),
+        orderBy("createdAt", "desc")
+      );
+      const snap = await getDocs(qAnn);
+      setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("Error loading announcements:", err);
+      setMessage("Error loading announcements. Check console.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAnnouncements();
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setMessage("");
+
+    if (!title.trim() && !body.trim()) {
+      setMessage("Please enter at least a title or a message.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      let imageUrl = "";
+      if (imageFile) {
+        try {
+          const safeName = imageFile.name.replace(/\s+/g, "_");
+          const storageRef = ref(
+            storage,
+            `employeeAnnouncements/${Date.now()}_${safeName}`
+          );
+          const snap = await uploadBytes(storageRef, imageFile);
+          imageUrl = await getDownloadURL(snap.ref);
+        } catch (uploadErr) {
+          console.error("Error uploading image:", uploadErr);
+          setMessage(
+            "Image upload failed. Announcement was posted without image."
+          );
+          imageUrl = "";
+        }
+      }
+
+      await addDoc(collection(db, "employeeAnnouncements"), {
+        title: title.trim() || "Announcement",
+        subtitle: subtitle.trim() || "",
+        body: body.trim() || "",
+        imageUrl,
+        createdAt: serverTimestamp(),
+        createdBy: user?.username || user?.id || "unknown",
+      });
+
+      setTitle("");
+      setSubtitle("");
+      setBody("");
+      setImageFile(null);
+      setMessage("Announcement posted!");
+      await loadAnnouncements();
+    } catch (err) {
+      console.error("Error posting announcement:", err);
+      setMessage("Error posting announcement. Check console for details.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAnnouncement = async (id) => {
+    const ok = window.confirm(
+      "Delete this announcement? This action cannot be undone."
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingId(id);
+      await deleteDoc(doc(db, "employeeAnnouncements", id));
+      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+      setMessage("Announcement deleted.");
+    } catch (err) {
+      console.error("Error deleting announcement:", err);
+      setMessage("Error deleting announcement.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setImageFile(null);
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file (jpg, png, etc).");
+      return;
+    }
+
+    setImageFile(file);
+  };
+
+  const success =
+    message.toLowerCase().includes("posted") ||
+    message.toLowerCase().includes("deleted");
+
   if (!user || user.role !== "station_manager") {
     return (
       <div
@@ -211,126 +334,6 @@ export default function CrewAnnouncementsPage() {
       </div>
     );
   }
-
-  const [title, setTitle] = useState("");
-  const [subtitle, setSubtitle] = useState("");
-  const [body, setBody] = useState("");
-  const [imageFile, setImageFile] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [announcements, setAnnouncements] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState(null);
-
-  const loadAnnouncements = async () => {
-    try {
-      const qAnn = query(
-        collection(db, "employeeAnnouncements"),
-        orderBy("createdAt", "desc")
-      );
-      const snap = await getDocs(qAnn);
-      setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    } catch (err) {
-      console.error("Error loading announcements:", err);
-      setMessage("Error loading announcements. Check console.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadAnnouncements();
-  }, []);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage("");
-
-    if (!title && !body) {
-      setMessage("Please enter at least a title or a message.");
-      return;
-    }
-
-    try {
-      setSaving(true);
-
-      let imageUrl = "";
-      if (imageFile) {
-        try {
-          const safeName = imageFile.name.replace(/\s+/g, "_");
-          const storageRef = ref(
-            storage,
-            `employeeAnnouncements/${Date.now()}_${safeName}`
-          );
-          const snap = await uploadBytes(storageRef, imageFile);
-          imageUrl = await getDownloadURL(snap.ref);
-        } catch (uploadErr) {
-          console.error("Error uploading image:", uploadErr);
-          setMessage(
-            "Image upload failed. Announcement was posted without image."
-          );
-          imageUrl = "";
-        }
-      }
-
-      await addDoc(collection(db, "employeeAnnouncements"), {
-        title: title || "Announcement",
-        subtitle: subtitle || "",
-        body: body || "",
-        imageUrl,
-        createdAt: serverTimestamp(),
-        createdBy: user.username || user.id,
-      });
-
-      setTitle("");
-      setSubtitle("");
-      setBody("");
-      setImageFile(null);
-      setMessage("Announcement posted!");
-      await loadAnnouncements();
-    } catch (err) {
-      console.error("Error posting announcement:", err);
-      setMessage("Error posting announcement. Check console for details.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeleteAnnouncement = async (id) => {
-    const ok = window.confirm(
-      "Delete this announcement? This action cannot be undone."
-    );
-    if (!ok) return;
-
-    try {
-      setDeletingId(id);
-      await deleteDoc(doc(db, "employeeAnnouncements", id));
-      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
-      setMessage("Announcement deleted.");
-    } catch (err) {
-      console.error("Error deleting announcement:", err);
-      setMessage("Error deleting announcement.");
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      setImageFile(null);
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
-      alert("Please select an image file (jpg, png, etc).");
-      return;
-    }
-    setImageFile(file);
-  };
-
-  const success =
-    message.toLowerCase().includes("posted") ||
-    message.toLowerCase().includes("deleted");
 
   return (
     <div
