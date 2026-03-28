@@ -12,11 +12,18 @@ export default function AppLayout() {
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
 
   const logout = () => {
     setUser(null);
     navigate("/login");
   };
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 900);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     const qTimeoff = query(
@@ -61,103 +68,83 @@ export default function AppLayout() {
   const isAgentOrSupervisor =
     user?.role === "agent" || user?.role === "supervisor";
 
-  const navSections = useMemo(() => {
-    const sections = [
+  const navItems = useMemo(() => {
+    const items = [
+      { to: "/dashboard", label: "Dashboard", icon: "🏠" },
+      { to: "/profile", label: "My Profile", icon: "👤" },
       {
-        title: "Overview",
-        items: [
-          { to: "/dashboard", label: "Dashboard", icon: "🏠" },
-          { to: "/profile", label: "My Profile", icon: "👤" },
-          {
-            to: "/messages",
-            label: "Messages",
-            icon: "💬",
-            showDot: unreadMessages > 0,
-          },
-        ],
+        to: "/messages",
+        label: "Messages",
+        icon: "💬",
+        showDot: unreadMessages > 0,
       },
     ];
 
     if (isManager) {
-      sections.push({
-        title: "Scheduling",
-        items: [
-          { to: "/schedule", label: "Create Schedule", icon: "🗓️" },
-          { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
-          {
-            to: "/cabin-saved-schedules",
-            label: "Cabin Saved Schedules",
-            icon: "📁",
-          },
-          { to: "/approvals", label: "Approvals", icon: "✅" },
-          { to: "/drafts", label: "Draft Schedules", icon: "📝" },
-          { to: "/approved", label: "Approved Schedules", icon: "📌" },
-          { to: "/returned", label: "Returned Schedules", icon: "↩️" },
-          { to: "/weekly-summary", label: "Weekly Summary", icon: "📊" },
-        ],
-      });
-
-      sections.push({
-        title: "Operations",
-        items: [
-          {
-            to: "/timeoff-requests",
-            label: "Day Off Requests",
-            icon: "🌴",
-            showDot: pendingTimeOff > 0,
-          },
-          { to: "/blocked", label: "Blocked Employees", icon: "🚫" },
-          { to: "/wchr/admin/flights", label: "WCHR: Close Flight", icon: "♿" },
-          {
-            to: "/employee-announcements",
-            label: "Crew Announcements",
-            icon: "📣",
-          },
-          { to: "/dashboard-editor", label: "Dashboard Editor", icon: "🎛️" },
-          { to: "/budgets", label: "Budgets", icon: "💰" },
-        ],
-      });
+      items.push(
+        { to: "/schedule", label: "Create Schedule", icon: "🗓️" },
+        { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
+        {
+          to: "/cabin-saved-schedules",
+          label: "Cabin Saved Schedules",
+          icon: "📁",
+        },
+        { to: "/approvals", label: "Approvals", icon: "✅" },
+        { to: "/drafts", label: "Draft Schedules", icon: "📝" },
+        { to: "/approved", label: "Approved Schedules", icon: "📌" },
+        { to: "/returned", label: "Returned Schedules", icon: "↩️" },
+        { to: "/weekly-summary", label: "Weekly Summary", icon: "📊" },
+        {
+          to: "/timeoff-requests",
+          label: "Day Off Requests",
+          icon: "🌴",
+          showDot: pendingTimeOff > 0,
+        },
+        { to: "/blocked", label: "Blocked Employees", icon: "🚫" },
+        { to: "/wchr/admin/flights", label: "WCHR: Close Flight", icon: "♿" },
+        {
+          to: "/employee-announcements",
+          label: "Crew Announcements",
+          icon: "📣",
+        },
+        { to: "/dashboard-editor", label: "Dashboard Editor", icon: "🎛️" },
+        { to: "/budgets", label: "Budgets", icon: "💰" }
+      );
     }
 
     if (user?.role === "station_manager") {
-      sections.push({
-        title: "Administration",
-        items: [
-          { to: "/create-user", label: "Create User", icon: "➕" },
-          { to: "/edit-users", label: "Manage Users", icon: "⚙️" },
-          { to: "/employees", label: "Employees", icon: "👥" },
-        ],
-      });
+      items.push(
+        { to: "/create-user", label: "Create User", icon: "➕" },
+        { to: "/edit-users", label: "Manage Users", icon: "⚙️" },
+        { to: "/employees", label: "Employees", icon: "👥" }
+      );
     }
 
     if (isAgentOrSupervisor) {
-      sections.push({
-        title: "My Tools",
-        items: [
-          { to: "/my-schedule", label: "My Schedule", icon: "📅" },
-          {
-            to: "/request-dayoff-internal",
-            label: "Request Day Off",
-            icon: "🛫",
-          },
-          {
-            to: "/dayoff-status-internal",
-            label: "My Day Off Status",
-            icon: "📍",
-          },
-          { to: "/wchr/scan", label: "WCHR: Scan Boarding Pass", icon: "🎫" },
-          { to: "/wchr/my-reports", label: "WCHR: My Reports", icon: "📄" },
-        ],
-      });
+      items.push(
+        { to: "/my-schedule", label: "My Schedule", icon: "📅" },
+        {
+          to: "/request-dayoff-internal",
+          label: "Request Day Off",
+          icon: "🛫",
+        },
+        {
+          to: "/dayoff-status-internal",
+          label: "My Day Off Status",
+          icon: "📍",
+        },
+        { to: "/wchr/scan", label: "WCHR: Scan Boarding Pass", icon: "🎫" },
+        { to: "/wchr/my-reports", label: "WCHR: My Reports", icon: "📄" }
+      );
     }
 
-    return sections;
+    return items;
   }, [isManager, isAgentOrSupervisor, unreadMessages, pendingTimeOff, user?.role]);
 
   return (
     <div
-      className="min-h-screen"
       style={{
+        minHeight: "100vh",
         background:
           "linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%)",
       }}
@@ -173,7 +160,7 @@ export default function AppLayout() {
       >
         <div
           style={{
-            background: "rgba(255,255,255,0.78)",
+            background: "rgba(255,255,255,0.82)",
             border: "1px solid rgba(255,255,255,0.95)",
             boxShadow: "0 14px 40px rgba(15,23,42,0.08)",
             borderRadius: 28,
@@ -203,6 +190,7 @@ export default function AppLayout() {
                   color: "#fff",
                   fontSize: 22,
                   boxShadow: "0 10px 24px rgba(23,105,170,0.25)",
+                  flexShrink: 0,
                 }}
               >
                 ✈️
@@ -234,101 +222,105 @@ export default function AppLayout() {
               </div>
             </div>
 
-            <div
-              className="hidden md:flex"
-              style={{
-                alignItems: "center",
-                gap: 10,
-                flexWrap: "wrap",
-                justifyContent: "flex-end",
-              }}
-            >
-              <StatusPill label="Unread Messages" value={unreadMessages} />
-              <StatusPill label="Pending Day Off" value={pendingTimeOff} />
-              <button
-                onClick={logout}
+            {isMobile ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button
+                  onClick={() => setMenuOpen((v) => !v)}
+                  style={{
+                    border: "none",
+                    background:
+                      "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                    color: "#fff",
+                    borderRadius: 14,
+                    padding: "11px 14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {menuOpen ? "Close" : "Menu"}
+                </button>
+              </div>
+            ) : (
+              <div
                 style={{
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
-                  color: "#fff",
-                  borderRadius: 14,
-                  padding: "11px 16px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  justifyContent: "flex-end",
                 }}
               >
-                Logout
-              </button>
-            </div>
-
-            <button
-              className="md:hidden"
-              onClick={() => setMenuOpen((v) => !v)}
-              style={{
-                border: "none",
-                background:
-                  "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
-                color: "#fff",
-                borderRadius: 14,
-                padding: "11px 14px",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              {menuOpen ? "Close" : "Menu"}
-            </button>
-          </div>
-
-          <div
-            className="hidden md:flex"
-            style={{
-              marginTop: 14,
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            {navSections.flatMap((section) =>
-              section.items.map((item) => (
-                <TopNavItem key={item.to} {...item} />
-              ))
+                <StatusPill label="Unread Messages" value={unreadMessages} />
+                <StatusPill label="Pending Day Off" value={pendingTimeOff} />
+                <button
+                  onClick={logout}
+                  style={{
+                    border: "none",
+                    background:
+                      "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                    color: "#fff",
+                    borderRadius: 14,
+                    padding: "11px 16px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
+                  }}
+                >
+                  Logout
+                </button>
+              </div>
             )}
           </div>
 
-          {menuOpen && (
+          {!isMobile && (
             <div
-              className="md:hidden"
+              style={{
+                marginTop: 14,
+                overflowX: "auto",
+                paddingBottom: 2,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "nowrap",
+                  minWidth: "max-content",
+                }}
+              >
+                {navItems.map((item) => (
+                  <TopNavItem key={item.to} {...item} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isMobile && menuOpen && (
+            <div
               style={{
                 marginTop: 14,
                 display: "grid",
-                gap: 16,
+                gap: 10,
                 paddingTop: 10,
                 borderTop: "1px solid #e2e8f0",
               }}
             >
-              {navSections.map((section) => (
-                <div key={section.title}>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                      color: "#64748b",
-                      marginBottom: 8,
-                    }}
-                  >
-                    {section.title}
-                  </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 10,
+                }}
+              >
+                <StatusPill label="Unread Messages" value={unreadMessages} />
+                <StatusPill label="Pending Day Off" value={pendingTimeOff} />
+              </div>
 
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {section.items.map((item) => (
-                      <TopNavItem key={item.to} {...item} mobile />
-                    ))}
-                  </div>
-                </div>
-              ))}
+              <div style={{ display: "grid", gap: 8 }}>
+                {navItems.map((item) => (
+                  <TopNavItem key={item.to} {...item} mobile />
+                ))}
+              </div>
 
               <button
                 onClick={logout}
@@ -419,6 +411,8 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
         border: isActive ? "1px solid #bfe0fb" : "1px solid #e2e8f0",
         boxShadow: isActive ? "0 10px 22px rgba(23,105,170,0.10)" : "none",
         minWidth: mobile ? "auto" : "fit-content",
+        whiteSpace: "nowrap",
+        flexShrink: 0,
       })}
     >
       <span
@@ -426,7 +420,6 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
           display: "flex",
           alignItems: "center",
           gap: 10,
-          minWidth: 0,
         }}
       >
         <span style={{ fontSize: 15 }}>{icon}</span>
