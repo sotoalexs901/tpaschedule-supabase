@@ -29,33 +29,6 @@ function formatMMDDYYYY(dateLike) {
   }
 }
 
-function toInputDateValue(dateLike) {
-  try {
-    const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
-    if (Number.isNaN(d.getTime())) return "";
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  } catch {
-    return "";
-  }
-}
-
-function normalizeFlightDate(value) {
-  if (!value) return "";
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value).trim())) {
-    return String(value).trim();
-  }
-
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(
-      parsed.getDate()
-    )}`;
-  }
-
-  return "";
-}
-
 function yyyymmdd(d = new Date()) {
   return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
 }
@@ -77,122 +50,6 @@ async function isFlightClosed(flight_key) {
   if (!snap.exists()) return false;
   const data = snap.data();
   return Boolean(data?.closed_at);
-}
-
-function safeUpper(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
-function extractFlightNumber(value) {
-  const str = String(value || "").trim();
-  if (!str) return "";
-
-  const match = str.match(/([A-Z]{1,3})?\s*0*([0-9]{1,4})/i);
-  if (!match) return str;
-
-  return match[2] || str;
-}
-
-function extractAirlineCode(value) {
-  const str = String(value || "").trim();
-  if (!str) return "";
-
-  const match = str.match(/^([A-Z]{1,3})/i);
-  return match ? safeUpper(match[1]) : safeUpper(str);
-}
-
-function normalizeScanPayload(scanResult = {}) {
-  const rawFlight =
-    scanResult.flight ||
-    scanResult.flight_number ||
-    scanResult.vuelo ||
-    scanResult.flightNo ||
-    "";
-
-  const rawAirline =
-    scanResult.airline ||
-    scanResult.airline_code ||
-    scanResult.carrier ||
-    scanResult.operating_carrier ||
-    extractAirlineCode(rawFlight) ||
-    "";
-
-  const rawFlightNumber =
-    scanResult.flight_number ||
-    scanResult.flightNo ||
-    scanResult.flight_num ||
-    extractFlightNumber(rawFlight) ||
-    "";
-
-  const rawDate =
-    scanResult.flight_date ||
-    scanResult.date ||
-    scanResult.departure_date ||
-    scanResult.travel_date ||
-    "";
-
-  return {
-    passenger_name:
-      scanResult.passenger_name ||
-      scanResult.passenger ||
-      scanResult.name ||
-      scanResult.full_name ||
-      "",
-
-    airline: safeUpper(rawAirline),
-
-    flight_number: rawFlightNumber,
-
-    flight_date: normalizeFlightDate(rawDate),
-
-    origin:
-      scanResult.origin ||
-      scanResult.from ||
-      scanResult.departure_airport ||
-      "",
-
-    destination:
-      scanResult.destination ||
-      scanResult.to ||
-      scanResult.arrival_airport ||
-      "",
-
-    seat: scanResult.seat || "",
-
-    gate: scanResult.gate || scanResult.sala || "",
-
-    time_at_gate:
-      scanResult.time_at_gate ||
-      scanResult.gate_time ||
-      scanResult.boarding_time ||
-      scanResult.hora_en_sala ||
-      "",
-
-    boarding_group:
-      scanResult.boarding_group ||
-      scanResult.group ||
-      scanResult.boardingGroup ||
-      scanResult.grupo ||
-      "",
-
-    pnr:
-      scanResult.pnr ||
-      scanResult.record_locator ||
-      scanResult.locator ||
-      scanResult.booking ||
-      scanResult.reservation ||
-      scanResult.booking_code ||
-      "",
-
-    operator:
-      scanResult.operator ||
-      scanResult.operated_by ||
-      scanResult.operating_carrier ||
-      scanResult.operado_por ||
-      "",
-
-    raw_text: scanResult.raw_text || scanResult.text || "",
-  };
 }
 
 function PageCard({ children, style = {} }) {
@@ -298,6 +155,223 @@ function TextInput(props) {
   );
 }
 
+function valueFromMany(obj, keys) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (String(value || "").trim()) return String(value).trim();
+  }
+  return "";
+}
+
+function getRawText(scanResult) {
+  return [
+    scanResult?.raw_text,
+    scanResult?.ocr_text,
+    scanResult?.text,
+    scanResult?.full_text,
+    scanResult?.rawText,
+    scanResult?.ocrText,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function cleanOperator(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function cleanFlightNumber(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function cleanAirportCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function cleanSeat(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function cleanGate(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function cleanBoardingGroup(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function cleanTimeAtGate(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return raw;
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
+function cleanPassengerName(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*\/\s*/g, "/")
+    .trim()
+    .toUpperCase();
+}
+
+function extractPassengerName(scanResult) {
+  const direct = cleanPassengerName(
+    valueFromMany(scanResult, [
+      "passenger_name",
+      "passengerName",
+      "passenger",
+      "name",
+      "full_name",
+      "fullName",
+      "traveler_name",
+      "travelerName",
+      "pax_name",
+      "paxName",
+      "last_first_name",
+      "name_text",
+    ])
+  );
+
+  if (direct) return direct;
+
+  const rawText = getRawText(scanResult);
+  if (rawText) {
+    const match = rawText.match(/\b([A-Z]{2,}\/[A-Z]{2,})\b/);
+    if (match?.[1]) return cleanPassengerName(match[1]);
+  }
+
+  return "";
+}
+
+function extractPNR(scanResult) {
+  const direct = valueFromMany(scanResult, [
+    "pnr",
+    "record_locator",
+    "recordLocator",
+    "locator",
+    "booking",
+    "booking_number",
+    "bookingNumber",
+    "reservation",
+    "reservation_number",
+    "reservationNumber",
+    "booking_code",
+    "bookingCode",
+    "confirmation_code",
+    "confirmationCode",
+  ]);
+
+  const normalizedDirect = String(direct || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+  if (
+    normalizedDirect &&
+    normalizedDirect.length >= 5 &&
+    normalizedDirect !== "MEMBER" &&
+    normalizedDirect !== "BOOKING" &&
+    normalizedDirect !== "RESERVA"
+  ) {
+    return normalizedDirect;
+  }
+
+  const rawText = getRawText(scanResult).toUpperCase();
+
+  const patterns = [
+    /BOOKING[:\s]*([A-Z0-9]{5,8})/,
+    /RESERVA[:\s]*([A-Z0-9]{5,8})/,
+    /PNR[:\s]*([A-Z0-9]{5,8})/,
+    /LOCATOR[:\s]*([A-Z0-9]{5,8})/,
+    /RECORD[\s_-]*LOCATOR[:\s]*([A-Z0-9]{5,8})/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = rawText.match(pattern);
+    if (match?.[1]) {
+      const val = match[1].replace(/[^A-Z0-9]/g, "");
+      if (val && val !== "MEMBER") return val;
+    }
+  }
+
+  const genericCandidates = rawText.match(/\b[A-Z0-9]{6}\b/g) || [];
+  const filtered = genericCandidates.find(
+    (x) =>
+      ![
+        "MEMBER",
+        "AVIANCA",
+        "BOGOTA",
+        "FLIGHT",
+        "OPERAD",
+        "RESERV",
+        "BOOKIN",
+      ].includes(x)
+  );
+
+  return filtered || "";
+}
+
+function extractFlightDate(scanResult) {
+  return valueFromMany(scanResult, [
+    "flight_date",
+    "flightDate",
+    "date",
+    "departure_date",
+    "travel_date",
+  ]);
+}
+
+function extractTimeAtGate(scanResult) {
+  const direct = valueFromMany(scanResult, [
+    "time_at_gate",
+    "timeAtGate",
+    "gate_time",
+    "gateTime",
+    "boarding_time",
+    "boardingTime",
+  ]);
+
+  if (direct) return cleanTimeAtGate(direct);
+
+  const rawText = getRawText(scanResult);
+  const match = rawText.match(/\b(\d{1,2}:\d{2})\b/);
+  return match?.[1] ? cleanTimeAtGate(match[1]) : "";
+}
+
+function extractBoardingGroup(scanResult) {
+  const direct = valueFromMany(scanResult, [
+    "boarding_group",
+    "boardingGroup",
+    "group",
+    "grupo",
+  ]);
+
+  if (direct) return cleanBoardingGroup(direct);
+
+  const rawText = getRawText(scanResult).toUpperCase();
+  const match = rawText.match(/GROUP[:\s]*([A-Z0-9]+)/) || rawText.match(/GRUPO[:\s]*([A-Z0-9]+)/);
+  return match?.[1] ? cleanBoardingGroup(match[1]) : "";
+}
+
+function extractOperator(scanResult) {
+  const direct = valueFromMany(scanResult, [
+    "operator",
+    "operated_by",
+    "operatedBy",
+    "carrier",
+  ]);
+
+  if (direct) return cleanOperator(direct);
+
+  const rawText = getRawText(scanResult).toUpperCase();
+  if (rawText.includes("AVIANCA")) return "AVIANCA";
+
+  return "";
+}
+
 export default function WCHRScan() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -309,7 +383,6 @@ export default function WCHRScan() {
   const [imageUrl, setImageUrl] = useState("");
   const [wchType, setWchType] = useState("WCHR");
   const [parsed, setParsed] = useState(null);
-  const [scanRaw, setScanRaw] = useState(null);
 
   const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
 
@@ -329,41 +402,28 @@ export default function WCHRScan() {
       parsed.seat,
       parsed.gate,
       parsed.pnr,
+      wchType,
     ];
 
     return required.every((v) => String(v || "").trim().length > 0);
-  }, [imageUrl, parsed]);
+  }, [imageUrl, parsed, wchType]);
 
   const handlePickFile = (file) => {
     setError("");
     setMessage("");
     setParsed(null);
-    setScanRaw(null);
     setImageUrl("");
     setImageFile(file || null);
   };
 
-  const handleParsedChange = (field, value) => {
-    setParsed((prev) => ({
-      ...(prev || {}),
-      [field]: value,
-    }));
-  };
-
   const uploadToStorage = async (file) => {
     const safeUser = (user?.username || user?.id || "unknown").toString();
-    const safeName = file.name.replace(/\s+/g, "_");
-    const path = `wch_reports/${safeUser}/${yyyymmdd()}/${Date.now()}-${safeName}`;
+    const path = `wch_reports/${safeUser}/${yyyymmdd()}/${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
-
     await uploadBytes(storageRef, file, {
       contentType: file.type || "image/jpeg",
     });
-
-    return {
-      imageUrl: await getDownloadURL(storageRef),
-      storagePath: path,
-    };
+    return await getDownloadURL(storageRef);
   };
 
   const callScanService = async (url) => {
@@ -399,27 +459,58 @@ export default function WCHRScan() {
     try {
       setStep("scanning");
 
-      const uploadResult = await uploadToStorage(imageFile);
-      setImageUrl(uploadResult.imageUrl);
+      const url = await uploadToStorage(imageFile);
+      setImageUrl(url);
 
-      let scanResult = {};
-      try {
-        scanResult = await callScanService(uploadResult.imageUrl);
-      } catch (scanErr) {
-        console.error(scanErr);
-        setMessage(
-          "The automatic scan could not read everything. You can complete the fields manually and still save the report."
-        );
-      }
+      const scanResult = await callScanService(url);
 
-      setScanRaw(scanResult || {});
-      setParsed(normalizeScanPayload(scanResult || {}));
+      const normalized = {
+        passenger_name: extractPassengerName(scanResult),
+        airline: cleanOperator(
+          valueFromMany(scanResult, [
+            "airline",
+            "carrier_code",
+            "carrierCode",
+            "marketing_carrier",
+            "marketingCarrier",
+          ])
+        ),
+        flight_number: cleanFlightNumber(
+          valueFromMany(scanResult, [
+            "flight_number",
+            "flightNumber",
+            "flight",
+          ])
+        ),
+        flight_date: extractFlightDate(scanResult),
+        origin: cleanAirportCode(
+          valueFromMany(scanResult, ["origin", "from", "departure_airport"])
+        ),
+        destination: cleanAirportCode(
+          valueFromMany(scanResult, ["destination", "to", "arrival_airport"])
+        ),
+        seat: cleanSeat(valueFromMany(scanResult, ["seat", "seat_number"])),
+        gate: cleanGate(valueFromMany(scanResult, ["gate", "gate_number"])),
+        pnr: extractPNR(scanResult),
+        time_at_gate: extractTimeAtGate(scanResult),
+        boarding_group: extractBoardingGroup(scanResult),
+        operator: extractOperator(scanResult),
+      };
+
+      setParsed(normalized);
       setStep("preview");
     } catch (e) {
       console.error(e);
       setStep("upload");
       setError(e?.message || "Unexpected error while scanning.");
     }
+  };
+
+  const updateParsedField = (field, value) => {
+    setParsed((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const handleSubmit = async () => {
@@ -432,9 +523,7 @@ export default function WCHRScan() {
     }
 
     if (!canSubmit) {
-      setError(
-        "Please complete the required fields before submitting the report."
-      );
+      setError("Missing required fields from scan. Please complete the missing fields before submitting.");
       return;
     }
 
@@ -465,18 +554,15 @@ export default function WCHRScan() {
         destination: parsed.destination || "",
         seat: parsed.seat || "",
         gate: parsed.gate || "",
+        pnr: parsed.pnr || "",
         time_at_gate: parsed.time_at_gate || "",
         boarding_group: parsed.boarding_group || "",
-        pnr: parsed.pnr || "",
         operator: parsed.operator || "",
 
         wch_type: wchType,
         status,
         flight_key,
-
         image_url: imageUrl,
-        boarding_pass_file_name: imageFile?.name || "",
-        scan_raw: scanRaw || {},
       });
 
       const short = docRef.id.slice(-6).toUpperCase();
@@ -588,8 +674,8 @@ export default function WCHRScan() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Scan a boarding pass, review the parsed details, correct anything
-              needed, and save both the report and the boarding pass image.
+              Scan a boarding pass, review the parsed details and submit a WCHR
+              report. Any logged-in user can access this screen.
             </p>
           </div>
 
@@ -705,7 +791,13 @@ export default function WCHRScan() {
           </div>
 
           {imageFile && (
-            <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                color: "#64748b",
+              }}
+            >
               Selected: <b>{imageFile.name}</b>
             </p>
           )}
@@ -751,7 +843,7 @@ export default function WCHRScan() {
                 letterSpacing: "-0.02em",
               }}
             >
-              Preview & Correct Details
+              Preview & Edit
             </h2>
             <p
               style={{
@@ -760,8 +852,7 @@ export default function WCHRScan() {
                 color: "#64748b",
               }}
             >
-              Review the scan and fix anything before saving. The boarding pass
-              image will also remain stored.
+              Confirm or correct the scan details before submitting the report.
             </p>
           </div>
 
@@ -772,7 +863,7 @@ export default function WCHRScan() {
                 alt="Boarding pass"
                 style={{
                   width: "100%",
-                  maxHeight: 380,
+                  maxHeight: 340,
                   objectFit: "contain",
                   borderRadius: 18,
                   border: "1px solid #e2e8f0",
@@ -793,9 +884,8 @@ export default function WCHRScan() {
               <FieldLabel>Passenger Name</FieldLabel>
               <TextInput
                 value={parsed.passenger_name || ""}
-                onChange={(e) =>
-                  handleParsedChange("passenger_name", e.target.value)
-                }
+                onChange={(e) => updateParsedField("passenger_name", e.target.value.toUpperCase())}
+                placeholder="VERGARA/CLAUDIA"
               />
             </div>
 
@@ -803,7 +893,8 @@ export default function WCHRScan() {
               <FieldLabel>Airline</FieldLabel>
               <TextInput
                 value={parsed.airline || ""}
-                onChange={(e) => handleParsedChange("airline", e.target.value)}
+                onChange={(e) => updateParsedField("airline", e.target.value.toUpperCase())}
+                placeholder="AV"
               />
             </div>
 
@@ -811,20 +902,17 @@ export default function WCHRScan() {
               <FieldLabel>Flight Number</FieldLabel>
               <TextInput
                 value={parsed.flight_number || ""}
-                onChange={(e) =>
-                  handleParsedChange("flight_number", e.target.value)
-                }
+                onChange={(e) => updateParsedField("flight_number", e.target.value.toUpperCase())}
+                placeholder="195"
               />
             </div>
 
             <div>
               <FieldLabel>Flight Date</FieldLabel>
               <TextInput
-                type="date"
-                value={toInputDateValue(parsed.flight_date)}
-                onChange={(e) =>
-                  handleParsedChange("flight_date", e.target.value)
-                }
+                value={parsed.flight_date || ""}
+                onChange={(e) => updateParsedField("flight_date", e.target.value)}
+                placeholder="2026-03-27"
               />
             </div>
 
@@ -832,7 +920,8 @@ export default function WCHRScan() {
               <FieldLabel>Origin</FieldLabel>
               <TextInput
                 value={parsed.origin || ""}
-                onChange={(e) => handleParsedChange("origin", e.target.value)}
+                onChange={(e) => updateParsedField("origin", e.target.value.toUpperCase())}
+                placeholder="TPA"
               />
             </div>
 
@@ -840,9 +929,8 @@ export default function WCHRScan() {
               <FieldLabel>Destination</FieldLabel>
               <TextInput
                 value={parsed.destination || ""}
-                onChange={(e) =>
-                  handleParsedChange("destination", e.target.value)
-                }
+                onChange={(e) => updateParsedField("destination", e.target.value.toUpperCase())}
+                placeholder="BOG"
               />
             </div>
 
@@ -850,7 +938,8 @@ export default function WCHRScan() {
               <FieldLabel>Seat</FieldLabel>
               <TextInput
                 value={parsed.seat || ""}
-                onChange={(e) => handleParsedChange("seat", e.target.value)}
+                onChange={(e) => updateParsedField("seat", e.target.value.toUpperCase())}
+                placeholder="2A"
               />
             </div>
 
@@ -858,7 +947,8 @@ export default function WCHRScan() {
               <FieldLabel>Gate</FieldLabel>
               <TextInput
                 value={parsed.gate || ""}
-                onChange={(e) => handleParsedChange("gate", e.target.value)}
+                onChange={(e) => updateParsedField("gate", e.target.value.toUpperCase())}
+                placeholder="F87"
               />
             </div>
 
@@ -866,9 +956,7 @@ export default function WCHRScan() {
               <FieldLabel>Time at Gate</FieldLabel>
               <TextInput
                 value={parsed.time_at_gate || ""}
-                onChange={(e) =>
-                  handleParsedChange("time_at_gate", e.target.value)
-                }
+                onChange={(e) => updateParsedField("time_at_gate", e.target.value)}
                 placeholder="14:55"
               />
             </div>
@@ -877,9 +965,7 @@ export default function WCHRScan() {
               <FieldLabel>Boarding Group</FieldLabel>
               <TextInput
                 value={parsed.boarding_group || ""}
-                onChange={(e) =>
-                  handleParsedChange("boarding_group", e.target.value)
-                }
+                onChange={(e) => updateParsedField("boarding_group", e.target.value.toUpperCase())}
                 placeholder="A"
               />
             </div>
@@ -888,7 +974,8 @@ export default function WCHRScan() {
               <FieldLabel>PNR / Booking</FieldLabel>
               <TextInput
                 value={parsed.pnr || ""}
-                onChange={(e) => handleParsedChange("pnr", e.target.value)}
+                onChange={(e) => updateParsedField("pnr", e.target.value.toUpperCase())}
+                placeholder="A7LLFB"
               />
             </div>
 
@@ -896,9 +983,14 @@ export default function WCHRScan() {
               <FieldLabel>Operator</FieldLabel>
               <TextInput
                 value={parsed.operator || ""}
-                onChange={(e) => handleParsedChange("operator", e.target.value)}
+                onChange={(e) => updateParsedField("operator", e.target.value.toUpperCase())}
                 placeholder="AVIANCA"
               />
+            </div>
+
+            <div>
+              <FieldLabel>WCHR Type</FieldLabel>
+              <TextInput value={wchType} readOnly />
             </div>
           </div>
 
@@ -913,7 +1005,6 @@ export default function WCHRScan() {
             <ActionButton
               onClick={() => {
                 setParsed(null);
-                setScanRaw(null);
                 setImageUrl("");
                 setStep("upload");
               }}
@@ -940,8 +1031,8 @@ export default function WCHRScan() {
               lineHeight: 1.6,
             }}
           >
-            Saved report includes the boarding pass image, the corrected fields,
-            and the raw scan output for later troubleshooting.
+            After submission, Duty Managers and Station Manager will be notified
+            automatically.
           </p>
         </PageCard>
       )}
