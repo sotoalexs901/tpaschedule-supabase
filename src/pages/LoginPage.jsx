@@ -1,136 +1,144 @@
-// src/pages/LoginPage.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import "./login.css";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { setUser } = useUser();
 
   const [username, setUsername] = useState("");
-  const [pin, setPin] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+    e.preventDefault();
     setError("");
 
-    const cleanUsername = username.trim();
-    const cleanPin = pin.trim();
-
-    if (!cleanUsername || !cleanPin) {
-      setError("Please enter username and PIN.");
+    if (!username.trim() || !password.trim()) {
+      setError("Please enter your username and password.");
       return;
     }
 
     try {
+      setLoading(true);
+
       const q = query(
         collection(db, "users"),
-        where("username", "==", cleanUsername),
-        where("pin", "==", cleanPin)
+        where("username", "==", username.trim())
       );
 
       const snap = await getDocs(q);
 
       if (snap.empty) {
-        setError("Invalid credentials.");
+        setError("Invalid username or password.");
         return;
       }
 
-      const userData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      const userDoc = snap.docs[0];
+      const userData = { id: userDoc.id, ...userDoc.data() };
 
-      // Opcional: si usas un campo 'active' y quieres bloquear usuarios deshabilitados:
-      // if (userData.active === false) {
-      //   setError("This user is disabled. Please contact your manager.");
-      //   return;
-      // }
+      if (userData.password !== password) {
+        setError("Invalid username or password.");
+        return;
+      }
 
       setUser(userData);
-
-      // 🔀 Siempre mandamos a /dashboard.
-      // DashboardEntry (en main.jsx) se encarga de mostrar
-      // EmployeeDashboardPage para agent/supervisor
-      // y DashboardPage para managers.
       navigate("/dashboard");
     } catch (err) {
-      console.error(err);
-      setError("Login error. Try again.");
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      handleLogin();
+      console.error("Login error:", err);
+      setError("There was a problem signing in. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div
-      className="login-page"
-      style={{
-        // Asegúrate de que esta imagen exista en /public, por ejemplo: public/flamingo-tpa.jpg
-        backgroundImage: "url('/flamingo-tpa.jpg')",
-      }}
-    >
-      {/* capa oscura encima de la foto */}
-      <div className="login-overlay" />
+    <div className="login-container">
+      <div className="login-left">
+        <div className="login-overlay-content">
+          <div className="login-overlay-tag">TPA OPS SYSTEM</div>
 
-      <div className="login-content">
+          <h1 className="login-overlay-title">
+            Smarter scheduling,
+            <br />
+            cleaner operations.
+          </h1>
+
+          <p className="login-overlay-text">
+            Manage schedules, communications, approvals, employee restrictions,
+            budgets and operational updates from one modern platform built for
+            station teams.
+          </p>
+        </div>
+      </div>
+
+      <div className="login-right">
         <div className="login-card">
-          <h1 className="login-title">TPA Ops Portal</h1>
-          <p className="login-subtitle">Crew Scheduling System</p>
+          <div className="login-brand">
+            <div className="login-brand-icon">✈️</div>
 
-          {/* Username */}
-          <div className="login-field">
-            <label className="login-label">User</label>
-            <input
-              type="text"
-              className="login-input"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Enter your user"
-            />
+            <div className="login-brand-text">
+              <p className="login-brand-title">TPA OPS SYSTEM</p>
+              <p className="login-brand-subtitle">
+                Airline operations dashboard
+              </p>
+            </div>
           </div>
 
-          {/* PIN */}
-          <div className="login-field">
-            <label className="login-label">PIN</label>
-            <input
-              type="password"
-              className="login-input"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Enter your PIN"
-            />
-          </div>
+          <form className="login-box" onSubmit={handleLogin}>
+            <h1 className="login-title">Welcome back</h1>
 
-          {/* Error */}
-          {error && (
-            <p
-              style={{
-                color: "#fecaca",
-                fontSize: "0.75rem",
-                textAlign: "center",
-                marginTop: "0.25rem",
-                marginBottom: "0.5rem",
-              }}
-            >
-              {error}
+            <p className="login-subtitle">
+              Sign in to continue to your scheduling and operations dashboard.
             </p>
-          )}
 
-          {/* LOGIN BUTTON */}
-          <button className="login-button" onClick={handleLogin}>
-            Login
-          </button>
+            {error && <div className="login-error">{error}</div>}
 
-          <p className="login-footer">TPA Schedule System · Tampa, FL</p>
+            <div className="login-field">
+              <label htmlFor="username">Username</label>
+              <input
+                id="username"
+                type="text"
+                placeholder="Enter your username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+              />
+            </div>
+
+            <div className="login-field">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+
+            <div className="login-row">
+              <span className="login-helper-text">
+                Access for station managers, supervisors and agents.
+              </span>
+            </div>
+
+            <button type="submit" className="login-button" disabled={loading}>
+              {loading ? "Signing in..." : "Sign In"}
+            </button>
+
+            <p className="login-footer-note">
+              Secure access to schedules, team updates, approvals and daily
+              station operations.
+            </p>
+          </form>
         </div>
       </div>
     </div>
   );
 }
-
