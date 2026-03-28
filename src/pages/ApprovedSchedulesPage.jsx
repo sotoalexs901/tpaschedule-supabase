@@ -7,15 +7,14 @@ import { db } from "../firebase";
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
-  tue: "TUESD",
+  tue: "TUE",
   wed: "WED",
-  thu: "THURSD",
-  fri: "FRIDAY",
-  sat: "SATURD",
-  sun: "SUND",
+  thu: "THU",
+  fri: "FRI",
+  sat: "SAT",
+  sun: "SUN",
 };
 
-// Construye un texto bonito de semana con los números de día
 function buildWeekText(days) {
   if (!days) return "Week not specified";
   return DAY_KEYS.map((k) => {
@@ -25,14 +24,69 @@ function buildWeekText(days) {
   }).join("  |  ");
 }
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({ children, onClick, variant = "secondary" }) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function ApprovedSchedulesPage() {
   const [loading, setLoading] = useState(false);
-  const [groups, setGroups] = useState({}); // { weekTag: [schedules] }
+  const [groups, setGroups] = useState({});
+  const [statusMessage, setStatusMessage] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
     async function load() {
       setLoading(true);
+      setStatusMessage("");
+
       try {
         const qApproved = query(
           collection(db, "schedules"),
@@ -41,7 +95,6 @@ export default function ApprovedSchedulesPage() {
         const snap = await getDocs(qApproved);
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // Agrupar por weekTag
         const grouped = {};
         items.forEach((sch) => {
           const key = sch.weekTag || "no-week";
@@ -49,9 +102,14 @@ export default function ApprovedSchedulesPage() {
           grouped[key].push(sch);
         });
 
-        setGroups(grouped);
+        const sortedGrouped = Object.fromEntries(
+          Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0]))
+        );
+
+        setGroups(sortedGrouped);
       } catch (err) {
         console.error("Error loading approved schedules:", err);
+        setStatusMessage("Could not load approved schedules.");
       } finally {
         setLoading(false);
       }
@@ -65,22 +123,184 @@ export default function ApprovedSchedulesPage() {
   };
 
   if (loading) {
-    return <p className="p-6 text-sm">Loading approved schedules...</p>;
+    return (
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Loading approved schedules...
+        </p>
+      </PageCard>
+    );
   }
 
   const weekTags = Object.keys(groups);
+
   if (!weekTags.length) {
     return (
-      <div className="card p-4 text-sm">
-        <h2 className="font-semibold mb-2">Approved Schedules</h2>
-        <p>No approved schedules yet.</p>
+      <div
+        style={{
+          display: "grid",
+          gap: 18,
+          fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            background:
+              "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+            borderRadius: 28,
+            padding: 24,
+            color: "#fff",
+            boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 700,
+            }}
+          >
+            TPA OPS · Scheduling
+          </p>
+          <h1
+            style={{
+              margin: "10px 0 6px",
+              fontSize: 32,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Approved Schedules
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 760,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.88)",
+            }}
+          >
+            Review approved schedules grouped by week and reopen each one in
+            full schedule view.
+          </p>
+        </div>
+
+        <PageCard style={{ padding: 22 }}>
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No approved schedules yet.
+          </p>
+        </PageCard>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-lg font-semibold mb-2">Approved Schedules</h1>
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
+
+        <div style={{ position: "relative" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 700,
+            }}
+          >
+            TPA OPS · Scheduling
+          </p>
+
+          <h1
+            style={{
+              margin: "10px 0 6px",
+              fontSize: 32,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Approved Schedules
+          </h1>
+
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 760,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.88)",
+            }}
+          >
+            Browse approved schedules grouped by week and open each one in its
+            detailed approved schedule view.
+          </p>
+        </div>
+      </div>
+
+      {statusMessage && (
+        <PageCard style={{ padding: 16 }}>
+          <div
+            style={{
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#1769aa",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {statusMessage}
+          </div>
+        </PageCard>
+      )}
 
       {weekTags.map((weekTag) => {
         const list = groups[weekTag];
@@ -88,52 +308,193 @@ export default function ApprovedSchedulesPage() {
         const weekText = buildWeekText(sample.days);
 
         return (
-          <div key={weekTag} className="card p-4 space-y-3">
-            {/* “Carpeta” de semana */}
-            <div className="flex items-center justify-between">
+          <PageCard key={weekTag} style={{ padding: 22 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 16,
+                flexWrap: "wrap",
+                marginBottom: 16,
+              }}
+            >
               <div>
-                <h2 className="text-sm font-semibold">
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    letterSpacing: "-0.02em",
+                  }}
+                >
                   📁 Week: {weekText}
                 </h2>
-                <p className="text-[11px] text-gray-500">
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: 13,
+                    color: "#64748b",
+                  }}
+                >
                   {list.length} schedule{list.length > 1 ? "s" : ""} approved
                   for this week.
                 </p>
               </div>
+
+              <div
+                style={{
+                  background: "#f8fbff",
+                  border: "1px solid #dbeafe",
+                  borderRadius: 14,
+                  padding: "10px 14px",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: "#1769aa",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                {weekTag === "no-week" ? "Unspecified week" : weekTag}
+              </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-3">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: 14,
+              }}
+            >
               {list.map((sch) => (
                 <div
                   key={sch.id}
-                  className="border border-gray-200 rounded-md p-3 text-sm bg-white"
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 20,
+                    padding: 18,
+                    boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
+                    display: "grid",
+                    gap: 12,
+                  }}
                 >
-                  <p className="font-semibold">
-                    {sch.airline} — {sch.department}
-                  </p>
-                  <p className="text-[11px] text-gray-600 mt-1">
-                    Created by: {sch.createdBy || "N/A"}
-                  </p>
-                  <p className="text-[11px] text-gray-600">
-                    Total Hours:{" "}
-                    {sch.airlineWeeklyHours
-                      ? sch.airlineWeeklyHours.toFixed(2)
-                      : "0.00"}
-                  </p>
-                  <button
-                    type="button"
-                    className="btn text-xs mt-2"
-                    onClick={() => handleOpen(sch.id)}
+                  <div>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 17,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {sch.airline} — {sch.department}
+                    </p>
+
+                    <p
+                      style={{
+                        margin: "7px 0 0",
+                        fontSize: 12,
+                        color: "#64748b",
+                      }}
+                    >
+                      Created by: <b>{sch.createdBy || "N/A"}</b>
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                    }}
                   >
-                    View schedule →
-                  </button>
+                    <div
+                      style={{
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        Total Hours
+                      </p>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 22,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          letterSpacing: "-0.03em",
+                        }}
+                      >
+                        {sch.airlineWeeklyHours
+                          ? sch.airlineWeeklyHours.toFixed(2)
+                          : "0.00"}
+                      </p>
+                    </div>
+
+                    <div
+                      style={{
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        Status
+                      </p>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 18,
+                          fontWeight: 800,
+                          color: "#065f46",
+                          letterSpacing: "-0.02em",
+                        }}
+                      >
+                        Approved
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => handleOpen(sch.id)}
+                    >
+                      View schedule →
+                    </ActionButton>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
+          </PageCard>
         );
       })}
     </div>
   );
 }
-
