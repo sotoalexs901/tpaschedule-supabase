@@ -12,7 +12,6 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 
-// 🔗 Sincroniza empleado ↔ users.username
 async function syncUserLink(employeeId, loginUsername) {
   if (!loginUsername) return;
   try {
@@ -23,7 +22,6 @@ async function syncUserLink(employeeId, loginUsername) {
     const snap = await getDocs(q);
     if (snap.empty) return;
 
-    // Si hay varios, los actualizamos todos por seguridad
     const updates = snap.docs.map((u) =>
       updateDoc(u.ref, {
         employeeId,
@@ -35,25 +33,167 @@ async function syncUserLink(employeeId, loginUsername) {
   }
 }
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#475569",
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+function TextInput(props) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        resize: "vertical",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  type = "button",
+  variant = "primary",
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    warning: {
+      background: "#f59e0b",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 10px 20px rgba(245,158,11,0.18)",
+    },
+    danger: {
+      background: "#dc2626",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 10px 20px rgba(220,38,38,0.18)",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
 
-  // formulario manual
   const [name, setName] = useState("");
-  const [username, setUsername] = useState(""); // ✅ NEW (loginUsername)
+  const [username, setUsername] = useState("");
   const [department, setDepartment] = useState("");
   const [position, setPosition] = useState("");
   const [status, setStatus] = useState("Active");
   const [notes, setNotes] = useState("");
 
-  const [editingId, setEditingId] = useState(null); // ✅ estamos editando un empleado?
+  const [editingId, setEditingId] = useState(null);
   const [formMessage, setFormMessage] = useState("");
 
-  // importación por pegar texto
   const [bulkText, setBulkText] = useState("");
   const [importStatus, setImportStatus] = useState("");
 
-  // Cargar empleados
   const loadEmployees = async () => {
     const snap = await getDocs(collection(db, "employees"));
     setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -63,9 +203,6 @@ export default function EmployeesPage() {
     loadEmployees().catch(console.error);
   }, []);
 
-  // =========================
-  //  CREAR / EDITAR EMPLEADO
-  // =========================
   const handleAddOrUpdateEmployee = async (e) => {
     e.preventDefault();
     setFormMessage("");
@@ -78,7 +215,6 @@ export default function EmployeesPage() {
       return;
     }
 
-    // 🚫 Chequeo de username duplicado (entre empleados)
     if (cleanUsername) {
       const exists = employees.some(
         (emp) =>
@@ -95,7 +231,6 @@ export default function EmployeesPage() {
 
     try {
       if (editingId) {
-        // ✏️ UPDATE
         const ref = doc(db, "employees", editingId);
         await updateDoc(ref, {
           name: cleanName,
@@ -110,7 +245,6 @@ export default function EmployeesPage() {
         await syncUserLink(editingId, cleanUsername);
         setFormMessage("Employee updated successfully.");
       } else {
-        // ➕ CREATE
         const ref = await addDoc(collection(db, "employees"), {
           name: cleanName,
           loginUsername: cleanUsername || null,
@@ -126,7 +260,6 @@ export default function EmployeesPage() {
         setFormMessage("Employee created successfully.");
       }
 
-      // Limpiar formulario
       setName("");
       setUsername("");
       setDepartment("");
@@ -153,7 +286,6 @@ export default function EmployeesPage() {
     setFormMessage("");
   };
 
-  // Borrar empleado
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this employee?")) return;
     await deleteDoc(doc(db, "employees", id));
@@ -169,20 +301,16 @@ export default function EmployeesPage() {
     setStatus(emp.status || (emp.active ? "Active" : "Inactive"));
     setNotes(emp.notes || "");
     setFormMessage("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // =========================
-  //  IMPORTAR PEGANDO TEXTO
-  //  Formato recomendado:
-  //  Name, Username(optional), Department, Position, Status, Notes
-  // =========================
   const handleBulkImport = async () => {
     if (!bulkText.trim()) {
       setImportStatus("Paste some data first.");
       return;
     }
 
-    setImportStatus("Processing…");
+    setImportStatus("Processing...");
 
     try {
       const lines = bulkText
@@ -201,7 +329,6 @@ export default function EmployeesPage() {
 
       const startIndex = hasHeader ? 1 : 0;
 
-      // Set de usernames ya existentes para evitar duplicados
       const existingUsernames = new Set(
         employees
           .map((e) => (e.loginUsername || "").toLowerCase())
@@ -214,10 +341,8 @@ export default function EmployeesPage() {
 
       for (let i = startIndex; i < lines.length; i++) {
         const row = lines[i];
-
-        // acepta separado por coma, tab o punto y coma
         const cells = row.split(/[\t,;]+/).map((c) => c.trim());
-        if (!cells[0]) continue; // sin nombre, ignoramos
+        if (!cells[0]) continue;
 
         const employeeName = cells[0];
         const loginUsername = cells[1] || "";
@@ -229,7 +354,6 @@ export default function EmployeesPage() {
         const normalizedStatus =
           statusRaw.toLowerCase() === "inactive" ? "Inactive" : "Active";
 
-        // 🚫 Evitar duplicados de username
         if (loginUsername) {
           const key = loginUsername.toLowerCase();
           if (existingUsernames.has(key) || batchUsernames.has(key)) {
@@ -268,191 +392,405 @@ export default function EmployeesPage() {
     }
   };
 
-  return (
-    <div className="space-y-4">
-      <h1 className="text-lg font-semibold mb-2">Employees</h1>
+  const formSuccess = formMessage.toLowerCase().includes("success");
+  const importSuccess = importStatus.toLowerCase().includes("imported");
 
-      {/* FORMULARIO MANUAL */}
-      <div className="card space-y-2">
-        <h2 className="text-sm font-semibold">
-          {editingId ? "Edit Employee" : "Add Employee"}
-        </h2>
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
+
+        <div style={{ position: "relative" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 700,
+            }}
+          >
+            TPA OPS · Administration
+          </p>
+
+          <h1
+            style={{
+              margin: "10px 0 6px",
+              fontSize: 32,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Employees
+          </h1>
+
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 760,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.88)",
+            }}
+          >
+            Create, edit and import employee records, and link them to login
+            usernames for scheduling visibility.
+          </p>
+        </div>
+      </div>
+
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ marginBottom: 16 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {editingId ? "Edit Employee" : "Add Employee"}
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Keep the employee profile and login username in sync.
+          </p>
+        </div>
 
         <form
           onSubmit={handleAddOrUpdateEmployee}
-          className="grid md:grid-cols-6 gap-2 text-xs items-end"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 14,
+          }}
         >
-          {/* Name */}
           <div>
-            <label className="block mb-1 font-medium">Name</label>
-            <input
-              className="border rounded w-full px-2 py-1 text-xs"
+            <FieldLabel>Name</FieldLabel>
+            <TextInput
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
             />
           </div>
 
-          {/* Username */}
           <div>
-            <label className="block mb-1 font-medium">
-              Username (login)
-            </label>
-            <input
-              className="border rounded w-full px-2 py-1 text-xs"
+            <FieldLabel>Username (login)</FieldLabel>
+            <TextInput
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Same as Login Page"
             />
           </div>
 
-          {/* Department */}
           <div>
-            <label className="block mb-1 font-medium">Department</label>
-            <input
-              className="border rounded w-full px-2 py-1 text-xs"
+            <FieldLabel>Department</FieldLabel>
+            <TextInput
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
             />
           </div>
 
-          {/* Position */}
           <div>
-            <label className="block mb-1 font-medium">Position</label>
-            <input
-              className="border rounded w-full px-2 py-1 text-xs"
+            <FieldLabel>Position</FieldLabel>
+            <TextInput
               value={position}
               onChange={(e) => setPosition(e.target.value)}
             />
           </div>
 
-          {/* Status */}
           <div>
-            <label className="block mb-1 font-medium">Status</label>
-            <select
-              className="border rounded w-full px-2 py-1 text-xs"
+            <FieldLabel>Status</FieldLabel>
+            <SelectInput
               value={status}
               onChange={(e) => setStatus(e.target.value)}
             >
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
-            </select>
+            </SelectInput>
           </div>
 
-          {/* Notes */}
-          <div className="md:col-span-2">
-            <label className="block mb-1 font-medium">Notes</label>
-            <textarea
-              className="border rounded w-full px-2 py-1 text-xs"
-              rows={1}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <FieldLabel>Notes</FieldLabel>
+            <TextArea
+              rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
 
-          {/* Botones */}
-          <div className="md:col-span-1 flex gap-2 mt-2 md:mt-0">
-            <button
-              type="submit"
-              className="btn btn-primary w-full text-xs"
-            >
-              {editingId ? "Update" : "Save"}
-            </button>
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <ActionButton type="submit" variant="primary">
+              {editingId ? "Update Employee" : "Save Employee"}
+            </ActionButton>
+
             {editingId && (
-              <button
+              <ActionButton
                 type="button"
-                className="btn text-xs"
+                variant="secondary"
                 onClick={handleCancelEdit}
               >
                 Cancel
-              </button>
+              </ActionButton>
             )}
           </div>
         </form>
 
         {formMessage && (
-          <p className="text-[11px] text-gray-700 mt-1">{formMessage}</p>
+          <div
+            style={{
+              marginTop: 14,
+              background: formSuccess ? "#ecfdf5" : "#fff1f2",
+              border: `1px solid ${formSuccess ? "#a7f3d0" : "#fecdd3"}`,
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: formSuccess ? "#065f46" : "#9f1239",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {formMessage}
+          </div>
         )}
-      </div>
+      </PageCard>
 
-      {/* IMPORTACIÓN MASIVA POR PEGAR TEXTO */}
-      <div className="card space-y-2">
-        <h2 className="text-sm font-semibold">Import employees (paste data)</h2>
-        <p className="text-[11px] text-gray-600">
-          Format (comma / tab separated):<br />
-          <code>
-            Name, Username(optional), Department, Position, Status, Notes
-          </code>
-        </p>
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ marginBottom: 16 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Import Employees
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+              lineHeight: 1.6,
+            }}
+          >
+            Paste rows using comma, tab or semicolon separated values in this
+            format:
+            <br />
+            <code>
+              Name, Username(optional), Department, Position, Status, Notes
+            </code>
+          </p>
+        </div>
 
-        <textarea
-          className="border rounded w-full text-xs p-2"
-          rows={6}
-          placeholder={`Maria Perez, mperez, Ramp, Agent, Active, Full time
+        <div style={{ display: "grid", gap: 14 }}>
+          <TextArea
+            rows={7}
+            placeholder={`Maria Perez, mperez, Ramp, Agent, Active, Full time
 Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
-          value={bulkText}
-          onChange={(e) => setBulkText(e.target.value)}
-        />
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+          />
 
-        <button
-          type="button"
-          className="btn text-xs mt-1"
-          onClick={handleBulkImport}
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <ActionButton onClick={handleBulkImport} variant="secondary">
+              Import from pasted text
+            </ActionButton>
+          </div>
+
+          {importStatus && (
+            <div
+              style={{
+                background: importSuccess ? "#ecfdf5" : "#fff7ed",
+                border: `1px solid ${importSuccess ? "#a7f3d0" : "#fed7aa"}`,
+                borderRadius: 16,
+                padding: "14px 16px",
+                color: importSuccess ? "#065f46" : "#9a3412",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              {importStatus}
+            </div>
+          )}
+        </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 18 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Current Employees
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Review all employee records and manage linked usernames.
+          </p>
+        </div>
+
+        <div
+          style={{
+            overflowX: "auto",
+            borderRadius: 18,
+            border: "1px solid #e2e8f0",
+          }}
         >
-          Import from pasted text
-        </button>
-
-        {importStatus && (
-          <p className="text-[11px] text-gray-700 mt-1">{importStatus}</p>
-        )}
-      </div>
-
-      {/* LISTA DE EMPLEADOS */}
-      <div className="card">
-        <h2 className="text-sm font-semibold mb-2">Current Employees</h2>
-        <div className="overflow-auto">
-          <table className="table text-xs">
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "separate",
+              borderSpacing: 0,
+              minWidth: 980,
+              background: "#fff",
+            }}
+          >
             <thead>
-              <tr>
-                <th>Name</th>
-                <th>Username</th>
-                <th>Department</th>
-                <th>Position</th>
-                <th>Status</th>
-                <th>Notes</th>
-                <th></th>
+              <tr style={{ background: "#f8fbff" }}>
+                <th style={thStyle({ textAlign: "left" })}>Name</th>
+                <th style={thStyle({ textAlign: "left" })}>Username</th>
+                <th style={thStyle({ textAlign: "left" })}>Department</th>
+                <th style={thStyle({ textAlign: "left" })}>Position</th>
+                <th style={thStyle({ textAlign: "left" })}>Status</th>
+                <th style={thStyle({ textAlign: "left" })}>Notes</th>
+                <th style={thStyle({ textAlign: "center" })}>Actions</th>
               </tr>
             </thead>
+
             <tbody>
-              {employees.map((e) => (
-                <tr key={e.id}>
-                  <td>{e.name}</td>
-                  <td>{e.loginUsername || "—"}</td>
-                  <td>{e.department}</td>
-                  <td>{e.position}</td>
-                  <td>{e.status || (e.active ? "Active" : "Inactive")}</td>
-                  <td>{e.notes}</td>
-                  <td className="space-x-1">
-                    <button
-                      type="button"
-                      className="btn text-xs"
-                      onClick={() => handleStartEdit(e)}
+              {employees.map((e, index) => (
+                <tr
+                  key={e.id}
+                  style={{
+                    background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                  }}
+                >
+                  <td style={tdStyle}>{e.name}</td>
+                  <td style={tdStyle}>{e.loginUsername || "—"}</td>
+                  <td style={tdStyle}>{e.department || "—"}</td>
+                  <td style={tdStyle}>{e.position || "—"}</td>
+                  <td style={tdStyle}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        background:
+                          (e.status || (e.active ? "Active" : "Inactive")) ===
+                          "Active"
+                            ? "#ecfdf5"
+                            : "#fff1f2",
+                        color:
+                          (e.status || (e.active ? "Active" : "Inactive")) ===
+                          "Active"
+                            ? "#065f46"
+                            : "#9f1239",
+                        border: `1px solid ${
+                          (e.status || (e.active ? "Active" : "Inactive")) ===
+                          "Active"
+                            ? "#a7f3d0"
+                            : "#fecdd3"
+                        }`,
+                      }}
                     >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn text-xs"
-                      onClick={() => handleDelete(e.id)}
+                      {e.status || (e.active ? "Active" : "Inactive")}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>{e.notes || "—"}</td>
+                  <td style={{ ...tdStyle, textAlign: "center" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        justifyContent: "center",
+                        flexWrap: "wrap",
+                      }}
                     >
-                      Delete
-                    </button>
+                      <ActionButton
+                        type="button"
+                        variant="secondary"
+                        onClick={() => handleStartEdit(e)}
+                      >
+                        Edit
+                      </ActionButton>
+                      <ActionButton
+                        type="button"
+                        variant="danger"
+                        onClick={() => handleDelete(e.id)}
+                      >
+                        Delete
+                      </ActionButton>
+                    </div>
                   </td>
                 </tr>
               ))}
+
               {employees.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center text-[11px] py-2">
+                  <td
+                    colSpan={7}
+                    style={{
+                      padding: "18px",
+                      textAlign: "center",
+                      fontSize: 13,
+                      color: "#64748b",
+                    }}
+                  >
                     No employees yet.
                   </td>
                 </tr>
@@ -460,7 +798,29 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
             </tbody>
           </table>
         </div>
-      </div>
+      </PageCard>
     </div>
   );
 }
+
+function thStyle(extra = {}) {
+  return {
+    padding: "14px 14px",
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    whiteSpace: "nowrap",
+    borderBottom: "1px solid #e2e8f0",
+    ...extra,
+  };
+}
+
+const tdStyle = {
+  padding: "14px",
+  borderBottom: "1px solid #eef2f7",
+  verticalAlign: "middle",
+  fontSize: 14,
+  color: "#0f172a",
+};
