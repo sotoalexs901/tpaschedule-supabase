@@ -1,3 +1,4 @@
+// src/components/CabinScheduleRosterView.jsx
 import React, { useMemo } from "react";
 
 const DAY_KEYS = [
@@ -20,7 +21,6 @@ const DAY_LABELS = {
   sunday: "SUN",
 };
 
-// 🔥 Define aquí cómo agrupar los shifts
 function getShiftGroup(slot) {
   const start = slot.start || "";
 
@@ -33,11 +33,10 @@ function getShiftGroup(slot) {
   return "NIGHT SHIFT";
 }
 
-// Convierte slots → estructura por empleado
 function buildRoster(slotsByDay) {
   const roster = {};
 
-  Object.entries(slotsByDay).forEach(([dayKey, slots]) => {
+  Object.entries(slotsByDay || {}).forEach(([dayKey, slots]) => {
     slots.forEach((slot) => {
       const empName = slot.employeeName || "UNASSIGNED";
 
@@ -70,67 +69,166 @@ export default function CabinScheduleRosterView({ slotsByDay }) {
     return groups;
   }, [roster]);
 
+  const orderedGroups = [
+    "SUPERVISOR",
+    "LAV",
+    "TEAM 1",
+    "TEAM 2",
+    "TEAM 3",
+    "NIGHT SHIFT",
+  ];
+
   return (
-    <div style={{ marginTop: 20 }}>
-      {Object.entries(grouped).map(([groupName, employees]) => (
-        <div key={groupName} style={{ marginBottom: 30 }}>
-          <h2 style={groupTitle}>{groupName}</h2>
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        marginTop: 8,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      {orderedGroups.map((groupName) => {
+        const employees = grouped[groupName] || [];
+        if (!employees.length) return null;
 
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={cellStyle}>Employee</th>
-                {DAY_KEYS.map((d) => (
-                  <th key={d} style={cellStyle}>
-                    {DAY_LABELS[d]}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+        return (
+          <div
+            key={groupName}
+            style={{
+              background: "rgba(255,255,255,0.96)",
+              border: "1px solid rgba(255,255,255,0.98)",
+              borderRadius: 22,
+              boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                background:
+                  "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+                color: "#ffffff",
+                padding: "12px 16px",
+                fontSize: 15,
+                fontWeight: 800,
+                letterSpacing: "0.03em",
+              }}
+            >
+              {groupName}
+            </div>
 
-            <tbody>
-              {employees.map((emp) => (
-                <tr key={emp.name}>
-                  <td style={cellStyleBold}>{emp.name}</td>
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  minWidth: 860,
+                  borderCollapse: "separate",
+                  borderSpacing: 0,
+                  background: "#ffffff",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f8fbff" }}>
+                    <th
+                      style={{
+                        ...headerCellStyle,
+                        minWidth: 240,
+                        textAlign: "left",
+                      }}
+                    >
+                      Employee
+                    </th>
 
-                  {DAY_KEYS.map((d) => (
-                    <td key={d} style={cellStyle}>
-                      {emp.days[d] || "OFF"}
-                    </td>
+                    {DAY_KEYS.map((d) => (
+                      <th key={d} style={headerCellStyle}>
+                        {DAY_LABELS[d]}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {employees.map((emp, index) => (
+                    <tr
+                      key={emp.name}
+                      style={{
+                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                      }}
+                    >
+                      <td
+                        style={{
+                          ...nameCellStyle,
+                          minWidth: 240,
+                        }}
+                      >
+                        {emp.name}
+                      </td>
+
+                      {DAY_KEYS.map((d) => {
+                        const value = emp.days[d] || "OFF";
+                        const isOff = value === "OFF";
+
+                        return (
+                          <td
+                            key={d}
+                            style={{
+                              ...bodyCellStyle,
+                              ...(isOff
+                                ? {
+                                    background: "#f1f5f9",
+                                    color: "#64748b",
+                                    fontWeight: 700,
+                                  }
+                                : {
+                                    color: "#0f172a",
+                                    fontWeight: 700,
+                                  }),
+                            }}
+                          >
+                            {value}
+                          </td>
+                        );
+                      })}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// estilos
-const tableStyle = {
-  width: "100%",
-  borderCollapse: "collapse",
-  marginTop: 10,
+const headerCellStyle = {
+  borderBottom: "1px solid #dbeafe",
+  padding: "12px 10px",
+  textAlign: "center",
+  fontSize: 12,
+  fontWeight: 800,
+  background: "#f8fbff",
+  color: "#1769aa",
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  whiteSpace: "nowrap",
 };
 
-const cellStyle = {
-  border: "1px solid #ccc",
-  padding: 6,
+const bodyCellStyle = {
+  borderBottom: "1px solid #eef2f7",
+  padding: "12px 10px",
   textAlign: "center",
   fontSize: 13,
+  verticalAlign: "middle",
 };
 
-const cellStyleBold = {
-  ...cellStyle,
-  fontWeight: "bold",
+const nameCellStyle = {
+  ...bodyCellStyle,
   textAlign: "left",
-};
-
-const groupTitle = {
-  background: "#1d4ed8",
-  color: "white",
-  padding: "6px 10px",
-  fontSize: 14,
+  fontWeight: 800,
+  color: "#0f172a",
+  paddingLeft: 14,
 };
