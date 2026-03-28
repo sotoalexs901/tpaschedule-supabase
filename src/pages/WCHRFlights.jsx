@@ -40,12 +40,7 @@ function endOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 }
 
-function safeStr(v) {
-  return String(v ?? "").trim();
-}
-
 function tsToDate(val) {
-  // Firestore Timestamp -> Date
   if (!val) return null;
   if (typeof val?.toDate === "function") return val.toDate();
   const d = new Date(val);
@@ -110,6 +105,127 @@ function downloadCSV(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "secondary",
+  type = "button",
+  disabled = false,
+  style = {},
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+        opacity: disabled ? 0.55 : 1,
+        ...styles[variant],
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function statusBadge(kind) {
+  const k = String(kind || "").toUpperCase();
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "7px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    border: "1px solid transparent",
+  };
+
+  if (k === "CLOSED") {
+    return {
+      ...base,
+      background: "#fff1f2",
+      color: "#9f1239",
+      borderColor: "#fecdd3",
+    };
+  }
+  if (k === "OPEN") {
+    return {
+      ...base,
+      background: "#ecfdf5",
+      color: "#065f46",
+      borderColor: "#a7f3d0",
+    };
+  }
+  if (k === "LATE") {
+    return {
+      ...base,
+      background: "#fff7ed",
+      color: "#9a3412",
+      borderColor: "#fed7aa",
+    };
+  }
+  if (k === "NEW") {
+    return {
+      ...base,
+      background: "#edf7ff",
+      color: "#1769aa",
+      borderColor: "#cfe7fb",
+    };
+  }
+
+  return {
+    ...base,
+    background: "#f8fafc",
+    color: "#334155",
+    borderColor: "#e2e8f0",
+  };
+}
+
 export default function WCHRFlights() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -119,7 +235,6 @@ export default function WCHRFlights() {
   const [flights, setFlights] = useState([]);
   const [error, setError] = useState("");
 
-  // ✅ NUEVO: selección de vuelo + detalle reportes
   const [selectedFlightKey, setSelectedFlightKey] = useState("");
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reports, setReports] = useState([]);
@@ -133,7 +248,6 @@ export default function WCHRFlights() {
     );
   }, [user]);
 
-  // Cargar vuelos del día
   useEffect(() => {
     let mounted = true;
 
@@ -153,17 +267,14 @@ export default function WCHRFlights() {
         );
 
         const snap = await getDocs(q);
-
-        // ⚠️ IMPORTANTE: necesitamos el id del doc para links/tabla
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
         const map = new Map();
         for (const r of rows) {
           const fk = r.flight_key || "UNKNOWN";
-          const key = fk;
 
-          if (!map.has(key)) {
-            map.set(key, {
+          if (!map.has(fk)) {
+            map.set(fk, {
               flight_key: fk,
               airline: r.airline || "—",
               flight_number: r.flight_number || "—",
@@ -177,15 +288,19 @@ export default function WCHRFlights() {
               closed_at: null,
             });
           }
-          const item = map.get(key);
+
+          const item = map.get(fk);
           item.total_reports += 1;
-          if (String(r.status || "").toUpperCase() === "LATE") item.late_reports += 1;
-          else item.new_reports += 1;
+
+          if (String(r.status || "").toUpperCase() === "LATE") {
+            item.late_reports += 1;
+          } else {
+            item.new_reports += 1;
+          }
         }
 
         const flightArr = Array.from(map.values());
 
-        // revisar si está cerrado
         for (const f of flightArr) {
           if (!f.flight_key || f.flight_key === "UNKNOWN") continue;
           const fsnap = await getDoc(doc(db, "wch_flights", f.flight_key));
@@ -205,7 +320,6 @@ export default function WCHRFlights() {
         if (mounted) {
           setFlights(flightArr);
 
-          // ✅ si el vuelo seleccionado ya no existe, limpiar
           const exists = flightArr.some((x) => x.flight_key === selectedFlightKey);
           if (!exists) {
             setSelectedFlightKey("");
@@ -226,7 +340,6 @@ export default function WCHRFlights() {
     };
   }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ✅ Cargar reportes del vuelo seleccionado
   useEffect(() => {
     let mounted = true;
 
@@ -304,7 +417,6 @@ export default function WCHRFlights() {
         });
       }
 
-      // refrescar UI
       setFlights((prev) =>
         prev.map((f) =>
           f.flight_key === flight.flight_key
@@ -313,7 +425,6 @@ export default function WCHRFlights() {
         )
       );
 
-      // ✅ auto-export al cerrar (si hay reportes cargados)
       if (selectedFlightKey === flight.flight_key && reports?.length) {
         const filename = `WCHR_${flight.airline}${flight.flight_number}_${toYYYYMMDD(
           flight.flight_date || new Date()
@@ -327,139 +438,374 @@ export default function WCHRFlights() {
   };
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "1rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <h2 style={{ margin: 0 }}>WCHR Flights</h2>
-          <p style={{ marginTop: 6, opacity: 0.8 }}>
-            Select a flight to view the table and export. Closing a flight marks it as closed.
-          </p>
-        </div>
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        maxWidth: 1180,
+        margin: "0 auto",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
 
-        <div style={{ display: "flex", gap: 10 }}>
-          {/* Si no existe esta ruta, cámbiala o elimina el botón */}
-          <button onClick={() => navigate("/wchr/my-reports")} style={btnGhost}>
-            My Reports
-          </button>
-          <button onClick={() => navigate("/dashboard")} style={btnGhost}>
-            Back
-          </button>
-        </div>
-      </div>
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              TPA OPS · WCHR
+            </p>
 
-      {error && (
-        <div style={alertError}>
-          <div style={{ fontSize: 14 }}>{error}</div>
-        </div>
-      )}
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              WCHR Flights
+            </h1>
 
-      {/* Date selector */}
-      <div style={card}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ fontSize: 13, opacity: 0.9 }}>Date</label>
-          <input
-            type="date"
-            value={toYYYYMMDD(selectedDate)}
-            onChange={(e) => setSelectedDate(new Date(e.target.value + "T00:00:00"))}
-            style={dateInput}
-          />
-          <div style={{ fontSize: 12, opacity: 0.75 }}>
-            Showing flights with WCHR reports submitted on: <b>{toMMDDYYYY(selectedDate)}</b>
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              View flights by date, review WCHR reports, export CSV files and
+              close flights when needed.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <ActionButton
+              onClick={() => navigate("/wchr/my-reports")}
+              variant="secondary"
+            >
+              My Reports
+            </ActionButton>
+            <ActionButton
+              onClick={() => navigate("/dashboard")}
+              variant="secondary"
+            >
+              Back
+            </ActionButton>
           </div>
         </div>
       </div>
 
-      {/* Flights list */}
-      <div style={card}>
+      {error && (
+        <PageCard style={{ padding: 16 }}>
+          <div
+            style={{
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#9f1239",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        </PageCard>
+      )}
+
+      <PageCard style={{ padding: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 6,
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#475569",
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+              }}
+            >
+              Date
+            </label>
+            <input
+              type="date"
+              value={toYYYYMMDD(selectedDate)}
+              onChange={(e) =>
+                setSelectedDate(new Date(e.target.value + "T00:00:00"))
+              }
+              style={{
+                border: "1px solid #dbeafe",
+                background: "#ffffff",
+                borderRadius: 14,
+                padding: "12px 14px",
+                fontSize: 14,
+                color: "#0f172a",
+                outline: "none",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 14,
+              padding: "12px 14px",
+              fontSize: 13,
+              color: "#334155",
+            }}
+          >
+            Showing flights with WCHR reports submitted on:{" "}
+            <b>{toMMDDYYYY(selectedDate)}</b>
+          </div>
+        </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 20 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Flights List
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Select a flight to review the report table, export data or close the
+            flight.
+          </p>
+        </div>
+
         {loading ? (
-          <div style={{ opacity: 0.8 }}>Loading…</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Loading...
+          </div>
         ) : flights.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No flights found for this date.</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No flights found for this date.
+          </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <div
+            style={{
+              overflowX: "auto",
+              borderRadius: 18,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                minWidth: 980,
+                background: "#fff",
+              }}
+            >
               <thead>
-                <tr style={{ textAlign: "left", opacity: 0.8 }}>
-                  <th style={th}>Flight</th>
-                  <th style={th}>Date</th>
-                  <th style={th}>Route</th>
-                  <th style={th}>Reports</th>
-                  <th style={th}>Status</th>
-                  <th style={th}></th>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle({ textAlign: "left" })}>Flight</th>
+                  <th style={thStyle({ textAlign: "left" })}>Date</th>
+                  <th style={thStyle({ textAlign: "left" })}>Route</th>
+                  <th style={thStyle({ textAlign: "left" })}>Reports</th>
+                  <th style={thStyle({ textAlign: "left" })}>Status</th>
+                  <th style={thStyle({ textAlign: "center" })}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {flights.map((f) => (
+                {flights.map((f, index) => (
                   <tr
                     key={f.flight_key}
                     style={{
-                      borderTop: "1px solid rgba(255,255,255,0.08)",
                       background:
                         selectedFlightKey === f.flight_key
-                          ? "rgba(255,255,255,0.06)"
-                          : "transparent",
+                          ? "#edf7ff"
+                          : index % 2 === 0
+                          ? "#ffffff"
+                          : "#fbfdff",
                     }}
                   >
-                    <td style={td}>
+                    <td style={tdStyle}>
                       <button
                         onClick={() => setSelectedFlightKey(f.flight_key)}
                         style={{
-                          ...btnLink,
-                          fontWeight: selectedFlightKey === f.flight_key ? 800 : 600,
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          textAlign: "left",
+                          color: "#1769aa",
+                          cursor: "pointer",
+                          fontWeight:
+                            selectedFlightKey === f.flight_key ? 900 : 700,
+                          fontSize: 14,
                         }}
                       >
                         {f.airline} {f.flight_number}
                       </button>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "#64748b",
+                          marginTop: 4,
+                        }}
+                      >
                         flight_key: {f.flight_key}
                       </div>
                     </td>
 
-                    <td style={td}>{f.flight_date ? toMMDDYYYY(f.flight_date) : "—"}</td>
-                    <td style={td}>
+                    <td style={tdStyle}>
+                      {f.flight_date ? toMMDDYYYY(f.flight_date) : "—"}
+                    </td>
+
+                    <td style={tdStyle}>
                       {(f.origin || "—") + " → " + (f.destination || "—")}
                     </td>
 
-                    <td style={td}>
-                      <div>Total: {f.total_reports}</div>
-                      <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    <td style={tdStyle}>
+                      <div style={{ fontWeight: 700 }}>
+                        Total: {f.total_reports}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                          marginTop: 4,
+                        }}
+                      >
                         NEW: {f.new_reports} · LATE: {f.late_reports}
                       </div>
                     </td>
 
-                    <td style={td}>
+                    <td style={tdStyle}>
                       {f.closed ? (
-                        <span style={badge("CLOSED")}>CLOSED</span>
+                        <span style={statusBadge("CLOSED")}>CLOSED</span>
                       ) : (
-                        <span style={badge("OPEN")}>OPEN</span>
+                        <span style={statusBadge("OPEN")}>OPEN</span>
                       )}
                       {f.closed_at && (
-                        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                            marginTop: 6,
+                          }}
+                        >
                           Closed at: {toMMDDYYYY(f.closed_at)}
                         </div>
                       )}
                     </td>
 
-                    <td style={td}>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
+                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <ActionButton
                           onClick={() => setSelectedFlightKey(f.flight_key)}
-                          style={btnGhostSmall}
+                          variant="secondary"
+                          style={{ padding: "8px 12px", fontSize: 12 }}
                         >
                           View Table
-                        </button>
+                        </ActionButton>
 
-                        <button
+                        <ActionButton
                           onClick={() => handleCloseFlight(f)}
+                          variant="primary"
                           disabled={!canClose || f.closed}
-                          style={{
-                            ...btnPrimary,
-                            opacity: !canClose || f.closed ? 0.5 : 1,
-                            cursor: !canClose || f.closed ? "not-allowed" : "pointer",
-                          }}
+                          style={{ padding: "8px 12px", fontSize: 12 }}
                         >
                           Close Flight
-                        </button>
+                        </ActionButton>
                       </div>
                     </td>
                   </tr>
@@ -467,199 +813,231 @@ export default function WCHRFlights() {
               </tbody>
             </table>
 
-            <p style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+            <p
+              style={{
+                margin: "10px 12px 0",
+                fontSize: 12,
+                color: "#64748b",
+                lineHeight: 1.6,
+              }}
+            >
               Note: Reports submitted after closure will be marked as <b>LATE</b>.
             </p>
           </div>
         )}
-      </div>
+      </PageCard>
 
-      {/* Selected flight reports table */}
-      <div style={card}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <PageCard style={{ padding: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+            marginBottom: 14,
+          }}
+        >
           <div>
-            <h3 style={{ margin: 0 }}>Flight Report Table</h3>
-            <p style={{ marginTop: 6, opacity: 0.8, fontSize: 13 }}>
-              {selectedFlight
-                ? <>
-                    Showing reports for <b>{selectedFlight.airline} {selectedFlight.flight_number}</b>{" "}
-                    ({(selectedFlight.origin || "—")} → {(selectedFlight.destination || "—")}) ·{" "}
-                    <b>{selectedFlight.flight_date ? toMMDDYYYY(selectedFlight.flight_date) : "—"}</b>
-                  </>
-                : "Select a flight above to view the table."}
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Flight Report Table
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              {selectedFlight ? (
+                <>
+                  Showing reports for <b>{selectedFlight.airline} {selectedFlight.flight_number}</b>{" "}
+                  ({selectedFlight.origin || "—"} → {selectedFlight.destination || "—"}) ·{" "}
+                  <b>{selectedFlight.flight_date ? toMMDDYYYY(selectedFlight.flight_date) : "—"}</b>
+                </>
+              ) : (
+                "Select a flight above to view the table."
+              )}
             </p>
           </div>
 
           {selectedFlight && (
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <ActionButton
                 onClick={() => {
                   const filename = `WCHR_${selectedFlight.airline}${selectedFlight.flight_number}_${toYYYYMMDD(
                     selectedFlight.flight_date || new Date()
                   )}.csv`;
                   downloadCSV(filename, reports);
                 }}
+                variant="secondary"
                 disabled={!reports?.length}
-                style={{
-                  ...btnGhost,
-                  opacity: reports?.length ? 1 : 0.5,
-                  cursor: reports?.length ? "pointer" : "not-allowed",
-                }}
               >
                 Export CSV
-              </button>
+              </ActionButton>
 
-              <button
+              <ActionButton
                 onClick={() => handleCloseFlight(selectedFlight)}
+                variant="success"
                 disabled={!canClose || selectedFlight.closed}
-                style={{
-                  ...btnPrimary,
-                  opacity: !canClose || selectedFlight.closed ? 0.5 : 1,
-                  cursor: !canClose || selectedFlight.closed ? "not-allowed" : "pointer",
-                }}
               >
                 Close Flight (Export)
-              </button>
+              </ActionButton>
             </div>
           )}
         </div>
 
         {reportsLoading ? (
-          <div style={{ opacity: 0.8 }}>Loading reports…</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Loading reports...
+          </div>
         ) : !selectedFlight ? (
-          <div style={{ opacity: 0.8 }}>No flight selected.</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No flight selected.
+          </div>
         ) : reports.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No reports for this flight.</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No reports for this flight.
+          </div>
         ) : (
-          <div style={{ overflowX: "auto", marginTop: 10 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: "left", opacity: 0.85 }}>
-                  <th style={th}>Report ID</th>
-                  <th style={th}>Passenger</th>
-                  <th style={th}>Seat</th>
-                  <th style={th}>Gate</th>
-                  <th style={th}>PNR</th>
-                  <th style={th}>WCHR</th>
-                  <th style={th}>Wheelchair #</th>
-                  <th style={th}>Submitted By</th>
-                  <th style={th}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports.map((r) => (
-                  <tr key={r.id} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                    <td style={td}>{r.report_id || r.id}</td>
-                    <td style={td}>{r.passenger_name || "—"}</td>
-                    <td style={td}>{r.seat || "—"}</td>
-                    <td style={td}>{r.gate || "—"}</td>
-                    <td style={td}>{r.pnr || "—"}</td>
-                    <td style={td}>{r.wch_type || "—"}</td>
-                    <td style={td}>{r.wheelchair_number || "—"}</td>
-                    <td style={td}>{r.employee_name || "—"}</td>
-                    <td style={td}>
-                      {String(r.status || "").toUpperCase() === "LATE" ? (
-                        <span style={badge("LATE")}>LATE</span>
-                      ) : (
-                        <span style={badge("NEW")}>NEW</span>
-                      )}
-                    </td>
+          <>
+            <div
+              style={{
+                overflowX: "auto",
+                borderRadius: 18,
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "separate",
+                  borderSpacing: 0,
+                  minWidth: 980,
+                  background: "#fff",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f8fbff" }}>
+                    <th style={thStyle({ textAlign: "left" })}>Report ID</th>
+                    <th style={thStyle({ textAlign: "left" })}>Passenger</th>
+                    <th style={thStyle({ textAlign: "left" })}>Seat</th>
+                    <th style={thStyle({ textAlign: "left" })}>Gate</th>
+                    <th style={thStyle({ textAlign: "left" })}>PNR</th>
+                    <th style={thStyle({ textAlign: "left" })}>WCHR</th>
+                    <th style={thStyle({ textAlign: "left" })}>Wheelchair #</th>
+                    <th style={thStyle({ textAlign: "left" })}>Submitted By</th>
+                    <th style={thStyle({ textAlign: "center" })}>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {reports.map((r, index) => (
+                    <tr
+                      key={r.id}
+                      style={{
+                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                      }}
+                    >
+                      <td style={tdStyle}>{r.report_id || r.id}</td>
+                      <td style={tdStyle}>{r.passenger_name || "—"}</td>
+                      <td style={tdStyle}>{r.seat || "—"}</td>
+                      <td style={tdStyle}>{r.gate || "—"}</td>
+                      <td style={tdStyle}>{r.pnr || "—"}</td>
+                      <td style={tdStyle}>{r.wch_type || "—"}</td>
+                      <td style={tdStyle}>{r.wheelchair_number || "—"}</td>
+                      <td style={tdStyle}>{r.employee_name || "—"}</td>
+                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                        {String(r.status || "").toUpperCase() === "LATE" ? (
+                          <span style={statusBadge("LATE")}>LATE</span>
+                        ) : (
+                          <span style={statusBadge("NEW")}>NEW</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 12,
+                color: "#64748b",
+              }}
+            >
               Total reports: <b>{reports.length}</b>
             </div>
-          </div>
+          </>
         )}
-      </div>
+      </PageCard>
     </div>
   );
 }
 
-// --- styles ---
-const card = {
-  marginTop: 16,
-  padding: 14,
-  borderRadius: 12,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.04)",
-};
-
-const alertError = {
-  marginTop: 12,
-  padding: 12,
-  borderRadius: 10,
-  background: "rgba(255,0,0,0.12)",
-  border: "1px solid rgba(255,0,0,0.25)",
-};
-
-const btnPrimary = {
-  height: 36,
-  padding: "0 12px",
-  borderRadius: 8,
-  border: "1px solid rgba(255,255,255,0.16)",
-  background: "rgba(255,255,255,0.18)",
-  color: "inherit",
-  cursor: "pointer",
-};
-
-const btnGhost = {
-  height: 36,
-  padding: "0 12px",
-  borderRadius: 8,
-  border: "1px solid rgba(255,255,255,0.16)",
-  background: "transparent",
-  color: "inherit",
-  cursor: "pointer",
-};
-
-const btnGhostSmall = {
-  height: 32,
-  padding: "0 10px",
-  borderRadius: 8,
-  border: "1px solid rgba(255,255,255,0.16)",
-  background: "transparent",
-  color: "inherit",
-  cursor: "pointer",
-  fontSize: 12,
-};
-
-const btnLink = {
-  background: "transparent",
-  border: "none",
-  color: "inherit",
-  cursor: "pointer",
-  padding: 0,
-  textAlign: "left",
-};
-
-const dateInput = {
-  height: 36,
-  padding: "0 10px",
-  borderRadius: 10,
-  border: "1px solid rgba(255,255,255,0.16)",
-  background: "rgba(0,0,0,0.25)",
-  color: "inherit",
-};
-
-const th = { padding: "10px 8px" };
-const td = { padding: "10px 8px", verticalAlign: "top" };
-
-function badge(kind) {
-  const k = String(kind || "").toUpperCase();
-  const base = {
-    display: "inline-block",
-    padding: "3px 8px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.18)",
+function thStyle(extra = {}) {
+  return {
+    padding: "14px 14px",
     fontSize: 12,
+    fontWeight: 800,
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    whiteSpace: "nowrap",
+    borderBottom: "1px solid #e2e8f0",
+    ...extra,
   };
-  if (k === "CLOSED") return { ...base, background: "rgba(255,0,0,0.10)" };
-  if (k === "OPEN") return { ...base, background: "rgba(0,255,0,0.10)" };
-  if (k === "LATE") return { ...base, background: "rgba(255,165,0,0.12)" };
-  if (k === "NEW") return { ...base, background: "rgba(0,128,255,0.12)" };
-  return { ...base, background: "rgba(255,255,255,0.08)" };
 }
+
+const tdStyle = {
+  padding: "14px",
+  borderBottom: "1px solid #eef2f7",
+  verticalAlign: "top",
+  fontSize: 14,
+  color: "#0f172a",
+};
