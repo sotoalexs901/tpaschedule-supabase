@@ -18,7 +18,7 @@ export default function AppLayout() {
     General: true,
     Schedules: true,
     "Time Off": false,
-    WCHR: false,
+    WCHR: true,
     Admin: false,
   });
 
@@ -161,7 +161,9 @@ export default function AppLayout() {
           icon: "📍",
         }
       );
+    }
 
+    if (user) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
         { to: "/wchr/my-reports", label: "My Reports", icon: "📄" }
@@ -180,6 +182,7 @@ export default function AppLayout() {
     isAgentOrSupervisor,
     unreadMessages,
     pendingTimeOff,
+    user,
     user?.role,
   ]);
 
