@@ -18,10 +18,10 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
-    if (!username.trim() || !password.trim()) {
-      setError("Please enter your username and password.");
-      return;
-    }
+    if (userData.pin !== password) {
+  setError("Invalid username or PIN.");
+  return;
+}
 
     try {
       setLoading(true);
