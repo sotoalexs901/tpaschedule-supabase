@@ -13,7 +13,6 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { useUser } from "../UserContext.jsx";
 
-// Logos por aerolínea
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
   WestJet: "/logos/westjet.png",
@@ -32,7 +31,6 @@ const AIRLINE_LOGOS = {
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4b5f-b126-9c6a69f6dcc6",
 };
 
-// 🔵 Colores por aerolínea
 const AIRLINE_COLORS = {
   SY: "#F28C28",
   WestJet: "#22B8B0",
@@ -46,7 +44,17 @@ const AIRLINE_COLORS = {
   OTHER: "#555555",
 };
 
-// Helper para cargar imágenes de logo (para PDF)
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const DAY_LABELS = {
+  mon: "MON",
+  tue: "TUE",
+  wed: "WED",
+  thu: "THU",
+  fri: "FRI",
+  sat: "SAT",
+  sun: "SUN",
+};
+
 const loadImage = (src) =>
   new Promise((resolve, reject) => {
     const img = new Image();
@@ -56,7 +64,6 @@ const loadImage = (src) =>
     img.src = src;
   });
 
-// Helper: hex -> rgba con alpha
 function hexToRgba(hex, alpha) {
   let h = hex.replace("#", "");
   if (h.length === 3) {
@@ -71,7 +78,6 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Orden de días
 const normalizeAirlineName = (value) => {
   const airline = String(value || "").trim();
 
@@ -87,18 +93,6 @@ const normalizeAirlineName = (value) => {
   return airline;
 };
 
-const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-const DAY_LABELS = {
-  mon: "MON",
-  tue: "TUESD",
-  wed: "WED",
-  thu: "THURSD",
-  fri: "FRIDAY",
-  sat: "SATURD",
-  sun: "SUND",
-};
-
-// Convierte arreglo de shifts a texto
 function getShiftText(shifts, idx) {
   const s = (shifts && shifts[idx]) || null;
   if (!s || !s.start || s.start === "OFF") return "OFF";
@@ -106,46 +100,150 @@ function getShiftText(shifts, idx) {
   return `${s.start} - ${s.end}`;
 }
 
-// ============= TABLA ESTILO EXCEL =============
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "primary",
+  type = "button",
+  disabled = false,
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+    dark: {
+      background: "#0f172a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(15,23,42,0.16)",
+    },
+    danger: {
+      background: "#dc2626",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(220,38,38,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 12,
+        padding: "11px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap",
+        opacity: disabled ? 0.65 : 1,
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StatusBadge({ overBudget }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "7px 12px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 800,
+        background: overBudget ? "#fff1f2" : "#ecfdf5",
+        color: overBudget ? "#9f1239" : "#065f46",
+        border: `1px solid ${overBudget ? "#fecdd3" : "#a7f3d0"}`,
+      }}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 999,
+          background: overBudget ? "#e11d48" : "#10b981",
+        }}
+      />
+      {overBudget ? "Over budget" : "Within budget"}
+    </span>
+  );
+}
+
 function ExcelScheduleTable({ schedule, employees, compact = false }) {
   const { days, grid, airline, department } = schedule;
-  const displayAirline = normalizeAirlineName(schedule.airlineDisplayName || airline);
+  const displayAirline = normalizeAirlineName(
+    schedule.airlineDisplayName || airline
+  );
 
   const logo = AIRLINE_LOGOS[displayAirline] || AIRLINE_LOGOS[airline];
-  const headerColor = AIRLINE_COLORS[displayAirline] || AIRLINE_COLORS[airline] || "#0f172a";
+  const headerColor =
+    AIRLINE_COLORS[displayAirline] || AIRLINE_COLORS[airline] || "#0f172a";
 
-  // Mapa id => nombre
   const empMap = {};
   employees.forEach((e) => {
     empMap[e.id] = e.name;
   });
 
-  // Texto corto de días para el subtítulo
   const weekText = DAY_KEYS.map((key) => {
     const label = DAY_LABELS[key];
     const num = days?.[key] || "";
     return num ? `${label} ${num}` : label;
   }).join("  |  ");
 
-  // Colores para filas alternadas según aerolínea
-  const stripeBg = hexToRgba(headerColor, 0.35); // fila “oscura”
+  const stripeBg = hexToRgba(headerColor, 0.35);
   const plainBg = "#ffffff";
 
-  // Contenedor (incluye escala para full-screen "compact")
   const wrapperStyle = {
     background: "#ffffff",
-    borderRadius: "10px",
-    border: "1px solid #e5e7eb",
-    boxShadow: "0 8px 18px rgba(15,23,42,0.12)",
+    borderRadius: "16px",
+    border: "1px solid #dbeafe",
+    boxShadow: "0 12px 28px rgba(15,23,42,0.08)",
     padding: compact ? "10px" : "16px",
     transform: compact ? "scale(0.7)" : "none",
     transformOrigin: "top left",
   };
 
-  // 🔹 Columnas finas, filas algo altas, números más grandes
   const baseCellStyle = {
-    padding: compact ? "6px 1px" : "9px 1px", // casi sin padding horizontal
-    fontSize: compact ? "12px" : "15px",     // números/letras más grandes
+    padding: compact ? "6px 1px" : "9px 1px",
+    fontSize: compact ? "12px" : "15px",
     lineHeight: 1.25,
     whiteSpace: "nowrap",
     textAlign: "center",
@@ -155,35 +253,35 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
     ...baseCellStyle,
     fontWeight: 700,
     fontSize: compact ? "12px" : "14px",
-    width: "10%", // 👈 cada día ~10%
+    width: "10%",
   };
 
-  // 🔹 Columna EMPLOYEE más ancha
- const employeeHeaderCellStyle = {
-  ...headerCellStyle,
-  width: "12%",       // 🟦 más estrecho
-  minWidth: 120,      // 🟪 limite reducido
-  maxWidth: 150,      // 🟩 no crecerá mas de esto
-  textAlign: "left",
-  paddingLeft: "8px",
-  paddingRight: "4px",
-  whiteSpace: "normal",
-};
+  const employeeHeaderCellStyle = {
+    ...headerCellStyle,
+    width: "12%",
+    minWidth: 120,
+    maxWidth: 150,
+    textAlign: "left",
+    paddingLeft: "8px",
+    paddingRight: "4px",
+    whiteSpace: "normal",
+  };
 
   return (
     <div className="excel-schedule-wrapper" style={wrapperStyle}>
-      {/* HEADER */}
       <div
         className="excel-header"
         style={{
           backgroundColor: headerColor,
           color: "#ffffff",
-          padding: "12px 16px",
-          borderRadius: "8px 8px 0 0",
+          padding: "14px 16px",
+          borderRadius: "12px 12px 0 0",
           margin: "-16px -16px 12px -16px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
         }}
       >
         <div style={{ textAlign: "left" }}>
@@ -196,9 +294,9 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
               letterSpacing: "0.08em",
             }}
           >
-            {airline} — {department}
+            {displayAirline} — {department}
           </div>
-          <div style={{ fontSize: "11px", opacity: 0.85, marginTop: 4 }}>
+          <div style={{ fontSize: "11px", opacity: 0.9, marginTop: 4 }}>
             WEEKLY SCHEDULE &nbsp;•&nbsp; {weekText}
           </div>
         </div>
@@ -206,20 +304,19 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
         {logo && (
           <img
             src={logo}
-            alt={airline}
+            alt={displayAirline}
             className="excel-logo"
             style={{ height: 60, objectFit: "contain" }}
           />
         )}
       </div>
 
-      {/* TABLA PRINCIPAL */}
       <table
         className="excel-table"
         style={{
           borderCollapse: "collapse",
           width: "100%",
-          tableLayout: "fixed", // 👈 respeta los width%
+          tableLayout: "fixed",
         }}
       >
         <thead>
@@ -244,31 +341,26 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
         <tbody>
           {grid.map((row, idx) => {
             const name = empMap[row.employeeId] || "Unknown";
-
-            // Fila alternada por empleado
             const isStriped = idx % 2 === 0;
             const rowBg = isStriped ? stripeBg : plainBg;
 
-    const employeeCellStyle = {
-  ...baseCellStyle,
-  width: "12%",       // 🟦 igual que header  
-  minWidth: 120,
-  maxWidth: 150,
-  backgroundColor: rowBg,
-  fontWeight: 600,
-  textAlign: "left",
-  whiteSpace: "normal",
-  paddingLeft: "8px",
-  paddingRight: "4px",
-  borderTop: "2px solid #111",
-  borderBottom: "2px solid #111",
-};
-
-
+            const employeeCellStyle = {
+              ...baseCellStyle,
+              width: "12%",
+              minWidth: 120,
+              maxWidth: 150,
+              backgroundColor: rowBg,
+              fontWeight: 600,
+              textAlign: "left",
+              whiteSpace: "normal",
+              paddingLeft: "8px",
+              paddingRight: "4px",
+              borderTop: "2px solid #111",
+              borderBottom: "2px solid #111",
+            };
 
             return (
               <React.Fragment key={idx}>
-                {/* Fila 1: Primer turno */}
                 <tr>
                   <td
                     className="excel-employee-cell"
@@ -284,9 +376,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
                     const isTraining = !!shiftObj?.training;
 
                     const displayText =
-                      isTraining && !isOff
-                        ? `${baseText} (TRN)`
-                        : baseText;
+                      isTraining && !isOff ? `${baseText} (TRN)` : baseText;
 
                     const cellStyle = {
                       ...baseCellStyle,
@@ -311,7 +401,6 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
                   })}
                 </tr>
 
-                {/* Fila 2: Segundo turno */}
                 <tr>
                   {DAY_KEYS.map((dKey) => {
                     const shiftObj = (row[dKey] && row[dKey][1]) || null;
@@ -320,9 +409,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
                     const isTraining = !!shiftObj?.training;
 
                     const displayText =
-                      isTraining && !isOff
-                        ? `${baseText} (TRN)`
-                        : baseText;
+                      isTraining && !isOff ? `${baseText} (TRN)` : baseText;
 
                     const cellStyle = {
                       ...baseCellStyle,
@@ -355,7 +442,6 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
   );
 }
 
-// ============= PÁGINA PRINCIPAL =============
 export default function ApprovedScheduleView() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -365,6 +451,7 @@ export default function ApprovedScheduleView() {
   const [employees, setEmployees] = useState([]);
   const [deleting, setDeleting] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -377,18 +464,38 @@ export default function ApprovedScheduleView() {
       setEmployees(empSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     }
 
-    load().catch(console.error);
+    load().catch((err) => {
+      console.error(err);
+      setStatusMessage("Could not load approved schedule.");
+    });
   }, [id]);
 
   if (!schedule) {
-    return <p className="p-6">Loading approved schedule...</p>;
+    return (
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Loading approved schedule...
+        </p>
+      </PageCard>
+    );
   }
+
+  const displayAirline = normalizeAirlineName(
+    schedule.airlineDisplayName || schedule.airline
+  );
 
   const handleUseAsTemplate = () => {
     navigate("/schedule", {
       state: {
         template: {
-          airline: normalizeAirlineName(schedule.airlineDisplayName || schedule.airline),
+          airline: displayAirline,
           department: schedule.department,
           days: schedule.days,
           grid: schedule.grid,
@@ -401,18 +508,17 @@ export default function ApprovedScheduleView() {
     if (!user || user.role !== "station_manager") return;
 
     const confirmDelete = window.confirm(
-      "⚠️ Are you sure you want to permanently delete this approved schedule?"
+      "Are you sure you want to permanently delete this approved schedule?"
     );
     if (!confirmDelete) return;
 
     try {
       setDeleting(true);
       await deleteDoc(doc(db, "schedules", schedule.id));
-      alert("Schedule deleted successfully.");
       navigate("/approved");
     } catch (err) {
       console.error("Error deleting schedule:", err);
-      alert("Error deleting schedule. Check console for details.");
+      setStatusMessage("Error deleting schedule.");
     } finally {
       setDeleting(false);
     }
@@ -426,8 +532,9 @@ export default function ApprovedScheduleView() {
         return;
       }
 
-      const displayAirline = normalizeAirlineName(schedule.airlineDisplayName || schedule.airline);
-      const logoUrl = AIRLINE_LOGOS[displayAirline] || AIRLINE_LOGOS[schedule.airline];
+      const logoUrl =
+        AIRLINE_LOGOS[displayAirline] || AIRLINE_LOGOS[schedule.airline];
+
       let logoImg = null;
       if (logoUrl) {
         try {
@@ -437,7 +544,6 @@ export default function ApprovedScheduleView() {
         }
       }
 
-      // Evitar tainted canvas
       const imgs = Array.from(element.querySelectorAll("img"));
       const originalDisplay = imgs.map((img) => img.style.display);
       imgs.forEach((img) => (img.style.display = "none"));
@@ -476,7 +582,7 @@ export default function ApprovedScheduleView() {
       }
 
       pdf.addImage(imgData, "PNG", marginX, y, imgWidth, imgHeight);
-      const safeAirline = normalizeAirlineName(schedule.airlineDisplayName || schedule.airline).replace(/\s+/g, "_");
+      const safeAirline = displayAirline.replace(/\s+/g, "_");
       pdf.save(`Approved_${safeAirline}_${schedule.department}.pdf`);
     } catch (err) {
       console.error("Error exporting PDF:", err);
@@ -484,156 +590,309 @@ export default function ApprovedScheduleView() {
     }
   };
 
+  const overBudget =
+    schedule.budget && schedule.airlineWeeklyHours > schedule.budget;
+
   return (
     <>
-      {/* VISTA NORMAL */}
-      <div className="p-2 md:p-4 lg:p-6 space-y-4 approved-page">
-        <button
-          onClick={() => navigate("/approved")}
-          className="btn btn-soft"
-          style={{ marginBottom: "0.75rem" }}
-          type="button"
-        >
-          ← Back to Approved Schedules
-        </button>
-
-        {/* Área principal del horario, con scroll horizontal y ancho cómodo */}
+      <div
+        className="approved-page"
+        style={{
+          display: "grid",
+          gap: 18,
+          fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        }}
+      >
         <div
-          id="approved-print-area"
-          className="overflow-x-auto -mx-2 md:mx-0"
+          style={{
+            background:
+              "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+            borderRadius: 28,
+            padding: 24,
+            color: "#fff",
+            boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+            position: "relative",
+            overflow: "hidden",
+          }}
         >
-          <div className="inline-block min-w-[900px] md:min-w-[1100px] w-full">
+          <div
+            style={{
+              position: "absolute",
+              width: 220,
+              height: 220,
+              borderRadius: "999px",
+              background: "rgba(255,255,255,0.08)",
+              top: -80,
+              right: -40,
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 16,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.22em",
+                  color: "rgba(255,255,255,0.78)",
+                  fontWeight: 700,
+                }}
+              >
+                TPA OPS · Approved Schedule
+              </p>
+
+              <h1
+                style={{
+                  margin: "10px 0 6px",
+                  fontSize: 32,
+                  lineHeight: 1.05,
+                  fontWeight: 800,
+                  letterSpacing: "-0.04em",
+                }}
+              >
+                {displayAirline} — {schedule.department}
+              </h1>
+
+              <p
+                style={{
+                  margin: 0,
+                  maxWidth: 760,
+                  fontSize: 14,
+                  color: "rgba(255,255,255,0.88)",
+                }}
+              >
+                View the final approved schedule, export it to PDF, use it as a
+                template, or open a full-screen version.
+              </p>
+            </div>
+
+            <ActionButton
+              type="button"
+              variant="secondary"
+              onClick={() => navigate("/approved")}
+            >
+              ← Back to Approved Schedules
+            </ActionButton>
+          </div>
+        </div>
+
+        {statusMessage && (
+          <PageCard style={{ padding: 16 }}>
+            <div
+              style={{
+                background: "#edf7ff",
+                border: "1px solid #cfe7fb",
+                borderRadius: 16,
+                padding: "14px 16px",
+                color: "#1769aa",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              {statusMessage}
+            </div>
+          </PageCard>
+        )}
+
+        <div id="approved-print-area" style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 900 }}>
             <ExcelScheduleTable schedule={schedule} employees={employees} />
           </div>
         </div>
 
-        <div className="card text-sm mt-4 space-y-1">
-          <h2 className="font-semibold mb-2">Weekly Summary</h2>
-          <p>
-            <b>Total Hours:</b>{" "}
-            {schedule.airlineWeeklyHours?.toFixed(2) ?? "0.00"}
-          </p>
-          <p>
-            <b>Budget:</b> {schedule.budget}
-          </p>
-          <p
-            className={
-              schedule.airlineWeeklyHours > schedule.budget
-                ? "text-red-600 font-bold"
-                : "text-green-700 font-bold"
-            }
-          >
-            {schedule.airlineWeeklyHours > schedule.budget
-              ? "Over budget"
-              : "Within budget"}
-          </p>
-        </div>
-
-        {/* BOTONES DE ACCIÓN */}
-        <div className="grid md:grid-cols-4 gap-3 mt-2">
-          {/* Template */}
-          <button
-            type="button"
-            onClick={handleUseAsTemplate}
-            className="btn w-full text-sm"
+        <PageCard style={{ padding: 20 }}>
+          <div
             style={{
-              backgroundColor: "#2563eb",
-              color: "#ffffff",
-              fontWeight: 600,
-              opacity: 1,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
             }}
           >
-            Use this schedule as template for new week
-          </button>
-
-          {/* Export PDF */}
-          <button
-            type="button"
-            onClick={exportPDF}
-            className="btn w-full text-sm"
-            style={{
-              backgroundColor: "#16a34a",
-              color: "#ffffff",
-              fontWeight: 600,
-              opacity: 1,
-            }}
-          >
-            Export PDF
-          </button>
-
-          {/* FULL SCREEN VIEW */}
-          <button
-            type="button"
-            onClick={() => setFullscreen(true)}
-            className="btn w-full text-sm"
-            style={{
-              backgroundColor: "#0f172a",
-              color: "#ffffff",
-              fontWeight: 600,
-              opacity: 1,
-            }}
-          >
-            Open full-screen schedule view
-          </button>
-
-          {/* Delete */}
-          {user?.role === "station_manager" && (
-            <button
-              type="button"
-              onClick={handleDeleteSchedule}
-              disabled={deleting}
-              className="btn w-full text-sm"
+            <div
               style={{
-                backgroundColor: "#dc2626",
-                color: "#ffffff",
-                fontWeight: 600,
-                opacity: deleting ? 0.6 : 1,
-                cursor: deleting ? "not-allowed" : "pointer",
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: "16px 18px",
               }}
             >
-              {deleting ? "Deleting..." : "Delete this schedule"}
-            </button>
-          )}
-        </div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Total Hours
+              </p>
+              <p
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: 28,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                {schedule.airlineWeeklyHours?.toFixed(2) ?? "0.00"}
+              </p>
+            </div>
+
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: "16px 18px",
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Budget
+              </p>
+              <p
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: 28,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                {schedule.budget ?? 0}
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                padding: "16px 18px",
+              }}
+            >
+              <StatusBadge overBudget={overBudget} />
+            </div>
+          </div>
+        </PageCard>
+
+        <PageCard style={{ padding: 20 }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <ActionButton
+              type="button"
+              variant="primary"
+              onClick={handleUseAsTemplate}
+            >
+              Use this schedule as template
+            </ActionButton>
+
+            <ActionButton
+              type="button"
+              variant="success"
+              onClick={exportPDF}
+            >
+              Export PDF
+            </ActionButton>
+
+            <ActionButton
+              type="button"
+              variant="dark"
+              onClick={() => setFullscreen(true)}
+            >
+              Open full-screen schedule view
+            </ActionButton>
+
+            {user?.role === "station_manager" && (
+              <ActionButton
+                type="button"
+                variant="danger"
+                disabled={deleting}
+                onClick={handleDeleteSchedule}
+              >
+                {deleting ? "Deleting..." : "Delete this schedule"}
+              </ActionButton>
+            )}
+          </div>
+        </PageCard>
       </div>
 
-      {/* OVERLAY FULL-SCREEN PARA SCREENSHOT LIMPIO */}
       {fullscreen && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            backgroundColor: "#000",
+            backgroundColor: "#020617",
             zIndex: 9999,
             display: "flex",
             flexDirection: "column",
           }}
         >
-          {/* Botón cerrar, arriba a la derecha */}
           <div
             style={{
               display: "flex",
-              justifyContent: "flex-end",
-              padding: "8px",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "10px 14px",
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
             }}
           >
+            <p
+              style={{
+                margin: 0,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              Full-screen schedule preview
+            </p>
+
             <button
               type="button"
               onClick={() => setFullscreen(false)}
               style={{
-                padding: "4px 10px",
-                borderRadius: 6,
-                border: "1px solid rgba(255,255,255,0.5)",
-                backgroundColor: "rgba(255,255,255,0.1)",
+                padding: "7px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.28)",
+                backgroundColor: "rgba(255,255,255,0.08)",
                 color: "#fff",
                 fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
               }}
             >
               Close
             </button>
           </div>
 
-          {/* Horario ocupando casi toda la pantalla */}
           <div
             style={{
               flex: 1,
@@ -641,7 +900,7 @@ export default function ApprovedScheduleView() {
               justifyContent: "center",
               alignItems: "center",
               overflow: "auto",
-              padding: 0,
+              padding: 10,
             }}
           >
             <div
@@ -650,6 +909,7 @@ export default function ApprovedScheduleView() {
                 maxWidth: "100%",
                 maxHeight: "100%",
                 overflow: "auto",
+                borderRadius: 14,
               }}
             >
               <div
@@ -661,7 +921,7 @@ export default function ApprovedScheduleView() {
                 <ExcelScheduleTable
                   schedule={schedule}
                   employees={employees}
-                  compact={true} // 👈 versión reducida para screenshot
+                  compact={true}
                 />
               </div>
             </div>
