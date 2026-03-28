@@ -12,20 +12,18 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
-  tue: "TUESD",
+  tue: "TUE",
   wed: "WED",
-  thu: "THURSD",
-  fri: "FRIDAY",
-  sat: "SATURD",
-  sun: "SUND",
+  thu: "THU",
+  fri: "FRI",
+  sat: "SAT",
+  sun: "SUN",
 };
 
-// Logos por aerolínea
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
   WestJet: "/logos/westjet.png",
@@ -59,7 +57,6 @@ const normalizeAirlineName = (value) => {
   return airline;
 };
 
-// Helper: convierte los shifts de un día a texto
 function dayShiftsToText(shifts) {
   if (!Array.isArray(shifts) || shifts.length === 0) return "OFF";
 
@@ -73,7 +70,6 @@ function dayShiftsToText(shifts) {
   return parts.length ? parts.join(", ") : "OFF";
 }
 
-// Helper: etiqueta bonita de semana tipo "MON 03 | TUESD 04 ..."
 function formatWeekLabelFromSchedule(schedule) {
   if (!schedule?.days) return "Week not defined";
 
@@ -84,6 +80,75 @@ function formatWeekLabelFromSchedule(schedule) {
   }).join("  |  ");
 }
 
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "secondary",
+  type = "button",
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+    danger: {
+      background: "#dc2626",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(220,38,38,0.18)",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function DraftSchedulesPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -91,23 +156,24 @@ export default function DraftSchedulesPage() {
   const [drafts, setDrafts] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [statusMessage, setStatusMessage] = useState("");
 
-  // Cargar drafts + empleados
   useEffect(() => {
     async function load() {
       setLoading(true);
+      setStatusMessage("");
+
       try {
-        // Empleados (para poder mostrar nombre)
         const empSnap = await getDocs(collection(db, "employees"));
         const empList = empSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setEmployees(empList);
 
-        // Schedules en estado DRAFT creados por este usuario
         const qDrafts = query(
           collection(db, "schedules"),
           where("status", "==", "draft"),
           where("createdBy", "==", user?.username || "")
         );
+
         const schSnap = await getDocs(qDrafts);
 
         const draftList = schSnap.docs
@@ -121,6 +187,7 @@ export default function DraftSchedulesPage() {
         setDrafts(draftList);
       } catch (err) {
         console.error("Error loading draft schedules:", err);
+        setStatusMessage("Could not load draft schedules.");
       } finally {
         setLoading(false);
       }
@@ -129,13 +196,11 @@ export default function DraftSchedulesPage() {
     load().catch(console.error);
   }, [user?.username]);
 
-  // Mapa rápido id -> nombre
   const employeeNameMap = {};
   employees.forEach((e) => {
     employeeNameMap[e.id] = e.name;
   });
 
-  // Abrir draft en /schedule
   const handleOpenDraft = (draft) => {
     navigate("/schedule", {
       state: {
@@ -149,133 +214,119 @@ export default function DraftSchedulesPage() {
     });
   };
 
-// Exportar un draft a PDF como tabla legible (similar a Approved)
-const handleExportDraft = (draft) => {
-  try {
-    const pdf = new jsPDF("landscape", "pt", "letter");
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
+  const handleExportDraft = (draft) => {
+    try {
+      const pdf = new jsPDF("landscape", "pt", "letter");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-    const margin = 40;
-    let y = margin;
-
-    // ====== HEADER ======
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(14);
-    pdf.text(
-      `Draft Schedule: ${draft.airline || "AIRLINE"} — ${
-        draft.department || "Department"
-      }`,
-      margin,
-      y
-    );
-    y += 18;
-
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10);
-    const weekLabel = formatWeekLabelFromSchedule(draft);
-    pdf.text(`Week of: ${weekLabel}`, margin, y);
-    y += 24;
-
-    // ====== CONFIG TABLA ======
-    const empColWidth = 130; // ancho columna empleado
-    const availableWidth = pageWidth - margin * 2 - empColWidth;
-    const dayColWidth = availableWidth / DAY_KEYS.length;
-    const headerRowHeight = 20;
-    const rowHeight = 18;
-
-    // Función para dibujar header de la tabla (por página)
-    const drawTableHeader = () => {
-      let x = margin;
+      const margin = 40;
+      let y = margin;
 
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(9);
+      pdf.setFontSize(14);
+      pdf.text(
+        `Draft Schedule: ${draft.airline || "AIRLINE"} — ${
+          draft.department || "Department"
+        }`,
+        margin,
+        y
+      );
+      y += 18;
 
-      // celda EMPLOYEE
-      pdf.rect(x, y, empColWidth, headerRowHeight);
-      pdf.text("EMPLOYEE", x + 4, y + 13);
-      x += empColWidth;
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      const weekLabel = formatWeekLabelFromSchedule(draft);
+      pdf.text(`Week of: ${weekLabel}`, margin, y);
+      y += 24;
 
-      // celdas días
-      DAY_KEYS.forEach((dKey) => {
-        const label = DAY_LABELS[dKey];
-        pdf.rect(x, y, dayColWidth, headerRowHeight);
-        pdf.text(label, x + 4, y + 13);
-        x += dayColWidth;
-      });
+      const empColWidth = 130;
+      const availableWidth = pageWidth - margin * 2 - empColWidth;
+      const dayColWidth = availableWidth / DAY_KEYS.length;
+      const headerRowHeight = 20;
+      const rowHeight = 18;
 
-      y += headerRowHeight;
-    };
+      const drawTableHeader = () => {
+        let x = margin;
 
-    // Dibujar header inicial
-    drawTableHeader();
-
-    // ====== FILAS DE EMPLEADOS ======
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(8);
-
-    const rows = draft.grid || [];
-
-    rows.forEach((row, index) => {
-      // salto de página si no cabe la siguiente fila
-      if (y + rowHeight > pageHeight - margin) {
-        pdf.addPage("letter", "landscape");
-        y = margin;
-
-        // volvemos a dibujar título pequeño arriba
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(11);
-        pdf.text(
-          `${draft.airline || "AIRLINE"} — ${
-            draft.department || "Department"
-          } (cont.)`,
-          margin,
-          y
-        );
-        y += 20;
+        pdf.setFontSize(9);
 
-        drawTableHeader();
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(8);
-      }
+        pdf.rect(x, y, empColWidth, headerRowHeight);
+        pdf.text("EMPLOYEE", x + 4, y + 13);
+        x += empColWidth;
 
-      let x = margin;
+        DAY_KEYS.forEach((dKey) => {
+          const label = DAY_LABELS[dKey];
+          pdf.rect(x, y, dayColWidth, headerRowHeight);
+          pdf.text(label, x + 4, y + 13);
+          x += dayColWidth;
+        });
 
-      // celda empleado
-      const empName =
-        employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
-      pdf.rect(x, y, empColWidth, rowHeight);
-      pdf.text(empName, x + 4, y + 12);
-      x += empColWidth;
+        y += headerRowHeight;
+      };
 
-      // celdas días
-      DAY_KEYS.forEach((dKey) => {
-        const txt = dayShiftsToText(row[dKey]); // "08:00-16:00, 17:00-19:00" o "OFF"
-        pdf.rect(x, y, dayColWidth, rowHeight);
+      drawTableHeader();
 
-        // si el texto es muy largo, lo cortamos un poco para que quepa
-        let display = txt;
-        if (display.length > 14) {
-          display = display.slice(0, 13) + "…";
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8);
+
+      const rows = draft.grid || [];
+
+      rows.forEach((row) => {
+        if (y + rowHeight > pageHeight - margin) {
+          pdf.addPage("letter", "landscape");
+          y = margin;
+
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(11);
+          pdf.text(
+            `${draft.airline || "AIRLINE"} — ${
+              draft.department || "Department"
+            } (cont.)`,
+            margin,
+            y
+          );
+          y += 20;
+
+          drawTableHeader();
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(8);
         }
 
-        pdf.text(display, x + 3, y + 12);
-        x += dayColWidth;
+        let x = margin;
+
+        const empName =
+          employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
+        pdf.rect(x, y, empColWidth, rowHeight);
+        pdf.text(empName, x + 4, y + 12);
+        x += empColWidth;
+
+        DAY_KEYS.forEach((dKey) => {
+          const txt = dayShiftsToText(row[dKey]);
+          pdf.rect(x, y, dayColWidth, rowHeight);
+
+          let display = txt;
+          if (display.length > 14) {
+            display = display.slice(0, 13) + "…";
+          }
+
+          pdf.text(display, x + 3, y + 12);
+          x += dayColWidth;
+        });
+
+        y += rowHeight;
       });
 
-      y += rowHeight;
-    });
+      pdf.save(
+        `Draft_${draft.airline || "AIRLINE"}_${draft.department || "DEPT"}.pdf`
+      );
+    } catch (err) {
+      console.error("Error exporting draft PDF:", err);
+      alert("Error exporting draft PDF. Check console for details.");
+    }
+  };
 
-    pdf.save(
-      `Draft_${draft.airline || "AIRLINE"}_${draft.department || "DEPT"}.pdf`
-    );
-  } catch (err) {
-    console.error("Error exporting draft PDF:", err);
-    alert("Error exporting draft PDF. Check console for details.");
-  }
-};
-
-  // ❌ Borrar draft
   const handleDeleteDraft = async (draftId) => {
     const ok = window.confirm(
       "Are you sure you want to delete this draft? This cannot be undone."
@@ -285,90 +336,352 @@ const handleExportDraft = (draft) => {
     try {
       await deleteDoc(doc(collection(db, "schedules"), draftId));
       setDrafts((prev) => prev.filter((d) => d.id !== draftId));
+      setStatusMessage("Draft deleted successfully.");
     } catch (err) {
       console.error("Error deleting draft:", err);
-      alert("Error deleting draft. Check console for details.");
+      setStatusMessage("Error deleting draft.");
     }
   };
 
-  return (
-    <div className="p-4 space-y-4">
-      {/* Back */}
-      <button
-        type="button"
-        className="btn btn-soft mb-2"
-        onClick={() => navigate("/dashboard")}
-      >
-        ← Back to Dashboard
-      </button>
-
-      <h1 className="text-lg font-semibold mb-1">Draft Schedules</h1>
-      <p className="text-xs text-slate-500 mb-3">
-        Here you can see your saved drafts, reopen them to continue editing,
-        export them to PDF, or delete drafts you no longer need.
-      </p>
-
-      {loading ? (
-        <p className="text-sm text-slate-400">Loading draft schedules...</p>
-      ) : drafts.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          You don&apos;t have any draft schedules yet.
+  if (loading) {
+    return (
+      <PageCard style={{ padding: 22 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Loading draft schedules...
         </p>
-      ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {drafts.map((draft) => (
-            <div
-              key={draft.id}
-              className="card border border-slate-200 bg-white shadow-sm text-sm flex flex-col justify-between"
-            >
-              <div>
-                <p className="font-semibold text-slate-800">
-                  {draft.airline} — {draft.department}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Week: {formatWeekLabelFromSchedule(draft)}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Total hours (stored):{" "}
-                  {typeof draft.airlineWeeklyHours === "number"
-                    ? draft.airlineWeeklyHours.toFixed(2)
-                    : "N/A"}
-                </p>
-                {draft.createdAt?.seconds && (
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Saved on:{" "}
-                    {new Date(
-                      draft.createdAt.seconds * 1000
-                    ).toLocaleString()}
-                  </p>
-                )}
-              </div>
+      </PageCard>
+    );
+  }
 
-              <div className="flex gap-2 mt-3">
-                <button
-                  type="button"
-                  className="flex-1 btn btn-soft text-xs"
-                  onClick={() => handleOpenDraft(draft)}
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              TPA OPS · Scheduling
+            </p>
+
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              Draft Schedules
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Reopen saved drafts, export them to PDF or remove schedules you
+              no longer need.
+            </p>
+          </div>
+
+          <ActionButton
+            type="button"
+            variant="secondary"
+            onClick={() => navigate("/dashboard")}
+          >
+            ← Back to Dashboard
+          </ActionButton>
+        </div>
+      </div>
+
+      {statusMessage && (
+        <PageCard style={{ padding: 16 }}>
+          <div
+            style={{
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#1769aa",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {statusMessage}
+          </div>
+        </PageCard>
+      )}
+
+      {drafts.length === 0 ? (
+        <PageCard style={{ padding: 22 }}>
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            You don&apos;t have any draft schedules yet.
+          </p>
+        </PageCard>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: 16,
+          }}
+        >
+          {drafts.map((draft) => {
+            const displayAirline = normalizeAirlineName(
+              draft.airlineDisplayName || draft.airline
+            );
+            const logo =
+              AIRLINE_LOGOS[displayAirline] || AIRLINE_LOGOS[draft.airline];
+
+            return (
+              <PageCard key={draft.id} style={{ padding: 20 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 14,
+                  }}
                 >
-                  Open Draft
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded px-2 py-1"
-                  onClick={() => handleExportDraft(draft)}
-                >
-                  Export PDF
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded px-2 py-1"
-                  onClick={() => handleDeleteDraft(draft.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 18,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          letterSpacing: "-0.02em",
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {displayAirline} — {draft.department}
+                      </p>
+
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 12,
+                          color: "#64748b",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Week: {formatWeekLabelFromSchedule(draft)}
+                      </p>
+                    </div>
+
+                    {logo && (
+                      <img
+                        src={logo}
+                        alt={displayAirline}
+                        style={{
+                          width: 46,
+                          height: 46,
+                          objectFit: "contain",
+                          borderRadius: 10,
+                          background: "#fff",
+                          padding: 4,
+                          border: "1px solid #e2e8f0",
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        Total Hours
+                      </p>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 22,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          letterSpacing: "-0.03em",
+                        }}
+                      >
+                        {typeof draft.airlineWeeklyHours === "number"
+                          ? draft.airlineWeeklyHours.toFixed(2)
+                          : "N/A"}
+                      </p>
+                    </div>
+
+                    <div
+                      style={{
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        Status
+                      </p>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 18,
+                          fontWeight: 800,
+                          color: "#1769aa",
+                          letterSpacing: "-0.02em",
+                        }}
+                      >
+                        Draft
+                      </p>
+                    </div>
+                  </div>
+
+                  {draft.createdAt?.seconds && (
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 12,
+                        color: "#64748b",
+                      }}
+                    >
+                      Saved on:{" "}
+                      {new Date(
+                        draft.createdAt.seconds * 1000
+                      ).toLocaleString()}
+                    </p>
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <ActionButton
+                      type="button"
+                      variant="secondary"
+                      onClick={() => handleOpenDraft(draft)}
+                    >
+                      Open Draft
+                    </ActionButton>
+
+                    <ActionButton
+                      type="button"
+                      variant="success"
+                      onClick={() => handleExportDraft(draft)}
+                    >
+                      Export PDF
+                    </ActionButton>
+
+                    <ActionButton
+                      type="button"
+                      variant="danger"
+                      onClick={() => handleDeleteDraft(draft.id)}
+                    >
+                      Delete
+                    </ActionButton>
+                  </div>
+                </div>
+              </PageCard>
+            );
+          })}
         </div>
       )}
     </div>
