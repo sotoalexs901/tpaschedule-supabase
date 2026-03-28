@@ -388,19 +388,17 @@ export default function CabinSavedSchedulesPage() {
   );
 }
 
-function thStyle() {
-  return {
-    padding: "14px 14px",
-    fontSize: 12,
-    fontWeight: 800,
-    color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    whiteSpace: "nowrap",
-    textAlign: "left",
-    borderBottom: "1px solid #e2e8f0",
-  };
-}
+const thStyle = {
+  padding: "14px 14px",
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#475569",
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  whiteSpace: "nowrap",
+  textAlign: "left",
+  borderBottom: "1px solid #e2e8f0",
+};
 
 const tdStyle = {
   padding: "14px",
