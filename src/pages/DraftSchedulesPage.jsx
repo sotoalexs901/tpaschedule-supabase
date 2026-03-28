@@ -25,11 +25,11 @@ const DAY_LABELS = {
   sun: "SUND",
 };
 
-// 🔵 Logos oficiales (mismo mapping que usas en Schedule/Approved)
+// Logos por aerolínea
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
-  "WL Havana Air":
-    "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2006_28_07%20p.m..png?alt=media&token=7bcf90fd-c854-400e-a28a-f838adca89f4",
+  WestJet: "/logos/westjet.png",
+  "WL Havana Air": "/logos/westjet.png",
   "WL Invicta":
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_49%20p.m..png?alt=media&token=092a1deb-3285-41e1-ab0c-2e48a8faab92",
   AV: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_37%20p.m..png?alt=media&token=f133d1c8-51f9-4513-96df-8a75c6457b5b",
@@ -42,6 +42,21 @@ const AIRLINE_LOGOS = {
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_25%20p.m..png?alt=media&token=09862a10-d237-43e9-a373-8bd07c30ce62",
   OTHER:
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4d5f-b126-9c6a69f6dcc6",
+};
+
+const normalizeAirlineName = (value) => {
+  const airline = String(value || "").trim();
+
+  if (
+    airline.toUpperCase() === "WL HAVANA AIR" ||
+    airline.toUpperCase() === "WAL HAVANA AIR" ||
+    airline.toUpperCase() === "WAL HAVANA" ||
+    airline.toUpperCase() === "WESTJET"
+  ) {
+    return "WestJet";
+  }
+
+  return airline;
 };
 
 // Helper: convierte los shifts de un día a texto
