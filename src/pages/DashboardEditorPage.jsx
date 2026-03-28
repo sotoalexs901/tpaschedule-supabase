@@ -1,4 +1,3 @@
-// src/pages/DashboardEditorPage.jsx
 import React, { useEffect, useState } from "react";
 import { db, storage } from "../firebase";
 import {
@@ -11,6 +10,171 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useUser } from "../UserContext.jsx";
+
+function SectionCard({ title, subtitle, icon, children, accent = "#1769aa" }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: 24,
+        padding: 20,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            background: `${accent}16`,
+            color: accent,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 18,
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {title}
+          </h2>
+          {subtitle && (
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              {subtitle}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#475569",
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+function TextInput(props) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 16,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        resize: "vertical",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function PrimaryButton({ children, onClick, disabled = false, type = "button" }) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        border: "none",
+        background: disabled
+          ? "#94a3b8"
+          : "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+        color: "#fff",
+        borderRadius: 14,
+        padding: "12px 16px",
+        fontWeight: 800,
+        fontSize: 14,
+        cursor: disabled ? "not-allowed" : "pointer",
+        boxShadow: disabled ? "none" : "0 12px 24px rgba(23,105,170,0.18)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryNote({ children }) {
+  return (
+    <p
+      style={{
+        margin: 0,
+        fontSize: 12,
+        lineHeight: 1.5,
+        color: "#64748b",
+      }}
+    >
+      {children}
+    </p>
+  );
+}
 
 export default function DashboardEditorPage() {
   const { user } = useUser();
@@ -32,76 +196,118 @@ export default function DashboardEditorPage() {
   const [noticeLink, setNoticeLink] = useState("");
 
   const [status, setStatus] = useState("");
+  const [statusType, setStatusType] = useState("info");
 
-  // Cargar mensaje principal
+  const [savingMessage, setSavingMessage] = useState(false);
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [savingNotice, setSavingNotice] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+
   useEffect(() => {
     async function load() {
       const refDoc = doc(db, "dashboard", "main");
       const snap = await getDoc(refDoc);
       if (snap.exists()) setMessage(snap.data().message || "");
     }
-    load().catch(console.error);
+    load().catch((err) => {
+      console.error(err);
+      setStatusType("error");
+      setStatus("Could not load dashboard message.");
+    });
   }, []);
 
-  const saveMessage = async () => {
-    const refDoc = doc(db, "dashboard", "main");
-    await setDoc(refDoc, {
-      message,
-      updatedAt: new Date().toISOString(),
-      updatedBy: user?.username || "station_manager",
-    });
-    setStatus("Dashboard message saved.");
+  const showStatus = (text, type = "info") => {
+    setStatus(text);
+    setStatusType(type);
   };
 
-  // EVENTOS
+  const saveMessage = async () => {
+    try {
+      setSavingMessage(true);
+      const refDoc = doc(db, "dashboard", "main");
+      await setDoc(refDoc, {
+        message,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user?.username || "station_manager",
+      });
+      showStatus("Dashboard message saved.", "success");
+    } catch (err) {
+      console.error("Save message error:", err);
+      showStatus(err?.message || "Could not save dashboard message.", "error");
+    } finally {
+      setSavingMessage(false);
+    }
+  };
+
   const addEvent = async () => {
     if (!eventTitle || !eventDate) {
-      setStatus("Event needs title and date.");
-      return;
-    }
-    await addDoc(collection(db, "dashboard_events"), {
-      title: eventTitle,
-      date: eventDate,
-      time: eventTime || null,
-      details: eventDetails || null,
-      createdAt: serverTimestamp(),
-      createdBy: user?.username || "station_manager",
-    });
-    setEventTitle("");
-    setEventDate("");
-    setEventTime("");
-    setEventDetails("");
-    setStatus("Event added.");
-  };
-
-  // NOTICES
-  const addNotice = async () => {
-    if (!noticeTitle) {
-      setStatus("Notice needs a title.");
-      return;
-    }
-    await addDoc(collection(db, "dashboard_notices"), {
-      title: noticeTitle,
-      body: noticeBody || null,
-      link: noticeLink || null,
-      createdAt: serverTimestamp(),
-      createdBy: user?.username || "station_manager",
-    });
-    setNoticeTitle("");
-    setNoticeBody("");
-    setNoticeLink("");
-    setStatus("Notice added.");
-  };
-
-  // 📷 SUBIR FOTO REAL A FIREBASE STORAGE
-  const uploadPhoto = async () => {
-    if (!photoFile) {
-      setStatus("Select a photo first.");
+      showStatus("Event needs title and date.", "error");
       return;
     }
 
     try {
-      setStatus("Uploading photo...");
+      setSavingEvent(true);
+      await addDoc(collection(db, "dashboard_events"), {
+        title: eventTitle,
+        date: eventDate,
+        time: eventTime || null,
+        details: eventDetails || null,
+        createdAt: serverTimestamp(),
+        createdBy: user?.username || "station_manager",
+      });
+
+      setEventTitle("");
+      setEventDate("");
+      setEventTime("");
+      setEventDetails("");
+      showStatus("Event added.", "success");
+    } catch (err) {
+      console.error("Add event error:", err);
+      showStatus(err?.message || "Could not add event.", "error");
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+
+  const addNotice = async () => {
+    if (!noticeTitle) {
+      showStatus("Notice needs a title.", "error");
+      return;
+    }
+
+    try {
+      setSavingNotice(true);
+      await addDoc(collection(db, "dashboard_notices"), {
+        title: noticeTitle,
+        body: noticeBody || null,
+        link: noticeLink || null,
+        createdAt: serverTimestamp(),
+        createdBy: user?.username || "station_manager",
+      });
+
+      setNoticeTitle("");
+      setNoticeBody("");
+      setNoticeLink("");
+      showStatus("Notice added.", "success");
+    } catch (err) {
+      console.error("Add notice error:", err);
+      showStatus(err?.message || "Could not add notice.", "error");
+    } finally {
+      setSavingNotice(false);
+    }
+  };
+
+  const uploadPhoto = async () => {
+    if (!photoFile) {
+      showStatus("Select a photo first.", "error");
+      return;
+    }
+
+    try {
+      setUploadingPhoto(true);
+      showStatus("Uploading photo...", "info");
+
       const path = `dashboard_photos/${Date.now()}_${photoFile.name}`;
       const storageRef = ref(storage, path);
 
@@ -116,22 +322,31 @@ export default function DashboardEditorPage() {
       });
 
       setPhotoFile(null);
-      setStatus("Photo uploaded successfully.");
+      const photoInput = document.getElementById("dashboard-photo-input");
+      if (photoInput) photoInput.value = "";
+
+      showStatus("Photo uploaded successfully.", "success");
     } catch (err) {
       console.error("Photo upload error:", err);
-      setStatus("Error uploading photo.");
+      showStatus(
+        err?.message || "Error uploading photo. Check Firebase Storage rules.",
+        "error"
+      );
+    } finally {
+      setUploadingPhoto(false);
     }
   };
 
-  // 📄 SUBIR DOCUMENTO REAL A STORAGE
   const uploadDoc = async () => {
     if (!docFile || !docTitle) {
-      setStatus("Select a document and enter a title.");
+      showStatus("Select a document and enter a title.", "error");
       return;
     }
 
     try {
-      setStatus("Uploading document...");
+      setUploadingDoc(true);
+      showStatus("Uploading document...", "info");
+
       const path = `dashboard_docs/${Date.now()}_${docFile.name}`;
       const storageRef = ref(storage, path);
 
@@ -148,148 +363,373 @@ export default function DashboardEditorPage() {
 
       setDocFile(null);
       setDocTitle("");
-      setStatus("Document uploaded successfully.");
+      const docInput = document.getElementById("dashboard-doc-input");
+      if (docInput) docInput.value = "";
+
+      showStatus("Document uploaded successfully.", "success");
     } catch (err) {
       console.error("Document upload error:", err);
-      setStatus("Error uploading document.");
+      showStatus(
+        err?.message || "Error uploading document. Check Firebase Storage rules.",
+        "error"
+      );
+    } finally {
+      setUploadingDoc(false);
     }
   };
 
+  const statusBg =
+    statusType === "success"
+      ? "#ecfdf5"
+      : statusType === "error"
+      ? "#fff1f2"
+      : "#eff6ff";
+
+  const statusBorder =
+    statusType === "success"
+      ? "#a7f3d0"
+      : statusType === "error"
+      ? "#fecdd3"
+      : "#bfdbfe";
+
+  const statusColor =
+    statusType === "success"
+      ? "#065f46"
+      : statusType === "error"
+      ? "#9f1239"
+      : "#1d4ed8";
+
   return (
-    <div className="space-y-4">
-      {/* MENSAJE PRINCIPAL */}
-      <div className="card space-y-2">
-        <h2 className="text-sm font-semibold">Dashboard Message</h2>
-        <textarea
-          className="border rounded w-full text-sm p-2"
-          rows={4}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: 28,
+          padding: 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
+          }}
         />
-        <button className="btn btn-primary text-xs" onClick={saveMessage}>
-          Save Message
-        </button>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        {/* EVENTOS */}
-        <div className="card space-y-2">
-          <h3 className="text-xs font-semibold text-gray-600">Add Event</h3>
-          <input
-            className="border rounded w-full text-xs px-2 py-1"
-            placeholder="Title"
-            value={eventTitle}
-            onChange={(e) => setEventTitle(e.target.value)}
-          />
-          <input
-            className="border rounded w-full text-xs px-2 py-1"
-            type="date"
-            value={eventDate}
-            onChange={(e) => setEventDate(e.target.value)}
-          />
-          <input
-            className="border rounded w-full text-xs px-2 py-1"
-            type="time"
-            value={eventTime}
-            onChange={(e) => setEventTime(e.target.value)}
-          />
-          <textarea
-            className="border rounded w-full text-xs px-2 py-1"
-            rows={2}
-            placeholder="Details"
-            value={eventDetails}
-            onChange={(e) => setEventDetails(e.target.value)}
-          />
-          <button className="btn btn-primary text-xs" onClick={addEvent}>
-            Add Event
-          </button>
-        </div>
-
-        {/* NOTICES */}
-        <div className="card space-y-2">
-          <h3 className="text-xs font-semibold text-gray-600">
-            Add Notice / Invitation
-          </h3>
-          <input
-            className="border rounded w-full text-xs px-2 py-1"
-            placeholder="Title"
-            value={noticeTitle}
-            onChange={(e) => setNoticeTitle(e.target.value)}
-          />
-          <textarea
-            className="border rounded w-full text-xs px-2 py-1"
-            rows={2}
-            placeholder="Body"
-            value={noticeBody}
-            onChange={(e) => setNoticeBody(e.target.value)}
-          />
-          <input
-            className="border rounded w-full text-xs px-2 py-1"
-            placeholder="Optional link"
-            value={noticeLink}
-            onChange={(e) => setNoticeLink(e.target.value)}
-          />
-          <button className="btn btn-primary text-xs" onClick={addNotice}>
-            Add Notice
-          </button>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        {/* FOTO REAL */}
-        <div className="card space-y-2">
-          <h3 className="text-xs font-semibold text-gray-600">Add Photo</h3>
-          <input
-            className="text-xs"
-            type="file"
-            accept="image/*"
-            onChange={(e) =>
-              setPhotoFile(e.target.files?.[0] || null)
-            }
-          />
-          <button className="btn text-xs" onClick={uploadPhoto}>
-            Upload Photo
-          </button>
-          <p className="text-[10px] text-gray-500">
-            This will upload the image to Firebase Storage and make it
-            available for the dashboard.
+        <div style={{ position: "relative" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 700,
+            }}
+          >
+            TPA OPS · Dashboard Editor
           </p>
-        </div>
-
-        {/* DOCUMENTO REAL */}
-        <div className="card space-y-2">
-          <h3 className="text-xs font-semibold text-gray-600">
-            Add Document
-          </h3>
-          <input
-            className="text-xs"
-            type="file"
-            onChange={(e) =>
-              setDocFile(e.target.files?.[0] || null)
-            }
-          />
-          <input
-            className="border rounded w-full text-xs px-2 py-1"
-            placeholder="Document title"
-            value={docTitle}
-            onChange={(e) => setDocTitle(e.target.value)}
-          />
-          <button className="btn text-xs" onClick={uploadDoc}>
-            Upload Document
-          </button>
-          <p className="text-[10px] text-gray-500">
-            Upload SOPs, memos or other docs for your team.
+          <h1
+            style={{
+              margin: "10px 0 6px",
+              fontSize: 32,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Manage dashboard content
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 760,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.86)",
+            }}
+          >
+            Update the main station message, create events and notices, and upload
+            dashboard photos and operational documents.
           </p>
         </div>
       </div>
 
       {status && (
-        <p className="text-[11px] text-gray-600" role="status">
+        <div
+          role="status"
+          style={{
+            background: statusBg,
+            border: `1px solid ${statusBorder}`,
+            borderRadius: 18,
+            padding: "14px 16px",
+            color: statusColor,
+            fontSize: 14,
+            fontWeight: 700,
+          }}
+        >
           {status}
-        </p>
+        </div>
       )}
+
+      <SectionCard
+        title="Dashboard Message"
+        subtitle="This appears in the main dashboard welcome area."
+        icon="📢"
+        accent="#1f7cc1"
+      >
+        <div style={{ display: "grid", gap: 12 }}>
+          <div>
+            <FieldLabel>Main message</FieldLabel>
+            <TextArea
+              rows={5}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Write the main message for the station team..."
+            />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <PrimaryButton onClick={saveMessage} disabled={savingMessage}>
+              {savingMessage ? "Saving..." : "Save Message"}
+            </PrimaryButton>
+          </div>
+        </div>
+      </SectionCard>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gap: 18,
+        }}
+      >
+        <SectionCard
+          title="Add Event"
+          subtitle="Create upcoming operational events."
+          icon="📅"
+          accent="#1f7cc1"
+        >
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <FieldLabel>Title</FieldLabel>
+              <TextInput
+                placeholder="Event title"
+                value={eventTitle}
+                onChange={(e) => setEventTitle(e.target.value)}
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: 12,
+              }}
+            >
+              <div>
+                <FieldLabel>Date</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={eventDate}
+                  onChange={(e) => setEventDate(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Time</FieldLabel>
+                <TextInput
+                  type="time"
+                  value={eventTime}
+                  onChange={(e) => setEventTime(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <FieldLabel>Details</FieldLabel>
+              <TextArea
+                rows={3}
+                placeholder="Optional event details"
+                value={eventDetails}
+                onChange={(e) => setEventDetails(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <PrimaryButton onClick={addEvent} disabled={savingEvent}>
+                {savingEvent ? "Adding..." : "Add Event"}
+              </PrimaryButton>
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Add Notice / Invitation"
+          subtitle="Create quick updates or invitation cards."
+          icon="📌"
+          accent="#f59e0b"
+        >
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <FieldLabel>Title</FieldLabel>
+              <TextInput
+                placeholder="Notice title"
+                value={noticeTitle}
+                onChange={(e) => setNoticeTitle(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Body</FieldLabel>
+              <TextArea
+                rows={3}
+                placeholder="Optional body"
+                value={noticeBody}
+                onChange={(e) => setNoticeBody(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Optional link</FieldLabel>
+              <TextInput
+                placeholder="https://..."
+                value={noticeLink}
+                onChange={(e) => setNoticeLink(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <PrimaryButton onClick={addNotice} disabled={savingNotice}>
+                {savingNotice ? "Adding..." : "Add Notice"}
+              </PrimaryButton>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gap: 18,
+        }}
+      >
+        <SectionCard
+          title="Add Photo"
+          subtitle="Upload a highlight image for the dashboard gallery."
+          icon="🖼️"
+          accent="#5aa9e6"
+        >
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <FieldLabel>Select image</FieldLabel>
+              <TextInput
+                id="dashboard-photo-input"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+                style={{ padding: "10px 12px" }}
+              />
+            </div>
+
+            {photoFile && (
+              <div
+                style={{
+                  background: "#f8fbff",
+                  border: "1px solid #d7e9fb",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                  fontSize: 13,
+                  color: "#334155",
+                  fontWeight: 600,
+                }}
+              >
+                Selected file: {photoFile.name}
+              </div>
+            )}
+
+            <SecondaryNote>
+              This uploads the image to Firebase Storage under
+              <b> dashboard_photos/</b> and saves the reference for the main dashboard.
+            </SecondaryNote>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <PrimaryButton onClick={uploadPhoto} disabled={uploadingPhoto}>
+                {uploadingPhoto ? "Uploading..." : "Upload Photo"}
+              </PrimaryButton>
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Add Document"
+          subtitle="Upload SOPs, memos or operational reference files."
+          icon="📄"
+          accent="#10b981"
+        >
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <FieldLabel>Select document</FieldLabel>
+              <TextInput
+                id="dashboard-doc-input"
+                type="file"
+                onChange={(e) => setDocFile(e.target.files?.[0] || null)}
+                style={{ padding: "10px 12px" }}
+              />
+            </div>
+
+            {docFile && (
+              <div
+                style={{
+                  background: "#f8fbff",
+                  border: "1px solid #d7e9fb",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                  fontSize: 13,
+                  color: "#334155",
+                  fontWeight: 600,
+                }}
+              >
+                Selected file: {docFile.name}
+              </div>
+            )}
+
+            <div>
+              <FieldLabel>Document title</FieldLabel>
+              <TextInput
+                placeholder="SOP, memo, checklist..."
+                value={docTitle}
+                onChange={(e) => setDocTitle(e.target.value)}
+              />
+            </div>
+
+            <SecondaryNote>
+              This uploads the file to Firebase Storage under
+              <b> dashboard_docs/</b> and creates a document record for your team.
+            </SecondaryNote>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <PrimaryButton onClick={uploadDoc} disabled={uploadingDoc}>
+                {uploadingDoc ? "Uploading..." : "Upload Document"}
+              </PrimaryButton>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
     </div>
   );
 }
-
-
