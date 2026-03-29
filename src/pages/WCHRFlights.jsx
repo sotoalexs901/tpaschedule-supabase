@@ -1,3 +1,4 @@
+// src/pages/WCHRFlights.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -8,6 +9,7 @@ import {
   getDocs,
   query,
   where,
+  orderBy,
   Timestamp,
   doc,
   setDoc,
@@ -62,7 +64,12 @@ function formatTimeAtGate(v) {
   return `${match[1].padStart(2, "0")}:${match[2]}`;
 }
 
-function downloadCSV(filename, rows) {
+function formatReportFlightDate(val) {
+  const d = tsToDate(val);
+  return d ? toMMDDYYYY(d) : "—";
+}
+
+function buildCsvRows(rows) {
   const headers = [
     "Report ID",
     "Submitted By",
@@ -119,9 +126,14 @@ function downloadCSV(filename, rows) {
 
       return cols.join(",");
     }),
-  ].join("\n");
+  ];
 
-  const blob = new Blob([csvLines], { type: "text/csv;charset=utf-8;" });
+  return csvLines.join("\n");
+}
+
+function downloadCSV(filename, rows) {
+  const csvContent = buildCsvRows(rows);
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -275,18 +287,6 @@ function ImageThumb({ src, alt = "Boarding pass" }) {
   );
 }
 
-function sortBySubmittedAtDesc(a, b) {
-  const A = tsToDate(a.submitted_at)?.getTime() || 0;
-  const B = tsToDate(b.submitted_at)?.getTime() || 0;
-  return B - A;
-}
-
-function sortBySubmittedAtAsc(a, b) {
-  const A = tsToDate(a.submitted_at)?.getTime() || 0;
-  const B = tsToDate(b.submitted_at)?.getTime() || 0;
-  return A - B;
-}
-
 export default function WCHRFlights() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -299,15 +299,21 @@ export default function WCHRFlights() {
   const [selectedFlightKey, setSelectedFlightKey] = useState("");
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reports, setReports] = useState([]);
+  const [allReportsForDate, setAllReportsForDate] = useState([]);
+
+  const userRole = String(user?.role || "").toLowerCase();
 
   const canClose = useMemo(() => {
-    const role = (user?.role || "").toLowerCase();
     return (
-      role.includes("station") ||
-      role.includes("duty") ||
-      role.includes("supervisor")
+      userRole.includes("station") ||
+      userRole.includes("duty") ||
+      userRole.includes("supervisor")
     );
-  }, [user]);
+  }, [userRole]);
+
+  const canManagerExport = useMemo(() => {
+    return userRole === "station_manager" || userRole === "duty_manager";
+  }, [userRole]);
 
   useEffect(() => {
     let mounted = true;
@@ -323,13 +329,13 @@ export default function WCHRFlights() {
         const q = query(
           collection(db, "wch_reports"),
           where("submitted_at", ">=", start),
-          where("submitted_at", "<=", end)
+          where("submitted_at", "<=", end),
+          orderBy("submitted_at", "desc")
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .sort(sortBySubmittedAtDesc);
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (mounted) setAllReportsForDate(rows);
 
         const map = new Map();
 
@@ -357,18 +363,10 @@ export default function WCHRFlights() {
           const item = map.get(fk);
           item.total_reports += 1;
 
-          if (!item.flight_date && reportFlightDate) {
-            item.flight_date = reportFlightDate;
-          }
-          if (!item.operator && r.operator) {
-            item.operator = safeUpper(r.operator);
-          }
-          if (!item.origin && r.origin) {
-            item.origin = safeUpper(r.origin);
-          }
-          if (!item.destination && r.destination) {
-            item.destination = safeUpper(r.destination);
-          }
+          if (!item.flight_date && reportFlightDate) item.flight_date = reportFlightDate;
+          if (!item.operator && r.operator) item.operator = safeUpper(r.operator);
+          if (!item.origin && r.origin) item.origin = safeUpper(r.origin);
+          if (!item.destination && r.destination) item.destination = safeUpper(r.destination);
 
           if (String(r.status || "").toUpperCase() === "LATE") {
             item.late_reports += 1;
@@ -416,7 +414,7 @@ export default function WCHRFlights() {
     return () => {
       mounted = false;
     };
-  }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedDate, selectedFlightKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -432,28 +430,27 @@ export default function WCHRFlights() {
       try {
         const q = query(
           collection(db, "wch_reports"),
-          where("flight_key", "==", selectedFlightKey)
+          where("flight_key", "==", selectedFlightKey),
+          orderBy("submitted_at", "asc")
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs
-          .map((d) => ({
-            id: d.id,
-            ...d.data(),
-            airline: safeUpper(d.data().airline),
-            flight_number: safeUpper(d.data().flight_number),
-            origin: safeUpper(d.data().origin),
-            destination: safeUpper(d.data().destination),
-            gate: safeUpper(d.data().gate),
-            seat: safeUpper(d.data().seat),
-            boarding_group: safeUpper(d.data().boarding_group),
-            operator: safeUpper(d.data().operator),
-            time_at_gate: formatTimeAtGate(d.data().time_at_gate),
-            pnr: safeText(d.data().pnr).toUpperCase(),
-            employee_login: safeText(d.data().employee_login),
-            employee_role: safeText(d.data().employee_role),
-          }))
-          .sort(sortBySubmittedAtAsc);
+        const rows = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          airline: safeUpper(d.data().airline),
+          flight_number: safeUpper(d.data().flight_number),
+          origin: safeUpper(d.data().origin),
+          destination: safeUpper(d.data().destination),
+          gate: safeUpper(d.data().gate),
+          seat: safeUpper(d.data().seat),
+          boarding_group: safeUpper(d.data().boarding_group),
+          operator: safeUpper(d.data().operator),
+          time_at_gate: formatTimeAtGate(d.data().time_at_gate),
+          pnr: safeText(d.data().pnr).toUpperCase(),
+          employee_login: safeText(d.data().employee_login),
+          employee_role: safeText(d.data().employee_role),
+        }));
 
         if (mounted) setReports(rows);
       } catch (e) {
@@ -532,6 +529,42 @@ export default function WCHRFlights() {
       console.error(e);
       setError(e?.message || "Failed to close flight.");
     }
+  };
+
+  const handleExportFullDay = () => {
+    if (!canManagerExport || !allReportsForDate.length) return;
+    const filename = `WCHR_FULL_DAY_${toYYYYMMDD(selectedDate)}.csv`;
+    downloadCSV(filename, allReportsForDate);
+  };
+
+  const handleExportSelectedFlight = () => {
+    if (!canManagerExport || !selectedFlight || !reports.length) return;
+    const filename = `WCHR_${selectedFlight.airline}${selectedFlight.flight_number}_${toYYYYMMDD(
+      selectedFlight.flight_date || selectedDate
+    )}.csv`;
+    downloadCSV(filename, reports);
+  };
+
+  const handleExportSeparateByFlight = () => {
+    if (!canManagerExport || !allReportsForDate.length) return;
+
+    const grouped = {};
+    allReportsForDate.forEach((r) => {
+      const key = r.flight_key || "UNKNOWN";
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(r);
+    });
+
+    Object.entries(grouped).forEach(([flightKey, flightRows]) => {
+      const first = flightRows[0] || {};
+      const dateObj = tsToDate(first.flight_date) || selectedDate;
+      const airline = safeUpper(first.airline || "UNK");
+      const flightNumber = safeUpper(first.flight_number || "UNK");
+      const filename = `WCHR_${airline}${flightNumber}_${toYYYYMMDD(
+        dateObj
+      )}.csv`;
+      downloadCSV(filename, flightRows);
+    });
   };
 
   return (
@@ -665,53 +698,76 @@ export default function WCHRFlights() {
             gap: 12,
             alignItems: "center",
             flexWrap: "wrap",
+            justifyContent: "space-between",
           }}
         >
-          <div>
-            <label
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: 6,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#475569",
+                  letterSpacing: "0.03em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Date
+              </label>
+              <input
+                type="date"
+                value={toYYYYMMDD(selectedDate)}
+                onChange={(e) =>
+                  setSelectedDate(new Date(e.target.value + "T00:00:00"))
+                }
+                style={{
+                  border: "1px solid #dbeafe",
+                  background: "#ffffff",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                  fontSize: 14,
+                  color: "#0f172a",
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            <div
               style={{
-                display: "block",
-                marginBottom: 6,
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#475569",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-              }}
-            >
-              Date
-            </label>
-            <input
-              type="date"
-              value={toYYYYMMDD(selectedDate)}
-              onChange={(e) =>
-                setSelectedDate(new Date(e.target.value + "T00:00:00"))
-              }
-              style={{
+                background: "#f8fbff",
                 border: "1px solid #dbeafe",
-                background: "#ffffff",
                 borderRadius: 14,
                 padding: "12px 14px",
-                fontSize: 14,
-                color: "#0f172a",
-                outline: "none",
+                fontSize: 13,
+                color: "#334155",
               }}
-            />
+            >
+              Showing flights with WCHR reports submitted on:{" "}
+              <b>{toMMDDYYYY(selectedDate)}</b>
+            </div>
           </div>
 
-          <div
-            style={{
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              borderRadius: 14,
-              padding: "12px 14px",
-              fontSize: 13,
-              color: "#334155",
-            }}
-          >
-            Showing flights with WCHR reports submitted on:{" "}
-            <b>{toMMDDYYYY(selectedDate)}</b>
-          </div>
+          {canManagerExport && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <ActionButton
+                onClick={handleExportFullDay}
+                variant="secondary"
+                disabled={!allReportsForDate.length}
+              >
+                Export Full Day
+              </ActionButton>
+
+              <ActionButton
+                onClick={handleExportSeparateByFlight}
+                variant="secondary"
+                disabled={!allReportsForDate.length}
+              >
+                Export Separate by Flight
+              </ActionButton>
+            </div>
+          )}
         </div>
       </PageCard>
 
@@ -741,33 +797,9 @@ export default function WCHRFlights() {
         </div>
 
         {loading ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Loading...
-          </div>
+          <div style={infoBoxStyle}>Loading...</div>
         ) : flights.length === 0 ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No flights found for this date.
-          </div>
+          <div style={infoBoxStyle}>No flights found for this date.</div>
         ) : (
           <div
             style={{
@@ -898,6 +930,25 @@ export default function WCHRFlights() {
                           View Table
                         </ActionButton>
 
+                        {canManagerExport && (
+                          <ActionButton
+                            onClick={() => {
+                              const flightRows = allReportsForDate.filter(
+                                (r) => r.flight_key === f.flight_key
+                              );
+                              if (!flightRows.length) return;
+                              const filename = `WCHR_${f.airline}${f.flight_number}_${toYYYYMMDD(
+                                f.flight_date || selectedDate
+                              )}.csv`;
+                              downloadCSV(filename, flightRows);
+                            }}
+                            variant="secondary"
+                            style={{ padding: "8px 12px", fontSize: 12 }}
+                          >
+                            Export Flight
+                          </ActionButton>
+                        )}
+
                         <ActionButton
                           onClick={() => handleCloseFlight(f)}
                           variant="primary"
@@ -969,7 +1020,7 @@ export default function WCHRFlights() {
             </p>
           </div>
 
-          {selectedFlight && (
+          {selectedFlight && canManagerExport && (
             <div
               style={{
                 display: "flex",
@@ -979,16 +1030,11 @@ export default function WCHRFlights() {
               }}
             >
               <ActionButton
-                onClick={() => {
-                  const filename = `WCHR_${selectedFlight.airline}${selectedFlight.flight_number}_${toYYYYMMDD(
-                    selectedFlight.flight_date || new Date()
-                  )}.csv`;
-                  downloadCSV(filename, reports);
-                }}
+                onClick={handleExportSelectedFlight}
                 variant="secondary"
                 disabled={!reports?.length}
               >
-                Export CSV
+                Export Selected Flight
               </ActionButton>
 
               <ActionButton
@@ -1003,47 +1049,11 @@ export default function WCHRFlights() {
         </div>
 
         {reportsLoading ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Loading reports...
-          </div>
+          <div style={infoBoxStyle}>Loading reports...</div>
         ) : !selectedFlight ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No flight selected.
-          </div>
+          <div style={infoBoxStyle}>No flight selected.</div>
         ) : reports.length === 0 ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No reports for this flight.
-          </div>
+          <div style={infoBoxStyle}>No reports for this flight.</div>
         ) : (
           <>
             <div
@@ -1141,11 +1151,6 @@ export default function WCHRFlights() {
   );
 }
 
-function formatReportFlightDate(val) {
-  const d = tsToDate(val);
-  return d ? toMMDDYYYY(d) : "—";
-}
-
 function thStyle(extra = {}) {
   return {
     padding: "14px 14px",
@@ -1166,4 +1171,14 @@ const tdStyle = {
   verticalAlign: "middle",
   fontSize: 14,
   color: "#0f172a",
+};
+
+const infoBoxStyle = {
+  padding: 14,
+  borderRadius: 16,
+  background: "#f8fbff",
+  border: "1px solid #dbeafe",
+  color: "#64748b",
+  fontSize: 14,
+  fontWeight: 600,
 };
