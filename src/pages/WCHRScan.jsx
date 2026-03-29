@@ -86,14 +86,17 @@ function cleanPnr(value) {
 
   const blocked = [
     "MEMBER",
-    "AVIANCA",
-    "OPERADO",
     "BOOKING",
     "RESERVA",
-    "FLIGHT",
-    "VUELO",
-    "ETKT",
     "TICKET",
+    "FLIGHT",
+    "AVIANCA",
+    "OPERADO",
+    "BOARDING",
+    "PASS",
+    "GATE",
+    "SEAT",
+    "GROUP",
   ];
 
   if (!v) return "";
@@ -103,28 +106,51 @@ function cleanPnr(value) {
   return v;
 }
 
+function getRawScanText(scanResult) {
+  return String(
+    scanResult?.raw_text ||
+      scanResult?.ocr_text ||
+      scanResult?.text ||
+      scanResult?.full_text ||
+      scanResult?.rawText ||
+      ""
+  );
+}
+
 function tryExtractPassengerFromText(rawText) {
   const text = String(rawText || "");
 
-  const byNameLabel =
-    text.match(/(?:NAME|PASSENGER|PAX)[^\n:]*[:\s]+([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)/i) ||
-    text.match(/\b([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)\b/);
+  const patterns = [
+    /(?:PASSENGER NAME|PASSENGER|NAME|PAX)\s*[:\-]?\s*([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)/i,
+    /\b([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)\b/,
+  ];
 
-  return byNameLabel?.[1] || "";
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  return "";
 }
 
 function tryExtractPnrFromText(rawText) {
   const text = String(rawText || "");
 
-  const labeled =
-    text.match(/(?:RESERVA|RESERVATION|BOOKING|LOCATOR|PNR)[^\n:]*[:\s]+([A-Z0-9]{5,8})/i)?.[1] ||
-    "";
+  const labelPatterns = [
+    /(?:BOOKING|RESERVATION|RESERVA|LOCATOR|RECORD LOCATOR|PNR)\s*[:\-]?\s*([A-Z0-9]{5,8})/i,
+    /(?:BOOKING|RESERVATION|RESERVA|LOCATOR|PNR)[^\n]*\n\s*([A-Z0-9]{5,8})/i,
+  ];
 
-  const cleanedLabeled = cleanPnr(labeled);
-  if (cleanedLabeled) return cleanedLabeled;
+  for (const pattern of labelPatterns) {
+    const match = text.match(pattern);
+    const value = cleanPnr(match?.[1] || "");
+    if (value) return value;
+  }
 
-  const candidates = text.match(/\b[A-Z0-9]{5,8}\b/g) || [];
-  for (const item of candidates) {
+  const allCandidates = text.match(/\b[A-Z0-9]{5,8}\b/g) || [];
+  for (const item of allCandidates) {
     const cleaned = cleanPnr(item);
     if (cleaned) return cleaned;
   }
@@ -372,13 +398,7 @@ export default function WCHRScan() {
       const scanResult = await callScanService(url);
       console.log("scanResult:", scanResult);
 
-      const rawText = String(
-        scanResult.raw_text ||
-          scanResult.ocr_text ||
-          scanResult.text ||
-          scanResult.full_text ||
-          ""
-      );
+      const rawText = getRawScanText(scanResult);
 
       const candidatePassenger =
         scanResult.passenger_name ||
@@ -388,7 +408,7 @@ export default function WCHRScan() {
         scanResult.fullName ||
         scanResult.pax_name ||
         scanResult.passengerName ||
-        "";
+        tryExtractPassengerFromText(rawText);
 
       const candidatePnr =
         scanResult.pnr ||
@@ -400,15 +420,10 @@ export default function WCHRScan() {
         scanResult.reservation ||
         scanResult.reservation_booking ||
         scanResult.reservationBooking ||
-        "";
-
-      const passengerFromText = tryExtractPassengerFromText(rawText);
-      const pnrFromText = tryExtractPnrFromText(rawText);
+        tryExtractPnrFromText(rawText);
 
       const normalized = {
-        passenger_name: normalizePassengerName(
-          candidatePassenger || passengerFromText || ""
-        ),
+        passenger_name: normalizePassengerName(candidatePassenger),
         airline: normalizeUpper(scanResult.airline || ""),
         flight_number: normalizeUpper(
           scanResult.flight_number || scanResult.flight || ""
@@ -428,7 +443,7 @@ export default function WCHRScan() {
         boarding_group: normalizeUpper(
           scanResult.boarding_group || scanResult.group || ""
         ),
-        pnr: cleanPnr(candidatePnr || pnrFromText),
+        pnr: cleanPnr(candidatePnr),
         operator: normalizeUpper(
           scanResult.operator ||
             scanResult.operated_by ||
@@ -437,18 +452,6 @@ export default function WCHRScan() {
         ),
         raw_text: rawText,
       };
-
-      if (normalized.destination === "BOGOTA") {
-        normalized.destination = "BOG";
-      }
-
-      if (
-        !normalized.flight_number &&
-        normalized.airline &&
-        scanResult.flight
-      ) {
-        normalized.flight_number = normalizeUpper(scanResult.flight);
-      }
 
       setParsed(normalized);
       setStep("preview");
@@ -491,7 +494,7 @@ export default function WCHRScan() {
 
     if (!canSubmit) {
       setError(
-        "Missing required fields from scan. Please review passenger name, flight, date, gate and booking number."
+        "Missing required fields. Please review passenger name and reservation / booking number."
       );
       return;
     }
@@ -645,7 +648,7 @@ export default function WCHRScan() {
               }}
             >
               Scan a boarding pass, review the parsed details and submit a WCHR
-              report. Any logged-in user can access this screen.
+              report.
             </p>
           </div>
 
@@ -676,24 +679,6 @@ export default function WCHRScan() {
         </PageCard>
       )}
 
-      {message && (
-        <PageCard style={{ padding: 16 }}>
-          <div
-            style={{
-              background: "#ecfdf5",
-              border: "1px solid #a7f3d0",
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: "#065f46",
-              fontSize: 14,
-              fontWeight: 700,
-            }}
-          >
-            {message}
-          </div>
-        </PageCard>
-      )}
-
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
           <h2
@@ -707,15 +692,6 @@ export default function WCHRScan() {
           >
             Scan Boarding Pass
           </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Upload a boarding pass image and select the wheelchair service type.
-          </p>
         </div>
 
         <div style={{ display: "grid", gap: 14 }}>
@@ -760,35 +736,6 @@ export default function WCHRScan() {
             </select>
           </div>
 
-          {imageFile && (
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12,
-                color: "#64748b",
-              }}
-            >
-              Selected: <b>{imageFile.name}</b>
-            </p>
-          )}
-
-          {!scanUrl && (
-            <div
-              style={{
-                background: "#fff7ed",
-                border: "1px solid #fed7aa",
-                borderRadius: 16,
-                padding: "14px 16px",
-                color: "#9a3412",
-                fontSize: 13,
-                fontWeight: 700,
-              }}
-            >
-              Scan endpoint not configured. Add <b>VITE_WCHR_SCAN_URL</b> to
-              enable parsing.
-            </div>
-          )}
-
           <div>
             <ActionButton
               onClick={handleScan}
@@ -803,29 +750,6 @@ export default function WCHRScan() {
 
       {step === "preview" && parsed && (
         <PageCard style={{ padding: 22 }}>
-          <div style={{ marginBottom: 16 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Preview
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Review and fix any field before submitting.
-            </p>
-          </div>
-
           {imageUrl && (
             <div style={{ marginBottom: 16 }}>
               <img
@@ -852,6 +776,7 @@ export default function WCHRScan() {
             }}
           >
             <PreviewField label="Passenger" value={parsed.passenger_name} />
+            <PreviewField label="PNR / Booking" value={parsed.pnr} />
             <PreviewField label="Airline" value={parsed.airline} />
             <PreviewField label="Flight" value={parsed.flight_number} />
             <PreviewField
@@ -862,10 +787,6 @@ export default function WCHRScan() {
             <PreviewField label="Destination" value={parsed.destination} />
             <PreviewField label="Seat" value={parsed.seat} />
             <PreviewField label="Gate" value={parsed.gate} />
-            <PreviewField label="Time at Gate" value={parsed.time_at_gate} />
-            <PreviewField label="Boarding Group" value={parsed.boarding_group} />
-            <PreviewField label="PNR / Booking" value={parsed.pnr} />
-            <PreviewField label="Operator" value={parsed.operator} />
             <PreviewField label="WCHR Type" value={wchType} />
           </div>
 
@@ -880,73 +801,48 @@ export default function WCHRScan() {
               label="Passenger Name"
               value={parsed.passenger_name}
               onChange={(value) => handleParsedChange("passenger_name", value)}
-              placeholder="Passenger name"
+              placeholder="VERGARA / CLAUDIA"
             />
             <EditInput
-              label="Airline"
-              value={parsed.airline}
-              onChange={(value) => handleParsedChange("airline", value)}
-              placeholder="AV"
-            />
-            <EditInput
-              label="Flight Number"
-              value={parsed.flight_number}
-              onChange={(value) => handleParsedChange("flight_number", value)}
-              placeholder="195"
-            />
-            <EditInput
-              label="Flight Date"
-              value={parsed.flight_date}
-              onChange={(value) => handleParsedChange("flight_date", value)}
-              placeholder="2026-03-27"
-            />
-            <EditInput
-              label="Origin"
-              value={parsed.origin}
-              onChange={(value) => handleParsedChange("origin", value)}
-              placeholder="TPA"
-            />
-            <EditInput
-              label="Destination"
-              value={parsed.destination}
-              onChange={(value) => handleParsedChange("destination", value)}
-              placeholder="BOG"
-            />
-            <EditInput
-              label="Seat"
-              value={parsed.seat}
-              onChange={(value) => handleParsedChange("seat", value)}
-              placeholder="2A"
-            />
-            <EditInput
-              label="Gate"
-              value={parsed.gate}
-              onChange={(value) => handleParsedChange("gate", value)}
-              placeholder="F87"
-            />
-            <EditInput
-              label="Time at Gate"
-              value={parsed.time_at_gate}
-              onChange={(value) => handleParsedChange("time_at_gate", value)}
-              placeholder="14:55"
-            />
-            <EditInput
-              label="Boarding Group"
-              value={parsed.boarding_group}
-              onChange={(value) => handleParsedChange("boarding_group", value)}
-              placeholder="A"
-            />
-            <EditInput
-              label="PNR / Booking"
+              label="Reservation / Booking"
               value={parsed.pnr}
               onChange={(value) => handleParsedChange("pnr", value)}
               placeholder="A7ILFB"
             />
             <EditInput
-              label="Operator"
-              value={parsed.operator}
-              onChange={(value) => handleParsedChange("operator", value)}
-              placeholder="AVIANCA"
+              label="Airline"
+              value={parsed.airline}
+              onChange={(value) => handleParsedChange("airline", value)}
+            />
+            <EditInput
+              label="Flight Number"
+              value={parsed.flight_number}
+              onChange={(value) => handleParsedChange("flight_number", value)}
+            />
+            <EditInput
+              label="Flight Date"
+              value={parsed.flight_date}
+              onChange={(value) => handleParsedChange("flight_date", value)}
+            />
+            <EditInput
+              label="Origin"
+              value={parsed.origin}
+              onChange={(value) => handleParsedChange("origin", value)}
+            />
+            <EditInput
+              label="Destination"
+              value={parsed.destination}
+              onChange={(value) => handleParsedChange("destination", value)}
+            />
+            <EditInput
+              label="Seat"
+              value={parsed.seat}
+              onChange={(value) => handleParsedChange("seat", value)}
+            />
+            <EditInput
+              label="Gate"
+              value={parsed.gate}
+              onChange={(value) => handleParsedChange("gate", value)}
             />
           </div>
 
@@ -977,19 +873,6 @@ export default function WCHRScan() {
               {step === "submitting" ? "Submitting..." : "Submit Report"}
             </ActionButton>
           </div>
-
-          <p
-            style={{
-              marginTop: 12,
-              marginBottom: 0,
-              fontSize: 12,
-              color: "#64748b",
-              lineHeight: 1.6,
-            }}
-          >
-            After submission, Duty Managers and Station Manager will be notified
-            automatically.
-          </p>
         </PageCard>
       )}
     </div>
