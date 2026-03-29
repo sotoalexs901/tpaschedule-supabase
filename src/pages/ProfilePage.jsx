@@ -1,5 +1,4 @@
-// src/pages/ProfilePage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
@@ -86,18 +85,31 @@ function ActionButton({ children, disabled = false, type = "button" }) {
   );
 }
 
+function safeFileName(name = "photo") {
+  return String(name)
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w.-]/g, "");
+}
+
 export default function ProfilePage() {
   const { user, setUser } = useUser();
 
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
-  const [profilePhotoURL, setProfilePhotoURL] = useState("");
+  const [storedPhotoURL, setStoredPhotoURL] = useState("");
+  const [photoPreviewURL, setPhotoPreviewURL] = useState("");
   const [photoFile, setPhotoFile] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  const visiblePhotoURL = useMemo(
+    () => photoPreviewURL || storedPhotoURL || "",
+    [photoPreviewURL, storedPhotoURL]
+  );
 
   useEffect(() => {
     async function loadProfile() {
@@ -107,13 +119,22 @@ export default function ProfilePage() {
       }
 
       try {
+        setLoading(true);
+        setError("");
+        setMessage("");
+
         const userRef = doc(db, "users", user.id);
         const snap = await getDoc(userRef);
+
         if (snap.exists()) {
           const data = snap.data();
-          setUsername(data.username || data.loginUsername || "");
+          setUsername(data.username || data.loginUsername || user.username || "");
           setPin(data.pin || "");
-          setProfilePhotoURL(data.profilePhotoURL || "");
+          setStoredPhotoURL(data.profilePhotoURL || "");
+        } else {
+          setUsername(user.username || "");
+          setPin(user.pin || "");
+          setStoredPhotoURL(user.profilePhotoURL || "");
         }
       } catch (err) {
         console.error("Error loading profile:", err);
@@ -124,22 +145,47 @@ export default function ProfilePage() {
     }
 
     loadProfile();
-  }, [user?.id]);
+  }, [user?.id, user?.username, user?.pin, user?.profilePhotoURL]);
+
+  useEffect(() => {
+    return () => {
+      if (photoPreviewURL) {
+        URL.revokeObjectURL(photoPreviewURL);
+      }
+    };
+  }, [photoPreviewURL]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    setMessage("");
+    setError("");
 
-    if (!file.type.startsWith("image/")) {
-      setError("Please select an image file (jpg, png, etc).");
+    if (!file) {
+      setPhotoFile(null);
+      if (photoPreviewURL) {
+        URL.revokeObjectURL(photoPreviewURL);
+      }
+      setPhotoPreviewURL("");
       return;
     }
 
-    setPhotoFile(file);
-    setError("");
+    if (!file.type.startsWith("image/")) {
+      setError("Please select a valid image file.");
+      return;
+    }
 
-    const url = URL.createObjectURL(file);
-    setProfilePhotoURL(url);
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image must be smaller than 5MB.");
+      return;
+    }
+
+    if (photoPreviewURL) {
+      URL.revokeObjectURL(photoPreviewURL);
+    }
+
+    const localUrl = URL.createObjectURL(file);
+    setPhotoFile(file);
+    setPhotoPreviewURL(localUrl);
   };
 
   const handleSave = async (e) => {
@@ -157,7 +203,7 @@ export default function ProfilePage() {
       return;
     }
 
-    if (pin && pin.length < 4) {
+    if (pin && pin.trim().length < 4) {
       setError("PIN must be at least 4 digits.");
       return;
     }
@@ -166,42 +212,59 @@ export default function ProfilePage() {
       setSaving(true);
 
       const userRef = doc(db, "users", user.id);
-
-      let finalPhotoURL = profilePhotoURL;
+      let finalPhotoURL = storedPhotoURL || "";
 
       if (photoFile) {
+        const extSafeName = safeFileName(photoFile.name || "profile-photo.jpg");
         const storageRef = ref(
           storage,
-          `profilePictures/${user.id}/${photoFile.name}`
+          `profilePictures/${user.id}/${Date.now()}_${extSafeName}`
         );
-        await uploadBytes(storageRef, photoFile);
+
+        await uploadBytes(storageRef, photoFile, {
+          contentType: photoFile.type || "image/jpeg",
+        });
+
         finalPhotoURL = await getDownloadURL(storageRef);
-        setProfilePhotoURL(finalPhotoURL);
       }
 
-      await updateDoc(userRef, {
+      const payload = {
         username: username.trim(),
         loginUsername: username.trim(),
         pin: pin.trim(),
-        profilePhotoURL: finalPhotoURL || "",
-      });
+        profilePhotoURL: finalPhotoURL,
+      };
 
-      setUser((prev) =>
-        prev
-          ? {
-              ...prev,
-              username: username.trim(),
-              loginUsername: username.trim(),
-              pin: pin.trim(),
-              profilePhotoURL: finalPhotoURL || "",
-            }
-          : prev
-      );
+      await updateDoc(userRef, payload);
+
+      setStoredPhotoURL(finalPhotoURL);
+      setPhotoFile(null);
+
+      if (photoPreviewURL) {
+        URL.revokeObjectURL(photoPreviewURL);
+      }
+      setPhotoPreviewURL("");
+
+      if (typeof setUser === "function") {
+        setUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                username: username.trim(),
+                loginUsername: username.trim(),
+                pin: pin.trim(),
+                profilePhotoURL: finalPhotoURL,
+              }
+            : prev
+        );
+      }
 
       setMessage("Profile updated successfully.");
     } catch (err) {
       console.error("Error saving profile:", err);
-      setError("Error saving your profile. Please try again.");
+      setError(
+        err?.message || "Error saving your profile. Please try again."
+      );
     } finally {
       setSaving(false);
     }
@@ -390,9 +453,9 @@ export default function ProfilePage() {
                   fontWeight: 700,
                 }}
               >
-                {profilePhotoURL ? (
+                {visiblePhotoURL ? (
                   <img
-                    src={profilePhotoURL}
+                    src={visiblePhotoURL}
                     alt="Profile"
                     style={{
                       width: "100%",
@@ -444,7 +507,7 @@ export default function ProfilePage() {
                   lineHeight: 1.6,
                 }}
               >
-                JPG / PNG. A small square photo works best.
+                JPG / PNG. Max 5MB. A square image works best.
               </p>
             </div>
           </div>
@@ -494,7 +557,7 @@ export default function ProfilePage() {
               <TextInput
                 type="password"
                 value={pin}
-                onChange={(e) => setPin(e.target.value)}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
                 placeholder="4-digit PIN"
                 maxLength={10}
               />
