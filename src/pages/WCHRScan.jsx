@@ -1,131 +1,203 @@
-// src/pages/WCHRFlights.jsx
-import React, { useEffect, useMemo, useState } from "react";
+// src/pages/WCHRScan.jsx
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { db } from "../firebase";
+import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
 import {
+  addDoc,
   collection,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  Timestamp,
   doc,
-  setDoc,
-  updateDoc,
   getDoc,
+  serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
+
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
-function toYYYYMMDD(dateObj) {
-  return `${dateObj.getFullYear()}-${pad2(dateObj.getMonth() + 1)}-${pad2(
-    dateObj.getDate()
-  )}`;
+function yyyymmdd(d = new Date()) {
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
 }
 
-function toMMDDYYYY(dateObj) {
-  return `${pad2(dateObj.getMonth() + 1)}-${pad2(
-    dateObj.getDate()
-  )}-${dateObj.getFullYear()}`;
+function formatMMDDYYYY(dateLike) {
+  try {
+    const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${d.getFullYear()}`;
+  } catch {
+    return "";
+  }
 }
 
-function startOfDay(d) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+function buildFlightKey({ airline, flight_number, flight_date }) {
+  const d = flight_date instanceof Date ? flight_date : new Date(flight_date);
+  const iso = Number.isNaN(d.getTime())
+    ? "unknown-date"
+    : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+  return `${String(airline || "UNK").trim()}-${String(flight_number || "UNK")
+    .trim()
+    .replace(/\s+/g, "")}-${iso}`;
 }
 
-function endOfDay(d) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
-
-function tsToDate(val) {
-  if (!val) return null;
-  if (typeof val?.toDate === "function") return val.toDate();
-  const d = new Date(val);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function safeUpper(v) {
-  return String(v || "").trim().toUpperCase();
+async function isFlightClosed(flight_key) {
+  const flightRef = doc(db, "wch_flights", flight_key);
+  const snap = await getDoc(flightRef);
+  if (!snap.exists()) return false;
+  const data = snap.data();
+  return Boolean(data?.closed_at);
 }
 
 function safeText(v) {
   return String(v || "").trim();
 }
 
-function formatTimeAtGate(v) {
-  const raw = String(v || "").trim();
-  if (!raw) return "";
-  const match = raw.match(/(\d{1,2}):(\d{2})/);
-  if (!match) return raw;
-  return `${match[1].padStart(2, "0")}:${match[2]}`;
+function safeUpper(v) {
+  return safeText(v).toUpperCase();
 }
 
-function downloadCSV(filename, rows) {
-  const headers = [
-    "Report ID",
-    "Submitted By",
-    "Submitted At",
-    "Passenger",
-    "Airline",
-    "Flight",
-    "Flight Date",
-    "Origin",
-    "Destination",
-    "Seat",
-    "Gate",
-    "Time At Gate",
-    "Boarding Group",
-    "PNR",
-    "Operator",
-    "WCHR Type",
-    "Wheelchair #",
-    "Status",
-    "Image URL",
+function cleanPnr(value) {
+  const v = safeUpper(value).replace(/[^A-Z0-9]/g, "");
+  if (!v) return "";
+
+  const blocked = [
+    "BOARDING",
+    "PASS",
+    "SEAT",
+    "GATE",
+    "GROUP",
+    "ZONE",
+    "FLIGHT",
+    "CABIN",
+    "PRIORITY",
+    "AVIANCA",
+    "OPERADO",
   ];
 
-  const csvLines = [
-    headers.join(","),
-    ...rows.map((r) => {
-      const flightDate = tsToDate(r.flight_date);
-      const submitted = tsToDate(r.submitted_at);
+  if (blocked.includes(v)) return "";
+  if (v.length < 5 || v.length > 8) return "";
 
-      const cols = [
-        r.report_id || "",
-        r.employee_name || "",
-        submitted ? submitted.toISOString() : "",
-        r.passenger_name || "",
-        r.airline || "",
-        r.flight_number || "",
-        flightDate ? toYYYYMMDD(flightDate) : "",
-        r.origin || "",
-        r.destination || "",
-        r.seat || "",
-        r.gate || "",
-        r.time_at_gate || "",
-        r.boarding_group || "",
-        r.pnr || "",
-        r.operator || "",
-        r.wch_type || "",
-        r.wheelchair_number || "",
-        r.status || "",
-        r.image_url || "",
-      ].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`);
+  return v;
+}
 
-      return cols.join(",");
-    }),
-  ].join("\n");
+function normalizePassengerName(value) {
+  const clean = safeText(value);
+  if (!clean) return "";
 
-  const blob = new Blob([csvLines], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  if (clean.includes("/")) {
+    return clean
+      .split("/")
+      .map((part) =>
+        part
+          .toLowerCase()
+          .replace(/\b\w/g, (c) => c.toUpperCase())
+          .trim()
+      )
+      .join(" / ");
+  }
+
+  return clean
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+function getRawScanText(scanResult) {
+  return String(
+    scanResult?.raw_text ||
+      scanResult?.ocr_text ||
+      scanResult?.text ||
+      scanResult?.full_text ||
+      scanResult?.rawText ||
+      scanResult?.ocr ||
+      ""
+  );
+}
+
+function tryExtractPassengerFromText(rawText) {
+  const text = String(rawText || "");
+
+  const patterns = [
+    /(?:PASSENGER NAME|PASSENGER|PAX NAME|NAME)\s*[:\-]?\s*([A-Z]{2,}\/[A-Z\s]{2,})/i,
+    /\b([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)\b/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+
+  return "";
+}
+
+function tryExtractPnrFromText(rawText) {
+  const text = String(rawText || "");
+
+  const patterns = [
+    /(?:RESERVATION|BOOKING|BOOKING NUMBER|RESERVATION NUMBER|RECORD LOCATOR|LOCATOR|PNR)\s*[:\-]?\s*([A-Z0-9]{5,8})/i,
+    /(?:RESERVATION|BOOKING|RECORD LOCATOR|LOCATOR|PNR)[^\n]*\n\s*([A-Z0-9]{5,8})/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const candidate = cleanPnr(match?.[1] || "");
+    if (candidate) return candidate;
+  }
+
+  const possible = text.match(/\b[A-Z0-9]{5,8}\b/g) || [];
+  for (const item of possible) {
+    const candidate = cleanPnr(item);
+    if (candidate) return candidate;
+  }
+
+  return "";
+}
+
+function guessPassengerName(scanResult, rawText) {
+  const candidates = [
+    scanResult?.passenger_name,
+    scanResult?.passenger,
+    scanResult?.name,
+    scanResult?.full_name,
+    scanResult?.fullName,
+    scanResult?.pax_name,
+    scanResult?.passengerName,
+    tryExtractPassengerFromText(rawText),
+  ];
+
+  for (const item of candidates) {
+    const cleaned = safeText(item);
+    if (cleaned) return normalizePassengerName(cleaned);
+  }
+
+  return "";
+}
+
+function guessPnr(scanResult, rawText) {
+  const candidates = [
+    scanResult?.pnr,
+    scanResult?.record_locator,
+    scanResult?.locator,
+    scanResult?.booking,
+    scanResult?.booking_number,
+    scanResult?.bookingNumber,
+    scanResult?.reservation,
+    scanResult?.reservation_number,
+    scanResult?.reservationNumber,
+    scanResult?.recordLocator,
+    tryExtractPnrFromText(rawText),
+  ];
+
+  for (const item of candidates) {
+    const cleaned = cleanPnr(item);
+    if (cleaned) return cleaned;
+  }
+
+  return "";
 }
 
 function PageCard({ children, style = {} }) {
@@ -150,7 +222,6 @@ function ActionButton({
   variant = "secondary",
   type = "button",
   disabled = false,
-  style = {},
 }) {
   const styles = {
     primary: {
@@ -186,9 +257,8 @@ function ActionButton({
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
-        opacity: disabled ? 0.55 : 1,
+        opacity: disabled ? 0.65 : 1,
         ...styles[variant],
-        ...style,
       }}
     >
       {children}
@@ -196,325 +266,244 @@ function ActionButton({
   );
 }
 
-function statusBadge(kind) {
-  const k = String(kind || "").toUpperCase();
-  const base = {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "7px 12px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 800,
-    border: "1px solid transparent",
-  };
-
-  if (k === "CLOSED") {
-    return {
-      ...base,
-      background: "#fff1f2",
-      color: "#9f1239",
-      borderColor: "#fecdd3",
-    };
-  }
-  if (k === "OPEN") {
-    return {
-      ...base,
-      background: "#ecfdf5",
-      color: "#065f46",
-      borderColor: "#a7f3d0",
-    };
-  }
-  if (k === "LATE") {
-    return {
-      ...base,
-      background: "#fff7ed",
-      color: "#9a3412",
-      borderColor: "#fed7aa",
-    };
-  }
-  if (k === "NEW") {
-    return {
-      ...base,
-      background: "#edf7ff",
-      color: "#1769aa",
-      borderColor: "#cfe7fb",
-    };
-  }
-
-  return {
-    ...base,
-    background: "#f8fafc",
-    color: "#334155",
-    borderColor: "#e2e8f0",
-  };
-}
-
-function ImageThumb({ src, alt = "Boarding pass" }) {
-  if (!src) {
-    return <span style={{ color: "#94a3b8" }}>—</span>;
-  }
-
+function FieldLabel({ children }) {
   return (
-    <a href={src} target="_blank" rel="noreferrer">
-      <img
-        src={src}
-        alt={alt}
-        style={{
-          width: 56,
-          height: 56,
-          objectFit: "cover",
-          borderRadius: 12,
-          border: "1px solid #dbeafe",
-          background: "#fff",
-          display: "block",
-        }}
-      />
-    </a>
+    <label
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#475569",
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </label>
   );
 }
 
-export default function WCHRFlights() {
+function EditInput({ label, value, onChange, placeholder = "" }) {
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <input
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: "100%",
+          border: "1px solid #dbeafe",
+          background: "#ffffff",
+          borderRadius: 14,
+          padding: "12px 14px",
+          fontSize: 14,
+          color: "#0f172a",
+          outline: "none",
+        }}
+      />
+    </div>
+  );
+}
+
+export default function WCHRScan() {
   const navigate = useNavigate();
   const { user } = useUser();
 
-  const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [loading, setLoading] = useState(true);
-  const [flights, setFlights] = useState([]);
+  const [step, setStep] = useState("upload");
   const [error, setError] = useState("");
+  const [imageFile, setImageFile] = useState(null);
+  const [imageUrl, setImageUrl] = useState("");
+  const [wchType, setWchType] = useState("WCHR");
+  const [parsed, setParsed] = useState(null);
 
-  const [selectedFlightKey, setSelectedFlightKey] = useState("");
-  const [reportsLoading, setReportsLoading] = useState(false);
-  const [reports, setReports] = useState([]);
+  const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
 
-  const canClose = useMemo(() => {
-    const role = (user?.role || "").toLowerCase();
-    return (
-      role.includes("station") ||
-      role.includes("duty") ||
-      role.includes("supervisor")
-    );
-  }, [user]);
+  const canScan = useMemo(() => Boolean(imageFile), [imageFile]);
 
-  useEffect(() => {
-    let mounted = true;
+  const canSubmit = useMemo(() => {
+    if (!imageUrl || !parsed) return false;
 
-    async function loadFlights() {
-      setError("");
-      setLoading(true);
+    return [
+      parsed.passenger_name,
+      parsed.airline,
+      parsed.flight_number,
+      parsed.flight_date,
+      parsed.destination,
+      parsed.seat,
+      parsed.gate,
+      parsed.pnr,
+      wchType,
+    ].every((v) => String(v || "").trim().length > 0);
+  }, [imageUrl, parsed, wchType]);
 
-      try {
-        const start = Timestamp.fromDate(startOfDay(selectedDate));
-        const end = Timestamp.fromDate(endOfDay(selectedDate));
-
-        const q = query(
-          collection(db, "wch_reports"),
-          where("submitted_at", ">=", start),
-          where("submitted_at", "<=", end),
-          orderBy("submitted_at", "desc")
-        );
-
-        const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-        const map = new Map();
-
-        for (const r of rows) {
-          const fk = r.flight_key || "UNKNOWN";
-          const reportFlightDate = tsToDate(r.flight_date);
-
-          if (!map.has(fk)) {
-            map.set(fk, {
-              flight_key: fk,
-              airline: safeUpper(r.airline) || "—",
-              flight_number: safeUpper(r.flight_number) || "—",
-              flight_date: reportFlightDate,
-              origin: safeUpper(r.origin) || "",
-              destination: safeUpper(r.destination) || "",
-              operator: safeUpper(r.operator) || "",
-              total_reports: 0,
-              new_reports: 0,
-              late_reports: 0,
-              closed: false,
-              closed_at: null,
-            });
-          }
-
-          const item = map.get(fk);
-          item.total_reports += 1;
-
-          if (!item.flight_date && reportFlightDate) {
-            item.flight_date = reportFlightDate;
-          }
-          if (!item.operator && r.operator) {
-            item.operator = safeUpper(r.operator);
-          }
-          if (!item.origin && r.origin) {
-            item.origin = safeUpper(r.origin);
-          }
-          if (!item.destination && r.destination) {
-            item.destination = safeUpper(r.destination);
-          }
-
-          if (String(r.status || "").toUpperCase() === "LATE") {
-            item.late_reports += 1;
-          } else {
-            item.new_reports += 1;
-          }
-        }
-
-        const flightArr = Array.from(map.values());
-
-        for (const f of flightArr) {
-          if (!f.flight_key || f.flight_key === "UNKNOWN") continue;
-          const fsnap = await getDoc(doc(db, "wch_flights", f.flight_key));
-          if (fsnap.exists()) {
-            const fd = fsnap.data();
-            f.closed = Boolean(fd?.closed_at);
-            f.closed_at = tsToDate(fd?.closed_at);
-          }
-        }
-
-        flightArr.sort((a, b) => {
-          const A = `${a.airline} ${a.flight_number}`;
-          const B = `${b.airline} ${b.flight_number}`;
-          return A.localeCompare(B);
-        });
-
-        if (mounted) {
-          setFlights(flightArr);
-
-          const exists = flightArr.some((x) => x.flight_key === selectedFlightKey);
-          if (!exists) {
-            setSelectedFlightKey("");
-            setReports([]);
-          }
-        }
-      } catch (e) {
-        console.error(e);
-        if (mounted) setError(e?.message || "Failed to load flights.");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    loadFlights();
-    return () => {
-      mounted = false;
-    };
-  }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadReportsForFlight() {
-      setError("");
-      if (!selectedFlightKey) {
-        setReports([]);
-        return;
-      }
-
-      setReportsLoading(true);
-      try {
-        const q = query(
-          collection(db, "wch_reports"),
-          where("flight_key", "==", selectedFlightKey),
-          orderBy("submitted_at", "asc")
-        );
-
-        const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-          airline: safeUpper(d.data().airline),
-          flight_number: safeUpper(d.data().flight_number),
-          origin: safeUpper(d.data().origin),
-          destination: safeUpper(d.data().destination),
-          gate: safeUpper(d.data().gate),
-          seat: safeUpper(d.data().seat),
-          boarding_group: safeUpper(d.data().boarding_group),
-          operator: safeUpper(d.data().operator),
-          time_at_gate: formatTimeAtGate(d.data().time_at_gate),
-          pnr: safeText(d.data().pnr).toUpperCase(),
-        }));
-
-        if (mounted) setReports(rows);
-      } catch (e) {
-        console.error(e);
-        if (mounted) {
-          setError(e?.message || "Failed to load reports for this flight.");
-        }
-      } finally {
-        if (mounted) setReportsLoading(false);
-      }
-    }
-
-    loadReportsForFlight();
-    return () => {
-      mounted = false;
-    };
-  }, [selectedFlightKey]);
-
-  const selectedFlight = useMemo(() => {
-    return flights.find((f) => f.flight_key === selectedFlightKey) || null;
-  }, [flights, selectedFlightKey]);
-
-  const handleCloseFlight = async (flight) => {
+  const handlePickFile = (file) => {
     setError("");
-    if (!canClose) {
-      setError("You do not have permission to close flights.");
-      return;
+    setParsed(null);
+    setImageUrl("");
+    setImageFile(file || null);
+  };
+
+  const handleParsedChange = (field, value) => {
+    setParsed((prev) => ({
+      ...prev,
+      [field]:
+        field === "pnr"
+          ? cleanPnr(value)
+          : field === "passenger_name"
+          ? value
+          : value,
+    }));
+  };
+
+  const uploadToStorage = async (file) => {
+    const safeUser = (user?.username || user?.id || "unknown").toString();
+    const path = `wch_reports/${safeUser}/${yyyymmdd()}/${Date.now()}-${file.name}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file, {
+      contentType: file.type || "image/jpeg",
+    });
+    return await getDownloadURL(storageRef);
+  };
+
+  const callScanService = async (url) => {
+    if (!scanUrl) {
+      throw new Error(
+        "Missing VITE_WCHR_SCAN_URL. Configure your scan endpoint to enable parsing."
+      );
     }
-    if (!flight?.flight_key || flight.flight_key === "UNKNOWN") {
-      setError("Missing flight_key. This flight cannot be closed.");
+
+    const res = await fetch(scanUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_url: url }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Scan failed (${res.status}). ${txt}`.trim());
+    }
+
+    return await res.json();
+  };
+
+  const handleScan = async () => {
+    setError("");
+
+    if (!imageFile) {
+      setError("Please select a boarding pass photo.");
       return;
     }
 
     try {
-      const ref = doc(db, "wch_flights", flight.flight_key);
-      const snap = await getDoc(ref);
+      setStep("scanning");
 
-      const payload = {
-        flight_key: flight.flight_key,
-        airline: flight.airline,
-        flight_number: flight.flight_number,
-        flight_date: flight.flight_date || null,
-        origin: flight.origin || "",
-        destination: flight.destination || "",
-        operator: flight.operator || "",
-        closed_at: Timestamp.now(),
-        closed_by_employee_id: user?.id || "",
-        closed_by_name: user?.username || "",
+      const url = await uploadToStorage(imageFile);
+      setImageUrl(url);
+
+      const scanResult = await callScanService(url);
+      console.log("WCHR scan result:", scanResult);
+
+      const rawText = getRawScanText(scanResult);
+
+      const normalized = {
+        passenger_name: guessPassengerName(scanResult, rawText),
+        airline: safeUpper(scanResult?.airline || ""),
+        flight_number: safeUpper(
+          scanResult?.flight_number || scanResult?.flight || ""
+        ),
+        flight_date: safeText(scanResult?.flight_date || scanResult?.date || ""),
+        destination: safeUpper(
+          scanResult?.destination || scanResult?.to || ""
+        ),
+        seat: safeUpper(scanResult?.seat || ""),
+        gate: safeUpper(scanResult?.gate || ""),
+        pnr: guessPnr(scanResult, rawText),
+        raw_text: rawText,
       };
 
-      if (!snap.exists()) {
-        await setDoc(ref, payload);
-      } else {
-        await updateDoc(ref, {
-          closed_at: payload.closed_at,
-          closed_by_employee_id: payload.closed_by_employee_id,
-          closed_by_name: payload.closed_by_name,
-        });
-      }
-
-      setFlights((prev) =>
-        prev.map((f) =>
-          f.flight_key === flight.flight_key
-            ? { ...f, closed: true, closed_at: new Date() }
-            : f
-        )
-      );
-
-      if (selectedFlightKey === flight.flight_key && reports?.length) {
-        const filename = `WCHR_${flight.airline}${flight.flight_number}_${toYYYYMMDD(
-          flight.flight_date || new Date()
-        )}.csv`;
-        downloadCSV(filename, reports);
-      }
+      setParsed(normalized);
+      setStep("preview");
     } catch (e) {
       console.error(e);
-      setError(e?.message || "Failed to close flight.");
+      setStep("upload");
+      setError(e?.message || "Unexpected error while scanning.");
     }
   };
+
+  const handleSubmit = async () => {
+    setError("");
+
+    if (!user) {
+      setError("You must be logged in.");
+      return;
+    }
+
+    if (!canSubmit) {
+      setError(
+        "Please complete Passenger Name, Airline, Flight Number, Flight Date, Destination, Seat, Gate, Reservation Code and WCHR Type before submit."
+      );
+      return;
+    }
+
+    try {
+      setStep("submitting");
+
+      const flightDateObj = new Date(parsed.flight_date);
+      const flight_key = buildFlightKey({
+        airline: parsed.airline,
+        flight_number: parsed.flight_number,
+        flight_date: flightDateObj,
+      });
+
+      const closed = await isFlightClosed(flight_key);
+      const status = closed ? "LATE" : "NEW";
+
+      const docRef = await addDoc(collection(db, "wch_reports"), {
+        report_id: "",
+        employee_id: user.id || "",
+        employee_name: user.username || "",
+        submitted_at: serverTimestamp(),
+
+        passenger_name: normalizePassengerName(parsed.passenger_name),
+        airline: safeUpper(parsed.airline),
+        flight_number: safeUpper(parsed.flight_number),
+        flight_date: flightDateObj,
+        destination: safeUpper(parsed.destination),
+        seat: safeUpper(parsed.seat),
+        gate: safeUpper(parsed.gate),
+        pnr: cleanPnr(parsed.pnr),
+
+        wch_type: wchType,
+        status,
+        flight_key,
+        image_url: imageUrl,
+        raw_text: parsed.raw_text || "",
+      });
+
+      const short = docRef.id.slice(-6).toUpperCase();
+      const report_id = `WCHR-${yyyymmdd()}-${short}`;
+
+      await updateDoc(doc(db, "wch_reports", docRef.id), { report_id });
+
+      navigate("/wchr/my-reports");
+    } catch (e) {
+      console.error(e);
+      setStep("preview");
+      setError(e?.message || "Unexpected error while submitting.");
+    }
+  };
+
+  if (!user) {
+    return (
+      <PageCard style={{ padding: 22, maxWidth: 900, margin: "0 auto" }}>
+        <p style={{ margin: 0, color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+          You must be logged in to scan and submit a WCHR report.
+        </p>
+      </PageCard>
+    );
+  }
 
   return (
     <div
@@ -522,7 +511,7 @@ export default function WCHRFlights() {
         display: "grid",
         gap: 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
-        maxWidth: 1180,
+        maxWidth: 980,
         margin: "0 auto",
       }}
     >
@@ -534,25 +523,10 @@ export default function WCHRFlights() {
           padding: 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          position: "relative",
-          overflow: "hidden",
         }}
       >
         <div
           style={{
-            position: "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
-          }}
-        />
-
-        <div
-          style={{
-            position: "relative",
             display: "flex",
             justifyContent: "space-between",
             gap: 16,
@@ -561,64 +535,20 @@ export default function WCHRFlights() {
           }}
         >
           <div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.78)",
-                fontWeight: 700,
-              }}
-            >
+            <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.78)", fontWeight: 700 }}>
               TPA OPS · WCHR
             </p>
-
-            <h1
-              style={{
-                margin: "10px 0 6px",
-                fontSize: 32,
-                lineHeight: 1.05,
-                fontWeight: 800,
-                letterSpacing: "-0.04em",
-              }}
-            >
-              WCHR Flights
+            <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800 }}>
+              WCHR Scan
             </h1>
-
-            <p
-              style={{
-                margin: 0,
-                maxWidth: 760,
-                fontSize: 14,
-                color: "rgba(255,255,255,0.88)",
-              }}
-            >
-              View flights by date, review WCHR reports, export CSV files and
-              close flights when needed.
+            <p style={{ margin: 0, maxWidth: 760, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
+              Scan a boarding pass and keep only the required fields for the WCHR report.
             </p>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <ActionButton
-              onClick={() => navigate("/wchr/my-reports")}
-              variant="secondary"
-            >
-              My Reports
-            </ActionButton>
-            <ActionButton
-              onClick={() => navigate("/dashboard")}
-              variant="secondary"
-            >
-              Back
-            </ActionButton>
-          </div>
+          <ActionButton onClick={() => navigate("/dashboard")} variant="secondary">
+            Back
+          </ActionButton>
         </div>
       </div>
 
@@ -640,508 +570,170 @@ export default function WCHRFlights() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 20 }}>
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ display: "grid", gap: 14 }}>
           <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: 6,
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#475569",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-              }}
-            >
-              Date
-            </label>
+            <FieldLabel>Boarding Pass Photo</FieldLabel>
             <input
-              type="date"
-              value={toYYYYMMDD(selectedDate)}
-              onChange={(e) =>
-                setSelectedDate(new Date(e.target.value + "T00:00:00"))
-              }
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => handlePickFile(e.target.files?.[0])}
               style={{
+                width: "100%",
                 border: "1px solid #dbeafe",
                 background: "#ffffff",
                 borderRadius: 14,
                 padding: "12px 14px",
                 fontSize: 14,
                 color: "#0f172a",
-                outline: "none",
               }}
             />
           </div>
 
-          <div
-            style={{
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              borderRadius: 14,
-              padding: "12px 14px",
-              fontSize: 13,
-              color: "#334155",
-            }}
-          >
-            Showing flights with WCHR reports submitted on:{" "}
-            <b>{toMMDDYYYY(selectedDate)}</b>
-          </div>
-        </div>
-      </PageCard>
-
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Flights List
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Select a flight to review the report table, export data or close the
-            flight.
-          </p>
-        </div>
-
-        {loading ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Loading...
-          </div>
-        ) : flights.length === 0 ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No flights found for this date.
-          </div>
-        ) : (
-          <div
-            style={{
-              overflowX: "auto",
-              borderRadius: 18,
-              border: "1px solid #e2e8f0",
-            }}
-          >
-            <table
+          <div style={{ maxWidth: 260 }}>
+            <FieldLabel>WCHR Type</FieldLabel>
+            <select
+              value={wchType}
+              onChange={(e) => setWchType(e.target.value)}
               style={{
                 width: "100%",
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                minWidth: 980,
-                background: "#fff",
+                border: "1px solid #dbeafe",
+                background: "#ffffff",
+                borderRadius: 14,
+                padding: "12px 14px",
+                fontSize: 14,
+                color: "#0f172a",
               }}
             >
-              <thead>
-                <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle({ textAlign: "left" })}>Flight</th>
-                  <th style={thStyle({ textAlign: "left" })}>Date</th>
-                  <th style={thStyle({ textAlign: "left" })}>Route</th>
-                  <th style={thStyle({ textAlign: "left" })}>Operator</th>
-                  <th style={thStyle({ textAlign: "left" })}>Reports</th>
-                  <th style={thStyle({ textAlign: "left" })}>Status</th>
-                  <th style={thStyle({ textAlign: "center" })}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {flights.map((f, index) => (
-                  <tr
-                    key={f.flight_key}
-                    style={{
-                      background:
-                        selectedFlightKey === f.flight_key
-                          ? "#edf7ff"
-                          : index % 2 === 0
-                          ? "#ffffff"
-                          : "#fbfdff",
-                    }}
-                  >
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => setSelectedFlightKey(f.flight_key)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          padding: 0,
-                          textAlign: "left",
-                          color: "#1769aa",
-                          cursor: "pointer",
-                          fontWeight:
-                            selectedFlightKey === f.flight_key ? 900 : 700,
-                          fontSize: 14,
-                        }}
-                      >
-                        {f.airline} {f.flight_number}
-                      </button>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#64748b",
-                          marginTop: 4,
-                        }}
-                      >
-                        flight_key: {f.flight_key}
-                      </div>
-                    </td>
-
-                    <td style={tdStyle}>
-                      {f.flight_date ? toMMDDYYYY(f.flight_date) : "—"}
-                    </td>
-
-                    <td style={tdStyle}>
-                      {(f.origin || "—") + " → " + (f.destination || "—")}
-                    </td>
-
-                    <td style={tdStyle}>{f.operator || "—"}</td>
-
-                    <td style={tdStyle}>
-                      <div style={{ fontWeight: 700 }}>
-                        Total: {f.total_reports}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          marginTop: 4,
-                        }}
-                      >
-                        NEW: {f.new_reports} · LATE: {f.late_reports}
-                      </div>
-                    </td>
-
-                    <td style={tdStyle}>
-                      {f.closed ? (
-                        <span style={statusBadge("CLOSED")}>CLOSED</span>
-                      ) : (
-                        <span style={statusBadge("OPEN")}>OPEN</span>
-                      )}
-                      {f.closed_at && (
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: "#64748b",
-                            marginTop: 6,
-                          }}
-                        >
-                          Closed at: {toMMDDYYYY(f.closed_at)}
-                        </div>
-                      )}
-                    </td>
-
-                    <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <ActionButton
-                          onClick={() => setSelectedFlightKey(f.flight_key)}
-                          variant="secondary"
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                        >
-                          View Table
-                        </ActionButton>
-
-                        <ActionButton
-                          onClick={() => handleCloseFlight(f)}
-                          variant="primary"
-                          disabled={!canClose || f.closed}
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                        >
-                          Close Flight
-                        </ActionButton>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <p
-              style={{
-                margin: "10px 12px 0",
-                fontSize: 12,
-                color: "#64748b",
-                lineHeight: 1.6,
-              }}
-            >
-              Note: Reports submitted after closure will be marked as <b>LATE</b>.
-            </p>
+              <option value="WCHR">WCHR</option>
+              <option value="WCHS">WCHS</option>
+              <option value="WCHC">WCHC</option>
+            </select>
           </div>
-        )}
+
+          <div>
+            <ActionButton
+              onClick={handleScan}
+              variant="primary"
+              disabled={!canScan || step === "scanning" || step === "submitting"}
+            >
+              {step === "scanning" ? "Scanning..." : "Scan & Preview"}
+            </ActionButton>
+          </div>
+        </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "flex-start",
-            marginBottom: 14,
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Flight Report Table
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              {selectedFlight ? (
-                <>
-                  Showing reports for <b>{selectedFlight.airline} {selectedFlight.flight_number}</b>{" "}
-                  ({selectedFlight.origin || "—"} → {selectedFlight.destination || "—"}) ·{" "}
-                  <b>{selectedFlight.flight_date ? toMMDDYYYY(selectedFlight.flight_date) : "—"}</b>
-                </>
-              ) : (
-                "Select a flight above to view the table."
-              )}
-            </p>
-          </div>
-
-          {selectedFlight && (
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <ActionButton
-                onClick={() => {
-                  const filename = `WCHR_${selectedFlight.airline}${selectedFlight.flight_number}_${toYYYYMMDD(
-                    selectedFlight.flight_date || new Date()
-                  )}.csv`;
-                  downloadCSV(filename, reports);
-                }}
-                variant="secondary"
-                disabled={!reports?.length}
-              >
-                Export CSV
-              </ActionButton>
-
-              <ActionButton
-                onClick={() => handleCloseFlight(selectedFlight)}
-                variant="success"
-                disabled={!canClose || selectedFlight.closed}
-              >
-                Close Flight (Export)
-              </ActionButton>
-            </div>
-          )}
-        </div>
-
-        {reportsLoading ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Loading reports...
-          </div>
-        ) : !selectedFlight ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No flight selected.
-          </div>
-        ) : reports.length === 0 ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No reports for this flight.
-          </div>
-        ) : (
-          <>
-            <div
-              style={{
-                overflowX: "auto",
-                borderRadius: 18,
-                border: "1px solid #e2e8f0",
-              }}
-            >
-              <table
+      {step === "preview" && parsed && (
+        <PageCard style={{ padding: 22 }}>
+          {imageUrl && (
+            <div style={{ marginBottom: 16 }}>
+              <img
+                src={imageUrl}
+                alt="Boarding pass"
                 style={{
                   width: "100%",
-                  borderCollapse: "separate",
-                  borderSpacing: 0,
-                  minWidth: 1480,
-                  background: "#fff",
+                  maxHeight: 340,
+                  objectFit: "contain",
+                  borderRadius: 18,
+                  border: "1px solid #e2e8f0",
+                  background: "#f8fbff",
                 }}
-              >
-                <thead>
-                  <tr style={{ background: "#f8fbff" }}>
-                    <th style={thStyle({ textAlign: "left" })}>Photo</th>
-                    <th style={thStyle({ textAlign: "left" })}>Report ID</th>
-                    <th style={thStyle({ textAlign: "left" })}>Passenger</th>
-                    <th style={thStyle({ textAlign: "left" })}>Flight Date</th>
-                    <th style={thStyle({ textAlign: "left" })}>Seat</th>
-                    <th style={thStyle({ textAlign: "left" })}>Gate</th>
-                    <th style={thStyle({ textAlign: "left" })}>Time at Gate</th>
-                    <th style={thStyle({ textAlign: "left" })}>Group</th>
-                    <th style={thStyle({ textAlign: "left" })}>PNR</th>
-                    <th style={thStyle({ textAlign: "left" })}>Operator</th>
-                    <th style={thStyle({ textAlign: "left" })}>WCHR</th>
-                    <th style={thStyle({ textAlign: "left" })}>Wheelchair #</th>
-                    <th style={thStyle({ textAlign: "left" })}>Submitted By</th>
-                    <th style={thStyle({ textAlign: "center" })}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reports.map((r, index) => (
-                    <tr
-                      key={r.id}
-                      style={{
-                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                      }}
-                    >
-                      <td style={tdStyle}>
-                        <ImageThumb
-                          src={r.image_url}
-                          alt={r.passenger_name || "Boarding pass"}
-                        />
-                      </td>
-                      <td style={tdStyle}>{r.report_id || r.id}</td>
-                      <td style={tdStyle}>{r.passenger_name || "—"}</td>
-                      <td style={tdStyle}>
-                        {formatReportFlightDate(r.flight_date)}
-                      </td>
-                      <td style={tdStyle}>{r.seat || "—"}</td>
-                      <td style={tdStyle}>{r.gate || "—"}</td>
-                      <td style={tdStyle}>{r.time_at_gate || "—"}</td>
-                      <td style={tdStyle}>{r.boarding_group || "—"}</td>
-                      <td style={tdStyle}>{r.pnr || "—"}</td>
-                      <td style={tdStyle}>{r.operator || "—"}</td>
-                      <td style={tdStyle}>{r.wch_type || "—"}</td>
-                      <td style={tdStyle}>{r.wheelchair_number || "—"}</td>
-                      <td style={tdStyle}>{r.employee_name || "—"}</td>
-                      <td style={{ ...tdStyle, textAlign: "center" }}>
-                        {String(r.status || "").toUpperCase() === "LATE" ? (
-                          <span style={statusBadge("LATE")}>LATE</span>
-                        ) : (
-                          <span style={statusBadge("NEW")}>NEW</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              />
             </div>
+          )}
 
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <EditInput
+              label="Passenger Name"
+              value={parsed.passenger_name}
+              onChange={(value) => handleParsedChange("passenger_name", value)}
+              placeholder="VERGARA / CLAUDIA"
+            />
+            <EditInput
+              label="Airline"
+              value={parsed.airline}
+              onChange={(value) => handleParsedChange("airline", value)}
+            />
+            <EditInput
+              label="Flight Number"
+              value={parsed.flight_number}
+              onChange={(value) => handleParsedChange("flight_number", value)}
+            />
+            <EditInput
+              label="Flight Date"
+              value={parsed.flight_date}
+              onChange={(value) => handleParsedChange("flight_date", value)}
+              placeholder="2026-03-29"
+            />
+            <EditInput
+              label="Destination"
+              value={parsed.destination}
+              onChange={(value) => handleParsedChange("destination", value)}
+            />
+            <EditInput
+              label="Seat"
+              value={parsed.seat}
+              onChange={(value) => handleParsedChange("seat", value)}
+            />
+            <EditInput
+              label="Gate"
+              value={parsed.gate}
+              onChange={(value) => handleParsedChange("gate", value)}
+            />
+            <EditInput
+              label="PNR / Reservation Code"
+              value={parsed.pnr}
+              onChange={(value) => handleParsedChange("pnr", value)}
+              placeholder="A7ILFB"
+            />
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <FieldLabel>Detected Date Preview</FieldLabel>
             <div
               style={{
-                marginTop: 10,
-                fontSize: 12,
-                color: "#64748b",
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 14,
+                padding: "12px 14px",
+                fontSize: 14,
+                color: "#0f172a",
+                fontWeight: 700,
               }}
             >
-              Total reports: <b>{reports.length}</b>
+              {formatMMDDYYYY(parsed.flight_date) || "—"}
             </div>
-          </>
-        )}
-      </PageCard>
+          </div>
+
+          <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
+            <ActionButton
+              onClick={() => {
+                setParsed(null);
+                setImageUrl("");
+                setStep("upload");
+              }}
+              variant="secondary"
+            >
+              Retake / Upload Again
+            </ActionButton>
+
+            <ActionButton
+              onClick={handleSubmit}
+              variant="success"
+              disabled={!canSubmit || step === "submitting"}
+            >
+              {step === "submitting" ? "Submitting..." : "Submit Report"}
+            </ActionButton>
+          </div>
+        </PageCard>
+      )}
     </div>
   );
 }
-
-function formatReportFlightDate(val) {
-  const d = tsToDate(val);
-  return d ? toMMDDYYYY(d) : "—";
-}
-
-function thStyle(extra = {}) {
-  return {
-    padding: "14px 14px",
-    fontSize: 12,
-    fontWeight: 800,
-    color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    whiteSpace: "nowrap",
-    borderBottom: "1px solid #e2e8f0",
-    ...extra,
-  };
-}
-
-const tdStyle = {
-  padding: "14px",
-  borderBottom: "1px solid #eef2f7",
-  verticalAlign: "middle",
-  fontSize: 14,
-  color: "#0f172a",
-};
