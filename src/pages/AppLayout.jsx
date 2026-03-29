@@ -86,26 +86,44 @@ export default function AppLayout() {
   useEffect(() => {
     if (!user?.id) return;
 
-    updateUserPresence(user, { currentPage: location.pathname }).catch(
-      console.error
+    updateUserPresence(user, {
+      currentPage: location.pathname,
+    }).catch((err) => console.error("Error updating user presence:", err));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    updateUserPage(user, location.pathname).catch((err) =>
+      console.error("Error updating current page:", err)
     );
+  }, [location.pathname, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
 
     const handleBeforeUnload = () => {
       markUserOffline(user).catch(() => {});
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        markUserOffline(user).catch(() => {});
+      } else {
+        updateUserPresence(user, {
+          currentPage: location.pathname,
+        }).catch(() => {});
+      }
+    };
+
     window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      markUserOffline(user).catch(() => {});
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    updateUserPage(user, location.pathname).catch(console.error);
-  }, [user?.id, location.pathname]);
+  }, [user, location.pathname]);
 
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
@@ -177,7 +195,11 @@ export default function AppLayout() {
 
     if (user?.role === "station_manager") {
       admin.push(
-        { to: "/admin/activity-dashboard", label: "User Activity", icon: "📈" },
+        {
+          to: "/admin/activity-dashboard",
+          label: "User Activity",
+          icon: "📈",
+        },
         { to: "/create-user", label: "Create User", icon: "➕" },
         { to: "/edit-users", label: "Manage Users", icon: "⚙️" },
         { to: "/employees", label: "Employees", icon: "👥" }
