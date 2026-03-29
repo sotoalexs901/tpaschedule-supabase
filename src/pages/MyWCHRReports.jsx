@@ -1,4 +1,3 @@
-// src/pages/MyWCHRReports.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -7,6 +6,7 @@ import {
   collection,
   query,
   where,
+  orderBy,
   limit,
   getDocs,
   updateDoc,
@@ -49,17 +49,6 @@ function toInputDateValue(val) {
   } catch {
     return "";
   }
-}
-
-function tsToDate(val) {
-  if (!val) return null;
-  if (typeof val?.toDate === "function") return val.toDate();
-  const d = new Date(val);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function safeText(v) {
-  return String(v || "").trim();
 }
 
 function PageCard({ children, style = {} }) {
@@ -237,10 +226,6 @@ export default function MyWCHRReports() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState("");
 
-  const [searchPassenger, setSearchPassenger] = useState("");
-  const [searchFlight, setSearchFlight] = useState("");
-  const [searchDate, setSearchDate] = useState("");
-
   const employeeId = useMemo(() => user?.id || "", [user]);
 
   useEffect(() => {
@@ -260,18 +245,12 @@ export default function MyWCHRReports() {
         const q = query(
           collection(db, "wch_reports"),
           where("employee_id", "==", employeeId),
+          orderBy("submitted_at", "desc"),
           limit(100)
         );
 
         const snap = await getDocs(q);
-
-        const data = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => {
-            const ta = tsToDate(a.submitted_at)?.getTime() || 0;
-            const tb = tsToDate(b.submitted_at)?.getTime() || 0;
-            return tb - ta;
-          });
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
         if (mounted) setRows(data);
       } catch (e) {
@@ -289,30 +268,9 @@ export default function MyWCHRReports() {
     };
   }, [employeeId]);
 
-  const filteredRows = useMemo(() => {
-    return rows.filter((r) => {
-      const passenger = safeText(r.passenger_name).toLowerCase();
-      const flight = `${safeText(r.airline)} ${safeText(r.flight_number)}`
-        .trim()
-        .toLowerCase();
-      const dateValue = toInputDateValue(r.flight_date);
+  const groupedReports = useMemo(() => groupReports(rows), [rows]);
 
-      const matchesPassenger = searchPassenger
-        ? passenger.includes(searchPassenger.trim().toLowerCase())
-        : true;
-
-      const matchesFlight = searchFlight
-        ? flight.includes(searchFlight.trim().toLowerCase())
-        : true;
-
-      const matchesDate = searchDate ? dateValue === searchDate : true;
-
-      return matchesPassenger && matchesFlight && matchesDate;
-    });
-  }, [rows, searchPassenger, searchFlight, searchDate]);
-
-  const groupedReports = useMemo(() => groupReports(filteredRows), [filteredRows]);
-  const totalReports = filteredRows.length;
+  const totalReports = rows.length;
 
   const handleDelete = async (id) => {
     const ok = window.confirm(
@@ -325,11 +283,9 @@ export default function MyWCHRReports() {
       await deleteDoc(doc(db, "wch_reports", id));
       setRows((prev) => prev.filter((r) => r.id !== id));
       setMessage("Report deleted successfully.");
-      setError("");
     } catch (e) {
       console.error(e);
       setError("Error deleting report.");
-      setMessage("");
     } finally {
       setDeletingId("");
     }
@@ -340,8 +296,6 @@ export default function MyWCHRReports() {
       ...row,
       flight_date: toInputDateValue(row.flight_date),
     });
-    setError("");
-    setMessage("");
   };
 
   const handleSaveEdit = async () => {
@@ -369,32 +323,24 @@ export default function MyWCHRReports() {
       });
 
       setRows((prev) =>
-        prev
-          .map((r) =>
-            r.id === editingRow.id
-              ? {
-                  ...r,
-                  ...editingRow,
-                  flight_date: editingRow.flight_date
-                    ? new Date(`${editingRow.flight_date}T00:00:00`)
-                    : r.flight_date,
-                }
-              : r
-          )
-          .sort((a, b) => {
-            const ta = tsToDate(a.submitted_at)?.getTime() || 0;
-            const tb = tsToDate(b.submitted_at)?.getTime() || 0;
-            return tb - ta;
-          })
+        prev.map((r) =>
+          r.id === editingRow.id
+            ? {
+                ...r,
+                ...editingRow,
+                flight_date: editingRow.flight_date
+                  ? new Date(`${editingRow.flight_date}T00:00:00`)
+                  : r.flight_date,
+              }
+            : r
+        )
       );
 
       setEditingRow(null);
       setMessage("Report updated successfully.");
-      setError("");
     } catch (e) {
       console.error(e);
       setError("Error updating report.");
-      setMessage("");
     } finally {
       setSavingEdit(false);
     }
@@ -422,7 +368,10 @@ export default function MyWCHRReports() {
           <h1>WCHR Report</h1>
           <div class="meta">
             <strong>Report ID:</strong> ${row.report_id || row.id}<br/>
-            <strong>Status:</strong> ${row.status || "-"}
+            <strong>Status:</strong> ${row.status || "-"}<br/>
+            <strong>Submitted By:</strong> ${row.employee_name || "-"}<br/>
+            <strong>Login:</strong> ${row.employee_login || "-"}<br/>
+            <strong>Role:</strong> ${row.employee_role || "-"}
           </div>
           <div class="grid">
             <div class="box"><div class="label">Passenger</div>${row.passenger_name || "-"}</div>
@@ -466,6 +415,9 @@ export default function MyWCHRReports() {
       const lines = [
         `Report ID: ${row.report_id || row.id}`,
         `Status: ${row.status || "-"}`,
+        `Submitted By: ${row.employee_name || "-"}`,
+        `Login: ${row.employee_login || "-"}`,
+        `Role: ${row.employee_role || "-"}`,
         `Passenger: ${row.passenger_name || "-"}`,
         `Flight: ${(row.airline || "-") + " " + (row.flight_number || "")}`,
         `Date: ${formatMMDDYYYYFromFirestore(row.flight_date) || "-"}`,
@@ -499,7 +451,6 @@ export default function MyWCHRReports() {
     } catch (e) {
       console.error(e);
       setError("Error exporting PDF.");
-      setMessage("");
     }
   };
 
@@ -666,78 +617,6 @@ export default function MyWCHRReports() {
               color: "#0f172a",
             }}
           >
-            Search Filters
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Search by passenger, flight, or exact flight date.
-          </p>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-          }}
-        >
-          <div>
-            <label style={filterLabelStyle}>Passenger Name</label>
-            <TextInput
-              value={searchPassenger}
-              onChange={(e) => setSearchPassenger(e.target.value)}
-              placeholder="Example: Claudia"
-            />
-          </div>
-
-          <div>
-            <label style={filterLabelStyle}>Flight</label>
-            <TextInput
-              value={searchFlight}
-              onChange={(e) => setSearchFlight(e.target.value)}
-              placeholder="Example: AV 195"
-            />
-          </div>
-
-          <div>
-            <label style={filterLabelStyle}>Flight Date</label>
-            <TextInput
-              type="date"
-              value={searchDate}
-              onChange={(e) => setSearchDate(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <ActionButton
-            variant="secondary"
-            onClick={() => {
-              setSearchPassenger("");
-              setSearchFlight("");
-              setSearchDate("");
-            }}
-          >
-            Clear Filters
-          </ActionButton>
-        </div>
-      </PageCard>
-
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
             Reports by Date & Flight
           </h2>
           <p
@@ -753,9 +632,9 @@ export default function MyWCHRReports() {
 
         {loading ? (
           <div style={infoBoxStyle}>Loading...</div>
-        ) : filteredRows.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div style={infoBoxStyle}>
-            No reports found with the current filters.
+            No reports yet. Click <b>New Report</b> to submit one.
           </div>
         ) : (
           <div style={{ display: "grid", gap: 18 }}>
@@ -892,18 +771,14 @@ export default function MyWCHRReports() {
                                 marginTop: 12,
                               }}
                             >
-                              <InfoMini
-                                label="Flight"
-                                value={`${r.airline || "—"} ${r.flight_number || ""}`}
-                              />
-                              <InfoMini
-                                label="Date"
-                                value={formatMMDDYYYYFromFirestore(r.flight_date) || "—"}
-                              />
+                              <InfoMini label="Flight" value={`${r.airline || "—"} ${r.flight_number || ""}`} />
+                              <InfoMini label="Date" value={formatMMDDYYYYFromFirestore(r.flight_date) || "—"} />
                               <InfoMini label="Seat" value={r.seat || "—"} />
                               <InfoMini label="Gate" value={r.gate || "—"} />
                               <InfoMini label="PNR" value={r.pnr || "—"} />
                               <InfoMini label="WCHR Type" value={r.wch_type || "—"} />
+                              <InfoMini label="Login" value={r.employee_login || "—"} />
+                              <InfoMini label="Role" value={r.employee_role || "—"} />
                             </div>
 
                             <div
@@ -1193,14 +1068,4 @@ const infoBoxStyle = {
   color: "#64748b",
   fontSize: 14,
   fontWeight: 600,
-};
-
-const filterLabelStyle = {
-  display: "block",
-  marginBottom: 6,
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#475569",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
 };
