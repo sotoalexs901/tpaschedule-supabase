@@ -39,15 +39,26 @@ function startOfWeek() {
   return monday;
 }
 
-function buildWchrCounts(reports, startDate) {
+function startOfMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+}
+
+function getRangeStart(range) {
+  if (range === "today") return startOfToday();
+  if (range === "week") return startOfWeek();
+  if (range === "month") return startOfMonth();
+  return null;
+}
+
+function buildCountByLogin(reports) {
   const counts = {};
 
-  for (const r of reports || []) {
-    const submitted = toDateSafe(r.submitted_at);
-    if (!submitted) continue;
-    if (submitted < startDate) continue;
+  for (const r of reports) {
+    const login = String(
+      r.employee_login || r.employee_name || "Unknown"
+    ).trim() || "Unknown";
 
-    const login = String(r.employee_login || r.employee_name || "Unknown").trim() || "Unknown";
     counts[login] = (counts[login] || 0) + 1;
   }
 
@@ -56,65 +67,96 @@ function buildWchrCounts(reports, startDate) {
     .sort((a, b) => b.count - a.count || a.login.localeCompare(b.login));
 }
 
-function buildLast7DaysWchr(reports) {
-  const days = [];
+function buildDailyCounts(reports, daysBack = 7) {
   const now = new Date();
+  const points = [];
 
-  for (let i = 6; i >= 0; i--) {
+  for (let i = daysBack - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(now.getDate() - i);
     d.setHours(0, 0, 0, 0);
 
-    const label = d.toLocaleDateString(undefined, {
-      month: "2-digit",
-      day: "2-digit",
-    });
-
-    days.push({
+    points.push({
       key: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`,
-      label,
+      label: d.toLocaleDateString(undefined, {
+        month: "2-digit",
+        day: "2-digit",
+      }),
       count: 0,
     });
   }
 
-  const map = new Map(days.map((d) => [d.key, d]));
+  const map = new Map(points.map((p) => [p.key, p]));
 
-  for (const r of reports || []) {
+  for (const r of reports) {
     const submitted = toDateSafe(r.submitted_at);
     if (!submitted) continue;
 
     const key = `${submitted.getFullYear()}-${submitted.getMonth()}-${submitted.getDate()}`;
-    const item = map.get(key);
-    if (item) item.count += 1;
+    const found = map.get(key);
+    if (found) found.count += 1;
   }
 
-  return days;
+  return points;
 }
 
-function buildTodayHourlyWchr(reports) {
-  const start = startOfToday();
-  const hours = Array.from({ length: 24 }, (_, i) => ({
-    label: `${String(i).padStart(2, "0")}:00`,
-    hour: i,
-    count: 0,
-  }));
+function countReportsSince(reports, startDate) {
+  if (!startDate) return reports.length;
+
+  return reports.filter((r) => {
+    const submitted = toDateSafe(r.submitted_at);
+    return submitted && submitted >= startDate;
+  }).length;
+}
+
+function buildProductivityTable(reports, users) {
+  const byLogin = {};
 
   for (const r of reports || []) {
+    const login = String(
+      r.employee_login || r.employee_name || "Unknown"
+    ).trim() || "Unknown";
+
+    if (!byLogin[login]) {
+      byLogin[login] = {
+        login,
+        today: 0,
+        week: 0,
+        month: 0,
+        total: 0,
+      };
+    }
+
     const submitted = toDateSafe(r.submitted_at);
     if (!submitted) continue;
-    if (submitted < start) continue;
 
-    const h = submitted.getHours();
-    if (hours[h]) hours[h].count += 1;
+    byLogin[login].total += 1;
+
+    if (submitted >= startOfToday()) byLogin[login].today += 1;
+    if (submitted >= startOfWeek()) byLogin[login].week += 1;
+    if (submitted >= startOfMonth()) byLogin[login].month += 1;
   }
 
-  return hours;
+  return Object.values(byLogin)
+    .map((row) => {
+      const matchedUser = users.find((u) => u.username === row.login);
+      return {
+        ...row,
+        role: matchedUser?.role || "",
+        online: Boolean(matchedUser?.online),
+      };
+    })
+    .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
 }
 
 export default function AdminActivityDashboard() {
   const [users, setUsers] = useState([]);
   const [presence, setPresence] = useState([]);
   const [reports, setReports] = useState([]);
+
+  const [range, setRange] = useState("week");
+  const [selectedLogin, setSelectedLogin] = useState("all");
+  const [selectedRole, setSelectedRole] = useState("all");
 
   useEffect(() => {
     const unsubUsers = onSnapshot(
@@ -171,33 +213,95 @@ export default function AdminActivityDashboard() {
       .sort((a, b) => a.username.localeCompare(b.username));
   }, [users, presence]);
 
-  const totalUsers = mergedUsers.length;
-  const onlineUsers = mergedUsers.filter((u) => u.online).length;
-  const activeUsers = mergedUsers.filter((u) => u.lastSeen).length;
+  const loginOptions = useMemo(() => {
+    const set = new Set();
 
-  const todayTopWchr = useMemo(
-    () => buildWchrCounts(reports, startOfToday()).slice(0, 8),
-    [reports]
+    reports.forEach((r) => {
+      const login = String(
+        r.employee_login || r.employee_name || "Unknown"
+      ).trim();
+      if (login) set.add(login);
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [reports]);
+
+  const roleOptions = useMemo(() => {
+    const set = new Set(
+      mergedUsers
+        .map((u) => u.role)
+        .filter(Boolean)
+    );
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [mergedUsers]);
+
+  const filteredUsers = useMemo(() => {
+    return mergedUsers.filter((u) => {
+      if (selectedRole !== "all" && u.role !== selectedRole) return false;
+      if (selectedLogin !== "all" && u.username !== selectedLogin) return false;
+      return true;
+    });
+  }, [mergedUsers, selectedLogin, selectedRole]);
+
+  const filteredReports = useMemo(() => {
+    const rangeStart = getRangeStart(range);
+
+    return reports.filter((r) => {
+      const submitted = toDateSafe(r.submitted_at);
+      if (!submitted) return false;
+      if (rangeStart && submitted < rangeStart) return false;
+
+      const login = String(
+        r.employee_login || r.employee_name || "Unknown"
+      ).trim();
+
+      if (selectedLogin !== "all" && login !== selectedLogin) return false;
+
+      if (selectedRole !== "all") {
+        const matchedUser = mergedUsers.find((u) => u.username === login);
+        if (!matchedUser || matchedUser.role !== selectedRole) return false;
+      }
+
+      return true;
+    });
+  }, [reports, range, selectedLogin, selectedRole, mergedUsers]);
+
+  const totalUsers = filteredUsers.length;
+  const onlineUsers = filteredUsers.filter((u) => u.online).length;
+  const activeUsers = filteredUsers.filter((u) => u.lastSeen).length;
+  const totalWchr = filteredReports.length;
+
+  const topWchrLogins = useMemo(
+    () => buildCountByLogin(filteredReports).slice(0, 10),
+    [filteredReports]
   );
 
-  const weekTopWchr = useMemo(
-    () => buildWchrCounts(reports, startOfWeek()).slice(0, 8),
-    [reports]
-  );
-
-  const dailyWchr = useMemo(() => buildLast7DaysWchr(reports), [reports]);
-  const hourlyWchr = useMemo(() => buildTodayHourlyWchr(reports), [reports]);
+  const dailyWchr = useMemo(() => {
+    if (range === "today") return buildDailyCounts(filteredReports, 1);
+    if (range === "week") return buildDailyCounts(filteredReports, 7);
+    if (range === "month") return buildDailyCounts(filteredReports, 30);
+    return buildDailyCounts(filteredReports, 14);
+  }, [filteredReports, range]);
 
   const recentUsers = useMemo(() => {
-    return [...mergedUsers]
+    return [...filteredUsers]
       .filter((u) => u.lastSeen)
       .sort((a, b) => {
         const A = toDateSafe(a.lastSeen)?.getTime() || 0;
         const B = toDateSafe(b.lastSeen)?.getTime() || 0;
         return B - A;
       })
-      .slice(0, 12);
-  }, [mergedUsers]);
+      .slice(0, 15);
+  }, [filteredUsers]);
+
+  const productivityRows = useMemo(() => {
+    return buildProductivityTable(filteredReports, mergedUsers).filter((row) => {
+      if (selectedRole !== "all" && row.role !== selectedRole) return false;
+      if (selectedLogin !== "all" && row.login !== selectedLogin) return false;
+      return true;
+    });
+  }, [filteredReports, mergedUsers, selectedRole, selectedLogin]);
 
   return (
     <div
@@ -214,9 +318,58 @@ export default function AdminActivityDashboard() {
           User Activity Dashboard
         </h1>
         <p style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
-          Live activity, WCHR usage, productivity trends, and user access.
+          Monitor user access, presence and WCHR productivity with filters.
         </p>
       </div>
+
+      <Panel title="Filters">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
+          <FilterField label="Range">
+            <select value={range} onChange={(e) => setRange(e.target.value)} style={selectStyle}>
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="all">All</option>
+            </select>
+          </FilterField>
+
+          <FilterField label="Login">
+            <select
+              value={selectedLogin}
+              onChange={(e) => setSelectedLogin(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="all">All</option>
+              {loginOptions.map((login) => (
+                <option key={login} value={login}>
+                  {login}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+
+          <FilterField label="Role">
+            <select
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="all">All</option>
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {normalizeRole(role)}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+        </div>
+      </Panel>
 
       <div
         style={{
@@ -225,17 +378,10 @@ export default function AdminActivityDashboard() {
           gap: 12,
         }}
       >
-        <StatCard label="Total Registered Users" value={totalUsers} />
+        <StatCard label="Filtered Users" value={totalUsers} />
         <StatCard label="Online Now" value={onlineUsers} />
         <StatCard label="Users With Activity" value={activeUsers} />
-        <StatCard
-          label="WCHR Today"
-          value={buildWchrCounts(reports, startOfToday()).reduce((a, b) => a + b.count, 0)}
-        />
-        <StatCard
-          label="WCHR This Week"
-          value={buildWchrCounts(reports, startOfWeek()).reduce((a, b) => a + b.count, 0)}
-        />
+        <StatCard label="WCHR Reports" value={totalWchr} />
       </div>
 
       <div
@@ -245,34 +391,18 @@ export default function AdminActivityDashboard() {
           gap: 16,
         }}
       >
-        <Panel title="Top WCHR Logins Today">
-          <BarChartList rows={todayTopWchr} emptyText="No WCHR scans today." />
+        <Panel title="Top WCHR Logins">
+          <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
         </Panel>
 
-        <Panel title="Top WCHR Logins This Week">
-          <BarChartList rows={weekTopWchr} emptyText="No WCHR scans this week." />
-        </Panel>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 16,
-        }}
-      >
-        <Panel title="WCHR Last 7 Days">
+        <Panel title="WCHR by Day">
           <VerticalBars rows={dailyWchr} />
-        </Panel>
-
-        <Panel title="WCHR Today by Hour">
-          <VerticalBars rows={hourlyWchr} compact />
         </Panel>
       </div>
 
       <Panel title="Recent User Activity">
         {recentUsers.length === 0 ? (
-          <InfoBox text="No user activity tracked yet." />
+          <InfoBox text="No recent activity for this filter." />
         ) : (
           <div
             style={{
@@ -297,9 +427,7 @@ export default function AdminActivityDashboard() {
                 {recentUsers.map((u, i) => (
                   <tr
                     key={u.id}
-                    style={{
-                      background: i % 2 === 0 ? "#fff" : "#f9fbff",
-                    }}
+                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
                   >
                     <td style={td}>
                       <div style={{ fontWeight: 700 }}>{u.username}</div>
@@ -326,49 +454,59 @@ export default function AdminActivityDashboard() {
         )}
       </Panel>
 
-      <Panel title="All Registered Users">
-        <div
-          style={{
-            border: "1px solid #e2e8f0",
-            borderRadius: 16,
-            overflow: "hidden",
-            background: "#fff",
-          }}
-        >
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead style={{ background: "#f8fbff" }}>
-              <tr>
-                <th style={th}>User</th>
-                <th style={th}>Role</th>
-                <th style={th}>Status</th>
-                <th style={th}>Current Page</th>
-                <th style={th}>Last Seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mergedUsers.map((u, i) => (
-                <tr
-                  key={u.id}
-                  style={{
-                    background: i % 2 === 0 ? "#fff" : "#f9fbff",
-                  }}
-                >
-                  <td style={td}>{u.username}</td>
-                  <td style={td}>{normalizeRole(u.role)}</td>
-                  <td style={td}>
-                    {u.online ? (
-                      <span style={badge("green")}>ONLINE</span>
-                    ) : (
-                      <span style={badge("gray")}>OFFLINE</span>
-                    )}
-                  </td>
-                  <td style={td}>{u.currentPage || "—"}</td>
-                  <td style={td}>{formatDate(u.lastSeen)}</td>
+      <Panel title="WCHR Productivity by Login">
+        {productivityRows.length === 0 ? (
+          <InfoBox text="No productivity data for this filter." />
+        ) : (
+          <div
+            style={{
+              border: "1px solid #e2e8f0",
+              borderRadius: 16,
+              overflow: "hidden",
+              background: "#fff",
+            }}
+          >
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead style={{ background: "#f8fbff" }}>
+                <tr>
+                  <th style={th}>Login</th>
+                  <th style={th}>Role</th>
+                  <th style={th}>Status</th>
+                  <th style={th}>Today</th>
+                  <th style={th}>This Week</th>
+                  <th style={th}>This Month</th>
+                  <th style={th}>Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {productivityRows.map((row, i) => (
+                  <tr
+                    key={row.login}
+                    style={{
+                      background: i % 2 === 0 ? "#fff" : "#f9fbff",
+                    }}
+                  >
+                    <td style={td}>
+                      <div style={{ fontWeight: 700 }}>{row.login}</div>
+                    </td>
+                    <td style={td}>{normalizeRole(row.role)}</td>
+                    <td style={td}>
+                      {row.online ? (
+                        <span style={badge("green")}>ONLINE</span>
+                      ) : (
+                        <span style={badge("gray")}>OFFLINE</span>
+                      )}
+                    </td>
+                    <td style={td}>{row.today}</td>
+                    <td style={td}>{row.week}</td>
+                    <td style={td}>{row.month}</td>
+                    <td style={{ ...td, fontWeight: 800 }}>{row.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
     </div>
   );
@@ -436,6 +574,26 @@ function StatCard({ label, value }) {
   );
 }
 
+function FilterField({ label, children }) {
+  return (
+    <div>
+      <div
+        style={{
+          marginBottom: 6,
+          fontSize: 12,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function BarChartList({ rows, emptyText }) {
   if (!rows.length) {
     return <InfoBox text={emptyText} />;
@@ -485,7 +643,7 @@ function BarChartList({ rows, emptyText }) {
   );
 }
 
-function VerticalBars({ rows, compact = false }) {
+function VerticalBars({ rows }) {
   if (!rows.length) {
     return <InfoBox text="No data available." />;
   }
@@ -497,7 +655,7 @@ function VerticalBars({ rows, compact = false }) {
       style={{
         display: "grid",
         gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))`,
-        gap: compact ? 6 : 10,
+        gap: 8,
         alignItems: "end",
         minHeight: 220,
       }}
@@ -527,7 +685,7 @@ function VerticalBars({ rows, compact = false }) {
           <div
             style={{
               width: "100%",
-              maxWidth: compact ? 20 : 36,
+              maxWidth: 34,
               height: `${Math.max((row.count / max) * 150, row.count > 0 ? 10 : 2)}px`,
               borderRadius: 10,
               background: "linear-gradient(180deg, #5aa9e6 0%, #1769aa 100%)",
@@ -536,7 +694,7 @@ function VerticalBars({ rows, compact = false }) {
 
           <div
             style={{
-              fontSize: compact ? 9 : 11,
+              fontSize: 11,
               color: "#64748b",
               textAlign: "center",
               wordBreak: "break-word",
@@ -567,6 +725,17 @@ function InfoBox({ text }) {
     </div>
   );
 }
+
+const selectStyle = {
+  width: "100%",
+  border: "1px solid #dbeafe",
+  background: "#ffffff",
+  borderRadius: 12,
+  padding: "10px 12px",
+  fontSize: 14,
+  color: "#0f172a",
+  outline: "none",
+};
 
 const th = {
   padding: 12,
