@@ -76,6 +76,108 @@ function buildEmployeeMatch(user, employees) {
   );
 }
 
+function timeToMinutes(value) {
+  if (!value || !String(value).includes(":")) return null;
+  const [hh, mm] = String(value).split(":").map(Number);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+  return hh * 60 + mm;
+}
+
+function calcShiftHours(shift) {
+  if (!shift?.start || !shift?.end || shift.start === "OFF") return 0;
+
+  let start = timeToMinutes(shift.start);
+  let end = timeToMinutes(shift.end);
+
+  if (start === null || end === null) return 0;
+  if (end <= start) end += 24 * 60;
+
+  return (end - start) / 60;
+}
+
+function calcRowHours(row) {
+  if (!row) return 0;
+
+  return DAY_KEYS.reduce((total, dayKey) => {
+    const shifts = Array.isArray(row[dayKey]) ? row[dayKey] : [];
+    return (
+      total +
+      shifts.reduce((sum, shift) => sum + calcShiftHours(shift), 0)
+    );
+  }, 0);
+}
+
+function roundHours(value) {
+  return Number(value.toFixed(2));
+}
+
+function parseScheduleDayDate(sch, dayKey) {
+  const raw = sch?.days?.[dayKey];
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(raw))) {
+    const d = new Date(`${raw}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function findNextShift(schedules, currentEmployeeId) {
+  const now = new Date();
+  let closest = null;
+
+  for (const sch of schedules || []) {
+    const row = (sch.grid || []).find((item) => item.employeeId === currentEmployeeId);
+    if (!row) continue;
+
+    for (const dayKey of DAY_KEYS) {
+      const baseDate = parseScheduleDayDate(sch, dayKey);
+      if (!baseDate) continue;
+
+      const shifts = Array.isArray(row[dayKey]) ? row[dayKey] : [];
+      for (const shift of shifts) {
+        if (!shift?.start || shift.start === "OFF") continue;
+
+        const [hh, mm] = String(shift.start).split(":").map(Number);
+        if (Number.isNaN(hh) || Number.isNaN(mm)) continue;
+
+        const shiftDate = new Date(baseDate);
+        shiftDate.setHours(hh, mm, 0, 0);
+
+        if (shiftDate < now) continue;
+
+        if (!closest || shiftDate < closest.startDateTime) {
+          closest = {
+            airline: sch.airline || "Airline",
+            department: sch.department || "Department",
+            dayKey,
+            dateLabel: sch.days?.[dayKey] || "",
+            start: shift.start,
+            end: shift.end || "",
+            startDateTime: shiftDate,
+          };
+        }
+      }
+    }
+  }
+
+  return closest;
+}
+
+function formatNextShiftText(nextShift) {
+  if (!nextShift) return "No upcoming shift found";
+
+  const dateText =
+    nextShift.startDateTime?.toLocaleDateString() || nextShift.dateLabel || "";
+  const timeText = nextShift.end
+    ? `${nextShift.start} - ${nextShift.end}`
+    : nextShift.start;
+
+  return `${DAY_FULL[nextShift.dayKey]} ${dateText} · ${timeText}`;
+}
+
 function SummaryCard({ label, value, subValue }) {
   return (
     <div
@@ -231,6 +333,26 @@ export default function MySchedulePage() {
     }, 0);
   }, [mySchedules, currentEmployee]);
 
+  const totalHours = useMemo(() => {
+    return roundHours(
+      mySchedules.reduce((sum, sch) => {
+        const row = (sch.grid || []).find(
+          (item) => item.employeeId === currentEmployee?.id
+        );
+        return sum + calcRowHours(row);
+      }, 0)
+    );
+  }, [mySchedules, currentEmployee]);
+
+  const nextShift = useMemo(() => {
+    if (!currentEmployee?.id) return null;
+    return findNextShift(mySchedules, currentEmployee.id);
+  }, [mySchedules, currentEmployee]);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   if (!user) {
     return (
       <div style={{ padding: 24 }}>
@@ -331,6 +453,7 @@ export default function MySchedulePage() {
 
   return (
     <div
+      id="my-schedule-page"
       style={{
         maxWidth: 1200,
         margin: "0 auto",
@@ -363,54 +486,81 @@ export default function MySchedulePage() {
           }}
         />
 
-        <div style={{ position: "relative" }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
-            Crew Portal
-          </p>
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 14,
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              Crew Portal
+            </p>
 
-          <h1
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              My Schedule
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.92)",
+                fontWeight: 600,
+              }}
+            >
+              {getEmployeeDisplayName(currentEmployee)} · {user.role}
+            </p>
+
+            <p
+              style={{
+                margin: "10px 0 0",
+                maxWidth: 780,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Review your approved schedules, next upcoming shift and who is
+              working with you on the same days.
+            </p>
+          </div>
+
+          <button
+            onClick={handlePrint}
             style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
+              border: "1px solid rgba(255,255,255,0.35)",
+              background: "rgba(255,255,255,0.16)",
+              color: "#fff",
+              borderRadius: 14,
+              padding: "10px 14px",
               fontWeight: 800,
-              letterSpacing: "-0.04em",
+              cursor: "pointer",
+              backdropFilter: "blur(6px)",
             }}
           >
-            My Schedule
-          </h1>
-
-          <p
-            style={{
-              margin: 0,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.92)",
-              fontWeight: 600,
-            }}
-          >
-            {getEmployeeDisplayName(currentEmployee)} · {user.role}
-          </p>
-
-          <p
-            style={{
-              margin: "10px 0 0",
-              maxWidth: 780,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            Review your approved schedules and expand each card to see who is
-            working with you during the same days.
-          </p>
+            Print Schedule
+          </button>
         </div>
       </div>
 
@@ -431,9 +581,14 @@ export default function MySchedulePage() {
           subValue="Across all approved schedules"
         />
         <SummaryCard
-          label="Employee Profile"
-          value={currentEmployee ? "Linked" : "Missing"}
-          subValue={currentEmployee?.id || "No linked employee profile"}
+          label="Estimated Hours"
+          value={loading ? "..." : totalHours}
+          subValue="Combined scheduled hours"
+        />
+        <SummaryCard
+          label="Next Shift"
+          value={nextShift ? nextShift.start : "—"}
+          subValue={formatNextShiftText(nextShift)}
         />
       </div>
 
@@ -493,6 +648,7 @@ export default function MySchedulePage() {
           );
 
           const workedDays = countWorkedDays(myRow);
+          const workedHours = roundHours(calcRowHours(myRow));
 
           const empMap = employees.reduce((acc, e) => {
             acc[e.id] = getEmployeeDisplayName(e);
@@ -578,19 +734,44 @@ export default function MySchedulePage() {
 
                 <div
                   style={{
-                    display: "inline-flex",
-                    alignItems: "center",
+                    display: "flex",
                     gap: 8,
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                    color: "#1769aa",
-                    borderRadius: 999,
-                    padding: "8px 12px",
-                    fontSize: 12,
-                    fontWeight: 800,
+                    flexWrap: "wrap",
                   }}
                 >
-                  Worked days: {workedDays}
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      background: "#f8fbff",
+                      border: "1px solid #dbeafe",
+                      color: "#1769aa",
+                      borderRadius: 999,
+                      padding: "8px 12px",
+                      fontSize: 12,
+                      fontWeight: 800,
+                    }}
+                  >
+                    Worked days: {workedDays}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      background: "#f8fbff",
+                      border: "1px solid #dbeafe",
+                      color: "#1769aa",
+                      borderRadius: 999,
+                      padding: "8px 12px",
+                      fontSize: 12,
+                      fontWeight: 800,
+                    }}
+                  >
+                    Hours: {workedHours}
+                  </div>
                 </div>
               </div>
 
