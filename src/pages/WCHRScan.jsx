@@ -464,6 +464,9 @@ export default function WCHRScan() {
         report_id: "",
         employee_id: user.id || "",
         employee_name: user.username || "",
+        employee_login:
+          user.username || user.loginUsername || user.email || "",
+        employee_role: user.role || "",
         submitted_at: serverTimestamp(),
 
         passenger_name: normalizePassengerName(parsed.passenger_name),
