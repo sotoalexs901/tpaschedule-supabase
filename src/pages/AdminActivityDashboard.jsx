@@ -31,8 +31,8 @@ function startOfToday() {
 
 function startOfWeek() {
   const now = new Date();
-  const day = now.getDay(); // 0 sun
-  const diff = day === 0 ? 6 : day - 1; // monday start
+  const day = now.getDay();
+  const diff = day === 0 ? 6 : day - 1;
   const monday = new Date(now);
   monday.setDate(now.getDate() - diff);
   monday.setHours(0, 0, 0, 0);
@@ -54,6 +54,61 @@ function buildWchrCounts(reports, startDate) {
   return Object.entries(counts)
     .map(([login, count]) => ({ login, count }))
     .sort((a, b) => b.count - a.count || a.login.localeCompare(b.login));
+}
+
+function buildLast7DaysWchr(reports) {
+  const days = [];
+  const now = new Date();
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+
+    const label = d.toLocaleDateString(undefined, {
+      month: "2-digit",
+      day: "2-digit",
+    });
+
+    days.push({
+      key: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`,
+      label,
+      count: 0,
+    });
+  }
+
+  const map = new Map(days.map((d) => [d.key, d]));
+
+  for (const r of reports || []) {
+    const submitted = toDateSafe(r.submitted_at);
+    if (!submitted) continue;
+
+    const key = `${submitted.getFullYear()}-${submitted.getMonth()}-${submitted.getDate()}`;
+    const item = map.get(key);
+    if (item) item.count += 1;
+  }
+
+  return days;
+}
+
+function buildTodayHourlyWchr(reports) {
+  const start = startOfToday();
+  const hours = Array.from({ length: 24 }, (_, i) => ({
+    label: `${String(i).padStart(2, "0")}:00`,
+    hour: i,
+    count: 0,
+  }));
+
+  for (const r of reports || []) {
+    const submitted = toDateSafe(r.submitted_at);
+    if (!submitted) continue;
+    if (submitted < start) continue;
+
+    const h = submitted.getHours();
+    if (hours[h]) hours[h].count += 1;
+  }
+
+  return hours;
 }
 
 export default function AdminActivityDashboard() {
@@ -130,6 +185,9 @@ export default function AdminActivityDashboard() {
     [reports]
   );
 
+  const dailyWchr = useMemo(() => buildLast7DaysWchr(reports), [reports]);
+  const hourlyWchr = useMemo(() => buildTodayHourlyWchr(reports), [reports]);
+
   const recentUsers = useMemo(() => {
     return [...mergedUsers]
       .filter((u) => u.lastSeen)
@@ -156,7 +214,7 @@ export default function AdminActivityDashboard() {
           User Activity Dashboard
         </h1>
         <p style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
-          Registered users, live presence, last access, and WCHR productivity trends.
+          Live activity, WCHR usage, productivity trends, and user access.
         </p>
       </div>
 
@@ -170,8 +228,14 @@ export default function AdminActivityDashboard() {
         <StatCard label="Total Registered Users" value={totalUsers} />
         <StatCard label="Online Now" value={onlineUsers} />
         <StatCard label="Users With Activity" value={activeUsers} />
-        <StatCard label="WCHR Today" value={buildWchrCounts(reports, startOfToday()).reduce((a, b) => a + b.count, 0)} />
-        <StatCard label="WCHR This Week" value={buildWchrCounts(reports, startOfWeek()).reduce((a, b) => a + b.count, 0)} />
+        <StatCard
+          label="WCHR Today"
+          value={buildWchrCounts(reports, startOfToday()).reduce((a, b) => a + b.count, 0)}
+        />
+        <StatCard
+          label="WCHR This Week"
+          value={buildWchrCounts(reports, startOfWeek()).reduce((a, b) => a + b.count, 0)}
+        />
       </div>
 
       <div
@@ -187,6 +251,22 @@ export default function AdminActivityDashboard() {
 
         <Panel title="Top WCHR Logins This Week">
           <BarChartList rows={weekTopWchr} emptyText="No WCHR scans this week." />
+        </Panel>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 16,
+        }}
+      >
+        <Panel title="WCHR Last 7 Days">
+          <VerticalBars rows={dailyWchr} />
+        </Panel>
+
+        <Panel title="WCHR Today by Hour">
+          <VerticalBars rows={hourlyWchr} compact />
         </Panel>
       </div>
 
@@ -398,6 +478,71 @@ function BarChartList({ rows, emptyText }) {
                 background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
               }}
             />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VerticalBars({ rows, compact = false }) {
+  if (!rows.length) {
+    return <InfoBox text="No data available." />;
+  }
+
+  const max = Math.max(...rows.map((r) => r.count), 1);
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))`,
+        gap: compact ? 6 : 10,
+        alignItems: "end",
+        minHeight: 220,
+      }}
+    >
+      {rows.map((row) => (
+        <div
+          key={row.label}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "end",
+            gap: 8,
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#334155",
+            }}
+          >
+            {row.count}
+          </div>
+
+          <div
+            style={{
+              width: "100%",
+              maxWidth: compact ? 20 : 36,
+              height: `${Math.max((row.count / max) * 150, row.count > 0 ? 10 : 2)}px`,
+              borderRadius: 10,
+              background: "linear-gradient(180deg, #5aa9e6 0%, #1769aa 100%)",
+            }}
+          />
+
+          <div
+            style={{
+              fontSize: compact ? 9 : 11,
+              color: "#64748b",
+              textAlign: "center",
+              wordBreak: "break-word",
+            }}
+          >
+            {row.label}
           </div>
         </div>
       ))}
