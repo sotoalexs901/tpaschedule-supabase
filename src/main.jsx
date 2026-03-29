@@ -34,6 +34,7 @@ import EmployeeTimeOffRequestPage from "./pages/EmployeeTimeOffRequestPage.jsx";
 import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
+import AdminActivityDashboard from "./pages/AdminActivityDashboard.jsx";
 
 // ✅ WCHR PAGES
 import WCHRScan from "./pages/WCHRScan.jsx";
@@ -149,6 +150,16 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["station_manager", "duty_manager"]}>
                 <WCHRFlights />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ✅ USER ACTIVITY – SOLO STATION MANAGER */}
+          <Route
+            path="admin/activity-dashboard"
+            element={
+              <ProtectedRoute roles={["station_manager"]}>
+                <AdminActivityDashboard />
               </ProtectedRoute>
             }
           />
