@@ -9,7 +9,6 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   Timestamp,
   doc,
   setDoc,
@@ -64,12 +63,19 @@ function formatTimeAtGate(v) {
   return `${match[1].padStart(2, "0")}:${match[2]}`;
 }
 
+function getMillis(val) {
+  if (!val) return 0;
+  if (typeof val?.toMillis === "function") return val.toMillis();
+  const d = tsToDate(val);
+  return d ? d.getTime() : 0;
+}
+
 function formatReportFlightDate(val) {
   const d = tsToDate(val);
   return d ? toMMDDYYYY(d) : "—";
 }
 
-function buildCsvRows(rows) {
+function downloadCSV(filename, rows) {
   const headers = [
     "Report ID",
     "Submitted By",
@@ -126,14 +132,9 @@ function buildCsvRows(rows) {
 
       return cols.join(",");
     }),
-  ];
+  ].join("\n");
 
-  return csvLines.join("\n");
-}
-
-function downloadCSV(filename, rows) {
-  const csvContent = buildCsvRows(rows);
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([csvLines], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -299,21 +300,15 @@ export default function WCHRFlights() {
   const [selectedFlightKey, setSelectedFlightKey] = useState("");
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reports, setReports] = useState([]);
-  const [allReportsForDate, setAllReportsForDate] = useState([]);
-
-  const userRole = String(user?.role || "").toLowerCase();
 
   const canClose = useMemo(() => {
+    const role = (user?.role || "").toLowerCase();
     return (
-      userRole.includes("station") ||
-      userRole.includes("duty") ||
-      userRole.includes("supervisor")
+      role.includes("station") ||
+      role.includes("duty") ||
+      role.includes("supervisor")
     );
-  }, [userRole]);
-
-  const canManagerExport = useMemo(() => {
-    return userRole === "station_manager" || userRole === "duty_manager";
-  }, [userRole]);
+  }, [user]);
 
   useEffect(() => {
     let mounted = true;
@@ -329,13 +324,13 @@ export default function WCHRFlights() {
         const q = query(
           collection(db, "wch_reports"),
           where("submitted_at", ">=", start),
-          where("submitted_at", "<=", end),
-          orderBy("submitted_at", "desc")
+          where("submitted_at", "<=", end)
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (mounted) setAllReportsForDate(rows);
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => getMillis(b.submitted_at) - getMillis(a.submitted_at));
 
         const map = new Map();
 
@@ -363,10 +358,18 @@ export default function WCHRFlights() {
           const item = map.get(fk);
           item.total_reports += 1;
 
-          if (!item.flight_date && reportFlightDate) item.flight_date = reportFlightDate;
-          if (!item.operator && r.operator) item.operator = safeUpper(r.operator);
-          if (!item.origin && r.origin) item.origin = safeUpper(r.origin);
-          if (!item.destination && r.destination) item.destination = safeUpper(r.destination);
+          if (!item.flight_date && reportFlightDate) {
+            item.flight_date = reportFlightDate;
+          }
+          if (!item.operator && r.operator) {
+            item.operator = safeUpper(r.operator);
+          }
+          if (!item.origin && r.origin) {
+            item.origin = safeUpper(r.origin);
+          }
+          if (!item.destination && r.destination) {
+            item.destination = safeUpper(r.destination);
+          }
 
           if (String(r.status || "").toUpperCase() === "LATE") {
             item.late_reports += 1;
@@ -430,27 +433,28 @@ export default function WCHRFlights() {
       try {
         const q = query(
           collection(db, "wch_reports"),
-          where("flight_key", "==", selectedFlightKey),
-          orderBy("submitted_at", "asc")
+          where("flight_key", "==", selectedFlightKey)
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-          airline: safeUpper(d.data().airline),
-          flight_number: safeUpper(d.data().flight_number),
-          origin: safeUpper(d.data().origin),
-          destination: safeUpper(d.data().destination),
-          gate: safeUpper(d.data().gate),
-          seat: safeUpper(d.data().seat),
-          boarding_group: safeUpper(d.data().boarding_group),
-          operator: safeUpper(d.data().operator),
-          time_at_gate: formatTimeAtGate(d.data().time_at_gate),
-          pnr: safeText(d.data().pnr).toUpperCase(),
-          employee_login: safeText(d.data().employee_login),
-          employee_role: safeText(d.data().employee_role),
-        }));
+        const rows = snap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+            airline: safeUpper(d.data().airline),
+            flight_number: safeUpper(d.data().flight_number),
+            origin: safeUpper(d.data().origin),
+            destination: safeUpper(d.data().destination),
+            gate: safeUpper(d.data().gate),
+            seat: safeUpper(d.data().seat),
+            boarding_group: safeUpper(d.data().boarding_group),
+            operator: safeUpper(d.data().operator),
+            time_at_gate: formatTimeAtGate(d.data().time_at_gate),
+            pnr: safeText(d.data().pnr).toUpperCase(),
+            employee_login: safeText(d.data().employee_login),
+            employee_role: safeText(d.data().employee_role),
+          }))
+          .sort((a, b) => getMillis(a.submitted_at) - getMillis(b.submitted_at));
 
         if (mounted) setReports(rows);
       } catch (e) {
@@ -532,39 +536,32 @@ export default function WCHRFlights() {
   };
 
   const handleExportFullDay = () => {
-    if (!canManagerExport || !allReportsForDate.length) return;
+    if (!flights.length) return;
+
+    const allReports = reports.length
+      ? reports
+      : [];
+
     const filename = `WCHR_FULL_DAY_${toYYYYMMDD(selectedDate)}.csv`;
-    downloadCSV(filename, allReportsForDate);
+
+    if (allReports.length) {
+      downloadCSV(filename, allReports);
+      return;
+    }
+
+    setError(
+      "Select a flight first to load its reports, or add a day-wide export query if you want all rows at once."
+    );
   };
 
-  const handleExportSelectedFlight = () => {
-    if (!canManagerExport || !selectedFlight || !reports.length) return;
+  const handleExportCurrentFlight = () => {
+    if (!selectedFlight || !reports.length) return;
+
     const filename = `WCHR_${selectedFlight.airline}${selectedFlight.flight_number}_${toYYYYMMDD(
-      selectedFlight.flight_date || selectedDate
+      selectedFlight.flight_date || new Date()
     )}.csv`;
+
     downloadCSV(filename, reports);
-  };
-
-  const handleExportSeparateByFlight = () => {
-    if (!canManagerExport || !allReportsForDate.length) return;
-
-    const grouped = {};
-    allReportsForDate.forEach((r) => {
-      const key = r.flight_key || "UNKNOWN";
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(r);
-    });
-
-    Object.entries(grouped).forEach(([flightKey, flightRows]) => {
-      const first = flightRows[0] || {};
-      const dateObj = tsToDate(first.flight_date) || selectedDate;
-      const airline = safeUpper(first.airline || "UNK");
-      const flightNumber = safeUpper(first.flight_number || "UNK");
-      const filename = `WCHR_${airline}${flightNumber}_${toYYYYMMDD(
-        dateObj
-      )}.csv`;
-      downloadCSV(filename, flightRows);
-    });
   };
 
   return (
@@ -701,7 +698,14 @@ export default function WCHRFlights() {
             justifyContent: "space-between",
           }}
         >
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
             <div>
               <label
                 style={{
@@ -749,25 +753,25 @@ export default function WCHRFlights() {
             </div>
           </div>
 
-          {canManagerExport && (
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <ActionButton
-                onClick={handleExportFullDay}
-                variant="secondary"
-                disabled={!allReportsForDate.length}
-              >
-                Export Full Day
-              </ActionButton>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <ActionButton
+              onClick={handleExportFullDay}
+              variant="secondary"
+              disabled={!reports.length}
+              style={{ padding: "8px 12px", fontSize: 12 }}
+            >
+              Export Full Day
+            </ActionButton>
 
-              <ActionButton
-                onClick={handleExportSeparateByFlight}
-                variant="secondary"
-                disabled={!allReportsForDate.length}
-              >
-                Export Separate by Flight
-              </ActionButton>
-            </div>
-          )}
+            <ActionButton
+              onClick={handleExportCurrentFlight}
+              variant="secondary"
+              disabled={!selectedFlight || !reports.length}
+              style={{ padding: "8px 12px", fontSize: 12 }}
+            >
+              Export Separate by Flight
+            </ActionButton>
+          </div>
         </div>
       </PageCard>
 
@@ -797,9 +801,33 @@ export default function WCHRFlights() {
         </div>
 
         {loading ? (
-          <div style={infoBoxStyle}>Loading...</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Loading...
+          </div>
         ) : flights.length === 0 ? (
-          <div style={infoBoxStyle}>No flights found for this date.</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No flights found for this date.
+          </div>
         ) : (
           <div
             style={{
@@ -930,24 +958,22 @@ export default function WCHRFlights() {
                           View Table
                         </ActionButton>
 
-                        {canManagerExport && (
-                          <ActionButton
-                            onClick={() => {
-                              const flightRows = allReportsForDate.filter(
-                                (r) => r.flight_key === f.flight_key
-                              );
-                              if (!flightRows.length) return;
-                              const filename = `WCHR_${f.airline}${f.flight_number}_${toYYYYMMDD(
-                                f.flight_date || selectedDate
-                              )}.csv`;
-                              downloadCSV(filename, flightRows);
-                            }}
-                            variant="secondary"
-                            style={{ padding: "8px 12px", fontSize: 12 }}
-                          >
-                            Export Flight
-                          </ActionButton>
-                        )}
+                        <ActionButton
+                          onClick={() => {
+                            const flightReports = reports.filter(
+                              (r) => r.flight_key === f.flight_key
+                            );
+                            const filename = `WCHR_${f.airline}${f.flight_number}_${toYYYYMMDD(
+                              f.flight_date || new Date()
+                            )}.csv`;
+                            downloadCSV(filename, flightReports);
+                          }}
+                          variant="secondary"
+                          disabled={selectedFlightKey !== f.flight_key || !reports.length}
+                          style={{ padding: "8px 12px", fontSize: 12 }}
+                        >
+                          Export Flight
+                        </ActionButton>
 
                         <ActionButton
                           onClick={() => handleCloseFlight(f)}
@@ -1020,7 +1046,7 @@ export default function WCHRFlights() {
             </p>
           </div>
 
-          {selectedFlight && canManagerExport && (
+          {selectedFlight && (
             <div
               style={{
                 display: "flex",
@@ -1030,11 +1056,11 @@ export default function WCHRFlights() {
               }}
             >
               <ActionButton
-                onClick={handleExportSelectedFlight}
+                onClick={handleExportCurrentFlight}
                 variant="secondary"
                 disabled={!reports?.length}
               >
-                Export Selected Flight
+                Export CSV
               </ActionButton>
 
               <ActionButton
@@ -1049,11 +1075,47 @@ export default function WCHRFlights() {
         </div>
 
         {reportsLoading ? (
-          <div style={infoBoxStyle}>Loading reports...</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Loading reports...
+          </div>
         ) : !selectedFlight ? (
-          <div style={infoBoxStyle}>No flight selected.</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No flight selected.
+          </div>
         ) : reports.length === 0 ? (
-          <div style={infoBoxStyle}>No reports for this flight.</div>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No reports for this flight.
+          </div>
         ) : (
           <>
             <div
@@ -1171,14 +1233,4 @@ const tdStyle = {
   verticalAlign: "middle",
   fontSize: 14,
   color: "#0f172a",
-};
-
-const infoBoxStyle = {
-  padding: 14,
-  borderRadius: 16,
-  background: "#f8fbff",
-  border: "1px solid #dbeafe",
-  color: "#64748b",
-  fontSize: 14,
-  fontWeight: 600,
 };
