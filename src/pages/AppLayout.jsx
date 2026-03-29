@@ -3,6 +3,11 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
+import {
+  updateUserPresence,
+  updateUserPage,
+  markUserOffline,
+} from "../services/presenceService";
 
 export default function AppLayout() {
   const { user, setUser } = useUser();
@@ -22,9 +27,17 @@ export default function AppLayout() {
     Admin: false,
   });
 
-  const logout = () => {
-    setUser(null);
-    navigate("/login");
+  const logout = async () => {
+    try {
+      if (user?.id) {
+        await markUserOffline(user);
+      }
+    } catch (err) {
+      console.error("Error marking user offline on logout:", err);
+    } finally {
+      setUser(null);
+      navigate("/login");
+    }
   };
 
   useEffect(() => {
@@ -69,6 +82,30 @@ export default function AppLayout() {
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    updateUserPresence(user, { currentPage: location.pathname }).catch(
+      console.error
+    );
+
+    const handleBeforeUnload = () => {
+      markUserOffline(user).catch(() => {});
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      markUserOffline(user).catch(() => {});
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    updateUserPage(user, location.pathname).catch(console.error);
+  }, [user?.id, location.pathname]);
 
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
@@ -140,6 +177,7 @@ export default function AppLayout() {
 
     if (user?.role === "station_manager") {
       admin.push(
+        { to: "/admin/activity-dashboard", label: "User Activity", icon: "📈" },
         { to: "/create-user", label: "Create User", icon: "➕" },
         { to: "/edit-users", label: "Manage Users", icon: "⚙️" },
         { to: "/employees", label: "Employees", icon: "👥" }
