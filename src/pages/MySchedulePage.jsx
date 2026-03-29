@@ -100,10 +100,7 @@ function calcRowHours(row) {
 
   return DAY_KEYS.reduce((total, dayKey) => {
     const shifts = Array.isArray(row[dayKey]) ? row[dayKey] : [];
-    return (
-      total +
-      shifts.reduce((sum, shift) => sum + calcShiftHours(shift), 0)
-    );
+    return total + shifts.reduce((sum, shift) => sum + calcShiftHours(shift), 0);
   }, 0);
 }
 
@@ -122,6 +119,32 @@ function parseScheduleDayDate(sch, dayKey) {
 
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isSameDate(a, b) {
+  return (
+    a &&
+    b &&
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function getDayVisualState(sch, dayKey) {
+  const dayDate = parseScheduleDayDate(sch, dayKey);
+  if (!dayDate) return "neutral";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const compareDate = new Date(dayDate);
+  compareDate.setHours(0, 0, 0, 0);
+
+  if (compareDate < today) return "past";
+  if (isSameDate(compareDate, today)) return "today";
+
+  return "future";
 }
 
 function findNextShift(schedules, currentEmployeeId) {
@@ -150,6 +173,7 @@ function findNextShift(schedules, currentEmployeeId) {
 
         if (!closest || shiftDate < closest.startDateTime) {
           closest = {
+            scheduleId: sch.id,
             airline: sch.airline || "Airline",
             department: sch.department || "Department",
             dayKey,
@@ -176,6 +200,38 @@ function formatNextShiftText(nextShift) {
     : nextShift.start;
 
   return `${DAY_FULL[nextShift.dayKey]} ${dateText} · ${timeText}`;
+}
+
+function getCellTheme({ isNextDay, state, off }) {
+  if (isNextDay) {
+    return {
+      background: off ? "#dbeafe" : "#bfdbfe",
+      border: "#60a5fa",
+      color: "#1e3a8a",
+    };
+  }
+
+  if (state === "past") {
+    return {
+      background: off ? "#e5e7eb" : "#d1d5db",
+      border: "#9ca3af",
+      color: "#374151",
+    };
+  }
+
+  if (state === "today") {
+    return {
+      background: off ? "#fef3c7" : "#fde68a",
+      border: "#f59e0b",
+      color: "#92400e",
+    };
+  }
+
+  return {
+    background: off ? "#f1f5f9" : "#eff6ff",
+    border: off ? "#e2e8f0" : "#bfdbfe",
+    color: off ? "#64748b" : "#1d4ed8",
+  };
 }
 
 function SummaryCard({ label, value, subValue }) {
@@ -226,7 +282,9 @@ function SummaryCard({ label, value, subValue }) {
   );
 }
 
-function ShiftBadge({ text, off = false }) {
+function ShiftBadge({ text, off = false, isNextDay = false, state = "neutral" }) {
+  const theme = getCellTheme({ isNextDay, state, off });
+
   return (
     <div
       style={{
@@ -238,9 +296,9 @@ function ShiftBadge({ text, off = false }) {
         borderRadius: 12,
         fontSize: 12,
         fontWeight: 700,
-        background: off ? "#f1f5f9" : "#eff6ff",
-        color: off ? "#64748b" : "#1d4ed8",
-        border: off ? "1px solid #e2e8f0" : "1px solid #bfdbfe",
+        background: theme.background,
+        color: theme.color,
+        border: `1px solid ${theme.border}`,
       }}
     >
       {text}
@@ -795,21 +853,40 @@ export default function MySchedulePage() {
                     <thead>
                       <tr style={{ background: "#f8fbff" }}>
                         <th style={thStyleLeft}>Your schedule</th>
-                        {DAY_KEYS.map((key) => (
-                          <th key={key} style={thStyleCenter}>
-                            <div>{DAY_LABELS[key]}</div>
-                            <div
+                        {DAY_KEYS.map((key) => {
+                          const state = getDayVisualState(sch, key);
+                          const isNextDay =
+                            nextShift?.scheduleId === sch.id &&
+                            nextShift?.dayKey === key;
+
+                          return (
+                            <th
+                              key={key}
                               style={{
-                                marginTop: 4,
-                                fontSize: 11,
-                                fontWeight: 700,
-                                color: "#64748b",
+                                ...thStyleCenter,
+                                background: isNextDay
+                                  ? "#dbeafe"
+                                  : state === "past"
+                                  ? "#f3f4f6"
+                                  : state === "today"
+                                  ? "#fffbeb"
+                                  : "#f8fbff",
                               }}
                             >
-                              {sch.days?.[key] || ""}
-                            </div>
-                          </th>
-                        ))}
+                              <div>{DAY_LABELS[key]}</div>
+                              <div
+                                style={{
+                                  marginTop: 4,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: "#64748b",
+                                }}
+                              >
+                                {sch.days?.[key] || ""}
+                              </div>
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
 
@@ -822,9 +899,31 @@ export default function MySchedulePage() {
                         {DAY_KEYS.map((key) => {
                           const text = getShiftText(myRow[key], 0);
                           const off = text === "OFF";
+                          const state = getDayVisualState(sch, key);
+                          const isNextDay =
+                            nextShift?.scheduleId === sch.id &&
+                            nextShift?.dayKey === key;
+
                           return (
-                            <td key={key} style={tdCenterStyle}>
-                              <ShiftBadge text={text} off={off} />
+                            <td
+                              key={key}
+                              style={{
+                                ...tdCenterStyle,
+                                background: isNextDay
+                                  ? "#eff6ff"
+                                  : state === "past"
+                                  ? "#f9fafb"
+                                  : state === "today"
+                                  ? "#fffdf5"
+                                  : "#ffffff",
+                              }}
+                            >
+                              <ShiftBadge
+                                text={text}
+                                off={off}
+                                isNextDay={isNextDay}
+                                state={state}
+                              />
                             </td>
                           );
                         })}
@@ -834,9 +933,31 @@ export default function MySchedulePage() {
                         {DAY_KEYS.map((key) => {
                           const text = getShiftText(myRow[key], 1);
                           const off = text === "OFF";
+                          const state = getDayVisualState(sch, key);
+                          const isNextDay =
+                            nextShift?.scheduleId === sch.id &&
+                            nextShift?.dayKey === key;
+
                           return (
-                            <td key={key} style={tdCenterStyle}>
-                              <ShiftBadge text={text} off={off} />
+                            <td
+                              key={key}
+                              style={{
+                                ...tdCenterStyle,
+                                background: isNextDay
+                                  ? "#eff6ff"
+                                  : state === "past"
+                                  ? "#f9fafb"
+                                  : state === "today"
+                                  ? "#fffdf5"
+                                  : "#fbfdff",
+                              }}
+                            >
+                              <ShiftBadge
+                                text={text}
+                                off={off}
+                                isNextDay={isNextDay}
+                                state={state}
+                              />
                             </td>
                           );
                         })}
