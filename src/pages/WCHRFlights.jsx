@@ -417,25 +417,31 @@ export default function WCHRFlights() {
       try {
         const q = query(
           collection(db, "wch_reports"),
-          where("flight_key", "==", selectedFlightKey),
-          orderBy("submitted_at", "asc")
+          where("flight_key", "==", selectedFlightKey)
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-          airline: safeUpper(d.data().airline),
-          flight_number: safeUpper(d.data().flight_number),
-          origin: safeUpper(d.data().origin),
-          destination: safeUpper(d.data().destination),
-          gate: safeUpper(d.data().gate),
-          seat: safeUpper(d.data().seat),
-          boarding_group: safeUpper(d.data().boarding_group),
-          operator: safeUpper(d.data().operator),
-          time_at_gate: formatTimeAtGate(d.data().time_at_gate),
-          pnr: safeText(d.data().pnr).toUpperCase(),
-        }));
+
+        const rows = snap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+            airline: safeUpper(d.data().airline),
+            flight_number: safeUpper(d.data().flight_number),
+            origin: safeUpper(d.data().origin),
+            destination: safeUpper(d.data().destination),
+            gate: safeUpper(d.data().gate),
+            seat: safeUpper(d.data().seat),
+            boarding_group: safeUpper(d.data().boarding_group),
+            operator: safeUpper(d.data().operator),
+            time_at_gate: formatTimeAtGate(d.data().time_at_gate),
+            pnr: safeText(d.data().pnr).toUpperCase(),
+          }))
+          .sort((a, b) => {
+            const ta = tsToDate(a.submitted_at)?.getTime() || 0;
+            const tb = tsToDate(b.submitted_at)?.getTime() || 0;
+            return ta - tb;
+          });
 
         if (mounted) setReports(rows);
       } catch (e) {
