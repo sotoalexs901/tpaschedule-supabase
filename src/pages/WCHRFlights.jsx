@@ -8,7 +8,6 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   Timestamp,
   doc,
   setDoc,
@@ -276,6 +275,18 @@ function ImageThumb({ src, alt = "Boarding pass" }) {
   );
 }
 
+function sortBySubmittedAtDesc(a, b) {
+  const A = tsToDate(a.submitted_at)?.getTime() || 0;
+  const B = tsToDate(b.submitted_at)?.getTime() || 0;
+  return B - A;
+}
+
+function sortBySubmittedAtAsc(a, b) {
+  const A = tsToDate(a.submitted_at)?.getTime() || 0;
+  const B = tsToDate(b.submitted_at)?.getTime() || 0;
+  return A - B;
+}
+
 export default function WCHRFlights() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -312,12 +323,13 @@ export default function WCHRFlights() {
         const q = query(
           collection(db, "wch_reports"),
           where("submitted_at", ">=", start),
-          where("submitted_at", "<=", end),
-          orderBy("submitted_at", "desc")
+          where("submitted_at", "<=", end)
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort(sortBySubmittedAtDesc);
 
         const map = new Map();
 
@@ -420,27 +432,28 @@ export default function WCHRFlights() {
       try {
         const q = query(
           collection(db, "wch_reports"),
-          where("flight_key", "==", selectedFlightKey),
-          orderBy("submitted_at", "asc")
+          where("flight_key", "==", selectedFlightKey)
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-          airline: safeUpper(d.data().airline),
-          flight_number: safeUpper(d.data().flight_number),
-          origin: safeUpper(d.data().origin),
-          destination: safeUpper(d.data().destination),
-          gate: safeUpper(d.data().gate),
-          seat: safeUpper(d.data().seat),
-          boarding_group: safeUpper(d.data().boarding_group),
-          operator: safeUpper(d.data().operator),
-          time_at_gate: formatTimeAtGate(d.data().time_at_gate),
-          pnr: safeText(d.data().pnr).toUpperCase(),
-          employee_login: safeText(d.data().employee_login),
-          employee_role: safeText(d.data().employee_role),
-        }));
+        const rows = snap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+            airline: safeUpper(d.data().airline),
+            flight_number: safeUpper(d.data().flight_number),
+            origin: safeUpper(d.data().origin),
+            destination: safeUpper(d.data().destination),
+            gate: safeUpper(d.data().gate),
+            seat: safeUpper(d.data().seat),
+            boarding_group: safeUpper(d.data().boarding_group),
+            operator: safeUpper(d.data().operator),
+            time_at_gate: formatTimeAtGate(d.data().time_at_gate),
+            pnr: safeText(d.data().pnr).toUpperCase(),
+            employee_login: safeText(d.data().employee_login),
+            employee_role: safeText(d.data().employee_role),
+          }))
+          .sort(sortBySubmittedAtAsc);
 
         if (mounted) setReports(rows);
       } catch (e) {
