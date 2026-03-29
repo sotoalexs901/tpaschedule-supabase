@@ -84,24 +84,28 @@ function normalizePassengerName(value) {
 function cleanPnr(value) {
   const v = normalizeUpper(value).replace(/[^A-Z0-9]/g, "");
 
+  if (!v) return "";
+  if (v.length < 5 || v.length > 8) return "";
+
   const blocked = [
-    "MEMBER",
-    "BOOKING",
-    "RESERVA",
-    "TICKET",
-    "FLIGHT",
-    "AVIANCA",
-    "OPERADO",
     "BOARDING",
     "PASS",
-    "GATE",
+    "MEMBER",
     "SEAT",
+    "GATE",
     "GROUP",
+    "ZONE",
+    "CLASS",
+    "FLIGHT",
+    "AIRLINE",
+    "OPERADO",
+    "AVIANCA",
+    "CABIN",
+    "PRIORITY",
+    "TAMPA",
   ];
 
-  if (!v) return "";
   if (blocked.includes(v)) return "";
-  if (v.length < 5 || v.length > 8) return "";
 
   return v;
 }
@@ -113,6 +117,7 @@ function getRawScanText(scanResult) {
       scanResult?.text ||
       scanResult?.full_text ||
       scanResult?.rawText ||
+      scanResult?.ocr ||
       ""
   );
 }
@@ -121,7 +126,7 @@ function tryExtractPassengerFromText(rawText) {
   const text = String(rawText || "");
 
   const patterns = [
-    /(?:PASSENGER NAME|PASSENGER|NAME|PAX)\s*[:\-]?\s*([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)/i,
+    /(?:PASSENGER NAME|PASSENGER|PAX NAME|NAME)\s*[:\-]?\s*([A-Z]{2,}\/[A-Z\s]{2,})/i,
     /\b([A-Z]{2,}\/[A-Z]{2,}(?:\s+[A-Z]{2,})*)\b/,
   ];
 
@@ -138,19 +143,64 @@ function tryExtractPassengerFromText(rawText) {
 function tryExtractPnrFromText(rawText) {
   const text = String(rawText || "");
 
-  const labelPatterns = [
-    /(?:BOOKING|RESERVATION|RESERVA|LOCATOR|RECORD LOCATOR|PNR)\s*[:\-]?\s*([A-Z0-9]{5,8})/i,
-    /(?:BOOKING|RESERVATION|RESERVA|LOCATOR|PNR)[^\n]*\n\s*([A-Z0-9]{5,8})/i,
+  const patterns = [
+    /(?:RESERVATION|BOOKING|BOOKING NUMBER|RESERVATION NUMBER|RECORD LOCATOR|LOCATOR|PNR)\s*[:\-]?\s*([A-Z0-9]{5,8})/i,
+    /(?:RESERVATION|BOOKING|RECORD LOCATOR|LOCATOR|PNR)[^\n]*\n\s*([A-Z0-9]{5,8})/i,
   ];
 
-  for (const pattern of labelPatterns) {
+  for (const pattern of patterns) {
     const match = text.match(pattern);
-    const value = cleanPnr(match?.[1] || "");
-    if (value) return value;
+    const candidate = cleanPnr(match?.[1] || "");
+    if (candidate) return candidate;
   }
 
-  const allCandidates = text.match(/\b[A-Z0-9]{5,8}\b/g) || [];
-  for (const item of allCandidates) {
+  const possible = text.match(/\b[A-Z0-9]{5,8}\b/g) || [];
+  for (const item of possible) {
+    const candidate = cleanPnr(item);
+    if (candidate) return candidate;
+  }
+
+  return "";
+}
+
+function guessPassengerName(scanResult, rawText) {
+  const candidates = [
+    scanResult?.passenger_name,
+    scanResult?.passenger,
+    scanResult?.name,
+    scanResult?.full_name,
+    scanResult?.fullName,
+    scanResult?.pax_name,
+    scanResult?.passengerName,
+    scanResult?.traveler_name,
+    scanResult?.travelerName,
+    tryExtractPassengerFromText(rawText),
+  ];
+
+  for (const item of candidates) {
+    const cleaned = normalizeText(item);
+    if (cleaned) return normalizePassengerName(cleaned);
+  }
+
+  return "";
+}
+
+function guessPnr(scanResult, rawText) {
+  const candidates = [
+    scanResult?.pnr,
+    scanResult?.record_locator,
+    scanResult?.locator,
+    scanResult?.booking,
+    scanResult?.booking_number,
+    scanResult?.bookingNumber,
+    scanResult?.reservation,
+    scanResult?.reservation_number,
+    scanResult?.reservationNumber,
+    scanResult?.recordLocator,
+    tryExtractPnrFromText(rawText),
+  ];
+
+  for (const item of candidates) {
     const cleaned = cleanPnr(item);
     if (cleaned) return cleaned;
   }
@@ -242,46 +292,6 @@ function FieldLabel({ children }) {
   );
 }
 
-function PreviewField({ label, value }) {
-  return (
-    <div
-      style={{
-        padding: 12,
-        borderRadius: 14,
-        border: "1px solid #dbeafe",
-        background: "#f8fbff",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 14,
-          color: "#0f172a",
-          fontWeight: 700,
-          lineHeight: 1.45,
-        }}
-      >
-        {String(value || "").trim() ? (
-          value
-        ) : (
-          <span style={{ color: "#94a3b8" }}>—</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function EditInput({ label, value, onChange, placeholder = "" }) {
   return (
     <div>
@@ -311,7 +321,6 @@ export default function WCHRScan() {
 
   const [step, setStep] = useState("upload");
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [wchType, setWchType] = useState("WCHR");
@@ -322,10 +331,9 @@ export default function WCHRScan() {
   const canScan = useMemo(() => Boolean(imageFile), [imageFile]);
 
   const canSubmit = useMemo(() => {
-    if (!imageUrl) return false;
-    if (!parsed) return false;
+    if (!imageUrl || !parsed) return false;
 
-    const required = [
+    return [
       parsed.passenger_name,
       parsed.airline,
       parsed.flight_number,
@@ -336,17 +344,26 @@ export default function WCHRScan() {
       parsed.gate,
       parsed.pnr,
       wchType,
-    ];
-
-    return required.every((v) => String(v || "").trim().length > 0);
+    ].every((v) => String(v || "").trim().length > 0);
   }, [imageUrl, parsed, wchType]);
 
   const handlePickFile = (file) => {
     setError("");
-    setMessage("");
     setParsed(null);
     setImageUrl("");
     setImageFile(file || null);
+  };
+
+  const handleParsedChange = (field, value) => {
+    setParsed((prev) => ({
+      ...prev,
+      [field]:
+        field === "pnr"
+          ? cleanPnr(value)
+          : field === "passenger_name"
+          ? value
+          : value,
+    }));
   };
 
   const uploadToStorage = async (file) => {
@@ -382,7 +399,6 @@ export default function WCHRScan() {
 
   const handleScan = async () => {
     setError("");
-    setMessage("");
 
     if (!imageFile) {
       setError("Please select a boarding pass photo.");
@@ -396,60 +412,22 @@ export default function WCHRScan() {
       setImageUrl(url);
 
       const scanResult = await callScanService(url);
-      console.log("scanResult:", scanResult);
+      console.log("WCHR scan result:", scanResult);
 
       const rawText = getRawScanText(scanResult);
 
-      const candidatePassenger =
-        scanResult.passenger_name ||
-        scanResult.passenger ||
-        scanResult.name ||
-        scanResult.full_name ||
-        scanResult.fullName ||
-        scanResult.pax_name ||
-        scanResult.passengerName ||
-        tryExtractPassengerFromText(rawText);
-
-      const candidatePnr =
-        scanResult.pnr ||
-        scanResult.record_locator ||
-        scanResult.locator ||
-        scanResult.booking ||
-        scanResult.booking_number ||
-        scanResult.bookingNumber ||
-        scanResult.reservation ||
-        scanResult.reservation_booking ||
-        scanResult.reservationBooking ||
-        tryExtractPnrFromText(rawText);
-
       const normalized = {
-        passenger_name: normalizePassengerName(candidatePassenger),
-        airline: normalizeUpper(scanResult.airline || ""),
+        passenger_name: guessPassengerName(scanResult, rawText),
+        airline: normalizeUpper(scanResult?.airline || ""),
         flight_number: normalizeUpper(
-          scanResult.flight_number || scanResult.flight || ""
+          scanResult?.flight_number || scanResult?.flight || ""
         ),
-        flight_date: normalizeText(scanResult.flight_date || scanResult.date || ""),
-        origin: normalizeUpper(scanResult.origin || scanResult.from || ""),
-        destination: normalizeUpper(scanResult.destination || scanResult.to || ""),
-        seat: normalizeUpper(scanResult.seat || ""),
-        gate: normalizeUpper(scanResult.gate || ""),
-        time_at_gate: normalizeText(
-          scanResult.time_at_gate ||
-            scanResult.timeAtGate ||
-            scanResult.gate_time ||
-            scanResult.boarding_time ||
-            ""
-        ),
-        boarding_group: normalizeUpper(
-          scanResult.boarding_group || scanResult.group || ""
-        ),
-        pnr: cleanPnr(candidatePnr),
-        operator: normalizeUpper(
-          scanResult.operator ||
-            scanResult.operated_by ||
-            scanResult.operatedBy ||
-            ""
-        ),
+        flight_date: normalizeText(scanResult?.flight_date || scanResult?.date || ""),
+        origin: normalizeUpper(scanResult?.origin || scanResult?.from || ""),
+        destination: normalizeUpper(scanResult?.destination || scanResult?.to || ""),
+        seat: normalizeUpper(scanResult?.seat || ""),
+        gate: normalizeUpper(scanResult?.gate || ""),
+        pnr: guessPnr(scanResult, rawText),
         raw_text: rawText,
       };
 
@@ -462,30 +440,8 @@ export default function WCHRScan() {
     }
   };
 
-  const handleParsedChange = (field, value) => {
-    setParsed((prev) => ({
-      ...prev,
-      [field]:
-        field === "airline" ||
-        field === "flight_number" ||
-        field === "origin" ||
-        field === "destination" ||
-        field === "seat" ||
-        field === "gate" ||
-        field === "boarding_group" ||
-        field === "operator"
-          ? normalizeUpper(value)
-          : field === "pnr"
-          ? cleanPnr(value)
-          : field === "passenger_name"
-          ? value
-          : value,
-    }));
-  };
-
   const handleSubmit = async () => {
     setError("");
-    setMessage("");
 
     if (!user) {
       setError("You must be logged in.");
@@ -494,7 +450,7 @@ export default function WCHRScan() {
 
     if (!canSubmit) {
       setError(
-        "Missing required fields. Please review passenger name and reservation / booking number."
+        "Passenger name and Reservation / Booking number are required. Please complete them before submit."
       );
       return;
     }
@@ -526,10 +482,7 @@ export default function WCHRScan() {
         destination: normalizeUpper(parsed.destination),
         seat: normalizeUpper(parsed.seat),
         gate: normalizeUpper(parsed.gate),
-        time_at_gate: normalizeText(parsed.time_at_gate),
-        boarding_group: normalizeUpper(parsed.boarding_group),
         pnr: cleanPnr(parsed.pnr),
-        operator: normalizeUpper(parsed.operator),
 
         wch_type: wchType,
         status,
@@ -543,7 +496,6 @@ export default function WCHRScan() {
 
       await updateDoc(doc(db, "wch_reports", docRef.id), { report_id });
 
-      setMessage("Report submitted successfully.");
       navigate("/wchr/my-reports");
     } catch (e) {
       console.error(e);
@@ -555,14 +507,7 @@ export default function WCHRScan() {
   if (!user) {
     return (
       <PageCard style={{ padding: 22, maxWidth: 900, margin: "0 auto" }}>
-        <p
-          style={{
-            margin: 0,
-            color: "#64748b",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
+        <p style={{ margin: 0, color: "#64748b", fontSize: 14, fontWeight: 600 }}>
           You must be logged in to scan and submit a WCHR report.
         </p>
       </PageCard>
@@ -587,25 +532,10 @@ export default function WCHRScan() {
           padding: 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          position: "relative",
-          overflow: "hidden",
         }}
       >
         <div
           style={{
-            position: "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
-          }}
-        />
-
-        <div
-          style={{
-            position: "relative",
             display: "flex",
             justifyContent: "space-between",
             gap: 16,
@@ -614,48 +544,18 @@ export default function WCHRScan() {
           }}
         >
           <div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.78)",
-                fontWeight: 700,
-              }}
-            >
+            <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.78)", fontWeight: 700 }}>
               TPA OPS · WCHR
             </p>
-
-            <h1
-              style={{
-                margin: "10px 0 6px",
-                fontSize: 32,
-                lineHeight: 1.05,
-                fontWeight: 800,
-                letterSpacing: "-0.04em",
-              }}
-            >
+            <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800 }}>
               WCHR Scan
             </h1>
-
-            <p
-              style={{
-                margin: 0,
-                maxWidth: 760,
-                fontSize: 14,
-                color: "rgba(255,255,255,0.88)",
-              }}
-            >
-              Scan a boarding pass, review the parsed details and submit a WCHR
-              report.
+            <p style={{ margin: 0, maxWidth: 760, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
+              Scan a boarding pass, review the parsed details and submit a WCHR report.
             </p>
           </div>
 
-          <ActionButton
-            onClick={() => navigate("/dashboard")}
-            variant="secondary"
-          >
+          <ActionButton onClick={() => navigate("/dashboard")} variant="secondary">
             Back
           </ActionButton>
         </div>
@@ -680,20 +580,6 @@ export default function WCHRScan() {
       )}
 
       <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Scan Boarding Pass
-          </h2>
-        </div>
-
         <div style={{ display: "grid", gap: 14 }}>
           <div>
             <FieldLabel>Boarding Pass Photo</FieldLabel>
@@ -727,7 +613,6 @@ export default function WCHRScan() {
                 padding: "12px 14px",
                 fontSize: 14,
                 color: "#0f172a",
-                outline: "none",
               }}
             >
               <option value="WCHR">WCHR</option>
@@ -772,29 +657,6 @@ export default function WCHRScan() {
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 12,
-              marginBottom: 16,
-            }}
-          >
-            <PreviewField label="Passenger" value={parsed.passenger_name} />
-            <PreviewField label="PNR / Booking" value={parsed.pnr} />
-            <PreviewField label="Airline" value={parsed.airline} />
-            <PreviewField label="Flight" value={parsed.flight_number} />
-            <PreviewField
-              label="Date (MM-DD-YYYY)"
-              value={formatMMDDYYYY(parsed.flight_date)}
-            />
-            <PreviewField label="Origin" value={parsed.origin} />
-            <PreviewField label="Destination" value={parsed.destination} />
-            <PreviewField label="Seat" value={parsed.seat} />
-            <PreviewField label="Gate" value={parsed.gate} />
-            <PreviewField label="WCHR Type" value={wchType} />
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
             }}
           >
             <EditInput
@@ -804,7 +666,7 @@ export default function WCHRScan() {
               placeholder="VERGARA / CLAUDIA"
             />
             <EditInput
-              label="Reservation / Booking"
+              label="Reservation / Booking Number"
               value={parsed.pnr}
               onChange={(value) => handleParsedChange("pnr", value)}
               placeholder="A7ILFB"
@@ -846,14 +708,7 @@ export default function WCHRScan() {
             />
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              marginTop: 16,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
             <ActionButton
               onClick={() => {
                 setParsed(null);
