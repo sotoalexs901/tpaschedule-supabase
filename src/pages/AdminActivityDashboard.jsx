@@ -63,8 +63,21 @@ function buildCountByLogin(reports) {
   }
 
   return Object.entries(counts)
-    .map(([login, count]) => ({ login, count }))
-    .sort((a, b) => b.count - a.count || a.login.localeCompare(b.login));
+    .map(([login, count]) => ({ label: login, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function buildCountByAirline(reports) {
+  const counts = {};
+
+  for (const r of reports) {
+    const airline = String(r.airline || "Unknown").trim().toUpperCase() || "Unknown";
+    counts[airline] = (counts[airline] || 0) + 1;
+  }
+
+  return Object.entries(counts)
+    .map(([airline, count]) => ({ label: airline, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
 function buildDailyCounts(reports, daysBack = 7) {
@@ -100,13 +113,20 @@ function buildDailyCounts(reports, daysBack = 7) {
   return points;
 }
 
-function countReportsSince(reports, startDate) {
-  if (!startDate) return reports.length;
+function buildHourlyCounts(reports) {
+  const hours = Array.from({ length: 24 }, (_, i) => ({
+    label: `${String(i).padStart(2, "0")}:00`,
+    count: 0,
+  }));
 
-  return reports.filter((r) => {
+  for (const r of reports) {
     const submitted = toDateSafe(r.submitted_at);
-    return submitted && submitted >= startDate;
-  }).length;
+    if (!submitted) continue;
+    const hour = submitted.getHours();
+    if (hours[hour]) hours[hour].count += 1;
+  }
+
+  return hours;
 }
 
 function buildProductivityTable(reports, users) {
@@ -147,6 +167,31 @@ function buildProductivityTable(reports, users) {
       };
     })
     .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
+}
+
+function downloadCSV(filename, rows) {
+  const csv = rows
+    .map((row) =>
+      row
+        .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
+        .join(",")
+    )
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function safeRangeLabel(range) {
+  if (range === "today") return "today";
+  if (range === "week") return "this-week";
+  if (range === "month") return "this-month";
+  return "all";
 }
 
 export default function AdminActivityDashboard() {
@@ -227,12 +272,7 @@ export default function AdminActivityDashboard() {
   }, [reports]);
 
   const roleOptions = useMemo(() => {
-    const set = new Set(
-      mergedUsers
-        .map((u) => u.role)
-        .filter(Boolean)
-    );
-
+    const set = new Set(mergedUsers.map((u) => u.role).filter(Boolean));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [mergedUsers]);
 
@@ -277,12 +317,19 @@ export default function AdminActivityDashboard() {
     [filteredReports]
   );
 
+  const topAirlines = useMemo(
+    () => buildCountByAirline(filteredReports).slice(0, 10),
+    [filteredReports]
+  );
+
   const dailyWchr = useMemo(() => {
     if (range === "today") return buildDailyCounts(filteredReports, 1);
     if (range === "week") return buildDailyCounts(filteredReports, 7);
     if (range === "month") return buildDailyCounts(filteredReports, 30);
     return buildDailyCounts(filteredReports, 14);
   }, [filteredReports, range]);
+
+  const hourlyWchr = useMemo(() => buildHourlyCounts(filteredReports), [filteredReports]);
 
   const recentUsers = useMemo(() => {
     return [...filteredUsers]
@@ -303,23 +350,103 @@ export default function AdminActivityDashboard() {
     });
   }, [filteredReports, mergedUsers, selectedRole, selectedLogin]);
 
+  const handleExportCsv = () => {
+    const rows = [
+      ["ADMIN ACTIVITY DASHBOARD"],
+      ["Range", safeRangeLabel(range)],
+      ["Login Filter", selectedLogin],
+      ["Role Filter", selectedRole],
+      [],
+      ["SUMMARY"],
+      ["Filtered Users", totalUsers],
+      ["Online Now", onlineUsers],
+      ["Users With Activity", activeUsers],
+      ["WCHR Reports", totalWchr],
+      [],
+      ["TOP WCHR LOGINS"],
+      ["Login", "Count"],
+      ...topWchrLogins.map((r) => [r.label, r.count]),
+      [],
+      ["TOP AIRLINES"],
+      ["Airline", "Count"],
+      ...topAirlines.map((r) => [r.label, r.count]),
+      [],
+      ["WCHR BY DAY"],
+      ["Day", "Count"],
+      ...dailyWchr.map((r) => [r.label, r.count]),
+      [],
+      ["WCHR BY HOUR"],
+      ["Hour", "Count"],
+      ...hourlyWchr.map((r) => [r.label, r.count]),
+      [],
+      ["PRODUCTIVITY BY LOGIN"],
+      ["Login", "Role", "Online", "Today", "This Week", "This Month", "Total"],
+      ...productivityRows.map((r) => [
+        r.login,
+        normalizeRole(r.role),
+        r.online ? "ONLINE" : "OFFLINE",
+        r.today,
+        r.week,
+        r.month,
+        r.total,
+      ]),
+      [],
+      ["ALL REGISTERED USERS"],
+      ["Username", "Role", "Online", "Current Page", "Last Seen", "First Login Tracked"],
+      ...mergedUsers.map((u) => [
+        u.username,
+        normalizeRole(u.role),
+        u.online ? "ONLINE" : "OFFLINE",
+        u.currentPage || "—",
+        formatDate(u.lastSeen),
+        formatDate(u.lastLoginAt),
+      ]),
+    ];
+
+    downloadCSV(`admin-activity-dashboard-${safeRangeLabel(range)}.csv`, rows);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <div
+      id="admin-activity-dashboard"
       style={{
-        maxWidth: 1320,
+        maxWidth: 1380,
         margin: "0 auto",
         display: "grid",
         gap: 16,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
-      <div>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>
-          User Activity Dashboard
-        </h1>
-        <p style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
-          Monitor user access, presence and WCHR productivity with filters.
-        </p>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+        }}
+      >
+        <div>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>
+            User Activity Dashboard
+          </h1>
+          <p style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
+            Monitor user access, presence, scan hours, airlines and WCHR productivity.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button onClick={handleExportCsv} style={actionBtnStyle}>
+            Export CSV
+          </button>
+          <button onClick={handlePrint} style={actionBtnStyle}>
+            Print / Save PDF
+          </button>
+        </div>
       </div>
 
       <Panel title="Filters">
@@ -395,8 +522,24 @@ export default function AdminActivityDashboard() {
           <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
         </Panel>
 
+        <Panel title="Top Airlines">
+          <BarChartList rows={topAirlines} emptyText="No airline data for this filter." />
+        </Panel>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 16,
+        }}
+      >
         <Panel title="WCHR by Day">
           <VerticalBars rows={dailyWchr} />
+        </Panel>
+
+        <Panel title="WCHR by Hour">
+          <VerticalBars rows={hourlyWchr} compact />
         </Panel>
       </div>
 
@@ -404,15 +547,8 @@ export default function AdminActivityDashboard() {
         {recentUsers.length === 0 ? (
           <InfoBox text="No recent activity for this filter." />
         ) : (
-          <div
-            style={{
-              border: "1px solid #e2e8f0",
-              borderRadius: 16,
-              overflow: "hidden",
-              background: "#fff",
-            }}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
               <thead style={{ background: "#f8fbff" }}>
                 <tr>
                   <th style={th}>User</th>
@@ -458,15 +594,8 @@ export default function AdminActivityDashboard() {
         {productivityRows.length === 0 ? (
           <InfoBox text="No productivity data for this filter." />
         ) : (
-          <div
-            style={{
-              border: "1px solid #e2e8f0",
-              borderRadius: 16,
-              overflow: "hidden",
-              background: "#fff",
-            }}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
               <thead style={{ background: "#f8fbff" }}>
                 <tr>
                   <th style={th}>Login</th>
@@ -482,13 +611,9 @@ export default function AdminActivityDashboard() {
                 {productivityRows.map((row, i) => (
                   <tr
                     key={row.login}
-                    style={{
-                      background: i % 2 === 0 ? "#fff" : "#f9fbff",
-                    }}
+                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
                   >
-                    <td style={td}>
-                      <div style={{ fontWeight: 700 }}>{row.login}</div>
-                    </td>
+                    <td style={td}><div style={{ fontWeight: 700 }}>{row.login}</div></td>
                     <td style={td}>{normalizeRole(row.role)}</td>
                     <td style={td}>
                       {row.online ? (
@@ -501,6 +626,53 @@ export default function AdminActivityDashboard() {
                     <td style={td}>{row.week}</td>
                     <td style={td}>{row.month}</td>
                     <td style={{ ...td, fontWeight: 800 }}>{row.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      <Panel title="All Registered Users">
+        {mergedUsers.length === 0 ? (
+          <InfoBox text="No registered users found." />
+        ) : (
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
+              <thead style={{ background: "#f8fbff" }}>
+                <tr>
+                  <th style={th}>User</th>
+                  <th style={th}>Role</th>
+                  <th style={th}>Status</th>
+                  <th style={th}>Current Page</th>
+                  <th style={th}>Last Seen</th>
+                  <th style={th}>First Login Tracked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mergedUsers.map((u, i) => (
+                  <tr
+                    key={u.id}
+                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                  >
+                    <td style={td}>
+                      <div style={{ fontWeight: 700 }}>{u.username}</div>
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                        {u.employeeId || "No linked employee"}
+                      </div>
+                    </td>
+                    <td style={td}>{normalizeRole(u.role)}</td>
+                    <td style={td}>
+                      {u.online ? (
+                        <span style={badge("green")}>ONLINE</span>
+                      ) : (
+                        <span style={badge("gray")}>OFFLINE</span>
+                      )}
+                    </td>
+                    <td style={td}>{u.currentPage || "—"}</td>
+                    <td style={td}>{formatDate(u.lastSeen)}</td>
+                    <td style={td}>{formatDate(u.lastLoginAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -595,16 +767,14 @@ function FilterField({ label, children }) {
 }
 
 function BarChartList({ rows, emptyText }) {
-  if (!rows.length) {
-    return <InfoBox text={emptyText} />;
-  }
+  if (!rows.length) return <InfoBox text={emptyText} />;
 
   const max = Math.max(...rows.map((r) => r.count), 1);
 
   return (
     <div style={{ display: "grid", gap: 10 }}>
       {rows.map((row) => (
-        <div key={row.login}>
+        <div key={row.label}>
           <div
             style={{
               display: "flex",
@@ -616,7 +786,7 @@ function BarChartList({ rows, emptyText }) {
               color: "#334155",
             }}
           >
-            <span>{row.login}</span>
+            <span>{row.label}</span>
             <span>{row.count}</span>
           </div>
 
@@ -643,10 +813,8 @@ function BarChartList({ rows, emptyText }) {
   );
 }
 
-function VerticalBars({ rows }) {
-  if (!rows.length) {
-    return <InfoBox text="No data available." />;
-  }
+function VerticalBars({ rows, compact = false }) {
+  if (!rows.length) return <InfoBox text="No data available." />;
 
   const max = Math.max(...rows.map((r) => r.count), 1);
 
@@ -655,7 +823,7 @@ function VerticalBars({ rows }) {
       style={{
         display: "grid",
         gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))`,
-        gap: 8,
+        gap: compact ? 6 : 8,
         alignItems: "end",
         minHeight: 220,
       }}
@@ -685,7 +853,7 @@ function VerticalBars({ rows }) {
           <div
             style={{
               width: "100%",
-              maxWidth: 34,
+              maxWidth: compact ? 22 : 34,
               height: `${Math.max((row.count / max) * 150, row.count > 0 ? 10 : 2)}px`,
               borderRadius: 10,
               background: "linear-gradient(180deg, #5aa9e6 0%, #1769aa 100%)",
@@ -694,7 +862,7 @@ function VerticalBars({ rows }) {
 
           <div
             style={{
-              fontSize: 11,
+              fontSize: compact ? 9 : 11,
               color: "#64748b",
               textAlign: "center",
               wordBreak: "break-word",
@@ -735,6 +903,29 @@ const selectStyle = {
   fontSize: 14,
   color: "#0f172a",
   outline: "none",
+};
+
+const actionBtnStyle = {
+  border: "1px solid #cfe7fb",
+  background: "#ffffff",
+  color: "#1769aa",
+  borderRadius: 12,
+  padding: "10px 14px",
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const tableWrapStyle = {
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+  overflow: "hidden",
+  background: "#fff",
+};
+
+const tableStyle = {
+  width: "100%",
+  borderCollapse: "collapse",
 };
 
 const th = {
