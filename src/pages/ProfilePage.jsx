@@ -162,9 +162,7 @@ export default function ProfilePage() {
 
     if (!file) {
       setPhotoFile(null);
-      if (photoPreviewURL) {
-        URL.revokeObjectURL(photoPreviewURL);
-      }
+      if (photoPreviewURL) URL.revokeObjectURL(photoPreviewURL);
       setPhotoPreviewURL("");
       return;
     }
@@ -198,11 +196,6 @@ export default function ProfilePage() {
       return;
     }
 
-    if (!username.trim()) {
-      setError("Username cannot be empty.");
-      return;
-    }
-
     if (pin && pin.trim().length < 4) {
       setError("PIN must be at least 4 digits.");
       return;
@@ -228,14 +221,10 @@ export default function ProfilePage() {
         finalPhotoURL = await getDownloadURL(storageRef);
       }
 
-      const payload = {
-        username: username.trim(),
-        loginUsername: username.trim(),
+      await updateDoc(userRef, {
         pin: pin.trim(),
         profilePhotoURL: finalPhotoURL,
-      };
-
-      await updateDoc(userRef, payload);
+      });
 
       setStoredPhotoURL(finalPhotoURL);
       setPhotoFile(null);
@@ -250,8 +239,6 @@ export default function ProfilePage() {
           prev
             ? {
                 ...prev,
-                username: username.trim(),
-                loginUsername: username.trim(),
                 pin: pin.trim(),
                 profilePhotoURL: finalPhotoURL,
               }
@@ -262,9 +249,7 @@ export default function ProfilePage() {
       setMessage("Profile updated successfully.");
     } catch (err) {
       console.error("Error saving profile:", err);
-      setError(
-        err?.message || "Error saving your profile. Please try again."
-      );
+      setError(err?.message || "Error saving your profile. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -372,7 +357,7 @@ export default function ProfilePage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Update your display name, PIN and profile picture.
+            Update your PIN and profile picture.
           </p>
         </div>
       </div>
@@ -507,7 +492,7 @@ export default function ProfilePage() {
                   lineHeight: 1.6,
                 }}
               >
-                JPG / PNG. Max 5MB. A square image works best.
+                JPG / PNG. Max 5MB. A small square photo works best.
               </p>
             </div>
           </div>
@@ -547,9 +532,25 @@ export default function ProfilePage() {
               <FieldLabel>Username</FieldLabel>
               <TextInput
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Your display name"
+                readOnly
+                disabled
+                style={{
+                  background: "#f8fafc",
+                  color: "#64748b",
+                  cursor: "not-allowed",
+                }}
               />
+              <p
+                style={{
+                  marginTop: 8,
+                  marginBottom: 0,
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.6,
+                }}
+              >
+                Username is managed by administration and cannot be changed here.
+              </p>
             </div>
 
             <div>
