@@ -1,4 +1,3 @@
-// src/pages/WCHRFlights.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -68,6 +67,8 @@ function downloadCSV(filename, rows) {
   const headers = [
     "Report ID",
     "Submitted By",
+    "Employee Login",
+    "Employee Role",
     "Submitted At",
     "Passenger",
     "Airline",
@@ -96,6 +97,8 @@ function downloadCSV(filename, rows) {
       const cols = [
         r.report_id || "",
         r.employee_name || "",
+        r.employee_login || "",
+        r.employee_role || "",
         submitted ? submitted.toISOString() : "",
         r.passenger_name || "",
         r.airline || "",
@@ -417,31 +420,27 @@ export default function WCHRFlights() {
       try {
         const q = query(
           collection(db, "wch_reports"),
-          where("flight_key", "==", selectedFlightKey)
+          where("flight_key", "==", selectedFlightKey),
+          orderBy("submitted_at", "asc")
         );
 
         const snap = await getDocs(q);
-
-        const rows = snap.docs
-          .map((d) => ({
-            id: d.id,
-            ...d.data(),
-            airline: safeUpper(d.data().airline),
-            flight_number: safeUpper(d.data().flight_number),
-            origin: safeUpper(d.data().origin),
-            destination: safeUpper(d.data().destination),
-            gate: safeUpper(d.data().gate),
-            seat: safeUpper(d.data().seat),
-            boarding_group: safeUpper(d.data().boarding_group),
-            operator: safeUpper(d.data().operator),
-            time_at_gate: formatTimeAtGate(d.data().time_at_gate),
-            pnr: safeText(d.data().pnr).toUpperCase(),
-          }))
-          .sort((a, b) => {
-            const ta = tsToDate(a.submitted_at)?.getTime() || 0;
-            const tb = tsToDate(b.submitted_at)?.getTime() || 0;
-            return ta - tb;
-          });
+        const rows = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          airline: safeUpper(d.data().airline),
+          flight_number: safeUpper(d.data().flight_number),
+          origin: safeUpper(d.data().origin),
+          destination: safeUpper(d.data().destination),
+          gate: safeUpper(d.data().gate),
+          seat: safeUpper(d.data().seat),
+          boarding_group: safeUpper(d.data().boarding_group),
+          operator: safeUpper(d.data().operator),
+          time_at_gate: formatTimeAtGate(d.data().time_at_gate),
+          pnr: safeText(d.data().pnr).toUpperCase(),
+          employee_login: safeText(d.data().employee_login),
+          employee_role: safeText(d.data().employee_role),
+        }));
 
         if (mounted) setReports(rows);
       } catch (e) {
@@ -1046,7 +1045,7 @@ export default function WCHRFlights() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1480,
+                  minWidth: 1600,
                   background: "#fff",
                 }}
               >
@@ -1065,6 +1064,8 @@ export default function WCHRFlights() {
                     <th style={thStyle({ textAlign: "left" })}>WCHR</th>
                     <th style={thStyle({ textAlign: "left" })}>Wheelchair #</th>
                     <th style={thStyle({ textAlign: "left" })}>Submitted By</th>
+                    <th style={thStyle({ textAlign: "left" })}>Login</th>
+                    <th style={thStyle({ textAlign: "left" })}>Role</th>
                     <th style={thStyle({ textAlign: "center" })}>Status</th>
                   </tr>
                 </thead>
@@ -1096,6 +1097,8 @@ export default function WCHRFlights() {
                       <td style={tdStyle}>{r.wch_type || "—"}</td>
                       <td style={tdStyle}>{r.wheelchair_number || "—"}</td>
                       <td style={tdStyle}>{r.employee_name || "—"}</td>
+                      <td style={tdStyle}>{r.employee_login || "—"}</td>
+                      <td style={tdStyle}>{r.employee_role || "—"}</td>
                       <td style={{ ...tdStyle, textAlign: "center" }}>
                         {String(r.status || "").toUpperCase() === "LATE" ? (
                           <span style={statusBadge("LATE")}>LATE</span>
