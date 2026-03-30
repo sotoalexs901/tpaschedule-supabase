@@ -1029,3 +1029,21 @@ aside.w-64 p {
 .sch-header.airline-cabin  { background-color: var(--airline-cabin) !important; }
 .sch-header.airline-aa-bso { background-color: var(--airline-aa-bso) !important; }
 .sch-header.airline-other  { background-color: var(--airline-other) !important; }
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
