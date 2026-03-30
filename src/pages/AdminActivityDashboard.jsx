@@ -169,6 +169,43 @@ function buildProductivityTable(reports, users) {
     .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
 }
 
+function buildTopWheelchairUsage(reports) {
+  const map = {};
+
+  for (const r of reports) {
+    const airline = String(r.airline || "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
+    const chair = String(r.wheelchair_number || "").trim().toUpperCase();
+
+    if (!chair) continue;
+
+    if (!map[airline]) map[airline] = {};
+    map[airline][chair] = (map[airline][chair] || 0) + 1;
+  }
+
+  const result = [];
+
+  for (const airline of Object.keys(map)) {
+    const chairs = map[airline];
+    let topChair = "";
+    let max = 0;
+
+    for (const chair of Object.keys(chairs)) {
+      if (chairs[chair] > max) {
+        max = chairs[chair];
+        topChair = chair;
+      }
+    }
+
+    result.push({
+      airline,
+      chair: topChair,
+      count: max,
+    });
+  }
+
+  return result.sort((a, b) => b.count - a.count || a.airline.localeCompare(b.airline));
+}
+
 function downloadCSV(filename, rows) {
   const csv = rows
     .map((row) =>
@@ -331,6 +368,24 @@ export default function AdminActivityDashboard() {
 
   const hourlyWchr = useMemo(() => buildHourlyCounts(filteredReports), [filteredReports]);
 
+  const weeklyWheelchairUsage = useMemo(() => {
+    return buildTopWheelchairUsage(
+      reports.filter((r) => {
+        const d = toDateSafe(r.submitted_at);
+        return d && d >= startOfWeek();
+      })
+    ).slice(0, 10);
+  }, [reports]);
+
+  const monthlyWheelchairUsage = useMemo(() => {
+    return buildTopWheelchairUsage(
+      reports.filter((r) => {
+        const d = toDateSafe(r.submitted_at);
+        return d && d >= startOfMonth();
+      })
+    ).slice(0, 10);
+  }, [reports]);
+
   const recentUsers = useMemo(() => {
     return [...filteredUsers]
       .filter((u) => u.lastSeen)
@@ -370,6 +425,14 @@ export default function AdminActivityDashboard() {
       ["TOP AIRLINES"],
       ["Airline", "Count"],
       ...topAirlines.map((r) => [r.label, r.count]),
+      [],
+      ["MOST USED WCHR THIS WEEK"],
+      ["Airline", "WCHR Number", "Count"],
+      ...weeklyWheelchairUsage.map((r) => [r.airline, r.chair, r.count]),
+      [],
+      ["MOST USED WCHR THIS MONTH"],
+      ["Airline", "WCHR Number", "Count"],
+      ...monthlyWheelchairUsage.map((r) => [r.airline, r.chair, r.count]),
       [],
       ["WCHR BY DAY"],
       ["Day", "Count"],
@@ -524,6 +587,34 @@ export default function AdminActivityDashboard() {
 
         <Panel title="Top Airlines">
           <BarChartList rows={topAirlines} emptyText="No airline data for this filter." />
+        </Panel>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 16,
+        }}
+      >
+        <Panel title="Most Used WCHR (This Week)">
+          <BarChartList
+            rows={weeklyWheelchairUsage.map((r) => ({
+              label: `${r.airline} · ${r.chair}`,
+              count: r.count,
+            }))}
+            emptyText="No WCHR usage this week."
+          />
+        </Panel>
+
+        <Panel title="Most Used WCHR (This Month)">
+          <BarChartList
+            rows={monthlyWheelchairUsage.map((r) => ({
+              label: `${r.airline} · ${r.chair}`,
+              count: r.count,
+            }))}
+            emptyText="No WCHR usage this month."
+          />
         </Panel>
       </div>
 
