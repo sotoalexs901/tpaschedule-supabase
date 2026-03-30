@@ -3,6 +3,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
 function toDateSafe(value) {
   if (!value) return null;
   if (typeof value?.toDate === "function") return value.toDate();
@@ -14,6 +18,12 @@ function formatDate(value) {
   const d = toDateSafe(value);
   if (!d) return "—";
   return d.toLocaleString();
+}
+
+function formatInputDate(value) {
+  const d = toDateSafe(value);
+  if (!d) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 function normalizeRole(role) {
@@ -30,6 +40,11 @@ function startOfToday() {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 }
 
+function endOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+}
+
 function startOfWeek() {
   const now = new Date();
   const day = now.getDay();
@@ -40,16 +55,59 @@ function startOfWeek() {
   return monday;
 }
 
+function endOfWeek() {
+  const start = startOfWeek();
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function startOfLastWeek() {
+  const start = startOfWeek();
+  const last = new Date(start);
+  last.setDate(start.getDate() - 7);
+  last.setHours(0, 0, 0, 0);
+  return last;
+}
+
+function endOfLastWeek() {
+  const start = startOfLastWeek();
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
 function startOfMonth() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
 }
 
-function getRangeStart(range) {
-  if (range === "today") return startOfToday();
-  if (range === "week") return startOfWeek();
-  if (range === "month") return startOfMonth();
-  return null;
+function endOfMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+
+function endOfDay(dateLike) {
+  const d = toDateSafe(dateLike) || new Date(dateLike);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
+function getRangeDates(range) {
+  if (range === "today") {
+    return { start: startOfToday(), end: endOfToday() };
+  }
+  if (range === "week") {
+    return { start: startOfWeek(), end: endOfWeek() };
+  }
+  if (range === "last_week") {
+    return { start: startOfLastWeek(), end: endOfLastWeek() };
+  }
+  if (range === "month") {
+    return { start: startOfMonth(), end: endOfMonth() };
+  }
+  return { start: null, end: null };
 }
 
 function buildCountByLogin(reports) {
@@ -81,37 +139,33 @@ function buildCountByAirline(reports) {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
-function buildDailyCounts(reports, daysBack = 7) {
-  const now = new Date();
-  const points = [];
-
-  for (let i = daysBack - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
-    d.setHours(0, 0, 0, 0);
-
-    points.push({
-      key: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`,
-      label: d.toLocaleDateString(undefined, {
-        month: "2-digit",
-        day: "2-digit",
-      }),
-      count: 0,
-    });
-  }
-
-  const map = new Map(points.map((p) => [p.key, p]));
+function buildDailyCounts(reports) {
+  const counts = {};
 
   for (const r of reports) {
     const submitted = toDateSafe(r.submitted_at);
     if (!submitted) continue;
 
-    const key = `${submitted.getFullYear()}-${submitted.getMonth()}-${submitted.getDate()}`;
-    const found = map.get(key);
-    if (found) found.count += 1;
+    const key = `${submitted.getFullYear()}-${pad2(submitted.getMonth() + 1)}-${pad2(
+      submitted.getDate()
+    )}`;
+
+    if (!counts[key]) {
+      counts[key] = {
+        label: submitted.toLocaleDateString(undefined, {
+          month: "2-digit",
+          day: "2-digit",
+        }),
+        count: 0,
+      };
+    }
+
+    counts[key].count += 1;
   }
 
-  return points;
+  return Object.entries(counts)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, value]) => value);
 }
 
 function buildHourlyCounts(reports) {
@@ -197,11 +251,13 @@ function buildTopWheelchairUsage(reports) {
       }
     }
 
-    result.push({
-      airline,
-      chair: topChair,
-      count: max,
-    });
+    if (topChair) {
+      result.push({
+        airline,
+        chair: topChair,
+        count: max,
+      });
+    }
   }
 
   return result.sort((a, b) => b.count - a.count || a.airline.localeCompare(b.airline));
@@ -228,8 +284,9 @@ function downloadCSV(filename, rows) {
 function safeRangeLabel(range) {
   if (range === "today") return "today";
   if (range === "week") return "this-week";
+  if (range === "last_week") return "last-week";
   if (range === "month") return "this-month";
-  return "all";
+  return "custom";
 }
 
 export default function AdminActivityDashboard() {
@@ -240,6 +297,8 @@ export default function AdminActivityDashboard() {
   const [range, setRange] = useState("week");
   const [selectedLogin, setSelectedLogin] = useState("all");
   const [selectedRole, setSelectedRole] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   useEffect(() => {
     const unsubUsers = onSnapshot(
@@ -272,6 +331,14 @@ export default function AdminActivityDashboard() {
       unsubReports();
     };
   }, []);
+
+  useEffect(() => {
+    if (range === "custom") return;
+
+    const { start, end } = getRangeDates(range);
+    setFromDate(formatInputDate(start));
+    setToDate(formatInputDate(end));
+  }, [range]);
 
   const mergedUsers = useMemo(() => {
     const presenceMap = new Map(
@@ -314,6 +381,9 @@ export default function AdminActivityDashboard() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [mergedUsers]);
 
+  const activeStartDate = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+  const activeEndDate = toDate ? endOfDay(`${toDate}T00:00:00`) : null;
+
   const filteredUsers = useMemo(() => {
     return mergedUsers.filter((u) => {
       if (selectedRole !== "all" && u.role !== selectedRole) return false;
@@ -323,12 +393,11 @@ export default function AdminActivityDashboard() {
   }, [mergedUsers, selectedLogin, selectedRole]);
 
   const filteredReports = useMemo(() => {
-    const rangeStart = getRangeStart(range);
-
     return reports.filter((r) => {
       const submitted = toDateSafe(r.submitted_at);
       if (!submitted) return false;
-      if (rangeStart && submitted < rangeStart) return false;
+      if (activeStartDate && submitted < activeStartDate) return false;
+      if (activeEndDate && submitted > activeEndDate) return false;
 
       const login = String(
         r.employee_login || r.employee_name || "Unknown"
@@ -343,7 +412,7 @@ export default function AdminActivityDashboard() {
 
       return true;
     });
-  }, [reports, range, selectedLogin, selectedRole, mergedUsers]);
+  }, [reports, activeStartDate, activeEndDate, selectedLogin, selectedRole, mergedUsers]);
 
   const totalUsers = filteredUsers.length;
   const onlineUsers = filteredUsers.filter((u) => u.online).length;
@@ -360,39 +429,21 @@ export default function AdminActivityDashboard() {
     [filteredReports]
   );
 
-  const dailyWchr = useMemo(() => {
-    if (range === "today") return buildDailyCounts(filteredReports, 1);
-    if (range === "week") return buildDailyCounts(filteredReports, 7);
-    if (range === "month") return buildDailyCounts(filteredReports, 30);
-    return buildDailyCounts(filteredReports, 14);
-  }, [filteredReports, range]);
+  const dailyWchr = useMemo(() => buildDailyCounts(filteredReports), [filteredReports]);
 
   const hourlyWchr = useMemo(() => buildHourlyCounts(filteredReports), [filteredReports]);
 
-  const weeklyWheelchairUsage = useMemo(() => {
-    return buildTopWheelchairUsage(
-      reports.filter((r) => {
-        const d = toDateSafe(r.submitted_at);
-        return d && d >= startOfWeek();
-      })
-    ).slice(0, 10);
-  }, [reports]);
-
-  const monthlyWheelchairUsage = useMemo(() => {
-    return buildTopWheelchairUsage(
-      reports.filter((r) => {
-        const d = toDateSafe(r.submitted_at);
-        return d && d >= startOfMonth();
-      })
-    ).slice(0, 10);
-  }, [reports]);
+  const wheelchairUsage = useMemo(
+    () => buildTopWheelchairUsage(filteredReports).slice(0, 10),
+    [filteredReports]
+  );
 
   const recentUsers = useMemo(() => {
     return [...filteredUsers]
       .filter((u) => u.lastSeen)
       .sort((a, b) => {
         const A = toDateSafe(a.lastSeen)?.getTime() || 0;
-        const B = toDateSafe(b.lastSeen)?.getTime() || 0;
+        const B = toDateSafe(a.lastSeen)?.getTime() || 0;
         return B - A;
       })
       .slice(0, 15);
@@ -410,6 +461,8 @@ export default function AdminActivityDashboard() {
     const rows = [
       ["ADMIN ACTIVITY DASHBOARD"],
       ["Range", safeRangeLabel(range)],
+      ["From", fromDate || "—"],
+      ["To", toDate || "—"],
       ["Login Filter", selectedLogin],
       ["Role Filter", selectedRole],
       [],
@@ -427,13 +480,9 @@ export default function AdminActivityDashboard() {
       ["Airline", "Count"],
       ...topAirlines.map((r) => [r.label, r.count]),
       [],
-      ["MOST USED WCHR THIS WEEK"],
+      ["MOST USED WCHR"],
       ["Airline", "WCHR Number", "Count"],
-      ...weeklyWheelchairUsage.map((r) => [r.airline, r.chair, r.count]),
-      [],
-      ["MOST USED WCHR THIS MONTH"],
-      ["Airline", "WCHR Number", "Count"],
-      ...monthlyWheelchairUsage.map((r) => [r.airline, r.chair, r.count]),
+      ...wheelchairUsage.map((r) => [r.airline, r.chair, r.count]),
       [],
       ["WCHR BY DAY"],
       ["Day", "Count"],
@@ -522,12 +571,41 @@ export default function AdminActivityDashboard() {
           }}
         >
           <FilterField label="Range">
-            <select value={range} onChange={(e) => setRange(e.target.value)} style={selectStyle}>
+            <select
+              value={range}
+              onChange={(e) => setRange(e.target.value)}
+              style={selectStyle}
+            >
               <option value="today">Today</option>
               <option value="week">This Week</option>
+              <option value="last_week">Last Week</option>
               <option value="month">This Month</option>
-              <option value="all">All</option>
+              <option value="custom">Custom Dates</option>
             </select>
+          </FilterField>
+
+          <FilterField label="From">
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => {
+                setRange("custom");
+                setFromDate(e.target.value);
+              }}
+              style={selectStyle}
+            />
+          </FilterField>
+
+          <FilterField label="To">
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => {
+                setRange("custom");
+                setToDate(e.target.value);
+              }}
+              style={selectStyle}
+            />
           </FilterField>
 
           <FilterField label="Login">
@@ -591,33 +669,15 @@ export default function AdminActivityDashboard() {
         </Panel>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 16,
-        }}
-      >
-        <Panel title="Most Used WCHR (This Week)">
-          <BarChartList
-            rows={weeklyWheelchairUsage.map((r) => ({
-              label: `${r.airline} · ${r.chair}`,
-              count: r.count,
-            }))}
-            emptyText="No WCHR usage this week."
-          />
-        </Panel>
-
-        <Panel title="Most Used WCHR (This Month)">
-          <BarChartList
-            rows={monthlyWheelchairUsage.map((r) => ({
-              label: `${r.airline} · ${r.chair}`,
-              count: r.count,
-            }))}
-            emptyText="No WCHR usage this month."
-          />
-        </Panel>
-      </div>
+      <Panel title="Most Used WCHR">
+        <BarChartList
+          rows={wheelchairUsage.map((r) => ({
+            label: `${r.airline} · ${r.chair}`,
+            count: r.count,
+          }))}
+          emptyText="No WCHR usage for this filter."
+        />
+      </Panel>
 
       <div
         style={{
@@ -705,7 +765,9 @@ export default function AdminActivityDashboard() {
                     key={row.login}
                     style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
                   >
-                    <td style={td}><div style={{ fontWeight: 700 }}>{row.login}</div></td>
+                    <td style={td}>
+                      <div style={{ fontWeight: 700 }}>{row.login}</div>
+                    </td>
                     <td style={td}>{normalizeRole(row.role)}</td>
                     <td style={td}>
                       {row.online ? (
