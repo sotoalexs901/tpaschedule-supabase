@@ -5,6 +5,38 @@ import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
+function getDefaultPosition(role) {
+  if (role === "station_manager") return "Station Manager";
+  if (role === "duty_manager") return "Duty Manager";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "agent") return "Agent";
+  return "Team Member";
+}
+
+function getVisibleName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    "Crew Member"
+  );
+}
+
+function getVisiblePosition(user) {
+  return user?.position || getDefaultPosition(user?.role);
+}
+
+function getInitials(name) {
+  const clean = String(name || "").trim();
+  if (!clean) return "U";
+
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+}
+
 function StatChip({ label, value }) {
   return (
     <div
@@ -80,6 +112,62 @@ function QuickActionCard({ title, subtitle, body, onClick, accent, icon }) {
   );
 }
 
+function LeaderboardCard({ title, subtitle, rows, emptyText }) {
+  return (
+    <div className="rounded-2xl bg-[#0f172a]/60 backdrop-blur-lg border border-white/10 shadow-lg p-5">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="text-base font-semibold text-white">{title}</h3>
+          <p className="text-xs text-slate-400 mt-1">{subtitle}</p>
+        </div>
+      </div>
+
+      {!rows.length ? (
+        <div className="text-sm text-slate-400">{emptyText}</div>
+      ) : (
+        <div className="grid gap-3">
+          {rows.map((row, index) => (
+            <div
+              key={`${row.name}-${index}`}
+              className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/5 px-4 py-3"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                  style={{
+                    background:
+                      index === 0
+                        ? "rgba(59,130,246,0.24)"
+                        : "rgba(255,255,255,0.08)",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                  }}
+                >
+                  {index + 1}
+                </div>
+
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-white truncate">
+                    {row.name}
+                  </div>
+                  <div className="text-xs text-slate-400 truncate">
+                    {row.position}
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <div className="text-sm font-bold text-sky-300">{row.value}</div>
+                <div className="text-[11px] text-slate-400">{row.label}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EmployeeDashboardPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -88,14 +176,14 @@ export default function EmployeeDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState("en");
 
-  const isSupervisor = user?.role === "supervisor";
+  const visibleName = useMemo(() => getVisibleName(user), [user]);
+  const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
+  const profilePhotoURL = user?.profilePhotoURL || "";
 
   const copy = {
     en: {
       crewPortal: "Crew Portal",
       welcome: "Welcome,",
-      roleAgent: "Crew Agent",
-      roleSupervisor: "Supervisor",
       intro:
         "Manage your workday, requests, reports, and stay updated with station news.",
       quickActions: {
@@ -134,12 +222,17 @@ export default function EmployeeDashboardPage() {
       myAccess: "Portal Access",
       latestTitle: "Latest update",
       createdBy: "Posted by",
+      wchrTopToday: "Top WCHR Today",
+      wchrTopWeek: "Top WCHR This Week",
+      wchrTopTodaySub: "This section will rank the strongest WCHR performers of the day.",
+      wchrTopWeekSub: "This section will rank the strongest WCHR performers of the week.",
+      emptyLeaderboard: "No ranking data available yet.",
+      companyBirthdays: "Company Birthdays",
+      companyBirthdaysSub: "Birthday calendar widget will be added here soon.",
     },
     es: {
       crewPortal: "Portal de Tripulación",
       welcome: "Bienvenido(a),",
-      roleAgent: "Agente de Rampa / TC",
-      roleSupervisor: "Supervisor",
       intro:
         "Administra tu jornada, solicitudes, reportes y mantente al día con las noticias de la estación.",
       quickActions: {
@@ -180,6 +273,13 @@ export default function EmployeeDashboardPage() {
       myAccess: "Acceso al Portal",
       latestTitle: "Última novedad",
       createdBy: "Publicado por",
+      wchrTopToday: "Top WCHR Hoy",
+      wchrTopWeek: "Top WCHR Semana",
+      wchrTopTodaySub: "Aquí aparecerá el ranking de empleados con más WCHR del día.",
+      wchrTopWeekSub: "Aquí aparecerá el ranking de empleados con más WCHR de la semana.",
+      emptyLeaderboard: "Aún no hay datos de ranking disponibles.",
+      companyBirthdays: "Cumpleaños de la Compañía",
+      companyBirthdaysSub: "Aquí agregaremos pronto el widget del calendario de cumpleaños.",
     },
   };
 
@@ -255,6 +355,20 @@ export default function EmployeeDashboardPage() {
 
   const featuredAnnouncement = announcements[0] || null;
 
+  const placeholderTopToday = useMemo(
+    () => [
+      { name: "Coming Soon", position: "WCHR Leaderboard", value: "—", label: "Today" },
+    ],
+    []
+  );
+
+  const placeholderTopWeek = useMemo(
+    () => [
+      { name: "Coming Soon", position: "WCHR Leaderboard", value: "—", label: "Week" },
+    ],
+    []
+  );
+
   return (
     <div
       className="min-h-screen p-4 md:p-6"
@@ -276,22 +390,60 @@ export default function EmployeeDashboardPage() {
         >
           <div className="p-5 md:p-7">
             <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
-              <div className="min-w-0">
-                <p className="text-xs text-slate-300 uppercase tracking-[0.25em]">
-                  {t.crewPortal}
-                </p>
+              <div className="min-w-0 flex items-start gap-4">
+                <div
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 22,
+                    overflow: "hidden",
+                    background: "rgba(255,255,255,0.12)",
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    fontSize: 24,
+                    fontWeight: 800,
+                    color: "#fff",
+                  }}
+                >
+                  {profilePhotoURL ? (
+                    <img
+                      src={profilePhotoURL}
+                      alt={visibleName}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  ) : (
+                    <span>{getInitials(visibleName)}</span>
+                  )}
+                </div>
 
-                <h1 className="text-2xl md:text-4xl font-bold tracking-wide text-white mt-2 leading-tight">
-                  {t.welcome} {user?.username || "Crew Member"}
-                </h1>
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-300 uppercase tracking-[0.25em]">
+                    {t.crewPortal}
+                  </p>
 
-                <p className="text-sm text-blue-200 mt-2 font-medium">
-                  {isSupervisor ? t.roleSupervisor : t.roleAgent}
-                </p>
+                  <h1 className="text-2xl md:text-4xl font-bold tracking-wide text-white mt-2 leading-tight">
+                    {t.welcome} {visibleName}
+                  </h1>
 
-                <p className="text-sm text-slate-300 mt-3 max-w-3xl leading-relaxed">
-                  {t.intro}
-                </p>
+                  <p className="text-sm text-blue-200 mt-2 font-medium">
+                    {visiblePosition}
+                  </p>
+
+                  <p className="text-xs text-slate-400 mt-1">
+                    @{user?.username || "user"}
+                  </p>
+
+                  <p className="text-sm text-slate-300 mt-3 max-w-3xl leading-relaxed">
+                    {t.intro}
+                  </p>
+                </div>
               </div>
 
               <div className="flex flex-col gap-3">
@@ -326,7 +478,7 @@ export default function EmployeeDashboardPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                  <StatChip label={t.myAccess} value={isSupervisor ? "Supervisor" : "Agent"} />
+                  <StatChip label={t.myAccess} value={visiblePosition} />
                   <StatChip label={t.activeCards} value={quickCards.length} />
                   <StatChip label={t.totalNews} value={announcements.length} />
                 </div>
@@ -350,6 +502,34 @@ export default function EmployeeDashboardPage() {
           </div>
           <div className="text-xs text-blue-50 md:text-right opacity-90 font-medium">
             ✨ Be on the loop
+          </div>
+        </div>
+
+        {/* Upcoming modules */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-8">
+          <LeaderboardCard
+            title={t.wchrTopToday}
+            subtitle={t.wchrTopTodaySub}
+            rows={placeholderTopToday}
+            emptyText={t.emptyLeaderboard}
+          />
+
+          <LeaderboardCard
+            title={t.wchrTopWeek}
+            subtitle={t.wchrTopWeekSub}
+            rows={placeholderTopWeek}
+            emptyText={t.emptyLeaderboard}
+          />
+
+          <div className="rounded-2xl bg-[#0f172a]/60 backdrop-blur-lg border border-white/10 shadow-lg p-5">
+            <h3 className="text-base font-semibold text-white">
+              {t.companyBirthdays}
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">{t.companyBirthdaysSub}</p>
+
+            <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/5 p-5 text-sm text-slate-400">
+              Birthday calendar placeholder
+            </div>
           </div>
         </div>
 
