@@ -1,4 +1,3 @@
-// src/pages/WCHRFlights.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -300,6 +299,7 @@ export default function WCHRFlights() {
   const [selectedFlightKey, setSelectedFlightKey] = useState("");
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reports, setReports] = useState([]);
+  const [allDayReports, setAllDayReports] = useState([]);
 
   const canClose = useMemo(() => {
     const role = (user?.role || "").toLowerCase();
@@ -331,6 +331,8 @@ export default function WCHRFlights() {
         const rows = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .sort((a, b) => getMillis(b.submitted_at) - getMillis(a.submitted_at));
+
+        if (mounted) setAllDayReports(rows);
 
         const map = new Map();
 
@@ -417,7 +419,7 @@ export default function WCHRFlights() {
     return () => {
       mounted = false;
     };
-  }, [selectedDate, selectedFlightKey]);
+  }, [selectedDate]);
 
   useEffect(() => {
     let mounted = true;
@@ -431,32 +433,27 @@ export default function WCHRFlights() {
 
       setReportsLoading(true);
       try {
-        const q = query(
-          collection(db, "wch_reports"),
-          where("flight_key", "==", selectedFlightKey)
-        );
-
-        const snap = await getDocs(q);
-        const rows = snap.docs
-          .map((d) => ({
-            id: d.id,
-            ...d.data(),
-            airline: safeUpper(d.data().airline),
-            flight_number: safeUpper(d.data().flight_number),
-            origin: safeUpper(d.data().origin),
-            destination: safeUpper(d.data().destination),
-            gate: safeUpper(d.data().gate),
-            seat: safeUpper(d.data().seat),
-            boarding_group: safeUpper(d.data().boarding_group),
-            operator: safeUpper(d.data().operator),
-            time_at_gate: formatTimeAtGate(d.data().time_at_gate),
-            pnr: safeText(d.data().pnr).toUpperCase(),
-            employee_login: safeText(d.data().employee_login),
-            employee_role: safeText(d.data().employee_role),
+        const flightRows = allDayReports
+          .filter((r) => r.flight_key === selectedFlightKey)
+          .map((r) => ({
+            ...r,
+            airline: safeUpper(r.airline),
+            flight_number: safeUpper(r.flight_number),
+            origin: safeUpper(r.origin),
+            destination: safeUpper(r.destination),
+            gate: safeUpper(r.gate),
+            seat: safeUpper(r.seat),
+            boarding_group: safeUpper(r.boarding_group),
+            operator: safeUpper(r.operator),
+            time_at_gate: formatTimeAtGate(r.time_at_gate),
+            pnr: safeText(r.pnr).toUpperCase(),
+            employee_login: safeText(r.employee_login),
+            employee_role: safeText(r.employee_role),
+            wheelchair_number: safeText(r.wheelchair_number).toUpperCase(),
           }))
           .sort((a, b) => getMillis(a.submitted_at) - getMillis(b.submitted_at));
 
-        if (mounted) setReports(rows);
+        if (mounted) setReports(flightRows);
       } catch (e) {
         console.error(e);
         if (mounted) {
@@ -471,7 +468,7 @@ export default function WCHRFlights() {
     return () => {
       mounted = false;
     };
-  }, [selectedFlightKey]);
+  }, [selectedFlightKey, allDayReports]);
 
   const selectedFlight = useMemo(() => {
     return flights.find((f) => f.flight_key === selectedFlightKey) || null;
@@ -523,11 +520,15 @@ export default function WCHRFlights() {
         )
       );
 
-      if (selectedFlightKey === flight.flight_key && reports?.length) {
+      const flightReports = allDayReports.filter(
+        (r) => r.flight_key === flight.flight_key
+      );
+
+      if (flightReports.length) {
         const filename = `WCHR_${flight.airline}${flight.flight_number}_${toYYYYMMDD(
           flight.flight_date || new Date()
         )}.csv`;
-        downloadCSV(filename, reports);
+        downloadCSV(filename, flightReports);
       }
     } catch (e) {
       console.error(e);
@@ -536,22 +537,9 @@ export default function WCHRFlights() {
   };
 
   const handleExportFullDay = () => {
-    if (!flights.length) return;
-
-    const allReports = reports.length
-      ? reports
-      : [];
-
+    if (!allDayReports.length) return;
     const filename = `WCHR_FULL_DAY_${toYYYYMMDD(selectedDate)}.csv`;
-
-    if (allReports.length) {
-      downloadCSV(filename, allReports);
-      return;
-    }
-
-    setError(
-      "Select a flight first to load its reports, or add a day-wide export query if you want all rows at once."
-    );
+    downloadCSV(filename, allDayReports);
   };
 
   const handleExportCurrentFlight = () => {
@@ -757,7 +745,7 @@ export default function WCHRFlights() {
             <ActionButton
               onClick={handleExportFullDay}
               variant="secondary"
-              disabled={!reports.length}
+              disabled={!allDayReports.length}
               style={{ padding: "8px 12px", fontSize: 12 }}
             >
               Export Full Day
@@ -857,136 +845,139 @@ export default function WCHRFlights() {
                 </tr>
               </thead>
               <tbody>
-                {flights.map((f, index) => (
-                  <tr
-                    key={f.flight_key}
-                    style={{
-                      background:
-                        selectedFlightKey === f.flight_key
-                          ? "#edf7ff"
-                          : index % 2 === 0
-                          ? "#ffffff"
-                          : "#fbfdff",
-                    }}
-                  >
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => setSelectedFlightKey(f.flight_key)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          padding: 0,
-                          textAlign: "left",
-                          color: "#1769aa",
-                          cursor: "pointer",
-                          fontWeight:
-                            selectedFlightKey === f.flight_key ? 900 : 700,
-                          fontSize: 14,
-                        }}
-                      >
-                        {f.airline} {f.flight_number}
-                      </button>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#64748b",
-                          marginTop: 4,
-                        }}
-                      >
-                        flight_key: {f.flight_key}
-                      </div>
-                    </td>
+                {flights.map((f, index) => {
+                  const flightReports = allDayReports.filter(
+                    (r) => r.flight_key === f.flight_key
+                  );
 
-                    <td style={tdStyle}>
-                      {f.flight_date ? toMMDDYYYY(f.flight_date) : "—"}
-                    </td>
+                  return (
+                    <tr
+                      key={f.flight_key}
+                      style={{
+                        background:
+                          selectedFlightKey === f.flight_key
+                            ? "#edf7ff"
+                            : index % 2 === 0
+                            ? "#ffffff"
+                            : "#fbfdff",
+                      }}
+                    >
+                      <td style={tdStyle}>
+                        <button
+                          onClick={() => setSelectedFlightKey(f.flight_key)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            textAlign: "left",
+                            color: "#1769aa",
+                            cursor: "pointer",
+                            fontWeight:
+                              selectedFlightKey === f.flight_key ? 900 : 700,
+                            fontSize: 14,
+                          }}
+                        >
+                          {f.airline} {f.flight_number}
+                        </button>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#64748b",
+                            marginTop: 4,
+                          }}
+                        >
+                          flight_key: {f.flight_key}
+                        </div>
+                      </td>
 
-                    <td style={tdStyle}>
-                      {(f.origin || "—") + " → " + (f.destination || "—")}
-                    </td>
+                      <td style={tdStyle}>
+                        {f.flight_date ? toMMDDYYYY(f.flight_date) : "—"}
+                      </td>
 
-                    <td style={tdStyle}>{f.operator || "—"}</td>
+                      <td style={tdStyle}>
+                        {(f.origin || "—") + " → " + (f.destination || "—")}
+                      </td>
 
-                    <td style={tdStyle}>
-                      <div style={{ fontWeight: 700 }}>
-                        Total: {f.total_reports}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          marginTop: 4,
-                        }}
-                      >
-                        NEW: {f.new_reports} · LATE: {f.late_reports}
-                      </div>
-                    </td>
+                      <td style={tdStyle}>{f.operator || "—"}</td>
 
-                    <td style={tdStyle}>
-                      {f.closed ? (
-                        <span style={statusBadge("CLOSED")}>CLOSED</span>
-                      ) : (
-                        <span style={statusBadge("OPEN")}>OPEN</span>
-                      )}
-                      {f.closed_at && (
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 700 }}>
+                          Total: {f.total_reports}
+                        </div>
                         <div
                           style={{
                             fontSize: 12,
                             color: "#64748b",
-                            marginTop: 6,
+                            marginTop: 4,
                           }}
                         >
-                          Closed at: {toMMDDYYYY(f.closed_at)}
+                          NEW: {f.new_reports} · LATE: {f.late_reports}
                         </div>
-                      )}
-                    </td>
+                      </td>
 
-                    <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <ActionButton
-                          onClick={() => setSelectedFlightKey(f.flight_key)}
-                          variant="secondary"
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                        >
-                          View Table
-                        </ActionButton>
+                      <td style={tdStyle}>
+                        {f.closed ? (
+                          <span style={statusBadge("CLOSED")}>CLOSED</span>
+                        ) : (
+                          <span style={statusBadge("OPEN")}>OPEN</span>
+                        )}
+                        {f.closed_at && (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                              marginTop: 6,
+                            }}
+                          >
+                            Closed at: {toMMDDYYYY(f.closed_at)}
+                          </div>
+                        )}
+                      </td>
 
-                        <ActionButton
-                          onClick={() => {
-                            const flightReports = reports.filter(
-                              (r) => r.flight_key === f.flight_key
-                            );
-                            const filename = `WCHR_${f.airline}${f.flight_number}_${toYYYYMMDD(
-                              f.flight_date || new Date()
-                            )}.csv`;
-                            downloadCSV(filename, flightReports);
+                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            justifyContent: "center",
                           }}
-                          variant="secondary"
-                          disabled={selectedFlightKey !== f.flight_key || !reports.length}
-                          style={{ padding: "8px 12px", fontSize: 12 }}
                         >
-                          Export Flight
-                        </ActionButton>
+                          <ActionButton
+                            onClick={() => setSelectedFlightKey(f.flight_key)}
+                            variant="secondary"
+                            style={{ padding: "8px 12px", fontSize: 12 }}
+                          >
+                            View Table
+                          </ActionButton>
 
-                        <ActionButton
-                          onClick={() => handleCloseFlight(f)}
-                          variant="primary"
-                          disabled={!canClose || f.closed}
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                        >
-                          Close Flight
-                        </ActionButton>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <ActionButton
+                            onClick={() => {
+                              const filename = `WCHR_${f.airline}${f.flight_number}_${toYYYYMMDD(
+                                f.flight_date || new Date()
+                              )}.csv`;
+                              downloadCSV(filename, flightReports);
+                            }}
+                            variant="secondary"
+                            disabled={!flightReports.length}
+                            style={{ padding: "8px 12px", fontSize: 12 }}
+                          >
+                            Export Flight
+                          </ActionButton>
+
+                          <ActionButton
+                            onClick={() => handleCloseFlight(f)}
+                            variant="primary"
+                            disabled={!canClose || f.closed}
+                            style={{ padding: "8px 12px", fontSize: 12 }}
+                          >
+                            Close Flight
+                          </ActionButton>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
