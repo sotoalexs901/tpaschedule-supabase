@@ -21,6 +21,15 @@ function formatDate(value) {
   return d.toLocaleString();
 }
 
+function formatInputDate(date) {
+  if (!date) return "";
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
 function normalizeRole(role) {
   const value = String(role || "").trim();
   if (value === "station_manager") return "Station Manager";
@@ -42,6 +51,11 @@ function startOfToday() {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 }
 
+function endOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+}
+
 function startOfWeek() {
   const now = new Date();
   const day = now.getDay();
@@ -52,16 +66,47 @@ function startOfWeek() {
   return monday;
 }
 
+function endOfWeek() {
+  const start = startOfWeek();
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
 function startOfMonth() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
 }
 
-function getRangeStart(range) {
-  if (range === "today") return startOfToday();
-  if (range === "week") return startOfWeek();
-  if (range === "month") return startOfMonth();
-  return null;
+function endOfMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+
+function getRangeBounds(range, customFrom, customTo) {
+  if (range === "today") {
+    return { start: startOfToday(), end: endOfToday() };
+  }
+  if (range === "week") {
+    return { start: startOfWeek(), end: endOfWeek() };
+  }
+  if (range === "month") {
+    return { start: startOfMonth(), end: endOfMonth() };
+  }
+  if (range === "custom") {
+    const start = customFrom ? new Date(`${customFrom}T00:00:00`) : null;
+    const end = customTo ? new Date(`${customTo}T23:59:59.999`) : null;
+    return { start, end };
+  }
+  return { start: null, end: null };
+}
+
+function isDateInRange(date, start, end) {
+  if (!date) return false;
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
 }
 
 function buildCountByLogin(reports) {
@@ -84,7 +129,8 @@ function buildCountByAirline(reports) {
   const counts = {};
 
   for (const r of reports) {
-    const airline = String(r.airline || "Unknown").trim().toUpperCase() || "Unknown";
+    const airline =
+      String(r.airline || "Unknown").trim().toUpperCase() || "Unknown";
     counts[airline] = (counts[airline] || 0) + 1;
   }
 
@@ -93,23 +139,34 @@ function buildCountByAirline(reports) {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
-function buildDailyCounts(reports, daysBack = 7) {
-  const now = new Date();
+function buildDailyCounts(reports, start = null, end = null) {
+  if (!start || !end) {
+    const counts = {};
+    for (const r of reports) {
+      const submitted = toDateSafe(r.submitted_at);
+      if (!submitted) continue;
+      const label = submitted.toLocaleDateString(undefined, {
+        month: "2-digit",
+        day: "2-digit",
+      });
+      counts[label] = (counts[label] || 0) + 1;
+    }
+    return Object.entries(counts).map(([label, count]) => ({ label, count }));
+  }
+
   const points = [];
+  const cursor = new Date(start);
 
-  for (let i = daysBack - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
-    d.setHours(0, 0, 0, 0);
-
+  while (cursor <= end) {
     points.push({
-      key: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`,
-      label: d.toLocaleDateString(undefined, {
+      key: `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`,
+      label: cursor.toLocaleDateString(undefined, {
         month: "2-digit",
         day: "2-digit",
       }),
       count: 0,
     });
+    cursor.setDate(cursor.getDate() + 1);
   }
 
   const map = new Map(points.map((p) => [p.key, p]));
@@ -142,8 +199,11 @@ function buildHourlyCounts(reports) {
   return hours;
 }
 
-function buildProductivityTable(reports, users) {
+function buildProductivityTable(reports, users, bounds) {
   const byLogin = {};
+  const todayStart = startOfToday();
+  const weekStart = startOfWeek();
+  const monthStart = startOfMonth();
 
   for (const r of reports || []) {
     const login = String(
@@ -162,12 +222,13 @@ function buildProductivityTable(reports, users) {
 
     const submitted = toDateSafe(r.submitted_at);
     if (!submitted) continue;
+    if (!isDateInRange(submitted, bounds.start, bounds.end)) continue;
 
     byLogin[login].total += 1;
 
-    if (submitted >= startOfToday()) byLogin[login].today += 1;
-    if (submitted >= startOfWeek()) byLogin[login].week += 1;
-    if (submitted >= startOfMonth()) byLogin[login].month += 1;
+    if (submitted >= todayStart) byLogin[login].today += 1;
+    if (submitted >= weekStart) byLogin[login].week += 1;
+    if (submitted >= monthStart) byLogin[login].month += 1;
   }
 
   return Object.values(byLogin)
@@ -186,7 +247,8 @@ function buildTopWheelchairUsage(reports) {
   const map = {};
 
   for (const r of reports) {
-    const airline = String(r.airline || "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
+    const airline =
+      String(r.airline || "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
     const chair = String(r.wheelchair_number || "").trim().toUpperCase();
 
     if (!chair) continue;
@@ -317,8 +379,13 @@ function buildStatsWheelchairUsage(stats) {
   return result.sort((a, b) => b.count - a.count || a.airline.localeCompare(b.airline));
 }
 
-function buildStatsProductivityTable(stats, mergedUsers) {
-  const totals = aggregateStatsObject(stats, "by_employee");
+function buildStatsProductivityTable(stats, mergedUsers, bounds) {
+  const inRangeStats = stats.filter((item) => {
+    const d = toStatsDateSafe(item.date);
+    return isDateInRange(d, bounds.start, bounds.end);
+  });
+
+  const totals = aggregateStatsObject(inRangeStats, "by_employee");
 
   return Object.entries(totals)
     .map(([loginKey, total]) => {
@@ -391,6 +458,7 @@ function safeRangeLabel(range) {
   if (range === "today") return "today";
   if (range === "week") return "this-week";
   if (range === "month") return "this-month";
+  if (range === "custom") return "custom-range";
   return "all";
 }
 
@@ -403,6 +471,12 @@ export default function AdminActivityDashboard() {
   const [range, setRange] = useState("week");
   const [selectedLogin, setSelectedLogin] = useState("all");
   const [selectedRole, setSelectedRole] = useState("all");
+  const [customFrom, setCustomFrom] = useState(
+    formatInputDate(startOfMonth())
+  );
+  const [customTo, setCustomTo] = useState(
+    formatInputDate(new Date())
+  );
 
   useEffect(() => {
     const unsubUsers = onSnapshot(
@@ -474,6 +548,10 @@ export default function AdminActivityDashboard() {
   }, [mergedUsers]);
 
   const statsAvailable = dailyStats.length > 0;
+  const bounds = useMemo(
+    () => getRangeBounds(range, customFrom, customTo),
+    [range, customFrom, customTo]
+  );
 
   const loginLabelMap = useMemo(() => {
     const map = {};
@@ -526,12 +604,10 @@ export default function AdminActivityDashboard() {
   }, [mergedUsers, selectedLogin, selectedRole]);
 
   const filteredReports = useMemo(() => {
-    const rangeStart = getRangeStart(range);
-
     return reports.filter((r) => {
       const submitted = toDateSafe(r.submitted_at);
       if (!submitted) return false;
-      if (rangeStart && submitted < rangeStart) return false;
+      if (!isDateInRange(submitted, bounds.start, bounds.end)) return false;
 
       const login = String(
         r.employee_login || r.employee_name || "Unknown"
@@ -546,18 +622,14 @@ export default function AdminActivityDashboard() {
 
       return true;
     });
-  }, [reports, range, selectedLogin, selectedRole, mergedUsers]);
+  }, [reports, selectedLogin, selectedRole, mergedUsers, bounds]);
 
   const filteredStats = useMemo(() => {
-    const rangeStart = getRangeStart(range);
-
     return dailyStats.filter((item) => {
       const d = toStatsDateSafe(item.date || item.id);
-      if (!d) return false;
-      if (rangeStart && d < rangeStart) return false;
-      return true;
+      return isDateInRange(d, bounds.start, bounds.end);
     });
-  }, [dailyStats, range]);
+  }, [dailyStats, bounds]);
 
   const roleLoginSet = useMemo(() => {
     const set = new Set();
@@ -574,36 +646,38 @@ export default function AdminActivityDashboard() {
   }, [mergedUsers, selectedRole]);
 
   const filteredStatsForView = useMemo(() => {
-    return filteredStats.map((item) => {
-      const byEmployee = {};
-      Object.entries(item.by_employee || {}).forEach(([loginKey, count]) => {
-        if (
-          selectedLogin !== "all" &&
-          normalizeLoginKey(selectedLogin) !== normalizeLoginKey(loginKey)
-        ) {
-          return;
-        }
+    return filteredStats
+      .map((item) => {
+        const byEmployee = {};
+        Object.entries(item.by_employee || {}).forEach(([loginKey, count]) => {
+          if (
+            selectedLogin !== "all" &&
+            normalizeLoginKey(selectedLogin) !== normalizeLoginKey(loginKey)
+          ) {
+            return;
+          }
 
-        if (selectedRole !== "all" && !roleLoginSet.has(normalizeLoginKey(loginKey))) {
-          return;
-        }
+          if (selectedRole !== "all" && !roleLoginSet.has(normalizeLoginKey(loginKey))) {
+            return;
+          }
 
-        byEmployee[loginKey] = Number(count || 0);
-      });
+          byEmployee[loginKey] = Number(count || 0);
+        });
 
-      const totalReports =
-        selectedLogin === "all" && selectedRole === "all"
-          ? Number(item.total_reports || 0)
-          : Object.values(byEmployee).reduce((sum, n) => sum + Number(n || 0), 0);
+        const totalReports =
+          selectedLogin === "all" && selectedRole === "all"
+            ? Number(item.total_reports || 0)
+            : Object.values(byEmployee).reduce((sum, n) => sum + Number(n || 0), 0);
 
-      if (totalReports <= 0) return null;
+        if (totalReports <= 0) return null;
 
-      return {
-        ...item,
-        total_reports: totalReports,
-        by_employee: byEmployee,
-      };
-    }).filter(Boolean);
+        return {
+          ...item,
+          total_reports: totalReports,
+          by_employee: byEmployee,
+        };
+      })
+      .filter(Boolean);
   }, [filteredStats, selectedLogin, selectedRole, roleLoginSet]);
 
   const totalUsers = filteredUsers.length;
@@ -635,11 +709,8 @@ export default function AdminActivityDashboard() {
     if (statsAvailable) {
       return buildStatsDailyCounts(filteredStatsForView);
     }
-    if (range === "today") return buildDailyCounts(filteredReports, 1);
-    if (range === "week") return buildDailyCounts(filteredReports, 7);
-    if (range === "month") return buildDailyCounts(filteredReports, 30);
-    return buildDailyCounts(filteredReports, 14);
-  }, [statsAvailable, filteredStatsForView, filteredReports, range]);
+    return buildDailyCounts(filteredReports, bounds.start, bounds.end);
+  }, [statsAvailable, filteredStatsForView, filteredReports, bounds]);
 
   const hourlyWchr = useMemo(() => {
     if (statsAvailable) {
@@ -695,7 +766,7 @@ export default function AdminActivityDashboard() {
 
   const productivityRows = useMemo(() => {
     if (statsAvailable) {
-      const base = buildStatsProductivityTable(filteredStatsForView, mergedUsers);
+      const base = buildStatsProductivityTable(filteredStatsForView, mergedUsers, bounds);
       const todayMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "today");
       const weekMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "week");
       const monthMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "month");
@@ -714,7 +785,7 @@ export default function AdminActivityDashboard() {
         });
     }
 
-    return buildProductivityTable(filteredReports, mergedUsers).filter((row) => {
+    return buildProductivityTable(filteredReports, mergedUsers, bounds).filter((row) => {
       if (selectedRole !== "all" && row.role !== selectedRole) return false;
       if (selectedLogin !== "all" && row.login !== selectedLogin) return false;
       return true;
@@ -727,12 +798,15 @@ export default function AdminActivityDashboard() {
     selectedRole,
     selectedLogin,
     filteredReports,
+    bounds,
   ]);
 
   const handleExportCsv = () => {
     const rows = [
       ["ADMIN ACTIVITY DASHBOARD"],
       ["Range", safeRangeLabel(range)],
+      ["Custom From", customFrom || "—"],
+      ["Custom To", customTo || "—"],
       ["Login Filter", selectedLogin],
       ["Role Filter", selectedRole],
       ["Stats Source", statsAvailable ? "wch_stats_daily" : "wch_reports"],
@@ -850,6 +924,7 @@ export default function AdminActivityDashboard() {
               <option value="today">Today</option>
               <option value="week">This Week</option>
               <option value="month">This Month</option>
+              <option value="custom">Custom Range</option>
               <option value="all">All</option>
             </select>
           </FilterField>
@@ -883,6 +958,28 @@ export default function AdminActivityDashboard() {
               ))}
             </select>
           </FilterField>
+
+          {range === "custom" && (
+            <>
+              <FilterField label="From">
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  style={selectStyle}
+                />
+              </FilterField>
+
+              <FilterField label="To">
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  style={selectStyle}
+                />
+              </FilterField>
+            </>
+          )}
         </div>
       </Panel>
 
@@ -1029,7 +1126,9 @@ export default function AdminActivityDashboard() {
                     key={row.login}
                     style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
                   >
-                    <td style={td}><div style={{ fontWeight: 700 }}>{row.login}</div></td>
+                    <td style={td}>
+                      <div style={{ fontWeight: 700 }}>{row.login}</div>
+                    </td>
                     <td style={td}>{normalizeRole(row.role)}</td>
                     <td style={td}>
                       {row.online ? (
