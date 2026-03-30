@@ -291,9 +291,6 @@ export default function MyWCHRReports() {
         pnr: editingRow.pnr || "",
         wch_type: editingRow.wch_type || "",
         wheelchair_number: editingRow.wheelchair_number || "",
-        time_at_gate: editingRow.time_at_gate || "",
-        boarding_group: editingRow.boarding_group || "",
-        operator: editingRow.operator || "",
       });
 
       setRows((prev) =>
@@ -363,7 +360,6 @@ export default function MyWCHRReports() {
             <div class="box"><div class="label">Seat</div>${row.seat || "-"}</div>
             <div class="box"><div class="label">Gate</div>${row.gate || "-"}</div>
             <div class="box"><div class="label">PNR</div>${row.pnr || "-"}</div>
-            <div class="box"><div class="label">Operator</div>${row.operator || "-"}</div>
           </div>
           ${
             row.image_url
@@ -869,27 +865,6 @@ export default function MyWCHRReports() {
                 value={editingRow.wheelchair_number || ""}
                 onChange={(v) =>
                   setEditingRow((prev) => ({ ...prev, wheelchair_number: v }))
-                }
-              />
-              <EditField
-                label="Time at Gate"
-                value={editingRow.time_at_gate || ""}
-                onChange={(v) =>
-                  setEditingRow((prev) => ({ ...prev, time_at_gate: v }))
-                }
-              />
-              <EditField
-                label="Boarding Group"
-                value={editingRow.boarding_group || ""}
-                onChange={(v) =>
-                  setEditingRow((prev) => ({ ...prev, boarding_group: v }))
-                }
-              />
-              <EditField
-                label="Operator"
-                value={editingRow.operator || ""}
-                onChange={(v) =>
-                  setEditingRow((prev) => ({ ...prev, operator: v }))
                 }
               />
             </div>
