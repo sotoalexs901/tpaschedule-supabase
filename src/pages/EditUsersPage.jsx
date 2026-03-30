@@ -511,6 +511,7 @@ export default function EditUsersPage() {
                       }
                     >
                       <option value="agent">Agent</option>
+                      <option value="supervisor">Supervisor</option>
                       <option value="duty_manager">Duty Manager</option>
                       <option value="station_manager">Station Manager</option>
                     </SelectInput>
