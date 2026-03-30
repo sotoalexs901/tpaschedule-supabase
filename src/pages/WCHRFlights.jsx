@@ -1,3 +1,4 @@
+// src/pages/WCHRFlights.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -13,6 +14,7 @@ import {
   setDoc,
   updateDoc,
   getDoc,
+  deleteDoc,
 } from "firebase/firestore";
 
 function pad2(n) {
@@ -142,6 +144,60 @@ function downloadCSV(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
+function buildFlightsFromRows(rows) {
+  const map = new Map();
+
+  for (const r of rows) {
+    const fk = r.flight_key || "UNKNOWN";
+    const reportFlightDate = tsToDate(r.flight_date);
+
+    if (!map.has(fk)) {
+      map.set(fk, {
+        flight_key: fk,
+        airline: safeUpper(r.airline) || "—",
+        flight_number: safeUpper(r.flight_number) || "—",
+        flight_date: reportFlightDate,
+        origin: safeUpper(r.origin) || "",
+        destination: safeUpper(r.destination) || "",
+        operator: safeUpper(r.operator) || "",
+        total_reports: 0,
+        new_reports: 0,
+        late_reports: 0,
+        closed: false,
+        closed_at: null,
+      });
+    }
+
+    const item = map.get(fk);
+    item.total_reports += 1;
+
+    if (!item.flight_date && reportFlightDate) {
+      item.flight_date = reportFlightDate;
+    }
+    if (!item.operator && r.operator) {
+      item.operator = safeUpper(r.operator);
+    }
+    if (!item.origin && r.origin) {
+      item.origin = safeUpper(r.origin);
+    }
+    if (!item.destination && r.destination) {
+      item.destination = safeUpper(r.destination);
+    }
+
+    if (String(r.status || "").toUpperCase() === "LATE") {
+      item.late_reports += 1;
+    } else {
+      item.new_reports += 1;
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    const A = `${a.airline} ${a.flight_number}`;
+    const B = `${b.airline} ${b.flight_number}`;
+    return A.localeCompare(B);
+  });
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -185,6 +241,12 @@ function ActionButton({
       color: "#fff",
       border: "none",
       boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+    danger: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecdd3",
+      boxShadow: "none",
     },
   };
 
@@ -295,11 +357,13 @@ export default function WCHRFlights() {
   const [loading, setLoading] = useState(true);
   const [flights, setFlights] = useState([]);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   const [selectedFlightKey, setSelectedFlightKey] = useState("");
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reports, setReports] = useState([]);
   const [allDayReports, setAllDayReports] = useState([]);
+  const [deletingId, setDeletingId] = useState("");
 
   const canClose = useMemo(() => {
     const role = (user?.role || "").toLowerCase();
@@ -315,6 +379,7 @@ export default function WCHRFlights() {
 
     async function loadFlights() {
       setError("");
+      setMessage("");
       setLoading(true);
 
       try {
@@ -332,55 +397,11 @@ export default function WCHRFlights() {
           .map((d) => ({ id: d.id, ...d.data() }))
           .sort((a, b) => getMillis(b.submitted_at) - getMillis(a.submitted_at));
 
-        if (mounted) setAllDayReports(rows);
-
-        const map = new Map();
-
-        for (const r of rows) {
-          const fk = r.flight_key || "UNKNOWN";
-          const reportFlightDate = tsToDate(r.flight_date);
-
-          if (!map.has(fk)) {
-            map.set(fk, {
-              flight_key: fk,
-              airline: safeUpper(r.airline) || "—",
-              flight_number: safeUpper(r.flight_number) || "—",
-              flight_date: reportFlightDate,
-              origin: safeUpper(r.origin) || "",
-              destination: safeUpper(r.destination) || "",
-              operator: safeUpper(r.operator) || "",
-              total_reports: 0,
-              new_reports: 0,
-              late_reports: 0,
-              closed: false,
-              closed_at: null,
-            });
-          }
-
-          const item = map.get(fk);
-          item.total_reports += 1;
-
-          if (!item.flight_date && reportFlightDate) {
-            item.flight_date = reportFlightDate;
-          }
-          if (!item.operator && r.operator) {
-            item.operator = safeUpper(r.operator);
-          }
-          if (!item.origin && r.origin) {
-            item.origin = safeUpper(r.origin);
-          }
-          if (!item.destination && r.destination) {
-            item.destination = safeUpper(r.destination);
-          }
-
-          if (String(r.status || "").toUpperCase() === "LATE") {
-            item.late_reports += 1;
-          } else {
-            item.new_reports += 1;
-          }
+        if (mounted) {
+          setAllDayReports(rows);
         }
 
-        const flightArr = Array.from(map.values());
+        let flightArr = buildFlightsFromRows(rows);
 
         for (const f of flightArr) {
           if (!f.flight_key || f.flight_key === "UNKNOWN") continue;
@@ -391,12 +412,6 @@ export default function WCHRFlights() {
             f.closed_at = tsToDate(fd?.closed_at);
           }
         }
-
-        flightArr.sort((a, b) => {
-          const A = `${a.airline} ${a.flight_number}`;
-          const B = `${b.airline} ${b.flight_number}`;
-          return A.localeCompare(B);
-        });
 
         if (mounted) {
           setFlights(flightArr);
@@ -419,7 +434,7 @@ export default function WCHRFlights() {
     return () => {
       mounted = false;
     };
-  }, [selectedDate]);
+  }, [selectedDate, selectedFlightKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -476,6 +491,8 @@ export default function WCHRFlights() {
 
   const handleCloseFlight = async (flight) => {
     setError("");
+    setMessage("");
+
     if (!canClose) {
       setError("You do not have permission to close flights.");
       return;
@@ -530,9 +547,66 @@ export default function WCHRFlights() {
         )}.csv`;
         downloadCSV(filename, flightReports);
       }
+
+      setMessage("Flight closed successfully.");
     } catch (e) {
       console.error(e);
       setError(e?.message || "Failed to close flight.");
+    }
+  };
+
+  const handleDeleteReport = async (report) => {
+    const ok = window.confirm(
+      `Delete report ${report.report_id || report.id}?\n\nThis action cannot be undone.`
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingId(report.id);
+      setError("");
+      setMessage("");
+
+      await deleteDoc(doc(db, "wch_reports", report.id));
+
+      const updatedAllDayReports = allDayReports.filter((r) => r.id !== report.id);
+      setAllDayReports(updatedAllDayReports);
+
+      const updatedReports = reports.filter((r) => r.id !== report.id);
+      setReports(updatedReports);
+
+      const updatedFlights = buildFlightsFromRows(updatedAllDayReports).map((f) => {
+        const oldMatch = flights.find((old) => old.flight_key === f.flight_key);
+        return {
+          ...f,
+          closed: Boolean(oldMatch?.closed),
+          closed_at: oldMatch?.closed_at || null,
+        };
+      });
+
+      for (const f of updatedFlights) {
+        if (!f.flight_key || f.flight_key === "UNKNOWN") continue;
+        const fsnap = await getDoc(doc(db, "wch_flights", f.flight_key));
+        if (fsnap.exists()) {
+          const fd = fsnap.data();
+          f.closed = Boolean(fd?.closed_at);
+          f.closed_at = tsToDate(fd?.closed_at);
+        }
+      }
+
+      setFlights(updatedFlights);
+
+      const stillExists = updatedFlights.some((f) => f.flight_key === selectedFlightKey);
+      if (!stillExists) {
+        setSelectedFlightKey("");
+        setReports([]);
+      }
+
+      setMessage("Report deleted successfully.");
+    } catch (e) {
+      console.error(e);
+      setError(e?.message || "Failed to delete report.");
+    } finally {
+      setDeletingId("");
     }
   };
 
@@ -630,8 +704,8 @@ export default function WCHRFlights() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              View flights by date, review WCHR reports, export CSV files and
-              close flights when needed.
+              View flights by date, review WCHR reports, export CSV files, delete
+              reports and close flights when needed.
             </p>
           </div>
 
@@ -658,20 +732,20 @@ export default function WCHRFlights() {
         </div>
       </div>
 
-      {error && (
+      {(error || message) && (
         <PageCard style={{ padding: 16 }}>
           <div
             style={{
-              background: "#fff1f2",
-              border: "1px solid #fecdd3",
+              background: error ? "#fff1f2" : "#ecfdf5",
+              border: `1px solid ${error ? "#fecdd3" : "#a7f3d0"}`,
               borderRadius: 16,
               padding: "14px 16px",
-              color: "#9f1239",
+              color: error ? "#9f1239" : "#065f46",
               fontSize: 14,
               fontWeight: 700,
             }}
           >
-            {error}
+            {error || message}
           </div>
         </PageCard>
       )}
@@ -783,8 +857,8 @@ export default function WCHRFlights() {
               color: "#64748b",
             }}
           >
-            Select a flight to review the report table, export data or close the
-            flight.
+            Select a flight to review the report table, export data, delete
+            reports or close the flight.
           </p>
         </div>
 
@@ -1121,7 +1195,7 @@ export default function WCHRFlights() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1600,
+                  minWidth: 1740,
                   background: "#fff",
                 }}
               >
@@ -1143,6 +1217,7 @@ export default function WCHRFlights() {
                     <th style={thStyle({ textAlign: "left" })}>Login</th>
                     <th style={thStyle({ textAlign: "left" })}>Role</th>
                     <th style={thStyle({ textAlign: "center" })}>Status</th>
+                    <th style={thStyle({ textAlign: "center" })}>Delete</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1181,6 +1256,16 @@ export default function WCHRFlights() {
                         ) : (
                           <span style={statusBadge("NEW")}>NEW</span>
                         )}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                        <ActionButton
+                          variant="danger"
+                          onClick={() => handleDeleteReport(r)}
+                          disabled={deletingId === r.id}
+                          style={{ padding: "8px 12px", fontSize: 12 }}
+                        >
+                          {deletingId === r.id ? "Deleting..." : "Delete"}
+                        </ActionButton>
                       </td>
                     </tr>
                   ))}
