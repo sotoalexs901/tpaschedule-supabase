@@ -92,10 +92,21 @@ function safeFileName(name = "photo") {
     .replace(/[^\w.-]/g, "");
 }
 
+function getDefaultPosition(role) {
+  if (role === "station_manager") return "Station Manager";
+  if (role === "duty_manager") return "Duty Manager";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "agent") return "Agent";
+  return "Team Member";
+}
+
 export default function ProfilePage() {
   const { user, setUser } = useUser();
 
   const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [position, setPosition] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [pin, setPin] = useState("");
   const [storedPhotoURL, setStoredPhotoURL] = useState("");
   const [photoPreviewURL, setPhotoPreviewURL] = useState("");
@@ -109,6 +120,16 @@ export default function ProfilePage() {
   const visiblePhotoURL = useMemo(
     () => photoPreviewURL || storedPhotoURL || "",
     [photoPreviewURL, storedPhotoURL]
+  );
+
+  const visibleName = useMemo(
+    () => displayName || username || "User",
+    [displayName, username]
+  );
+
+  const visiblePosition = useMemo(
+    () => position || getDefaultPosition(user?.role),
+    [position, user?.role]
   );
 
   useEffect(() => {
@@ -128,11 +149,26 @@ export default function ProfilePage() {
 
         if (snap.exists()) {
           const data = snap.data();
+
           setUsername(data.username || data.loginUsername || user.username || "");
+          setDisplayName(
+            data.displayName ||
+              data.fullName ||
+              data.name ||
+              user.displayName ||
+              ""
+          );
+          setPosition(
+            data.position || user.position || getDefaultPosition(data.role || user.role)
+          );
+          setBirthDate(data.birthDate || user.birthDate || "");
           setPin(data.pin || "");
           setStoredPhotoURL(data.profilePhotoURL || "");
         } else {
           setUsername(user.username || "");
+          setDisplayName(user.displayName || "");
+          setPosition(user.position || getDefaultPosition(user.role));
+          setBirthDate(user.birthDate || "");
           setPin(user.pin || "");
           setStoredPhotoURL(user.profilePhotoURL || "");
         }
@@ -145,7 +181,16 @@ export default function ProfilePage() {
     }
 
     loadProfile();
-  }, [user?.id, user?.username, user?.pin, user?.profilePhotoURL]);
+  }, [
+    user?.id,
+    user?.username,
+    user?.displayName,
+    user?.position,
+    user?.birthDate,
+    user?.pin,
+    user?.profilePhotoURL,
+    user?.role,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -201,6 +246,11 @@ export default function ProfilePage() {
       return;
     }
 
+    if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+      setError("Birth date must be a valid date.");
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -221,10 +271,15 @@ export default function ProfilePage() {
         finalPhotoURL = await getDownloadURL(storageRef);
       }
 
-      await updateDoc(userRef, {
+      const payload = {
         pin: pin.trim(),
         profilePhotoURL: finalPhotoURL,
-      });
+        displayName: displayName.trim(),
+        position: position.trim(),
+        birthDate: birthDate || "",
+      };
+
+      await updateDoc(userRef, payload);
 
       setStoredPhotoURL(finalPhotoURL);
       setPhotoFile(null);
@@ -241,6 +296,9 @@ export default function ProfilePage() {
                 ...prev,
                 pin: pin.trim(),
                 profilePhotoURL: finalPhotoURL,
+                displayName: displayName.trim(),
+                position: position.trim(),
+                birthDate: birthDate || "",
               }
             : prev
         );
@@ -295,7 +353,7 @@ export default function ProfilePage() {
         display: "grid",
         gap: 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
-        maxWidth: 900,
+        maxWidth: 980,
         margin: "0 auto",
       }}
     >
@@ -357,7 +415,7 @@ export default function ProfilePage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Update your PIN and profile picture.
+            Update your display information, PIN, birthday and profile picture.
           </p>
         </div>
       </div>
@@ -402,7 +460,7 @@ export default function ProfilePage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(220px, 260px) 1fr",
+            gridTemplateColumns: "minmax(240px, 280px) 1fr",
             gap: 24,
           }}
         >
@@ -456,22 +514,33 @@ export default function ProfilePage() {
               <p
                 style={{
                   margin: 0,
-                  fontSize: 16,
+                  fontSize: 18,
                   fontWeight: 800,
                   color: "#0f172a",
                 }}
               >
-                {username || "User"}
+                {visibleName}
               </p>
 
               <p
                 style={{
                   margin: "4px 0 0",
-                  fontSize: 12,
+                  fontSize: 13,
                   color: "#64748b",
+                  fontWeight: 600,
                 }}
               >
-                {user?.role || "Team Member"}
+                {visiblePosition}
+              </p>
+
+              <p
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: 12,
+                  color: "#94a3b8",
+                }}
+              >
+                @{username}
               </p>
             </div>
 
@@ -550,6 +619,66 @@ export default function ProfilePage() {
                 }}
               >
                 Username is managed by administration and cannot be changed here.
+              </p>
+            </div>
+
+            <div>
+              <FieldLabel>Display Name</FieldLabel>
+              <TextInput
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Alexis Napoles"
+              />
+              <p
+                style={{
+                  marginTop: 8,
+                  marginBottom: 0,
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.6,
+                }}
+              >
+                This is the name that will be shown across the app.
+              </p>
+            </div>
+
+            <div>
+              <FieldLabel>Position</FieldLabel>
+              <TextInput
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
+                placeholder="Station Manager"
+              />
+              <p
+                style={{
+                  marginTop: 8,
+                  marginBottom: 0,
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.6,
+                }}
+              >
+                Visible job title shown in profile, dashboard and other pages.
+              </p>
+            </div>
+
+            <div>
+              <FieldLabel>Birthday</FieldLabel>
+              <TextInput
+                type="date"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+              />
+              <p
+                style={{
+                  marginTop: 8,
+                  marginBottom: 0,
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.6,
+                }}
+              >
+                This will be used later for the company birthday calendar.
               </p>
             </div>
 
