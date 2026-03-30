@@ -1,4 +1,3 @@
-// src/pages/MyWCHRReports.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -10,6 +9,7 @@ import {
   limit,
   getDocs,
   updateDoc,
+  doc,
 } from "firebase/firestore";
 
 function pad2(n) {
@@ -290,6 +290,7 @@ export default function MyWCHRReports() {
         gate: editingRow.gate || "",
         pnr: editingRow.pnr || "",
         wch_type: editingRow.wch_type || "",
+        wheelchair_number: editingRow.wheelchair_number || "",
         time_at_gate: editingRow.time_at_gate || "",
         boarding_group: editingRow.boarding_group || "",
         operator: editingRow.operator || "",
@@ -356,6 +357,7 @@ export default function MyWCHRReports() {
             <div class="box"><div class="label">Flight</div>${row.airline || "-"} ${row.flight_number || ""}</div>
             <div class="box"><div class="label">Date</div>${formatMMDDYYYYFromFirestore(row.flight_date) || "-"}</div>
             <div class="box"><div class="label">WCHR Type</div>${row.wch_type || "-"}</div>
+            <div class="box"><div class="label">Wheelchair #</div>${row.wheelchair_number || "-"}</div>
             <div class="box"><div class="label">Origin</div>${row.origin || "-"}</div>
             <div class="box"><div class="label">Destination</div>${row.destination || "-"}</div>
             <div class="box"><div class="label">Seat</div>${row.seat || "-"}</div>
@@ -706,6 +708,10 @@ export default function MyWCHRReports() {
                               <InfoMini label="Gate" value={r.gate || "—"} />
                               <InfoMini label="PNR" value={r.pnr || "—"} />
                               <InfoMini label="WCHR Type" value={r.wch_type || "—"} />
+                              <InfoMini
+                                label="Wheelchair #"
+                                value={r.wheelchair_number || "—"}
+                              />
                             </div>
 
                             <div
@@ -856,6 +862,13 @@ export default function MyWCHRReports() {
                 value={editingRow.wch_type || ""}
                 onChange={(v) =>
                   setEditingRow((prev) => ({ ...prev, wch_type: v }))
+                }
+              />
+              <EditField
+                label="Wheelchair #"
+                value={editingRow.wheelchair_number || ""}
+                onChange={(v) =>
+                  setEditingRow((prev) => ({ ...prev, wheelchair_number: v }))
                 }
               />
               <EditField
