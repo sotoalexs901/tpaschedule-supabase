@@ -1,5 +1,5 @@
 // src/pages/CreateUserPage.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   addDoc,
   collection,
@@ -108,8 +108,92 @@ function PrimaryButton({ children, disabled = false, type = "button" }) {
   );
 }
 
+function getDefaultPosition(role) {
+  if (role === "station_manager") return "Station Manager";
+  if (role === "duty_manager") return "Duty Manager";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "agent") return "Agent";
+  return "Team Member";
+}
+
+function getEmployeeSuggestedPosition(emp, selectedRole) {
+  return (
+    emp?.position ||
+    emp?.jobTitle ||
+    emp?.roleLabel ||
+    getDefaultPosition(selectedRole)
+  );
+}
+
 export default function CreateUserPage() {
   const { user } = useUser();
+
+  const [username, setUsername] = useState("");
+  const [pin, setPin] = useState("");
+  const [role, setRole] = useState("agent");
+  const [employeeId, setEmployeeId] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [position, setPosition] = useState("Agent");
+  const [birthDate, setBirthDate] = useState("");
+
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const selectedEmployee = useMemo(
+    () => employees.find((emp) => emp.id === employeeId) || null,
+    [employees, employeeId]
+  );
+
+  useEffect(() => {
+    async function loadEmployees() {
+      try {
+        const snap = await getDocs(collection(db, "employees"));
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
+        list.sort((a, b) => {
+          const na = (a.name || "").toLowerCase();
+          const nb = (b.name || "").toLowerCase();
+          if (na < nb) return -1;
+          if (na > nb) return 1;
+          return 0;
+        });
+
+        setEmployees(list);
+      } catch (err) {
+        console.error("Error loading employees:", err);
+        setMessage("Could not load employees list.");
+      }
+    }
+
+    loadEmployees().catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (!employeeId || !selectedEmployee) return;
+
+    setDisplayName(
+      selectedEmployee.name ||
+        selectedEmployee.displayName ||
+        selectedEmployee.fullName ||
+        ""
+    );
+
+    setPosition(getEmployeeSuggestedPosition(selectedEmployee, role));
+
+    if (selectedEmployee.birthDate) {
+      setBirthDate(selectedEmployee.birthDate);
+    }
+  }, [employeeId, selectedEmployee, role]);
+
+  useEffect(() => {
+    if (!employeeId) {
+      setPosition(getDefaultPosition(role));
+    }
+  }, [role, employeeId]);
 
   if (!user || user.role !== "station_manager") {
     return (
@@ -183,50 +267,27 @@ export default function CreateUserPage() {
     );
   }
 
-  const [username, setUsername] = useState("");
-  const [pin, setPin] = useState("");
-  const [role, setRole] = useState("agent");
-  const [employeeId, setEmployeeId] = useState("");
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    async function loadEmployees() {
-      try {
-        const snap = await getDocs(collection(db, "employees"));
-        const list = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
-
-        list.sort((a, b) => {
-          const na = (a.name || "").toLowerCase();
-          const nb = (b.name || "").toLowerCase();
-          if (na < nb) return -1;
-          if (na > nb) return 1;
-          return 0;
-        });
-
-        setEmployees(list);
-      } catch (err) {
-        console.error("Error loading employees:", err);
-        setMessage("Could not load employees list.");
-      }
-    }
-
-    loadEmployees().catch(console.error);
-  }, []);
-
   const createUser = async (e) => {
     e.preventDefault();
     setMessage("");
 
-    const cleanUsername = username.trim();
+    const cleanUsername = username.trim().toLowerCase();
     const cleanPin = pin.trim();
+    const cleanDisplayName = displayName.trim();
+    const cleanPosition = position.trim();
 
     if (!cleanUsername || !cleanPin || !role) {
-      setMessage("All fields are required (username, PIN, role).");
+      setMessage("Username, PIN and role are required.");
+      return;
+    }
+
+    if (!cleanDisplayName) {
+      setMessage("Display name is required.");
+      return;
+    }
+
+    if (!cleanPosition) {
+      setMessage("Position is required.");
       return;
     }
 
@@ -240,8 +301,12 @@ export default function CreateUserPage() {
 
       const payload = {
         username: cleanUsername,
+        loginUsername: cleanUsername,
         pin: cleanPin,
         role,
+        displayName: cleanDisplayName,
+        position: cleanPosition,
+        birthDate: birthDate || "",
         createdAt: serverTimestamp(),
       };
 
@@ -267,6 +332,9 @@ export default function CreateUserPage() {
       setPin("");
       setRole("agent");
       setEmployeeId("");
+      setDisplayName("");
+      setPosition("Agent");
+      setBirthDate("");
 
       setMessage("User created successfully!");
     } catch (error) {
@@ -369,7 +437,7 @@ export default function CreateUserPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22, maxWidth: 760 }}>
+      <PageCard style={{ padding: 22, maxWidth: 860 }}>
         <div style={{ marginBottom: 16 }}>
           <h2
             style={{
@@ -389,7 +457,8 @@ export default function CreateUserPage() {
               color: "#64748b",
             }}
           >
-            Fill out the account details and choose a role before saving.
+            Fill out the account details, personal display information and role
+            before saving.
           </p>
         </div>
 
@@ -400,41 +469,6 @@ export default function CreateUserPage() {
             gap: 14,
           }}
         >
-          <div>
-            <FieldLabel>Username</FieldLabel>
-            <TextInput
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter username"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>PIN</FieldLabel>
-            <TextInput
-              type="password"
-              value={pin}
-              maxLength={4}
-              onChange={(e) =>
-                setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-              placeholder="4-digit PIN"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Select Role</FieldLabel>
-            <SelectInput
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-            >
-              <option value="agent">Agent</option>
-              <option value="supervisor">Supervisor</option>
-              <option value="duty_manager">Duty Manager</option>
-              <option value="station_manager">Station Manager</option>
-            </SelectInput>
-          </div>
-
           <div>
             <FieldLabel>
               Link to Employee (optional, recommended for Agents/Supervisors)
@@ -464,10 +498,129 @@ export default function CreateUserPage() {
               }}
             >
               When linked, the employee record is updated with{" "}
-              <code>loginUsername</code> and <code>linkedUserId</code>, so the
-              user can see their personal schedule in <b>My Schedule</b>.
+              <code>loginUsername</code> and <code>linkedUserId</code>.
             </p>
           </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>Username</FieldLabel>
+              <TextInput
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter username"
+              />
+            </div>
+
+            <div>
+              <FieldLabel>PIN</FieldLabel>
+              <TextInput
+                type="password"
+                value={pin}
+                maxLength={4}
+                onChange={(e) =>
+                  setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                placeholder="4-digit PIN"
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>Select Role</FieldLabel>
+              <SelectInput
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+              >
+                <option value="agent">Agent</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="duty_manager">Duty Manager</option>
+                <option value="station_manager">Station Manager</option>
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Position</FieldLabel>
+              <TextInput
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
+                placeholder="Agent / Supervisor / Duty Manager / Station Manager"
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>Display Name</FieldLabel>
+              <TextInput
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Alexis Napoles"
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Birth Date (optional)</FieldLabel>
+              <TextInput
+                type="date"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {selectedEmployee && (
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: "14px 16px",
+                fontSize: 13,
+                color: "#475569",
+                lineHeight: 1.7,
+              }}
+            >
+              <div>
+                <b>Linked employee:</b> {selectedEmployee.name || "Unnamed"}
+              </div>
+              {selectedEmployee.airline || selectedEmployee.department ? (
+                <div>
+                  <b>Area:</b> {selectedEmployee.airline || "—"}{" "}
+                  {selectedEmployee.department || ""}
+                </div>
+              ) : null}
+              <div>
+                <b>Suggested name:</b>{" "}
+                {selectedEmployee.name ||
+                  selectedEmployee.displayName ||
+                  "—"}
+              </div>
+              <div>
+                <b>Suggested position:</b>{" "}
+                {getEmployeeSuggestedPosition(selectedEmployee, role)}
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: 6 }}>
             <PrimaryButton type="submit" disabled={loading}>
