@@ -87,14 +87,6 @@ function getPresetRange(range) {
   return { start: null, end: null };
 }
 
-function inRange(dateValue, startDate, endDate) {
-  const d = toDateSafe(dateValue);
-  if (!d) return false;
-  if (startDate && d < startDate) return false;
-  if (endDate && d > endDate) return false;
-  return true;
-}
-
 function buildCountByLogin(reports) {
   const counts = {};
 
@@ -277,7 +269,9 @@ function buildStatsCountRows(stats, fieldName, labelMap = {}) {
 
 function buildStatsDailyCounts(stats) {
   return [...stats]
-    .sort((a, b) => String(a.date || a.id || "").localeCompare(String(b.date || b.id || "")))
+    .sort((a, b) =>
+      String(a.date || a.id || "").localeCompare(String(b.date || b.id || ""))
+    )
     .map((item) => {
       const d = toStatsDateSafe(item.date || item.id);
       return {
@@ -516,7 +510,25 @@ export default function AdminActivityDashboard() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [mergedUsers]);
 
-  const statsAvailable = dailyStats.length > 0;
+  const statsAvailable = useMemo(() => {
+    if (!dailyStats.length) return false;
+
+    return dailyStats.some((item) => {
+      const totalReports = Number(item.total_reports || 0);
+      const byEmployeeCount = Object.keys(item.by_employee || {}).length;
+      const byAirlineCount = Object.keys(item.by_airline || {}).length;
+      const wheelchairAirlineCount = Object.keys(
+        item.wheelchair_by_airline || {}
+      ).length;
+
+      return (
+        totalReports > 0 ||
+        byEmployeeCount > 0 ||
+        byAirlineCount > 0 ||
+        wheelchairAirlineCount > 0
+      );
+    });
+  }, [dailyStats]);
 
   const loginLabelMap = useMemo(() => {
     const map = {};
@@ -591,7 +603,14 @@ export default function AdminActivityDashboard() {
 
       return true;
     });
-  }, [reports, activeStartDate, activeEndDate, selectedLogin, selectedRole, mergedUsers]);
+  }, [
+    reports,
+    activeStartDate,
+    activeEndDate,
+    selectedLogin,
+    selectedRole,
+    mergedUsers,
+  ]);
 
   const filteredStats = useMemo(() => {
     return dailyStats.filter((item) => {
@@ -641,7 +660,10 @@ export default function AdminActivityDashboard() {
         const totalReports =
           selectedLogin === "all" && selectedRole === "all"
             ? Number(item.total_reports || 0)
-            : Object.values(byEmployee).reduce((sum, n) => sum + Number(n || 0), 0);
+            : Object.values(byEmployee).reduce(
+                (sum, n) => sum + Number(n || 0),
+                0
+              );
 
         if (totalReports <= 0) return null;
 
@@ -654,10 +676,12 @@ export default function AdminActivityDashboard() {
       .filter(Boolean);
   }, [filteredStats, selectedLogin, selectedRole, roleLoginSet]);
 
+  const hasRenderableStats = statsAvailable && filteredStatsForView.length > 0;
+
   const totalUsers = filteredUsers.length;
   const onlineUsers = filteredUsers.filter((u) => u.online).length;
   const activeUsers = filteredUsers.filter((u) => u.lastSeen).length;
-  const totalWchr = statsAvailable
+  const totalWchr = hasRenderableStats
     ? filteredStatsForView.reduce(
         (sum, item) => sum + Number(item.total_reports || 0),
         0
@@ -665,7 +689,7 @@ export default function AdminActivityDashboard() {
     : filteredReports.length;
 
   const topWchrLogins = useMemo(() => {
-    if (statsAvailable) {
+    if (hasRenderableStats) {
       return buildStatsCountRows(
         filteredStatsForView,
         "by_employee",
@@ -673,31 +697,31 @@ export default function AdminActivityDashboard() {
       ).slice(0, 10);
     }
     return buildCountByLogin(filteredReports).slice(0, 10);
-  }, [statsAvailable, filteredStatsForView, loginLabelMap, filteredReports]);
+  }, [hasRenderableStats, filteredStatsForView, loginLabelMap, filteredReports]);
 
   const topAirlines = useMemo(() => {
-    if (statsAvailable) {
+    if (hasRenderableStats) {
       return buildStatsCountRows(filteredStatsForView, "by_airline").slice(0, 10);
     }
     return buildCountByAirline(filteredReports).slice(0, 10);
-  }, [statsAvailable, filteredStatsForView, filteredReports]);
+  }, [hasRenderableStats, filteredStatsForView, filteredReports]);
 
   const dailyWchr = useMemo(() => {
-    if (statsAvailable) return buildStatsDailyCounts(filteredStatsForView);
+    if (hasRenderableStats) return buildStatsDailyCounts(filteredStatsForView);
     return buildDailyCounts(filteredReports);
-  }, [statsAvailable, filteredStatsForView, filteredReports]);
+  }, [hasRenderableStats, filteredStatsForView, filteredReports]);
 
   const hourlyWchr = useMemo(() => {
-    if (statsAvailable) return buildStatsHourlyCounts(filteredStatsForView);
+    if (hasRenderableStats) return buildStatsHourlyCounts(filteredStatsForView);
     return buildHourlyCounts(filteredReports);
-  }, [statsAvailable, filteredStatsForView, filteredReports]);
+  }, [hasRenderableStats, filteredStatsForView, filteredReports]);
 
   const wheelchairUsage = useMemo(() => {
-    if (statsAvailable) {
+    if (hasRenderableStats) {
       return buildStatsWheelchairUsage(filteredStatsForView).slice(0, 10);
     }
     return buildTopWheelchairUsage(filteredReports).slice(0, 10);
-  }, [statsAvailable, filteredStatsForView, filteredReports]);
+  }, [hasRenderableStats, filteredStatsForView, filteredReports]);
 
   const recentUsers = useMemo(() => {
     return [...filteredUsers]
@@ -711,7 +735,7 @@ export default function AdminActivityDashboard() {
   }, [filteredUsers]);
 
   const productivityRows = useMemo(() => {
-    if (statsAvailable) {
+    if (hasRenderableStats) {
       const base = buildStatsProductivityTable(filteredStatsForView, mergedUsers);
       const todayMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "today");
       const weekMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "week");
@@ -737,7 +761,7 @@ export default function AdminActivityDashboard() {
       return true;
     });
   }, [
-    statsAvailable,
+    hasRenderableStats,
     filteredStatsForView,
     dailyStats,
     mergedUsers,
@@ -754,7 +778,7 @@ export default function AdminActivityDashboard() {
       ["To", toDate || "—"],
       ["Login Filter", selectedLogin],
       ["Role Filter", selectedRole],
-      ["Stats Source", statsAvailable ? "wch_stats_daily" : "wch_reports"],
+      ["Stats Source", hasRenderableStats ? "wch_stats_daily" : "wch_reports"],
       [],
       ["SUMMARY"],
       ["Filtered Users", totalUsers],
@@ -915,6 +939,27 @@ export default function AdminActivityDashboard() {
               ))}
             </select>
           </FilterField>
+        </div>
+      </Panel>
+
+      <Panel title="Debug WCHR">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 10,
+            fontSize: 14,
+            color: "#334155",
+          }}
+        >
+          <div>dailyStats docs: <b>{dailyStats.length}</b></div>
+          <div>filteredStatsForView: <b>{filteredStatsForView.length}</b></div>
+          <div>reports docs: <b>{reports.length}</b></div>
+          <div>filteredReports: <b>{filteredReports.length}</b></div>
+          <div>statsAvailable: <b>{String(statsAvailable)}</b></div>
+          <div>hasRenderableStats: <b>{String(hasRenderableStats)}</b></div>
+          <div>From: <b>{fromDate || "—"}</b></div>
+          <div>To: <b>{toDate || "—"}</b></div>
         </div>
       </Panel>
 
