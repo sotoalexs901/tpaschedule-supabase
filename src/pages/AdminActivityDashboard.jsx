@@ -110,6 +110,41 @@ function getRangeDates(range) {
   return { start: null, end: null };
 }
 
+function normalizeWheelchairNumber(value) {
+  let raw = String(value || "").trim().toUpperCase();
+  if (!raw) return "";
+
+  raw = raw.replace(/\s+/g, "");
+  raw = raw.replace(/^WCHR[-#:]*/i, "");
+  raw = raw.replace(/^WC[-#:]*/i, "");
+  raw = raw.replace(/^CHAIR[-#:]*/i, "");
+  raw = raw.replace(/^SILLA[-#:]*/i, "");
+
+  const onlyDigits = raw.match(/^\d+$/);
+  if (onlyDigits) {
+    return String(Number(raw));
+  }
+
+  const lettersAndDigits = raw.match(/^([A-Z]+)[- ]*0*(\d+)$/);
+  if (lettersAndDigits) {
+    return `${lettersAndDigits[1]}${lettersAndDigits[2]}`;
+  }
+
+  raw = raw.replace(/[^A-Z0-9]/g, "");
+
+  const digitsAfterCleanup = raw.match(/^\d+$/);
+  if (digitsAfterCleanup) {
+    return String(Number(raw));
+  }
+
+  const finalLettersAndDigits = raw.match(/^([A-Z]+)0*(\d+)$/);
+  if (finalLettersAndDigits) {
+    return `${finalLettersAndDigits[1]}${finalLettersAndDigits[2]}`;
+  }
+
+  return raw;
+}
+
 function buildCountByLogin(reports) {
   const counts = {};
 
@@ -224,43 +259,33 @@ function buildProductivityTable(reports, users) {
     .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
 }
 
-function buildTopWheelchairUsage(reports) {
-  const map = {};
+function buildMostUsedWheelchair(reports) {
+  const counts = {};
 
-  for (const r of reports) {
-    const airline = String(r.airline || "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-    const chair = String(r.wheelchair_number || "").trim().toUpperCase();
-
+  for (const r of reports || []) {
+    const chair = normalizeWheelchairNumber(r.wheelchair_number);
     if (!chair) continue;
 
-    if (!map[airline]) map[airline] = {};
-    map[airline][chair] = (map[airline][chair] || 0) + 1;
+    counts[chair] = (counts[chair] || 0) + 1;
   }
 
-  const result = [];
+  let topChair = "";
+  let topCount = 0;
 
-  for (const airline of Object.keys(map)) {
-    const chairs = map[airline];
-    let topChair = "";
-    let max = 0;
-
-    for (const chair of Object.keys(chairs)) {
-      if (chairs[chair] > max) {
-        max = chairs[chair];
-        topChair = chair;
-      }
-    }
-
-    if (topChair) {
-      result.push({
-        airline,
-        chair: topChair,
-        count: max,
-      });
+  for (const chair of Object.keys(counts)) {
+    if (
+      counts[chair] > topCount ||
+      (counts[chair] === topCount && chair.localeCompare(topChair) < 0)
+    ) {
+      topChair = chair;
+      topCount = counts[chair];
     }
   }
 
-  return result.sort((a, b) => b.count - a.count || a.airline.localeCompare(b.airline));
+  return {
+    chair: topChair,
+    count: topCount,
+  };
 }
 
 function downloadCSV(filename, rows) {
@@ -433,17 +458,48 @@ export default function AdminActivityDashboard() {
 
   const hourlyWchr = useMemo(() => buildHourlyCounts(filteredReports), [filteredReports]);
 
-  const wheelchairUsage = useMemo(
-    () => buildTopWheelchairUsage(filteredReports).slice(0, 10),
-    [filteredReports]
-  );
+  const mostUsedWheelchairToday = useMemo(() => {
+    const start = startOfToday();
+    const end = endOfToday();
+
+    return buildMostUsedWheelchair(
+      reports.filter((r) => {
+        const submitted = toDateSafe(r.submitted_at);
+        return submitted && submitted >= start && submitted <= end;
+      })
+    );
+  }, [reports]);
+
+  const mostUsedWheelchairWeek = useMemo(() => {
+    const start = startOfWeek();
+    const end = endOfWeek();
+
+    return buildMostUsedWheelchair(
+      reports.filter((r) => {
+        const submitted = toDateSafe(r.submitted_at);
+        return submitted && submitted >= start && submitted <= end;
+      })
+    );
+  }, [reports]);
+
+  const mostUsedWheelchairMonth = useMemo(() => {
+    const start = startOfMonth();
+    const end = endOfMonth();
+
+    return buildMostUsedWheelchair(
+      reports.filter((r) => {
+        const submitted = toDateSafe(r.submitted_at);
+        return submitted && submitted >= start && submitted <= end;
+      })
+    );
+  }, [reports]);
 
   const recentUsers = useMemo(() => {
     return [...filteredUsers]
       .filter((u) => u.lastSeen)
       .sort((a, b) => {
         const A = toDateSafe(a.lastSeen)?.getTime() || 0;
-        const B = toDateSafe(a.lastSeen)?.getTime() || 0;
+        const B = toDateSafe(b.lastSeen)?.getTime() || 0;
         return B - A;
       })
       .slice(0, 15);
@@ -480,9 +536,11 @@ export default function AdminActivityDashboard() {
       ["Airline", "Count"],
       ...topAirlines.map((r) => [r.label, r.count]),
       [],
-      ["MOST USED WCHR"],
-      ["Airline", "WCHR Number", "Count"],
-      ...wheelchairUsage.map((r) => [r.airline, r.chair, r.count]),
+      ["MOST USED WCHR IN STATION"],
+      ["Period", "WCHR Number", "Count"],
+      ["Today", mostUsedWheelchairToday.chair || "—", mostUsedWheelchairToday.count || 0],
+      ["This Week", mostUsedWheelchairWeek.chair || "—", mostUsedWheelchairWeek.count || 0],
+      ["This Month", mostUsedWheelchairMonth.chair || "—", mostUsedWheelchairMonth.count || 0],
       [],
       ["WCHR BY DAY"],
       ["Day", "Count"],
@@ -669,14 +727,41 @@ export default function AdminActivityDashboard() {
         </Panel>
       </div>
 
-      <Panel title="Most Used WCHR">
-        <BarChartList
-          rows={wheelchairUsage.map((r) => ({
-            label: `${r.airline} · ${r.chair}`,
-            count: r.count,
-          }))}
-          emptyText="No WCHR usage for this filter."
-        />
+      <Panel title="Most Used WCHR in Station">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
+          <StatCard
+            label="Today"
+            value={
+              mostUsedWheelchairToday.chair
+                ? `${mostUsedWheelchairToday.chair} (${mostUsedWheelchairToday.count})`
+                : "—"
+            }
+          />
+
+          <StatCard
+            label="This Week"
+            value={
+              mostUsedWheelchairWeek.chair
+                ? `${mostUsedWheelchairWeek.chair} (${mostUsedWheelchairWeek.count})`
+                : "—"
+            }
+          />
+
+          <StatCard
+            label="This Month"
+            value={
+              mostUsedWheelchairMonth.chair
+                ? `${mostUsedWheelchairMonth.chair} (${mostUsedWheelchairMonth.count})`
+                : "—"
+            }
+          />
+        </div>
       </Panel>
 
       <div
