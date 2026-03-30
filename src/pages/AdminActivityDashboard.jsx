@@ -1,11 +1,6 @@
-// src/pages/AdminActivityDashboard.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
 
 function toDateSafe(value) {
   if (!value) return null;
@@ -14,23 +9,10 @@ function toDateSafe(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function toStatsDateSafe(value) {
-  if (!value) return null;
-  const raw = String(value).slice(0, 10);
-  const d = new Date(`${raw}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
 function formatDate(value) {
   const d = toDateSafe(value);
   if (!d) return "—";
   return d.toLocaleString();
-}
-
-function formatInputDate(value) {
-  const d = toDateSafe(value);
-  if (!d) return "";
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 function normalizeRole(role) {
@@ -42,24 +24,9 @@ function normalizeRole(role) {
   return value || "—";
 }
 
-function normalizeLoginKey(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[./#[\]$]/g, "_");
-}
-
 function startOfToday() {
   const now = new Date();
-  return new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0,
-    0,
-    0,
-    0
-  );
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 }
 
 function startOfWeek() {
@@ -77,39 +44,20 @@ function startOfMonth() {
   return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
 }
 
-function endOfDay(dateLike) {
-  const d = toDateSafe(dateLike) || new Date(dateLike);
-  return new Date(
-    d.getFullYear(),
-    d.getMonth(),
-    d.getDate(),
-    23,
-    59,
-    59,
-    999
-  );
-}
-
-function getPresetRange(range) {
-  if (range === "today") {
-    return { start: startOfToday(), end: new Date() };
-  }
-  if (range === "week") {
-    return { start: startOfWeek(), end: new Date() };
-  }
-  if (range === "month") {
-    return { start: startOfMonth(), end: new Date() };
-  }
-  return { start: null, end: null };
+function getRangeStart(range) {
+  if (range === "today") return startOfToday();
+  if (range === "week") return startOfWeek();
+  if (range === "month") return startOfMonth();
+  return null;
 }
 
 function buildCountByLogin(reports) {
   const counts = {};
 
   for (const r of reports) {
-    const login =
-      String(r.employee_login || r.employee_name || "Unknown").trim() ||
-      "Unknown";
+    const login = String(
+      r.employee_login || r.employee_name || "Unknown"
+    ).trim() || "Unknown";
 
     counts[login] = (counts[login] || 0) + 1;
   }
@@ -123,8 +71,7 @@ function buildCountByAirline(reports) {
   const counts = {};
 
   for (const r of reports) {
-    const airline =
-      String(r.airline || "Unknown").trim().toUpperCase() || "Unknown";
+    const airline = String(r.airline || "Unknown").trim().toUpperCase() || "Unknown";
     counts[airline] = (counts[airline] || 0) + 1;
   }
 
@@ -133,33 +80,37 @@ function buildCountByAirline(reports) {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
-function buildDailyCounts(reports) {
-  const counts = {};
+function buildDailyCounts(reports, daysBack = 7) {
+  const now = new Date();
+  const points = [];
+
+  for (let i = daysBack - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+
+    points.push({
+      key: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`,
+      label: d.toLocaleDateString(undefined, {
+        month: "2-digit",
+        day: "2-digit",
+      }),
+      count: 0,
+    });
+  }
+
+  const map = new Map(points.map((p) => [p.key, p]));
 
   for (const r of reports) {
     const submitted = toDateSafe(r.submitted_at);
     if (!submitted) continue;
 
-    const key = `${submitted.getFullYear()}-${pad2(
-      submitted.getMonth() + 1
-    )}-${pad2(submitted.getDate())}`;
-
-    if (!counts[key]) {
-      counts[key] = {
-        label: submitted.toLocaleDateString(undefined, {
-          month: "2-digit",
-          day: "2-digit",
-        }),
-        count: 0,
-      };
-    }
-
-    counts[key].count += 1;
+    const key = `${submitted.getFullYear()}-${submitted.getMonth()}-${submitted.getDate()}`;
+    const found = map.get(key);
+    if (found) found.count += 1;
   }
 
-  return Object.entries(counts)
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([, value]) => value);
+  return points;
 }
 
 function buildHourlyCounts(reports) {
@@ -182,9 +133,9 @@ function buildProductivityTable(reports, users) {
   const byLogin = {};
 
   for (const r of reports || []) {
-    const login =
-      String(r.employee_login || r.employee_name || "Unknown").trim() ||
-      "Unknown";
+    const login = String(
+      r.employee_login || r.employee_name || "Unknown"
+    ).trim() || "Unknown";
 
     if (!byLogin[login]) {
       byLogin[login] = {
@@ -200,6 +151,7 @@ function buildProductivityTable(reports, users) {
     if (!submitted) continue;
 
     byLogin[login].total += 1;
+
     if (submitted >= startOfToday()) byLogin[login].today += 1;
     if (submitted >= startOfWeek()) byLogin[login].week += 1;
     if (submitted >= startOfMonth()) byLogin[login].month += 1;
@@ -215,202 +167,6 @@ function buildProductivityTable(reports, users) {
       };
     })
     .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
-}
-
-function buildTopWheelchairUsage(reports) {
-  const map = {};
-
-  for (const r of reports) {
-    const airline =
-      String(r.airline || "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-    const chair = String(r.wheelchair_number || "").trim().toUpperCase();
-
-    if (!chair) continue;
-
-    if (!map[airline]) map[airline] = {};
-    map[airline][chair] = (map[airline][chair] || 0) + 1;
-  }
-
-  const result = [];
-
-  for (const airline of Object.keys(map)) {
-    const chairs = map[airline];
-    let topChair = "";
-    let max = 0;
-
-    for (const chair of Object.keys(chairs)) {
-      if (chairs[chair] > max) {
-        max = chairs[chair];
-        topChair = chair;
-      }
-    }
-
-    if (topChair) {
-      result.push({
-        airline,
-        chair: topChair,
-        count: max,
-      });
-    }
-  }
-
-  return result.sort(
-    (a, b) => b.count - a.count || a.airline.localeCompare(b.airline)
-  );
-}
-
-function aggregateStatsObject(stats, fieldName) {
-  const totals = {};
-
-  for (const item of stats) {
-    const source = item[fieldName] || {};
-    Object.entries(source).forEach(([key, value]) => {
-      totals[key] = (totals[key] || 0) + Number(value || 0);
-    });
-  }
-
-  return totals;
-}
-
-function buildStatsCountRows(stats, fieldName, labelMap = {}) {
-  const totals = aggregateStatsObject(stats, fieldName);
-
-  return Object.entries(totals)
-    .map(([key, count]) => ({
-      label: labelMap[key] || key,
-      count,
-    }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-}
-
-function buildStatsDailyCounts(stats) {
-  return [...stats]
-    .sort((a, b) =>
-      String(a.date || a.id || "").localeCompare(String(b.date || b.id || ""))
-    )
-    .map((item) => {
-      const d = toStatsDateSafe(item.date || item.id);
-      return {
-        label:
-          d?.toLocaleDateString(undefined, {
-            month: "2-digit",
-            day: "2-digit",
-          }) || item.date || item.id,
-        count: Number(item.total_reports || 0),
-      };
-    });
-}
-
-function buildStatsHourlyCounts(stats) {
-  const hours = Array.from({ length: 24 }, (_, i) => ({
-    label: `${String(i).padStart(2, "0")}:00`,
-    count: 0,
-  }));
-
-  for (const item of stats) {
-    const source = item.by_hour || {};
-    for (const [hourKey, count] of Object.entries(source)) {
-      const idx = Number(hourKey);
-      if (!Number.isNaN(idx) && hours[idx]) {
-        hours[idx].count += Number(count || 0);
-      }
-    }
-  }
-
-  return hours;
-}
-
-function buildStatsWheelchairUsage(stats) {
-  const merged = {};
-
-  for (const item of stats) {
-    const byAirline = item.wheelchair_by_airline || {};
-    Object.entries(byAirline).forEach(([airline, chairs]) => {
-      if (!merged[airline]) merged[airline] = {};
-      Object.entries(chairs || {}).forEach(([chair, count]) => {
-        merged[airline][chair] =
-          (merged[airline][chair] || 0) + Number(count || 0);
-      });
-    });
-  }
-
-  const result = [];
-
-  Object.entries(merged).forEach(([airline, chairs]) => {
-    let topChair = "";
-    let max = 0;
-
-    Object.entries(chairs).forEach(([chair, count]) => {
-      if (Number(count || 0) > max) {
-        max = Number(count || 0);
-        topChair = chair;
-      }
-    });
-
-    if (topChair) {
-      result.push({
-        airline,
-        chair: topChair,
-        count: max,
-      });
-    }
-  });
-
-  return result.sort(
-    (a, b) => b.count - a.count || a.airline.localeCompare(b.airline)
-  );
-}
-
-function buildStatsProductivityTable(stats, mergedUsers) {
-  const totals = aggregateStatsObject(stats, "by_employee");
-
-  return Object.entries(totals)
-    .map(([loginKey, total]) => {
-      const matchedUser =
-        mergedUsers.find(
-          (u) => normalizeLoginKey(u.username) === normalizeLoginKey(loginKey)
-        ) || null;
-
-      return {
-        login: matchedUser?.username || loginKey,
-        role: matchedUser?.role || "",
-        online: Boolean(matchedUser?.online),
-        today: 0,
-        week: 0,
-        month: 0,
-        total: Number(total || 0),
-      };
-    })
-    .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
-}
-
-function buildStatsPeriodProductivity(stats, mergedUsers, period) {
-  const start =
-    period === "today"
-      ? startOfToday()
-      : period === "week"
-      ? startOfWeek()
-      : startOfMonth();
-
-  const filtered = stats.filter((item) => {
-    const d = toStatsDateSafe(item.date || item.id);
-    return d && d >= start;
-  });
-
-  const totals = aggregateStatsObject(filtered, "by_employee");
-  const result = {};
-
-  Object.entries(totals).forEach(([loginKey, count]) => {
-    const matchedUser =
-      mergedUsers.find(
-        (u) => normalizeLoginKey(u.username) === normalizeLoginKey(loginKey)
-      ) || null;
-
-    const label = matchedUser?.username || loginKey;
-    result[label] = Number(count || 0);
-  });
-
-  return result;
 }
 
 function downloadCSV(filename, rows) {
@@ -435,20 +191,17 @@ function safeRangeLabel(range) {
   if (range === "today") return "today";
   if (range === "week") return "this-week";
   if (range === "month") return "this-month";
-  return "custom";
+  return "all";
 }
 
 export default function AdminActivityDashboard() {
   const [users, setUsers] = useState([]);
   const [presence, setPresence] = useState([]);
   const [reports, setReports] = useState([]);
-  const [dailyStats, setDailyStats] = useState([]);
 
   const [range, setRange] = useState("week");
   const [selectedLogin, setSelectedLogin] = useState("all");
   const [selectedRole, setSelectedRole] = useState("all");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
 
   useEffect(() => {
     const unsubUsers = onSnapshot(
@@ -475,28 +228,12 @@ export default function AdminActivityDashboard() {
       (err) => console.error("Error loading WCHR reports:", err)
     );
 
-    const unsubDailyStats = onSnapshot(
-      collection(db, "wch_stats_daily"),
-      (snap) => {
-        setDailyStats(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
-      (err) => console.error("Error loading daily WCHR stats:", err)
-    );
-
     return () => {
       unsubUsers();
       unsubPresence();
       unsubReports();
-      unsubDailyStats();
     };
   }, []);
-
-  useEffect(() => {
-    if (range === "custom") return;
-    const preset = getPresetRange(range);
-    setFromDate(formatInputDate(preset.start));
-    setToDate(formatInputDate(preset.end));
-  }, [range]);
 
   const mergedUsers = useMemo(() => {
     const presenceMap = new Map(
@@ -521,73 +258,23 @@ export default function AdminActivityDashboard() {
       .sort((a, b) => a.username.localeCompare(b.username));
   }, [users, presence]);
 
+  const loginOptions = useMemo(() => {
+    const set = new Set();
+
+    reports.forEach((r) => {
+      const login = String(
+        r.employee_login || r.employee_name || "Unknown"
+      ).trim();
+      if (login) set.add(login);
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [reports]);
+
   const roleOptions = useMemo(() => {
     const set = new Set(mergedUsers.map((u) => u.role).filter(Boolean));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [mergedUsers]);
-
-  const statsAvailable = useMemo(() => {
-    if (!dailyStats.length) return false;
-
-    return dailyStats.some((item) => {
-      const totalReports = Number(item.total_reports || 0);
-      const byEmployeeCount = Object.keys(item.by_employee || {}).length;
-      const byAirlineCount = Object.keys(item.by_airline || {}).length;
-      const wheelchairAirlineCount = Object.keys(
-        item.wheelchair_by_airline || {}
-      ).length;
-
-      return (
-        totalReports > 0 ||
-        byEmployeeCount > 0 ||
-        byAirlineCount > 0 ||
-        wheelchairAirlineCount > 0
-      );
-    });
-  }, [dailyStats]);
-
-  const loginLabelMap = useMemo(() => {
-    const map = {};
-
-    mergedUsers.forEach((u) => {
-      map[normalizeLoginKey(u.username)] = u.username;
-    });
-
-    reports.forEach((r) => {
-      const login =
-        String(r.employee_login || r.employee_name || "Unknown").trim();
-      if (login) {
-        map[normalizeLoginKey(login)] = login;
-      }
-    });
-
-    return map;
-  }, [mergedUsers, reports]);
-
-  const loginOptions = useMemo(() => {
-    const set = new Set();
-
-    mergedUsers.forEach((u) => {
-      if (u.username) set.add(u.username);
-    });
-
-    reports.forEach((r) => {
-      const login =
-        String(r.employee_login || r.employee_name || "Unknown").trim();
-      if (login) set.add(login);
-    });
-
-    dailyStats.forEach((item) => {
-      Object.keys(item.by_employee || {}).forEach((key) => {
-        set.add(loginLabelMap[key] || key);
-      });
-    });
-
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [mergedUsers, reports, dailyStats, loginLabelMap]);
-
-  const activeStartDate = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
-  const activeEndDate = toDate ? endOfDay(`${toDate}T00:00:00`) : null;
 
   const filteredUsers = useMemo(() => {
     return mergedUsers.filter((u) => {
@@ -598,14 +285,16 @@ export default function AdminActivityDashboard() {
   }, [mergedUsers, selectedLogin, selectedRole]);
 
   const filteredReports = useMemo(() => {
+    const rangeStart = getRangeStart(range);
+
     return reports.filter((r) => {
       const submitted = toDateSafe(r.submitted_at);
       if (!submitted) return false;
-      if (activeStartDate && submitted < activeStartDate) return false;
-      if (activeEndDate && submitted > activeEndDate) return false;
+      if (rangeStart && submitted < rangeStart) return false;
 
-      const login =
-        String(r.employee_login || r.employee_name || "Unknown").trim();
+      const login = String(
+        r.employee_login || r.employee_name || "Unknown"
+      ).trim();
 
       if (selectedLogin !== "all" && login !== selectedLogin) return false;
 
@@ -616,128 +305,31 @@ export default function AdminActivityDashboard() {
 
       return true;
     });
-  }, [
-    reports,
-    activeStartDate,
-    activeEndDate,
-    selectedLogin,
-    selectedRole,
-    mergedUsers,
-  ]);
-
-  const filteredStats = useMemo(() => {
-    return dailyStats.filter((item) => {
-      const d = toStatsDateSafe(item.date || item.id);
-      if (!d) return false;
-      if (activeStartDate && d < activeStartDate) return false;
-      if (activeEndDate && d > activeEndDate) return false;
-      return true;
-    });
-  }, [dailyStats, activeStartDate, activeEndDate]);
-
-  const roleLoginSet = useMemo(() => {
-    const set = new Set();
-    if (selectedRole === "all") return set;
-
-    mergedUsers.forEach((u) => {
-      if (u.role === selectedRole) {
-        set.add(normalizeLoginKey(u.username));
-      }
-    });
-
-    return set;
-  }, [mergedUsers, selectedRole]);
-
-  const filteredStatsForView = useMemo(() => {
-    return filteredStats
-      .map((item) => {
-        const byEmployee = {};
-        Object.entries(item.by_employee || {}).forEach(([loginKey, count]) => {
-          if (
-            selectedLogin !== "all" &&
-            normalizeLoginKey(selectedLogin) !== normalizeLoginKey(loginKey)
-          ) {
-            return;
-          }
-
-          if (
-            selectedRole !== "all" &&
-            !roleLoginSet.has(normalizeLoginKey(loginKey))
-          ) {
-            return;
-          }
-
-          byEmployee[loginKey] = Number(count || 0);
-        });
-
-        const totalReports =
-          selectedLogin === "all" && selectedRole === "all"
-            ? Number(item.total_reports || 0)
-            : Object.values(byEmployee).reduce(
-                (sum, n) => sum + Number(n || 0),
-                0
-              );
-
-        if (totalReports <= 0) return null;
-
-        return {
-          ...item,
-          total_reports: totalReports,
-          by_employee: byEmployee,
-        };
-      })
-      .filter(Boolean);
-  }, [filteredStats, selectedLogin, selectedRole, roleLoginSet]);
-
-  const hasRenderableStats = statsAvailable && filteredStatsForView.length > 0;
+  }, [reports, range, selectedLogin, selectedRole, mergedUsers]);
 
   const totalUsers = filteredUsers.length;
   const onlineUsers = filteredUsers.filter((u) => u.online).length;
   const activeUsers = filteredUsers.filter((u) => u.lastSeen).length;
-  const totalWchr = hasRenderableStats
-    ? filteredStatsForView.reduce(
-        (sum, item) => sum + Number(item.total_reports || 0),
-        0
-      )
-    : filteredReports.length;
+  const totalWchr = filteredReports.length;
 
-  const topWchrLogins = useMemo(() => {
-    if (hasRenderableStats) {
-      return buildStatsCountRows(
-        filteredStatsForView,
-        "by_employee",
-        loginLabelMap
-      ).slice(0, 10);
-    }
-    return buildCountByLogin(filteredReports).slice(0, 10);
-  }, [hasRenderableStats, filteredStatsForView, loginLabelMap, filteredReports]);
+  const topWchrLogins = useMemo(
+    () => buildCountByLogin(filteredReports).slice(0, 10),
+    [filteredReports]
+  );
 
-  const topAirlines = useMemo(() => {
-    if (hasRenderableStats) {
-      return buildStatsCountRows(
-        filteredStatsForView,
-        "by_airline"
-      ).slice(0, 10);
-    }
-    return buildCountByAirline(filteredReports).slice(0, 10);
-  }, [hasRenderableStats, filteredStatsForView, filteredReports]);
+  const topAirlines = useMemo(
+    () => buildCountByAirline(filteredReports).slice(0, 10),
+    [filteredReports]
+  );
 
   const dailyWchr = useMemo(() => {
-    if (hasRenderableStats) return buildStatsDailyCounts(filteredStatsForView);
-    return buildDailyCounts(filteredReports);
-  }, [hasRenderableStats, filteredStatsForView, filteredReports]);
+    if (range === "today") return buildDailyCounts(filteredReports, 1);
+    if (range === "week") return buildDailyCounts(filteredReports, 7);
+    if (range === "month") return buildDailyCounts(filteredReports, 30);
+    return buildDailyCounts(filteredReports, 14);
+  }, [filteredReports, range]);
 
-  const hourlyWchr = useMemo(() => {
-    if (hasRenderableStats) return buildStatsHourlyCounts(filteredStatsForView);
-    return buildHourlyCounts(filteredReports);
-  }, [hasRenderableStats, filteredStatsForView, filteredReports]);
-
-  const wheelchairUsage = useMemo(() => {
-    if (hasRenderableStats) {
-      return buildStatsWheelchairUsage(filteredStatsForView).slice(0, 10);
-    }
-    return buildTopWheelchairUsage(filteredReports).slice(0, 10);
-  }, [hasRenderableStats, filteredStatsForView, filteredReports]);
+  const hourlyWchr = useMemo(() => buildHourlyCounts(filteredReports), [filteredReports]);
 
   const recentUsers = useMemo(() => {
     return [...filteredUsers]
@@ -751,66 +343,19 @@ export default function AdminActivityDashboard() {
   }, [filteredUsers]);
 
   const productivityRows = useMemo(() => {
-    if (hasRenderableStats) {
-      const base = buildStatsProductivityTable(
-        filteredStatsForView,
-        mergedUsers
-      );
-      const todayMap = buildStatsPeriodProductivity(
-        dailyStats,
-        mergedUsers,
-        "today"
-      );
-      const weekMap = buildStatsPeriodProductivity(
-        dailyStats,
-        mergedUsers,
-        "week"
-      );
-      const monthMap = buildStatsPeriodProductivity(
-        dailyStats,
-        mergedUsers,
-        "month"
-      );
-
-      return base
-        .map((row) => ({
-          ...row,
-          today: todayMap[row.login] || 0,
-          week: weekMap[row.login] || 0,
-          month: monthMap[row.login] || 0,
-        }))
-        .filter((row) => {
-          if (selectedRole !== "all" && row.role !== selectedRole) return false;
-          if (selectedLogin !== "all" && row.login !== selectedLogin)
-            return false;
-          return true;
-        });
-    }
-
     return buildProductivityTable(filteredReports, mergedUsers).filter((row) => {
       if (selectedRole !== "all" && row.role !== selectedRole) return false;
       if (selectedLogin !== "all" && row.login !== selectedLogin) return false;
       return true;
     });
-  }, [
-    hasRenderableStats,
-    filteredStatsForView,
-    dailyStats,
-    mergedUsers,
-    selectedRole,
-    selectedLogin,
-    filteredReports,
-  ]);
+  }, [filteredReports, mergedUsers, selectedRole, selectedLogin]);
 
   const handleExportCsv = () => {
     const rows = [
       ["ADMIN ACTIVITY DASHBOARD"],
       ["Range", safeRangeLabel(range)],
-      ["From", fromDate || "—"],
-      ["To", toDate || "—"],
       ["Login Filter", selectedLogin],
       ["Role Filter", selectedRole],
-      ["Stats Source", hasRenderableStats ? "wch_stats_daily" : "wch_reports"],
       [],
       ["SUMMARY"],
       ["Filtered Users", totalUsers],
@@ -825,10 +370,6 @@ export default function AdminActivityDashboard() {
       ["TOP AIRLINES"],
       ["Airline", "Count"],
       ...topAirlines.map((r) => [r.label, r.count]),
-      [],
-      ["MOST USED WCHR"],
-      ["Airline", "WCHR Number", "Count"],
-      ...wheelchairUsage.map((r) => [r.airline, r.chair, r.count]),
       [],
       ["WCHR BY DAY"],
       ["Day", "Count"],
@@ -848,6 +389,17 @@ export default function AdminActivityDashboard() {
         r.week,
         r.month,
         r.total,
+      ]),
+      [],
+      ["ALL REGISTERED USERS"],
+      ["Username", "Role", "Online", "Current Page", "Last Seen", "First Login Tracked"],
+      ...mergedUsers.map((u) => [
+        u.username,
+        normalizeRole(u.role),
+        u.online ? "ONLINE" : "OFFLINE",
+        u.currentPage || "—",
+        formatDate(u.lastSeen),
+        formatDate(u.lastLoginAt),
       ]),
     ];
 
@@ -883,8 +435,7 @@ export default function AdminActivityDashboard() {
             User Activity Dashboard
           </h1>
           <p style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
-            Monitor user access, presence, scan hours, airlines and WCHR
-            productivity.
+            Monitor user access, presence, scan hours, airlines and WCHR productivity.
           </p>
         </div>
 
@@ -907,40 +458,12 @@ export default function AdminActivityDashboard() {
           }}
         >
           <FilterField label="Range">
-            <select
-              value={range}
-              onChange={(e) => setRange(e.target.value)}
-              style={selectStyle}
-            >
+            <select value={range} onChange={(e) => setRange(e.target.value)} style={selectStyle}>
               <option value="today">Today</option>
               <option value="week">This Week</option>
               <option value="month">This Month</option>
-              <option value="custom">Custom Dates</option>
+              <option value="all">All</option>
             </select>
-          </FilterField>
-
-          <FilterField label="From Date">
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => {
-                setRange("custom");
-                setFromDate(e.target.value);
-              }}
-              style={selectStyle}
-            />
-          </FilterField>
-
-          <FilterField label="To Date">
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => {
-                setRange("custom");
-                setToDate(e.target.value);
-              }}
-              style={selectStyle}
-            />
           </FilterField>
 
           <FilterField label="Login">
@@ -975,43 +498,6 @@ export default function AdminActivityDashboard() {
         </div>
       </Panel>
 
-      <Panel title="Debug WCHR">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 10,
-            fontSize: 14,
-            color: "#334155",
-          }}
-        >
-          <div>
-            dailyStats docs: <b>{dailyStats.length}</b>
-          </div>
-          <div>
-            filteredStatsForView: <b>{filteredStatsForView.length}</b>
-          </div>
-          <div>
-            reports docs: <b>{reports.length}</b>
-          </div>
-          <div>
-            filteredReports: <b>{filteredReports.length}</b>
-          </div>
-          <div>
-            statsAvailable: <b>{String(statsAvailable)}</b>
-          </div>
-          <div>
-            hasRenderableStats: <b>{String(hasRenderableStats)}</b>
-          </div>
-          <div>
-            From: <b>{fromDate || "—"}</b>
-          </div>
-          <div>
-            To: <b>{toDate || "—"}</b>
-          </div>
-        </div>
-      </Panel>
-
       <div
         style={{
           display: "grid",
@@ -1033,29 +519,13 @@ export default function AdminActivityDashboard() {
         }}
       >
         <Panel title="Top WCHR Logins">
-          <BarChartList
-            rows={topWchrLogins}
-            emptyText="No WCHR activity for this filter."
-          />
+          <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
         </Panel>
 
         <Panel title="Top Airlines">
-          <BarChartList
-            rows={topAirlines}
-            emptyText="No airline data for this filter."
-          />
+          <BarChartList rows={topAirlines} emptyText="No airline data for this filter." />
         </Panel>
       </div>
-
-      <Panel title="Most Used WCHR">
-        <BarChartList
-          rows={wheelchairUsage.map((r) => ({
-            label: `${r.airline} · ${r.chair}`,
-            count: r.count,
-          }))}
-          emptyText="No WCHR usage for this filter."
-        />
-      </Panel>
 
       <div
         style={{
@@ -1097,13 +567,7 @@ export default function AdminActivityDashboard() {
                   >
                     <td style={td}>
                       <div style={{ fontWeight: 700 }}>{u.username}</div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          marginTop: 2,
-                        }}
-                      >
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
                         {u.employeeId || "No linked employee"}
                       </div>
                     </td>
@@ -1149,9 +613,7 @@ export default function AdminActivityDashboard() {
                     key={row.login}
                     style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
                   >
-                    <td style={td}>
-                      <div style={{ fontWeight: 700 }}>{row.login}</div>
-                    </td>
+                    <td style={td}><div style={{ fontWeight: 700 }}>{row.login}</div></td>
                     <td style={td}>{normalizeRole(row.role)}</td>
                     <td style={td}>
                       {row.online ? (
@@ -1196,13 +658,7 @@ export default function AdminActivityDashboard() {
                   >
                     <td style={td}>
                       <div style={{ fontWeight: 700 }}>{u.username}</div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          marginTop: 2,
-                        }}
-                      >
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
                         {u.employeeId || "No linked employee"}
                       </div>
                     </td>
@@ -1347,8 +803,7 @@ function BarChartList({ rows, emptyText }) {
                 width: `${(row.count / max) * 100}%`,
                 height: "100%",
                 borderRadius: 999,
-                background:
-                  "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
               }}
             />
           </div>
@@ -1399,13 +854,9 @@ function VerticalBars({ rows, compact = false }) {
             style={{
               width: "100%",
               maxWidth: compact ? 22 : 34,
-              height: `${Math.max(
-                (row.count / max) * 150,
-                row.count > 0 ? 10 : 2
-              )}px`,
+              height: `${Math.max((row.count / max) * 150, row.count > 0 ? 10 : 2)}px`,
               borderRadius: 10,
-              background:
-                "linear-gradient(180deg, #5aa9e6 0%, #1769aa 100%)",
+              background: "linear-gradient(180deg, #5aa9e6 0%, #1769aa 100%)",
             }}
           />
 
