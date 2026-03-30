@@ -15,6 +15,7 @@ import {
   updateDoc,
   getDoc,
   deleteDoc,
+  increment,
 } from "firebase/firestore";
 
 function pad2(n) {
@@ -74,6 +75,53 @@ function getMillis(val) {
 function formatReportFlightDate(val) {
   const d = tsToDate(val);
   return d ? toMMDDYYYY(d) : "—";
+}
+
+function normalizeLoginKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[./#[\]$]/g, "_");
+}
+
+function statsDateKey(dateLike) {
+  const d = tsToDate(dateLike) || new Date(dateLike);
+  if (!d || Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+async function decrementDailyWchrStats(report) {
+  const dateKey = statsDateKey(report.flight_date);
+  if (!dateKey) return;
+
+  const airline = safeUpper(report.airline) || "UNKNOWN";
+  const loginKey = normalizeLoginKey(
+    report.employee_login || report.employee_name || "unknown"
+  );
+  const chair = safeUpper(report.wheelchair_number || "");
+  const submitted = tsToDate(report.submitted_at);
+  const hour = submitted ? submitted.getHours() : null;
+
+  const statsRef = doc(db, "wch_stats_daily", dateKey);
+  const snap = await getDoc(statsRef);
+  if (!snap.exists()) return;
+
+  const payload = {
+    updated_at: Timestamp.now(),
+    total_reports: increment(-1),
+    [`by_airline.${airline}`]: increment(-1),
+    [`by_employee.${loginKey}`]: increment(-1),
+  };
+
+  if (hour !== null && hour >= 0 && hour <= 23) {
+    payload[`by_hour.${hour}`] = increment(-1);
+  }
+
+  if (chair) {
+    payload[`wheelchair_by_airline.${airline}.${chair}`] = increment(-1);
+  }
+
+  await setDoc(statsRef, payload, { merge: true });
 }
 
 function downloadCSV(filename, rows) {
@@ -365,7 +413,7 @@ export default function WCHRFlights() {
   const [allDayReports, setAllDayReports] = useState([]);
   const [deletingId, setDeletingId] = useState("");
 
-  const canManageReports = useMemo(() => {
+  const canClose = useMemo(() => {
     const role = (user?.role || "").toLowerCase();
     return (
       role.includes("station") ||
@@ -434,7 +482,7 @@ export default function WCHRFlights() {
     return () => {
       mounted = false;
     };
-  }, [selectedDate]);
+  }, [selectedDate, selectedFlightKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -493,7 +541,7 @@ export default function WCHRFlights() {
     setError("");
     setMessage("");
 
-    if (!canManageReports) {
+    if (!canClose) {
       setError("You do not have permission to close flights.");
       return;
     }
@@ -556,12 +604,6 @@ export default function WCHRFlights() {
   };
 
   const handleDeleteReport = async (report) => {
-    if (!canManageReports) {
-      setError("You do not have permission to delete reports.");
-      setMessage("");
-      return;
-    }
-
     const ok = window.confirm(
       `Delete report ${report.report_id || report.id}?\n\nThis action cannot be undone.`
     );
@@ -572,15 +614,16 @@ export default function WCHRFlights() {
       setError("");
       setMessage("");
 
+      await decrementDailyWchrStats(report);
       await deleteDoc(doc(db, "wch_reports", report.id));
 
       const updatedAllDayReports = allDayReports.filter((r) => r.id !== report.id);
-      const updatedReports = reports.filter((r) => r.id !== report.id);
-
       setAllDayReports(updatedAllDayReports);
+
+      const updatedReports = reports.filter((r) => r.id !== report.id);
       setReports(updatedReports);
 
-      let updatedFlights = buildFlightsFromRows(updatedAllDayReports).map((f) => {
+      const updatedFlights = buildFlightsFromRows(updatedAllDayReports).map((f) => {
         const oldMatch = flights.find((old) => old.flight_key === f.flight_key);
         return {
           ...f,
@@ -1048,7 +1091,7 @@ export default function WCHRFlights() {
                           <ActionButton
                             onClick={() => handleCloseFlight(f)}
                             variant="primary"
-                            disabled={!canManageReports || f.closed}
+                            disabled={!canClose || f.closed}
                             style={{ padding: "8px 12px", fontSize: 12 }}
                           >
                             Close Flight
@@ -1137,7 +1180,7 @@ export default function WCHRFlights() {
               <ActionButton
                 onClick={() => handleCloseFlight(selectedFlight)}
                 variant="success"
-                disabled={!canManageReports || selectedFlight.closed}
+                disabled={!canClose || selectedFlight.closed}
               >
                 Close Flight (Export)
               </ActionButton>
@@ -1267,7 +1310,7 @@ export default function WCHRFlights() {
                         <ActionButton
                           variant="danger"
                           onClick={() => handleDeleteReport(r)}
-                          disabled={!canManageReports || deletingId === r.id}
+                          disabled={deletingId === r.id}
                           style={{ padding: "8px 12px", fontSize: 12 }}
                         >
                           {deletingId === r.id ? "Deleting..." : "Delete"}
