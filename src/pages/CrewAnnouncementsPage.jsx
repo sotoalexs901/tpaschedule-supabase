@@ -1,5 +1,5 @@
 // src/pages/CrewAnnouncementsPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
   addDoc,
@@ -51,6 +51,25 @@ function FieldLabel({ children }) {
 function TextInput(props) {
   return (
     <input
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function SelectInput(props) {
+  return (
+    <select
       {...props}
       style={{
         width: "100%",
@@ -137,18 +156,107 @@ function ActionButton({
   );
 }
 
+function getVisibleName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    user?.id ||
+    "unknown"
+  );
+}
+
+function getDefaultPosition(role) {
+  if (role === "station_manager") return "Station Manager";
+  if (role === "duty_manager") return "Duty Manager";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "agent") return "Agent";
+  return "Team Member";
+}
+
+function priorityBadge(priority) {
+  const p = String(priority || "normal").toLowerCase();
+
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    border: "1px solid transparent",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+
+  if (p === "high") {
+    return {
+      ...base,
+      background: "#fff1f2",
+      color: "#be123c",
+      borderColor: "#fecdd3",
+    };
+  }
+
+  if (p === "medium") {
+    return {
+      ...base,
+      background: "#fff7ed",
+      color: "#9a3412",
+      borderColor: "#fed7aa",
+    };
+  }
+
+  return {
+    ...base,
+    background: "#ecfdf5",
+    color: "#065f46",
+    borderColor: "#a7f3d0",
+  };
+}
+
+function categoryBadge(category) {
+  const c = String(category || "general").toLowerCase();
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    border: "1px solid #cfe7fb",
+    background: "#edf7ff",
+    color: "#1769aa",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+}
+
 export default function CrewAnnouncementsPage() {
   const { user } = useUser();
 
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [body, setBody] = useState("");
+  const [category, setCategory] = useState("general");
+  const [priority, setPriority] = useState("normal");
+  const [pinned, setPinned] = useState(false);
+  const [expiresOn, setExpiresOn] = useState("");
   const [imageFile, setImageFile] = useState(null);
+
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+
+  const visibleName = useMemo(() => getVisibleName(user), [user]);
+  const visiblePosition = useMemo(
+    () => user?.position || getDefaultPosition(user?.role),
+    [user]
+  );
 
   const loadAnnouncements = async () => {
     try {
@@ -186,17 +294,32 @@ export default function CrewAnnouncementsPage() {
       let imageUrl = "";
       if (imageFile) {
         try {
-          const safeName = imageFile.name.replace(/\s+/g, "_");
+          if (!imageFile.type.startsWith("image/")) {
+            throw new Error("Please select a valid image file.");
+          }
+
+          if (imageFile.size > 5 * 1024 * 1024) {
+            throw new Error("Image must be smaller than 5MB.");
+          }
+
+          const safeName = imageFile.name
+            .replace(/\s+/g, "_")
+            .replace(/[^\w.-]/g, "");
+
           const storageRef = ref(
             storage,
             `employeeAnnouncements/${Date.now()}_${safeName}`
           );
-          const snap = await uploadBytes(storageRef, imageFile);
+
+          const snap = await uploadBytes(storageRef, imageFile, {
+            contentType: imageFile.type || "image/jpeg",
+          });
           imageUrl = await getDownloadURL(snap.ref);
         } catch (uploadErr) {
           console.error("Error uploading image:", uploadErr);
           setMessage(
-            "Image upload failed. Announcement was posted without image."
+            uploadErr?.message ||
+              "Image upload failed. Announcement was posted without image."
           );
           imageUrl = "";
         }
@@ -206,14 +329,25 @@ export default function CrewAnnouncementsPage() {
         title: title.trim() || "Announcement",
         subtitle: subtitle.trim() || "",
         body: body.trim() || "",
+        category,
+        priority,
+        pinned,
+        expiresOn: expiresOn || "",
         imageUrl,
         createdAt: serverTimestamp(),
-        createdBy: user?.username || user?.id || "unknown",
+        createdBy: visibleName,
+        createdByUsername: user?.username || "",
+        createdByRole: user?.role || "",
+        createdByPosition: visiblePosition,
       });
 
       setTitle("");
       setSubtitle("");
       setBody("");
+      setCategory("general");
+      setPriority("normal");
+      setPinned(false);
+      setExpiresOn("");
       setImageFile(null);
       setMessage("Announcement posted!");
       await loadAnnouncements();
@@ -253,6 +387,11 @@ export default function CrewAnnouncementsPage() {
 
     if (!file.type.startsWith("image/")) {
       alert("Please select an image file (jpg, png, etc).");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be smaller than 5MB.");
       return;
     }
 
@@ -447,8 +586,8 @@ export default function CrewAnnouncementsPage() {
               color: "#64748b",
             }}
           >
-            Create a visible notice for the dashboard with optional subtitle and
-            image.
+            Create a visible notice for the dashboard with optional subtitle,
+            image, category and priority.
           </p>
         </div>
 
@@ -485,6 +624,77 @@ export default function CrewAnnouncementsPage() {
               onChange={(e) => setBody(e.target.value)}
               placeholder="Details for the crew..."
             />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>Category</FieldLabel>
+              <SelectInput
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value="general">General</option>
+                <option value="operations">Operations</option>
+                <option value="schedule">Schedule</option>
+                <option value="training">Training</option>
+                <option value="event">Event</option>
+                <option value="policy">Policy</option>
+                <option value="wchr">WCHR</option>
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Priority</FieldLabel>
+              <SelectInput
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+              >
+                <option value="normal">Normal</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Expires On (optional)</FieldLabel>
+              <TextInput
+                type="date"
+                value={expiresOn}
+                onChange={(e) => setExpiresOn(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <input
+              id="pinned-announcement"
+              type="checkbox"
+              checked={pinned}
+              onChange={(e) => setPinned(e.target.checked)}
+            />
+            <label
+              htmlFor="pinned-announcement"
+              style={{
+                fontSize: 14,
+                color: "#334155",
+                fontWeight: 600,
+              }}
+            >
+              Pin this announcement to dashboard
+            </label>
           </div>
 
           <div>
@@ -601,6 +811,41 @@ export default function CrewAnnouncementsPage() {
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <span style={categoryBadge(a.category)}>
+                        {a.category || "general"}
+                      </span>
+                      <span style={priorityBadge(a.priority)}>
+                        {a.priority || "normal"}
+                      </span>
+                      {a.pinned && (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "6px 10px",
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            border: "1px solid #bfdbfe",
+                            background: "#dbeafe",
+                            color: "#1d4ed8",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                          }}
+                        >
+                          Pinned
+                        </span>
+                      )}
+                    </div>
+
                     <h3
                       style={{
                         margin: 0,
@@ -661,6 +906,26 @@ export default function CrewAnnouncementsPage() {
                     {a.body}
                   </p>
                 )}
+
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "grid",
+                    gap: 4,
+                    fontSize: 12,
+                    color: "#64748b",
+                  }}
+                >
+                  <span>
+                    Posted by: <b>{a.createdBy || a.createdByUsername || "Unknown"}</b>
+                    {a.createdByPosition ? ` · ${a.createdByPosition}` : ""}
+                  </span>
+                  {a.expiresOn && (
+                    <span>
+                      Expires on: <b>{a.expiresOn}</b>
+                    </span>
+                  )}
+                </div>
 
                 {a.imageUrl && (
                   <div style={{ marginTop: 14 }}>
