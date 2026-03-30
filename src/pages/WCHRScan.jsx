@@ -1,3 +1,4 @@
+// src/pages/WCHRScan.jsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, storage } from "../firebase";
@@ -185,60 +186,46 @@ function guessPnr(scanResult, rawText) {
   return "";
 }
 
-function toStatsDateKey(dateLike) {
+function statsDateKey(dateLike) {
   const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
-  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  if (Number.isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function sanitizeStatsKey(value, fallback = "UNKNOWN") {
-  const clean = String(value || "")
+function normalizeLoginKey(value) {
+  return String(value || "")
     .trim()
+    .toLowerCase()
     .replace(/[./#[\]$]/g, "_");
-
-  return clean || fallback;
 }
 
-function sanitizeAirlineKey(value) {
-  return safeUpper(value).replace(/[./#[\]$]/g, "_") || "UNKNOWN";
-}
-
-function sanitizeWheelchairKey(value) {
-  return cleanWheelchairNumber(value).replace(/[./#[\]$]/g, "_") || "";
-}
-
-async function updateDailyWchrStats({
-  submittedAtDate,
+async function incrementDailyWchrStats({
+  flightDate,
   airline,
-  wchType,
   employeeLogin,
   wheelchairNumber,
 }) {
-  const dateKey = toStatsDateKey(submittedAtDate);
-  const statsRef = doc(db, "wch_stats_daily", dateKey);
+  const dateKey = statsDateKey(flightDate);
+  if (!dateKey) return;
 
-  const hourKey = String(submittedAtDate.getHours()).padStart(2, "0");
-  const airlineKey = sanitizeAirlineKey(airline);
-  const wchTypeKey = sanitizeStatsKey(safeUpper(wchType), "UNKNOWN");
-  const employeeKey = sanitizeStatsKey(
-    String(employeeLogin || "").trim().toLowerCase(),
-    "unknown"
-  );
-  const wheelchairKey = sanitizeWheelchairKey(wheelchairNumber);
+  const safeAirline = safeUpper(airline) || "UNKNOWN";
+  const safeLogin = normalizeLoginKey(employeeLogin || "unknown");
+  const safeChair = cleanWheelchairNumber(wheelchairNumber);
+  const currentHour = new Date().getHours();
+
+  const statsRef = doc(db, "wch_stats_daily", dateKey);
 
   const payload = {
     date: dateKey,
-    updated_at: serverTimestamp(),
     total_reports: increment(1),
-    [`by_airline.${airlineKey}`]: increment(1),
-    [`by_wch_type.${wchTypeKey}`]: increment(1),
-    [`by_employee.${employeeKey}`]: increment(1),
-    [`by_hour.${hourKey}`]: increment(1),
+    [`by_airline.${safeAirline}`]: increment(1),
+    [`by_employee.${safeLogin}`]: increment(1),
+    [`by_hour.${currentHour}`]: increment(1),
+    updated_at: serverTimestamp(),
   };
 
-  if (wheelchairKey) {
-    payload[`by_wheelchair.${wheelchairKey}`] = increment(1);
-    payload[`wheelchair_by_airline.${airlineKey}.${wheelchairKey}`] = increment(1);
+  if (safeChair) {
+    payload[`wheelchair_by_airline.${safeAirline}.${safeChair}`] = increment(1);
   }
 
   await setDoc(statsRef, payload, { merge: true });
@@ -442,6 +429,8 @@ export default function WCHRScan() {
       setImageUrl(url);
 
       const scanResult = await callScanService(url);
+      console.log("WCHR scan result:", scanResult);
+
       const rawText = getRawScanText(scanResult);
 
       const normalized = {
@@ -498,16 +487,16 @@ export default function WCHRScan() {
 
       const finalPassengerName = safeText(parsed.passenger_name);
       const finalPnr = safeText(parsed.pnr).toUpperCase();
-      const finalWheelchairNumber = cleanWheelchairNumber(parsed.wheelchair_number);
+      const finalWheelchairNumber = cleanWheelchairNumber(
+        parsed.wheelchair_number
+      );
       const employeeLogin =
-        user.username || user.loginUsername || user.email || "";
-      const employeeName =
-        user.displayName || user.fullName || user.username || "";
+        user.username || user.loginUsername || user.email || "unknown";
 
       const docRef = await addDoc(collection(db, "wch_reports"), {
         report_id: "",
         employee_id: user.id || "",
-        employee_name: employeeName,
+        employee_name: user.displayName || user.fullName || user.username || "",
         employee_login: employeeLogin,
         employee_role: user.role || "",
         submitted_at: serverTimestamp(),
@@ -529,18 +518,17 @@ export default function WCHRScan() {
         raw_text: parsed.raw_text || "",
       });
 
+      await incrementDailyWchrStats({
+        flightDate: flightDateObj,
+        airline: parsed.airline,
+        employeeLogin,
+        wheelchairNumber: finalWheelchairNumber,
+      });
+
       const short = docRef.id.slice(-6).toUpperCase();
       const report_id = `WCHR-${yyyymmdd()}-${short}`;
 
       await updateDoc(doc(db, "wch_reports", docRef.id), { report_id });
-
-      await updateDailyWchrStats({
-        submittedAtDate: new Date(),
-        airline: parsed.airline,
-        wchType,
-        employeeLogin,
-        wheelchairNumber: finalWheelchairNumber,
-      });
 
       navigate("/wchr/my-reports");
     } catch (e) {
@@ -627,7 +615,10 @@ export default function WCHRScan() {
             </p>
           </div>
 
-          <ActionButton onClick={() => navigate("/dashboard")} variant="secondary">
+          <ActionButton
+            onClick={() => navigate("/dashboard")}
+            variant="secondary"
+          >
             Back
           </ActionButton>
         </div>
@@ -697,7 +688,9 @@ export default function WCHRScan() {
             <ActionButton
               onClick={handleScan}
               variant="primary"
-              disabled={!canScan || step === "scanning" || step === "submitting"}
+              disabled={
+                !canScan || step === "scanning" || step === "submitting"
+              }
             >
               {step === "scanning" ? "Scanning..." : "Scan & Preview"}
             </ActionButton>
@@ -777,7 +770,9 @@ export default function WCHRScan() {
             <EditInput
               label="WCHR Number"
               value={parsed.wheelchair_number}
-              onChange={(value) => handleParsedChange("wheelchair_number", value)}
+              onChange={(value) =>
+                handleParsedChange("wheelchair_number", value)
+              }
               placeholder="EAR23 or 23"
             />
           </div>
