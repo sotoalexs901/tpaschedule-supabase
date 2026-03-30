@@ -9,6 +9,12 @@ function toDateSafe(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function toStatsDateSafe(value) {
+  if (!value) return null;
+  const d = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function formatDate(value) {
   const d = toDateSafe(value);
   if (!d) return "—";
@@ -22,6 +28,13 @@ function normalizeRole(role) {
   if (value === "supervisor") return "Supervisor";
   if (value === "agent") return "Agent";
   return value || "—";
+}
+
+function normalizeLoginKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[./#[\]$]/g, "_");
 }
 
 function startOfToday() {
@@ -206,6 +219,156 @@ function buildTopWheelchairUsage(reports) {
   return result.sort((a, b) => b.count - a.count || a.airline.localeCompare(b.airline));
 }
 
+function aggregateStatsObject(stats, fieldName) {
+  const totals = {};
+
+  for (const item of stats) {
+    const source = item[fieldName] || {};
+    Object.entries(source).forEach(([key, value]) => {
+      totals[key] = (totals[key] || 0) + Number(value || 0);
+    });
+  }
+
+  return totals;
+}
+
+function buildStatsCountRows(stats, fieldName, labelMap = {}) {
+  const totals = aggregateStatsObject(stats, fieldName);
+
+  return Object.entries(totals)
+    .map(([key, count]) => ({
+      label: labelMap[key] || key,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function buildStatsDailyCounts(stats) {
+  return [...stats]
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+    .map((item) => {
+      const d = toStatsDateSafe(item.date);
+      return {
+        label:
+          d?.toLocaleDateString(undefined, {
+            month: "2-digit",
+            day: "2-digit",
+          }) || item.date,
+        count: Number(item.total_reports || 0),
+      };
+    });
+}
+
+function buildStatsHourlyCounts(stats) {
+  const hours = Array.from({ length: 24 }, (_, i) => ({
+    label: `${String(i).padStart(2, "0")}:00`,
+    count: 0,
+  }));
+
+  for (const item of stats) {
+    const source = item.by_hour || {};
+    for (const [hourKey, count] of Object.entries(source)) {
+      const idx = Number(hourKey);
+      if (!Number.isNaN(idx) && hours[idx]) {
+        hours[idx].count += Number(count || 0);
+      }
+    }
+  }
+
+  return hours;
+}
+
+function buildStatsWheelchairUsage(stats) {
+  const merged = {};
+
+  for (const item of stats) {
+    const byAirline = item.wheelchair_by_airline || {};
+    Object.entries(byAirline).forEach(([airline, chairs]) => {
+      if (!merged[airline]) merged[airline] = {};
+      Object.entries(chairs || {}).forEach(([chair, count]) => {
+        merged[airline][chair] =
+          (merged[airline][chair] || 0) + Number(count || 0);
+      });
+    });
+  }
+
+  const result = [];
+
+  Object.entries(merged).forEach(([airline, chairs]) => {
+    let topChair = "";
+    let max = 0;
+
+    Object.entries(chairs).forEach(([chair, count]) => {
+      if (Number(count || 0) > max) {
+        max = Number(count || 0);
+        topChair = chair;
+      }
+    });
+
+    if (topChair) {
+      result.push({
+        airline,
+        chair: topChair,
+        count: max,
+      });
+    }
+  });
+
+  return result.sort((a, b) => b.count - a.count || a.airline.localeCompare(b.airline));
+}
+
+function buildStatsProductivityTable(stats, mergedUsers) {
+  const totals = aggregateStatsObject(stats, "by_employee");
+
+  return Object.entries(totals)
+    .map(([loginKey, total]) => {
+      const matchedUser =
+        mergedUsers.find(
+          (u) => normalizeLoginKey(u.username) === normalizeLoginKey(loginKey)
+        ) || null;
+
+      return {
+        login: matchedUser?.username || loginKey,
+        role: matchedUser?.role || "",
+        online: Boolean(matchedUser?.online),
+        today: 0,
+        week: 0,
+        month: 0,
+        total: Number(total || 0),
+      };
+    })
+    .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
+}
+
+function buildStatsPeriodProductivity(stats, mergedUsers, period) {
+  const start =
+    period === "today"
+      ? startOfToday()
+      : period === "week"
+      ? startOfWeek()
+      : startOfMonth();
+
+  const filtered = stats.filter((item) => {
+    const d = toStatsDateSafe(item.date);
+    return d && d >= start;
+  });
+
+  const totals = aggregateStatsObject(filtered, "by_employee");
+  const result = {};
+
+  Object.entries(totals).forEach(([loginKey, count]) => {
+    const matchedUser =
+      mergedUsers.find(
+        (u) => normalizeLoginKey(u.username) === normalizeLoginKey(loginKey)
+      ) || null;
+
+    const label = matchedUser?.username || loginKey;
+    result[label] = Number(count || 0);
+  });
+
+  return result;
+}
+
 function downloadCSV(filename, rows) {
   const csv = rows
     .map((row) =>
@@ -235,6 +398,7 @@ export default function AdminActivityDashboard() {
   const [users, setUsers] = useState([]);
   const [presence, setPresence] = useState([]);
   const [reports, setReports] = useState([]);
+  const [dailyStats, setDailyStats] = useState([]);
 
   const [range, setRange] = useState("week");
   const [selectedLogin, setSelectedLogin] = useState("all");
@@ -265,10 +429,19 @@ export default function AdminActivityDashboard() {
       (err) => console.error("Error loading WCHR reports:", err)
     );
 
+    const unsubDailyStats = onSnapshot(
+      collection(db, "wch_stats_daily"),
+      (snap) => {
+        setDailyStats(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (err) => console.error("Error loading daily WCHR stats:", err)
+    );
+
     return () => {
       unsubUsers();
       unsubPresence();
       unsubReports();
+      unsubDailyStats();
     };
   }, []);
 
@@ -295,8 +468,38 @@ export default function AdminActivityDashboard() {
       .sort((a, b) => a.username.localeCompare(b.username));
   }, [users, presence]);
 
+  const roleOptions = useMemo(() => {
+    const set = new Set(mergedUsers.map((u) => u.role).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [mergedUsers]);
+
+  const statsAvailable = dailyStats.length > 0;
+
+  const loginLabelMap = useMemo(() => {
+    const map = {};
+
+    mergedUsers.forEach((u) => {
+      map[normalizeLoginKey(u.username)] = u.username;
+    });
+
+    reports.forEach((r) => {
+      const login = String(
+        r.employee_login || r.employee_name || "Unknown"
+      ).trim();
+      if (login) {
+        map[normalizeLoginKey(login)] = login;
+      }
+    });
+
+    return map;
+  }, [mergedUsers, reports]);
+
   const loginOptions = useMemo(() => {
     const set = new Set();
+
+    mergedUsers.forEach((u) => {
+      if (u.username) set.add(u.username);
+    });
 
     reports.forEach((r) => {
       const login = String(
@@ -305,13 +508,14 @@ export default function AdminActivityDashboard() {
       if (login) set.add(login);
     });
 
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [reports]);
+    dailyStats.forEach((item) => {
+      Object.keys(item.by_employee || {}).forEach((key) => {
+        set.add(loginLabelMap[key] || key);
+      });
+    });
 
-  const roleOptions = useMemo(() => {
-    const set = new Set(mergedUsers.map((u) => u.role).filter(Boolean));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [mergedUsers]);
+  }, [mergedUsers, reports, dailyStats, loginLabelMap]);
 
   const filteredUsers = useMemo(() => {
     return mergedUsers.filter((u) => {
@@ -344,47 +548,139 @@ export default function AdminActivityDashboard() {
     });
   }, [reports, range, selectedLogin, selectedRole, mergedUsers]);
 
+  const filteredStats = useMemo(() => {
+    const rangeStart = getRangeStart(range);
+
+    return dailyStats.filter((item) => {
+      const d = toStatsDateSafe(item.date || item.id);
+      if (!d) return false;
+      if (rangeStart && d < rangeStart) return false;
+      return true;
+    });
+  }, [dailyStats, range]);
+
+  const roleLoginSet = useMemo(() => {
+    const set = new Set();
+
+    if (selectedRole === "all") return set;
+
+    mergedUsers.forEach((u) => {
+      if (u.role === selectedRole) {
+        set.add(normalizeLoginKey(u.username));
+      }
+    });
+
+    return set;
+  }, [mergedUsers, selectedRole]);
+
+  const filteredStatsForView = useMemo(() => {
+    return filteredStats.map((item) => {
+      const byEmployee = {};
+      Object.entries(item.by_employee || {}).forEach(([loginKey, count]) => {
+        if (
+          selectedLogin !== "all" &&
+          normalizeLoginKey(selectedLogin) !== normalizeLoginKey(loginKey)
+        ) {
+          return;
+        }
+
+        if (selectedRole !== "all" && !roleLoginSet.has(normalizeLoginKey(loginKey))) {
+          return;
+        }
+
+        byEmployee[loginKey] = Number(count || 0);
+      });
+
+      const totalReports =
+        selectedLogin === "all" && selectedRole === "all"
+          ? Number(item.total_reports || 0)
+          : Object.values(byEmployee).reduce((sum, n) => sum + Number(n || 0), 0);
+
+      if (totalReports <= 0) return null;
+
+      return {
+        ...item,
+        total_reports: totalReports,
+        by_employee: byEmployee,
+      };
+    }).filter(Boolean);
+  }, [filteredStats, selectedLogin, selectedRole, roleLoginSet]);
+
   const totalUsers = filteredUsers.length;
   const onlineUsers = filteredUsers.filter((u) => u.online).length;
   const activeUsers = filteredUsers.filter((u) => u.lastSeen).length;
-  const totalWchr = filteredReports.length;
+  const totalWchr = statsAvailable
+    ? filteredStatsForView.reduce((sum, item) => sum + Number(item.total_reports || 0), 0)
+    : filteredReports.length;
 
-  const topWchrLogins = useMemo(
-    () => buildCountByLogin(filteredReports).slice(0, 10),
-    [filteredReports]
-  );
+  const topWchrLogins = useMemo(() => {
+    if (statsAvailable) {
+      return buildStatsCountRows(
+        filteredStatsForView,
+        "by_employee",
+        loginLabelMap
+      ).slice(0, 10);
+    }
+    return buildCountByLogin(filteredReports).slice(0, 10);
+  }, [statsAvailable, filteredStatsForView, loginLabelMap, filteredReports]);
 
-  const topAirlines = useMemo(
-    () => buildCountByAirline(filteredReports).slice(0, 10),
-    [filteredReports]
-  );
+  const topAirlines = useMemo(() => {
+    if (statsAvailable) {
+      return buildStatsCountRows(filteredStatsForView, "by_airline").slice(0, 10);
+    }
+    return buildCountByAirline(filteredReports).slice(0, 10);
+  }, [statsAvailable, filteredStatsForView, filteredReports]);
 
   const dailyWchr = useMemo(() => {
+    if (statsAvailable) {
+      return buildStatsDailyCounts(filteredStatsForView);
+    }
     if (range === "today") return buildDailyCounts(filteredReports, 1);
     if (range === "week") return buildDailyCounts(filteredReports, 7);
     if (range === "month") return buildDailyCounts(filteredReports, 30);
     return buildDailyCounts(filteredReports, 14);
-  }, [filteredReports, range]);
+  }, [statsAvailable, filteredStatsForView, filteredReports, range]);
 
-  const hourlyWchr = useMemo(() => buildHourlyCounts(filteredReports), [filteredReports]);
+  const hourlyWchr = useMemo(() => {
+    if (statsAvailable) {
+      return buildStatsHourlyCounts(filteredStatsForView);
+    }
+    return buildHourlyCounts(filteredReports);
+  }, [statsAvailable, filteredStatsForView, filteredReports]);
 
   const weeklyWheelchairUsage = useMemo(() => {
+    if (statsAvailable) {
+      const weeklyStats = dailyStats.filter((item) => {
+        const d = toStatsDateSafe(item.date || item.id);
+        return d && d >= startOfWeek();
+      });
+      return buildStatsWheelchairUsage(weeklyStats).slice(0, 10);
+    }
+
     return buildTopWheelchairUsage(
       reports.filter((r) => {
         const d = toDateSafe(r.submitted_at);
         return d && d >= startOfWeek();
       })
     ).slice(0, 10);
-  }, [reports]);
+  }, [statsAvailable, dailyStats, reports]);
 
   const monthlyWheelchairUsage = useMemo(() => {
+    if (statsAvailable) {
+      const monthlyStats = dailyStats.filter((item) => {
+        const d = toStatsDateSafe(item.date || item.id);
+        return d && d >= startOfMonth();
+      });
+      return buildStatsWheelchairUsage(monthlyStats).slice(0, 10);
+    }
+
     return buildTopWheelchairUsage(
       reports.filter((r) => {
         const d = toDateSafe(r.submitted_at);
         return d && d >= startOfMonth();
       })
     ).slice(0, 10);
-  }, [reports]);
+  }, [statsAvailable, dailyStats, reports]);
 
   const recentUsers = useMemo(() => {
     return [...filteredUsers]
@@ -398,12 +694,40 @@ export default function AdminActivityDashboard() {
   }, [filteredUsers]);
 
   const productivityRows = useMemo(() => {
+    if (statsAvailable) {
+      const base = buildStatsProductivityTable(filteredStatsForView, mergedUsers);
+      const todayMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "today");
+      const weekMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "week");
+      const monthMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "month");
+
+      return base
+        .map((row) => ({
+          ...row,
+          today: todayMap[row.login] || 0,
+          week: weekMap[row.login] || 0,
+          month: monthMap[row.login] || 0,
+        }))
+        .filter((row) => {
+          if (selectedRole !== "all" && row.role !== selectedRole) return false;
+          if (selectedLogin !== "all" && row.login !== selectedLogin) return false;
+          return true;
+        });
+    }
+
     return buildProductivityTable(filteredReports, mergedUsers).filter((row) => {
       if (selectedRole !== "all" && row.role !== selectedRole) return false;
       if (selectedLogin !== "all" && row.login !== selectedLogin) return false;
       return true;
     });
-  }, [filteredReports, mergedUsers, selectedRole, selectedLogin]);
+  }, [
+    statsAvailable,
+    filteredStatsForView,
+    dailyStats,
+    mergedUsers,
+    selectedRole,
+    selectedLogin,
+    filteredReports,
+  ]);
 
   const handleExportCsv = () => {
     const rows = [
@@ -411,6 +735,7 @@ export default function AdminActivityDashboard() {
       ["Range", safeRangeLabel(range)],
       ["Login Filter", selectedLogin],
       ["Role Filter", selectedRole],
+      ["Stats Source", statsAvailable ? "wch_stats_daily" : "wch_reports"],
       [],
       ["SUMMARY"],
       ["Filtered Users", totalUsers],
