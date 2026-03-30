@@ -61,27 +61,7 @@ function safeUpper(v) {
 }
 
 function cleanPnr(value) {
-  const v = safeUpper(value).replace(/[^A-Z0-9]/g, "");
-  if (!v) return "";
-
-  const blocked = [
-    "BOARDING",
-    "PASS",
-    "SEAT",
-    "GATE",
-    "GROUP",
-    "ZONE",
-    "FLIGHT",
-    "CABIN",
-    "PRIORITY",
-    "AVIANCA",
-    "OPERADO",
-  ];
-
-  if (blocked.includes(v)) return "";
-  if (v.length < 5 || v.length > 8) return "";
-
-  return v;
+  return safeUpper(value).replace(/[^A-Z0-9]/g, "");
 }
 
 function normalizePassengerName(value) {
@@ -348,12 +328,7 @@ export default function WCHRScan() {
   const handleParsedChange = (field, value) => {
     setParsed((prev) => ({
       ...prev,
-      [field]:
-        field === "pnr"
-          ? cleanPnr(value)
-          : field === "passenger_name"
-          ? value
-          : value,
+      [field]: value,
     }));
   };
 
@@ -414,9 +389,7 @@ export default function WCHRScan() {
           scanResult?.flight_number || scanResult?.flight || ""
         ),
         flight_date: safeText(scanResult?.flight_date || scanResult?.date || ""),
-        destination: safeUpper(
-          scanResult?.destination || scanResult?.to || ""
-        ),
+        destination: safeUpper(scanResult?.destination || scanResult?.to || ""),
         seat: safeUpper(scanResult?.seat || ""),
         gate: safeUpper(scanResult?.gate || ""),
         pnr: guessPnr(scanResult, rawText),
@@ -460,23 +433,26 @@ export default function WCHRScan() {
       const closed = await isFlightClosed(flight_key);
       const status = closed ? "LATE" : "NEW";
 
+      const finalPassengerName = safeText(parsed.passenger_name);
+      const finalPnr = safeText(parsed.pnr).toUpperCase();
+
       const docRef = await addDoc(collection(db, "wch_reports"), {
         report_id: "",
         employee_id: user.id || "",
-        employee_name: user.username || "",
+        employee_name: user.displayName || user.fullName || user.username || "",
         employee_login:
           user.username || user.loginUsername || user.email || "",
         employee_role: user.role || "",
         submitted_at: serverTimestamp(),
 
-        passenger_name: normalizePassengerName(parsed.passenger_name),
+        passenger_name: finalPassengerName,
         airline: safeUpper(parsed.airline),
         flight_number: safeUpper(parsed.flight_number),
         flight_date: flightDateObj,
         destination: safeUpper(parsed.destination),
         seat: safeUpper(parsed.seat),
         gate: safeUpper(parsed.gate),
-        pnr: cleanPnr(parsed.pnr),
+        pnr: finalPnr,
 
         wch_type: wchType,
         status,
@@ -501,7 +477,9 @@ export default function WCHRScan() {
   if (!user) {
     return (
       <PageCard style={{ padding: 22, maxWidth: 900, margin: "0 auto" }}>
-        <p style={{ margin: 0, color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+        <p
+          style={{ margin: 0, color: "#64748b", fontSize: 14, fontWeight: 600 }}
+        >
           You must be logged in to scan and submit a WCHR report.
         </p>
       </PageCard>
@@ -538,14 +516,38 @@ export default function WCHRScan() {
           }}
         >
           <div>
-            <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.78)", fontWeight: 700 }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
               TPA OPS · WCHR
             </p>
-            <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800 }}>
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+              }}
+            >
               WCHR Scan
             </h1>
-            <p style={{ margin: 0, maxWidth: 760, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
-              Scan a boarding pass and keep only the required fields for the WCHR report.
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Scan a boarding pass and keep only the required fields for the WCHR
+              report.
             </p>
           </div>
 
@@ -715,7 +717,9 @@ export default function WCHRScan() {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
+          <div
+            style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}
+          >
             <ActionButton
               onClick={() => {
                 setParsed(null);
