@@ -41,6 +41,16 @@ function getInitials(name) {
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
+function getStoredBoolean(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+
 export default function AppLayout() {
   const { user, setUser } = useUser();
   const navigate = useNavigate();
@@ -50,6 +60,10 @@ export default function AppLayout() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
+
+  const [headerCollapsed, setHeaderCollapsed] = useState(() =>
+    getStoredBoolean("tpa_header_collapsed", false)
+  );
 
   const [openSections, setOpenSections] = useState({
     General: true,
@@ -81,6 +95,14 @@ export default function AppLayout() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("tpa_header_collapsed", String(headerCollapsed));
+    } catch {
+      // ignore
+    }
+  }, [headerCollapsed]);
 
   useEffect(() => {
     const qTimeoff = query(
@@ -282,11 +304,31 @@ export default function AppLayout() {
     user?.role,
   ]);
 
+  const allSectionsOpen = navSections.every(
+    (section) => openSections[section.title]
+  );
+
   const toggleSection = (title) => {
     setOpenSections((prev) => ({
       ...prev,
       [title]: !prev[title],
     }));
+  };
+
+  const setAllSections = (isOpen) => {
+    const next = {};
+    navSections.forEach((section) => {
+      next[section.title] = isOpen;
+    });
+    setOpenSections((prev) => ({
+      ...prev,
+      ...next,
+    }));
+  };
+
+  const toggleHeaderCollapsed = () => {
+    setHeaderCollapsed((prev) => !prev);
+    setMenuOpen(false);
   };
 
   return (
@@ -302,8 +344,9 @@ export default function AppLayout() {
           position: "sticky",
           top: 0,
           zIndex: 50,
-          padding: "14px 16px 0",
+          padding: headerCollapsed ? "8px 10px 0" : isMobile ? "10px 10px 0" : "14px 16px 0",
           backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
         }}
       >
         <div
@@ -311,8 +354,9 @@ export default function AppLayout() {
             background: "rgba(255,255,255,0.84)",
             border: "1px solid rgba(255,255,255,0.96)",
             boxShadow: "0 16px 40px rgba(15,23,42,0.08)",
-            borderRadius: 30,
-            padding: 16,
+            borderRadius: headerCollapsed ? 20 : 30,
+            padding: headerCollapsed ? (isMobile ? 10 : 12) : 16,
+            transition: "all 0.22s ease",
           }}
         >
           <div
@@ -324,19 +368,27 @@ export default function AppLayout() {
               flexWrap: "wrap",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: headerCollapsed ? 10 : 14,
+                minWidth: 0,
+                flex: "1 1 auto",
+              }}
+            >
               <div
                 style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: 18,
+                  width: headerCollapsed ? 42 : 50,
+                  height: headerCollapsed ? 42 : 50,
+                  borderRadius: headerCollapsed ? 14 : 18,
                   background:
                     "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   color: "#fff",
-                  fontSize: 22,
+                  fontSize: headerCollapsed ? 18 : 22,
                   boxShadow: "0 10px 24px rgba(23,105,170,0.25)",
                   flexShrink: 0,
                   overflow: "hidden",
@@ -357,60 +409,77 @@ export default function AppLayout() {
                 )}
               </div>
 
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <p
                   style={{
                     margin: 0,
-                    fontSize: 12,
+                    fontSize: headerCollapsed ? 11 : 12,
                     fontWeight: 800,
                     letterSpacing: "0.14em",
                     textTransform: "uppercase",
                     color: "#1769aa",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
                   }}
                 >
                   TPA OPS SYSTEM
                 </p>
                 <p
                   style={{
-                    margin: "4px 0 0",
-                    fontSize: 14,
+                    margin: headerCollapsed ? "2px 0 0" : "4px 0 0",
+                    fontSize: headerCollapsed ? 13 : 14,
                     color: "#0f172a",
                     fontWeight: 800,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
                   }}
                 >
                   {visibleName}
                 </p>
-                <p
-                  style={{
-                    margin: "2px 0 0",
-                    fontSize: 12,
-                    color: "#64748b",
-                    fontWeight: 600,
-                  }}
-                >
-                  {visiblePosition}
-                </p>
+                {!headerCollapsed && (
+                  <p
+                    style={{
+                      margin: "2px 0 0",
+                      fontSize: 12,
+                      color: "#64748b",
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {visiblePosition}
+                  </p>
+                )}
               </div>
             </div>
 
             {isMobile ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexShrink: 0,
+                }}
+              >
                 <button
-                  onClick={() => setMenuOpen((v) => !v)}
-                  style={{
-                    border: "none",
-                    background:
-                      "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
-                    color: "#fff",
-                    borderRadius: 14,
-                    padding: "11px 14px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
-                  }}
+                  onClick={toggleHeaderCollapsed}
+                  style={mobileActionButtonStyle("secondary")}
                 >
-                  {menuOpen ? "Close" : "Menu"}
+                  {headerCollapsed ? "Show" : "Hide"}
                 </button>
+
+                {!headerCollapsed && (
+                  <button
+                    onClick={() => setMenuOpen((v) => !v)}
+                    style={mobileActionButtonStyle("primary")}
+                  >
+                    {menuOpen ? "Close" : "Menu"}
+                  </button>
+                )}
               </div>
             ) : (
               <div
@@ -422,8 +491,29 @@ export default function AppLayout() {
                   justifyContent: "flex-end",
                 }}
               >
-                <StatusPill label="Unread Messages" value={unreadMessages} />
-                <StatusPill label="Pending Day Off" value={pendingTimeOff} />
+                {!headerCollapsed && (
+                  <>
+                    <StatusPill label="Unread Messages" value={unreadMessages} />
+                    <StatusPill label="Pending Day Off" value={pendingTimeOff} />
+                  </>
+                )}
+
+                <button
+                  onClick={toggleHeaderCollapsed}
+                  style={{
+                    border: "1px solid #cfe7fb",
+                    background: "#ffffff",
+                    color: "#1769aa",
+                    borderRadius: 14,
+                    padding: headerCollapsed ? "10px 12px" : "11px 14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {headerCollapsed ? "Show Menu" : "Hide Menu"}
+                </button>
+
                 <button
                   onClick={logout}
                   style={{
@@ -432,10 +522,11 @@ export default function AppLayout() {
                       "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
                     color: "#fff",
                     borderRadius: 14,
-                    padding: "11px 16px",
+                    padding: headerCollapsed ? "10px 14px" : "11px 16px",
                     fontWeight: 700,
                     cursor: "pointer",
                     boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   Logout
@@ -444,7 +535,7 @@ export default function AppLayout() {
             )}
           </div>
 
-          {!isMobile && (
+          {!isMobile && !headerCollapsed && (
             <div
               style={{
                 marginTop: 16,
@@ -452,6 +543,22 @@ export default function AppLayout() {
                 gap: 12,
               }}
             >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  onClick={() => setAllSections(!allSectionsOpen)}
+                  style={smallUtilityButtonStyle}
+                >
+                  {allSectionsOpen ? "Collapse All" : "Expand All"}
+                </button>
+              </div>
+
               {navSections.map((section) => (
                 <div
                   key={section.title}
@@ -503,10 +610,10 @@ export default function AppLayout() {
             </div>
           )}
 
-          {isMobile && menuOpen && (
+          {isMobile && menuOpen && !headerCollapsed && (
             <div
               style={{
-                marginTop: 16,
+                marginTop: 14,
                 display: "grid",
                 gap: 12,
                 paddingTop: 12,
@@ -522,6 +629,22 @@ export default function AppLayout() {
               >
                 <StatusPill label="Unread Messages" value={unreadMessages} />
                 <StatusPill label="Pending Day Off" value={pendingTimeOff} />
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  onClick={() => setAllSections(!allSectionsOpen)}
+                  style={smallUtilityButtonStyle}
+                >
+                  {allSectionsOpen ? "Collapse All" : "Expand All"}
+                </button>
               </div>
 
               {navSections.map((section) => (
@@ -588,11 +711,39 @@ export default function AppLayout() {
 
       <main
         style={{
-          padding: "16px",
-          maxWidth: 1600,
+          padding: isMobile ? "12px 10px 18px" : headerCollapsed ? "12px 12px 24px" : "16px",
+          maxWidth: headerCollapsed ? "100%" : 1600,
+          width: "100%",
           margin: "0 auto",
+          transition: "all 0.22s ease",
         }}
       >
+        {headerCollapsed && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginBottom: 10,
+            }}
+          >
+            <button
+              onClick={toggleHeaderCollapsed}
+              style={{
+                border: "1px solid #cfe7fb",
+                background: "rgba(255,255,255,0.92)",
+                color: "#1769aa",
+                borderRadius: 14,
+                padding: "10px 14px",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxShadow: "0 10px 24px rgba(23,105,170,0.10)",
+              }}
+            >
+              Show Top Menu
+            </button>
+          </div>
+        )}
+
         <Outlet />
       </main>
     </div>
@@ -648,7 +799,7 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
         padding: mobile ? "12px 14px" : "10px 14px",
         borderRadius: 14,
         textDecoration: "none",
-        fontSize: 14,
+        fontSize: mobile ? 15 : 14,
         fontWeight: isActive ? 800 : 600,
         color: isActive ? "#0f4c81" : "#334155",
         background: isActive
@@ -657,8 +808,9 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
         border: isActive ? "1px solid #bfe0fb" : "1px solid #e2e8f0",
         boxShadow: isActive ? "0 10px 22px rgba(23,105,170,0.10)" : "none",
         minWidth: mobile ? "auto" : "fit-content",
-        whiteSpace: "nowrap",
+        whiteSpace: mobile ? "normal" : "nowrap",
         flexShrink: 0,
+        minHeight: mobile ? 48 : "auto",
       })}
     >
       <span
@@ -666,6 +818,7 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
           display: "flex",
           alignItems: "center",
           gap: 10,
+          minWidth: 0,
         }}
       >
         <span style={{ fontSize: 15 }}>{icon}</span>
@@ -686,4 +839,40 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
       )}
     </NavLink>
   );
+}
+
+const smallUtilityButtonStyle = {
+  border: "1px solid #cfe7fb",
+  background: "#ffffff",
+  color: "#1769aa",
+  borderRadius: 12,
+  padding: "9px 12px",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+function mobileActionButtonStyle(kind) {
+  if (kind === "primary") {
+    return {
+      border: "none",
+      background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+      color: "#fff",
+      borderRadius: 14,
+      padding: "11px 14px",
+      fontWeight: 700,
+      cursor: "pointer",
+      boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
+    };
+  }
+
+  return {
+    border: "1px solid #cfe7fb",
+    background: "#ffffff",
+    color: "#1769aa",
+    borderRadius: 14,
+    padding: "11px 12px",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
 }
