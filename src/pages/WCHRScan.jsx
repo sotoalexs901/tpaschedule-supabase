@@ -200,32 +200,42 @@ function normalizeLoginKey(value) {
 }
 
 async function incrementDailyWchrStats({
-  flightDate,
   airline,
   employeeLogin,
   wheelchairNumber,
 }) {
-  const dateKey = statsDateKey(flightDate);
+  const now = new Date();
+  const dateKey = statsDateKey(now);
   if (!dateKey) return;
 
   const safeAirline = safeUpper(airline) || "UNKNOWN";
   const safeLogin = normalizeLoginKey(employeeLogin || "unknown");
   const safeChair = cleanWheelchairNumber(wheelchairNumber);
-  const currentHour = new Date().getHours();
+  const currentHour = now.getHours();
 
   const statsRef = doc(db, "wch_stats_daily", dateKey);
 
   const payload = {
     date: dateKey,
     total_reports: increment(1),
-    [`by_airline.${safeAirline}`]: increment(1),
-    [`by_employee.${safeLogin}`]: increment(1),
-    [`by_hour.${currentHour}`]: increment(1),
+    by_airline: {
+      [safeAirline]: increment(1),
+    },
+    by_employee: {
+      [safeLogin]: increment(1),
+    },
+    by_hour: {
+      [currentHour]: increment(1),
+    },
     updated_at: serverTimestamp(),
   };
 
   if (safeChair) {
-    payload[`wheelchair_by_airline.${safeAirline}.${safeChair}`] = increment(1);
+    payload.wheelchair_by_airline = {
+      [safeAirline]: {
+        [safeChair]: increment(1),
+      },
+    };
   }
 
   await setDoc(statsRef, payload, { merge: true });
@@ -519,7 +529,6 @@ export default function WCHRScan() {
       });
 
       await incrementDailyWchrStats({
-        flightDate: flightDateObj,
         airline: parsed.airline,
         employeeLogin,
         wheelchairNumber: finalWheelchairNumber,
