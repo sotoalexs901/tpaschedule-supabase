@@ -365,7 +365,7 @@ export default function WCHRFlights() {
   const [allDayReports, setAllDayReports] = useState([]);
   const [deletingId, setDeletingId] = useState("");
 
-  const canClose = useMemo(() => {
+  const canManageReports = useMemo(() => {
     const role = (user?.role || "").toLowerCase();
     return (
       role.includes("station") ||
@@ -434,7 +434,7 @@ export default function WCHRFlights() {
     return () => {
       mounted = false;
     };
-  }, [selectedDate, selectedFlightKey]);
+  }, [selectedDate]);
 
   useEffect(() => {
     let mounted = true;
@@ -493,7 +493,7 @@ export default function WCHRFlights() {
     setError("");
     setMessage("");
 
-    if (!canClose) {
+    if (!canManageReports) {
       setError("You do not have permission to close flights.");
       return;
     }
@@ -556,6 +556,12 @@ export default function WCHRFlights() {
   };
 
   const handleDeleteReport = async (report) => {
+    if (!canManageReports) {
+      setError("You do not have permission to delete reports.");
+      setMessage("");
+      return;
+    }
+
     const ok = window.confirm(
       `Delete report ${report.report_id || report.id}?\n\nThis action cannot be undone.`
     );
@@ -569,12 +575,12 @@ export default function WCHRFlights() {
       await deleteDoc(doc(db, "wch_reports", report.id));
 
       const updatedAllDayReports = allDayReports.filter((r) => r.id !== report.id);
-      setAllDayReports(updatedAllDayReports);
-
       const updatedReports = reports.filter((r) => r.id !== report.id);
+
+      setAllDayReports(updatedAllDayReports);
       setReports(updatedReports);
 
-      const updatedFlights = buildFlightsFromRows(updatedAllDayReports).map((f) => {
+      let updatedFlights = buildFlightsFromRows(updatedAllDayReports).map((f) => {
         const oldMatch = flights.find((old) => old.flight_key === f.flight_key);
         return {
           ...f,
@@ -1042,7 +1048,7 @@ export default function WCHRFlights() {
                           <ActionButton
                             onClick={() => handleCloseFlight(f)}
                             variant="primary"
-                            disabled={!canClose || f.closed}
+                            disabled={!canManageReports || f.closed}
                             style={{ padding: "8px 12px", fontSize: 12 }}
                           >
                             Close Flight
@@ -1131,7 +1137,7 @@ export default function WCHRFlights() {
               <ActionButton
                 onClick={() => handleCloseFlight(selectedFlight)}
                 variant="success"
-                disabled={!canClose || selectedFlight.closed}
+                disabled={!canManageReports || selectedFlight.closed}
               >
                 Close Flight (Export)
               </ActionButton>
@@ -1261,7 +1267,7 @@ export default function WCHRFlights() {
                         <ActionButton
                           variant="danger"
                           onClick={() => handleDeleteReport(r)}
-                          disabled={deletingId === r.id}
+                          disabled={!canManageReports || deletingId === r.id}
                           style={{ padding: "8px 12px", fontSize: 12 }}
                         >
                           {deletingId === r.id ? "Deleting..." : "Delete"}
