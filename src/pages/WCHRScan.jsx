@@ -64,6 +64,10 @@ function cleanPnr(value) {
   return safeUpper(value).replace(/[^A-Z0-9]/g, "");
 }
 
+function cleanWheelchairNumber(value) {
+  return safeUpper(value).replace(/[^A-Z0-9-]/g, "");
+}
+
 function normalizePassengerName(value) {
   const clean = safeText(value);
   if (!clean) return "";
@@ -393,6 +397,7 @@ export default function WCHRScan() {
         seat: safeUpper(scanResult?.seat || ""),
         gate: safeUpper(scanResult?.gate || ""),
         pnr: guessPnr(scanResult, rawText),
+        wheelchair_number: safeText(scanResult?.wheelchair_number || ""),
         raw_text: rawText,
       };
 
@@ -435,6 +440,7 @@ export default function WCHRScan() {
 
       const finalPassengerName = safeText(parsed.passenger_name);
       const finalPnr = safeText(parsed.pnr).toUpperCase();
+      const finalWheelchairNumber = cleanWheelchairNumber(parsed.wheelchair_number);
 
       const docRef = await addDoc(collection(db, "wch_reports"), {
         report_id: "",
@@ -453,6 +459,7 @@ export default function WCHRScan() {
         seat: safeUpper(parsed.seat),
         gate: safeUpper(parsed.gate),
         pnr: finalPnr,
+        wheelchair_number: finalWheelchairNumber,
 
         wch_type: wchType,
         status,
@@ -697,6 +704,12 @@ export default function WCHRScan() {
               value={parsed.pnr}
               onChange={(value) => handleParsedChange("pnr", value)}
               placeholder="A7ILFB"
+            />
+            <EditInput
+              label="WCHR Number"
+              value={parsed.wheelchair_number}
+              onChange={(value) => handleParsedChange("wheelchair_number", value)}
+              placeholder="EAR23 or 23"
             />
           </div>
 
