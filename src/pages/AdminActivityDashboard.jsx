@@ -1,4 +1,3 @@
-// src/pages/AdminActivityDashboard.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
@@ -111,38 +110,13 @@ function getRangeDates(range) {
 }
 
 function normalizeWheelchairNumber(value) {
-  let raw = String(value || "").trim().toUpperCase();
+  const raw = String(value || "").trim();
   if (!raw) return "";
 
-  raw = raw.replace(/\s+/g, "");
-  raw = raw.replace(/^WCHR[-#:]*/i, "");
-  raw = raw.replace(/^WC[-#:]*/i, "");
-  raw = raw.replace(/^CHAIR[-#:]*/i, "");
-  raw = raw.replace(/^SILLA[-#:]*/i, "");
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
 
-  const onlyDigits = raw.match(/^\d+$/);
-  if (onlyDigits) {
-    return String(Number(raw));
-  }
-
-  const lettersAndDigits = raw.match(/^([A-Z]+)[- ]*0*(\d+)$/);
-  if (lettersAndDigits) {
-    return `${lettersAndDigits[1]}${lettersAndDigits[2]}`;
-  }
-
-  raw = raw.replace(/[^A-Z0-9]/g, "");
-
-  const digitsAfterCleanup = raw.match(/^\d+$/);
-  if (digitsAfterCleanup) {
-    return String(Number(raw));
-  }
-
-  const finalLettersAndDigits = raw.match(/^([A-Z]+)0*(\d+)$/);
-  if (finalLettersAndDigits) {
-    return `${finalLettersAndDigits[1]}${finalLettersAndDigits[2]}`;
-  }
-
-  return raw;
+  return String(Number(digits));
 }
 
 function buildCountByLogin(reports) {
