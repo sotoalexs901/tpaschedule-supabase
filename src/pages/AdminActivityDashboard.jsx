@@ -51,7 +51,15 @@ function normalizeLoginKey(value) {
 
 function startOfToday() {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0,
+    0,
+    0,
+    0
+  );
 }
 
 function startOfWeek() {
@@ -71,7 +79,15 @@ function startOfMonth() {
 
 function endOfDay(dateLike) {
   const d = toDateSafe(dateLike) || new Date(dateLike);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+  return new Date(
+    d.getFullYear(),
+    d.getMonth(),
+    d.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
 }
 
 function getPresetRange(range) {
@@ -91,9 +107,9 @@ function buildCountByLogin(reports) {
   const counts = {};
 
   for (const r of reports) {
-    const login = String(
-      r.employee_login || r.employee_name || "Unknown"
-    ).trim() || "Unknown";
+    const login =
+      String(r.employee_login || r.employee_name || "Unknown").trim() ||
+      "Unknown";
 
     counts[login] = (counts[login] || 0) + 1;
   }
@@ -124,9 +140,9 @@ function buildDailyCounts(reports) {
     const submitted = toDateSafe(r.submitted_at);
     if (!submitted) continue;
 
-    const key = `${submitted.getFullYear()}-${pad2(submitted.getMonth() + 1)}-${pad2(
-      submitted.getDate()
-    )}`;
+    const key = `${submitted.getFullYear()}-${pad2(
+      submitted.getMonth() + 1
+    )}-${pad2(submitted.getDate())}`;
 
     if (!counts[key]) {
       counts[key] = {
@@ -166,9 +182,9 @@ function buildProductivityTable(reports, users) {
   const byLogin = {};
 
   for (const r of reports || []) {
-    const login = String(
-      r.employee_login || r.employee_name || "Unknown"
-    ).trim() || "Unknown";
+    const login =
+      String(r.employee_login || r.employee_name || "Unknown").trim() ||
+      "Unknown";
 
     if (!byLogin[login]) {
       byLogin[login] = {
@@ -538,9 +554,8 @@ export default function AdminActivityDashboard() {
     });
 
     reports.forEach((r) => {
-      const login = String(
-        r.employee_login || r.employee_name || "Unknown"
-      ).trim();
+      const login =
+        String(r.employee_login || r.employee_name || "Unknown").trim();
       if (login) {
         map[normalizeLoginKey(login)] = login;
       }
@@ -557,9 +572,8 @@ export default function AdminActivityDashboard() {
     });
 
     reports.forEach((r) => {
-      const login = String(
-        r.employee_login || r.employee_name || "Unknown"
-      ).trim();
+      const login =
+        String(r.employee_login || r.employee_name || "Unknown").trim();
       if (login) set.add(login);
     });
 
@@ -590,9 +604,8 @@ export default function AdminActivityDashboard() {
       if (activeStartDate && submitted < activeStartDate) return false;
       if (activeEndDate && submitted > activeEndDate) return false;
 
-      const login = String(
-        r.employee_login || r.employee_name || "Unknown"
-      ).trim();
+      const login =
+        String(r.employee_login || r.employee_name || "Unknown").trim();
 
       if (selectedLogin !== "all" && login !== selectedLogin) return false;
 
@@ -701,7 +714,10 @@ export default function AdminActivityDashboard() {
 
   const topAirlines = useMemo(() => {
     if (hasRenderableStats) {
-      return buildStatsCountRows(filteredStatsForView, "by_airline").slice(0, 10);
+      return buildStatsCountRows(
+        filteredStatsForView,
+        "by_airline"
+      ).slice(0, 10);
     }
     return buildCountByAirline(filteredReports).slice(0, 10);
   }, [hasRenderableStats, filteredStatsForView, filteredReports]);
@@ -736,10 +752,25 @@ export default function AdminActivityDashboard() {
 
   const productivityRows = useMemo(() => {
     if (hasRenderableStats) {
-      const base = buildStatsProductivityTable(filteredStatsForView, mergedUsers);
-      const todayMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "today");
-      const weekMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "week");
-      const monthMap = buildStatsPeriodProductivity(dailyStats, mergedUsers, "month");
+      const base = buildStatsProductivityTable(
+        filteredStatsForView,
+        mergedUsers
+      );
+      const todayMap = buildStatsPeriodProductivity(
+        dailyStats,
+        mergedUsers,
+        "today"
+      );
+      const weekMap = buildStatsPeriodProductivity(
+        dailyStats,
+        mergedUsers,
+        "week"
+      );
+      const monthMap = buildStatsPeriodProductivity(
+        dailyStats,
+        mergedUsers,
+        "month"
+      );
 
       return base
         .map((row) => ({
@@ -750,7 +781,8 @@ export default function AdminActivityDashboard() {
         }))
         .filter((row) => {
           if (selectedRole !== "all" && row.role !== selectedRole) return false;
-          if (selectedLogin !== "all" && row.login !== selectedLogin) return false;
+          if (selectedLogin !== "all" && row.login !== selectedLogin)
+            return false;
           return true;
         });
     }
@@ -851,7 +883,8 @@ export default function AdminActivityDashboard() {
             User Activity Dashboard
           </h1>
           <p style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
-            Monitor user access, presence, scan hours, airlines and WCHR productivity.
+            Monitor user access, presence, scan hours, airlines and WCHR
+            productivity.
           </p>
         </div>
 
@@ -952,14 +985,30 @@ export default function AdminActivityDashboard() {
             color: "#334155",
           }}
         >
-          <div>dailyStats docs: <b>{dailyStats.length}</b></div>
-          <div>filteredStatsForView: <b>{filteredStatsForView.length}</b></div>
-          <div>reports docs: <b>{reports.length}</b></div>
-          <div>filteredReports: <b>{filteredReports.length}</b></div>
-          <div>statsAvailable: <b>{String(statsAvailable)}</b></div>
-          <div>hasRenderableStats: <b>{String(hasRenderableStats)}</b></div>
-          <div>From: <b>{fromDate || "—"}</b></div>
-          <div>To: <b>{toDate || "—"}</b></div>
+          <div>
+            dailyStats docs: <b>{dailyStats.length}</b>
+          </div>
+          <div>
+            filteredStatsForView: <b>{filteredStatsForView.length}</b>
+          </div>
+          <div>
+            reports docs: <b>{reports.length}</b>
+          </div>
+          <div>
+            filteredReports: <b>{filteredReports.length}</b>
+          </div>
+          <div>
+            statsAvailable: <b>{String(statsAvailable)}</b>
+          </div>
+          <div>
+            hasRenderableStats: <b>{String(hasRenderableStats)}</b>
+          </div>
+          <div>
+            From: <b>{fromDate || "—"}</b>
+          </div>
+          <div>
+            To: <b>{toDate || "—"}</b>
+          </div>
         </div>
       </Panel>
 
@@ -984,11 +1033,17 @@ export default function AdminActivityDashboard() {
         }}
       >
         <Panel title="Top WCHR Logins">
-          <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
+          <BarChartList
+            rows={topWchrLogins}
+            emptyText="No WCHR activity for this filter."
+          />
         </Panel>
 
         <Panel title="Top Airlines">
-          <BarChartList rows={topAirlines} emptyText="No airline data for this filter." />
+          <BarChartList
+            rows={topAirlines}
+            emptyText="No airline data for this filter."
+          />
         </Panel>
       </div>
 
@@ -1036,10 +1091,19 @@ export default function AdminActivityDashboard() {
               </thead>
               <tbody>
                 {recentUsers.map((u, i) => (
-                  <tr key={u.id} style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}>
+                  <tr
+                    key={u.id}
+                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                  >
                     <td style={td}>
                       <div style={{ fontWeight: 700 }}>{u.username}</div>
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                          marginTop: 2,
+                        }}
+                      >
                         {u.employeeId || "No linked employee"}
                       </div>
                     </td>
@@ -1081,7 +1145,10 @@ export default function AdminActivityDashboard() {
               </thead>
               <tbody>
                 {productivityRows.map((row, i) => (
-                  <tr key={row.login} style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}>
+                  <tr
+                    key={row.login}
+                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                  >
                     <td style={td}>
                       <div style={{ fontWeight: 700 }}>{row.login}</div>
                     </td>
@@ -1123,10 +1190,19 @@ export default function AdminActivityDashboard() {
               </thead>
               <tbody>
                 {mergedUsers.map((u, i) => (
-                  <tr key={u.id} style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}>
+                  <tr
+                    key={u.id}
+                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                  >
                     <td style={td}>
                       <div style={{ fontWeight: 700 }}>{u.username}</div>
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                          marginTop: 2,
+                        }}
+                      >
                         {u.employeeId || "No linked employee"}
                       </div>
                     </td>
@@ -1271,7 +1347,8 @@ function BarChartList({ rows, emptyText }) {
                 width: `${(row.count / max) * 100}%`,
                 height: "100%",
                 borderRadius: 999,
-                background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                background:
+                  "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
               }}
             />
           </div>
@@ -1322,9 +1399,13 @@ function VerticalBars({ rows, compact = false }) {
             style={{
               width: "100%",
               maxWidth: compact ? 22 : 34,
-              height: `${Math.max((row.count / max) * 150, row.count > 0 ? 10 : 2)}px`,
+              height: `${Math.max(
+                (row.count / max) * 150,
+                row.count > 0 ? 10 : 2
+              )}px`,
               borderRadius: 10,
-              background: "linear-gradient(180deg, #5aa9e6 0%, #1769aa 100%)",
+              background:
+                "linear-gradient(180deg, #5aa9e6 0%, #1769aa 100%)",
             }}
           />
 
