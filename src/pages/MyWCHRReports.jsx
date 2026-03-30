@@ -10,10 +10,7 @@ import {
   limit,
   getDocs,
   updateDoc,
-  deleteDoc,
-  doc,
 } from "firebase/firestore";
-import jsPDF from "jspdf";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -100,12 +97,6 @@ function ActionButton({
       color: "#fff",
       border: "none",
       boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
-    },
-    danger: {
-      background: "#fff1f2",
-      color: "#b91c1c",
-      border: "1px solid #fecdd3",
-      boxShadow: "none",
     },
     warning: {
       background: "#fff7ed",
@@ -209,18 +200,6 @@ function groupReports(rows) {
   return grouped;
 }
 
-async function imageToDataUrl(url) {
-  const response = await fetch(url);
-  const blob = await response.blob();
-
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
 export default function MyWCHRReports() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -231,7 +210,6 @@ export default function MyWCHRReports() {
   const [message, setMessage] = useState("");
   const [editingRow, setEditingRow] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [deletingId, setDeletingId] = useState("");
 
   const employeeId = useMemo(() => user?.id || "", [user]);
 
@@ -283,27 +261,6 @@ export default function MyWCHRReports() {
 
   const groupedReports = useMemo(() => groupReports(rows), [rows]);
   const totalReports = rows.length;
-
-  const handleDelete = async (id) => {
-    const ok = window.confirm(
-      "Delete this WCHR report? This action cannot be undone."
-    );
-    if (!ok) return;
-
-    try {
-      setDeletingId(id);
-      await deleteDoc(doc(db, "wch_reports", id));
-      setRows((prev) => prev.filter((r) => r.id !== id));
-      setMessage("Report deleted successfully.");
-      setError("");
-    } catch (e) {
-      console.error(e);
-      setError("Error deleting report.");
-      setMessage("");
-    } finally {
-      setDeletingId("");
-    }
-  };
 
   const handleOpenEdit = (row) => {
     setEditingRow({
@@ -420,59 +377,6 @@ export default function MyWCHRReports() {
     printWindow.print();
   };
 
-  const handleExportPdf = async (row) => {
-    try {
-      const pdf = new jsPDF("portrait", "pt", "letter");
-      let y = 40;
-
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(18);
-      pdf.text("WCHR Report", 40, y);
-      y += 24;
-
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(11);
-
-      const lines = [
-        `Report ID: ${row.report_id || row.id}`,
-        `Status: ${row.status || "-"}`,
-        `Passenger: ${row.passenger_name || "-"}`,
-        `Flight: ${(row.airline || "-") + " " + (row.flight_number || "")}`,
-        `Date: ${formatMMDDYYYYFromFirestore(row.flight_date) || "-"}`,
-        `WCHR Type: ${row.wch_type || "-"}`,
-        `Origin: ${row.origin || "-"}`,
-        `Destination: ${row.destination || "-"}`,
-        `Seat: ${row.seat || "-"}`,
-        `Gate: ${row.gate || "-"}`,
-        `PNR: ${row.pnr || "-"}`,
-        `Operator: ${row.operator || "-"}`,
-        `Time at Gate: ${row.time_at_gate || "-"}`,
-        `Boarding Group: ${row.boarding_group || "-"}`,
-      ];
-
-      lines.forEach((line) => {
-        pdf.text(line, 40, y);
-        y += 16;
-      });
-
-      if (row.image_url) {
-        try {
-          const dataUrl = await imageToDataUrl(row.image_url);
-          y += 10;
-          pdf.addImage(dataUrl, "JPEG", 40, y, 240, 180);
-        } catch (imgErr) {
-          console.warn("Could not attach image to PDF:", imgErr);
-        }
-      }
-
-      pdf.save(`${row.report_id || row.id}.pdf`);
-    } catch (e) {
-      console.error(e);
-      setError("Error exporting PDF.");
-      setMessage("");
-    }
-  };
-
   return (
     <div
       style={{
@@ -551,7 +455,7 @@ export default function MyWCHRReports() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Review, edit, print, export and manage your boarding pass scan reports.
+              Review, edit and print your boarding pass scan reports.
             </p>
           </div>
 
@@ -820,25 +724,10 @@ export default function MyWCHRReports() {
                               </ActionButton>
 
                               <ActionButton
-                                variant="success"
-                                onClick={() => handleExportPdf(r)}
-                              >
-                                Export PDF
-                              </ActionButton>
-
-                              <ActionButton
                                 variant="warning"
                                 onClick={() => handlePrint(r)}
                               >
                                 Print
-                              </ActionButton>
-
-                              <ActionButton
-                                variant="danger"
-                                onClick={() => handleDelete(r.id)}
-                                disabled={deletingId === r.id}
-                              >
-                                {deletingId === r.id ? "Deleting..." : "Delete"}
                               </ActionButton>
                             </div>
                           </div>
