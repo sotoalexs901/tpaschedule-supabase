@@ -30,58 +30,252 @@ function getVisiblePosition(user) {
 function getInitials(name) {
   const clean = String(name || "").trim();
   if (!clean) return "U";
-
   const parts = clean.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
-
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
-function StatChip({ label, value }) {
+function parseBirthDate(value) {
+  if (!value) return null;
+
+  if (typeof value?.toDate === "function") {
+    const d = value.toDate();
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "string") {
+    const d = new Date(`${value}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function sameMonthAndDay(a, b) {
+  return (
+    a &&
+    b &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function formatBirthday(date, language = "en") {
+  if (!date) return "—";
+  return date.toLocaleDateString(language === "es" ? "es-US" : "en-US", {
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function daysUntilBirthday(date) {
+  if (!date) return null;
+
+  const today = new Date();
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  let next = new Date(current.getFullYear(), date.getMonth(), date.getDate());
+
+  if (next < current) {
+    next = new Date(current.getFullYear() + 1, date.getMonth(), date.getDate());
+  }
+
+  const diff = next.getTime() - current.getTime();
+  return Math.round(diff / (1000 * 60 * 60 * 24));
+}
+
+function useIsMobile(breakpoint = 900) {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < breakpoint);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
+function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.08)",
-        border: "1px solid rgba(255,255,255,0.14)",
-        borderRadius: 16,
-        padding: "10px 14px",
-        minWidth: 130,
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: isMobile ? 18 : 22,
+        padding: isMobile ? 16 : 18,
+        boxShadow: "0 16px 36px rgba(23,105,170,0.08)",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
-      <p
+      <div
         style={{
-          margin: 0,
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "rgba(255,255,255,0.72)",
+          position: "absolute",
+          inset: 0,
+          background: `linear-gradient(135deg, ${accent}16 0%, transparent 58%)`,
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          position: "relative",
         }}
       >
-        {label}
-      </p>
-      <p
-        style={{
-          margin: "5px 0 0",
-          fontSize: 18,
-          fontWeight: 800,
-          color: "#ffffff",
-        }}
-      >
-        {value}
-      </p>
+        <div style={{ minWidth: 0 }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#64748b",
+            }}
+          >
+            {title}
+          </p>
+          <h3
+            style={{
+              margin: "8px 0 4px",
+              fontSize: isMobile ? 24 : 28,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.03em",
+            }}
+          >
+            {value}
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              color: "#475569",
+            }}
+          >
+            {subtitle}
+          </p>
+        </div>
+
+        <div
+          style={{
+            width: isMobile ? 40 : 44,
+            height: isMobile ? 40 : 44,
+            borderRadius: 14,
+            background: `${accent}18`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: isMobile ? 18 : 20,
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </div>
+      </div>
     </div>
   );
 }
 
-function QuickActionCard({ title, subtitle, body, onClick, accent, icon }) {
+function GlassCard({
+  title,
+  icon,
+  action,
+  children,
+  accent = "#1769aa",
+  isMobile,
+}) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
+        borderRadius: isMobile ? 20 : 24,
+        padding: isMobile ? 16 : 20,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: isMobile ? "flex-start" : "center",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: isMobile ? "flex-start" : "center",
+            gap: 12,
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 14,
+              background: `${accent}16`,
+              color: accent,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 18,
+              fontWeight: 700,
+              flexShrink: 0,
+            }}
+          >
+            {icon}
+          </div>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: isMobile ? 17 : 19,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+              lineHeight: 1.15,
+              wordBreak: "break-word",
+            }}
+          >
+            {title}
+          </h2>
+        </div>
+        {action}
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+function QuickActionTile({ title, subtitle, body, onClick, accent, icon }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-full text-left p-5 rounded-2xl bg-[#0f172a]/72 backdrop-blur-lg border border-white/10 shadow-lg hover:shadow-blue-500/30 hover:border-blue-400/40 hover:bg-[#1e293b]/75 transition duration-300 cursor-pointer bg-gradient-to-br ${accent}`}
       style={{
-        minHeight: 180,
+        textAlign: "left",
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: `linear-gradient(135deg, ${accent}12 0%, #ffffff 75%)`,
+        borderRadius: 18,
+        padding: 16,
+        cursor: "pointer",
+        boxShadow: "0 10px 20px rgba(15,23,42,0.04)",
       }}
     >
       <div
@@ -89,81 +283,218 @@ function QuickActionCard({ title, subtitle, body, onClick, accent, icon }) {
           width: 42,
           height: 42,
           borderRadius: 14,
-          background: "rgba(255,255,255,0.10)",
-          border: "1px solid rgba(255,255,255,0.14)",
+          background: `${accent}18`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           fontSize: 20,
-          marginBottom: 14,
+          marginBottom: 12,
         }}
       >
         {icon}
       </div>
 
-      <div className="text-[11px] uppercase tracking-widest text-blue-300 font-semibold">
+      <div
+        style={{
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: "#64748b",
+          fontWeight: 800,
+        }}
+      >
         {title}
       </div>
 
-      <div className="text-lg font-semibold mt-1 text-white">{subtitle}</div>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 17,
+          fontWeight: 800,
+          color: "#0f172a",
+          lineHeight: 1.2,
+        }}
+      >
+        {subtitle}
+      </div>
 
-      <p className="text-xs text-slate-300 mt-2 leading-relaxed">{body}</p>
+      <p
+        style={{
+          margin: "8px 0 0",
+          fontSize: 13,
+          color: "#475569",
+          lineHeight: 1.6,
+        }}
+      >
+        {body}
+      </p>
     </button>
   );
 }
 
-function LeaderboardCard({ title, subtitle, rows, emptyText }) {
+function BirthdayRow({ person, language, tag }) {
+  const initials = getInitials(person.displayName);
+
   return (
-    <div className="rounded-2xl bg-[#0f172a]/60 backdrop-blur-lg border border-white/10 shadow-lg p-5">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
-          <h3 className="text-base font-semibold text-white">{title}</h3>
-          <p className="text-xs text-slate-400 mt-1">{subtitle}</p>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        borderRadius: 16,
+        padding: 14,
+        background: "linear-gradient(135deg, #fdf2f8 0%, #ffffff 100%)",
+        border: "1px solid #fbcfe8",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <div
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            overflow: "hidden",
+            background: "#fce7f3",
+            border: "1px solid #fbcfe8",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#9d174d",
+            fontWeight: 800,
+            flexShrink: 0,
+          }}
+        >
+          {person.profilePhotoURL ? (
+            <img
+              src={person.profilePhotoURL}
+              alt={person.displayName}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <span>{initials}</span>
+          )}
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#0f172a",
+              wordBreak: "break-word",
+            }}
+          >
+            {person.displayName}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "#64748b",
+            }}
+          >
+            {person.position}
+          </div>
         </div>
       </div>
 
-      {!rows.length ? (
-        <div className="text-sm text-slate-400">{emptyText}</div>
-      ) : (
-        <div className="grid gap-3">
-          {rows.map((row, index) => (
-            <div
-              key={`${row.name}-${index}`}
-              className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/5 px-4 py-3"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-                  style={{
-                    background:
-                      index === 0
-                        ? "rgba(59,130,246,0.24)"
-                        : "rgba(255,255,255,0.08)",
-                    color: "#fff",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                  }}
-                >
-                  {index + 1}
-                </div>
-
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-white truncate">
-                    {row.name}
-                  </div>
-                  <div className="text-xs text-slate-400 truncate">
-                    {row.position}
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <div className="text-sm font-bold text-sky-300">{row.value}</div>
-                <div className="text-[11px] text-slate-400">{row.label}</div>
-              </div>
-            </div>
-          ))}
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 800,
+            color: "#be185d",
+          }}
+        >
+          {formatBirthday(person.birthDateParsed, language)}
         </div>
-      )}
+        <div
+          style={{
+            marginTop: 2,
+            fontSize: 11,
+            color: "#64748b",
+          }}
+        >
+          {tag}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeaderRow({ row, accent = "#1769aa" }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        borderRadius: 16,
+        padding: 14,
+        background: "linear-gradient(135deg, #edf7ff 0%, #ffffff 100%)",
+        border: "1px solid #dbeafe",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <div
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 12,
+            background: `${accent}18`,
+            color: accent,
+            fontSize: 13,
+            fontWeight: 800,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          {row.rank}
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#0f172a",
+            }}
+          >
+            {row.name}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "#64748b",
+            }}
+          >
+            {row.position}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 800,
+            color: accent,
+          }}
+        >
+          {row.value}
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: "#64748b",
+          }}
+        >
+          {row.label}
+        </div>
+      </div>
     </div>
   );
 }
@@ -171,8 +502,10 @@ function LeaderboardCard({ title, subtitle, rows, emptyText }) {
 export default function EmployeeDashboardPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const isMobile = useIsMobile(900);
 
   const [announcements, setAnnouncements] = useState([]);
+  const [birthdays, setBirthdays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState("en");
 
@@ -183,126 +516,168 @@ export default function EmployeeDashboardPage() {
   const copy = {
     en: {
       crewPortal: "Crew Portal",
-      welcome: "Welcome,",
+      welcome: "Welcome back,",
       intro:
-        "Manage your workday, requests, reports, and stay updated with station news.",
+        "Quick overview of your day, requests, WCHR tools and station updates.",
+      quickActionsTitle: "Quick Access",
       quickActions: {
-        scheduleTitle: "My Schedule",
-        scheduleSubtitle: "Weekly Hours",
-        scheduleBody: "View your approved schedules and weekly assignments.",
-
-        ptoTitle: "PTO & Day Off",
-        ptoSubtitle: "Send Request",
-        ptoBody: "Submit time-off requests directly to HR/Management.",
-
-        statusTitle: "Request Status",
-        statusSubtitle: "Track Status",
-        statusBody:
-          "See if your requests were approved, pending, or returned.",
-
-        wchrScanTitle: "WCHR Scan",
+        scheduleTitle: "Schedule",
+        scheduleSubtitle: "My Schedule",
+        scheduleBody: "Review your assigned weekly schedule and shift details.",
+        ptoTitle: "Time Off",
+        ptoSubtitle: "Request PTO",
+        ptoBody: "Submit a PTO or day-off request directly in the portal.",
+        statusTitle: "Requests",
+        statusSubtitle: "PTO Status",
+        statusBody: "Check if your request is pending, approved or returned.",
+        wchrScanTitle: "WCHR",
         wchrScanSubtitle: "Scan Boarding Pass",
-        wchrScanBody:
-          "Scan a boarding pass and submit a new WCHR report quickly.",
-
-        wchrReportsTitle: "My WCHR Reports",
-        wchrReportsSubtitle: "Recent Reports",
-        wchrReportsBody:
-          "Review your latest WCHR submissions and check their current status.",
+        wchrScanBody: "Create a new WCHR report from a boarding pass scan.",
+        wchrReportsTitle: "Reports",
+        wchrReportsSubtitle: "My WCHR Reports",
+        wchrReportsBody: "Review, edit and manage your recent WCHR reports.",
       },
-      bannerTag: "Schedule Update",
-      bannerTitle: "New schedule experience coming soon",
+      bannerTitle: "Schedule update",
       bannerBody:
-        "We are improving how you see and access your schedules. Stay tuned for upcoming updates and features.",
-      newsTitle: "Station News & Events",
-      loading: "Loading announcements...",
-      empty: "No announcements available.",
-      activeCards: "Quick Access",
+        "We are improving how you view and access your schedules. Stay tuned for upcoming updates and features.",
+      announcementsTitle: "Crew Announcements",
+      announcementsEmpty: "No announcements available.",
+      loading: "Loading dashboard...",
+      latestAnnouncement: "Latest Announcement",
+      postedBy: "Posted by",
+      portalAccess: "Portal Access",
+      modules: "Modules",
       totalNews: "Announcements",
-      myAccess: "Portal Access",
-      latestTitle: "Latest update",
-      createdBy: "Posted by",
+      birthdaysToday: "Today's Birthdays",
+      birthdaysMonth: "This Month's Birthdays",
+      birthdaysEmptyToday: "No birthdays today.",
+      birthdaysEmptyMonth: "No birthdays this month.",
+      birthdayTodayTag: "Today",
+      birthdaySoonTag: "Coming up",
       wchrTopToday: "Top WCHR Today",
       wchrTopWeek: "Top WCHR This Week",
-      wchrTopTodaySub: "This section will rank the strongest WCHR performers of the day.",
-      wchrTopWeekSub: "This section will rank the strongest WCHR performers of the week.",
-      emptyLeaderboard: "No ranking data available yet.",
-      companyBirthdays: "Company Birthdays",
-      companyBirthdaysSub: "Birthday calendar widget will be added here soon.",
+      topTodaySub: "Daily WCHR performance ranking.",
+      topWeekSub: "Weekly WCHR performance ranking.",
+      comingSoon: "Coming Soon",
+      leaderboard: "Leaderboard",
+      today: "Today",
+      week: "Week",
     },
     es: {
       crewPortal: "Portal de Tripulación",
       welcome: "Bienvenido(a),",
       intro:
-        "Administra tu jornada, solicitudes, reportes y mantente al día con las noticias de la estación.",
+        "Resumen rápido de tu día, solicitudes, herramientas WCHR y actualizaciones de la estación.",
+      quickActionsTitle: "Accesos Rápidos",
       quickActions: {
-        scheduleTitle: "Mi Horario",
-        scheduleSubtitle: "Horas Semanales",
-        scheduleBody:
-          "Consulta tus horarios aprobados y asignaciones semanales.",
-
-        ptoTitle: "PTO y Días Libres",
-        ptoSubtitle: "Enviar Solicitud",
-        ptoBody:
-          "Envía tus solicitudes de tiempo libre directamente a HR/Management.",
-
-        statusTitle: "Estatus de Solicitudes",
-        statusSubtitle: "Ver Estatus",
-        statusBody:
-          "Revisa si tus solicitudes fueron aprobadas, pendientes o devueltas.",
-
-        wchrScanTitle: "Escaneo WCHR",
+        scheduleTitle: "Horario",
+        scheduleSubtitle: "Mi Horario",
+        scheduleBody: "Revisa tu horario semanal asignado y los detalles de turno.",
+        ptoTitle: "Tiempo Libre",
+        ptoSubtitle: "Solicitar PTO",
+        ptoBody: "Envía una solicitud de PTO o día libre directamente en el portal.",
+        statusTitle: "Solicitudes",
+        statusSubtitle: "Estatus PTO",
+        statusBody: "Verifica si tu solicitud está pendiente, aprobada o devuelta.",
+        wchrScanTitle: "WCHR",
         wchrScanSubtitle: "Escanear Boarding Pass",
-        wchrScanBody:
-          "Escanea un boarding pass y envía rápidamente un nuevo reporte WCHR.",
-
-        wchrReportsTitle: "Mis Reportes WCHR",
-        wchrReportsSubtitle: "Reportes Recientes",
-        wchrReportsBody:
-          "Revisa tus últimos reportes WCHR y verifica su estatus actual.",
+        wchrScanBody: "Crea un nuevo reporte WCHR desde el escaneo del pase.",
+        wchrReportsTitle: "Reportes",
+        wchrReportsSubtitle: "Mis Reportes WCHR",
+        wchrReportsBody: "Revisa, edita y administra tus reportes WCHR recientes.",
       },
-      bannerTag: "Actualización de Horarios",
-      bannerTitle: "¡Nuevos cambios en los horarios muy pronto!",
+      bannerTitle: "Actualización de horarios",
       bannerBody:
         "Estamos mejorando la manera en que ves y accedes a tus horarios. Mantente pendiente de las próximas actualizaciones y funciones.",
-      newsTitle: "Noticias y Eventos de la Estación",
-      loading: "Cargando anuncios...",
-      empty: "No hay anuncios disponibles.",
-      activeCards: "Accesos Rápidos",
+      announcementsTitle: "Anuncios de Tripulación",
+      announcementsEmpty: "No hay anuncios disponibles.",
+      loading: "Cargando dashboard...",
+      latestAnnouncement: "Último Anuncio",
+      postedBy: "Publicado por",
+      portalAccess: "Acceso",
+      modules: "Módulos",
       totalNews: "Anuncios",
-      myAccess: "Acceso al Portal",
-      latestTitle: "Última novedad",
-      createdBy: "Publicado por",
+      birthdaysToday: "Cumpleaños de Hoy",
+      birthdaysMonth: "Cumpleaños del Mes",
+      birthdaysEmptyToday: "No hay cumpleaños hoy.",
+      birthdaysEmptyMonth: "No hay cumpleaños este mes.",
+      birthdayTodayTag: "Hoy",
+      birthdaySoonTag: "Próximo",
       wchrTopToday: "Top WCHR Hoy",
       wchrTopWeek: "Top WCHR Semana",
-      wchrTopTodaySub: "Aquí aparecerá el ranking de empleados con más WCHR del día.",
-      wchrTopWeekSub: "Aquí aparecerá el ranking de empleados con más WCHR de la semana.",
-      emptyLeaderboard: "Aún no hay datos de ranking disponibles.",
-      companyBirthdays: "Cumpleaños de la Compañía",
-      companyBirthdaysSub: "Aquí agregaremos pronto el widget del calendario de cumpleaños.",
+      topTodaySub: "Ranking diario de desempeño WCHR.",
+      topWeekSub: "Ranking semanal de desempeño WCHR.",
+      comingSoon: "Próximamente",
+      leaderboard: "Ranking",
+      today: "Hoy",
+      week: "Semana",
     },
   };
 
   const t = copy[language];
 
   useEffect(() => {
-    async function loadAnnouncements() {
+    async function loadDashboardData() {
       try {
-        const q = query(
+        const qAnnouncements = query(
           collection(db, "employeeAnnouncements"),
           orderBy("createdAt", "desc")
         );
-        const snap = await getDocs(q);
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setAnnouncements(list);
+        const announcementsSnap = await getDocs(qAnnouncements);
+        const announcementList = announcementsSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
+        const sortedAnnouncements = announcementList.sort((a, b) => {
+          const aPinned = a.pinned ? 1 : 0;
+          const bPinned = b.pinned ? 1 : 0;
+          if (aPinned !== bPinned) return bPinned - aPinned;
+
+          const aTime = a.createdAt?.seconds || 0;
+          const bTime = b.createdAt?.seconds || 0;
+          return bTime - aTime;
+        });
+
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const filteredAnnouncements = sortedAnnouncements.filter((item) => {
+          if (!item.expiresOn) return true;
+          return item.expiresOn >= todayStr;
+        });
+
+        setAnnouncements(filteredAnnouncements);
+
+        const usersSnap = await getDocs(collection(db, "users"));
+        const birthdayList = usersSnap.docs
+          .map((d) => {
+            const data = d.data();
+            const parsedDate = parseBirthDate(data.birthDate);
+
+            return {
+              id: d.id,
+              displayName:
+                data.displayName ||
+                data.fullName ||
+                data.name ||
+                data.username ||
+                "Team Member",
+              position: data.position || getDefaultPosition(data.role),
+              profilePhotoURL: data.profilePhotoURL || "",
+              birthDateParsed: parsedDate,
+              daysAway: daysUntilBirthday(parsedDate),
+            };
+          })
+          .filter((item) => item.birthDateParsed);
+
+        setBirthdays(birthdayList);
       } catch (err) {
-        console.error("Error loading employee announcements:", err);
+        console.error("Error loading employee dashboard:", err);
       } finally {
         setLoading(false);
       }
     }
 
-    loadAnnouncements().catch(console.error);
+    loadDashboardData().catch(console.error);
   }, []);
 
   const goTo = (path) => navigate(path);
@@ -314,7 +689,7 @@ export default function EmployeeDashboardPage() {
         subtitle: t.quickActions.scheduleSubtitle,
         body: t.quickActions.scheduleBody,
         onClick: () => goTo("/my-schedule"),
-        accent: "from-blue-500/30 to-cyan-400/20",
+        accent: "#1f7cc1",
         icon: "📅",
       },
       {
@@ -322,7 +697,7 @@ export default function EmployeeDashboardPage() {
         subtitle: t.quickActions.ptoSubtitle,
         body: t.quickActions.ptoBody,
         onClick: () => goTo("/request-dayoff-internal"),
-        accent: "from-indigo-500/30 to-blue-400/20",
+        accent: "#4f46e5",
         icon: "🌴",
       },
       {
@@ -330,7 +705,7 @@ export default function EmployeeDashboardPage() {
         subtitle: t.quickActions.statusSubtitle,
         body: t.quickActions.statusBody,
         onClick: () => goTo("/dayoff-status-internal"),
-        accent: "from-sky-500/30 to-indigo-400/20",
+        accent: "#0ea5e9",
         icon: "📍",
       },
       {
@@ -338,7 +713,7 @@ export default function EmployeeDashboardPage() {
         subtitle: t.quickActions.wchrScanSubtitle,
         body: t.quickActions.wchrScanBody,
         onClick: () => goTo("/wchr/scan"),
-        accent: "from-teal-500/30 to-cyan-400/20",
+        accent: "#14b8a6",
         icon: "🎫",
       },
       {
@@ -346,7 +721,7 @@ export default function EmployeeDashboardPage() {
         subtitle: t.quickActions.wchrReportsSubtitle,
         body: t.quickActions.wchrReportsBody,
         onClick: () => goTo("/wchr/my-reports"),
-        accent: "from-emerald-500/30 to-teal-400/20",
+        accent: "#10b981",
         icon: "📄",
       },
     ],
@@ -355,335 +730,677 @@ export default function EmployeeDashboardPage() {
 
   const featuredAnnouncement = announcements[0] || null;
 
-  const placeholderTopToday = useMemo(
+  const todayBirthdays = useMemo(() => {
+    const today = new Date();
+    return birthdays.filter((item) =>
+      sameMonthAndDay(item.birthDateParsed, today)
+    );
+  }, [birthdays]);
+
+  const monthBirthdays = useMemo(() => {
+    const today = new Date();
+
+    return birthdays
+      .filter((item) => item.birthDateParsed?.getMonth() === today.getMonth())
+      .sort((a, b) => a.birthDateParsed.getDate() - b.birthDateParsed.getDate());
+  }, [birthdays]);
+
+  const topToday = useMemo(
     () => [
-      { name: "Coming Soon", position: "WCHR Leaderboard", value: "—", label: "Today" },
+      {
+        rank: 1,
+        name: t.comingSoon,
+        position: t.leaderboard,
+        value: "—",
+        label: t.today,
+      },
     ],
-    []
+    [t]
   );
 
-  const placeholderTopWeek = useMemo(
+  const topWeek = useMemo(
     () => [
-      { name: "Coming Soon", position: "WCHR Leaderboard", value: "—", label: "Week" },
+      {
+        rank: 1,
+        name: t.comingSoon,
+        position: t.leaderboard,
+        value: "—",
+        label: t.week,
+      },
     ],
-    []
+    [t]
+  );
+
+  const stats = useMemo(
+    () => [
+      {
+        title: t.portalAccess,
+        value: visiblePosition,
+        subtitle: "TPA OPS",
+        accent: "#1f7cc1",
+        icon: "👤",
+      },
+      {
+        title: t.modules,
+        value: quickCards.length,
+        subtitle: "Active shortcuts",
+        accent: "#10b981",
+        icon: "⚡",
+      },
+      {
+        title: t.totalNews,
+        value: announcements.length,
+        subtitle: "Current updates",
+        accent: "#f59e0b",
+        icon: "📣",
+      },
+    ],
+    [visiblePosition, quickCards.length, announcements.length, t]
   );
 
   return (
     <div
-      className="min-h-screen p-4 md:p-6"
       style={{
-        background: "radial-gradient(circle at top, #0a0f24 0%, #020617 70%)",
-        color: "white",
-        fontFamily: "Poppins, system-ui, -apple-system, BlinkMacSystemFont",
+        minHeight: "100%",
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          borderRadius: isMobile ? 22 : 28,
+          padding: isMobile ? 18 : 24,
+          color: "#fff",
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
+          marginBottom: 18,
+        }}
+      >
         <div
-          className="rounded-3xl border border-white/10 shadow-2xl overflow-hidden mb-6"
           style={{
-            background:
-              "linear-gradient(135deg, rgba(14,165,233,0.24) 0%, rgba(37,99,235,0.20) 40%, rgba(79,70,229,0.18) 100%)",
-            backdropFilter: "blur(10px)",
+            position: "absolute",
+            width: isMobile ? 180 : 240,
+            height: isMobile ? 180 : 240,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: isMobile ? -80 : -90,
+            right: isMobile ? -60 : -50,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: isMobile ? 120 : 160,
+            height: isMobile ? 120 : 160,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.06)",
+            bottom: -50,
+            right: isMobile ? 60 : 160,
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
           }}
         >
-          <div className="p-5 md:p-7">
-            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
-              <div className="min-w-0 flex items-start gap-4">
-                <div
-                  style={{
-                    width: 72,
-                    height: 72,
-                    borderRadius: 22,
-                    overflow: "hidden",
-                    background: "rgba(255,255,255,0.12)",
-                    border: "1px solid rgba(255,255,255,0.14)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    fontSize: 24,
-                    fontWeight: 800,
-                    color: "#fff",
-                  }}
-                >
-                  {profilePhotoURL ? (
-                    <img
-                      src={profilePhotoURL}
-                      alt={visibleName}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
-                  ) : (
-                    <span>{getInitials(visibleName)}</span>
-                  )}
-                </div>
-
-                <div className="min-w-0">
-                  <p className="text-xs text-slate-300 uppercase tracking-[0.25em]">
-                    {t.crewPortal}
-                  </p>
-
-                  <h1 className="text-2xl md:text-4xl font-bold tracking-wide text-white mt-2 leading-tight">
-                    {t.welcome} {visibleName}
-                  </h1>
-
-                  <p className="text-sm text-blue-200 mt-2 font-medium">
-                    {visiblePosition}
-                  </p>
-
-                  <p className="text-xs text-slate-400 mt-1">
-                    @{user?.username || "user"}
-                  </p>
-
-                  <p className="text-sm text-slate-300 mt-3 max-w-3xl leading-relaxed">
-                    {t.intro}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-2 self-start xl:self-end">
-                  <span className="text-[11px] text-slate-300 uppercase tracking-wide mr-1">
-                    Language
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => setLanguage("en")}
-                    className={`px-3 py-1 text-xs rounded-full border backdrop-blur-md transition ${
-                      language === "en"
-                        ? "bg-blue-500 text-white border-blue-400 shadow-lg shadow-blue-500/40"
-                        : "bg-transparent text-slate-300 border-white/20 hover:bg-white/10"
-                    }`}
-                  >
-                    EN
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setLanguage("es")}
-                    className={`px-3 py-1 text-xs rounded-full border backdrop-blur-md transition ${
-                      language === "es"
-                        ? "bg-blue-500 text-white border-blue-400 shadow-lg shadow-blue-500/40"
-                        : "bg-transparent text-slate-300 border-white/20 hover:bg-white/10"
-                    }`}
-                  >
-                    ES
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <StatChip label={t.myAccess} value={visiblePosition} />
-                  <StatChip label={t.activeCards} value={quickCards.length} />
-                  <StatChip label={t.totalNews} value={announcements.length} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Banner */}
-        <div className="mb-7 rounded-2xl bg-gradient-to-r from-sky-500/80 via-indigo-500/85 to-blue-700/85 border border-white/20 shadow-xl shadow-blue-900/50 px-4 py-4 md:px-6 md:py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <p className="text-xs md:text-[13px] uppercase tracking-[0.25em] text-blue-100/90">
-              {t.bannerTag}
-            </p>
-            <h2 className="text-sm md:text-lg font-semibold text-white mt-1">
-              {t.bannerTitle}
-            </h2>
-            <p className="text-[11px] md:text-sm text-blue-50 mt-1 max-w-3xl leading-relaxed">
-              {t.bannerBody}
-            </p>
-          </div>
-          <div className="text-xs text-blue-50 md:text-right opacity-90 font-medium">
-            ✨ Be on the loop
-          </div>
-        </div>
-
-        {/* Upcoming modules */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-8">
-          <LeaderboardCard
-            title={t.wchrTopToday}
-            subtitle={t.wchrTopTodaySub}
-            rows={placeholderTopToday}
-            emptyText={t.emptyLeaderboard}
-          />
-
-          <LeaderboardCard
-            title={t.wchrTopWeek}
-            subtitle={t.wchrTopWeekSub}
-            rows={placeholderTopWeek}
-            emptyText={t.emptyLeaderboard}
-          />
-
-          <div className="rounded-2xl bg-[#0f172a]/60 backdrop-blur-lg border border-white/10 shadow-lg p-5">
-            <h3 className="text-base font-semibold text-white">
-              {t.companyBirthdays}
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">{t.companyBirthdaysSub}</p>
-
-            <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/5 p-5 text-sm text-slate-400">
-              Birthday calendar placeholder
-            </div>
-          </div>
-        </div>
-
-        {/* Featured announcement */}
-        {!loading && featuredAnnouncement && (
-          <div className="mb-8 rounded-2xl overflow-hidden border border-white/10 bg-[#0f172a]/70 backdrop-blur-lg shadow-lg">
-            <div className="p-5 border-b border-white/10">
-              <p className="text-[11px] uppercase tracking-[0.22em] text-sky-300 font-semibold">
-                {t.latestTitle}
-              </p>
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mt-2">
-                <h2 className="text-xl md:text-2xl font-bold text-white">
-                  {featuredAnnouncement.title || "Announcement"}
-                </h2>
-                {featuredAnnouncement.createdAt?.toDate && (
-                  <span className="text-[11px] text-blue-300 whitespace-nowrap">
-                    {featuredAnnouncement.createdAt.toDate().toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-
-              {featuredAnnouncement.subtitle && (
-                <p className="text-sm text-blue-200 mt-2">
-                  {featuredAnnouncement.subtitle}
-                </p>
-              )}
-
-              {featuredAnnouncement.body && (
-                <p className="text-sm text-slate-300 mt-3 leading-relaxed whitespace-pre-line max-w-4xl">
-                  {featuredAnnouncement.body}
-                </p>
-              )}
-
-              {featuredAnnouncement.createdBy && (
-                <p className="text-xs text-slate-400 mt-3">
-                  {t.createdBy}: <b>{featuredAnnouncement.createdBy}</b>
-                </p>
-              )}
-            </div>
-
-            {featuredAnnouncement.imageUrl && (
-              <div className="w-full">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 14,
+              minWidth: 0,
+              flex: 1,
+            }}
+          >
+            <div
+              style={{
+                width: isMobile ? 64 : 72,
+                height: isMobile ? 64 : 72,
+                borderRadius: 22,
+                overflow: "hidden",
+                background: "rgba(255,255,255,0.14)",
+                border: "1px solid rgba(255,255,255,0.14)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#fff",
+                fontSize: isMobile ? 22 : 24,
+                fontWeight: 800,
+                flexShrink: 0,
+              }}
+            >
+              {profilePhotoURL ? (
                 <img
-                  src={featuredAnnouncement.imageUrl}
-                  alt={featuredAnnouncement.title || "Announcement"}
-                  className="w-full max-h-[360px] object-cover"
+                  src={profilePhotoURL}
+                  alt={visibleName}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
                 />
-              </div>
-            )}
-          </div>
-        )}
+              ) : (
+                <span>{getInitials(visibleName)}</span>
+              )}
+            </div>
 
-        {/* Quick Actions */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <h2 className="text-lg font-semibold text-white tracking-wide">
-              {t.activeCards}
-            </h2>
-            <span className="text-xs text-slate-400">
-              {quickCards.length} modules
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-            {quickCards.map((card) => (
-              <QuickActionCard key={card.title} {...card} />
-            ))}
-          </div>
-        </div>
-
-        {/* Announcements */}
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <h2 className="text-lg font-semibold text-white tracking-wide">
-            {t.newsTitle}
-          </h2>
-          {!loading && announcements.length > 0 && (
-            <span className="text-xs text-slate-400">
-              {announcements.length} items
-            </span>
-          )}
-        </div>
-
-        {loading && (
-          <div className="bg-[#0f172a]/60 backdrop-blur-md p-4 rounded-xl border border-white/10 text-sm text-slate-300">
-            {t.loading}
-          </div>
-        )}
-
-        {!loading && announcements.length === 0 && (
-          <div className="bg-[#0f172a]/60 backdrop-blur-md p-4 rounded-xl border border-white/10 text-sm text-slate-300">
-            {t.empty}
-          </div>
-        )}
-
-        {!loading && announcements.length > 0 && (
-          <div className="grid gap-4">
-            {announcements.map((item, index) => (
-              <div
-                key={item.id}
-                className="rounded-2xl bg-[#0f172a]/60 backdrop-blur-lg border border-white/10 shadow-lg overflow-hidden"
+            <div style={{ minWidth: 0 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.22em",
+                  color: "rgba(255,255,255,0.76)",
+                  fontWeight: 700,
+                }}
               >
-                {item.imageUrl && (
-                  <div className="w-full border-b border-white/10">
-                    <img
-                      src={item.imageUrl}
-                      alt={item.title || "Announcement"}
-                      className="w-full max-h-[340px] object-cover"
-                    />
-                  </div>
-                )}
+                {t.crewPortal}
+              </p>
 
-                <div className="p-5">
-                  <div className="flex justify-between items-start gap-3 flex-wrap">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] uppercase tracking-[0.18em] text-sky-300 font-semibold">
-                          #{String(index + 1).padStart(2, "0")}
-                        </span>
-                      </div>
+              <h1
+                style={{
+                  margin: "10px 0 6px",
+                  fontSize: isMobile ? 26 : 34,
+                  lineHeight: 1.05,
+                  fontWeight: 800,
+                  letterSpacing: "-0.04em",
+                }}
+              >
+                {t.welcome} {visibleName}
+              </h1>
 
-                      <h3 className="text-base md:text-lg font-semibold text-white tracking-wide">
-                        {item.title || "Announcement"}
-                      </h3>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 15,
+                  color: "rgba(255,255,255,0.92)",
+                  fontWeight: 700,
+                }}
+              >
+                {visiblePosition}
+              </p>
 
-                      {item.subtitle && (
-                        <p className="text-xs text-blue-200 mt-1">
-                          {item.subtitle}
-                        </p>
-                      )}
-                    </div>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 13,
+                  color: "rgba(255,255,255,0.72)",
+                }}
+              >
+                @{user?.username || "user"}
+              </p>
 
-                    {item.createdAt?.toDate && (
-                      <span className="text-[11px] text-blue-300 whitespace-nowrap">
-                        {item.createdAt.toDate().toLocaleDateString()}
+              <p
+                style={{
+                  margin: "12px 0 0",
+                  maxWidth: 720,
+                  fontSize: isMobile ? 13 : 14,
+                  color: "rgba(255,255,255,0.86)",
+                }}
+              >
+                {t.intro}
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: 10,
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                justifyContent: isMobile ? "flex-start" : "flex-end",
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "rgba(255,255,255,0.82)",
+                }}
+              >
+                Language
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setLanguage("en")}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.22)",
+                  background:
+                    language === "en"
+                      ? "rgba(255,255,255,0.22)"
+                      : "rgba(255,255,255,0.10)",
+                  color: "#fff",
+                  borderRadius: 12,
+                  padding: "8px 12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                EN
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLanguage("es")}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.22)",
+                  background:
+                    language === "es"
+                      ? "rgba(255,255,255,0.22)"
+                      : "rgba(255,255,255,0.10)",
+                  color: "#fff",
+                  borderRadius: 12,
+                  padding: "8px 12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                ES
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 14,
+          marginBottom: 18,
+        }}
+      >
+        {stats.map((item) => (
+          <StatCard key={item.title} {...item} isMobile={isMobile} />
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : "minmax(0, 1.5fr) minmax(320px, 1fr)",
+          gap: 18,
+        }}
+      >
+        <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
+          <GlassCard
+            title={t.quickActionsTitle}
+            icon="⚡"
+            accent="#1769aa"
+            isMobile={isMobile}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {quickCards.map((card) => (
+                <QuickActionTile key={card.title} {...card} />
+              ))}
+            </div>
+          </GlassCard>
+
+          {!loading && featuredAnnouncement && (
+            <GlassCard
+              title={t.latestAnnouncement}
+              icon="📢"
+              accent="#1f7cc1"
+              isMobile={isMobile}
+            >
+              <div
+                style={{
+                  borderRadius: 18,
+                  overflow: "hidden",
+                  background: "linear-gradient(135deg, #edf7ff 0%, #ffffff 100%)",
+                  border: "1px solid #d6ebff",
+                }}
+              >
+                <div style={{ padding: 16 }}>
+                  <h3
+                    style={{
+                      margin: 0,
+                      fontSize: isMobile ? 18 : 20,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {featuredAnnouncement.title || "Announcement"}
+                  </h3>
+
+                  {featuredAnnouncement.subtitle && (
+                    <p
+                      style={{
+                        margin: "8px 0 0",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#1769aa",
+                      }}
+                    >
+                      {featuredAnnouncement.subtitle}
+                    </p>
+                  )}
+
+                  {featuredAnnouncement.body && (
+                    <p
+                      style={{
+                        margin: "10px 0 0",
+                        fontSize: 14,
+                        color: "#334155",
+                        lineHeight: 1.7,
+                        whiteSpace: "pre-line",
+                      }}
+                    >
+                      {featuredAnnouncement.body}
+                    </p>
+                  )}
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: "flex",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      fontSize: 12,
+                      color: "#64748b",
+                    }}
+                  >
+                    {featuredAnnouncement.createdAt?.toDate && (
+                      <span>
+                        {featuredAnnouncement.createdAt
+                          .toDate()
+                          .toLocaleDateString()}
+                      </span>
+                    )}
+
+                    {featuredAnnouncement.createdBy && (
+                      <span>
+                        {t.postedBy}: <b>{featuredAnnouncement.createdBy}</b>
                       </span>
                     )}
                   </div>
-
-                  {item.body && (
-                    <p className="text-sm text-slate-300 whitespace-pre-line mt-3 leading-relaxed">
-                      {item.body}
-                    </p>
-                  )}
-
-                  {item.createdBy && (
-                    <p className="text-xs text-slate-400 mt-3">
-                      {t.createdBy}: <b>{item.createdBy}</b>
-                    </p>
-                  )}
                 </div>
+
+                {featuredAnnouncement.imageUrl && (
+                  <div
+                    style={{
+                      borderTop: "1px solid #dbeafe",
+                      background: "#fff",
+                    }}
+                  >
+                    <img
+                      src={featuredAnnouncement.imageUrl}
+                      alt={featuredAnnouncement.title || "Announcement"}
+                      style={{
+                        width: "100%",
+                        maxHeight: 340,
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                    />
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+            </GlassCard>
+          )}
+
+          <GlassCard
+            title={t.announcementsTitle}
+            icon="📌"
+            accent="#f59e0b"
+            isMobile={isMobile}
+          >
+            {loading ? (
+              <p style={{ margin: 0, color: "#94a3b8" }}>{t.loading}</p>
+            ) : announcements.length === 0 ? (
+              <p style={{ margin: 0, color: "#64748b" }}>
+                {t.announcementsEmpty}
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {announcements.slice(0, 6).map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      borderRadius: 16,
+                      padding: 14,
+                      background:
+                        "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
+                      border: "1px solid #fde68a",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            marginBottom: 6,
+                          }}
+                        >
+                          {item.pinned && (
+                            <span
+                              style={{
+                                padding: "5px 9px",
+                                borderRadius: 999,
+                                background: "#dbeafe",
+                                border: "1px solid #bfdbfe",
+                                color: "#1d4ed8",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Pinned
+                            </span>
+                          )}
+                          {item.category && (
+                            <span
+                              style={{
+                                padding: "5px 9px",
+                                borderRadius: 999,
+                                background: "#fff7ed",
+                                border: "1px solid #fed7aa",
+                                color: "#9a3412",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              {item.category}
+                            </span>
+                          )}
+                        </div>
+
+                        <p
+                          style={{
+                            margin: 0,
+                            fontWeight: 800,
+                            color: "#0f172a",
+                            fontSize: 15,
+                          }}
+                        >
+                          {item.title || "Announcement"}
+                        </p>
+
+                        {item.subtitle && (
+                          <p
+                            style={{
+                              margin: "6px 0 0",
+                              fontSize: 12,
+                              color: "#b45309",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {item.subtitle}
+                          </p>
+                        )}
+                      </div>
+
+                      {item.createdAt?.toDate && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {item.createdAt.toDate().toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+
+                    {item.body && (
+                      <p
+                        style={{
+                          margin: "8px 0 0",
+                          fontSize: 13,
+                          color: "#475569",
+                          lineHeight: 1.6,
+                          whiteSpace: "pre-line",
+                        }}
+                      >
+                        {item.body}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+        </div>
+
+        <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
+          <GlassCard
+            title={t.birthdaysToday}
+            icon="🎂"
+            accent="#ec4899"
+            isMobile={isMobile}
+          >
+            {todayBirthdays.length === 0 ? (
+              <p style={{ margin: 0, color: "#64748b" }}>
+                {t.birthdaysEmptyToday}
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {todayBirthdays.map((person) => (
+                  <BirthdayRow
+                    key={person.id}
+                    person={person}
+                    language={language}
+                    tag={t.birthdayTodayTag}
+                  />
+                ))}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title={t.birthdaysMonth}
+            icon="🎉"
+            accent="#db2777"
+            isMobile={isMobile}
+          >
+            {monthBirthdays.length === 0 ? (
+              <p style={{ margin: 0, color: "#64748b" }}>
+                {t.birthdaysEmptyMonth}
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {monthBirthdays.slice(0, 6).map((person) => (
+                  <BirthdayRow
+                    key={person.id}
+                    person={person}
+                    language={language}
+                    tag={
+                      person.daysAway === 0
+                        ? t.birthdayTodayTag
+                        : `${t.birthdaySoonTag}: ${person.daysAway}d`
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title={t.wchrTopToday}
+            icon="♿"
+            accent="#0ea5e9"
+            isMobile={isMobile}
+          >
+            <p
+              style={{
+                margin: "0 0 12px",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              {t.topTodaySub}
+            </p>
+            <div style={{ display: "grid", gap: 10 }}>
+              {topToday.map((row) => (
+                <LeaderRow key={`${row.name}-${row.rank}`} row={row} accent="#0ea5e9" />
+              ))}
+            </div>
+          </GlassCard>
+
+          <GlassCard
+            title={t.wchrTopWeek}
+            icon="📊"
+            accent="#10b981"
+            isMobile={isMobile}
+          >
+            <p
+              style={{
+                margin: "0 0 12px",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              {t.topWeekSub}
+            </p>
+            <div style={{ display: "grid", gap: 10 }}>
+              {topWeek.map((row) => (
+                <LeaderRow key={`${row.name}-${row.rank}`} row={row} accent="#10b981" />
+              ))}
+            </div>
+          </GlassCard>
+        </div>
       </div>
     </div>
   );
