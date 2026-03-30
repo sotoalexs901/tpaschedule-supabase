@@ -1,4 +1,3 @@
-// src/pages/WCHRScan.jsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, storage } from "../firebase";
@@ -11,6 +10,8 @@ import {
   getDoc,
   serverTimestamp,
   updateDoc,
+  setDoc,
+  increment,
 } from "firebase/firestore";
 
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -182,6 +183,65 @@ function guessPnr(scanResult, rawText) {
   }
 
   return "";
+}
+
+function toStatsDateKey(dateLike) {
+  const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function sanitizeStatsKey(value, fallback = "UNKNOWN") {
+  const clean = String(value || "")
+    .trim()
+    .replace(/[./#[\]$]/g, "_");
+
+  return clean || fallback;
+}
+
+function sanitizeAirlineKey(value) {
+  return safeUpper(value).replace(/[./#[\]$]/g, "_") || "UNKNOWN";
+}
+
+function sanitizeWheelchairKey(value) {
+  return cleanWheelchairNumber(value).replace(/[./#[\]$]/g, "_") || "";
+}
+
+async function updateDailyWchrStats({
+  submittedAtDate,
+  airline,
+  wchType,
+  employeeLogin,
+  wheelchairNumber,
+}) {
+  const dateKey = toStatsDateKey(submittedAtDate);
+  const statsRef = doc(db, "wch_stats_daily", dateKey);
+
+  const hourKey = String(submittedAtDate.getHours()).padStart(2, "0");
+  const airlineKey = sanitizeAirlineKey(airline);
+  const wchTypeKey = sanitizeStatsKey(safeUpper(wchType), "UNKNOWN");
+  const employeeKey = sanitizeStatsKey(
+    String(employeeLogin || "").trim().toLowerCase(),
+    "unknown"
+  );
+  const wheelchairKey = sanitizeWheelchairKey(wheelchairNumber);
+
+  const payload = {
+    date: dateKey,
+    updated_at: serverTimestamp(),
+    total_reports: increment(1),
+    [`by_airline.${airlineKey}`]: increment(1),
+    [`by_wch_type.${wchTypeKey}`]: increment(1),
+    [`by_employee.${employeeKey}`]: increment(1),
+    [`by_hour.${hourKey}`]: increment(1),
+  };
+
+  if (wheelchairKey) {
+    payload[`by_wheelchair.${wheelchairKey}`] = increment(1);
+    payload[`wheelchair_by_airline.${airlineKey}.${wheelchairKey}`] = increment(1);
+  }
+
+  await setDoc(statsRef, payload, { merge: true });
 }
 
 function PageCard({ children, style = {} }) {
@@ -382,8 +442,6 @@ export default function WCHRScan() {
       setImageUrl(url);
 
       const scanResult = await callScanService(url);
-      console.log("WCHR scan result:", scanResult);
-
       const rawText = getRawScanText(scanResult);
 
       const normalized = {
@@ -441,13 +499,16 @@ export default function WCHRScan() {
       const finalPassengerName = safeText(parsed.passenger_name);
       const finalPnr = safeText(parsed.pnr).toUpperCase();
       const finalWheelchairNumber = cleanWheelchairNumber(parsed.wheelchair_number);
+      const employeeLogin =
+        user.username || user.loginUsername || user.email || "";
+      const employeeName =
+        user.displayName || user.fullName || user.username || "";
 
       const docRef = await addDoc(collection(db, "wch_reports"), {
         report_id: "",
         employee_id: user.id || "",
-        employee_name: user.displayName || user.fullName || user.username || "",
-        employee_login:
-          user.username || user.loginUsername || user.email || "",
+        employee_name: employeeName,
+        employee_login: employeeLogin,
         employee_role: user.role || "",
         submitted_at: serverTimestamp(),
 
@@ -472,6 +533,14 @@ export default function WCHRScan() {
       const report_id = `WCHR-${yyyymmdd()}-${short}`;
 
       await updateDoc(doc(db, "wch_reports", docRef.id), { report_id });
+
+      await updateDailyWchrStats({
+        submittedAtDate: new Date(),
+        airline: parsed.airline,
+        wchType,
+        employeeLogin,
+        wheelchairNumber: finalWheelchairNumber,
+      });
 
       navigate("/wchr/my-reports");
     } catch (e) {
