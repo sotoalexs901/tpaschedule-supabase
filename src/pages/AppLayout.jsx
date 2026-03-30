@@ -9,6 +9,38 @@ import {
   markUserOffline,
 } from "../services/presenceService";
 
+function getDefaultPosition(role) {
+  if (role === "station_manager") return "Station Manager";
+  if (role === "duty_manager") return "Duty Manager";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "agent") return "Agent";
+  return "Team Member";
+}
+
+function getVisibleName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    "User"
+  );
+}
+
+function getVisiblePosition(user) {
+  return user?.position || getDefaultPosition(user?.role);
+}
+
+function getInitials(name) {
+  const clean = String(name || "").trim();
+  if (!clean) return "U";
+
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+}
+
 export default function AppLayout() {
   const { user, setUser } = useUser();
   const navigate = useNavigate();
@@ -26,6 +58,10 @@ export default function AppLayout() {
     WCHR: true,
     Admin: false,
   });
+
+  const visibleName = useMemo(() => getVisibleName(user), [user]);
+  const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
+  const profilePhotoURL = user?.profilePhotoURL || "";
 
   const logout = async () => {
     try {
@@ -89,7 +125,7 @@ export default function AppLayout() {
     updateUserPresence(user, {
       currentPage: location.pathname,
     }).catch((err) => console.error("Error updating user presence:", err));
-  }, [user?.id]);
+  }, [user, location.pathname]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -97,7 +133,7 @@ export default function AppLayout() {
     updateUserPage(user, location.pathname).catch((err) =>
       console.error("Error updating current page:", err)
     );
-  }, [location.pathname, user?.id]);
+  }, [location.pathname, user]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -303,9 +339,22 @@ export default function AppLayout() {
                   fontSize: 22,
                   boxShadow: "0 10px 24px rgba(23,105,170,0.25)",
                   flexShrink: 0,
+                  overflow: "hidden",
                 }}
               >
-                ✈️
+                {profilePhotoURL ? (
+                  <img
+                    src={profilePhotoURL}
+                    alt={visibleName}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                ) : (
+                  <span>{getInitials(visibleName)}</span>
+                )}
               </div>
 
               <div>
@@ -324,12 +373,22 @@ export default function AppLayout() {
                 <p
                   style={{
                     margin: "4px 0 0",
-                    fontSize: 13,
-                    color: "#475569",
+                    fontSize: 14,
+                    color: "#0f172a",
+                    fontWeight: 800,
+                  }}
+                >
+                  {visibleName}
+                </p>
+                <p
+                  style={{
+                    margin: "2px 0 0",
+                    fontSize: 12,
+                    color: "#64748b",
                     fontWeight: 600,
                   }}
                 >
-                  Logged as <b>{user?.username}</b> · {user?.role}
+                  {visiblePosition}
                 </p>
               </div>
             </div>
