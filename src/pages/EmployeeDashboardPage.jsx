@@ -1,4 +1,3 @@
-// src/pages/EmployeeDashboardPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
@@ -57,12 +56,7 @@ function parseBirthDate(value) {
 }
 
 function sameMonthAndDay(a, b) {
-  return (
-    a &&
-    b &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return a && b && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function formatBirthday(date, language = "en") {
@@ -512,6 +506,7 @@ export default function EmployeeDashboardPage() {
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
   const profilePhotoURL = user?.profilePhotoURL || "";
+  const isSupervisor = user?.role === "supervisor";
 
   const copy = {
     en: {
@@ -536,6 +531,10 @@ export default function EmployeeDashboardPage() {
         wchrReportsTitle: "Reports",
         wchrReportsSubtitle: "My WCHR Reports",
         wchrReportsBody: "Review, edit and manage your recent WCHR reports.",
+        timesheetTitle: "Timesheets",
+        timesheetSubtitle: "Submit Timesheet",
+        timesheetBody:
+          "Create and send a station timesheet report for manager review.",
       },
       bannerTitle: "Schedule update",
       bannerBody:
@@ -585,6 +584,10 @@ export default function EmployeeDashboardPage() {
         wchrReportsTitle: "Reportes",
         wchrReportsSubtitle: "Mis Reportes WCHR",
         wchrReportsBody: "Revisa, edita y administra tus reportes WCHR recientes.",
+        timesheetTitle: "Timesheets",
+        timesheetSubtitle: "Enviar Timesheet",
+        timesheetBody:
+          "Crea y envía un reporte de timesheet de estación para revisión gerencial.",
       },
       bannerTitle: "Actualización de horarios",
       bannerBody:
@@ -682,8 +685,8 @@ export default function EmployeeDashboardPage() {
 
   const goTo = (path) => navigate(path);
 
-  const quickCards = useMemo(
-    () => [
+  const quickCards = useMemo(() => {
+    const baseCards = [
       {
         title: t.quickActions.scheduleTitle,
         subtitle: t.quickActions.scheduleSubtitle,
@@ -724,9 +727,21 @@ export default function EmployeeDashboardPage() {
         accent: "#10b981",
         icon: "📄",
       },
-    ],
-    [t]
-  );
+    ];
+
+    if (isSupervisor) {
+      baseCards.unshift({
+        title: t.quickActions.timesheetTitle,
+        subtitle: t.quickActions.timesheetSubtitle,
+        body: t.quickActions.timesheetBody,
+        onClick: () => goTo("/timesheets/submit"),
+        accent: "#f59e0b",
+        icon: "🕒",
+      });
+    }
+
+    return baseCards;
+  }, [t, isSupervisor]);
 
   const featuredAnnouncement = announcements[0] || null;
 
