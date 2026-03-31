@@ -36,8 +36,9 @@ import MessagesPage from "./pages/MessagesPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import AdminActivityDashboard from "./pages/AdminActivityDashboard.jsx";
 
-// ✅ NUEVA PÁGINA TIMESHEET
+// ✅ TIMESHEETS
 import SupervisorTimesheetPage from "./pages/SupervisorTimesheetPage.jsx";
+import TimesheetAdminPage from "./pages/TimesheetAdminPage.jsx";
 
 // ✅ WCHR PAGES
 import WCHRScan from "./pages/WCHRScan.jsx";
@@ -136,6 +137,18 @@ function AppRouter() {
                 roles={["supervisor", "duty_manager", "station_manager"]}
               >
                 <SupervisorTimesheetPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ✅ TIMESHEET REPORTS – SUPERVISOR / DUTY MANAGER / STATION MANAGER */}
+          <Route
+            path="timesheets/reports"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <TimesheetAdminPage />
               </ProtectedRoute>
             }
           />
