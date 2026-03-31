@@ -321,20 +321,23 @@ export default function SupervisorTimesheetPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [usersSnap, budgetsSnap] = await Promise.all([
-          getDocs(collection(db, "users")),
+        const [employeesSnap, budgetsSnap] = await Promise.all([
+          getDocs(collection(db, "employees")),
           getDocs(collection(db, "airlineBudgets")),
         ]);
 
-        const employeeList = usersSnap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((item) => item.role === "agent" || item.role === "supervisor")
+        const employeeList = employeesSnap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
           .map((item) => ({
             id: item.id,
             name:
-              item.displayName ||
-              item.fullName ||
               item.name ||
+              item.employeeName ||
+              item.fullName ||
+              item.displayName ||
               item.username ||
               "Unnamed employee",
           }))
@@ -899,8 +902,8 @@ export default function SupervisorTimesheetPage() {
                 color: "#64748b",
               }}
             >
-              Select employee names already registered in the system and complete
-              the additional fields.
+              Select employee names from Employees page and complete the
+              additional fields.
             </p>
           </div>
 
