@@ -67,6 +67,57 @@ function shouldRequireAttentionFromResponses(responses) {
   return false;
 }
 
+function mergeBaseFieldsWithBuilder(baseFields, builderFields) {
+  const normalizedBuilder = (builderFields || []).map((item) => ({
+    id: item.id,
+    key: item.key,
+    label: item.label,
+    type: item.type || "text",
+    required: Boolean(item.required),
+    options: Array.isArray(item.options) ? item.options : [],
+    active: item.active !== false,
+    order: Number(item.order || 0),
+  }));
+
+  const builderMap = {};
+  normalizedBuilder.forEach((field) => {
+    if (!field.key) return;
+    builderMap[field.key] = field;
+  });
+
+  const mergedBase = baseFields
+    .map((base, index) => {
+      const override = builderMap[base.key];
+      const merged = override
+        ? {
+            ...base,
+            ...override,
+            options:
+              override.type === "yesno"
+                ? ["Yes", "No"]
+                : override.options?.length
+                ? override.options
+                : base.options || [],
+          }
+        : {
+            ...base,
+            order: Number(base.order || index + 1),
+            active: true,
+          };
+
+      return merged;
+    })
+    .filter((field) => field.active !== false);
+
+  const baseKeys = new Set(baseFields.map((field) => field.key));
+
+  const extraFields = normalizedBuilder
+    .filter((field) => field.active !== false && field.key && !baseKeys.has(field.key))
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+  return [...mergedBase, ...extraFields];
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -205,7 +256,7 @@ function ActionButton({
   );
 }
 
-const DEFAULT_FIELDS = [
+const BASE_FIELDS = [
   {
     key: "operation_status",
     label: "Operation Status",
@@ -454,7 +505,7 @@ export default function SupervisorOperationalReportPage() {
     user?.role === "station_manager";
 
   const [loadingBuilder, setLoadingBuilder] = useState(true);
-  const [dynamicFields, setDynamicFields] = useState(DEFAULT_FIELDS);
+  const [dynamicFields, setDynamicFields] = useState(BASE_FIELDS);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -472,7 +523,7 @@ export default function SupervisorOperationalReportPage() {
     delayedReason: "",
     delayedCodeReported: "",
     needsAttention: false,
-    responses: buildInitialResponses(DEFAULT_FIELDS),
+    responses: buildInitialResponses(BASE_FIELDS),
   });
 
   useEffect(() => {
@@ -480,40 +531,32 @@ export default function SupervisorOperationalReportPage() {
       try {
         const snap = await getDocs(collection(db, "operational_report_form_fields"));
 
-        if (snap.empty) {
-          setDynamicFields(DEFAULT_FIELDS);
-          setForm((prev) => ({
-            ...prev,
-            responses: buildInitialResponses(DEFAULT_FIELDS),
-          }));
-          return;
-        }
-
-        const fields = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((item) => item.active !== false)
-          .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
-          .map((item) => ({
-            key: item.key,
-            label: item.label,
-            type: item.type || "text",
-            required: Boolean(item.required),
-            options: Array.isArray(item.options) ? item.options : [],
-          }));
-
-        const finalFields = fields.length ? fields : DEFAULT_FIELDS;
+        const builderRows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const finalFields = mergeBaseFieldsWithBuilder(BASE_FIELDS, builderRows);
 
         setDynamicFields(finalFields);
-        setForm((prev) => ({
-          ...prev,
-          responses: buildInitialResponses(finalFields),
-        }));
+
+        setForm((prev) => {
+          const currentResponses = prev.responses || {};
+          const nextResponses = buildInitialResponses(finalFields);
+
+          finalFields.forEach((field) => {
+            if (currentResponses[field.key] !== undefined) {
+              nextResponses[field.key] = currentResponses[field.key];
+            }
+          });
+
+          return {
+            ...prev,
+            responses: nextResponses,
+          };
+        });
       } catch (err) {
         console.error("Error loading operational report builder:", err);
-        setDynamicFields(DEFAULT_FIELDS);
+        setDynamicFields(BASE_FIELDS);
         setForm((prev) => ({
           ...prev,
-          responses: buildInitialResponses(DEFAULT_FIELDS),
+          responses: buildInitialResponses(BASE_FIELDS),
         }));
       } finally {
         setLoadingBuilder(false);
@@ -1048,7 +1091,7 @@ export default function SupervisorOperationalReportPage() {
               color: "#64748b",
             }}
           >
-            These questions update automatically from the Operational Report Builder.
+            Base questions are always included. The builder can edit them, deactivate them, or add new ones.
           </p>
         </div>
 
