@@ -12,14 +12,7 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
-const FIELD_TYPES = [
-  "text",
-  "textarea",
-  "select",
-  "number",
-  "date",
-  "time",
-];
+const FIELD_TYPES = ["text", "textarea", "select", "number", "date", "time"];
 
 const DEFAULT_SECTIONS = [
   "Overall Operation Status",
@@ -28,6 +21,7 @@ const DEFAULT_SECTIONS = [
   "Exceptions",
   "Staffing",
   "Final Remarks / Recommendations",
+  "Other",
 ];
 
 function PageCard({ children, style = {} }) {
@@ -191,7 +185,7 @@ function emptyForm(order = 1) {
     key: "",
     label: "",
     type: "text",
-    section: "Overall Operation Status",
+    section: DEFAULT_SECTIONS[0],
     required: false,
     active: true,
     order,
@@ -263,54 +257,23 @@ export default function OperationalReportFormBuilderPage() {
 
   if (!canAccess) {
     return (
-      <div
-        style={{
-          display: "grid",
-          gap: 18,
-          fontFamily: "Poppins, Inter, system-ui, sans-serif",
-        }}
-      >
+      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
         <div
           style={{
-            background:
-              "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+            background: "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
             borderRadius: 28,
             padding: 24,
             color: "#fff",
             boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           }}
         >
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
+          <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.78)", fontWeight: 700 }}>
             TPA OPS · Operational Report Builder
           </p>
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
+          <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-0.04em" }}>
             Access denied
           </h1>
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 700,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
+          <p style={{ margin: 0, maxWidth: 700, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
             Only Station Managers can manage the operational report form.
           </p>
         </div>
@@ -329,7 +292,7 @@ export default function OperationalReportFormBuilderPage() {
       key: field.key || "",
       label: field.label || "",
       type: field.type || "text",
-      section: field.section || "Overall Operation Status",
+      section: field.section || DEFAULT_SECTIONS[0],
       required: Boolean(field.required),
       active: field.active !== false,
       order: Number(field.order || 1),
@@ -357,6 +320,14 @@ export default function OperationalReportFormBuilderPage() {
 
     if (!/^[a-zA-Z0-9_]+$/.test(key)) {
       setStatusMessage("Field key must use only letters, numbers and underscore.");
+      return;
+    }
+
+    const duplicate = fields.find(
+      (item) => item.key === key && item.id !== editingId
+    );
+    if (duplicate) {
+      setStatusMessage("That field key already exists.");
       return;
     }
 
@@ -453,17 +424,10 @@ export default function OperationalReportFormBuilderPage() {
   };
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gap: 18,
-        fontFamily: "Poppins, Inter, system-ui, sans-serif",
-      }}
-    >
+    <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
       <div
         style={{
-          background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          background: "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
           borderRadius: 28,
           padding: 24,
           color: "#fff",
@@ -485,41 +449,16 @@ export default function OperationalReportFormBuilderPage() {
         />
 
         <div style={{ position: "relative" }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
+          <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.78)", fontWeight: 700 }}>
             TPA OPS · Operational Report Builder
           </p>
 
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
+          <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-0.04em" }}>
             Manage Operational Report Form
           </h1>
 
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 760,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            Add, edit, activate, deactivate and reorder questions used in the
-            supervisor operational report.
+          <p style={{ margin: 0, maxWidth: 760, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
+            Add, edit, activate, deactivate and reorder questions used in the supervisor operational report.
           </p>
         </div>
       </div>
@@ -554,26 +493,11 @@ export default function OperationalReportFormBuilderPage() {
           }}
         >
           <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.02em",
-              }}
-            >
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
               {editingId ? "Edit Field" : "Create New Field"}
             </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Keys must be unique. Example: operationStatus, issueDetails,
-              staffingRemarks.
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
+              Keys must be unique. Example: operationStatus, issueDetails, staffingRemarks.
             </p>
           </div>
 
@@ -690,15 +614,7 @@ export default function OperationalReportFormBuilderPage() {
             flexWrap: "wrap",
           }}
         >
-          <label
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              fontWeight: 700,
-              color: "#0f172a",
-            }}
-          >
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, color: "#0f172a" }}>
             <input
               type="checkbox"
               checked={form.required}
@@ -709,15 +625,7 @@ export default function OperationalReportFormBuilderPage() {
             Required
           </label>
 
-          <label
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              fontWeight: 700,
-              color: "#0f172a",
-            }}
-          >
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, color: "#0f172a" }}>
             <input
               type="checkbox"
               checked={form.active}
@@ -742,52 +650,20 @@ export default function OperationalReportFormBuilderPage() {
 
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
             Current Form Fields
           </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
             Active and inactive fields grouped by section.
           </p>
         </div>
 
         {loading ? (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
-            }}
-          >
+          <div style={{ padding: 16, borderRadius: 16, background: "#f8fbff", border: "1px solid #dbeafe", color: "#64748b", fontWeight: 600 }}>
             Loading form fields...
           </div>
         ) : fields.length === 0 ? (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
-            }}
-          >
+          <div style={{ padding: 16, borderRadius: 16, background: "#f8fbff", border: "1px solid #dbeafe", color: "#64748b", fontWeight: 600 }}>
             No fields configured yet.
           </div>
         ) : (
@@ -835,21 +711,8 @@ export default function OperationalReportFormBuilderPage() {
                         }}
                       >
                         <div style={{ minWidth: 0, flex: 1 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                              alignItems: "center",
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 15,
-                                fontWeight: 800,
-                                color: "#0f172a",
-                              }}
-                            >
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>
                               {field.label}
                             </span>
 
@@ -872,9 +735,7 @@ export default function OperationalReportFormBuilderPage() {
                                 padding: "4px 8px",
                                 borderRadius: 999,
                                 background: field.active ? "#dcfce7" : "#f1f5f9",
-                                border: `1px solid ${
-                                  field.active ? "#86efac" : "#cbd5e1"
-                                }`,
+                                border: `1px solid ${field.active ? "#86efac" : "#cbd5e1"}`,
                                 color: field.active ? "#166534" : "#475569",
                                 fontSize: 11,
                                 fontWeight: 800,
@@ -909,49 +770,30 @@ export default function OperationalReportFormBuilderPage() {
                               wordBreak: "break-word",
                             }}
                           >
-                            <div>
-                              <strong>Key:</strong> {field.key}
-                            </div>
-                            <div>
-                              <strong>Order:</strong> {field.order || 0}
-                            </div>
+                            <div><strong>Key:</strong> {field.key}</div>
+                            <div><strong>Order:</strong> {field.order || 0}</div>
                             {field.placeholder ? (
-                              <div>
-                                <strong>Placeholder:</strong> {field.placeholder}
-                              </div>
+                              <div><strong>Placeholder:</strong> {field.placeholder}</div>
                             ) : null}
                             {field.helpText ? (
-                              <div>
-                                <strong>Help text:</strong> {field.helpText}
-                              </div>
+                              <div><strong>Help text:</strong> {field.helpText}</div>
                             ) : null}
                             {Array.isArray(field.options) && field.options.length > 0 ? (
-                              <div>
-                                <strong>Options:</strong> {field.options.join(", ")}
-                              </div>
+                              <div><strong>Options:</strong> {field.options.join(", ")}</div>
                             ) : null}
                           </div>
                         </div>
 
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <ActionButton
-                            variant="secondary"
-                            onClick={() => loadIntoEditor(field)}
-                          >
+                          <ActionButton variant="secondary" onClick={() => loadIntoEditor(field)}>
                             Edit
                           </ActionButton>
 
-                          <ActionButton
-                            variant="warning"
-                            onClick={() => quickToggleActive(field)}
-                          >
+                          <ActionButton variant="warning" onClick={() => quickToggleActive(field)}>
                             {field.active ? "Deactivate" : "Activate"}
                           </ActionButton>
 
-                          <ActionButton
-                            variant="danger"
-                            onClick={() => handleDelete(field)}
-                          >
+                          <ActionButton variant="danger" onClick={() => handleDelete(field)}>
                             Delete
                           </ActionButton>
                         </div>
