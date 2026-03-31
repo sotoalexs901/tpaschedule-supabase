@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  getDocs,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
@@ -16,32 +21,24 @@ const AIRLINE_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
-const EMPLOYEE_STATUS_OPTIONS = [
+const STATUS_OPTIONS = [
   "Present",
   "Late",
   "Call Out",
   "No Show",
-  "Sick",
-  "Vacation",
-  "Suspended",
+  "Sent Home",
+  "Training",
+  "Modified Duty",
   "Other",
 ];
 
-const BREAK_TAKEN_OPTIONS = [
-  "Yes",
+const BREAK_OPTIONS = [
   "No",
+  "Yes",
   "30 min",
   "45 min",
   "60 min",
 ];
-
-const REASON_REQUIRED_STATUSES = new Set([
-  "Late",
-  "Call Out",
-  "No Show",
-  "Sick",
-  "Other",
-]);
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
@@ -56,6 +53,55 @@ function normalizeAirlineName(value) {
   }
 
   return airline;
+}
+
+function detectBudgetAirline(value) {
+  const raw = String(value || "").trim();
+  const upper = raw.toUpperCase();
+
+  if (!upper) return "";
+
+  if (upper === "SY" || upper.startsWith("SY ") || upper.includes(" SY")) {
+    return "SY";
+  }
+
+  if (
+    upper.includes("WESTJET") ||
+    upper.includes("WL HAVANA") ||
+    upper === "WL"
+  ) {
+    return "WestJet";
+  }
+
+  if (upper.includes("WL INVICTA")) {
+    return "WL Invicta";
+  }
+
+  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) {
+    return "AV";
+  }
+
+  if (upper === "EA" || upper.startsWith("EA ")) {
+    return "EA";
+  }
+
+  if (upper.includes("WCHR")) {
+    return "WCHR";
+  }
+
+  if (upper.includes("CABIN")) {
+    return "CABIN";
+  }
+
+  if (upper.includes("AA-BSO") || upper.includes("AA BSO")) {
+    return "AA-BSO";
+  }
+
+  if (upper.includes("OTHER")) {
+    return "OTHER";
+  }
+
+  return normalizeAirlineName(raw);
 }
 
 function getDefaultPosition(role) {
@@ -74,6 +120,42 @@ function getVisibleName(user) {
     user?.username ||
     "User"
   );
+}
+
+function toMinutes(timeStr) {
+  if (!timeStr) return null;
+  const [h, m] = String(timeStr).split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function getBreakMinutes(value) {
+  const v = String(value || "").trim().toLowerCase();
+
+  if (!v || v === "no") return 0;
+  if (v === "yes") return 30;
+  if (v.includes("30")) return 30;
+  if (v.includes("45")) return 45;
+  if (v.includes("60")) return 60;
+
+  return 0;
+}
+
+function calculateRowHours(row) {
+  const start = toMinutes(row?.punchIn);
+  const endRaw = toMinutes(row?.punchOut);
+
+  if (start == null || endRaw == null) return 0;
+
+  let end = endRaw;
+  if (end <= start) end += 24 * 60;
+
+  let minutes = end - start;
+  minutes -= getBreakMinutes(row?.breakTaken);
+
+  if (minutes < 0) minutes = 0;
+
+  return minutes / 60;
 }
 
 function PageCard({ children, style = {} }) {
@@ -191,6 +273,12 @@ function ActionButton({
       border: "1px solid #cfe7fb",
       boxShadow: "none",
     },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
     danger: {
       background: "#dc2626",
       color: "#fff",
@@ -227,42 +315,17 @@ function emptyRow() {
     punchIn: "",
     punchOut: "",
     employeeStatus: "",
-    breakTaken: "",
+    breakTaken: "No",
     reason: "",
   };
 }
-
-function thStyle(extra = {}) {
-  return {
-    padding: "14px 14px",
-    fontSize: 12,
-    fontWeight: 800,
-    color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    whiteSpace: "nowrap",
-    textAlign: "left",
-    borderBottom: "1px solid #e2e8f0",
-    ...extra,
-  };
-}
-
-const tdStyle = {
-  padding: "14px",
-  borderBottom: "1px solid #eef2f7",
-  verticalAlign: "middle",
-};
 
 export default function SupervisorTimesheetPage() {
   const { user } = useUser();
   const navigate = useNavigate();
 
-  const canAccess =
-    user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
-
   const [employees, setEmployees] = useState([]);
+  const [budgetDocs, setBudgetDocs] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -274,25 +337,20 @@ export default function SupervisorTimesheetPage() {
     supervisorReporting: getVisibleName(user),
     supervisorPosition: user?.position || getDefaultPosition(user?.role),
     notes: "",
+    overBudgetReason: "",
   });
 
   const [rows, setRows] = useState([emptyRow()]);
 
   useEffect(() => {
-    if (!user) return;
-
-    setForm((prev) => ({
-      ...prev,
-      supervisorReporting: getVisibleName(user),
-      supervisorPosition: user?.position || getDefaultPosition(user?.role),
-    }));
-  }, [user]);
-
-  useEffect(() => {
-    async function loadEmployees() {
+    async function loadData() {
       try {
-        const snap = await getDocs(collection(db, "users"));
-        const employeeList = snap.docs
+        const [usersSnap, budgetsSnap] = await Promise.all([
+          getDocs(collection(db, "users")),
+          getDocs(collection(db, "airlineBudgets")),
+        ]);
+
+        const employeeList = usersSnap.docs
           .map((d) => ({
             id: d.id,
             ...d.data(),
@@ -311,16 +369,22 @@ export default function SupervisorTimesheetPage() {
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
+        const budgets = budgetsSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
         setEmployees(employeeList);
+        setBudgetDocs(budgets);
       } catch (err) {
-        console.error("Error loading employees:", err);
-        setStatusMessage("Could not load employees.");
+        console.error("Error loading employees/budgets:", err);
+        setStatusMessage("Could not load employees or budgets.");
       } finally {
         setLoadingEmployees(false);
       }
     }
 
-    loadEmployees();
+    loadData();
   }, []);
 
   const employeeMap = useMemo(() => {
@@ -330,6 +394,64 @@ export default function SupervisorTimesheetPage() {
     });
     return map;
   }, [employees]);
+
+  const budgetByAirline = useMemo(() => {
+    const totals = {};
+
+    budgetDocs.forEach((item) => {
+      const source =
+        item.airline ||
+        item.airlineDisplayName ||
+        item.name ||
+        item.code ||
+        item.id ||
+        "";
+
+      const airline = detectBudgetAirline(source);
+      const weekly = Number(item.budgetHours || 0);
+      const dailyManual =
+        item.dailyBudgetHours === null ||
+        item.dailyBudgetHours === undefined ||
+        item.dailyBudgetHours === ""
+          ? null
+          : Number(item.dailyBudgetHours);
+
+      if (!airline) return;
+
+      if (!totals[airline]) {
+        totals[airline] = {
+          daily: 0,
+          weekly: 0,
+          hasManualDaily: false,
+        };
+      }
+
+      totals[airline].weekly += Number.isNaN(weekly) ? 0 : weekly;
+
+      if (dailyManual !== null && !Number.isNaN(dailyManual)) {
+        totals[airline].daily += dailyManual;
+        totals[airline].hasManualDaily = true;
+      }
+    });
+
+    const finalMap = {};
+    Object.keys(totals).forEach((airline) => {
+      const item = totals[airline];
+      finalMap[airline] = item.hasManualDaily ? item.daily : item.weekly / 7;
+    });
+
+    return finalMap;
+  }, [budgetDocs]);
+
+  const selectedAirline = normalizeAirlineName(form.airline);
+  const currentBudget = Number(budgetByAirline[selectedAirline] || 0);
+
+  const totalReportedHours = useMemo(() => {
+    return rows.reduce((sum, row) => sum + calculateRowHours(row), 0);
+  }, [rows]);
+
+  const overBudget = currentBudget > 0 && totalReportedHours > currentBudget;
+  const overBudgetBy = overBudget ? totalReportedHours - currentBudget : 0;
 
   const handleFormChange = (field, value) => {
     setForm((prev) => ({
@@ -393,6 +515,7 @@ export default function SupervisorTimesheetPage() {
         employeeStatus: String(row.employeeStatus || "").trim(),
         breakTaken: String(row.breakTaken || "").trim(),
         reason: String(row.reason || "").trim(),
+        rowHours: calculateRowHours(row),
       }))
       .filter(
         (row) =>
@@ -410,30 +533,20 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
-    if (cleanRows.some((row) => !row.employeeId)) {
+    const missingEmployee = cleanRows.some((row) => !row.employeeId);
+    if (missingEmployee) {
       setStatusMessage("Each row must have an employee selected.");
       return;
     }
 
-    if (cleanRows.some((row) => !row.employeeStatus)) {
-      setStatusMessage("Please select Employee Status for all rows.");
+    const missingStatus = cleanRows.some((row) => !row.employeeStatus);
+    if (missingStatus) {
+      setStatusMessage("Each row must have an employee status selected.");
       return;
     }
 
-    if (cleanRows.some((row) => !row.breakTaken)) {
-      setStatusMessage("Please select Break Taken for all rows.");
-      return;
-    }
-
-    const missingRequiredReason = cleanRows.find(
-      (row) =>
-        REASON_REQUIRED_STATUSES.has(row.employeeStatus) && !row.reason.trim()
-    );
-
-    if (missingRequiredReason) {
-      setStatusMessage(
-        "Reason is required for Late, Call Out, No Show, Sick and Other."
-      );
+    if (overBudget && !String(form.overBudgetReason || "").trim()) {
+      setStatusMessage("Please explain why this timesheet is over budget.");
       return;
     }
 
@@ -446,11 +559,14 @@ export default function SupervisorTimesheetPage() {
         shift: form.shift || "",
         supervisorReporting: form.supervisorReporting || getVisibleName(user),
         supervisorPosition:
-          form.supervisorPosition ||
-          user?.position ||
-          getDefaultPosition(user?.role),
+          form.supervisorPosition || user?.position || getDefaultPosition(user?.role),
         notes: form.notes || "",
         rows: cleanRows,
+        totalHours: totalReportedHours,
+        budgetHoursDaily: currentBudget,
+        overBudget,
+        overBudgetBy: overBudget ? overBudgetBy : 0,
+        overBudgetReason: overBudget ? form.overBudgetReason : "",
         submittedByUserId: user?.id || "",
         submittedByUsername: user?.username || "",
         submittedByName: getVisibleName(user),
@@ -467,6 +583,7 @@ export default function SupervisorTimesheetPage() {
         reportDate: "",
         shift: "",
         notes: "",
+        overBudgetReason: "",
       }));
 
       setRows([emptyRow()]);
@@ -477,27 +594,6 @@ export default function SupervisorTimesheetPage() {
       setSaving(false);
     }
   };
-
-  if (!canAccess) {
-    return (
-      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
-        <PageCard style={{ padding: 22 }}>
-          <div
-            style={{
-              background: "#fff1f2",
-              border: "1px solid #fecdd3",
-              borderRadius: 18,
-              padding: "16px 18px",
-              color: "#9f1239",
-              fontWeight: 700,
-            }}
-          >
-            You do not have permission to access the timesheet page.
-          </div>
-        </PageCard>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -575,7 +671,8 @@ export default function SupervisorTimesheetPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Create a timesheet report and send it for manager review.
+              Create a timesheet report and send it to Station Manager, Duty
+              Manager and admin review.
             </p>
           </div>
 
@@ -593,11 +690,11 @@ export default function SupervisorTimesheetPage() {
         <PageCard style={{ padding: 16 }}>
           <div
             style={{
-              background: "#edf7ff",
-              border: "1px solid #cfe7fb",
+              background: overBudget ? "#fff1f2" : "#edf7ff",
+              border: `1px solid ${overBudget ? "#fecdd3" : "#cfe7fb"}`,
               borderRadius: 16,
               padding: "14px 16px",
-              color: "#1769aa",
+              color: overBudget ? "#9f1239" : "#1769aa",
               fontSize: 14,
               fontWeight: 700,
             }}
@@ -620,6 +717,15 @@ export default function SupervisorTimesheetPage() {
           >
             Report Header
           </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Complete the general information before filling employee rows.
+          </p>
         </div>
 
         <div
@@ -673,6 +779,122 @@ export default function SupervisorTimesheetPage() {
           </div>
         </div>
 
+        {form.airline && (
+          <div
+            style={{
+              marginTop: 16,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: "14px 16px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Daily Budget
+              </div>
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                {currentBudget.toFixed(2)} hrs
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: overBudget ? "#fff1f2" : "#f8fbff",
+                border: `1px solid ${overBudget ? "#fecdd3" : "#dbeafe"}`,
+                borderRadius: 16,
+                padding: "14px 16px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: overBudget ? "#9f1239" : "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Total Reported
+              </div>
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color: overBudget ? "#9f1239" : "#0f172a",
+                }}
+              >
+                {totalReportedHours.toFixed(2)} hrs
+              </div>
+            </div>
+          </div>
+        )}
+
+        {overBudget && (
+          <div
+            style={{
+              marginTop: 16,
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              borderRadius: 18,
+              padding: "16px 18px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 800,
+                color: "#9f1239",
+                marginBottom: 10,
+              }}
+            >
+              Budget Alert
+            </div>
+
+            <div
+              style={{
+                fontSize: 14,
+                color: "#9f1239",
+                fontWeight: 700,
+                marginBottom: 12,
+              }}
+            >
+              This timesheet is over budget by {overBudgetBy.toFixed(2)} hours.
+            </div>
+
+            <FieldLabel>Why are you over budget?</FieldLabel>
+            <TextArea
+              value={form.overBudgetReason}
+              onChange={(e) =>
+                handleFormChange("overBudgetReason", e.target.value)
+              }
+              placeholder="Explain why this operation exceeded the airline daily budget."
+            />
+          </div>
+        )}
+
         <div style={{ marginTop: 14 }}>
           <FieldLabel>Notes</FieldLabel>
           <TextArea
@@ -706,6 +928,16 @@ export default function SupervisorTimesheetPage() {
             >
               Employee Entries
             </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Select employee names already registered in the system and complete
+              the additional fields.
+            </p>
           </div>
 
           <ActionButton onClick={addRow} variant="secondary">
@@ -739,134 +971,125 @@ export default function SupervisorTimesheetPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 1200,
+                minWidth: 1500,
                 background: "#fff",
               }}
             >
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle()}>Employee</th>
-                  <th style={thStyle()}>Punch In</th>
-                  <th style={thStyle()}>Punch Out</th>
-                  <th style={thStyle()}>Employee Status</th>
-                  <th style={thStyle()}>Break Taken</th>
-                  <th style={thStyle()}>Reason</th>
-                  <th style={thStyle({ textAlign: "center" })}>Remove</th>
+                  <th style={thStyle}>Employee</th>
+                  <th style={thStyle}>Punch In</th>
+                  <th style={thStyle}>Punch Out</th>
+                  <th style={thStyle}>Employee Status</th>
+                  <th style={thStyle}>Break Taken</th>
+                  <th style={thStyle}>Reason</th>
+                  <th style={thStyle}>Hours</th>
+                  <th style={{ ...thStyle, textAlign: "center" }}>Remove</th>
                 </tr>
               </thead>
 
               <tbody>
-                {rows.map((row, index) => {
-                  const reasonRequired = REASON_REQUIRED_STATUSES.has(
-                    row.employeeStatus
-                  );
+                {rows.map((row, index) => (
+                  <tr
+                    key={index}
+                    style={{
+                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                    }}
+                  >
+                    <td style={tdStyle}>
+                      <SelectInput
+                        value={row.employeeId}
+                        onChange={(e) =>
+                          handleRowChange(index, "employeeId", e.target.value)
+                        }
+                      >
+                        <option value="">Select employee</option>
+                        {employees.map((emp) => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.name}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    </td>
 
-                  return (
-                    <tr
-                      key={index}
-                      style={{
-                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                      }}
-                    >
-                      <td style={tdStyle}>
-                        <SelectInput
-                          value={row.employeeId}
-                          onChange={(e) =>
-                            handleRowChange(index, "employeeId", e.target.value)
-                          }
-                        >
-                          <option value="">Select employee</option>
-                          {employees.map((emp) => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.name}
-                            </option>
-                          ))}
-                        </SelectInput>
-                      </td>
+                    <td style={tdStyle}>
+                      <TextInput
+                        type="time"
+                        value={row.punchIn}
+                        onChange={(e) =>
+                          handleRowChange(index, "punchIn", e.target.value)
+                        }
+                      />
+                    </td>
 
-                      <td style={tdStyle}>
-                        <TextInput
-                          type="time"
-                          value={row.punchIn}
-                          onChange={(e) =>
-                            handleRowChange(index, "punchIn", e.target.value)
-                          }
-                        />
-                      </td>
+                    <td style={tdStyle}>
+                      <TextInput
+                        type="time"
+                        value={row.punchOut}
+                        onChange={(e) =>
+                          handleRowChange(index, "punchOut", e.target.value)
+                        }
+                      />
+                    </td>
 
-                      <td style={tdStyle}>
-                        <TextInput
-                          type="time"
-                          value={row.punchOut}
-                          onChange={(e) =>
-                            handleRowChange(index, "punchOut", e.target.value)
-                          }
-                        />
-                      </td>
+                    <td style={tdStyle}>
+                      <SelectInput
+                        value={row.employeeStatus}
+                        onChange={(e) =>
+                          handleRowChange(index, "employeeStatus", e.target.value)
+                        }
+                      >
+                        <option value="">Select status</option>
+                        {STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    </td>
 
-                      <td style={tdStyle}>
-                        <SelectInput
-                          value={row.employeeStatus}
-                          onChange={(e) =>
-                            handleRowChange(index, "employeeStatus", e.target.value)
-                          }
-                        >
-                          <option value="">Select status</option>
-                          {EMPLOYEE_STATUS_OPTIONS.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </SelectInput>
-                      </td>
+                    <td style={tdStyle}>
+                      <SelectInput
+                        value={row.breakTaken}
+                        onChange={(e) =>
+                          handleRowChange(index, "breakTaken", e.target.value)
+                        }
+                      >
+                        {BREAK_OPTIONS.map((breakOption) => (
+                          <option key={breakOption} value={breakOption}>
+                            {breakOption}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    </td>
 
-                      <td style={tdStyle}>
-                        <SelectInput
-                          value={row.breakTaken}
-                          onChange={(e) =>
-                            handleRowChange(index, "breakTaken", e.target.value)
-                          }
-                        >
-                          <option value="">Select break</option>
-                          {BREAK_TAKEN_OPTIONS.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </SelectInput>
-                      </td>
+                    <td style={tdStyle}>
+                      <TextInput
+                        value={row.reason}
+                        onChange={(e) =>
+                          handleRowChange(index, "reason", e.target.value)
+                        }
+                        placeholder="Reason / note"
+                      />
+                    </td>
 
-                      <td style={tdStyle}>
-                        <TextInput
-                          value={row.reason}
-                          onChange={(e) =>
-                            handleRowChange(index, "reason", e.target.value)
-                          }
-                          placeholder={
-                            reasonRequired
-                              ? "Reason required"
-                              : "Optional reason / note"
-                          }
-                          style={{
-                            borderColor: reasonRequired && !row.reason ? "#fca5a5" : "#dbeafe",
-                            background:
-                              reasonRequired && !row.reason ? "#fff7f7" : "#ffffff",
-                          }}
-                        />
-                      </td>
+                    <td style={tdStyle}>
+                      <span style={{ fontWeight: 800 }}>
+                        {calculateRowHours(row).toFixed(2)} hrs
+                      </span>
+                    </td>
 
-                      <td style={{ ...tdStyle, textAlign: "center" }}>
-                        <ActionButton
-                          onClick={() => removeRow(index)}
-                          variant="danger"
-                          disabled={rows.length === 1}
-                        >
-                          Remove
-                        </ActionButton>
-                      </td>
-                    </tr>
-                  );
-                })}
+                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                      <ActionButton
+                        onClick={() => removeRow(index)}
+                        variant="danger"
+                        disabled={rows.length === 1}
+                      >
+                        Remove
+                      </ActionButton>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -900,3 +1123,24 @@ export default function SupervisorTimesheetPage() {
     </div>
   );
 }
+
+function thStyle(extra = {}) {
+  return {
+    padding: "14px 14px",
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    whiteSpace: "nowrap",
+    textAlign: "left",
+    borderBottom: "1px solid #e2e8f0",
+    ...extra,
+  };
+}
+
+const tdStyle = {
+  padding: "14px",
+  borderBottom: "1px solid #eef2f7",
+  verticalAlign: "middle",
+};
