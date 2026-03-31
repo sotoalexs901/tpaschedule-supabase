@@ -48,11 +48,6 @@ function buildInitialResponses(fields) {
       return;
     }
 
-    if (field.type === "yesno") {
-      result[field.key] = "";
-      return;
-    }
-
     result[field.key] = "";
   });
 
@@ -60,19 +55,16 @@ function buildInitialResponses(fields) {
 }
 
 function shouldRequireAttentionFromResponses(responses) {
-  return Object.entries(responses || {}).some(([key, value]) => {
-    const k = String(key || "").toLowerCase();
+  const operationStatus = String(responses?.operation_status || "").toLowerCase();
 
-    if (
-      k.includes("operation completed without issues") ||
-      k.includes("operation completed without issue") ||
-      k.includes("completed without issues")
-    ) {
-      return String(value || "").trim().toLowerCase() === "no";
-    }
+  if (
+    operationStatus.includes("not completed") ||
+    operationStatus.includes("remarks")
+  ) {
+    return true;
+  }
 
-    return false;
-  });
+  return false;
 }
 
 function PageCard({ children, style = {} }) {
@@ -190,12 +182,6 @@ function ActionButton({
       border: "1px solid #cfe7fb",
       boxShadow: "none",
     },
-    warning: {
-      background: "#f59e0b",
-      color: "#fff",
-      border: "none",
-      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
-    },
   };
 
   return (
@@ -219,47 +205,230 @@ function ActionButton({
   );
 }
 
-function normalizeFieldKey(label) {
-  return String(label || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
 const DEFAULT_FIELDS = [
   {
-    key: "operation_completed_without_issues",
-    label: "Operation Completed Without Issues",
-    type: "yesno",
+    key: "operation_status",
+    label: "Operation Status",
+    type: "select",
     required: true,
-    options: ["Yes", "No"],
+    options: [
+      "Operation completed with no issues",
+      "Operation completed with remarks",
+      "Operation not completed as planned",
+    ],
+    active: true,
+    order: 1,
   },
   {
-    key: "staffing_ok",
-    label: "Staffing OK",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-  },
-  {
-    key: "equipment_ok",
-    label: "Equipment OK",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-  },
-  {
-    key: "safety_concerns",
-    label: "Safety Concerns",
+    key: "general_comments",
+    label: "General Comments",
     type: "textarea",
     required: false,
+    options: [],
+    active: true,
+    order: 2,
   },
   {
-    key: "additional_comments",
-    label: "Additional Comments",
+    key: "issue_types",
+    label: "Issue Types (select all that apply)",
+    type: "checkbox-group",
+    required: false,
+    options: [
+      "N/A",
+      "Delays",
+      "Staffing",
+      "Baggage",
+      "Equipment",
+      "Customer Service",
+      "Operational",
+      "Safety",
+      "Other",
+    ],
+    active: true,
+    order: 3,
+  },
+  {
+    key: "issue_details",
+    label: "Issue Details",
     type: "textarea",
     required: false,
+    options: [],
+    active: true,
+    order: 4,
+  },
+  {
+    key: "action_taken",
+    label: "Action Taken",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 5,
+  },
+  {
+    key: "issue_status",
+    label: "Status",
+    type: "select",
+    required: false,
+    options: ["N/A", "Resolved", "Pending", "Escalated"],
+    active: true,
+    order: 6,
+  },
+  {
+    key: "oh_bags_total_quantity",
+    label: "OH Bags Total Quantity",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 7,
+  },
+  {
+    key: "oh_bags_affected_flights",
+    label: "OH Bags Affected Flights",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 8,
+  },
+  {
+    key: "oh_bags_details",
+    label: "OH Bags Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 9,
+  },
+  {
+    key: "oh_bags_follow_up_actions",
+    label: "OH Bags Follow-up Actions",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 10,
+  },
+  {
+    key: "pending_item_1",
+    label: "Pending Item 1",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 11,
+  },
+  {
+    key: "pending_description",
+    label: "Pending Description",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 12,
+  },
+  {
+    key: "pending_responsible",
+    label: "Pending Responsible",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 13,
+  },
+  {
+    key: "pending_target_date",
+    label: "Pending Target Date",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 14,
+  },
+  {
+    key: "exception_type",
+    label: "Exception Type (select all that apply)",
+    type: "checkbox-group",
+    required: false,
+    options: ["N/A", "Operational", "Staffing", "Safety", "Baggage", "Other"],
+    active: true,
+    order: 15,
+  },
+  {
+    key: "exception_description",
+    label: "Exception Description",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 16,
+  },
+  {
+    key: "exception_reason",
+    label: "Exception Reason",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 17,
+  },
+  {
+    key: "exception_reported_to",
+    label: "Reported To",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 18,
+  },
+  {
+    key: "staffing_status",
+    label: "Staffing Status (select all that apply)",
+    type: "checkbox-group",
+    required: false,
+    options: ["Full staffing", "Short staffed", "Overtime needed", "Call out", "Other"],
+    active: true,
+    order: 19,
+  },
+  {
+    key: "staffing_remarks",
+    label: "Staffing Remarks",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 20,
+  },
+  {
+    key: "employees_breaks",
+    label: "Employees Breaks",
+    type: "select",
+    required: false,
+    options: [
+      "All agents have taken their scheduled break",
+      "Not all agents have taken their scheduled break",
+    ],
+    active: true,
+    order: 21,
+  },
+  {
+    key: "employees_no_break_taken",
+    label: "Name of Employees / No Break taken",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 22,
+  },
+  {
+    key: "final_remarks_recommendations",
+    label: "Final Remarks / Recommendations",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 23,
   },
 ];
 
@@ -292,6 +461,7 @@ export default function SupervisorOperationalReportPage() {
   const [form, setForm] = useState({
     airline: "",
     reportDate: "",
+    department: "",
     shift: "",
     flightsHandled: "",
     supervisorReporting: getVisibleName(user),
@@ -324,8 +494,8 @@ export default function SupervisorOperationalReportPage() {
           .filter((item) => item.active !== false)
           .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
           .map((item) => ({
-            key: item.key || normalizeFieldKey(item.label),
-            label: item.label || "Unnamed Field",
+            key: item.key,
+            label: item.label,
             type: item.type || "text",
             required: Boolean(item.required),
             options: Array.isArray(item.options) ? item.options : [],
@@ -356,11 +526,6 @@ export default function SupervisorOperationalReportPage() {
       setLoadingBuilder(false);
     }
   }, [canAccess]);
-
-  const visibleAirlineLabel = useMemo(() => {
-    const found = AIRLINE_OPTIONS.find((a) => a.value === form.airline);
-    return found?.label || form.airline || "—";
-  }, [form.airline]);
 
   const computedNeedsAttention = useMemo(() => {
     return shouldRequireAttentionFromResponses(form.responses);
@@ -465,6 +630,7 @@ export default function SupervisorOperationalReportPage() {
       const payload = {
         airline: normalizeAirlineName(form.airline),
         reportDate: form.reportDate,
+        department: String(form.department || "").trim(),
         shift: String(form.shift || "").trim(),
         flightsHandled: String(form.flightsHandled || "").trim(),
         supervisorReporting:
@@ -501,6 +667,7 @@ export default function SupervisorOperationalReportPage() {
       setForm({
         airline: "",
         reportDate: "",
+        department: "",
         shift: "",
         flightsHandled: "",
         supervisorReporting: getVisibleName(user),
@@ -642,8 +809,8 @@ export default function SupervisorOperationalReportPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Submit the operational report from your profile, include delays,
-              issues, and dynamic form responses for manager follow-up.
+              Submit the operational report from your profile, including delays,
+              issues, OH bags, pending items, staffing, and final remarks.
             </p>
           </div>
 
@@ -695,7 +862,7 @@ export default function SupervisorOperationalReportPage() {
               color: "#64748b",
             }}
           >
-            Complete the main operational report information first.
+            Complete the main report information first.
           </p>
         </div>
 
@@ -722,7 +889,7 @@ export default function SupervisorOperationalReportPage() {
           </div>
 
           <div>
-            <FieldLabel>Report Date</FieldLabel>
+            <FieldLabel>Date</FieldLabel>
             <TextInput
               type="date"
               value={form.reportDate}
@@ -731,11 +898,20 @@ export default function SupervisorOperationalReportPage() {
           </div>
 
           <div>
+            <FieldLabel>Department</FieldLabel>
+            <TextInput
+              value={form.department}
+              onChange={(e) => handleFormChange("department", e.target.value)}
+              placeholder="Ramp / TC / BSO / WCHR / Cabin"
+            />
+          </div>
+
+          <div>
             <FieldLabel>Shift</FieldLabel>
             <TextInput
               value={form.shift}
               onChange={(e) => handleFormChange("shift", e.target.value)}
-              placeholder="AM / PM / MID / 05:00-13:30"
+              placeholder="AM / PM / MID"
             />
           </div>
 
@@ -749,21 +925,11 @@ export default function SupervisorOperationalReportPage() {
           </div>
 
           <div>
-            <FieldLabel>Supervisor Reporting</FieldLabel>
+            <FieldLabel>Supervisor (Name)</FieldLabel>
             <TextInput
               value={form.supervisorReporting}
               onChange={(e) =>
                 handleFormChange("supervisorReporting", e.target.value)
-              }
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Supervisor Position</FieldLabel>
-            <TextInput
-              value={form.supervisorPosition}
-              onChange={(e) =>
-                handleFormChange("supervisorPosition", e.target.value)
               }
             />
           </div>
@@ -783,15 +949,6 @@ export default function SupervisorOperationalReportPage() {
           >
             Delay Information
           </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            If there was a delayed flight, complete all related fields.
-          </p>
         </div>
 
         <div
@@ -882,7 +1039,7 @@ export default function SupervisorOperationalReportPage() {
               letterSpacing: "-0.02em",
             }}
           >
-            Dynamic Operational Questions
+            Operational Questions
           </h2>
           <p
             style={{
@@ -1092,7 +1249,7 @@ export default function SupervisorOperationalReportPage() {
                 fontSize: 14,
               }}
             >
-              Attention alert: this report will be flagged because the response indicates the operation was not completed without issues.
+              Attention alert: this report will be flagged because the selected operation status indicates issues or incomplete operation.
             </div>
           )}
         </div>
@@ -1121,47 +1278,6 @@ export default function SupervisorOperationalReportPage() {
             Cancel
           </ActionButton>
         </div>
-
-        {(form.airline || form.reportDate) && (
-          <div
-            style={{
-              marginTop: 16,
-              borderRadius: 16,
-              padding: "14px 16px",
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                color: "#64748b",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                marginBottom: 6,
-              }}
-            >
-              Submission Preview
-            </div>
-            <div
-              style={{
-                fontSize: 14,
-                color: "#0f172a",
-                lineHeight: 1.7,
-                fontWeight: 600,
-              }}
-            >
-              Airline: {visibleAirlineLabel}
-              <br />
-              Date: {form.reportDate || "—"}
-              <br />
-              Delayed Flight: {form.delayedFlight ? "Yes" : "No"}
-              <br />
-              Needs Attention: {finalNeedsAttention ? "Yes" : "No"}
-            </div>
-          </div>
-        )}
       </PageCard>
     </div>
   );
