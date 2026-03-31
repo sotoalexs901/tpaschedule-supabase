@@ -10,14 +10,6 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
-function getDefaultPosition(role) {
-  if (role === "station_manager") return "Station Manager";
-  if (role === "duty_manager") return "Duty Manager";
-  if (role === "supervisor") return "Supervisor";
-  if (role === "agent") return "Agent";
-  return "Team Member";
-}
-
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
 
@@ -40,16 +32,58 @@ function tsToDate(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function formatDate(value) {
-  const d = tsToDate(value);
-  if (!d) return "—";
-  return d.toLocaleDateString();
-}
-
 function formatDateTime(value) {
   const d = tsToDate(value);
   if (!d) return "—";
   return d.toLocaleString();
+}
+
+function toMinutes(timeStr) {
+  if (!timeStr) return null;
+  const [h, m] = String(timeStr).split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function getBreakMinutes(value) {
+  const v = String(value || "").trim().toLowerCase();
+
+  if (!v || v === "no") return 0;
+  if (v === "yes") return 30;
+
+  if (v.includes("30")) return 30;
+  if (v.includes("45")) return 45;
+  if (v.includes("60")) return 60;
+
+  return 0;
+}
+
+function calculateRowHours(row) {
+  const start = toMinutes(row?.punchIn);
+  const endRaw = toMinutes(row?.punchOut);
+
+  if (start == null || endRaw == null) return 0;
+
+  let end = endRaw;
+  if (end <= start) end += 24 * 60;
+
+  let minutes = end - start;
+  minutes -= getBreakMinutes(row?.breakTaken);
+
+  if (minutes < 0) minutes = 0;
+
+  return minutes / 60;
+}
+
+function calculateReportHours(report) {
+  return (report?.rows || []).reduce((sum, row) => sum + calculateRowHours(row), 0);
+}
+
+function startOfTodayString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
 }
 
 function PageCard({ children, style = {} }) {
@@ -145,12 +179,6 @@ function ActionButton({
       border: "1px solid #cfe7fb",
       boxShadow: "none",
     },
-    success: {
-      background: "#16a34a",
-      color: "#fff",
-      border: "none",
-      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
-    },
     danger: {
       background: "#dc2626",
       color: "#fff",
@@ -233,6 +261,42 @@ function statusBadge(status) {
   };
 }
 
+function InfoCard({ label, value }) {
+  return (
+    <div
+      style={{
+        background: "#f8fbff",
+        border: "1px solid #dbeafe",
+        borderRadius: 16,
+        padding: "14px 16px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 16,
+          fontWeight: 800,
+          color: "#0f172a",
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
 export default function TimesheetAdminPage() {
   const { user } = useUser();
 
@@ -249,7 +313,7 @@ export default function TimesheetAdminPage() {
 
   const [filters, setFilters] = useState({
     airline: "all",
-    reportDate: "",
+    reportDate: startOfTodayString(),
     submittedBy: "",
   });
 
@@ -283,15 +347,28 @@ export default function TimesheetAdminPage() {
     }
   }, [canAccess]);
 
+  const reportsWithHours = useMemo(() => {
+    return reports.map((report) => ({
+      ...report,
+      totalHours: calculateReportHours(report),
+      normalizedAirline: normalizeAirlineName(report.airline),
+    }));
+  }, [reports]);
+
   const filteredReports = useMemo(() => {
-    return reports.filter((r) => {
-      const airline = normalizeAirlineName(r.airline);
+    return reportsWithHours.filter((r) => {
       const submittedBy = String(
-        r.submittedByName || r.submittedByUsername || ""
+        r.submittedByName || r.submittedByUsername || r.supervisorReporting || ""
       ).toLowerCase();
 
-      if (filters.airline !== "all" && airline !== filters.airline) return false;
-      if (filters.reportDate && r.reportDate !== filters.reportDate) return false;
+      if (filters.airline !== "all" && r.normalizedAirline !== filters.airline) {
+        return false;
+      }
+
+      if (filters.reportDate && r.reportDate !== filters.reportDate) {
+        return false;
+      }
+
       if (
         filters.submittedBy &&
         !submittedBy.includes(filters.submittedBy.toLowerCase())
@@ -301,15 +378,35 @@ export default function TimesheetAdminPage() {
 
       return true;
     });
-  }, [reports, filters]);
+  }, [reportsWithHours, filters]);
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
-    reports.forEach((r) => {
-      if (r.airline) set.add(normalizeAirlineName(r.airline));
+    reportsWithHours.forEach((r) => {
+      if (r.normalizedAirline) set.add(r.normalizedAirline);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [reports]);
+  }, [reportsWithHours]);
+
+  const airlineHourSummary = useMemo(() => {
+    const totals = {};
+
+    filteredReports.forEach((report) => {
+      const airline = report.normalizedAirline || "Unknown";
+      totals[airline] = (totals[airline] || 0) + report.totalHours;
+    });
+
+    return Object.entries(totals)
+      .map(([airline, hours]) => ({
+        airline,
+        hours,
+      }))
+      .sort((a, b) => b.hours - a.hours || a.airline.localeCompare(b.airline));
+  }, [filteredReports]);
+
+  const totalHoursAllAirlines = useMemo(() => {
+    return airlineHourSummary.reduce((sum, row) => sum + row.hours, 0);
+  }, [airlineHourSummary]);
 
   const selectedReport = useMemo(() => {
     return filteredReports.find((r) => r.id === selectedId) || null;
@@ -468,8 +565,8 @@ export default function TimesheetAdminPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Review submitted timesheets, open the detail, print, save PDF or
-            remove reports sent by mistake.
+            Review submitted reports, filter by day, see total hours by airline
+            and delete reports sent by mistake.
           </p>
         </div>
       </div>
@@ -555,11 +652,91 @@ export default function TimesheetAdminPage() {
         </div>
       </PageCard>
 
+      <PageCard style={{ padding: 22 }}>
+        <div
+          style={{
+            marginBottom: 14,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Total Hours by Airline
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Based on current day filter and current airline filter.
+            </p>
+          </div>
+
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 14,
+              padding: "12px 14px",
+              fontWeight: 800,
+              color: "#0f172a",
+            }}
+          >
+            Total: {totalHoursAllAirlines.toFixed(2)} hrs
+          </div>
+        </div>
+
+        {airlineHourSummary.length === 0 ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontWeight: 600,
+            }}
+          >
+            No airline hour totals found for this filter.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {airlineHourSummary.map((row) => (
+              <InfoCard
+                key={row.airline}
+                label={row.airline}
+                value={`${row.hours.toFixed(2)} hrs`}
+              />
+            ))}
+          </div>
+        )}
+      </PageCard>
+
       <div
         style={{
           display: "grid",
           gridTemplateColumns: selectedReport
-            ? "minmax(320px, 0.9fr) minmax(420px, 1.3fr)"
+            ? "minmax(320px, 0.95fr) minmax(420px, 1.25fr)"
             : "1fr",
           gap: 18,
         }}
@@ -627,18 +804,19 @@ export default function TimesheetAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 900,
+                  minWidth: 980,
                   background: "#fff",
                 }}
               >
                 <thead>
                   <tr style={{ background: "#f8fbff" }}>
-                    <th style={thStyle}>Airline</th>
-                    <th style={thStyle}>Date</th>
-                    <th style={thStyle}>Submitted By</th>
-                    <th style={thStyle}>Created</th>
-                    <th style={thStyle}>Status</th>
-                    <th style={{ ...thStyle, textAlign: "center" }}>Actions</th>
+                    <th style={thStyle()}>Airline</th>
+                    <th style={thStyle()}>Date</th>
+                    <th style={thStyle()}>Submitted By</th>
+                    <th style={thStyle()}>Hours</th>
+                    <th style={thStyle()}>Created</th>
+                    <th style={thStyle()}>Status</th>
+                    <th style={thStyle({ textAlign: "center" })}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -654,7 +832,7 @@ export default function TimesheetAdminPage() {
                             : "#fbfdff",
                       }}
                     >
-                      <td style={tdStyle}>{normalizeAirlineName(report.airline) || "—"}</td>
+                      <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
                       <td style={tdStyle}>{report.reportDate || "—"}</td>
                       <td style={tdStyle}>
                         {report.submittedByName ||
@@ -662,6 +840,7 @@ export default function TimesheetAdminPage() {
                           report.submittedByUsername ||
                           "—"}
                       </td>
+                      <td style={tdStyle}>{report.totalHours.toFixed(2)} hrs</td>
                       <td style={tdStyle}>{formatDateTime(report.createdAt)}</td>
                       <td style={tdStyle}>
                         <span style={statusBadge(report.status)}>
@@ -738,7 +917,7 @@ export default function TimesheetAdminPage() {
                       color: "#64748b",
                     }}
                   >
-                    {normalizeAirlineName(selectedReport.airline) || "—"} ·{" "}
+                    {selectedReport.normalizedAirline || "—"} ·{" "}
                     {selectedReport.reportDate || "—"}
                   </p>
                 </div>
@@ -762,7 +941,7 @@ export default function TimesheetAdminPage() {
               >
                 <InfoCard
                   label="Airline"
-                  value={normalizeAirlineName(selectedReport.airline) || "—"}
+                  value={selectedReport.normalizedAirline || "—"}
                 />
                 <InfoCard
                   label="Report Date"
@@ -785,8 +964,8 @@ export default function TimesheetAdminPage() {
                   }
                 />
                 <InfoCard
-                  label="Created At"
-                  value={formatDateTime(selectedReport.createdAt)}
+                  label="Total Hours"
+                  value={`${selectedReport.totalHours.toFixed(2)} hrs`}
                 />
               </div>
 
@@ -842,12 +1021,13 @@ export default function TimesheetAdminPage() {
                 >
                   <thead>
                     <tr style={{ background: "#f8fbff" }}>
-                      <th style={thStyle}>Employee</th>
-                      <th style={thStyle}>Punch In</th>
-                      <th style={thStyle}>Punch Out</th>
-                      <th style={thStyle}>Employee Status</th>
-                      <th style={thStyle}>Break Taken</th>
-                      <th style={thStyle}>Reason</th>
+                      <th style={thStyle()}>Employee</th>
+                      <th style={thStyle()}>Punch In</th>
+                      <th style={thStyle()}>Punch Out</th>
+                      <th style={thStyle()}>Employee Status</th>
+                      <th style={thStyle()}>Break Taken</th>
+                      <th style={thStyle()}>Reason</th>
+                      <th style={thStyle()}>Hours</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -864,6 +1044,7 @@ export default function TimesheetAdminPage() {
                         <td style={tdStyle}>{row.employeeStatus || "—"}</td>
                         <td style={tdStyle}>{row.breakTaken || "—"}</td>
                         <td style={tdStyle}>{row.reason || "—"}</td>
+                        <td style={tdStyle}>{calculateRowHours(row).toFixed(2)} hrs</td>
                       </tr>
                     ))}
                   </tbody>
@@ -872,42 +1053,6 @@ export default function TimesheetAdminPage() {
             </div>
           </PageCard>
         )}
-      </div>
-    </div>
-  );
-}
-
-function InfoCard({ label, value }) {
-  return (
-    <div
-      style={{
-        background: "#f8fbff",
-        border: "1px solid #dbeafe",
-        borderRadius: 16,
-        padding: "14px 16px",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 16,
-          fontWeight: 800,
-          color: "#0f172a",
-          wordBreak: "break-word",
-        }}
-      >
-        {value}
       </div>
     </div>
   );
