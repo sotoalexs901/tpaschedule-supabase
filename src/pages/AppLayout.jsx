@@ -68,6 +68,7 @@ export default function AppLayout() {
   const [openSections, setOpenSections] = useState({
     General: true,
     Schedules: true,
+    "Submission of Reports": true,
     "Time Off": false,
     WCHR: true,
     Admin: false,
@@ -217,6 +218,7 @@ export default function AppLayout() {
     ];
 
     const schedules = [];
+    const reports = [];
     const timeoff = [];
     const wchr = [];
     const admin = [];
@@ -295,7 +297,7 @@ export default function AppLayout() {
     }
 
     if (canAccessTimesheets) {
-      schedules.push(
+      reports.push(
         {
           to: "/timesheets/submit",
           label: "Timesheet Submit",
@@ -310,12 +312,18 @@ export default function AppLayout() {
     }
 
     if (canAccessOperationalReports) {
-      schedules.push({
+      reports.push({
         to: "/operational-report/submit",
-        label: "Operational Report",
+        label: "Supervisor Report",
         icon: "📝",
       });
     }
+
+    // Futuros reportes organizados aquí
+    // reports.push(
+    //   { to: "/international-trash/submit", label: "International Trash", icon: "🗑️" },
+    //   { to: "/epr/submit", label: "EPR", icon: "📄" }
+    // );
 
     if (user) {
       wchr.push(
@@ -334,6 +342,9 @@ export default function AppLayout() {
 
     if (general.length) sections.push({ title: "General", items: general });
     if (schedules.length) sections.push({ title: "Schedules", items: schedules });
+    if (reports.length) {
+      sections.push({ title: "Submission of Reports", items: reports });
+    }
     if (timeoff.length) sections.push({ title: "Time Off", items: timeoff });
     if (wchr.length) sections.push({ title: "WCHR", items: wchr });
     if (admin.length) sections.push({ title: "Admin", items: admin });
