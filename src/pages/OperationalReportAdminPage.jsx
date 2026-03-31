@@ -46,7 +46,15 @@ function startOfToday() {
 
 function endOfToday() {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
 }
 
 function startOfWeek() {
@@ -74,13 +82,57 @@ function startOfMonth() {
 
 function endOfMonth() {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  return new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999
+  );
 }
 
 function getRangeDates(range) {
   if (range === "today") return { start: startOfToday(), end: endOfToday() };
   if (range === "week") return { start: startOfWeek(), end: endOfWeek() };
   return { start: startOfMonth(), end: endOfMonth() };
+}
+
+function prettifyKey(key) {
+  return String(key || "")
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function parseBooleanLike(value) {
+  if (typeof value === "boolean") return value;
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "yes" || raw === "true" || raw === "1";
+}
+
+function shouldFlagNeedsAttention(report) {
+  if (report?.needsAttention) return true;
+
+  const responses = report?.responses || {};
+  return Object.entries(responses).some(([key, value]) => {
+    const k = String(key || "").toLowerCase();
+    if (
+      k.includes("operation completed without issues") ||
+      k.includes("operation completed without issue") ||
+      k.includes("completed without issues")
+    ) {
+      return !parseBooleanLike(value) && String(value).trim().toLowerCase() !== "yes";
+    }
+    return false;
+  });
+}
+
+function getDelayedMinutes(report) {
+  return Number(report?.delayedTimeMinutes || 0);
 }
 
 function PageCard({ children, style = {} }) {
@@ -293,6 +345,7 @@ export default function OperationalReportAdminPage() {
     delayedReason: "",
     delayedCodeReported: "",
     needsAttention: false,
+    responses: {},
   });
 
   useEffect(() => {
@@ -368,7 +421,7 @@ export default function OperationalReportAdminPage() {
         };
       }
 
-      const minutes = Number(r.delayedTimeMinutes || 0);
+      const minutes = getDelayedMinutes(r);
 
       map[airline].totalDelayed += 1;
       map[airline].maxMinutes = Math.max(map[airline].maxMinutes, minutes);
@@ -402,11 +455,11 @@ export default function OperationalReportAdminPage() {
     });
 
     filteredReports.forEach((r) => {
-      if (r.needsAttention) {
+      if (shouldFlagNeedsAttention(r)) {
         rows.push({
           type: "attention",
           airline: r.normalizedAirline || "Unknown",
-          text: `${r.normalizedAirline || "Unknown"}: Report submitted needs attention because operation was not completed without issues.`,
+          text: `${r.normalizedAirline || "Unknown"}: Report needs attention because operation was not completed without issues.`,
         });
       }
     });
@@ -443,6 +496,7 @@ export default function OperationalReportAdminPage() {
       delayedReason: report.delayedReason || "",
       delayedCodeReported: report.delayedCodeReported || "",
       needsAttention: Boolean(report.needsAttention),
+      responses: { ...(report.responses || {}) },
     });
     setSelectedId(report.id);
   };
@@ -450,6 +504,16 @@ export default function OperationalReportAdminPage() {
   const cancelEdit = () => {
     setEditingId("");
     setSavingId("");
+  };
+
+  const handleDynamicResponseChange = (key, value) => {
+    setEditForm((prev) => ({
+      ...prev,
+      responses: {
+        ...(prev.responses || {}),
+        [key]: value,
+      },
+    }));
   };
 
   const saveEdit = async (report) => {
@@ -468,6 +532,7 @@ export default function OperationalReportAdminPage() {
         delayedReason: String(editForm.delayedReason || "").trim(),
         delayedCodeReported: String(editForm.delayedCodeReported || "").trim(),
         needsAttention: Boolean(editForm.needsAttention),
+        responses: editForm.responses || {},
       };
 
       await updateDoc(doc(db, "operational_reports", report.id), payload);
@@ -775,7 +840,9 @@ export default function OperationalReportAdminPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: selectedReport ? "minmax(320px, 0.95fr) minmax(420px, 1.25fr)" : "1fr",
+          gridTemplateColumns: selectedReport
+            ? "minmax(320px, 0.95fr) minmax(420px, 1.25fr)"
+            : "1fr",
           gap: 18,
         }}
       >
@@ -844,7 +911,7 @@ export default function OperationalReportAdminPage() {
                       <td style={tdStyle}>{report.supervisorReporting || "—"}</td>
                       <td style={tdStyle}>{report.delayedFlight ? "Yes" : "No"}</td>
                       <td style={tdStyle}>{Number(report.delayedTimeMinutes || 0)}</td>
-                      <td style={tdStyle}>{report.needsAttention ? "Yes" : "No"}</td>
+                      <td style={tdStyle}>{shouldFlagNeedsAttention(report) ? "Yes" : "No"}</td>
                       <td style={tdStyle}>{formatDateTime(report.createdAt)}</td>
                       <td style={{ ...tdStyle, textAlign: "center" }}>
                         <div
@@ -1051,6 +1118,24 @@ export default function OperationalReportAdminPage() {
                   />
                   Needs Attention
                 </label>
+
+                <div>
+                  <FieldLabel>Dynamic Responses</FieldLabel>
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {Object.entries(editForm.responses || {}).map(([key, value]) => (
+                      <div key={key}>
+                        <FieldLabel>{prettifyKey(key)}</FieldLabel>
+                        <TextArea
+                          value={Array.isArray(value) ? value.join(", ") : String(value ?? "")}
+                          onChange={(e) =>
+                            handleDynamicResponseChange(key, e.target.value)
+                          }
+                          style={{ minHeight: 70 }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : (
               <div style={{ display: "grid", gap: 16 }}>
@@ -1083,7 +1168,7 @@ export default function OperationalReportAdminPage() {
                 <DetailBox label="Delayed Reason" value={selectedReport.delayedReason || "—"} />
                 <DetailBox label="Notes" value={selectedReport.notes || "—"} />
 
-                {selectedReport.needsAttention && (
+                {shouldFlagNeedsAttention(selectedReport) && (
                   <div
                     style={{
                       borderRadius: 16,
@@ -1139,38 +1224,53 @@ export default function OperationalReportAdminPage() {
                       gap: 10,
                     }}
                   >
-                    {Object.entries(selectedReport.responses || {}).map(([key, value]) => (
+                    {Object.entries(selectedReport.responses || {}).length === 0 ? (
                       <div
-                        key={key}
                         style={{
                           borderRadius: 14,
                           padding: "12px 14px",
                           background: "#f8fbff",
                           border: "1px solid #dbeafe",
+                          color: "#64748b",
+                          fontWeight: 600,
                         }}
                       >
-                        <div
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 800,
-                            color: "#64748b",
-                            marginBottom: 4,
-                          }}
-                        >
-                          {key}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 14,
-                            color: "#0f172a",
-                            fontWeight: 600,
-                            whiteSpace: "pre-line",
-                          }}
-                        >
-                          {Array.isArray(value) ? value.join(", ") : String(value || "—")}
-                        </div>
+                        No dynamic responses found.
                       </div>
-                    ))}
+                    ) : (
+                      Object.entries(selectedReport.responses || {}).map(([key, value]) => (
+                        <div
+                          key={key}
+                          style={{
+                            borderRadius: 14,
+                            padding: "12px 14px",
+                            background: "#f8fbff",
+                            border: "1px solid #dbeafe",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: "#64748b",
+                              marginBottom: 4,
+                            }}
+                          >
+                            {prettifyKey(key)}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              color: "#0f172a",
+                              fontWeight: 600,
+                              whiteSpace: "pre-line",
+                            }}
+                          >
+                            {Array.isArray(value) ? value.join(", ") : String(value || "—")}
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
