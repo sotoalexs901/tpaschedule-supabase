@@ -25,6 +25,18 @@ function formatDateLabel(value) {
   }
 }
 
+function formatCreatedAtLabel(value) {
+  if (!value) return "—";
+  try {
+    if (typeof value?.toDate === "function") {
+      return value.toDate().toLocaleString();
+    }
+    return new Date(value).toLocaleString();
+  } catch {
+    return "—";
+  }
+}
+
 function useIsMobile(breakpoint = 900) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < breakpoint);
 
@@ -223,6 +235,12 @@ export default function DashboardPage() {
   const [photos, setPhotos] = useState([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
 
+  const [pendingTimesheets, setPendingTimesheets] = useState([]);
+  const [loadingTimesheets, setLoadingTimesheets] = useState(false);
+
+  const canTrackTimesheets =
+    user?.role === "duty_manager" || user?.role === "station_manager";
+
   const fetchMainMessage = async () => {
     try {
       const ref = doc(db, "dashboard", "main");
@@ -349,6 +367,37 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchPendingTimesheets = async () => {
+    if (!canTrackTimesheets) {
+      setPendingTimesheets([]);
+      return;
+    }
+
+    setLoadingTimesheets(true);
+    try {
+      const qPending = query(
+        collection(db, "timesheet_reports"),
+        where("status", "==", "submitted")
+      );
+
+      const snap = await getDocs(qPending);
+
+      const items = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const aTime = a.createdAt?.seconds || 0;
+          const bTime = b.createdAt?.seconds || 0;
+          return bTime - aTime;
+        });
+
+      setPendingTimesheets(items);
+    } catch (err) {
+      console.error("Error loading pending timesheets:", err);
+    } finally {
+      setLoadingTimesheets(false);
+    }
+  };
+
   const reloadAll = () => {
     fetchMainMessage();
     fetchEvents();
@@ -356,14 +405,15 @@ export default function DashboardPage() {
     fetchBlockedEmployees();
     fetchPendingSchedules();
     fetchPhotos();
+    fetchPendingTimesheets();
   };
 
   useEffect(() => {
     reloadAll();
   }, [user?.role]);
 
-  const stats = useMemo(
-    () => [
+  const stats = useMemo(() => {
+    const base = [
       {
         title: "Upcoming Events",
         value: events.length,
@@ -392,14 +442,27 @@ export default function DashboardPage() {
         accent: "#10b981",
         icon: "📥",
       },
-    ],
-    [
-      events.length,
-      notices.length,
-      blockedEmployees.length,
-      pendingSchedules.length,
-    ]
-  );
+    ];
+
+    if (canTrackTimesheets) {
+      base.push({
+        title: "Pending Timesheets",
+        value: pendingTimesheets.length,
+        subtitle: "Waiting for manager review",
+        accent: "#c2410c",
+        icon: "🕒",
+      });
+    }
+
+    return base;
+  }, [
+    events.length,
+    notices.length,
+    blockedEmployees.length,
+    pendingSchedules.length,
+    pendingTimesheets.length,
+    canTrackTimesheets,
+  ]);
 
   return (
     <div
@@ -489,7 +552,7 @@ export default function DashboardPage() {
               }}
             >
               Quick overview of station updates, highlights, notices,
-              restrictions and schedules pending decision.
+              restrictions, pending schedules and timesheet follow up.
             </p>
           </div>
 
@@ -758,6 +821,124 @@ export default function DashboardPage() {
               </div>
             )}
           </GlassCard>
+
+          {canTrackTimesheets && (
+            <GlassCard
+              title="Pending Timesheets Follow Up"
+              icon="🕒"
+              accent="#c2410c"
+              isMobile={isMobile}
+              action={
+                <button
+                  type="button"
+                  onClick={() => navigate("/timesheets/reports")}
+                  style={{
+                    border: "1px solid #fdba74",
+                    background: "#fff7ed",
+                    color: "#c2410c",
+                    borderRadius: 14,
+                    padding: "10px 14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    width: isMobile ? "100%" : "auto",
+                  }}
+                >
+                  Open Reports
+                </button>
+              }
+            >
+              {loadingTimesheets ? (
+                <p style={{ margin: 0, color: "#94a3b8" }}>
+                  Loading timesheets...
+                </p>
+              ) : pendingTimesheets.length === 0 ? (
+                <p style={{ margin: 0, color: "#64748b" }}>
+                  No pending supervisor timesheets right now.
+                </p>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {pendingTimesheets.slice(0, 6).map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        borderRadius: 16,
+                        padding: 14,
+                        background:
+                          "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
+                        border: "1px solid #fdba74",
+                        minWidth: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontWeight: 800,
+                              color: "#0f172a",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {item.airline || "—"} · {item.reportDate || "—"}
+                          </p>
+
+                          <p
+                            style={{
+                              margin: "7px 0 0",
+                              fontSize: 13,
+                              color: "#475569",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            Submitted by{" "}
+                            <b>
+                              {item.submittedByName ||
+                                item.submittedByUsername ||
+                                item.supervisorReporting ||
+                                "Unknown"}
+                            </b>
+                          </p>
+
+                          <p
+                            style={{
+                              margin: "6px 0 0",
+                              fontSize: 12,
+                              color: "#64748b",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            Created: {formatCreatedAtLabel(item.createdAt)}
+                          </p>
+                        </div>
+
+                        <div
+                          style={{
+                            alignSelf: "center",
+                            padding: "7px 10px",
+                            borderRadius: 999,
+                            background: "#fff1f2",
+                            border: "1px solid #fecdd3",
+                            color: "#be123c",
+                            fontSize: 12,
+                            fontWeight: 800,
+                          }}
+                        >
+                          Pending
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </GlassCard>
+          )}
         </div>
 
         <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
