@@ -208,6 +208,28 @@ function SelectInput(props) {
   );
 }
 
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        resize: "vertical",
+        minHeight: 110,
+        fontFamily: "inherit",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 function ActionButton({
   children,
   onClick,
@@ -234,6 +256,12 @@ function ActionButton({
       color: "#fff",
       border: "none",
       boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+    warning: {
+      background: "#f59e0b",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
     },
     danger: {
       background: "#dc2626",
@@ -306,6 +334,15 @@ function statusBadge(status) {
       background: "#dcfce7",
       color: "#166534",
       borderColor: "#86efac",
+    };
+  }
+
+  if (value === "RETURNED") {
+    return {
+      ...base,
+      background: "#fff7ed",
+      color: "#9a3412",
+      borderColor: "#fdba74",
     };
   }
 
@@ -394,6 +431,23 @@ function buildPrintableHtml(report, airlineSummary) {
       `
       : "";
 
+  const returnedBlock =
+    String(report.status || "").toLowerCase() === "returned"
+      ? `
+        <div class="returned-box">
+          <div class="section-label">Returned For Fix</div>
+          <div>
+            Returned by ${report.returnedByName || "Manager"}
+            ${report.returnedByRole ? ` (${report.returnedByRole})` : ""}
+            · ${formatDateTime(report.returnedAt)}
+          </div>
+          <div style="margin-top:8px;">
+            ${String(report.returnedReason || "No reason provided.").replace(/\n/g, "<br/>")}
+          </div>
+        </div>
+      `
+      : "";
+
   const notesBlock = report.notes
     ? `
       <div class="notes-box">
@@ -469,6 +523,11 @@ function buildPrintableHtml(report, airlineSummary) {
             color: #166534;
             border-color: #86efac;
           }
+          .status.returned {
+            background: #fff7ed;
+            color: #9a3412;
+            border-color: #fdba74;
+          }
           .grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -506,6 +565,7 @@ function buildPrintableHtml(report, airlineSummary) {
           }
           .notes-box,
           .approval-box,
+          .returned-box,
           .over-budget-reason-box {
             border-radius: 14px;
             padding: 12px 14px;
@@ -519,6 +579,11 @@ function buildPrintableHtml(report, airlineSummary) {
           .approval-box {
             background: #ecfdf5;
             border: 1px solid #a7f3d0;
+          }
+          .returned-box {
+            background: #fff7ed;
+            border: 1px solid #fdba74;
+            color: #9a3412;
           }
           .over-budget-reason-box {
             background: #fff7ed;
@@ -573,7 +638,13 @@ function buildPrintableHtml(report, airlineSummary) {
               ${report.normalizedAirline || "—"} · ${report.reportDate || "—"}
             </div>
           </div>
-          <div class="status ${String(report.status || "").toLowerCase() === "approved" ? "approved" : ""}">
+          <div class="status ${
+            String(report.status || "").toLowerCase() === "approved"
+              ? "approved"
+              : String(report.status || "").toLowerCase() === "returned"
+              ? "returned"
+              : ""
+          }">
             ${String(report.status || "submitted").toUpperCase()}
           </div>
         </div>
@@ -605,17 +676,26 @@ function buildPrintableHtml(report, airlineSummary) {
           </div>
           <div class="card">
             <div class="card-label">Daily Budget</div>
-            <div class="card-value">${airlineSummary ? airlineSummary.budget.toFixed(2) : Number(report.budgetHoursDaily || 0).toFixed(2)} hrs</div>
+            <div class="card-value">${
+              airlineSummary
+                ? airlineSummary.budget.toFixed(2)
+                : Number(report.budgetHoursDaily || 0).toFixed(2)
+            } hrs</div>
           </div>
           <div class="card">
             <div class="card-label">Airline Daily Total</div>
-            <div class="card-value">${airlineSummary ? airlineSummary.hours.toFixed(2) : report.totalHours.toFixed(2)} hrs</div>
+            <div class="card-value">${
+              airlineSummary
+                ? airlineSummary.hours.toFixed(2)
+                : report.totalHours.toFixed(2)
+            } hrs</div>
           </div>
         </div>
 
         ${budgetAlert}
         ${overBudgetReasonBlock}
         ${notesBlock}
+        ${returnedBlock}
         ${approvalBlock}
 
         <table>
@@ -644,6 +724,18 @@ function buildPrintableHtml(report, airlineSummary) {
   `;
 }
 
+function emptyEditRow() {
+  return {
+    employeeId: "",
+    employeeName: "",
+    punchIn: "",
+    punchOut: "",
+    employeeStatus: "",
+    breakTaken: "No",
+    reason: "",
+  };
+}
+
 export default function TimesheetAdminPage() {
   const { user } = useUser();
 
@@ -662,11 +754,24 @@ export default function TimesheetAdminPage() {
   const [selectedId, setSelectedId] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [approvingId, setApprovingId] = useState("");
+  const [returningId, setReturningId] = useState("");
+  const [savingEditId, setSavingEditId] = useState("");
 
   const [filters, setFilters] = useState({
     airline: "all",
     reportDate: startOfTodayString(),
     submittedBy: "",
+  });
+
+  const [returnReason, setReturnReason] = useState("");
+  const [editData, setEditData] = useState({
+    airline: "",
+    reportDate: "",
+    shift: "",
+    supervisorReporting: "",
+    notes: "",
+    overBudgetReason: "",
+    rows: [],
   });
 
   useEffect(() => {
@@ -857,6 +962,44 @@ export default function TimesheetAdminPage() {
     }
   }, [filteredReports, selectedId]);
 
+  useEffect(() => {
+    if (!selectedReport) {
+      setEditData({
+        airline: "",
+        reportDate: "",
+        shift: "",
+        supervisorReporting: "",
+        notes: "",
+        overBudgetReason: "",
+        rows: [],
+      });
+      setReturnReason("");
+      return;
+    }
+
+    setEditData({
+      airline: selectedReport.airline || "",
+      reportDate: selectedReport.reportDate || "",
+      shift: selectedReport.shift || "",
+      supervisorReporting: selectedReport.supervisorReporting || "",
+      notes: selectedReport.notes || "",
+      overBudgetReason: selectedReport.overBudgetReason || "",
+      rows: (selectedReport.rows || []).length
+        ? selectedReport.rows.map((row) => ({
+            employeeId: row.employeeId || "",
+            employeeName: row.employeeName || "",
+            punchIn: row.punchIn || "",
+            punchOut: row.punchOut || "",
+            employeeStatus: row.employeeStatus || "",
+            breakTaken: row.breakTaken || "No",
+            reason: row.reason || "",
+          }))
+        : [emptyEditRow()],
+    });
+
+    setReturnReason(selectedReport.returnedReason || "");
+  }, [selectedReport]);
+
   const handleDelete = async (report) => {
     const ok = window.confirm(
       `Delete this timesheet report from ${report.reportDate || "unknown date"}?`
@@ -909,6 +1052,7 @@ export default function TimesheetAdminPage() {
           user?.username ||
           "Manager",
         approvedByRole: user?.role || "",
+        returnedReason: "",
       });
 
       setReports((prev) =>
@@ -925,6 +1069,7 @@ export default function TimesheetAdminPage() {
                   user?.username ||
                   "Manager",
                 approvedByRole: user?.role || "",
+                returnedReason: "",
               }
             : item
         )
@@ -947,10 +1092,200 @@ export default function TimesheetAdminPage() {
     }
   };
 
+  const handleReturn = async (report) => {
+    if (!canApprove) return;
+
+    if (!String(returnReason || "").trim()) {
+      setStatusMessage("Please write the reason before returning the timesheet.");
+      return;
+    }
+
+    const ok = window.confirm("Return this timesheet to supervisor for fix?");
+    if (!ok) return;
+
+    try {
+      setReturningId(report.id);
+
+      await updateDoc(doc(db, "timesheet_reports", report.id), {
+        status: "returned",
+        returnedAt: serverTimestamp(),
+        returnedByName:
+          user?.displayName ||
+          user?.fullName ||
+          user?.name ||
+          user?.username ||
+          "Manager",
+        returnedByRole: user?.role || "",
+        returnedReason: returnReason,
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                status: "returned",
+                returnedAt: new Date(),
+                returnedByName:
+                  user?.displayName ||
+                  user?.fullName ||
+                  user?.name ||
+                  user?.username ||
+                  "Manager",
+                returnedByRole: user?.role || "",
+                returnedReason: returnReason,
+              }
+            : item
+        )
+      );
+
+      setStatusMessage("Timesheet returned for correction.");
+    } catch (err) {
+      console.error("Error returning timesheet:", err);
+      setStatusMessage("Could not return timesheet.");
+    } finally {
+      setReturningId("");
+    }
+  };
+
+  const handleEditField = (field, value) => {
+    setEditData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleEditRow = (index, field, value) => {
+    setEditData((prev) => ({
+      ...prev,
+      rows: prev.rows.map((row, i) =>
+        i === index ? { ...row, [field]: value } : row
+      ),
+    }));
+  };
+
+  const addEditRow = () => {
+    setEditData((prev) => ({
+      ...prev,
+      rows: [...prev.rows, emptyEditRow()],
+    }));
+  };
+
+  const removeEditRow = (index) => {
+    setEditData((prev) => ({
+      ...prev,
+      rows:
+        prev.rows.length === 1
+          ? prev.rows
+          : prev.rows.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleSaveEdits = async (report) => {
+    if (!canApprove) return;
+
+    try {
+      setSavingEditId(report.id);
+
+      const cleanRows = (editData.rows || [])
+        .map((row) => ({
+          employeeId: row.employeeId || "",
+          employeeName: String(row.employeeName || "").trim(),
+          punchIn: String(row.punchIn || "").trim(),
+          punchOut: String(row.punchOut || "").trim(),
+          employeeStatus: String(row.employeeStatus || "").trim(),
+          breakTaken: String(row.breakTaken || "").trim(),
+          reason: String(row.reason || "").trim(),
+        }))
+        .filter(
+          (row) =>
+            row.employeeName ||
+            row.punchIn ||
+            row.punchOut ||
+            row.employeeStatus ||
+            row.breakTaken ||
+            row.reason
+        );
+
+      if (!cleanRows.length) {
+        setStatusMessage("The timesheet needs at least one employee row.");
+        return;
+      }
+
+      const totalHours = cleanRows.reduce(
+        (sum, row) => sum + calculateRowHours(row),
+        0
+      );
+
+      await updateDoc(doc(db, "timesheet_reports", report.id), {
+        airline: normalizeAirlineName(editData.airline),
+        reportDate: editData.reportDate || "",
+        shift: editData.shift || "",
+        supervisorReporting: editData.supervisorReporting || "",
+        notes: editData.notes || "",
+        overBudgetReason: editData.overBudgetReason || "",
+        rows: cleanRows,
+        totalHours,
+        lastEditedAt: serverTimestamp(),
+        lastEditedByName:
+          user?.displayName ||
+          user?.fullName ||
+          user?.name ||
+          user?.username ||
+          "Manager",
+        lastEditedByRole: user?.role || "",
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                airline: normalizeAirlineName(editData.airline),
+                reportDate: editData.reportDate || "",
+                shift: editData.shift || "",
+                supervisorReporting: editData.supervisorReporting || "",
+                notes: editData.notes || "",
+                overBudgetReason: editData.overBudgetReason || "",
+                rows: cleanRows,
+                totalHours,
+              }
+            : item
+        )
+      );
+
+      setStatusMessage("Timesheet changes saved.");
+    } catch (err) {
+      console.error("Error saving edits:", err);
+      setStatusMessage("Could not save timesheet edits.");
+    } finally {
+      setSavingEditId("");
+    }
+  };
+
   const handlePrintExport = () => {
     if (!selectedReport) return;
 
-    const html = buildPrintableHtml(selectedReport, selectedAirlineSummary);
+    const printableReport = {
+      ...selectedReport,
+      airline: normalizeAirlineName(editData.airline || selectedReport.airline),
+      normalizedAirline: normalizeAirlineName(
+        editData.airline || selectedReport.airline
+      ),
+      reportDate: editData.reportDate || selectedReport.reportDate,
+      shift: editData.shift || selectedReport.shift,
+      supervisorReporting:
+        editData.supervisorReporting || selectedReport.supervisorReporting,
+      notes: editData.notes || selectedReport.notes,
+      overBudgetReason:
+        editData.overBudgetReason || selectedReport.overBudgetReason,
+      rows: (editData.rows || []).length ? editData.rows : selectedReport.rows || [],
+      totalHours: (editData.rows || []).length
+        ? editData.rows.reduce((sum, row) => sum + calculateRowHours(row), 0)
+        : selectedReport.totalHours,
+    };
+
+    const html = buildPrintableHtml(printableReport, selectedAirlineSummary);
     const printWindow = window.open("", "_blank", "width=1200,height=900");
 
     if (!printWindow) {
@@ -1094,7 +1429,8 @@ export default function TimesheetAdminPage() {
             }}
           >
             Review submitted reports, compare daily airline hours vs daily budget,
-            approve reports, and export only the selected timesheet.
+            approve, return for correction, edit reports, and export only the
+            selected timesheet.
           </p>
         </div>
       </div>
@@ -1368,7 +1704,7 @@ export default function TimesheetAdminPage() {
         style={{
           display: "grid",
           gridTemplateColumns: selectedReport
-            ? "minmax(320px, 0.95fr) minmax(420px, 1.25fr)"
+            ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
             : "1fr",
           gap: 18,
         }}
@@ -1436,7 +1772,7 @@ export default function TimesheetAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1040,
+                  minWidth: 1140,
                   background: "#fff",
                 }}
               >
@@ -1502,6 +1838,18 @@ export default function TimesheetAdminPage() {
                               disabled={approvingId === report.id}
                             >
                               {approvingId === report.id ? "Approving..." : "Approve"}
+                            </ActionButton>
+                          )}
+
+                          {canApprove && report.status !== "approved" && (
+                            <ActionButton
+                              variant="warning"
+                              onClick={() => {
+                                setSelectedId(report.id);
+                                setReturnReason(report.returnedReason || "");
+                              }}
+                            >
+                              Return
                             </ActionButton>
                           )}
 
@@ -1571,6 +1919,16 @@ export default function TimesheetAdminPage() {
                     Print / Export PDF
                   </ActionButton>
 
+                  {canApprove && (
+                    <ActionButton
+                      variant="primary"
+                      onClick={() => handleSaveEdits(selectedReport)}
+                      disabled={savingEditId === selectedReport.id}
+                    >
+                      {savingEditId === selectedReport.id ? "Saving..." : "Save Edits"}
+                    </ActionButton>
+                  )}
+
                   {canApprove && selectedReport.status !== "approved" && (
                     <ActionButton
                       variant="success"
@@ -1592,19 +1950,23 @@ export default function TimesheetAdminPage() {
               >
                 <InfoCard
                   label="Airline"
-                  value={selectedReport.normalizedAirline || "—"}
+                  value={editData.airline || selectedReport.normalizedAirline || "—"}
                 />
                 <InfoCard
                   label="Report Date"
-                  value={selectedReport.reportDate || "—"}
+                  value={editData.reportDate || selectedReport.reportDate || "—"}
                 />
                 <InfoCard
                   label="Shift"
-                  value={selectedReport.shift || "—"}
+                  value={editData.shift || selectedReport.shift || "—"}
                 />
                 <InfoCard
                   label="Supervisor Reporting"
-                  value={selectedReport.supervisorReporting || "—"}
+                  value={
+                    editData.supervisorReporting ||
+                    selectedReport.supervisorReporting ||
+                    "—"
+                  }
                 />
                 <InfoCard
                   label="Submitted By"
@@ -1616,7 +1978,14 @@ export default function TimesheetAdminPage() {
                 />
                 <InfoCard
                   label="Report Hours"
-                  value={`${selectedReport.totalHours.toFixed(2)} hrs`}
+                  value={`${(
+                    (editData.rows || []).length
+                      ? editData.rows.reduce(
+                          (sum, row) => sum + calculateRowHours(row),
+                          0
+                        )
+                      : selectedReport.totalHours
+                  ).toFixed(2)} hrs`}
                 />
                 <InfoCard
                   label="Daily Budget"
@@ -1655,7 +2024,7 @@ export default function TimesheetAdminPage() {
                 </div>
               )}
 
-              {selectedReport.overBudget && selectedReport.overBudgetReason && (
+              {selectedReport.status === "returned" && (
                 <div
                   style={{
                     borderRadius: 16,
@@ -1674,94 +2043,125 @@ export default function TimesheetAdminPage() {
                       marginBottom: 6,
                     }}
                   >
-                    Over Budget Reason
+                    Returned For Fix
                   </div>
                   <div
                     style={{
                       fontSize: 14,
                       color: "#7c2d12",
-                      whiteSpace: "pre-line",
                       lineHeight: 1.7,
+                      fontWeight: 700,
+                      whiteSpace: "pre-line",
+                    }}
+                  >
+                    {selectedReport.returnedReason || "No reason provided."}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 13,
+                      color: "#9a3412",
                       fontWeight: 700,
                     }}
                   >
-                    {selectedReport.overBudgetReason}
-                  </div>
-                </div>
-              )}
-
-              {selectedReport.notes && (
-                <div
-                  style={{
-                    borderRadius: 16,
-                    padding: "14px 16px",
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                      marginBottom: 6,
-                    }}
-                  >
-                    Notes
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      color: "#0f172a",
-                      whiteSpace: "pre-line",
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    {selectedReport.notes}
-                  </div>
-                </div>
-              )}
-
-              {selectedReport.status === "approved" && (
-                <div
-                  style={{
-                    borderRadius: 16,
-                    padding: "14px 16px",
-                    background: "#ecfdf5",
-                    border: "1px solid #a7f3d0",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#047857",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                      marginBottom: 6,
-                    }}
-                  >
-                    Approval
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      color: "#065f46",
-                      lineHeight: 1.7,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Approved by {selectedReport.approvedByName || "Manager"}{" "}
-                    {selectedReport.approvedByRole
-                      ? `(${selectedReport.approvedByRole})`
+                    {selectedReport.returnedByName || "Manager"}
+                    {selectedReport.returnedByRole
+                      ? ` (${selectedReport.returnedByRole})`
                       : ""}
                     {" · "}
-                    {formatDateTime(selectedReport.approvedAt)}
+                    {formatDateTime(selectedReport.returnedAt)}
                   </div>
                 </div>
               )}
+
+              {canApprove && selectedReport.status !== "approved" && (
+                <div>
+                  <FieldLabel>Reason to return for correction</FieldLabel>
+                  <TextArea
+                    value={returnReason}
+                    onChange={(e) => setReturnReason(e.target.value)}
+                    placeholder="Explain what needs to be fixed before resubmitting."
+                  />
+                  <div style={{ marginTop: 12 }}>
+                    <ActionButton
+                      variant="warning"
+                      onClick={() => handleReturn(selectedReport)}
+                      disabled={returningId === selectedReport.id}
+                    >
+                      {returningId === selectedReport.id
+                        ? "Returning..."
+                        : "Return to Supervisor"}
+                    </ActionButton>
+                  </div>
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <FieldLabel>Airline</FieldLabel>
+                  <TextInput
+                    value={editData.airline}
+                    onChange={(e) => handleEditField("airline", e.target.value)}
+                    disabled={!canApprove}
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Report Date</FieldLabel>
+                  <TextInput
+                    type="date"
+                    value={editData.reportDate}
+                    onChange={(e) => handleEditField("reportDate", e.target.value)}
+                    disabled={!canApprove}
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Shift</FieldLabel>
+                  <TextInput
+                    value={editData.shift}
+                    onChange={(e) => handleEditField("shift", e.target.value)}
+                    disabled={!canApprove}
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Supervisor Reporting</FieldLabel>
+                  <TextInput
+                    value={editData.supervisorReporting}
+                    onChange={(e) =>
+                      handleEditField("supervisorReporting", e.target.value)
+                    }
+                    disabled={!canApprove}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>Notes</FieldLabel>
+                <TextArea
+                  value={editData.notes}
+                  onChange={(e) => handleEditField("notes", e.target.value)}
+                  disabled={!canApprove}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Over Budget Reason</FieldLabel>
+                <TextArea
+                  value={editData.overBudgetReason}
+                  onChange={(e) =>
+                    handleEditField("overBudgetReason", e.target.value)
+                  }
+                  disabled={!canApprove}
+                />
+              </div>
 
               <div
                 style={{
@@ -1788,30 +2188,106 @@ export default function TimesheetAdminPage() {
                       <th style={thStyle()}>Break Taken</th>
                       <th style={thStyle()}>Reason</th>
                       <th style={thStyle()}>Hours</th>
+                      {canApprove && <th style={thStyle({ textAlign: "center" })}>Remove</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {(selectedReport.rows || []).map((row, index) => (
+                    {(editData.rows || []).map((row, index) => (
                       <tr
                         key={index}
                         style={{
                           background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                         }}
                       >
-                        <td style={tdStyle}>{row.employeeName || "—"}</td>
-                        <td style={tdStyle}>{row.punchIn || "—"}</td>
-                        <td style={tdStyle}>{row.punchOut || "—"}</td>
-                        <td style={tdStyle}>{row.employeeStatus || "—"}</td>
-                        <td style={tdStyle}>{row.breakTaken || "—"}</td>
-                        <td style={tdStyle}>{row.reason || "—"}</td>
+                        <td style={tdStyle}>
+                          <TextInput
+                            value={row.employeeName || ""}
+                            onChange={(e) =>
+                              handleEditRow(index, "employeeName", e.target.value)
+                            }
+                            disabled={!canApprove}
+                          />
+                        </td>
+                        <td style={tdStyle}>
+                          <TextInput
+                            type="time"
+                            value={row.punchIn || ""}
+                            onChange={(e) =>
+                              handleEditRow(index, "punchIn", e.target.value)
+                            }
+                            disabled={!canApprove}
+                          />
+                        </td>
+                        <td style={tdStyle}>
+                          <TextInput
+                            type="time"
+                            value={row.punchOut || ""}
+                            onChange={(e) =>
+                              handleEditRow(index, "punchOut", e.target.value)
+                            }
+                            disabled={!canApprove}
+                          />
+                        </td>
+                        <td style={tdStyle}>
+                          <TextInput
+                            value={row.employeeStatus || ""}
+                            onChange={(e) =>
+                              handleEditRow(index, "employeeStatus", e.target.value)
+                            }
+                            disabled={!canApprove}
+                          />
+                        </td>
+                        <td style={tdStyle}>
+                          <SelectInput
+                            value={row.breakTaken || "No"}
+                            onChange={(e) =>
+                              handleEditRow(index, "breakTaken", e.target.value)
+                            }
+                            disabled={!canApprove}
+                          >
+                            <option value="No">No</option>
+                            <option value="Yes">Yes</option>
+                            <option value="30 min">30 min</option>
+                            <option value="45 min">45 min</option>
+                            <option value="60 min">60 min</option>
+                          </SelectInput>
+                        </td>
+                        <td style={tdStyle}>
+                          <TextInput
+                            value={row.reason || ""}
+                            onChange={(e) =>
+                              handleEditRow(index, "reason", e.target.value)
+                            }
+                            disabled={!canApprove}
+                          />
+                        </td>
                         <td style={tdStyle}>
                           {calculateRowHours(row).toFixed(2)} hrs
                         </td>
+                        {canApprove && (
+                          <td style={{ ...tdStyle, textAlign: "center" }}>
+                            <ActionButton
+                              variant="danger"
+                              onClick={() => removeEditRow(index)}
+                              disabled={(editData.rows || []).length === 1}
+                            >
+                              Remove
+                            </ActionButton>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+
+              {canApprove && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <ActionButton variant="secondary" onClick={addEditRow}>
+                    + Add Row
+                  </ActionButton>
+                </div>
+              )}
 
               <div
                 style={{
@@ -1847,7 +2323,14 @@ export default function TimesheetAdminPage() {
                       color: "#0f172a",
                     }}
                   >
-                    {selectedReport.totalHours.toFixed(2)} hrs
+                    {(
+                      (editData.rows || []).length
+                        ? editData.rows.reduce(
+                            (sum, row) => sum + calculateRowHours(row),
+                            0
+                          )
+                        : selectedReport.totalHours
+                    ).toFixed(2)} hrs
                   </div>
                 </div>
               </div>
