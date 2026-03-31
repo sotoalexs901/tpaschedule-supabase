@@ -36,6 +36,9 @@ import MessagesPage from "./pages/MessagesPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import AdminActivityDashboard from "./pages/AdminActivityDashboard.jsx";
 
+// ✅ NUEVA PÁGINA TIMESHEET
+import SupervisorTimesheetPage from "./pages/SupervisorTimesheetPage.jsx";
+
 // ✅ WCHR PAGES
 import WCHRScan from "./pages/WCHRScan.jsx";
 import MyWCHRReports from "./pages/MyWCHRReports.jsx";
@@ -121,6 +124,18 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["agent", "supervisor"]}>
                 <EmployeeTimeOffStatusPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ✅ TIMESHEET SUBMIT – SUPERVISOR / DUTY MANAGER / STATION MANAGER */}
+          <Route
+            path="timesheets/submit"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <SupervisorTimesheetPage />
               </ProtectedRoute>
             }
           />
