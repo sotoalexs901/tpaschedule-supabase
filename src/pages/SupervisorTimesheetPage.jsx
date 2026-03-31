@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  getDocs,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  doc,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
@@ -49,7 +58,6 @@ function detectBudgetAirline(value) {
   const upper = raw.toUpperCase();
 
   if (!upper) return "";
-
   if (upper === "SY" || upper.startsWith("SY ")) return "SY";
   if (upper.includes("WESTJET") || upper.includes("WL HAVANA") || upper === "WL") {
     return "WestJet";
@@ -117,6 +125,16 @@ function calculateRowHours(row) {
   if (minutes < 0) minutes = 0;
 
   return minutes / 60;
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  try {
+    if (typeof value?.toDate === "function") return value.toDate().toLocaleString();
+    return new Date(value).toLocaleString();
+  } catch {
+    return "—";
+  }
 }
 
 function emptyRow() {
@@ -302,9 +320,11 @@ export default function SupervisorTimesheetPage() {
 
   const [employees, setEmployees] = useState([]);
   const [budgetDocs, setBudgetDocs] = useState([]);
+  const [returnedReports, setReturnedReports] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [editingReportId, setEditingReportId] = useState("");
 
   const [form, setForm] = useState({
     airline: "",
@@ -321,10 +341,27 @@ export default function SupervisorTimesheetPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [employeesSnap, budgetsSnap] = await Promise.all([
+        const requests = [
           getDocs(collection(db, "employees")),
           getDocs(collection(db, "airlineBudgets")),
-        ]);
+        ];
+
+        if (user?.id) {
+          requests.push(
+            getDocs(
+              query(
+                collection(db, "timesheet_reports"),
+                where("submittedByUserId", "==", user.id),
+                where("status", "==", "returned")
+              )
+            )
+          );
+        }
+
+        const results = await Promise.all(requests);
+        const employeesSnap = results[0];
+        const budgetsSnap = results[1];
+        const returnedSnap = results[2];
 
         const employeeList = employeesSnap.docs
           .map((d) => ({
@@ -348,18 +385,29 @@ export default function SupervisorTimesheetPage() {
           ...d.data(),
         }));
 
+        const returned = returnedSnap
+          ? returnedSnap.docs
+              .map((d) => ({ id: d.id, ...d.data() }))
+              .sort((a, b) => {
+                const A = a.returnedAt?.seconds || 0;
+                const B = b.returnedAt?.seconds || 0;
+                return B - A;
+              })
+          : [];
+
         setEmployees(employeeList);
         setBudgetDocs(budgets);
+        setReturnedReports(returned);
       } catch (err) {
-        console.error("Error loading employees/budgets:", err);
-        setStatusMessage("Could not load employees or budgets.");
+        console.error("Error loading supervisor page data:", err);
+        setStatusMessage("Could not load employees, budgets or returned timesheets.");
       } finally {
         setLoadingEmployees(false);
       }
     }
 
     loadData();
-  }, []);
+  }, [user?.id]);
 
   const employeeMap = useMemo(() => {
     const map = {};
@@ -466,6 +514,52 @@ export default function SupervisorTimesheetPage() {
     });
   };
 
+  const loadReturnedReport = (report) => {
+    setEditingReportId(report.id);
+    setForm({
+      airline: report.airline || "",
+      reportDate: report.reportDate || "",
+      shift: report.shift || "",
+      supervisorReporting: report.supervisorReporting || getVisibleName(user),
+      supervisorPosition:
+        report.supervisorPosition ||
+        user?.position ||
+        getDefaultPosition(user?.role),
+      notes: report.notes || "",
+      overBudgetReason: report.overBudgetReason || "",
+    });
+
+    setRows(
+      (report.rows || []).length
+        ? report.rows.map((row) => ({
+            employeeId: row.employeeId || "",
+            employeeName: row.employeeName || "",
+            punchIn: row.punchIn || "",
+            punchOut: row.punchOut || "",
+            employeeStatus: row.employeeStatus || "",
+            breakTaken: row.breakTaken || "No",
+            reason: row.reason || "",
+          }))
+        : [emptyRow()]
+    );
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const resetForm = () => {
+    setEditingReportId("");
+    setForm({
+      airline: "",
+      reportDate: "",
+      shift: "",
+      supervisorReporting: getVisibleName(user),
+      supervisorPosition: user?.position || getDefaultPosition(user?.role),
+      notes: "",
+      overBudgetReason: "",
+    });
+    setRows([emptyRow()]);
+  };
+
   const handleSubmit = async () => {
     setStatusMessage("");
 
@@ -524,7 +618,7 @@ export default function SupervisorTimesheetPage() {
     try {
       setSaving(true);
 
-      await addDoc(collection(db, "timesheet_reports"), {
+      const payload = {
         airline: normalizeAirlineName(form.airline),
         reportDate: form.reportDate,
         shift: form.shift || "",
@@ -542,22 +636,31 @@ export default function SupervisorTimesheetPage() {
         submittedByUsername: user?.username || "",
         submittedByName: getVisibleName(user),
         submittedByRole: user?.role || "",
-        createdAt: serverTimestamp(),
         status: "submitted",
-      });
+      };
 
-      setStatusMessage("Timesheet submitted successfully.");
+      if (editingReportId) {
+        await updateDoc(doc(db, "timesheet_reports", editingReportId), {
+          ...payload,
+          resubmittedAt: serverTimestamp(),
+          returnedAt: null,
+          returnedByName: "",
+          returnedByRole: "",
+          returnedReason: "",
+        });
 
-      setForm((prev) => ({
-        ...prev,
-        airline: "",
-        reportDate: "",
-        shift: "",
-        notes: "",
-        overBudgetReason: "",
-      }));
+        setReturnedReports((prev) => prev.filter((item) => item.id !== editingReportId));
+        setStatusMessage("Returned timesheet fixed and resubmitted successfully.");
+      } else {
+        await addDoc(collection(db, "timesheet_reports"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
 
-      setRows([emptyRow()]);
+        setStatusMessage("Timesheet submitted successfully.");
+      }
+
+      resetForm();
     } catch (err) {
       console.error("Error saving timesheet:", err);
       setStatusMessage("Could not submit timesheet.");
@@ -631,7 +734,7 @@ export default function SupervisorTimesheetPage() {
                 letterSpacing: "-0.04em",
               }}
             >
-              Submit Timesheet Report
+              {editingReportId ? "Fix Returned Timesheet" : "Submit Timesheet Report"}
             </h1>
 
             <p
@@ -642,18 +745,24 @@ export default function SupervisorTimesheetPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Create a timesheet report and send it to Station Manager, Duty
-              Manager and admin review.
+              Create, fix and resubmit supervisor timesheets.
             </p>
           </div>
 
-          <ActionButton
-            type="button"
-            variant="secondary"
-            onClick={() => navigate("/dashboard")}
-          >
-            ← Back to Dashboard
-          </ActionButton>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {editingReportId && (
+              <ActionButton type="button" variant="secondary" onClick={resetForm}>
+                Cancel Edit
+              </ActionButton>
+            )}
+            <ActionButton
+              type="button"
+              variant="secondary"
+              onClick={() => navigate("/dashboard")}
+            >
+              ← Back to Dashboard
+            </ActionButton>
+          </div>
         </div>
       </div>
 
@@ -675,6 +784,129 @@ export default function SupervisorTimesheetPage() {
         </PageCard>
       )}
 
+      {returnedReports.length > 0 && (
+        <PageCard style={{ padding: 22 }}>
+          <div style={{ marginBottom: 16 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Returned / Rejected Timesheets
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Review why the manager returned them, fix them, and resubmit.
+            </p>
+          </div>
+
+          <div style={{ display: "grid", gap: 12 }}>
+            {returnedReports.map((report) => (
+              <div
+                key={report.id}
+                style={{
+                  borderRadius: 18,
+                  padding: 16,
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: "#881337",
+                      }}
+                    >
+                      {report.airline || "—"} · {report.reportDate || "—"}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 13,
+                        color: "#9f1239",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Returned by {report.returnedByName || "Manager"}{" "}
+                      {report.returnedByRole ? `(${report.returnedByRole})` : ""}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        color: "#64748b",
+                      }}
+                    >
+                      {formatDateTime(report.returnedAt)}
+                    </div>
+                  </div>
+
+                  <ActionButton
+                    variant="secondary"
+                    onClick={() => loadReturnedReport(report)}
+                  >
+                    Load to Fix
+                  </ActionButton>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 12,
+                    background: "#ffffff",
+                    border: "1px solid #fecdd3",
+                    borderRadius: 14,
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#9f1239",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Return Reason
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      color: "#0f172a",
+                      whiteSpace: "pre-line",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {report.returnedReason || "No reason provided."}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </PageCard>
+      )}
+
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
           <h2
@@ -688,15 +920,6 @@ export default function SupervisorTimesheetPage() {
           >
             Report Header
           </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Complete the general information before filling employee rows.
-          </p>
         </div>
 
         <div
@@ -748,7 +971,7 @@ export default function SupervisorTimesheetPage() {
           </div>
         </div>
 
-        {form.airline ? (
+        {form.airline && (
           <div
             style={{
               marginTop: 16,
@@ -819,9 +1042,9 @@ export default function SupervisorTimesheetPage() {
               </div>
             </div>
           </div>
-        ) : null}
+        )}
 
-        {overBudget ? (
+        {overBudget && (
           <div
             style={{
               marginTop: 16,
@@ -860,7 +1083,7 @@ export default function SupervisorTimesheetPage() {
               placeholder="Explain why this operation exceeded the airline daily budget."
             />
           </div>
-        ) : null}
+        )}
 
         <div style={{ marginTop: 14 }}>
           <FieldLabel>Notes</FieldLabel>
@@ -895,16 +1118,6 @@ export default function SupervisorTimesheetPage() {
             >
               Employee Entries
             </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Select employee names from Employees page and complete the
-              additional fields.
-            </p>
           </div>
 
           <ActionButton onClick={addRow} variant="secondary">
@@ -1056,22 +1269,17 @@ export default function SupervisorTimesheetPage() {
       </PageCard>
 
       <PageCard style={{ padding: 20 }}>
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <ActionButton onClick={handleSubmit} variant="primary" disabled={saving}>
-            {saving ? "Submitting..." : "Submit Timesheet"}
+            {saving
+              ? "Submitting..."
+              : editingReportId
+              ? "Resubmit Fixed Timesheet"
+              : "Submit Timesheet"}
           </ActionButton>
 
-          <ActionButton
-            onClick={() => navigate("/dashboard")}
-            variant="secondary"
-          >
-            Cancel
+          <ActionButton onClick={resetForm} variant="secondary">
+            Clear
           </ActionButton>
         </div>
       </PageCard>
