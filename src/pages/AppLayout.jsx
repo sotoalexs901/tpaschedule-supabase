@@ -287,11 +287,18 @@ export default function AppLayout() {
     }
 
     if (canAccessTimesheets) {
-      schedules.push({
-        to: "/timesheets/submit",
-        label: "Timesheet Submit",
-        icon: "🕒",
-      });
+      schedules.push(
+        {
+          to: "/timesheets/submit",
+          label: "Timesheet Submit",
+          icon: "🕒",
+        },
+        {
+          to: "/timesheets/reports",
+          label: "Timesheet Reports",
+          icon: "📋",
+        }
+      );
     }
 
     if (user) {
