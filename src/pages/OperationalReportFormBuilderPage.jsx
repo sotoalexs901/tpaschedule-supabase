@@ -12,16 +12,377 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
-const FIELD_TYPES = ["text", "textarea", "select", "number", "date", "time"];
+const FIELD_TYPES = [
+  "text",
+  "textarea",
+  "select",
+  "checkbox_group",
+  "number",
+  "date",
+  "time",
+];
 
 const DEFAULT_SECTIONS = [
   "Overall Operation Status",
   "Operational Issues",
   "OH Bags",
+  "Pending Items",
   "Exceptions",
   "Staffing",
   "Final Remarks / Recommendations",
   "Other",
+];
+
+const STANDARD_TEMPLATE = [
+  {
+    key: "operationStatus",
+    label: "Operation status",
+    type: "select",
+    section: "Overall Operation Status",
+    required: true,
+    active: true,
+    order: 1,
+    options: [
+      "Operation completed with no issues",
+      "Operation completed with remarks",
+      "Operational delay",
+      "Operational irregularity",
+    ],
+    placeholder: "",
+    helpText: "Select the overall status of the shift.",
+  },
+  {
+    key: "generalComments",
+    label: "General comments",
+    type: "textarea",
+    section: "Overall Operation Status",
+    required: false,
+    active: true,
+    order: 2,
+    options: [],
+    placeholder: "General comments about the operation",
+    helpText: "",
+  },
+  {
+    key: "delayedFlight",
+    label: "Delayed Flight",
+    type: "select",
+    section: "Operational Issues",
+    required: true,
+    active: true,
+    order: 3,
+    options: ["No", "Yes"],
+    placeholder: "",
+    helpText: "Select Yes if the operation had a delayed flight.",
+  },
+  {
+    key: "delayedTimeMinutes",
+    label: "Delayed Time (minutes)",
+    type: "number",
+    section: "Operational Issues",
+    required: false,
+    active: true,
+    order: 4,
+    options: [],
+    placeholder: "Example: 12",
+    helpText: "Complete only if Delayed Flight = Yes.",
+  },
+  {
+    key: "delayedReason",
+    label: "Delayed Reason",
+    type: "textarea",
+    section: "Operational Issues",
+    required: false,
+    active: true,
+    order: 5,
+    options: [],
+    placeholder: "Explain reason for the delay",
+    helpText: "Complete only if Delayed Flight = Yes.",
+  },
+  {
+    key: "delayedCodeReported",
+    label: "Delayed Code Reported to the Airline",
+    type: "text",
+    section: "Operational Issues",
+    required: false,
+    active: true,
+    order: 6,
+    options: [],
+    placeholder: "Example: 93 / MX / OPS / WX",
+    helpText: "Complete only if Delayed Flight = Yes.",
+  },
+  {
+    key: "issueTypes",
+    label: "Issue types",
+    type: "checkbox_group",
+    section: "Operational Issues",
+    required: false,
+    active: true,
+    order: 7,
+    options: [
+      "N/A",
+      "Delays",
+      "Baggage",
+      "Staffing",
+      "Customer service",
+      "Gate change",
+      "Late inbound",
+      "Operational coordination",
+      "Equipment",
+      "Other",
+    ],
+    placeholder: "",
+    helpText: "Select all that apply.",
+  },
+  {
+    key: "issueDetails",
+    label: "Issue details",
+    type: "textarea",
+    section: "Operational Issues",
+    required: false,
+    active: true,
+    order: 8,
+    options: [],
+    placeholder: "Describe the issue",
+    helpText: "",
+  },
+  {
+    key: "actionTaken",
+    label: "Action taken",
+    type: "textarea",
+    section: "Operational Issues",
+    required: false,
+    active: true,
+    order: 9,
+    options: [],
+    placeholder: "Explain actions taken",
+    helpText: "",
+  },
+  {
+    key: "issueStatus",
+    label: "Status",
+    type: "select",
+    section: "Operational Issues",
+    required: false,
+    active: true,
+    order: 10,
+    options: ["N/A", "Resolved", "Pending", "Monitoring", "Escalated"],
+    placeholder: "",
+    helpText: "",
+  },
+  {
+    key: "ohBagTotalQty",
+    label: "Total quantity",
+    type: "number",
+    section: "OH Bags",
+    required: false,
+    active: true,
+    order: 11,
+    options: [],
+    placeholder: "0",
+    helpText: "Total OH / mishandled bags.",
+  },
+  {
+    key: "ohAffectedFlights",
+    label: "Affected flights",
+    type: "text",
+    section: "OH Bags",
+    required: false,
+    active: true,
+    order: 12,
+    options: [],
+    placeholder: "Example: CLT, DFW, MIA",
+    helpText: "Separate flights with commas if needed.",
+  },
+  {
+    key: "ohBagDetails",
+    label: "Details",
+    type: "textarea",
+    section: "OH Bags",
+    required: false,
+    active: true,
+    order: 13,
+    options: [],
+    placeholder: "Explain the OH bag situation",
+    helpText: "",
+  },
+  {
+    key: "ohFollowUpActions",
+    label: "Follow-up actions",
+    type: "textarea",
+    section: "OH Bags",
+    required: false,
+    active: true,
+    order: 14,
+    options: [],
+    placeholder: "What follow-up actions were taken?",
+    helpText: "",
+  },
+  {
+    key: "pendingItemDescription",
+    label: "Pending item / description",
+    type: "textarea",
+    section: "Pending Items",
+    required: false,
+    active: true,
+    order: 15,
+    options: [],
+    placeholder: "Describe pending item",
+    helpText: "",
+  },
+  {
+    key: "pendingItemResponsible",
+    label: "Responsible",
+    type: "text",
+    section: "Pending Items",
+    required: false,
+    active: true,
+    order: 16,
+    options: [],
+    placeholder: "Who is responsible?",
+    helpText: "",
+  },
+  {
+    key: "pendingItemTargetDate",
+    label: "Target date",
+    type: "date",
+    section: "Pending Items",
+    required: false,
+    active: true,
+    order: 17,
+    options: [],
+    placeholder: "",
+    helpText: "",
+  },
+  {
+    key: "exceptionTypes",
+    label: "Exception type",
+    type: "checkbox_group",
+    section: "Exceptions",
+    required: false,
+    active: true,
+    order: 18,
+    options: [
+      "N/A",
+      "Operational",
+      "Safety",
+      "Security",
+      "Customer service",
+      "Staffing",
+      "Delay",
+      "Baggage",
+      "Other",
+    ],
+    placeholder: "",
+    helpText: "Select all that apply.",
+  },
+  {
+    key: "exceptionDescription",
+    label: "Description",
+    type: "textarea",
+    section: "Exceptions",
+    required: false,
+    active: true,
+    order: 19,
+    options: [],
+    placeholder: "Describe the exception",
+    helpText: "",
+  },
+  {
+    key: "exceptionReason",
+    label: "Reason",
+    type: "textarea",
+    section: "Exceptions",
+    required: false,
+    active: true,
+    order: 20,
+    options: [],
+    placeholder: "Explain the reason",
+    helpText: "",
+  },
+  {
+    key: "exceptionReportedTo",
+    label: "Reported to",
+    type: "text",
+    section: "Exceptions",
+    required: false,
+    active: true,
+    order: 21,
+    options: [],
+    placeholder: "Who was notified?",
+    helpText: "",
+  },
+  {
+    key: "staffingStatus",
+    label: "Staffing status",
+    type: "checkbox_group",
+    section: "Staffing",
+    required: false,
+    active: true,
+    order: 22,
+    options: [
+      "Full staffing",
+      "Short staffed",
+      "Overtime required",
+      "Call out",
+      "Coverage adjustment",
+    ],
+    placeholder: "",
+    helpText: "Select all that apply.",
+  },
+  {
+    key: "staffingRemarks",
+    label: "Remarks",
+    type: "textarea",
+    section: "Staffing",
+    required: false,
+    active: true,
+    order: 23,
+    options: [],
+    placeholder: "Staffing remarks",
+    helpText: "",
+  },
+  {
+    key: "employeesBreaks",
+    label: "Employees Breaks",
+    type: "select",
+    section: "Staffing",
+    required: false,
+    active: true,
+    order: 24,
+    options: [
+      "All agents have taken their scheduled break",
+      "Some agents did not take break",
+      "No breaks taken",
+      "Modified breaks",
+    ],
+    placeholder: "",
+    helpText: "",
+  },
+  {
+    key: "employeesNoBreakNames",
+    label: "Name of Employees / No Break taken",
+    type: "textarea",
+    section: "Staffing",
+    required: false,
+    active: true,
+    order: 25,
+    options: [],
+    placeholder: "Names of employees without break",
+    helpText: "",
+  },
+  {
+    key: "finalRemarks",
+    label: "Final Remarks / Recommendations",
+    type: "textarea",
+    section: "Final Remarks / Recommendations",
+    required: false,
+    active: true,
+    order: 26,
+    options: [],
+    placeholder: "Final remarks or recommendations",
+    helpText: "",
+  },
 ];
 
 function PageCard({ children, style = {} }) {
@@ -336,8 +697,11 @@ export default function OperationalReportFormBuilderPage() {
       .map((item) => item.trim())
       .filter(Boolean);
 
-    if (form.type === "select" && !options.length) {
-      setStatusMessage("Select fields need at least one option.");
+    if (
+      (form.type === "select" || form.type === "checkbox_group") &&
+      !options.length
+    ) {
+      setStatusMessage("This field type needs at least one option.");
       return;
     }
 
@@ -349,7 +713,8 @@ export default function OperationalReportFormBuilderPage() {
       required: Boolean(form.required),
       active: Boolean(form.active),
       order: Number(form.order || 1),
-      options: form.type === "select" ? options : [],
+      options:
+        form.type === "select" || form.type === "checkbox_group" ? options : [],
       placeholder: String(form.placeholder || "").trim(),
       helpText: String(form.helpText || "").trim(),
     };
@@ -423,6 +788,38 @@ export default function OperationalReportFormBuilderPage() {
     }
   };
 
+  const loadStandardTemplate = async () => {
+    const ok = window.confirm(
+      "Load standard Supervisor Operational Report template?\n\nMissing keys will be added. Existing matching keys will stay unchanged."
+    );
+    if (!ok) return;
+
+    try {
+      setSaving(true);
+
+      const existingKeys = new Set(fields.map((item) => item.key));
+      const missing = STANDARD_TEMPLATE.filter((item) => !existingKeys.has(item.key));
+
+      for (const item of missing) {
+        await addDoc(collection(db, "operational_report_form_config"), item);
+      }
+
+      const q = query(
+        collection(db, "operational_report_form_config"),
+        orderBy("order", "asc")
+      );
+      const snap = await getDocs(q);
+      setFields(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+
+      setStatusMessage("Standard template loaded successfully.");
+    } catch (err) {
+      console.error("Error loading standard template:", err);
+      setStatusMessage("Could not load standard template.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
       <div
@@ -480,6 +877,32 @@ export default function OperationalReportFormBuilderPage() {
           </div>
         </PageCard>
       )}
+
+      <PageCard style={{ padding: 22 }}>
+        <div
+          style={{
+            marginBottom: 16,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
+              Standard Template
+            </h2>
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
+              Load the Supervisor Operational Report structure based on your attached form.
+            </p>
+          </div>
+
+          <ActionButton onClick={loadStandardTemplate} variant="success" disabled={saving}>
+            Load Standard Template
+          </ActionButton>
+        </div>
+      </PageCard>
 
       <PageCard style={{ padding: 22 }}>
         <div
@@ -592,7 +1015,7 @@ export default function OperationalReportFormBuilderPage() {
           />
         </div>
 
-        {form.type === "select" && (
+        {(form.type === "select" || form.type === "checkbox_group") && (
           <div style={{ marginTop: 14 }}>
             <FieldLabel>Options (one per line)</FieldLabel>
             <TextArea
