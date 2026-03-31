@@ -176,15 +176,6 @@ function slugifyLabel(value) {
     .replace(/_+/g, "_");
 }
 
-function prettifyKey(key) {
-  return String(key || "")
-    .replace(/_/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 const FIELD_TYPE_OPTIONS = [
   { value: "text", label: "Text" },
   { value: "textarea", label: "Textarea" },
@@ -193,7 +184,7 @@ const FIELD_TYPE_OPTIONS = [
   { value: "checkbox-group", label: "Checkbox Group" },
 ];
 
-const BASE_FIELDS = [
+const PROTECTED_BASE_FIELDS = [
   {
     key: "operation_status",
     label: "Operation Status",
@@ -475,6 +466,7 @@ function mergeBaseFieldsWithBuilder(baseFields, builderFields) {
     return {
       ...base,
       ...override,
+      key: base.key,
       options:
         override.type === "yesno"
           ? ["Yes", "No"]
@@ -540,7 +532,7 @@ export default function OperationalReportFormBuilderPage() {
   }, []);
 
   const mergedFields = useMemo(() => {
-    return mergeBaseFieldsWithBuilder(BASE_FIELDS, builderDocs);
+    return mergeBaseFieldsWithBuilder(PROTECTED_BASE_FIELDS, builderDocs);
   }, [builderDocs]);
 
   const nextSuggestedOrder = useMemo(() => {
@@ -628,7 +620,7 @@ export default function OperationalReportFormBuilderPage() {
 
   const deleteExtraField = async (field) => {
     if (field.system) {
-      setStatusMessage("Base fields cannot be deleted. You can deactivate them instead.");
+      setStatusMessage("Protected fields cannot be removed. You can only edit, activate or deactivate them.");
       return;
     }
 
@@ -785,7 +777,7 @@ export default function OperationalReportFormBuilderPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Edit base questions, activate or deactivate them, and add new dynamic questions for the supervisor operational report.
+            Protected fields only allow edit, activate or deactivate. Custom fields can also be removed.
           </p>
         </div>
       </div>
@@ -993,7 +985,7 @@ export default function OperationalReportFormBuilderPage() {
               color: "#64748b",
             }}
           >
-            Base fields cannot be deleted, but they can be edited or deactivated.
+            Protected fields cannot be removed. They only allow edit, activate, or deactivate.
           </p>
         </div>
 
@@ -1046,7 +1038,7 @@ export default function OperationalReportFormBuilderPage() {
                           color: "#0f172a",
                         }}
                       >
-                        {field.label || prettifyKey(field.key)}
+                        {field.label}
                       </div>
                       <div
                         style={{
@@ -1055,26 +1047,18 @@ export default function OperationalReportFormBuilderPage() {
                           marginTop: 4,
                         }}
                       >
-                        key: {field.key} {field.system ? "• base field" : "• custom field"}
+                        key: {field.key} {field.system ? "• protected field" : "• custom field"}
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      {!field.system && (
-                        <ActionButton
-                          variant="danger"
-                          onClick={() => deleteExtraField(field)}
-                        >
-                          Delete
-                        </ActionButton>
-                      )}
-                    </div>
+                    {!field.system && (
+                      <ActionButton
+                        variant="danger"
+                        onClick={() => deleteExtraField(field)}
+                      >
+                        Delete
+                      </ActionButton>
+                    )}
                   </div>
 
                   <div
@@ -1091,6 +1075,19 @@ export default function OperationalReportFormBuilderPage() {
                         onBlur={(e) =>
                           updateExistingField(field, { label: e.target.value })
                         }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Key</FieldLabel>
+                      <TextInput
+                        value={field.key}
+                        disabled
+                        style={{
+                          background: "#f8fafc",
+                          color: "#64748b",
+                          cursor: "not-allowed",
+                        }}
                       />
                     </div>
 
