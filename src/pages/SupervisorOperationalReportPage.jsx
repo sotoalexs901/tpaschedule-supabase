@@ -187,6 +187,55 @@ function ActionButton({
   );
 }
 
+function CheckboxGroupField({ field, value, onChange }) {
+  const selected = Array.isArray(value) ? value : [];
+
+  const toggleOption = (option) => {
+    if (selected.includes(option)) {
+      onChange(
+        field.key,
+        selected.filter((item) => item !== option)
+      );
+    } else {
+      onChange(field.key, [...selected, option]);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 8,
+        padding: 12,
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+      }}
+    >
+      {(field.options || []).map((option) => (
+        <label
+          key={option}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 14,
+            color: "#0f172a",
+            fontWeight: 600,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={selected.includes(option)}
+            onChange={() => toggleOption(option)}
+          />
+          <span>{option}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function DynamicField({ field, value, onChange }) {
   const commonProps = {
     value: value ?? "",
@@ -208,6 +257,16 @@ function DynamicField({ field, value, onChange }) {
           </option>
         ))}
       </SelectInput>
+    );
+  }
+
+  if (field.type === "checkbox_group") {
+    return (
+      <CheckboxGroupField
+        field={field}
+        value={value}
+        onChange={onChange}
+      />
     );
   }
 
@@ -244,6 +303,7 @@ export default function SupervisorOperationalReportPage() {
     airline: "",
     reportDate: "",
     shift: "",
+    flightsHandled: "",
     supervisorReporting: getVisibleName(user),
     supervisorPosition: user?.position || getDefaultPosition(user?.role),
     notes: "",
@@ -288,6 +348,9 @@ export default function SupervisorOperationalReportPage() {
     });
     return map;
   }, [fields]);
+
+  const delayedFlightSelected =
+    String(responses.delayedFlight || "").trim().toLowerCase() === "yes";
 
   if (!canAccess) {
     return (
@@ -339,13 +402,48 @@ export default function SupervisorOperationalReportPage() {
       return;
     }
 
-    const missingRequired = fields.find(
-      (field) => field.required && !String(responses[field.key] || "").trim()
-    );
+    const missingRequired = fields.find((field) => {
+      if (!field.required) return false;
+
+      if (
+        !delayedFlightSelected &&
+        ["delayedTimeMinutes", "delayedReason", "delayedCodeReported"].includes(field.key)
+      ) {
+        return false;
+      }
+
+      const value = responses[field.key];
+
+      if (field.type === "checkbox_group") {
+        return !Array.isArray(value) || value.length === 0;
+      }
+
+      return !String(value || "").trim();
+    });
 
     if (missingRequired) {
       setStatusMessage(`Please complete required field: ${missingRequired.label}`);
       return;
+    }
+
+    const delayedFlightValue = String(responses.delayedFlight || "").trim().toLowerCase();
+    const operationStatusValue = String(responses.operationStatus || "").trim().toLowerCase();
+
+    if (delayedFlightValue === "yes") {
+      if (!String(responses.delayedTimeMinutes || "").trim()) {
+        setStatusMessage("Please complete Delayed Time (minutes).");
+        return;
+      }
+
+      if (!String(responses.delayedReason || "").trim()) {
+        setStatusMessage("Please complete Delayed Reason.");
+        return;
+      }
+
+      if (!String(responses.delayedCodeReported || "").trim()) {
+        setStatusMessage("Please complete Delayed Code Reported to the Airline.");
+        return;
+      }
     }
 
     try {
@@ -355,11 +453,19 @@ export default function SupervisorOperationalReportPage() {
         airline: normalizeAirlineName(form.airline),
         reportDate: form.reportDate,
         shift: form.shift || "",
+        flightsHandled: form.flightsHandled || "",
         supervisorReporting: form.supervisorReporting || getVisibleName(user),
         supervisorPosition:
           form.supervisorPosition || user?.position || getDefaultPosition(user?.role),
         notes: form.notes || "",
         responses,
+        delayedFlight: delayedFlightValue === "yes",
+        delayedTimeMinutes: Number(responses.delayedTimeMinutes || 0),
+        delayedReason: String(responses.delayedReason || "").trim(),
+        delayedCodeReported: String(responses.delayedCodeReported || "").trim(),
+        needsAttention:
+          operationStatusValue !== "operation completed with no issues" &&
+          operationStatusValue !== "operation completed without issues",
         submittedByUserId: user?.id || "",
         submittedByUsername: user?.username || "",
         submittedByName: getVisibleName(user),
@@ -375,6 +481,7 @@ export default function SupervisorOperationalReportPage() {
         airline: "",
         reportDate: "",
         shift: "",
+        flightsHandled: "",
         notes: "",
       }));
       setResponses({});
@@ -510,6 +617,15 @@ export default function SupervisorOperationalReportPage() {
           </div>
 
           <div>
+            <FieldLabel>Flights handled</FieldLabel>
+            <TextInput
+              value={form.flightsHandled}
+              onChange={(e) => handleFormChange("flightsHandled", e.target.value)}
+              placeholder="Example: SY213/214"
+            />
+          </div>
+
+          <div>
             <FieldLabel>Supervisor Reporting</FieldLabel>
             <TextInput
               value={form.supervisorReporting}
@@ -572,33 +688,43 @@ export default function SupervisorOperationalReportPage() {
                 </div>
 
                 <div style={{ padding: 16, display: "grid", gap: 14 }}>
-                  {groupedFields[section].map((field) => (
-                    <div key={field.id}>
-                      <FieldLabel>
-                        {field.label}
-                        {field.required ? " *" : ""}
-                      </FieldLabel>
+                  {groupedFields[section].map((field) => {
+                    const shouldHideDelayedDetail =
+                      !delayedFlightSelected &&
+                      ["delayedTimeMinutes", "delayedReason", "delayedCodeReported"].includes(
+                        field.key
+                      );
 
-                      <DynamicField
-                        field={field}
-                        value={responses[field.key] || ""}
-                        onChange={handleResponseChange}
-                      />
+                    if (shouldHideDelayedDetail) return null;
 
-                      {field.helpText ? (
-                        <p
-                          style={{
-                            margin: "6px 0 0",
-                            fontSize: 12,
-                            color: "#64748b",
-                            lineHeight: 1.6,
-                          }}
-                        >
-                          {field.helpText}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
+                    return (
+                      <div key={field.id}>
+                        <FieldLabel>
+                          {field.label}
+                          {field.required ? " *" : ""}
+                        </FieldLabel>
+
+                        <DynamicField
+                          field={field}
+                          value={responses[field.key]}
+                          onChange={handleResponseChange}
+                        />
+
+                        {field.helpText ? (
+                          <p
+                            style={{
+                              margin: "6px 0 0",
+                              fontSize: 12,
+                              color: "#64748b",
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            {field.helpText}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
