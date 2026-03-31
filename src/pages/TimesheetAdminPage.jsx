@@ -403,12 +403,23 @@ function buildPrintableHtml(report, airlineSummary) {
     `
     : "";
 
+  const overBudgetReasonBlock =
+    report.overBudget && report.overBudgetReason
+      ? `
+        <div class="over-budget-reason-box">
+          <div class="section-label">Over Budget Reason</div>
+          <div>${String(report.overBudgetReason).replace(/\n/g, "<br/>")}</div>
+        </div>
+      `
+      : "";
+
   const budgetAlert =
-    airlineSummary?.overBudget
+    airlineSummary?.overBudget || report.overBudget
       ? `
         <div class="alert-box">
           Budget alert: ${report.normalizedAirline} is over budget by
-          ${airlineSummary.overBy.toFixed(2)} hours on ${report.reportDate || "this day"}.
+          ${Number(report.overBudgetBy || airlineSummary?.overBy || 0).toFixed(2)} hours
+          on ${report.reportDate || "this day"}.
         </div>
       `
       : "";
@@ -425,7 +436,6 @@ function buildPrintableHtml(report, airlineSummary) {
             margin: 24px;
             color: #111827;
           }
-
           .header {
             display: flex;
             justify-content: space-between;
@@ -433,20 +443,17 @@ function buildPrintableHtml(report, airlineSummary) {
             gap: 16px;
             margin-bottom: 18px;
           }
-
           .title {
             font-size: 28px;
             font-weight: 800;
             margin: 0;
           }
-
           .subtitle {
             margin-top: 6px;
             font-size: 14px;
             color: #475569;
             font-weight: 700;
           }
-
           .status {
             display: inline-block;
             padding: 6px 10px;
@@ -457,27 +464,23 @@ function buildPrintableHtml(report, airlineSummary) {
             background: #edf7ff;
             color: #1769aa;
           }
-
           .status.approved {
             background: #dcfce7;
             color: #166534;
             border-color: #86efac;
           }
-
           .grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 12px;
             margin-bottom: 16px;
           }
-
           .card {
             background: #f8fbff;
             border: 1px solid #dbeafe;
             border-radius: 14px;
             padding: 12px 14px;
           }
-
           .card-label,
           .section-label {
             font-size: 11px;
@@ -486,14 +489,12 @@ function buildPrintableHtml(report, airlineSummary) {
             text-transform: uppercase;
             letter-spacing: 0.08em;
           }
-
           .card-value {
             margin-top: 6px;
             font-size: 16px;
             font-weight: 800;
             color: #0f172a;
           }
-
           .alert-box {
             border-radius: 14px;
             padding: 12px 14px;
@@ -503,35 +504,39 @@ function buildPrintableHtml(report, airlineSummary) {
             font-weight: 800;
             margin-bottom: 16px;
           }
-
           .notes-box,
-          .approval-box {
+          .approval-box,
+          .over-budget-reason-box {
             border-radius: 14px;
             padding: 12px 14px;
-            background: #f8fbff;
-            border: 1px solid #dbeafe;
             margin-bottom: 16px;
             line-height: 1.6;
           }
-
+          .notes-box {
+            background: #f8fbff;
+            border: 1px solid #dbeafe;
+          }
           .approval-box {
             background: #ecfdf5;
-            border-color: #a7f3d0;
+            border: 1px solid #a7f3d0;
           }
-
+          .over-budget-reason-box {
+            background: #fff7ed;
+            border: 1px solid #fdba74;
+            color: #9a3412;
+            font-weight: 700;
+          }
           table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
           }
-
           th, td {
             border: 1px solid #dbeafe;
             padding: 10px 12px;
             text-align: left;
             font-size: 13px;
           }
-
           th {
             background: #f8fbff;
             font-size: 12px;
@@ -539,7 +544,6 @@ function buildPrintableHtml(report, airlineSummary) {
             letter-spacing: 0.05em;
             color: #475569;
           }
-
           .total-box {
             margin-top: 16px;
             margin-left: auto;
@@ -549,13 +553,11 @@ function buildPrintableHtml(report, airlineSummary) {
             border-radius: 14px;
             padding: 14px 16px;
           }
-
           .total-value {
             margin-top: 6px;
             font-size: 26px;
             font-weight: 900;
           }
-
           @media print {
             body {
               margin: 14px;
@@ -602,16 +604,17 @@ function buildPrintableHtml(report, airlineSummary) {
             <div class="card-value">${formatDateTime(report.createdAt)}</div>
           </div>
           <div class="card">
-            <div class="card-label">Airline Budget</div>
-            <div class="card-value">${airlineSummary ? airlineSummary.budget.toFixed(2) : "0.00"} hrs</div>
+            <div class="card-label">Daily Budget</div>
+            <div class="card-value">${airlineSummary ? airlineSummary.budget.toFixed(2) : Number(report.budgetHoursDaily || 0).toFixed(2)} hrs</div>
           </div>
           <div class="card">
             <div class="card-label">Airline Daily Total</div>
-            <div class="card-value">${airlineSummary ? airlineSummary.hours.toFixed(2) : "0.00"} hrs</div>
+            <div class="card-value">${airlineSummary ? airlineSummary.hours.toFixed(2) : report.totalHours.toFixed(2)} hrs</div>
           </div>
         </div>
 
         ${budgetAlert}
+        ${overBudgetReasonBlock}
         ${notesBlock}
         ${approvalBlock}
 
@@ -757,7 +760,10 @@ export default function TimesheetAdminPage() {
   const reportsWithHours = useMemo(() => {
     return reports.map((report) => ({
       ...report,
-      totalHours: calculateReportHours(report),
+      totalHours:
+        report.totalHours !== undefined && report.totalHours !== null
+          ? Number(report.totalHours)
+          : calculateReportHours(report),
       normalizedAirline: normalizeAirlineName(report.airline),
     }));
   }, [reports]);
@@ -878,11 +884,11 @@ export default function TimesheetAdminPage() {
 
     let ok = true;
 
-    if (airlineSummary?.overBudget) {
+    if (airlineSummary?.overBudget || report.overBudget) {
       ok = window.confirm(
-        `${report.normalizedAirline} is over daily budget by ${airlineSummary.overBy.toFixed(
-          2
-        )} hours. Approve anyway?`
+        `${report.normalizedAirline} is over daily budget by ${Number(
+          report.overBudgetBy || airlineSummary?.overBy || 0
+        ).toFixed(2)} hours. Approve anyway?`
       );
     } else {
       ok = window.confirm("Approve this timesheet report?");
@@ -924,11 +930,11 @@ export default function TimesheetAdminPage() {
         )
       );
 
-      if (airlineSummary?.overBudget) {
+      if (airlineSummary?.overBudget || report.overBudget) {
         setStatusMessage(
-          `${report.normalizedAirline} approved. Alert: over daily budget by ${airlineSummary.overBy.toFixed(
-            2
-          )} hours.`
+          `${report.normalizedAirline} approved. Alert: over daily budget by ${Number(
+            report.overBudgetBy || airlineSummary?.overBy || 0
+          ).toFixed(2)} hours.`
         );
       } else {
         setStatusMessage("Timesheet report approved.");
@@ -1617,7 +1623,7 @@ export default function TimesheetAdminPage() {
                   value={`${
                     selectedAirlineSummary
                       ? selectedAirlineSummary.budget.toFixed(2)
-                      : "0.00"
+                      : Number(selectedReport.budgetHoursDaily || 0).toFixed(2)
                   } hrs`}
                 />
                 <InfoCard
@@ -1625,12 +1631,12 @@ export default function TimesheetAdminPage() {
                   value={`${
                     selectedAirlineSummary
                       ? selectedAirlineSummary.hours.toFixed(2)
-                      : "0.00"
+                      : selectedReport.totalHours.toFixed(2)
                   } hrs`}
                 />
               </div>
 
-              {selectedAirlineSummary?.overBudget && (
+              {(selectedAirlineSummary?.overBudget || selectedReport.overBudget) && (
                 <div
                   style={{
                     borderRadius: 16,
@@ -1643,8 +1649,44 @@ export default function TimesheetAdminPage() {
                   }}
                 >
                   Budget alert: {selectedReport.normalizedAirline} is over daily budget by{" "}
-                  {selectedAirlineSummary.overBy.toFixed(2)} hours on{" "}
-                  {selectedReport.reportDate || "this day"}.
+                  {Number(
+                    selectedReport.overBudgetBy || selectedAirlineSummary?.overBy || 0
+                  ).toFixed(2)} hours on {selectedReport.reportDate || "this day"}.
+                </div>
+              )}
+
+              {selectedReport.overBudget && selectedReport.overBudgetReason && (
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "14px 16px",
+                    background: "#fff7ed",
+                    border: "1px solid #fdba74",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#9a3412",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Over Budget Reason
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      color: "#7c2d12",
+                      whiteSpace: "pre-line",
+                      lineHeight: 1.7,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selectedReport.overBudgetReason}
+                  </div>
                 </div>
               )}
 
