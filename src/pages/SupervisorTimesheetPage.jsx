@@ -16,6 +16,33 @@ const AIRLINE_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
+const EMPLOYEE_STATUS_OPTIONS = [
+  "Present",
+  "Late",
+  "Call Out",
+  "No Show",
+  "Sick",
+  "Vacation",
+  "Suspended",
+  "Other",
+];
+
+const BREAK_TAKEN_OPTIONS = [
+  "Yes",
+  "No",
+  "30 min",
+  "45 min",
+  "60 min",
+];
+
+const REASON_REQUIRED_STATUSES = new Set([
+  "Late",
+  "Call Out",
+  "No Show",
+  "Sick",
+  "Other",
+]);
+
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
 
@@ -388,6 +415,28 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
+    if (cleanRows.some((row) => !row.employeeStatus)) {
+      setStatusMessage("Please select Employee Status for all rows.");
+      return;
+    }
+
+    if (cleanRows.some((row) => !row.breakTaken)) {
+      setStatusMessage("Please select Break Taken for all rows.");
+      return;
+    }
+
+    const missingRequiredReason = cleanRows.find(
+      (row) =>
+        REASON_REQUIRED_STATUSES.has(row.employeeStatus) && !row.reason.trim()
+    );
+
+    if (missingRequiredReason) {
+      setStatusMessage(
+        "Reason is required for Late, Call Out, No Show, Sick and Other."
+      );
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -707,90 +756,117 @@ export default function SupervisorTimesheetPage() {
               </thead>
 
               <tbody>
-                {rows.map((row, index) => (
-                  <tr
-                    key={index}
-                    style={{
-                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                    }}
-                  >
-                    <td style={tdStyle}>
-                      <SelectInput
-                        value={row.employeeId}
-                        onChange={(e) =>
-                          handleRowChange(index, "employeeId", e.target.value)
-                        }
-                      >
-                        <option value="">Select employee</option>
-                        {employees.map((emp) => (
-                          <option key={emp.id} value={emp.id}>
-                            {emp.name}
-                          </option>
-                        ))}
-                      </SelectInput>
-                    </td>
+                {rows.map((row, index) => {
+                  const reasonRequired = REASON_REQUIRED_STATUSES.has(
+                    row.employeeStatus
+                  );
 
-                    <td style={tdStyle}>
-                      <TextInput
-                        type="time"
-                        value={row.punchIn}
-                        onChange={(e) =>
-                          handleRowChange(index, "punchIn", e.target.value)
-                        }
-                      />
-                    </td>
+                  return (
+                    <tr
+                      key={index}
+                      style={{
+                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                      }}
+                    >
+                      <td style={tdStyle}>
+                        <SelectInput
+                          value={row.employeeId}
+                          onChange={(e) =>
+                            handleRowChange(index, "employeeId", e.target.value)
+                          }
+                        >
+                          <option value="">Select employee</option>
+                          {employees.map((emp) => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.name}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      </td>
 
-                    <td style={tdStyle}>
-                      <TextInput
-                        type="time"
-                        value={row.punchOut}
-                        onChange={(e) =>
-                          handleRowChange(index, "punchOut", e.target.value)
-                        }
-                      />
-                    </td>
+                      <td style={tdStyle}>
+                        <TextInput
+                          type="time"
+                          value={row.punchIn}
+                          onChange={(e) =>
+                            handleRowChange(index, "punchIn", e.target.value)
+                          }
+                        />
+                      </td>
 
-                    <td style={tdStyle}>
-                      <TextInput
-                        value={row.employeeStatus}
-                        onChange={(e) =>
-                          handleRowChange(index, "employeeStatus", e.target.value)
-                        }
-                        placeholder="Present / Late / Call Out / No Show"
-                      />
-                    </td>
+                      <td style={tdStyle}>
+                        <TextInput
+                          type="time"
+                          value={row.punchOut}
+                          onChange={(e) =>
+                            handleRowChange(index, "punchOut", e.target.value)
+                          }
+                        />
+                      </td>
 
-                    <td style={tdStyle}>
-                      <TextInput
-                        value={row.breakTaken}
-                        onChange={(e) =>
-                          handleRowChange(index, "breakTaken", e.target.value)
-                        }
-                        placeholder="Yes / No / 30 min"
-                      />
-                    </td>
+                      <td style={tdStyle}>
+                        <SelectInput
+                          value={row.employeeStatus}
+                          onChange={(e) =>
+                            handleRowChange(index, "employeeStatus", e.target.value)
+                          }
+                        >
+                          <option value="">Select status</option>
+                          {EMPLOYEE_STATUS_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      </td>
 
-                    <td style={tdStyle}>
-                      <TextInput
-                        value={row.reason}
-                        onChange={(e) =>
-                          handleRowChange(index, "reason", e.target.value)
-                        }
-                        placeholder="Reason / note"
-                      />
-                    </td>
+                      <td style={tdStyle}>
+                        <SelectInput
+                          value={row.breakTaken}
+                          onChange={(e) =>
+                            handleRowChange(index, "breakTaken", e.target.value)
+                          }
+                        >
+                          <option value="">Select break</option>
+                          {BREAK_TAKEN_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      </td>
 
-                    <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <ActionButton
-                        onClick={() => removeRow(index)}
-                        variant="danger"
-                        disabled={rows.length === 1}
-                      >
-                        Remove
-                      </ActionButton>
-                    </td>
-                  </tr>
-                ))}
+                      <td style={tdStyle}>
+                        <TextInput
+                          value={row.reason}
+                          onChange={(e) =>
+                            handleRowChange(index, "reason", e.target.value)
+                          }
+                          placeholder={
+                            reasonRequired
+                              ? "Reason required"
+                              : "Optional reason / note"
+                          }
+                          style={{
+                            borderColor: reasonRequired && !row.reason ? "#fca5a5" : "#dbeafe",
+                            background:
+                              reasonRequired && !row.reason ? "#fff7f7" : "#ffffff",
+                          }}
+                        />
+                      </td>
+
+                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                        <ActionButton
+                          onClick={() => removeRow(index)}
+                          variant="danger"
+                          disabled={rows.length === 1}
+                        >
+                          Remove
+                        </ActionButton>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
