@@ -1,20 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, getDocs, orderBy, query, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
-
-const AIRLINE_OPTIONS = [
-  { value: "SY", label: "SY" },
-  { value: "WestJet", label: "WestJet" },
-  { value: "WL Invicta", label: "WL Invicta" },
-  { value: "AV", label: "AV" },
-  { value: "EA", label: "EA" },
-  { value: "WCHR", label: "WCHR" },
-  { value: "CABIN", label: "Cabin Service" },
-  { value: "AA-BSO", label: "AA-BSO" },
-  { value: "OTHER", label: "Other" },
-];
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
@@ -47,6 +35,44 @@ function getVisibleName(user) {
     user?.username ||
     "User"
   );
+}
+
+function buildInitialResponses(fields) {
+  const result = {};
+
+  (fields || []).forEach((field) => {
+    if (!field?.key) return;
+
+    if (field.type === "checkbox-group") {
+      result[field.key] = [];
+      return;
+    }
+
+    if (field.type === "yesno") {
+      result[field.key] = "";
+      return;
+    }
+
+    result[field.key] = "";
+  });
+
+  return result;
+}
+
+function shouldRequireAttentionFromResponses(responses) {
+  return Object.entries(responses || {}).some(([key, value]) => {
+    const k = String(key || "").toLowerCase();
+
+    if (
+      k.includes("operation completed without issues") ||
+      k.includes("operation completed without issue") ||
+      k.includes("completed without issues")
+    ) {
+      return String(value || "").trim().toLowerCase() === "no";
+    }
+
+    return false;
+  });
 }
 
 function PageCard({ children, style = {} }) {
@@ -164,6 +190,12 @@ function ActionButton({
       border: "1px solid #cfe7fb",
       boxShadow: "none",
     },
+    warning: {
+      background: "#f59e0b",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
+    },
   };
 
   return (
@@ -187,103 +219,61 @@ function ActionButton({
   );
 }
 
-function CheckboxGroupField({ field, value, onChange }) {
-  const selected = Array.isArray(value) ? value : [];
-
-  const toggleOption = (option) => {
-    if (selected.includes(option)) {
-      onChange(
-        field.key,
-        selected.filter((item) => item !== option)
-      );
-    } else {
-      onChange(field.key, [...selected, option]);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gap: 8,
-        padding: 12,
-        border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-      }}
-    >
-      {(field.options || []).map((option) => (
-        <label
-          key={option}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 14,
-            color: "#0f172a",
-            fontWeight: 600,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={selected.includes(option)}
-            onChange={() => toggleOption(option)}
-          />
-          <span>{option}</span>
-        </label>
-      ))}
-    </div>
-  );
+function normalizeFieldKey(label) {
+  return String(label || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
-function DynamicField({ field, value, onChange }) {
-  const commonProps = {
-    value: value ?? "",
-    onChange: (e) => onChange(field.key, e.target.value),
-    placeholder: field.placeholder || "",
-  };
+const DEFAULT_FIELDS = [
+  {
+    key: "operation_completed_without_issues",
+    label: "Operation Completed Without Issues",
+    type: "yesno",
+    required: true,
+    options: ["Yes", "No"],
+  },
+  {
+    key: "staffing_ok",
+    label: "Staffing OK",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+  },
+  {
+    key: "equipment_ok",
+    label: "Equipment OK",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+  },
+  {
+    key: "safety_concerns",
+    label: "Safety Concerns",
+    type: "textarea",
+    required: false,
+  },
+  {
+    key: "additional_comments",
+    label: "Additional Comments",
+    type: "textarea",
+    required: false,
+  },
+];
 
-  if (field.type === "textarea") {
-    return <TextArea {...commonProps} />;
-  }
-
-  if (field.type === "select") {
-    return (
-      <SelectInput {...commonProps}>
-        <option value="">Select</option>
-        {(field.options || []).map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </SelectInput>
-    );
-  }
-
-  if (field.type === "checkbox_group") {
-    return (
-      <CheckboxGroupField
-        field={field}
-        value={value}
-        onChange={onChange}
-      />
-    );
-  }
-
-  if (field.type === "number") {
-    return <TextInput {...commonProps} type="number" />;
-  }
-
-  if (field.type === "date") {
-    return <TextInput {...commonProps} type="date" />;
-  }
-
-  if (field.type === "time") {
-    return <TextInput {...commonProps} type="time" />;
-  }
-
-  return <TextInput {...commonProps} type="text" />;
-}
+const AIRLINE_OPTIONS = [
+  { value: "SY", label: "SY" },
+  { value: "WestJet", label: "WestJet" },
+  { value: "WL Invicta", label: "WL Invicta" },
+  { value: "AV", label: "AV" },
+  { value: "EA", label: "EA" },
+  { value: "WCHR", label: "WCHR" },
+  { value: "CABIN", label: "Cabin Service" },
+  { value: "AA-BSO", label: "AA-BSO" },
+  { value: "OTHER", label: "Other" },
+];
 
 export default function SupervisorOperationalReportPage() {
   const { user } = useUser();
@@ -294,8 +284,8 @@ export default function SupervisorOperationalReportPage() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
-  const [fields, setFields] = useState([]);
-  const [loadingFields, setLoadingFields] = useState(true);
+  const [loadingBuilder, setLoadingBuilder] = useState(true);
+  const [dynamicFields, setDynamicFields] = useState(DEFAULT_FIELDS);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -307,184 +297,222 @@ export default function SupervisorOperationalReportPage() {
     supervisorReporting: getVisibleName(user),
     supervisorPosition: user?.position || getDefaultPosition(user?.role),
     notes: "",
+    delayedFlight: false,
+    delayedTimeMinutes: "",
+    delayedReason: "",
+    delayedCodeReported: "",
+    needsAttention: false,
+    responses: buildInitialResponses(DEFAULT_FIELDS),
   });
 
-  const [responses, setResponses] = useState({});
-
   useEffect(() => {
-    async function loadFields() {
+    async function loadBuilderConfig() {
       try {
-        const q = query(
-          collection(db, "operational_report_form_config"),
-          orderBy("order", "asc")
-        );
-        const snap = await getDocs(q);
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((item) => item.active !== false);
+        const snap = await getDocs(collection(db, "operational_report_form_fields"));
 
-        setFields(rows);
+        if (snap.empty) {
+          setDynamicFields(DEFAULT_FIELDS);
+          setForm((prev) => ({
+            ...prev,
+            responses: buildInitialResponses(DEFAULT_FIELDS),
+          }));
+          return;
+        }
+
+        const fields = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((item) => item.active !== false)
+          .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+          .map((item) => ({
+            key: item.key || normalizeFieldKey(item.label),
+            label: item.label || "Unnamed Field",
+            type: item.type || "text",
+            required: Boolean(item.required),
+            options: Array.isArray(item.options) ? item.options : [],
+          }));
+
+        const finalFields = fields.length ? fields : DEFAULT_FIELDS;
+
+        setDynamicFields(finalFields);
+        setForm((prev) => ({
+          ...prev,
+          responses: buildInitialResponses(finalFields),
+        }));
       } catch (err) {
-        console.error("Error loading operational report fields:", err);
-        setStatusMessage("Could not load report form.");
+        console.error("Error loading operational report builder:", err);
+        setDynamicFields(DEFAULT_FIELDS);
+        setForm((prev) => ({
+          ...prev,
+          responses: buildInitialResponses(DEFAULT_FIELDS),
+        }));
       } finally {
-        setLoadingFields(false);
+        setLoadingBuilder(false);
       }
     }
 
     if (canAccess) {
-      loadFields();
+      loadBuilderConfig();
     } else {
-      setLoadingFields(false);
+      setLoadingBuilder(false);
     }
   }, [canAccess]);
 
-  const groupedFields = useMemo(() => {
-    const map = {};
-    fields.forEach((field) => {
-      const section = field.section || "Other";
-      if (!map[section]) map[section] = [];
-      map[section].push(field);
-    });
-    return map;
-  }, [fields]);
+  const visibleAirlineLabel = useMemo(() => {
+    const found = AIRLINE_OPTIONS.find((a) => a.value === form.airline);
+    return found?.label || form.airline || "—";
+  }, [form.airline]);
 
-  const delayedFlightSelected =
-    String(responses.delayedFlight || "").trim().toLowerCase() === "yes";
+  const computedNeedsAttention = useMemo(() => {
+    return shouldRequireAttentionFromResponses(form.responses);
+  }, [form.responses]);
 
-  if (!canAccess) {
-    return (
-      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
-        <div
-          style={{
-            background: "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-            borderRadius: 28,
-            padding: 24,
-            color: "#fff",
-            boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          }}
-        >
-          <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.78)", fontWeight: 700 }}>
-            TPA OPS · Operational Report
-          </p>
-          <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-0.04em" }}>
-            Access denied
-          </h1>
-          <p style={{ margin: 0, maxWidth: 700, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
-            You do not have permission to access Operational Reports.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const finalNeedsAttention = useMemo(() => {
+    return Boolean(form.needsAttention || computedNeedsAttention);
+  }, [form.needsAttention, computedNeedsAttention]);
 
   const handleFormChange = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const handleResponseChange = (key, value) => {
-    setResponses((prev) => ({
+    setForm((prev) => ({
       ...prev,
-      [key]: value,
+      responses: {
+        ...(prev.responses || {}),
+        [key]: value,
+      },
     }));
+  };
+
+  const handleCheckboxGroupChange = (key, option, checked) => {
+    setForm((prev) => {
+      const current = Array.isArray(prev.responses?.[key]) ? prev.responses[key] : [];
+      const next = checked
+        ? [...current, option]
+        : current.filter((item) => item !== option);
+
+      return {
+        ...prev,
+        responses: {
+          ...(prev.responses || {}),
+          [key]: next,
+        },
+      };
+    });
+  };
+
+  const validateRequiredFields = () => {
+    if (!form.airline) {
+      setStatusMessage("Please select the reporting airline.");
+      return false;
+    }
+
+    if (!form.reportDate) {
+      setStatusMessage("Please select the report date.");
+      return false;
+    }
+
+    for (const field of dynamicFields) {
+      if (!field.required) continue;
+
+      const value = form.responses?.[field.key];
+
+      if (field.type === "checkbox-group") {
+        if (!Array.isArray(value) || value.length === 0) {
+          setStatusMessage(`Please complete the required field: ${field.label}.`);
+          return false;
+        }
+        continue;
+      }
+
+      if (String(value ?? "").trim() === "") {
+        setStatusMessage(`Please complete the required field: ${field.label}.`);
+        return false;
+      }
+    }
+
+    if (form.delayedFlight) {
+      if (!String(form.delayedTimeMinutes || "").trim()) {
+        setStatusMessage("Please enter the delayed time in minutes.");
+        return false;
+      }
+
+      if (!String(form.delayedReason || "").trim()) {
+        setStatusMessage("Please enter the delayed reason.");
+        return false;
+      }
+
+      if (!String(form.delayedCodeReported || "").trim()) {
+        setStatusMessage("Please enter the delayed code reported to the airline.");
+        return false;
+      }
+    }
+
+    return true;
   };
 
   const handleSubmit = async () => {
     setStatusMessage("");
 
-    if (!form.airline) {
-      setStatusMessage("Please select the reporting airline.");
-      return;
-    }
-
-    if (!form.reportDate) {
-      setStatusMessage("Please select the report date.");
-      return;
-    }
-
-    const missingRequired = fields.find((field) => {
-      if (!field.required) return false;
-
-      if (
-        !delayedFlightSelected &&
-        ["delayedTimeMinutes", "delayedReason", "delayedCodeReported"].includes(field.key)
-      ) {
-        return false;
-      }
-
-      const value = responses[field.key];
-
-      if (field.type === "checkbox_group") {
-        return !Array.isArray(value) || value.length === 0;
-      }
-
-      return !String(value || "").trim();
-    });
-
-    if (missingRequired) {
-      setStatusMessage(`Please complete required field: ${missingRequired.label}`);
-      return;
-    }
-
-    const delayedFlightValue = String(responses.delayedFlight || "").trim().toLowerCase();
-    const operationStatusValue = String(responses.operationStatus || "").trim().toLowerCase();
-
-    if (delayedFlightValue === "yes") {
-      if (!String(responses.delayedTimeMinutes || "").trim()) {
-        setStatusMessage("Please complete Delayed Time (minutes).");
-        return;
-      }
-
-      if (!String(responses.delayedReason || "").trim()) {
-        setStatusMessage("Please complete Delayed Reason.");
-        return;
-      }
-
-      if (!String(responses.delayedCodeReported || "").trim()) {
-        setStatusMessage("Please complete Delayed Code Reported to the Airline.");
-        return;
-      }
-    }
+    if (!validateRequiredFields()) return;
 
     try {
       setSaving(true);
 
-      await addDoc(collection(db, "operational_reports"), {
+      const payload = {
         airline: normalizeAirlineName(form.airline),
         reportDate: form.reportDate,
-        shift: form.shift || "",
-        flightsHandled: form.flightsHandled || "",
-        supervisorReporting: form.supervisorReporting || getVisibleName(user),
+        shift: String(form.shift || "").trim(),
+        flightsHandled: String(form.flightsHandled || "").trim(),
+        supervisorReporting:
+          String(form.supervisorReporting || "").trim() || getVisibleName(user),
         supervisorPosition:
-          form.supervisorPosition || user?.position || getDefaultPosition(user?.role),
-        notes: form.notes || "",
-        responses,
-        delayedFlight: delayedFlightValue === "yes",
-        delayedTimeMinutes: Number(responses.delayedTimeMinutes || 0),
-        delayedReason: String(responses.delayedReason || "").trim(),
-        delayedCodeReported: String(responses.delayedCodeReported || "").trim(),
-        needsAttention:
-          operationStatusValue !== "operation completed with no issues" &&
-          operationStatusValue !== "operation completed without issues",
+          String(form.supervisorPosition || "").trim() ||
+          user?.position ||
+          getDefaultPosition(user?.role),
+        notes: String(form.notes || "").trim(),
+        delayedFlight: Boolean(form.delayedFlight),
+        delayedTimeMinutes: form.delayedFlight
+          ? Number(form.delayedTimeMinutes || 0)
+          : 0,
+        delayedReason: form.delayedFlight
+          ? String(form.delayedReason || "").trim()
+          : "",
+        delayedCodeReported: form.delayedFlight
+          ? String(form.delayedCodeReported || "").trim()
+          : "",
+        needsAttention: finalNeedsAttention,
+        responses: form.responses || {},
         submittedByUserId: user?.id || "",
         submittedByUsername: user?.username || "",
         submittedByName: getVisibleName(user),
         submittedByRole: user?.role || "",
         createdAt: serverTimestamp(),
         status: "submitted",
-      });
+      };
+
+      await addDoc(collection(db, "operational_reports"), payload);
 
       setStatusMessage("Operational report submitted successfully.");
 
-      setForm((prev) => ({
-        ...prev,
+      setForm({
         airline: "",
         reportDate: "",
         shift: "",
         flightsHandled: "",
+        supervisorReporting: getVisibleName(user),
+        supervisorPosition: user?.position || getDefaultPosition(user?.role),
         notes: "",
-      }));
-      setResponses({});
+        delayedFlight: false,
+        delayedTimeMinutes: "",
+        delayedReason: "",
+        delayedCodeReported: "",
+        needsAttention: false,
+        responses: buildInitialResponses(dynamicFields),
+      });
     } catch (err) {
       console.error("Error saving operational report:", err);
       setStatusMessage("Could not submit operational report.");
@@ -493,11 +521,63 @@ export default function SupervisorOperationalReportPage() {
     }
   };
 
+  if (!canAccess) {
+    return (
+      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+        <div
+          style={{
+            background:
+              "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+            borderRadius: 28,
+            padding: 24,
+            color: "#fff",
+            boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 700,
+            }}
+          >
+            TPA OPS · Operational Reports
+          </p>
+          <h1
+            style={{
+              margin: "10px 0 6px",
+              fontSize: 32,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Access denied
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 700,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.88)",
+            }}
+          >
+            You do not have permission to submit operational reports.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
       <div
         style={{
-          background: "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          background:
+            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
           borderRadius: 28,
           padding: 24,
           color: "#fff",
@@ -529,20 +609,49 @@ export default function SupervisorOperationalReportPage() {
           }}
         >
           <div>
-            <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.78)", fontWeight: 700 }}>
-              TPA OPS · Operational Report
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              TPA OPS · Operational Reports
             </p>
 
-            <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-0.04em" }}>
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
               Submit Operational Report
             </h1>
 
-            <p style={{ margin: 0, maxWidth: 760, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
-              Header is fixed. The rest of the form updates automatically from the builder configuration.
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Submit the operational report from your profile, include delays,
+              issues, and dynamic form responses for manager follow-up.
             </p>
           </div>
 
-          <ActionButton type="button" variant="secondary" onClick={() => navigate("/dashboard")}>
+          <ActionButton
+            type="button"
+            variant="secondary"
+            onClick={() => navigate("/dashboard")}
+          >
             ← Back to Dashboard
           </ActionButton>
         </div>
@@ -568,11 +677,25 @@ export default function SupervisorOperationalReportPage() {
 
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
             Report Header
           </h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
-            Complete the general information before answering the report questions.
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Complete the main operational report information first.
           </p>
         </div>
 
@@ -617,11 +740,11 @@ export default function SupervisorOperationalReportPage() {
           </div>
 
           <div>
-            <FieldLabel>Flights handled</FieldLabel>
+            <FieldLabel>Flights Handled</FieldLabel>
             <TextInput
               value={form.flightsHandled}
               onChange={(e) => handleFormChange("flightsHandled", e.target.value)}
-              placeholder="Example: SY213/214"
+              placeholder="Example: 4"
             />
           </div>
 
@@ -629,119 +752,416 @@ export default function SupervisorOperationalReportPage() {
             <FieldLabel>Supervisor Reporting</FieldLabel>
             <TextInput
               value={form.supervisorReporting}
-              onChange={(e) => handleFormChange("supervisorReporting", e.target.value)}
+              onChange={(e) =>
+                handleFormChange("supervisorReporting", e.target.value)
+              }
             />
           </div>
-        </div>
 
-        <div style={{ marginTop: 14 }}>
-          <FieldLabel>Header Notes</FieldLabel>
-          <TextArea
-            value={form.notes}
-            onChange={(e) => handleFormChange("notes", e.target.value)}
-            placeholder="Optional general notes"
-          />
+          <div>
+            <FieldLabel>Supervisor Position</FieldLabel>
+            <TextInput
+              value={form.supervisorPosition}
+              onChange={(e) =>
+                handleFormChange("supervisorPosition", e.target.value)
+              }
+            />
+          </div>
         </div>
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
-            Dynamic Report Questions
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Delay Information
           </h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
-            These questions are loaded from the Operational Report Builder.
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            If there was a delayed flight, complete all related fields.
           </p>
         </div>
 
-        {loadingFields ? (
-          <div style={{ padding: 16, borderRadius: 16, background: "#f8fbff", border: "1px solid #dbeafe", color: "#64748b", fontWeight: 600 }}>
-            Loading report questions...
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: 14,
+          }}
+        >
+          <div>
+            <FieldLabel>Delayed Flight</FieldLabel>
+            <SelectInput
+              value={form.delayedFlight ? "Yes" : "No"}
+              onChange={(e) =>
+                handleFormChange("delayedFlight", e.target.value === "Yes")
+              }
+            >
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </SelectInput>
           </div>
-        ) : fields.length === 0 ? (
-          <div style={{ padding: 16, borderRadius: 16, background: "#f8fbff", border: "1px solid #dbeafe", color: "#64748b", fontWeight: 600 }}>
-            No active questions found. Please create them in Operational Report Builder.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 18 }}>
-            {Object.keys(groupedFields).map((section) => (
-              <div
-                key={section}
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 20,
-                  overflow: "hidden",
-                  background: "#fff",
-                }}
-              >
-                <div
-                  style={{
-                    padding: "14px 16px",
-                    background: "#f8fbff",
-                    borderBottom: "1px solid #e2e8f0",
-                    fontSize: 15,
-                    fontWeight: 800,
-                    color: "#1769aa",
-                  }}
-                >
-                  {section}
-                </div>
 
-                <div style={{ padding: 16, display: "grid", gap: 14 }}>
-                  {groupedFields[section].map((field) => {
-                    const shouldHideDelayedDetail =
-                      !delayedFlightSelected &&
-                      ["delayedTimeMinutes", "delayedReason", "delayedCodeReported"].includes(
-                        field.key
-                      );
-
-                    if (shouldHideDelayedDetail) return null;
-
-                    return (
-                      <div key={field.id}>
-                        <FieldLabel>
-                          {field.label}
-                          {field.required ? " *" : ""}
-                        </FieldLabel>
-
-                        <DynamicField
-                          field={field}
-                          value={responses[field.key]}
-                          onChange={handleResponseChange}
-                        />
-
-                        {field.helpText ? (
-                          <p
-                            style={{
-                              margin: "6px 0 0",
-                              fontSize: 12,
-                              color: "#64748b",
-                              lineHeight: 1.6,
-                            }}
-                          >
-                            {field.helpText}
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
+          {form.delayedFlight && (
+            <>
+              <div>
+                <FieldLabel>Delayed Time (minutes)</FieldLabel>
+                <TextInput
+                  type="number"
+                  value={form.delayedTimeMinutes}
+                  onChange={(e) =>
+                    handleFormChange("delayedTimeMinutes", e.target.value)
+                  }
+                  placeholder="Example: 7"
+                />
               </div>
-            ))}
+
+              <div>
+                <FieldLabel>Delayed Code Reported to the Airline</FieldLabel>
+                <TextInput
+                  value={form.delayedCodeReported}
+                  onChange={(e) =>
+                    handleFormChange("delayedCodeReported", e.target.value)
+                  }
+                  placeholder="Example: MX / WX / OPS"
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {form.delayedFlight && (
+          <div style={{ marginTop: 14 }}>
+            <FieldLabel>Delayed Reason</FieldLabel>
+            <TextArea
+              value={form.delayedReason}
+              onChange={(e) => handleFormChange("delayedReason", e.target.value)}
+              placeholder="Explain the delayed reason"
+            />
+          </div>
+        )}
+
+        {form.delayedFlight && Number(form.delayedTimeMinutes || 0) > 4 && (
+          <div
+            style={{
+              marginTop: 14,
+              borderRadius: 16,
+              padding: "14px 16px",
+              background: "#fff7ed",
+              border: "1px solid #fdba74",
+              color: "#9a3412",
+              fontWeight: 800,
+              fontSize: 14,
+            }}
+          >
+            Alert: this delay exceeds 4 minutes and will trigger manager follow-up.
           </div>
         )}
       </PageCard>
 
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ marginBottom: 16 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Dynamic Operational Questions
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            These questions update automatically from the Operational Report Builder.
+          </p>
+        </div>
+
+        {loadingBuilder ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontWeight: 600,
+            }}
+          >
+            Loading form fields...
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 18 }}>
+            {dynamicFields.map((field) => {
+              const value = form.responses?.[field.key];
+
+              if (field.type === "textarea") {
+                return (
+                  <div key={field.key}>
+                    <FieldLabel>
+                      {field.label} {field.required ? "*" : ""}
+                    </FieldLabel>
+                    <TextArea
+                      value={String(value || "")}
+                      onChange={(e) =>
+                        handleResponseChange(field.key, e.target.value)
+                      }
+                    />
+                  </div>
+                );
+              }
+
+              if (field.type === "select") {
+                return (
+                  <div key={field.key}>
+                    <FieldLabel>
+                      {field.label} {field.required ? "*" : ""}
+                    </FieldLabel>
+                    <SelectInput
+                      value={String(value || "")}
+                      onChange={(e) =>
+                        handleResponseChange(field.key, e.target.value)
+                      }
+                    >
+                      <option value="">Select option</option>
+                      {(field.options || []).map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                );
+              }
+
+              if (field.type === "yesno") {
+                return (
+                  <div key={field.key}>
+                    <FieldLabel>
+                      {field.label} {field.required ? "*" : ""}
+                    </FieldLabel>
+                    <SelectInput
+                      value={String(value || "")}
+                      onChange={(e) =>
+                        handleResponseChange(field.key, e.target.value)
+                      }
+                    >
+                      <option value="">Select option</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </SelectInput>
+                  </div>
+                );
+              }
+
+              if (field.type === "checkbox-group") {
+                const selected = Array.isArray(value) ? value : [];
+
+                return (
+                  <div key={field.key}>
+                    <FieldLabel>
+                      {field.label} {field.required ? "*" : ""}
+                    </FieldLabel>
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 10,
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
+                        borderRadius: 16,
+                        padding: 14,
+                      }}
+                    >
+                      {(field.options || []).map((option) => (
+                        <label
+                          key={option}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            color: "#0f172a",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(option)}
+                            onChange={(e) =>
+                              handleCheckboxGroupChange(
+                                field.key,
+                                option,
+                                e.target.checked
+                              )
+                            }
+                          />
+                          {option}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={field.key}>
+                  <FieldLabel>
+                    {field.label} {field.required ? "*" : ""}
+                  </FieldLabel>
+                  <TextInput
+                    value={String(value || "")}
+                    onChange={(e) =>
+                      handleResponseChange(field.key, e.target.value)
+                    }
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </PageCard>
+
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Notes and Attention
+          </h2>
+        </div>
+
+        <div>
+          <FieldLabel>Notes</FieldLabel>
+          <TextArea
+            value={form.notes}
+            onChange={(e) => handleFormChange("notes", e.target.value)}
+            placeholder="Additional operational notes"
+          />
+        </div>
+
+        <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontWeight: 700,
+              color: "#0f172a",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={form.needsAttention}
+              onChange={(e) => handleFormChange("needsAttention", e.target.checked)}
+            />
+            Mark report as Needs Attention
+          </label>
+
+          {computedNeedsAttention && (
+            <div
+              style={{
+                borderRadius: 16,
+                padding: "14px 16px",
+                background: "#fff1f2",
+                border: "1px solid #fecdd3",
+                color: "#9f1239",
+                fontWeight: 800,
+                fontSize: 14,
+              }}
+            >
+              Attention alert: this report will be flagged because the response indicates the operation was not completed without issues.
+            </div>
+          )}
+        </div>
+      </PageCard>
+
       <PageCard style={{ padding: 20 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <ActionButton onClick={handleSubmit} variant="primary" disabled={saving}>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <ActionButton
+            onClick={handleSubmit}
+            variant="primary"
+            disabled={saving}
+          >
             {saving ? "Submitting..." : "Submit Operational Report"}
           </ActionButton>
 
-          <ActionButton onClick={() => navigate("/dashboard")} variant="secondary">
+          <ActionButton
+            onClick={() => navigate("/dashboard")}
+            variant="secondary"
+          >
             Cancel
           </ActionButton>
         </div>
+
+        {(form.airline || form.reportDate) && (
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              padding: "14px 16px",
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                marginBottom: 6,
+              }}
+            >
+              Submission Preview
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                color: "#0f172a",
+                lineHeight: 1.7,
+                fontWeight: 600,
+              }}
+            >
+              Airline: {visibleAirlineLabel}
+              <br />
+              Date: {form.reportDate || "—"}
+              <br />
+              Delayed Flight: {form.delayedFlight ? "Yes" : "No"}
+              <br />
+              Needs Attention: {finalNeedsAttention ? "Yes" : "No"}
+            </div>
+          </div>
+        )}
       </PageCard>
     </div>
   );
