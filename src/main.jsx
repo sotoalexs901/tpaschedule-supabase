@@ -23,7 +23,6 @@ import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
 import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx";
 import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 
-// ⭐ NUEVOS
 import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
 import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx";
 import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx";
@@ -36,21 +35,17 @@ import MessagesPage from "./pages/MessagesPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import AdminActivityDashboard from "./pages/AdminActivityDashboard.jsx";
 
-// ✅ TIMESHEETS
 import SupervisorTimesheetPage from "./pages/SupervisorTimesheetPage.jsx";
 import TimesheetAdminPage from "./pages/TimesheetAdminPage.jsx";
 
-// ✅ WCHR PAGES
 import WCHRScan from "./pages/WCHRScan.jsx";
 import MyWCHRReports from "./pages/MyWCHRReports.jsx";
 import WCHRFlights from "./pages/WCHRFlights.jsx";
 
-// ✅ CABIN SERVICE
 import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
 
-// -------- protección de rutas ----------
 function ProtectedRoute({ children, roles }) {
   const { user } = useUser();
 
@@ -60,7 +55,6 @@ function ProtectedRoute({ children, roles }) {
   return children;
 }
 
-// Decide qué dashboard mostrar según rol
 function DashboardEntry() {
   const { user } = useUser();
 
@@ -75,14 +69,11 @@ function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* LOGIN */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* 🔓 RUTAS PÚBLICAS */}
         <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
         <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
 
-        {/* RUTAS PROTEGIDAS */}
         <Route
           path="/"
           element={
@@ -91,17 +82,12 @@ function AppRouter() {
             </ProtectedRoute>
           }
         >
-          {/* Dashboard según rol */}
           <Route index element={<DashboardEntry />} />
           <Route path="dashboard" element={<DashboardEntry />} />
 
-          {/* PERFIL – TODOS LOS USUARIOS LOGUEADOS */}
           <Route path="profile" element={<ProfilePage />} />
-
-          {/* MENSAJES – TODOS LOS USUARIOS LOGUEADOS */}
           <Route path="messages" element={<MessagesPage />} />
 
-          {/* SOLO AGENT / SUPERVISOR */}
           <Route
             path="my-schedule"
             element={
@@ -129,31 +115,24 @@ function AppRouter() {
             }
           />
 
-          {/* ✅ TIMESHEET SUBMIT – SUPERVISOR / DUTY MANAGER / STATION MANAGER */}
           <Route
             path="timesheets/submit"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <SupervisorTimesheetPage />
               </ProtectedRoute>
             }
           />
 
-          {/* ✅ TIMESHEET REPORTS – SUPERVISOR / DUTY MANAGER / STATION MANAGER */}
           <Route
             path="timesheets/reports"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <TimesheetAdminPage />
               </ProtectedRoute>
             }
           />
 
-          {/* ✅ WCHR – AGENT / SUPERVISOR */}
           <Route
             path="wchr/scan"
             element={
@@ -172,7 +151,6 @@ function AppRouter() {
             }
           />
 
-          {/* ✅ WCHR – ADMIN / MANAGERS */}
           <Route
             path="wchr/admin/flights"
             element={
@@ -182,7 +160,6 @@ function AppRouter() {
             }
           />
 
-          {/* ✅ USER ACTIVITY – SOLO STATION MANAGER */}
           <Route
             path="admin/activity-dashboard"
             element={
@@ -192,7 +169,6 @@ function AppRouter() {
             }
           />
 
-          {/* SOLO STATION MANAGER: anuncios para empleados */}
           <Route
             path="employee-announcements"
             element={
@@ -213,7 +189,6 @@ function AppRouter() {
 
           <Route path="schedule" element={<SchedulePage />} />
 
-          {/* ✅ CABIN SERVICE */}
           <Route
             path="cabin-service"
             element={
@@ -295,7 +270,6 @@ function AppRouter() {
             }
           />
 
-          {/* ADMIN PARA APROBAR DAY OFF */}
           <Route
             path="timeoff-requests"
             element={
@@ -363,7 +337,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </React.StrictMode>
 );
 
-// ✅ Registro del Service Worker para PWA
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch((err) => {
