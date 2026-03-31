@@ -38,6 +38,9 @@ import AdminActivityDashboard from "./pages/AdminActivityDashboard.jsx";
 import SupervisorTimesheetPage from "./pages/SupervisorTimesheetPage.jsx";
 import TimesheetAdminPage from "./pages/TimesheetAdminPage.jsx";
 
+import SupervisorOperationalReportPage from "./pages/SupervisorOperationalReportPage.jsx";
+import OperationalReportFormBuilderPage from "./pages/OperationalReportFormBuilderPage.jsx";
+
 import WCHRScan from "./pages/WCHRScan.jsx";
 import MyWCHRReports from "./pages/MyWCHRReports.jsx";
 import WCHRFlights from "./pages/WCHRFlights.jsx";
@@ -118,7 +121,9 @@ function AppRouter() {
           <Route
             path="timesheets/submit"
             element={
-              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
                 <SupervisorTimesheetPage />
               </ProtectedRoute>
             }
@@ -127,8 +132,30 @@ function AppRouter() {
           <Route
             path="timesheets/reports"
             element={
-              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
                 <TimesheetAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="operational-report/submit"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <SupervisorOperationalReportPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="operational-report/form-builder"
+            element={
+              <ProtectedRoute roles={["station_manager"]}>
+                <OperationalReportFormBuilderPage />
               </ProtectedRoute>
             }
           />
