@@ -177,7 +177,7 @@ function TextInput(props) {
       style={{
         width: "100%",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
         fontSize: 14,
@@ -196,7 +196,7 @@ function SelectInput(props) {
       style={{
         width: "100%",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
         fontSize: 14,
@@ -215,7 +215,7 @@ function TextArea(props) {
       style={{
         width: "100%",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
         fontSize: 14,
@@ -756,6 +756,7 @@ export default function TimesheetAdminPage() {
   const [approvingId, setApprovingId] = useState("");
   const [returningId, setReturningId] = useState("");
   const [savingEditId, setSavingEditId] = useState("");
+  const [isEditMode, setIsEditMode] = useState(false);
 
   const [filters, setFilters] = useState({
     airline: "all",
@@ -974,6 +975,7 @@ export default function TimesheetAdminPage() {
         rows: [],
       });
       setReturnReason("");
+      setIsEditMode(false);
       return;
     }
 
@@ -1140,6 +1142,7 @@ export default function TimesheetAdminPage() {
       );
 
       setStatusMessage("Timesheet returned for correction.");
+      setIsEditMode(false);
     } catch (err) {
       console.error("Error returning timesheet:", err);
       setStatusMessage("Could not return timesheet.");
@@ -1255,6 +1258,7 @@ export default function TimesheetAdminPage() {
       );
 
       setStatusMessage("Timesheet changes saved.");
+      setIsEditMode(false);
     } catch (err) {
       console.error("Error saving edits:", err);
       setStatusMessage("Could not save timesheet edits.");
@@ -1268,21 +1272,31 @@ export default function TimesheetAdminPage() {
 
     const printableReport = {
       ...selectedReport,
-      airline: normalizeAirlineName(editData.airline || selectedReport.airline),
-      normalizedAirline: normalizeAirlineName(
-        editData.airline || selectedReport.airline
-      ),
-      reportDate: editData.reportDate || selectedReport.reportDate,
-      shift: editData.shift || selectedReport.shift,
-      supervisorReporting:
-        editData.supervisorReporting || selectedReport.supervisorReporting,
-      notes: editData.notes || selectedReport.notes,
-      overBudgetReason:
-        editData.overBudgetReason || selectedReport.overBudgetReason,
-      rows: (editData.rows || []).length ? editData.rows : selectedReport.rows || [],
-      totalHours: (editData.rows || []).length
-        ? editData.rows.reduce((sum, row) => sum + calculateRowHours(row), 0)
-        : selectedReport.totalHours,
+      airline: isEditMode
+        ? normalizeAirlineName(editData.airline || selectedReport.airline)
+        : selectedReport.airline,
+      normalizedAirline: isEditMode
+        ? normalizeAirlineName(editData.airline || selectedReport.airline)
+        : selectedReport.normalizedAirline,
+      reportDate: isEditMode
+        ? editData.reportDate || selectedReport.reportDate
+        : selectedReport.reportDate,
+      shift: isEditMode ? editData.shift || selectedReport.shift : selectedReport.shift,
+      supervisorReporting: isEditMode
+        ? editData.supervisorReporting || selectedReport.supervisorReporting
+        : selectedReport.supervisorReporting,
+      notes: isEditMode ? editData.notes || selectedReport.notes : selectedReport.notes,
+      overBudgetReason: isEditMode
+        ? editData.overBudgetReason || selectedReport.overBudgetReason
+        : selectedReport.overBudgetReason,
+      rows:
+        isEditMode && (editData.rows || []).length
+          ? editData.rows
+          : selectedReport.rows || [],
+      totalHours:
+        isEditMode && (editData.rows || []).length
+          ? editData.rows.reduce((sum, row) => sum + calculateRowHours(row), 0)
+          : selectedReport.totalHours,
     };
 
     const html = buildPrintableHtml(printableReport, selectedAirlineSummary);
@@ -1361,6 +1375,11 @@ export default function TimesheetAdminPage() {
       </div>
     );
   }
+
+  const currentDisplayedTotal =
+    isEditMode && (editData.rows || []).length
+      ? editData.rows.reduce((sum, row) => sum + calculateRowHours(row), 0)
+      : selectedReport?.totalHours || 0;
 
   return (
     <div
@@ -1826,10 +1845,25 @@ export default function TimesheetAdminPage() {
                         >
                           <ActionButton
                             variant="secondary"
-                            onClick={() => setSelectedId(report.id)}
+                            onClick={() => {
+                              setSelectedId(report.id);
+                              setIsEditMode(false);
+                            }}
                           >
                             View
                           </ActionButton>
+
+                          {canApprove && (
+                            <ActionButton
+                              variant="primary"
+                              onClick={() => {
+                                setSelectedId(report.id);
+                                setIsEditMode(true);
+                              }}
+                            >
+                              Edit
+                            </ActionButton>
+                          )}
 
                           {canApprove && report.status !== "approved" && (
                             <ActionButton
@@ -1838,18 +1872,6 @@ export default function TimesheetAdminPage() {
                               disabled={approvingId === report.id}
                             >
                               {approvingId === report.id ? "Approving..." : "Approve"}
-                            </ActionButton>
-                          )}
-
-                          {canApprove && report.status !== "approved" && (
-                            <ActionButton
-                              variant="warning"
-                              onClick={() => {
-                                setSelectedId(report.id);
-                                setReturnReason(report.returnedReason || "");
-                              }}
-                            >
-                              Return
                             </ActionButton>
                           )}
 
@@ -1872,54 +1894,432 @@ export default function TimesheetAdminPage() {
 
         {selectedReport && (
           <PageCard style={{ padding: 20 }}>
-            <div
-              style={{
-                display: "grid",
-                gap: 16,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  flexWrap: "wrap",
-                  alignItems: "flex-start",
-                }}
-              >
-                <div>
-                  <h2
-                    style={{
-                      margin: 0,
-                      fontSize: 22,
-                      fontWeight: 800,
-                      color: "#0f172a",
-                      letterSpacing: "-0.02em",
-                    }}
-                  >
-                    Timesheet Detail
-                  </h2>
-                  <p
-                    style={{
-                      margin: "4px 0 0",
-                      fontSize: 13,
-                      color: "#64748b",
-                    }}
-                  >
-                    {selectedReport.normalizedAirline || "—"} ·{" "}
-                    {selectedReport.reportDate || "—"}
-                  </p>
+            {!isEditMode ? (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 22,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      Timesheet Detail
+                    </h2>
+                    <p
+                      style={{
+                        margin: "4px 0 0",
+                        fontSize: 13,
+                        color: "#64748b",
+                      }}
+                    >
+                      {selectedReport.normalizedAirline || "—"} ·{" "}
+                      {selectedReport.reportDate || "—"}
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={handlePrintExport}
+                    >
+                      Print / Export PDF
+                    </ActionButton>
+
+                    {canApprove && (
+                      <ActionButton
+                        variant="primary"
+                        onClick={() => setIsEditMode(true)}
+                      >
+                        Edit
+                      </ActionButton>
+                    )}
+
+                    {canApprove && selectedReport.status !== "approved" && (
+                      <ActionButton
+                        variant="success"
+                        onClick={() => handleApprove(selectedReport)}
+                        disabled={approvingId === selectedReport.id}
+                      >
+                        {approvingId === selectedReport.id ? "Approving..." : "Approve"}
+                      </ActionButton>
+                    )}
+                  </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <ActionButton
-                    variant="secondary"
-                    onClick={handlePrintExport}
-                  >
-                    Print / Export PDF
-                  </ActionButton>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  <InfoCard
+                    label="Airline"
+                    value={selectedReport.normalizedAirline || "—"}
+                  />
+                  <InfoCard
+                    label="Report Date"
+                    value={selectedReport.reportDate || "—"}
+                  />
+                  <InfoCard
+                    label="Shift"
+                    value={selectedReport.shift || "—"}
+                  />
+                  <InfoCard
+                    label="Supervisor Reporting"
+                    value={selectedReport.supervisorReporting || "—"}
+                  />
+                  <InfoCard
+                    label="Submitted By"
+                    value={
+                      selectedReport.submittedByName ||
+                      selectedReport.submittedByUsername ||
+                      "—"
+                    }
+                  />
+                  <InfoCard
+                    label="Report Hours"
+                    value={`${selectedReport.totalHours.toFixed(2)} hrs`}
+                  />
+                  <InfoCard
+                    label="Daily Budget"
+                    value={`${
+                      selectedAirlineSummary
+                        ? selectedAirlineSummary.budget.toFixed(2)
+                        : Number(selectedReport.budgetHoursDaily || 0).toFixed(2)
+                    } hrs`}
+                  />
+                  <InfoCard
+                    label="Airline Daily Total"
+                    value={`${
+                      selectedAirlineSummary
+                        ? selectedAirlineSummary.hours.toFixed(2)
+                        : selectedReport.totalHours.toFixed(2)
+                    } hrs`}
+                  />
+                </div>
 
-                  {canApprove && (
+                {(selectedAirlineSummary?.overBudget || selectedReport.overBudget) && (
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      background: "#fff1f2",
+                      border: "1px solid #fecdd3",
+                      color: "#9f1239",
+                      fontWeight: 800,
+                      fontSize: 14,
+                    }}
+                  >
+                    Budget alert: {selectedReport.normalizedAirline} is over daily budget by{" "}
+                    {Number(
+                      selectedReport.overBudgetBy || selectedAirlineSummary?.overBy || 0
+                    ).toFixed(2)} hours on {selectedReport.reportDate || "this day"}.
+                  </div>
+                )}
+
+                {selectedReport.overBudget && selectedReport.overBudgetReason && (
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      background: "#fff7ed",
+                      border: "1px solid #fdba74",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#9a3412",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Over Budget Reason
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "#7c2d12",
+                        whiteSpace: "pre-line",
+                        lineHeight: 1.7,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {selectedReport.overBudgetReason}
+                    </div>
+                  </div>
+                )}
+
+                {selectedReport.notes && (
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      background: "#f8fbff",
+                      border: "1px solid #dbeafe",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Notes
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "#0f172a",
+                        whiteSpace: "pre-line",
+                        lineHeight: 1.7,
+                      }}
+                    >
+                      {selectedReport.notes}
+                    </div>
+                  </div>
+                )}
+
+                {selectedReport.status === "returned" && (
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      background: "#fff7ed",
+                      border: "1px solid #fdba74",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#9a3412",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Returned For Fix
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "#7c2d12",
+                        lineHeight: 1.7,
+                        fontWeight: 700,
+                        whiteSpace: "pre-line",
+                      }}
+                    >
+                      {selectedReport.returnedReason || "No reason provided."}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 13,
+                        color: "#9a3412",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {selectedReport.returnedByName || "Manager"}
+                      {selectedReport.returnedByRole
+                        ? ` (${selectedReport.returnedByRole})`
+                        : ""}
+                      {" · "}
+                      {formatDateTime(selectedReport.returnedAt)}
+                    </div>
+                  </div>
+                )}
+
+                {selectedReport.status === "approved" && (
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      background: "#ecfdf5",
+                      border: "1px solid #a7f3d0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#047857",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Approval
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "#065f46",
+                        lineHeight: 1.7,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Approved by {selectedReport.approvedByName || "Manager"}{" "}
+                      {selectedReport.approvedByRole
+                        ? `(${selectedReport.approvedByRole})`
+                        : ""}
+                      {" · "}
+                      {formatDateTime(selectedReport.approvedAt)}
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    overflowX: "auto",
+                    borderRadius: 18,
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "separate",
+                      borderSpacing: 0,
+                      minWidth: 1180,
+                      background: "#fff",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#f8fbff" }}>
+                        <th style={thStyle()}>Employee</th>
+                        <th style={thStyle()}>Punch In</th>
+                        <th style={thStyle()}>Punch Out</th>
+                        <th style={thStyle()}>Employee Status</th>
+                        <th style={thStyle()}>Break Taken</th>
+                        <th style={thStyle()}>Reason</th>
+                        <th style={thStyle()}>Hours</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedReport.rows || []).map((row, index) => (
+                        <tr
+                          key={index}
+                          style={{
+                            background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                          }}
+                        >
+                          <td style={tdStyle}>{row.employeeName || "—"}</td>
+                          <td style={tdStyle}>{row.punchIn || "—"}</td>
+                          <td style={tdStyle}>{row.punchOut || "—"}</td>
+                          <td style={tdStyle}>{row.employeeStatus || "—"}</td>
+                          <td style={tdStyle}>{row.breakTaken || "—"}</td>
+                          <td style={tdStyle}>{row.reason || "—"}</td>
+                          <td style={tdStyle}>
+                            {calculateRowHours(row).toFixed(2)} hrs
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <div
+                    style={{
+                      minWidth: 260,
+                      background: "#f8fbff",
+                      border: "1px solid #dbeafe",
+                      borderRadius: 16,
+                      padding: "16px 18px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      Report Total
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 26,
+                        fontWeight: 900,
+                        color: "#0f172a",
+                      }}
+                    >
+                      {selectedReport.totalHours.toFixed(2)} hrs
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 22,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      Edit Timesheet
+                    </h2>
+                    <p
+                      style={{
+                        margin: "4px 0 0",
+                        fontSize: 13,
+                        color: "#64748b",
+                      }}
+                    >
+                      {selectedReport.normalizedAirline || "—"} ·{" "}
+                      {selectedReport.reportDate || "—"}
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => setIsEditMode(false)}
+                    >
+                      Cancel Edit
+                    </ActionButton>
+
                     <ActionButton
                       variant="primary"
                       onClick={() => handleSaveEdits(selectedReport)}
@@ -1927,154 +2327,80 @@ export default function TimesheetAdminPage() {
                     >
                       {savingEditId === selectedReport.id ? "Saving..." : "Save Edits"}
                     </ActionButton>
-                  )}
 
-                  {canApprove && selectedReport.status !== "approved" && (
-                    <ActionButton
-                      variant="success"
-                      onClick={() => handleApprove(selectedReport)}
-                      disabled={approvingId === selectedReport.id}
-                    >
-                      {approvingId === selectedReport.id ? "Approving..." : "Approve"}
-                    </ActionButton>
-                  )}
+                    {selectedReport.status !== "approved" && (
+                      <ActionButton
+                        variant="success"
+                        onClick={() => handleApprove(selectedReport)}
+                        disabled={approvingId === selectedReport.id}
+                      >
+                        {approvingId === selectedReport.id ? "Approving..." : "Approve"}
+                      </ActionButton>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                <InfoCard
-                  label="Airline"
-                  value={editData.airline || selectedReport.normalizedAirline || "—"}
-                />
-                <InfoCard
-                  label="Report Date"
-                  value={editData.reportDate || selectedReport.reportDate || "—"}
-                />
-                <InfoCard
-                  label="Shift"
-                  value={editData.shift || selectedReport.shift || "—"}
-                />
-                <InfoCard
-                  label="Supervisor Reporting"
-                  value={
-                    editData.supervisorReporting ||
-                    selectedReport.supervisorReporting ||
-                    "—"
-                  }
-                />
-                <InfoCard
-                  label="Submitted By"
-                  value={
-                    selectedReport.submittedByName ||
-                    selectedReport.submittedByUsername ||
-                    "—"
-                  }
-                />
-                <InfoCard
-                  label="Report Hours"
-                  value={`${(
-                    (editData.rows || []).length
-                      ? editData.rows.reduce(
-                          (sum, row) => sum + calculateRowHours(row),
-                          0
-                        )
-                      : selectedReport.totalHours
-                  ).toFixed(2)} hrs`}
-                />
-                <InfoCard
-                  label="Daily Budget"
-                  value={`${
-                    selectedAirlineSummary
-                      ? selectedAirlineSummary.budget.toFixed(2)
-                      : Number(selectedReport.budgetHoursDaily || 0).toFixed(2)
-                  } hrs`}
-                />
-                <InfoCard
-                  label="Airline Daily Total"
-                  value={`${
-                    selectedAirlineSummary
-                      ? selectedAirlineSummary.hours.toFixed(2)
-                      : selectedReport.totalHours.toFixed(2)
-                  } hrs`}
-                />
-              </div>
-
-              {(selectedAirlineSummary?.overBudget || selectedReport.overBudget) && (
                 <div
                   style={{
-                    borderRadius: 16,
-                    padding: "14px 16px",
-                    background: "#fff1f2",
-                    border: "1px solid #fecdd3",
-                    color: "#9f1239",
-                    fontWeight: 800,
-                    fontSize: 14,
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 12,
                   }}
                 >
-                  Budget alert: {selectedReport.normalizedAirline} is over daily budget by{" "}
-                  {Number(
-                    selectedReport.overBudgetBy || selectedAirlineSummary?.overBy || 0
-                  ).toFixed(2)} hours on {selectedReport.reportDate || "this day"}.
-                </div>
-              )}
+                  <div>
+                    <FieldLabel>Airline</FieldLabel>
+                    <TextInput
+                      value={editData.airline}
+                      onChange={(e) => handleEditField("airline", e.target.value)}
+                    />
+                  </div>
 
-              {selectedReport.status === "returned" && (
-                <div
-                  style={{
-                    borderRadius: 16,
-                    padding: "14px 16px",
-                    background: "#fff7ed",
-                    border: "1px solid #fdba74",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#9a3412",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                      marginBottom: 6,
-                    }}
-                  >
-                    Returned For Fix
+                  <div>
+                    <FieldLabel>Report Date</FieldLabel>
+                    <TextInput
+                      type="date"
+                      value={editData.reportDate}
+                      onChange={(e) => handleEditField("reportDate", e.target.value)}
+                    />
                   </div>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      color: "#7c2d12",
-                      lineHeight: 1.7,
-                      fontWeight: 700,
-                      whiteSpace: "pre-line",
-                    }}
-                  >
-                    {selectedReport.returnedReason || "No reason provided."}
+
+                  <div>
+                    <FieldLabel>Shift</FieldLabel>
+                    <TextInput
+                      value={editData.shift}
+                      onChange={(e) => handleEditField("shift", e.target.value)}
+                    />
                   </div>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 13,
-                      color: "#9a3412",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {selectedReport.returnedByName || "Manager"}
-                    {selectedReport.returnedByRole
-                      ? ` (${selectedReport.returnedByRole})`
-                      : ""}
-                    {" · "}
-                    {formatDateTime(selectedReport.returnedAt)}
+
+                  <div>
+                    <FieldLabel>Supervisor Reporting</FieldLabel>
+                    <TextInput
+                      value={editData.supervisorReporting}
+                      onChange={(e) =>
+                        handleEditField("supervisorReporting", e.target.value)
+                      }
+                    />
                   </div>
                 </div>
-              )}
 
-              {canApprove && selectedReport.status !== "approved" && (
+                <div>
+                  <FieldLabel>Notes</FieldLabel>
+                  <TextArea
+                    value={editData.notes}
+                    onChange={(e) => handleEditField("notes", e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Over Budget Reason</FieldLabel>
+                  <TextArea
+                    value={editData.overBudgetReason}
+                    onChange={(e) =>
+                      handleEditField("overBudgetReason", e.target.value)
+                    }
+                  />
+                </div>
+
                 <div>
                   <FieldLabel>Reason to return for correction</FieldLabel>
                   <TextArea
@@ -2094,177 +2420,102 @@ export default function TimesheetAdminPage() {
                     </ActionButton>
                   </div>
                 </div>
-              )}
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                <div>
-                  <FieldLabel>Airline</FieldLabel>
-                  <TextInput
-                    value={editData.airline}
-                    onChange={(e) => handleEditField("airline", e.target.value)}
-                    disabled={!canApprove}
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Report Date</FieldLabel>
-                  <TextInput
-                    type="date"
-                    value={editData.reportDate}
-                    onChange={(e) => handleEditField("reportDate", e.target.value)}
-                    disabled={!canApprove}
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Shift</FieldLabel>
-                  <TextInput
-                    value={editData.shift}
-                    onChange={(e) => handleEditField("shift", e.target.value)}
-                    disabled={!canApprove}
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Supervisor Reporting</FieldLabel>
-                  <TextInput
-                    value={editData.supervisorReporting}
-                    onChange={(e) =>
-                      handleEditField("supervisorReporting", e.target.value)
-                    }
-                    disabled={!canApprove}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <FieldLabel>Notes</FieldLabel>
-                <TextArea
-                  value={editData.notes}
-                  onChange={(e) => handleEditField("notes", e.target.value)}
-                  disabled={!canApprove}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Over Budget Reason</FieldLabel>
-                <TextArea
-                  value={editData.overBudgetReason}
-                  onChange={(e) =>
-                    handleEditField("overBudgetReason", e.target.value)
-                  }
-                  disabled={!canApprove}
-                />
-              </div>
-
-              <div
-                style={{
-                  overflowX: "auto",
-                  borderRadius: 18,
-                  border: "1px solid #e2e8f0",
-                }}
-              >
-                <table
+                <div
                   style={{
-                    width: "100%",
-                    borderCollapse: "separate",
-                    borderSpacing: 0,
-                    minWidth: 1180,
-                    background: "#fff",
+                    overflowX: "auto",
+                    borderRadius: 18,
+                    border: "1px solid #e2e8f0",
                   }}
                 >
-                  <thead>
-                    <tr style={{ background: "#f8fbff" }}>
-                      <th style={thStyle()}>Employee</th>
-                      <th style={thStyle()}>Punch In</th>
-                      <th style={thStyle()}>Punch Out</th>
-                      <th style={thStyle()}>Employee Status</th>
-                      <th style={thStyle()}>Break Taken</th>
-                      <th style={thStyle()}>Reason</th>
-                      <th style={thStyle()}>Hours</th>
-                      {canApprove && <th style={thStyle({ textAlign: "center" })}>Remove</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(editData.rows || []).map((row, index) => (
-                      <tr
-                        key={index}
-                        style={{
-                          background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                        }}
-                      >
-                        <td style={tdStyle}>
-                          <TextInput
-                            value={row.employeeName || ""}
-                            onChange={(e) =>
-                              handleEditRow(index, "employeeName", e.target.value)
-                            }
-                            disabled={!canApprove}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          <TextInput
-                            type="time"
-                            value={row.punchIn || ""}
-                            onChange={(e) =>
-                              handleEditRow(index, "punchIn", e.target.value)
-                            }
-                            disabled={!canApprove}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          <TextInput
-                            type="time"
-                            value={row.punchOut || ""}
-                            onChange={(e) =>
-                              handleEditRow(index, "punchOut", e.target.value)
-                            }
-                            disabled={!canApprove}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          <TextInput
-                            value={row.employeeStatus || ""}
-                            onChange={(e) =>
-                              handleEditRow(index, "employeeStatus", e.target.value)
-                            }
-                            disabled={!canApprove}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          <SelectInput
-                            value={row.breakTaken || "No"}
-                            onChange={(e) =>
-                              handleEditRow(index, "breakTaken", e.target.value)
-                            }
-                            disabled={!canApprove}
-                          >
-                            <option value="No">No</option>
-                            <option value="Yes">Yes</option>
-                            <option value="30 min">30 min</option>
-                            <option value="45 min">45 min</option>
-                            <option value="60 min">60 min</option>
-                          </SelectInput>
-                        </td>
-                        <td style={tdStyle}>
-                          <TextInput
-                            value={row.reason || ""}
-                            onChange={(e) =>
-                              handleEditRow(index, "reason", e.target.value)
-                            }
-                            disabled={!canApprove}
-                          />
-                        </td>
-                        <td style={tdStyle}>
-                          {calculateRowHours(row).toFixed(2)} hrs
-                        </td>
-                        {canApprove && (
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "separate",
+                      borderSpacing: 0,
+                      minWidth: 1180,
+                      background: "#fff",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#f8fbff" }}>
+                        <th style={thStyle()}>Employee</th>
+                        <th style={thStyle()}>Punch In</th>
+                        <th style={thStyle()}>Punch Out</th>
+                        <th style={thStyle()}>Employee Status</th>
+                        <th style={thStyle()}>Break Taken</th>
+                        <th style={thStyle()}>Reason</th>
+                        <th style={thStyle()}>Hours</th>
+                        <th style={thStyle({ textAlign: "center" })}>Remove</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(editData.rows || []).map((row, index) => (
+                        <tr
+                          key={index}
+                          style={{
+                            background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                          }}
+                        >
+                          <td style={tdStyle}>
+                            <TextInput
+                              value={row.employeeName || ""}
+                              onChange={(e) =>
+                                handleEditRow(index, "employeeName", e.target.value)
+                              }
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <TextInput
+                              type="time"
+                              value={row.punchIn || ""}
+                              onChange={(e) =>
+                                handleEditRow(index, "punchIn", e.target.value)
+                              }
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <TextInput
+                              type="time"
+                              value={row.punchOut || ""}
+                              onChange={(e) =>
+                                handleEditRow(index, "punchOut", e.target.value)
+                              }
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <TextInput
+                              value={row.employeeStatus || ""}
+                              onChange={(e) =>
+                                handleEditRow(index, "employeeStatus", e.target.value)
+                              }
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <SelectInput
+                              value={row.breakTaken || "No"}
+                              onChange={(e) =>
+                                handleEditRow(index, "breakTaken", e.target.value)
+                              }
+                            >
+                              <option value="No">No</option>
+                              <option value="Yes">Yes</option>
+                              <option value="30 min">30 min</option>
+                              <option value="45 min">45 min</option>
+                              <option value="60 min">60 min</option>
+                            </SelectInput>
+                          </td>
+                          <td style={tdStyle}>
+                            <TextInput
+                              value={row.reason || ""}
+                              onChange={(e) =>
+                                handleEditRow(index, "reason", e.target.value)
+                              }
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            {calculateRowHours(row).toFixed(2)} hrs
+                          </td>
                           <td style={{ ...tdStyle, textAlign: "center" }}>
                             <ActionButton
                               variant="danger"
@@ -2274,67 +2525,58 @@ export default function TimesheetAdminPage() {
                               Remove
                             </ActionButton>
                           </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-              {canApprove && (
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <ActionButton variant="secondary" onClick={addEditRow}>
                     + Add Row
                   </ActionButton>
                 </div>
-              )}
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                }}
-              >
                 <div
                   style={{
-                    minWidth: 260,
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                    borderRadius: 16,
-                    padding: "16px 18px",
+                    display: "flex",
+                    justifyContent: "flex-end",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      minWidth: 260,
+                      background: "#f8fbff",
+                      border: "1px solid #dbeafe",
+                      borderRadius: 16,
+                      padding: "16px 18px",
                     }}
                   >
-                    Report Total
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 26,
-                      fontWeight: 900,
-                      color: "#0f172a",
-                    }}
-                  >
-                    {(
-                      (editData.rows || []).length
-                        ? editData.rows.reduce(
-                            (sum, row) => sum + calculateRowHours(row),
-                            0
-                          )
-                        : selectedReport.totalHours
-                    ).toFixed(2)} hrs
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      Report Total
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 26,
+                        fontWeight: 900,
+                        color: "#0f172a",
+                      }}
+                    >
+                      {currentDisplayedTotal.toFixed(2)} hrs
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </PageCard>
         )}
       </div>
