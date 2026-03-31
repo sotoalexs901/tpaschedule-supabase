@@ -124,7 +124,8 @@ export default function BudgetsPage() {
   const [budgets, setBudgets] = useState([]);
   const [airline, setAirline] = useState("");
   const [department, setDepartment] = useState("");
-  const [hours, setHours] = useState("");
+  const [weeklyHours, setWeeklyHours] = useState("");
+  const [dailyHours, setDailyHours] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
   const loadBudgets = async () => {
@@ -135,6 +136,11 @@ export default function BudgetsPage() {
         id: d.id,
         ...data,
         airline: normalizeAirlineName(data.airline),
+        budgetHours: Number(data.budgetHours || 0),
+        dailyBudgetHours:
+          data.dailyBudgetHours !== undefined && data.dailyBudgetHours !== null
+            ? Number(data.dailyBudgetHours)
+            : "",
       };
     });
     setBudgets(arr);
@@ -145,7 +151,7 @@ export default function BudgetsPage() {
   }, []);
 
   const createBudget = async () => {
-    if (!airline || !hours) {
+    if (!airline || !weeklyHours) {
       setStatusMessage("Missing info.");
       return;
     }
@@ -153,13 +159,16 @@ export default function BudgetsPage() {
     try {
       await addDoc(collection(db, "airlineBudgets"), {
         airline: normalizeAirlineName(airline),
-        department,
-        budgetHours: Number(hours),
+        department: String(department || "").trim(),
+        budgetHours: Number(weeklyHours),
+        dailyBudgetHours:
+          dailyHours === "" ? null : Number(dailyHours),
       });
 
       setAirline("");
       setDepartment("");
-      setHours("");
+      setWeeklyHours("");
+      setDailyHours("");
       setStatusMessage("Budget saved successfully.");
       loadBudgets();
     } catch (err) {
@@ -168,11 +177,25 @@ export default function BudgetsPage() {
     }
   };
 
-  const updateBudget = async (id, newHours) => {
+  const updateBudgetField = async (id, field, value) => {
     try {
+      let finalValue = value;
+
+      if (field === "budgetHours") {
+        finalValue = Number(value || 0);
+      }
+
+      if (field === "dailyBudgetHours") {
+        finalValue =
+          value === "" || value === null || value === undefined
+            ? null
+            : Number(value);
+      }
+
       await updateDoc(doc(db, "airlineBudgets", id), {
-        budgetHours: Number(newHours),
+        [field]: finalValue,
       });
+
       setStatusMessage("Budget updated.");
       loadBudgets();
     } catch (err) {
@@ -265,7 +288,8 @@ export default function BudgetsPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Create and manage weekly budget hours by airline and department.
+            Manage weekly budget hours for schedules and daily budget hours for
+            timesheet control.
           </p>
         </div>
       </div>
@@ -308,7 +332,8 @@ export default function BudgetsPage() {
               color: "#64748b",
             }}
           >
-            Set the weekly budget hours for each airline and department.
+            Weekly budget is used for schedules. Daily budget is used for the
+            Timesheet Reports page.
           </p>
         </div>
 
@@ -341,8 +366,17 @@ export default function BudgetsPage() {
             <FieldLabel>Weekly Hours</FieldLabel>
             <TextInput
               placeholder="Weekly Hours"
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
+              value={weeklyHours}
+              onChange={(e) => setWeeklyHours(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Daily Hours</FieldLabel>
+            <TextInput
+              placeholder="Daily Hours (for timesheets)"
+              value={dailyHours}
+              onChange={(e) => setDailyHours(e.target.value)}
             />
           </div>
         </div>
@@ -374,7 +408,8 @@ export default function BudgetsPage() {
               color: "#64748b",
             }}
           >
-            Review and adjust current budget hour allocations.
+            Weekly budget stays for scheduling. Daily budget is optional but
+            recommended for Timesheet Admin.
           </p>
         </div>
 
@@ -390,7 +425,7 @@ export default function BudgetsPage() {
               width: "100%",
               borderCollapse: "separate",
               borderSpacing: 0,
-              minWidth: 700,
+              minWidth: 900,
               background: "#fff",
             }}
           >
@@ -398,7 +433,8 @@ export default function BudgetsPage() {
               <tr style={{ background: "#f8fbff" }}>
                 <th style={thStyle({ textAlign: "left" })}>Airline</th>
                 <th style={thStyle({ textAlign: "left" })}>Department</th>
-                <th style={thStyle({ textAlign: "left" })}>Hours</th>
+                <th style={thStyle({ textAlign: "left" })}>Weekly Hours</th>
+                <th style={thStyle({ textAlign: "left" })}>Daily Hours</th>
                 <th style={thStyle({ textAlign: "center" })}>Actions</th>
               </tr>
             </thead>
@@ -417,13 +453,36 @@ export default function BudgetsPage() {
                     </span>
                   </td>
                   <td style={tdStyle}>{b.department || "—"}</td>
+
                   <td style={tdStyle}>
                     <TextInput
                       defaultValue={b.budgetHours}
-                      onBlur={(e) => updateBudget(b.id, e.target.value)}
-                      style={{ maxWidth: 120 }}
+                      onBlur={(e) =>
+                        updateBudgetField(b.id, "budgetHours", e.target.value)
+                      }
+                      style={{ maxWidth: 130 }}
                     />
                   </td>
+
+                  <td style={tdStyle}>
+                    <TextInput
+                      defaultValue={
+                        b.dailyBudgetHours === "" || b.dailyBudgetHours === null
+                          ? ""
+                          : b.dailyBudgetHours
+                      }
+                      placeholder="Optional"
+                      onBlur={(e) =>
+                        updateBudgetField(
+                          b.id,
+                          "dailyBudgetHours",
+                          e.target.value
+                        )
+                      }
+                      style={{ maxWidth: 130 }}
+                    />
+                  </td>
+
                   <td style={{ ...tdStyle, textAlign: "center" }}>
                     <ActionButton
                       variant="danger"
@@ -438,7 +497,7 @@ export default function BudgetsPage() {
               {budgets.length === 0 && (
                 <tr>
                   <td
-                    colSpan="4"
+                    colSpan="5"
                     style={{
                       padding: "18px",
                       textAlign: "center",
