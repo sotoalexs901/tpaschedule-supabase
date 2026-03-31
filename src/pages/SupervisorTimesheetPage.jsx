@@ -1,10 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  addDoc,
-  collection,
-  getDocs,
-  serverTimestamp,
-} from "firebase/firestore";
+import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
@@ -32,13 +27,7 @@ const STATUS_OPTIONS = [
   "Other",
 ];
 
-const BREAK_OPTIONS = [
-  "No",
-  "Yes",
-  "30 min",
-  "45 min",
-  "60 min",
-];
+const BREAK_OPTIONS = ["No", "Yes", "30 min", "45 min", "60 min"];
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
@@ -61,45 +50,17 @@ function detectBudgetAirline(value) {
 
   if (!upper) return "";
 
-  if (upper === "SY" || upper.startsWith("SY ") || upper.includes(" SY")) {
-    return "SY";
-  }
-
-  if (
-    upper.includes("WESTJET") ||
-    upper.includes("WL HAVANA") ||
-    upper === "WL"
-  ) {
+  if (upper === "SY" || upper.startsWith("SY ")) return "SY";
+  if (upper.includes("WESTJET") || upper.includes("WL HAVANA") || upper === "WL") {
     return "WestJet";
   }
-
-  if (upper.includes("WL INVICTA")) {
-    return "WL Invicta";
-  }
-
-  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) {
-    return "AV";
-  }
-
-  if (upper === "EA" || upper.startsWith("EA ")) {
-    return "EA";
-  }
-
-  if (upper.includes("WCHR")) {
-    return "WCHR";
-  }
-
-  if (upper.includes("CABIN")) {
-    return "CABIN";
-  }
-
-  if (upper.includes("AA-BSO") || upper.includes("AA BSO")) {
-    return "AA-BSO";
-  }
-
-  if (upper.includes("OTHER")) {
-    return "OTHER";
-  }
+  if (upper.includes("WL INVICTA")) return "WL Invicta";
+  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) return "AV";
+  if (upper === "EA" || upper.startsWith("EA ")) return "EA";
+  if (upper.includes("WCHR")) return "WCHR";
+  if (upper.includes("CABIN")) return "CABIN";
+  if (upper.includes("AA-BSO") || upper.includes("AA BSO")) return "AA-BSO";
+  if (upper.includes("OTHER")) return "OTHER";
 
   return normalizeAirlineName(raw);
 }
@@ -156,6 +117,18 @@ function calculateRowHours(row) {
   if (minutes < 0) minutes = 0;
 
   return minutes / 60;
+}
+
+function emptyRow() {
+  return {
+    employeeId: "",
+    employeeName: "",
+    punchIn: "",
+    punchOut: "",
+    employeeStatus: "",
+    breakTaken: "No",
+    reason: "",
+  };
 }
 
 function PageCard({ children, style = {} }) {
@@ -244,7 +217,7 @@ function TextArea(props) {
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
-        minHeight: 90,
+        minHeight: 100,
         fontFamily: "inherit",
         ...props.style,
       }}
@@ -272,12 +245,6 @@ function ActionButton({
       color: "#1769aa",
       border: "1px solid #cfe7fb",
       boxShadow: "none",
-    },
-    success: {
-      background: "#16a34a",
-      color: "#fff",
-      border: "none",
-      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
     },
     danger: {
       background: "#dc2626",
@@ -308,17 +275,26 @@ function ActionButton({
   );
 }
 
-function emptyRow() {
+function tableHeaderStyle(extra = {}) {
   return {
-    employeeId: "",
-    employeeName: "",
-    punchIn: "",
-    punchOut: "",
-    employeeStatus: "",
-    breakTaken: "No",
-    reason: "",
+    padding: "14px",
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    textAlign: "left",
+    borderBottom: "1px solid #e2e8f0",
+    whiteSpace: "nowrap",
+    ...extra,
   };
 }
+
+const tableCellStyle = {
+  padding: "14px",
+  borderBottom: "1px solid #eef2f7",
+  verticalAlign: "middle",
+};
 
 export default function SupervisorTimesheetPage() {
   const { user } = useUser();
@@ -351,10 +327,7 @@ export default function SupervisorTimesheetPage() {
         ]);
 
         const employeeList = usersSnap.docs
-          .map((d) => ({
-            id: d.id,
-            ...d.data(),
-          }))
+          .map((d) => ({ id: d.id, ...d.data() }))
           .filter((item) => item.role === "agent" || item.role === "supervisor")
           .map((item) => ({
             id: item.id,
@@ -364,8 +337,6 @@ export default function SupervisorTimesheetPage() {
               item.name ||
               item.username ||
               "Unnamed employee",
-            role: item.position || getDefaultPosition(item.role),
-            username: item.username || "",
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -443,21 +414,20 @@ export default function SupervisorTimesheetPage() {
     return finalMap;
   }, [budgetDocs]);
 
-  const selectedAirline = normalizeAirlineName(form.airline);
-  const currentBudget = Number(budgetByAirline[selectedAirline] || 0);
+  const currentBudget = Number(
+    budgetByAirline[normalizeAirlineName(form.airline)] || 0
+  );
 
-  const totalReportedHours = useMemo(() => {
-    return rows.reduce((sum, row) => sum + calculateRowHours(row), 0);
-  }, [rows]);
+  const totalReportedHours = useMemo(
+    () => rows.reduce((sum, row) => sum + calculateRowHours(row), 0),
+    [rows]
+  );
 
   const overBudget = currentBudget > 0 && totalReportedHours > currentBudget;
   const overBudgetBy = overBudget ? totalReportedHours - currentBudget : 0;
 
   const handleFormChange = (field, value) => {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleRowChange = (index, field, value) => {
@@ -533,14 +503,12 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
-    const missingEmployee = cleanRows.some((row) => !row.employeeId);
-    if (missingEmployee) {
+    if (cleanRows.some((row) => !row.employeeId)) {
       setStatusMessage("Each row must have an employee selected.");
       return;
     }
 
-    const missingStatus = cleanRows.some((row) => !row.employeeStatus);
-    if (missingStatus) {
+    if (cleanRows.some((row) => !row.employeeStatus)) {
       setStatusMessage("Each row must have an employee status selected.");
       return;
     }
@@ -772,14 +740,12 @@ export default function SupervisorTimesheetPage() {
             <FieldLabel>Supervisor Reporting</FieldLabel>
             <TextInput
               value={form.supervisorReporting}
-              onChange={(e) =>
-                handleFormChange("supervisorReporting", e.target.value)
-              }
+              onChange={(e) => handleFormChange("supervisorReporting", e.target.value)}
             />
           </div>
         </div>
 
-        {form.airline && (
+        {form.airline ? (
           <div
             style={{
               marginTop: 16,
@@ -850,9 +816,9 @@ export default function SupervisorTimesheetPage() {
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {overBudget && (
+        {overBudget ? (
           <div
             style={{
               marginTop: 16,
@@ -887,13 +853,11 @@ export default function SupervisorTimesheetPage() {
             <FieldLabel>Why are you over budget?</FieldLabel>
             <TextArea
               value={form.overBudgetReason}
-              onChange={(e) =>
-                handleFormChange("overBudgetReason", e.target.value)
-              }
+              onChange={(e) => handleFormChange("overBudgetReason", e.target.value)}
               placeholder="Explain why this operation exceeded the airline daily budget."
             />
           </div>
-        )}
+        ) : null}
 
         <div style={{ marginTop: 14 }}>
           <FieldLabel>Notes</FieldLabel>
@@ -971,20 +935,20 @@ export default function SupervisorTimesheetPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 1500,
+                minWidth: 1450,
                 background: "#fff",
               }}
             >
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle}>Employee</th>
-                  <th style={thStyle}>Punch In</th>
-                  <th style={thStyle}>Punch Out</th>
-                  <th style={thStyle}>Employee Status</th>
-                  <th style={thStyle}>Break Taken</th>
-                  <th style={thStyle}>Reason</th>
-                  <th style={thStyle}>Hours</th>
-                  <th style={{ ...thStyle, textAlign: "center" }}>Remove</th>
+                  <th style={tableHeaderStyle()}>Employee</th>
+                  <th style={tableHeaderStyle()}>Punch In</th>
+                  <th style={tableHeaderStyle()}>Punch Out</th>
+                  <th style={tableHeaderStyle()}>Employee Status</th>
+                  <th style={tableHeaderStyle()}>Break Taken</th>
+                  <th style={tableHeaderStyle()}>Reason</th>
+                  <th style={tableHeaderStyle()}>Hours</th>
+                  <th style={tableHeaderStyle({ textAlign: "center" })}>Remove</th>
                 </tr>
               </thead>
 
@@ -996,12 +960,10 @@ export default function SupervisorTimesheetPage() {
                       background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                     }}
                   >
-                    <td style={tdStyle}>
+                    <td style={tableCellStyle}>
                       <SelectInput
                         value={row.employeeId}
-                        onChange={(e) =>
-                          handleRowChange(index, "employeeId", e.target.value)
-                        }
+                        onChange={(e) => handleRowChange(index, "employeeId", e.target.value)}
                       >
                         <option value="">Select employee</option>
                         {employees.map((emp) => (
@@ -1012,27 +974,23 @@ export default function SupervisorTimesheetPage() {
                       </SelectInput>
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={tableCellStyle}>
                       <TextInput
                         type="time"
                         value={row.punchIn}
-                        onChange={(e) =>
-                          handleRowChange(index, "punchIn", e.target.value)
-                        }
+                        onChange={(e) => handleRowChange(index, "punchIn", e.target.value)}
                       />
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={tableCellStyle}>
                       <TextInput
                         type="time"
                         value={row.punchOut}
-                        onChange={(e) =>
-                          handleRowChange(index, "punchOut", e.target.value)
-                        }
+                        onChange={(e) => handleRowChange(index, "punchOut", e.target.value)}
                       />
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={tableCellStyle}>
                       <SelectInput
                         value={row.employeeStatus}
                         onChange={(e) =>
@@ -1048,38 +1006,36 @@ export default function SupervisorTimesheetPage() {
                       </SelectInput>
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={tableCellStyle}>
                       <SelectInput
                         value={row.breakTaken}
                         onChange={(e) =>
                           handleRowChange(index, "breakTaken", e.target.value)
                         }
                       >
-                        {BREAK_OPTIONS.map((breakOption) => (
-                          <option key={breakOption} value={breakOption}>
-                            {breakOption}
+                        {BREAK_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
                           </option>
                         ))}
                       </SelectInput>
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={tableCellStyle}>
                       <TextInput
                         value={row.reason}
-                        onChange={(e) =>
-                          handleRowChange(index, "reason", e.target.value)
-                        }
+                        onChange={(e) => handleRowChange(index, "reason", e.target.value)}
                         placeholder="Reason / note"
                       />
                     </td>
 
-                    <td style={tdStyle}>
+                    <td style={tableCellStyle}>
                       <span style={{ fontWeight: 800 }}>
                         {calculateRowHours(row).toFixed(2)} hrs
                       </span>
                     </td>
 
-                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                    <td style={{ ...tableCellStyle, textAlign: "center" }}>
                       <ActionButton
                         onClick={() => removeRow(index)}
                         variant="danger"
@@ -1104,11 +1060,7 @@ export default function SupervisorTimesheetPage() {
             flexWrap: "wrap",
           }}
         >
-          <ActionButton
-            onClick={handleSubmit}
-            variant="primary"
-            disabled={saving}
-          >
+          <ActionButton onClick={handleSubmit} variant="primary" disabled={saving}>
             {saving ? "Submitting..." : "Submit Timesheet"}
           </ActionButton>
 
@@ -1123,24 +1075,3 @@ export default function SupervisorTimesheetPage() {
     </div>
   );
 }
-
-function thStyle(extra = {}) {
-  return {
-    padding: "14px 14px",
-    fontSize: 12,
-    fontWeight: 800,
-    color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    whiteSpace: "nowrap",
-    textAlign: "left",
-    borderBottom: "1px solid #e2e8f0",
-    ...extra,
-  };
-}
-
-const tdStyle = {
-  padding: "14px",
-  borderBottom: "1px solid #eef2f7",
-  verticalAlign: "middle",
-};
