@@ -194,6 +194,14 @@ export default function AppLayout() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
+  const canAccessOperationalReports =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageOperationalReportForm =
+    user?.role === "station_manager";
+
   const navSections = useMemo(() => {
     const sections = [];
 
@@ -301,11 +309,27 @@ export default function AppLayout() {
       );
     }
 
+    if (canAccessOperationalReports) {
+      schedules.push({
+        to: "/operational-report/submit",
+        label: "Operational Report",
+        icon: "📝",
+      });
+    }
+
     if (user) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
         { to: "/wchr/my-reports", label: "My Reports", icon: "📄" }
       );
+    }
+
+    if (canManageOperationalReportForm) {
+      admin.push({
+        to: "/operational-report/form-builder",
+        label: "Operational Report Builder",
+        icon: "🧩",
+      });
     }
 
     if (general.length) sections.push({ title: "General", items: general });
@@ -319,6 +343,8 @@ export default function AppLayout() {
     isManager,
     isAgentOrSupervisor,
     canAccessTimesheets,
+    canAccessOperationalReports,
+    canManageOperationalReportForm,
     unreadMessages,
     pendingTimeOff,
     user,
