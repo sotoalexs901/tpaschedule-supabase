@@ -135,6 +135,221 @@ function getDelayedMinutes(report) {
   return Number(report?.delayedTimeMinutes || 0);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function formatResponseValue(value) {
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value ?? "—");
+}
+
+function buildPrintableHtml(report) {
+  const responses = report?.responses || {};
+  const dynamicBlocks =
+    Object.entries(responses).length === 0
+      ? `
+        <div class="detail-box">
+          <div class="detail-label">Dynamic Responses</div>
+          <div class="detail-value">No dynamic responses found.</div>
+        </div>
+      `
+      : Object.entries(responses)
+          .map(
+            ([key, value]) => `
+              <div class="detail-box">
+                <div class="detail-label">${escapeHtml(prettifyKey(key))}</div>
+                <div class="detail-value">${escapeHtml(formatResponseValue(value)).replace(/\n/g, "<br/>")}</div>
+              </div>
+            `
+          )
+          .join("");
+
+  const alertNeedsAttention = shouldFlagNeedsAttention(report)
+    ? `
+      <div class="alert alert-danger">
+        This report needs attention because the operation was not completed without issues.
+      </div>
+    `
+    : "";
+
+  const alertDelay = report?.delayedFlight
+    ? `
+      <div class="alert alert-warning">
+        Delay Alert: ${escapeHtml(report.normalizedAirline || "Unknown")} reported a delay of
+        ${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} minutes.
+        ${
+          Number(report.delayedTimeMinutes || 0) > 4
+            ? " Duty Mgrs Follow up needed."
+            : ""
+        }
+      </div>
+    `
+    : "";
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Operational Report</title>
+        <style>
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 24px;
+            color: #0f172a;
+          }
+          .header {
+            margin-bottom: 20px;
+          }
+          .title {
+            margin: 0;
+            font-size: 30px;
+            font-weight: 800;
+          }
+          .subtitle {
+            margin-top: 8px;
+            font-size: 14px;
+            color: #475569;
+            font-weight: 700;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+          }
+          .info-card {
+            background: #f8fbff;
+            border: 1px solid #dbeafe;
+            border-radius: 14px;
+            padding: 14px 16px;
+          }
+          .info-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }
+          .info-value {
+            margin-top: 6px;
+            font-size: 16px;
+            font-weight: 800;
+            color: #0f172a;
+            word-break: break-word;
+          }
+          .detail-box {
+            border-radius: 14px;
+            padding: 14px 16px;
+            background: #f8fbff;
+            border: 1px solid #dbeafe;
+            margin-bottom: 12px;
+          }
+          .detail-label {
+            font-size: 12px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+          }
+          .detail-value {
+            font-size: 14px;
+            color: #0f172a;
+            white-space: pre-line;
+            line-height: 1.7;
+          }
+          .alert {
+            border-radius: 14px;
+            padding: 14px 16px;
+            font-weight: 800;
+            font-size: 14px;
+            margin-bottom: 14px;
+          }
+          .alert-danger {
+            background: #fff1f2;
+            border: 1px solid #fecdd3;
+            color: #9f1239;
+          }
+          .alert-warning {
+            background: #fff7ed;
+            border: 1px solid #fdba74;
+            color: #9a3412;
+          }
+          @media print {
+            body {
+              margin: 14px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1 class="title">Operational Report</h1>
+          <div class="subtitle">
+            ${escapeHtml(report.normalizedAirline || "—")} · ${escapeHtml(report.reportDate || "—")}
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="info-card">
+            <div class="info-label">Airline</div>
+            <div class="info-value">${escapeHtml(report.normalizedAirline || "—")}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Report Date</div>
+            <div class="info-value">${escapeHtml(report.reportDate || "—")}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Shift</div>
+            <div class="info-value">${escapeHtml(report.shift || "—")}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Flights Handled</div>
+            <div class="info-value">${escapeHtml(report.flightsHandled || "—")}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Supervisor</div>
+            <div class="info-value">${escapeHtml(report.supervisorReporting || "—")}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Delayed Flight</div>
+            <div class="info-value">${report.delayedFlight ? "Yes" : "No"}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Delayed Time</div>
+            <div class="info-value">${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} min</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Delayed Code</div>
+            <div class="info-value">${escapeHtml(report.delayedCodeReported || "—")}</div>
+          </div>
+        </div>
+
+        ${alertNeedsAttention}
+        ${alertDelay}
+
+        <div class="detail-box">
+          <div class="detail-label">Delayed Reason</div>
+          <div class="detail-value">${escapeHtml(report.delayedReason || "—").replace(/\n/g, "<br/>")}</div>
+        </div>
+
+        <div class="detail-box">
+          <div class="detail-label">Notes</div>
+          <div class="detail-value">${escapeHtml(report.notes || "—").replace(/\n/g, "<br/>")}</div>
+        </div>
+
+        ${dynamicBlocks}
+      </body>
+    </html>
+  `;
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -578,6 +793,29 @@ export default function OperationalReportAdminPage() {
     }
   };
 
+  const handlePrintExport = () => {
+    if (!selectedReport) return;
+
+    const html = buildPrintableHtml(selectedReport);
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+
+    if (!printWindow) {
+      setStatusMessage("Pop-up blocked. Please allow pop-ups to export/print.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    const triggerPrint = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    setTimeout(triggerPrint, 400);
+  };
+
   if (!canAccess) {
     return (
       <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
@@ -877,7 +1115,7 @@ export default function OperationalReportAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 980,
+                  minWidth: 1120,
                   background: "#fff",
                 }}
               >
@@ -1122,30 +1360,65 @@ export default function OperationalReportAdminPage() {
                 <div>
                   <FieldLabel>Dynamic Responses</FieldLabel>
                   <div style={{ display: "grid", gap: 12 }}>
-                    {Object.entries(editForm.responses || {}).map(([key, value]) => (
-                      <div key={key}>
-                        <FieldLabel>{prettifyKey(key)}</FieldLabel>
-                        <TextArea
-                          value={Array.isArray(value) ? value.join(", ") : String(value ?? "")}
-                          onChange={(e) =>
-                            handleDynamicResponseChange(key, e.target.value)
-                          }
-                          style={{ minHeight: 70 }}
-                        />
+                    {Object.entries(editForm.responses || {}).length === 0 ? (
+                      <div
+                        style={{
+                          borderRadius: 14,
+                          padding: "12px 14px",
+                          background: "#f8fbff",
+                          border: "1px solid #dbeafe",
+                          color: "#64748b",
+                          fontWeight: 600,
+                        }}
+                      >
+                        No dynamic responses found.
                       </div>
-                    ))}
+                    ) : (
+                      Object.entries(editForm.responses || {}).map(([key, value]) => (
+                        <div key={key}>
+                          <FieldLabel>{prettifyKey(key)}</FieldLabel>
+                          <TextArea
+                            value={Array.isArray(value) ? value.join(", ") : String(value ?? "")}
+                            onChange={(e) =>
+                              handleDynamicResponseChange(key, e.target.value)
+                            }
+                            style={{ minHeight: 70 }}
+                          />
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
             ) : (
               <div style={{ display: "grid", gap: 16 }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
-                    Report Detail
-                  </h2>
-                  <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
-                    {selectedReport.normalizedAirline || "—"} · {selectedReport.reportDate || "—"}
-                  </p>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
+                      Report Detail
+                    </h2>
+                    <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
+                      {selectedReport.normalizedAirline || "—"} · {selectedReport.reportDate || "—"}
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <ActionButton variant="secondary" onClick={handlePrintExport}>
+                      Print / Export PDF
+                    </ActionButton>
+
+                    <ActionButton variant="warning" onClick={() => startEdit(selectedReport)}>
+                      Edit
+                    </ActionButton>
+                  </div>
                 </div>
 
                 <div
