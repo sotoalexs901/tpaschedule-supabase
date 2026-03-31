@@ -200,6 +200,9 @@ export default function AppLayout() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
+  const canAccessOperationalReportAdmin =
+    user?.role === "duty_manager" || user?.role === "station_manager";
+
   const canManageOperationalReportForm =
     user?.role === "station_manager";
 
@@ -297,18 +300,11 @@ export default function AppLayout() {
     }
 
     if (canAccessTimesheets) {
-      reports.push(
-        {
-          to: "/timesheets/submit",
-          label: "Timesheet Submit",
-          icon: "🕒",
-        },
-        {
-          to: "/timesheets/reports",
-          label: "Timesheet Reports",
-          icon: "📋",
-        }
-      );
+      reports.push({
+        to: "/timesheets/submit",
+        label: "Timesheet Submit",
+        icon: "🕒",
+      });
     }
 
     if (canAccessOperationalReports) {
@@ -319,7 +315,23 @@ export default function AppLayout() {
       });
     }
 
-    // Futuros reportes organizados aquí
+    if (canAccessTimesheets) {
+      reports.push({
+        to: "/timesheets/reports",
+        label: "Timesheet Reports",
+        icon: "📋",
+      });
+    }
+
+    if (canAccessOperationalReportAdmin) {
+      reports.push({
+        to: "/operational-report/reports",
+        label: "Operational Reports",
+        icon: "📑",
+      });
+    }
+
+    // futuros reportes:
     // reports.push(
     //   { to: "/international-trash/submit", label: "International Trash", icon: "🗑️" },
     //   { to: "/epr/submit", label: "EPR", icon: "📄" }
@@ -355,6 +367,7 @@ export default function AppLayout() {
     isAgentOrSupervisor,
     canAccessTimesheets,
     canAccessOperationalReports,
+    canAccessOperationalReportAdmin,
     canManageOperationalReportForm,
     unreadMessages,
     pendingTimeOff,
