@@ -39,6 +39,7 @@ import SupervisorTimesheetPage from "./pages/SupervisorTimesheetPage.jsx";
 import TimesheetAdminPage from "./pages/TimesheetAdminPage.jsx";
 
 import SupervisorOperationalReportPage from "./pages/SupervisorOperationalReportPage.jsx";
+import OperationalReportAdminPage from "./pages/OperationalReportAdminPage.jsx";
 import OperationalReportFormBuilderPage from "./pages/OperationalReportFormBuilderPage.jsx";
 
 import WCHRScan from "./pages/WCHRScan.jsx";
@@ -147,6 +148,15 @@ function AppRouter() {
                 roles={["supervisor", "duty_manager", "station_manager"]}
               >
                 <SupervisorOperationalReportPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="operational-report/reports"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <OperationalReportAdminPage />
               </ProtectedRoute>
             }
           />
