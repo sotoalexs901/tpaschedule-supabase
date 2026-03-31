@@ -189,6 +189,11 @@ export default function AppLayout() {
   const isAgentOrSupervisor =
     user?.role === "agent" || user?.role === "supervisor";
 
+  const canAccessTimesheets =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
   const navSections = useMemo(() => {
     const sections = [];
 
@@ -281,6 +286,14 @@ export default function AppLayout() {
       );
     }
 
+    if (canAccessTimesheets) {
+      schedules.push({
+        to: "/timesheets/submit",
+        label: "Timesheet Submit",
+        icon: "🕒",
+      });
+    }
+
     if (user) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
@@ -298,6 +311,7 @@ export default function AppLayout() {
   }, [
     isManager,
     isAgentOrSupervisor,
+    canAccessTimesheets,
     unreadMessages,
     pendingTimeOff,
     user,
@@ -344,7 +358,11 @@ export default function AppLayout() {
           position: "sticky",
           top: 0,
           zIndex: 50,
-          padding: headerCollapsed ? "8px 10px 0" : isMobile ? "10px 10px 0" : "14px 16px 0",
+          padding: headerCollapsed
+            ? "8px 10px 0"
+            : isMobile
+            ? "10px 10px 0"
+            : "14px 16px 0",
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
         }}
@@ -711,7 +729,11 @@ export default function AppLayout() {
 
       <main
         style={{
-          padding: isMobile ? "12px 10px 18px" : headerCollapsed ? "12px 12px 24px" : "16px",
+          padding: isMobile
+            ? "12px 10px 18px"
+            : headerCollapsed
+            ? "12px 12px 24px"
+            : "16px",
           maxWidth: headerCollapsed ? "100%" : 1600,
           width: "100%",
           margin: "0 auto",
