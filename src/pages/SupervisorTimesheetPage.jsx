@@ -164,12 +164,6 @@ function ActionButton({
       border: "1px solid #cfe7fb",
       boxShadow: "none",
     },
-    success: {
-      background: "#16a34a",
-      color: "#fff",
-      border: "none",
-      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
-    },
     danger: {
       background: "#dc2626",
       color: "#fff",
@@ -211,9 +205,35 @@ function emptyRow() {
   };
 }
 
+function thStyle(extra = {}) {
+  return {
+    padding: "14px 14px",
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    whiteSpace: "nowrap",
+    textAlign: "left",
+    borderBottom: "1px solid #e2e8f0",
+    ...extra,
+  };
+}
+
+const tdStyle = {
+  padding: "14px",
+  borderBottom: "1px solid #eef2f7",
+  verticalAlign: "middle",
+};
+
 export default function SupervisorTimesheetPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+
+  const canAccess =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const [employees, setEmployees] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
@@ -230,6 +250,16 @@ export default function SupervisorTimesheetPage() {
   });
 
   const [rows, setRows] = useState([emptyRow()]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    setForm((prev) => ({
+      ...prev,
+      supervisorReporting: getVisibleName(user),
+      supervisorPosition: user?.position || getDefaultPosition(user?.role),
+    }));
+  }, [user]);
 
   useEffect(() => {
     async function loadEmployees() {
@@ -353,8 +383,7 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
-    const missingEmployee = cleanRows.some((row) => !row.employeeId);
-    if (missingEmployee) {
+    if (cleanRows.some((row) => !row.employeeId)) {
       setStatusMessage("Each row must have an employee selected.");
       return;
     }
@@ -368,7 +397,9 @@ export default function SupervisorTimesheetPage() {
         shift: form.shift || "",
         supervisorReporting: form.supervisorReporting || getVisibleName(user),
         supervisorPosition:
-          form.supervisorPosition || user?.position || getDefaultPosition(user?.role),
+          form.supervisorPosition ||
+          user?.position ||
+          getDefaultPosition(user?.role),
         notes: form.notes || "",
         rows: cleanRows,
         submittedByUserId: user?.id || "",
@@ -397,6 +428,27 @@ export default function SupervisorTimesheetPage() {
       setSaving(false);
     }
   };
+
+  if (!canAccess) {
+    return (
+      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+        <PageCard style={{ padding: 22 }}>
+          <div
+            style={{
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              borderRadius: 18,
+              padding: "16px 18px",
+              color: "#9f1239",
+              fontWeight: 700,
+            }}
+          >
+            You do not have permission to access the timesheet page.
+          </div>
+        </PageCard>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -474,8 +526,7 @@ export default function SupervisorTimesheetPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Create a timesheet report and send it to Station Manager, Duty
-              Manager and admin review.
+              Create a timesheet report and send it for manager review.
             </p>
           </div>
 
@@ -520,15 +571,6 @@ export default function SupervisorTimesheetPage() {
           >
             Report Header
           </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Complete the general information before filling employee rows.
-          </p>
         </div>
 
         <div
@@ -615,16 +657,6 @@ export default function SupervisorTimesheetPage() {
             >
               Employee Entries
             </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Select employee names already registered in the system and complete
-              the additional fields.
-            </p>
           </div>
 
           <ActionButton onClick={addRow} variant="secondary">
@@ -658,19 +690,19 @@ export default function SupervisorTimesheetPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 1400,
+                minWidth: 1200,
                 background: "#fff",
               }}
             >
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle}>Employee</th>
-                  <th style={thStyle}>Punch In</th>
-                  <th style={thStyle}>Punch Out</th>
-                  <th style={thStyle}>Employee Status</th>
-                  <th style={thStyle}>Break Taken</th>
-                  <th style={thStyle}>Reason</th>
-                  <th style={{ ...thStyle, textAlign: "center" }}>Remove</th>
+                  <th style={thStyle()}>Employee</th>
+                  <th style={thStyle()}>Punch In</th>
+                  <th style={thStyle()}>Punch Out</th>
+                  <th style={thStyle()}>Employee Status</th>
+                  <th style={thStyle()}>Break Taken</th>
+                  <th style={thStyle()}>Reason</th>
+                  <th style={thStyle({ textAlign: "center" })}>Remove</th>
                 </tr>
               </thead>
 
@@ -792,24 +824,3 @@ export default function SupervisorTimesheetPage() {
     </div>
   );
 }
-
-function thStyle(extra = {}) {
-  return {
-    padding: "14px 14px",
-    fontSize: 12,
-    fontWeight: 800,
-    color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    whiteSpace: "nowrap",
-    textAlign: "left",
-    borderBottom: "1px solid #e2e8f0",
-    ...extra,
-  };
-}
-
-const tdStyle = {
-  padding: "14px",
-  borderBottom: "1px solid #eef2f7",
-  verticalAlign: "middle",
-};
