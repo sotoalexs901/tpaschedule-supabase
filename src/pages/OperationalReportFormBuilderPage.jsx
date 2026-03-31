@@ -131,12 +131,6 @@ function ActionButton({
       border: "none",
       boxShadow: "0 10px 20px rgba(220,38,38,0.18)",
     },
-    success: {
-      background: "#16a34a",
-      color: "#fff",
-      border: "none",
-      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
-    },
   };
 
   return (
@@ -178,35 +172,49 @@ const FIELD_TYPE_OPTIONS = [
 
 const DEFAULT_FIELDS = [
   {
-    key: "operation_completed_without_issues",
-    label: "Operation Completed Without Issues",
-    type: "yesno",
+    key: "operation_status",
+    label: "Operation Status",
+    type: "select",
     required: true,
-    options: ["Yes", "No"],
+    options: [
+      "Operation completed with no issues",
+      "Operation completed with remarks",
+      "Operation not completed as planned",
+    ],
     active: true,
     order: 1,
   },
   {
-    key: "staffing_ok",
-    label: "Staffing OK",
-    type: "yesno",
+    key: "general_comments",
+    label: "General Comments",
+    type: "textarea",
     required: false,
-    options: ["Yes", "No"],
+    options: [],
     active: true,
     order: 2,
   },
   {
-    key: "equipment_ok",
-    label: "Equipment OK",
-    type: "yesno",
+    key: "issue_types",
+    label: "Issue Types (select all that apply)",
+    type: "checkbox-group",
     required: false,
-    options: ["Yes", "No"],
+    options: [
+      "N/A",
+      "Delays",
+      "Staffing",
+      "Baggage",
+      "Equipment",
+      "Customer Service",
+      "Operational",
+      "Safety",
+      "Other",
+    ],
     active: true,
     order: 3,
   },
   {
-    key: "safety_concerns",
-    label: "Safety Concerns",
+    key: "issue_details",
+    label: "Issue Details",
     type: "textarea",
     required: false,
     options: [],
@@ -214,13 +222,178 @@ const DEFAULT_FIELDS = [
     order: 4,
   },
   {
-    key: "additional_comments",
-    label: "Additional Comments",
+    key: "action_taken",
+    label: "Action Taken",
     type: "textarea",
     required: false,
     options: [],
     active: true,
     order: 5,
+  },
+  {
+    key: "issue_status",
+    label: "Status",
+    type: "select",
+    required: false,
+    options: ["N/A", "Resolved", "Pending", "Escalated"],
+    active: true,
+    order: 6,
+  },
+  {
+    key: "oh_bags_total_quantity",
+    label: "OH Bags Total Quantity",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 7,
+  },
+  {
+    key: "oh_bags_affected_flights",
+    label: "OH Bags Affected Flights",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 8,
+  },
+  {
+    key: "oh_bags_details",
+    label: "OH Bags Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 9,
+  },
+  {
+    key: "oh_bags_follow_up_actions",
+    label: "OH Bags Follow-up Actions",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 10,
+  },
+  {
+    key: "pending_item_1",
+    label: "Pending Item 1",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 11,
+  },
+  {
+    key: "pending_description",
+    label: "Pending Description",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 12,
+  },
+  {
+    key: "pending_responsible",
+    label: "Pending Responsible",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 13,
+  },
+  {
+    key: "pending_target_date",
+    label: "Pending Target Date",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 14,
+  },
+  {
+    key: "exception_type",
+    label: "Exception Type (select all that apply)",
+    type: "checkbox-group",
+    required: false,
+    options: ["N/A", "Operational", "Staffing", "Safety", "Baggage", "Other"],
+    active: true,
+    order: 15,
+  },
+  {
+    key: "exception_description",
+    label: "Exception Description",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 16,
+  },
+  {
+    key: "exception_reason",
+    label: "Exception Reason",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 17,
+  },
+  {
+    key: "exception_reported_to",
+    label: "Reported To",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 18,
+  },
+  {
+    key: "staffing_status",
+    label: "Staffing Status (select all that apply)",
+    type: "checkbox-group",
+    required: false,
+    options: ["Full staffing", "Short staffed", "Overtime needed", "Call out", "Other"],
+    active: true,
+    order: 19,
+  },
+  {
+    key: "staffing_remarks",
+    label: "Staffing Remarks",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 20,
+  },
+  {
+    key: "employees_breaks",
+    label: "Employees Breaks",
+    type: "select",
+    required: false,
+    options: [
+      "All agents have taken their scheduled break",
+      "Not all agents have taken their scheduled break",
+    ],
+    active: true,
+    order: 21,
+  },
+  {
+    key: "employees_no_break_taken",
+    label: "Name of Employees / No Break taken",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 22,
+  },
+  {
+    key: "final_remarks_recommendations",
+    label: "Final Remarks / Recommendations",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 23,
   },
 ];
 
@@ -374,11 +547,33 @@ export default function OperationalReportFormBuilderPage() {
 
   const deleteFieldItem = async (field) => {
     const protectedKeys = [
-      "operation_completed_without_issues",
+      "operation_status",
+      "general_comments",
+      "issue_types",
+      "issue_details",
+      "action_taken",
+      "issue_status",
+      "oh_bags_total_quantity",
+      "oh_bags_affected_flights",
+      "oh_bags_details",
+      "oh_bags_follow_up_actions",
+      "pending_item_1",
+      "pending_description",
+      "pending_responsible",
+      "pending_target_date",
+      "exception_type",
+      "exception_description",
+      "exception_reason",
+      "exception_reported_to",
+      "staffing_status",
+      "staffing_remarks",
+      "employees_breaks",
+      "employees_no_break_taken",
+      "final_remarks_recommendations",
     ];
 
     if (protectedKeys.includes(field.key)) {
-      setStatusMessage("This core field cannot be deleted.");
+      setStatusMessage("This base field cannot be deleted. You can deactivate it instead.");
       return;
     }
 
@@ -517,7 +712,7 @@ export default function OperationalReportFormBuilderPage() {
               onChange={(e) =>
                 setNewField((prev) => ({ ...prev, label: e.target.value }))
               }
-              placeholder="Example: Operation Completed Without Issues"
+              placeholder="Example: Ramp Condition"
             />
           </div>
 
@@ -528,7 +723,7 @@ export default function OperationalReportFormBuilderPage() {
               onChange={(e) =>
                 setNewField((prev) => ({ ...prev, key: e.target.value }))
               }
-              placeholder="example_key"
+              placeholder="ramp_condition"
             />
           </div>
 
@@ -659,22 +854,20 @@ N/A`}
                   <div>
                     <FieldLabel>Label</FieldLabel>
                     <TextInput
-                      value={field.label || ""}
+                      defaultValue={field.label || ""}
                       onBlur={(e) =>
                         updateField(field.id, { label: e.target.value.trim() })
                       }
-                      defaultValue={field.label || ""}
                     />
                   </div>
 
                   <div>
                     <FieldLabel>Key</FieldLabel>
                     <TextInput
-                      value={field.key || ""}
+                      defaultValue={field.key || ""}
                       onBlur={(e) =>
                         updateField(field.id, { key: normalizeFieldKey(e.target.value) })
                       }
-                      defaultValue={field.key || ""}
                     />
                   </div>
 
