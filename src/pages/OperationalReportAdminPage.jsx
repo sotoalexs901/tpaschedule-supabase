@@ -100,6 +100,22 @@ function getRangeDates(range) {
   return { start: startOfMonth(), end: endOfMonth() };
 }
 
+function getCustomDateRange(fromDate, toDate) {
+  if (!fromDate && !toDate) return null;
+
+  const start = fromDate
+    ? new Date(`${fromDate}T00:00:00`)
+    : new Date("2000-01-01T00:00:00");
+
+  const end = toDate
+    ? new Date(`${toDate}T23:59:59.999`)
+    : new Date("2100-12-31T23:59:59.999");
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  return { start, end };
+}
+
 function prettifyKey(key) {
   return String(key || "")
     .replace(/_/g, " ")
@@ -130,10 +146,6 @@ function shouldFlagNeedsAttention(report) {
     }
     return false;
   });
-}
-
-function getDelayedMinutes(report) {
-  return Number(report?.delayedTimeMinutes || 0);
 }
 
 function escapeHtml(value) {
@@ -775,8 +787,11 @@ export default function OperationalReportAdminPage() {
 
   const [filters, setFilters] = useState({
     airline: "all",
-    range: "today",
     lifecycle: "active",
+    dateMode: "quick",
+    range: "today",
+    fromDate: "",
+    toDate: "",
   });
 
   const [editForm, setEditForm] = useState({
@@ -848,12 +863,25 @@ export default function OperationalReportAdminPage() {
   }, [reports]);
 
   const filteredReports = useMemo(() => {
-    const { start, end } = getRangeDates(filters.range);
+    const quickRange =
+      filters.dateMode === "quick" ? getRangeDates(filters.range) : null;
+
+    const customRange =
+      filters.dateMode === "custom"
+        ? getCustomDateRange(filters.fromDate, filters.toDate)
+        : null;
 
     return reports.filter((r) => {
       const created = tsToDate(r.createdAt);
       if (!created) return false;
-      if (created < start || created > end) return false;
+
+      if (filters.dateMode === "quick" && quickRange) {
+        if (created < quickRange.start || created > quickRange.end) return false;
+      }
+
+      if (filters.dateMode === "custom" && customRange) {
+        if (created < customRange.start || created > customRange.end) return false;
+      }
 
       if (filters.airline !== "all" && r.normalizedAirline !== filters.airline) {
         return false;
@@ -923,12 +951,17 @@ export default function OperationalReportAdminPage() {
         0
       );
 
-      if (filters.range === "month" && item.totalDelayedFlights > 2) {
-        rows.push({
-          type: "followup",
-          airline: item.airline,
-          text: `${item.airline}: Duty Mgrs Follow up needed. More than 2 delayed flights reported this month.`,
-        });
+      if (
+        (filters.dateMode === "quick" && filters.range === "month") ||
+        (filters.dateMode === "custom" && item.totalDelayedFlights > 2)
+      ) {
+        if (item.totalDelayedFlights > 2) {
+          rows.push({
+            type: "followup",
+            airline: item.airline,
+            text: `${item.airline}: Duty Mgrs Follow up needed. More than 2 delayed flights reported in selected period.`,
+          });
+        }
       }
 
       if (maxMinutes > 4) {
@@ -951,7 +984,7 @@ export default function OperationalReportAdminPage() {
     });
 
     return rows;
-  }, [delayedSummaryByAirline, filteredReports, filters.range]);
+  }, [delayedSummaryByAirline, filteredReports, filters.range, filters.dateMode]);
 
   const selectedReport = useMemo(() => {
     return filteredReports.find((r) => r.id === selectedId) || null;
@@ -1233,10 +1266,15 @@ export default function OperationalReportAdminPage() {
       return;
     }
 
+    const rangeLabel =
+      filters.dateMode === "custom"
+        ? `${filters.fromDate || "Start"} to ${filters.toDate || "End"}`
+        : filters.range;
+
     const html = buildDelaySummaryPrintableHtml(
       selectedDelayAirline,
       selectedDelayAirlineReports,
-      filters.range
+      rangeLabel
     );
 
     const printWindow = window.open("", "_blank", "width=1200,height=900");
@@ -1339,18 +1377,60 @@ export default function OperationalReportAdminPage() {
           }}
         >
           <div>
-            <FieldLabel>Range</FieldLabel>
+            <FieldLabel>Date Filter Mode</FieldLabel>
             <SelectInput
-              value={filters.range}
+              value={filters.dateMode}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, range: e.target.value }))
+                setFilters((prev) => ({
+                  ...prev,
+                  dateMode: e.target.value,
+                }))
               }
             >
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
+              <option value="quick">Quick Range</option>
+              <option value="custom">Custom Dates</option>
             </SelectInput>
           </div>
+
+          {filters.dateMode === "quick" ? (
+            <div>
+              <FieldLabel>Range</FieldLabel>
+              <SelectInput
+                value={filters.range}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, range: e.target.value }))
+                }
+              >
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+              </SelectInput>
+            </div>
+          ) : (
+            <>
+              <div>
+                <FieldLabel>From</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={filters.fromDate}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, fromDate: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel>To</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={filters.toDate}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, toDate: e.target.value }))
+                  }
+                />
+              </div>
+            </>
+          )}
 
           <div>
             <FieldLabel>Airline</FieldLabel>
@@ -1455,6 +1535,9 @@ export default function OperationalReportAdminPage() {
               }}
             >
               Click an airline to view its delayed flight list.
+              {filters.dateMode === "custom"
+                ? ` Filter: ${filters.fromDate || "Start"} to ${filters.toDate || "End"}`
+                : ` Filter: ${filters.range}`}
             </p>
           </div>
 
