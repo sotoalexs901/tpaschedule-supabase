@@ -8,6 +8,7 @@ import {
   doc,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { useUser } from "../UserContext.jsx";
 
 function normalizeAirlineName(name) {
   const value = String(name || "").trim();
@@ -84,6 +85,7 @@ function ActionButton({
   onClick,
   type = "button",
   variant = "primary",
+  disabled = false,
 }) {
   const styles = {
     primary: {
@@ -105,12 +107,14 @@ function ActionButton({
     <button
       type={type}
       onClick={onClick}
+      disabled={disabled}
       style={{
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
         fontWeight: 800,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
         whiteSpace: "nowrap",
         ...styles[variant],
       }}
@@ -121,6 +125,16 @@ function ActionButton({
 }
 
 export default function BudgetsPage() {
+  const { user } = useUser();
+
+  const isStationManager = user?.role === "station_manager";
+  const isDutyManager = user?.role === "duty_manager";
+
+  const canEditWeekly = isStationManager;
+  const canEditDaily = isStationManager || isDutyManager;
+  const canCreateBudget = isStationManager;
+  const canDeleteBudget = isStationManager;
+
   const [budgets, setBudgets] = useState([]);
   const [airline, setAirline] = useState("");
   const [department, setDepartment] = useState("");
@@ -151,6 +165,8 @@ export default function BudgetsPage() {
   }, []);
 
   const createBudget = async () => {
+    if (!canCreateBudget) return;
+
     if (!airline || !weeklyHours) {
       setStatusMessage("Missing info.");
       return;
@@ -161,8 +177,7 @@ export default function BudgetsPage() {
         airline: normalizeAirlineName(airline),
         department: String(department || "").trim(),
         budgetHours: Number(weeklyHours),
-        dailyBudgetHours:
-          dailyHours === "" ? null : Number(dailyHours),
+        dailyBudgetHours: dailyHours === "" ? null : Number(dailyHours),
       });
 
       setAirline("");
@@ -205,6 +220,7 @@ export default function BudgetsPage() {
   };
 
   const deleteBudget = async (id) => {
+    if (!canDeleteBudget) return;
     if (!window.confirm("Delete this budget?")) return;
 
     try {
@@ -312,81 +328,83 @@ export default function BudgetsPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h2
+      {canCreateBudget && (
+        <PageCard style={{ padding: 22 }}>
+          <div style={{ marginBottom: 16 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Add / Update Budget
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Weekly budget is used for schedules. Daily budget is used for the
+              Timesheet Reports page.
+            </p>
+          </div>
+
+          <div
             style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
             }}
           >
-            Add / Update Budget
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Weekly budget is used for schedules. Daily budget is used for the
-            Timesheet Reports page.
-          </p>
-        </div>
+            <div>
+              <FieldLabel>Airline</FieldLabel>
+              <TextInput
+                placeholder="Airline (SY, AV, WestJet...)"
+                value={airline}
+                onChange={(e) => setAirline(normalizeAirlineName(e.target.value))}
+              />
+            </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-          }}
-        >
-          <div>
-            <FieldLabel>Airline</FieldLabel>
-            <TextInput
-              placeholder="Airline (SY, AV, WestJet...)"
-              value={airline}
-              onChange={(e) => setAirline(normalizeAirlineName(e.target.value))}
-            />
+            <div>
+              <FieldLabel>Department</FieldLabel>
+              <TextInput
+                placeholder="Department (Ramp, TC, BSO...)"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Weekly Hours</FieldLabel>
+              <TextInput
+                placeholder="Weekly Hours"
+                value={weeklyHours}
+                onChange={(e) => setWeeklyHours(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Daily Hours</FieldLabel>
+              <TextInput
+                placeholder="Daily Hours (for timesheets)"
+                value={dailyHours}
+                onChange={(e) => setDailyHours(e.target.value)}
+              />
+            </div>
           </div>
 
-          <div>
-            <FieldLabel>Department</FieldLabel>
-            <TextInput
-              placeholder="Department (Ramp, TC, BSO...)"
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-            />
+          <div style={{ marginTop: 16 }}>
+            <ActionButton onClick={createBudget} variant="primary">
+              Save Budget
+            </ActionButton>
           </div>
-
-          <div>
-            <FieldLabel>Weekly Hours</FieldLabel>
-            <TextInput
-              placeholder="Weekly Hours"
-              value={weeklyHours}
-              onChange={(e) => setWeeklyHours(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Daily Hours</FieldLabel>
-            <TextInput
-              placeholder="Daily Hours (for timesheets)"
-              value={dailyHours}
-              onChange={(e) => setDailyHours(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 16 }}>
-          <ActionButton onClick={createBudget} variant="primary">
-            Save Budget
-          </ActionButton>
-        </div>
-      </PageCard>
+        </PageCard>
+      )}
 
       <PageCard style={{ padding: 18 }}>
         <div style={{ marginBottom: 14 }}>
@@ -411,6 +429,18 @@ export default function BudgetsPage() {
             Weekly budget stays for scheduling. Daily budget is optional but
             recommended for Timesheet Admin.
           </p>
+          {!isStationManager && isDutyManager && (
+            <p
+              style={{
+                margin: "8px 0 0",
+                fontSize: 13,
+                color: "#b45309",
+                fontWeight: 700,
+              }}
+            >
+              Duty Managers can edit daily budget only.
+            </p>
+          )}
         </div>
 
         <div
@@ -452,15 +482,23 @@ export default function BudgetsPage() {
                       {normalizeAirlineName(b.airline)}
                     </span>
                   </td>
+
                   <td style={tdStyle}>{b.department || "—"}</td>
 
                   <td style={tdStyle}>
                     <TextInput
                       defaultValue={b.budgetHours}
+                      disabled={!canEditWeekly}
                       onBlur={(e) =>
+                        canEditWeekly &&
                         updateBudgetField(b.id, "budgetHours", e.target.value)
                       }
-                      style={{ maxWidth: 130 }}
+                      style={{
+                        maxWidth: 130,
+                        background: canEditWeekly ? "#fff" : "#f8fafc",
+                        color: canEditWeekly ? "#0f172a" : "#64748b",
+                        cursor: canEditWeekly ? "text" : "not-allowed",
+                      }}
                     />
                   </td>
 
@@ -472,24 +510,43 @@ export default function BudgetsPage() {
                           : b.dailyBudgetHours
                       }
                       placeholder="Optional"
+                      disabled={!canEditDaily}
                       onBlur={(e) =>
+                        canEditDaily &&
                         updateBudgetField(
                           b.id,
                           "dailyBudgetHours",
                           e.target.value
                         )
                       }
-                      style={{ maxWidth: 130 }}
+                      style={{
+                        maxWidth: 130,
+                        background: canEditDaily ? "#fff" : "#f8fafc",
+                        color: canEditDaily ? "#0f172a" : "#64748b",
+                        cursor: canEditDaily ? "text" : "not-allowed",
+                      }}
                     />
                   </td>
 
                   <td style={{ ...tdStyle, textAlign: "center" }}>
-                    <ActionButton
-                      variant="danger"
-                      onClick={() => deleteBudget(b.id)}
-                    >
-                      Delete
-                    </ActionButton>
+                    {canDeleteBudget ? (
+                      <ActionButton
+                        variant="danger"
+                        onClick={() => deleteBudget(b.id)}
+                      >
+                        Delete
+                      </ActionButton>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#64748b",
+                        }}
+                      >
+                        Daily only
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
