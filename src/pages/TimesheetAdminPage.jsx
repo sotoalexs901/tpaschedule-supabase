@@ -27,6 +27,17 @@ function normalizeAirlineName(value) {
   return airline;
 }
 
+function normalizeDepartment(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function isCabinServiceDepartment(value) {
+  return normalizeDepartment(value) === "dl cabin service";
+}
+
 function detectBudgetAirline(value) {
   const raw = String(value || "").trim();
   const upper = raw.toUpperCase();
@@ -757,6 +768,7 @@ export default function TimesheetAdminPage() {
   const [returningId, setReturningId] = useState("");
   const [savingEditId, setSavingEditId] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
+  const [restrictToOwnReports, setRestrictToOwnReports] = useState(false);
 
   const [filters, setFilters] = useState({
     airline: "all",
@@ -783,9 +795,10 @@ export default function TimesheetAdminPage() {
           orderBy("createdAt", "desc")
         );
 
-        const [reportsSnap, budgetsSnap] = await Promise.all([
+        const [reportsSnap, budgetsSnap, employeesSnap] = await Promise.all([
           getDocs(reportsQuery),
           getDocs(collection(db, "airlineBudgets")),
+          getDocs(collection(db, "employees")),
         ]);
 
         const reportRows = reportsSnap.docs.map((d) => ({
@@ -798,6 +811,57 @@ export default function TimesheetAdminPage() {
           ...d.data(),
         }));
 
+        const employeeRows = employeesSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
+        const currentUsername = String(user?.username || "")
+          .trim()
+          .toLowerCase();
+
+        const currentVisibleName = String(
+          user?.displayName ||
+            user?.fullName ||
+            user?.name ||
+            user?.username ||
+            ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const currentEmployeeRecord = employeeRows.find((item) => {
+          const itemUsername = String(item.username || "")
+            .trim()
+            .toLowerCase();
+
+          const itemName = String(
+            item.name ||
+              item.employeeName ||
+              item.fullName ||
+              item.displayName ||
+              ""
+          )
+            .trim()
+            .toLowerCase();
+
+          return (
+            (currentUsername && itemUsername === currentUsername) ||
+            (currentVisibleName && itemName === currentVisibleName)
+          );
+        });
+
+        const currentRole = String(
+          currentEmployeeRecord?.role || user?.role || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const shouldRestrictCabinSupervisor =
+          isCabinServiceDepartment(currentEmployeeRecord?.department) &&
+          currentRole === "supervisor";
+
+        setRestrictToOwnReports(shouldRestrictCabinSupervisor);
         setReports(reportRows);
         setBudgetDocs(budgetRows);
       } catch (err) {
@@ -813,7 +877,7 @@ export default function TimesheetAdminPage() {
     } else {
       setLoading(false);
     }
-  }, [canAccess]);
+  }, [canAccess, user]);
 
   const budgetByAirline = useMemo(() => {
     const totals = {};
@@ -880,6 +944,10 @@ export default function TimesheetAdminPage() {
         r.submittedByName || r.submittedByUsername || r.supervisorReporting || ""
       ).toLowerCase();
 
+      if (restrictToOwnReports && r.submittedByUserId !== user?.id) {
+        return false;
+      }
+
       if (filters.airline !== "all" && r.normalizedAirline !== filters.airline) {
         return false;
       }
@@ -897,7 +965,7 @@ export default function TimesheetAdminPage() {
 
       return true;
     });
-  }, [reportsWithHours, filters]);
+  }, [reportsWithHours, filters, restrictToOwnReports, user?.id]);
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
@@ -1447,9 +1515,9 @@ export default function TimesheetAdminPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Review submitted reports, compare daily airline hours vs daily budget,
-            approve, return for correction, edit reports, and export only the
-            selected timesheet.
+            {restrictToOwnReports
+              ? "Review your submitted timesheets, check budget impact, and export your selected report."
+              : "Review submitted reports, compare daily airline hours vs daily budget, approve, return for correction, edit reports, and export only the selected timesheet."}
           </p>
         </div>
       </div>
@@ -1875,13 +1943,15 @@ export default function TimesheetAdminPage() {
                             </ActionButton>
                           )}
 
-                          <ActionButton
-                            variant="danger"
-                            onClick={() => handleDelete(report)}
-                            disabled={deletingId === report.id}
-                          >
-                            {deletingId === report.id ? "Deleting..." : "Delete"}
-                          </ActionButton>
+                          {canApprove && (
+                            <ActionButton
+                              variant="danger"
+                              onClick={() => handleDelete(report)}
+                              disabled={deletingId === report.id}
+                            >
+                              {deletingId === report.id ? "Deleting..." : "Delete"}
+                            </ActionButton>
+                          )}
                         </div>
                       </td>
                     </tr>
