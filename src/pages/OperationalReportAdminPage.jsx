@@ -461,6 +461,123 @@ function buildPrintableHtml(report) {
   `;
 }
 
+function buildDelaySummaryPrintableHtml(airline, reports, range) {
+  const rowsHtml = reports
+    .map((report) => {
+      const dutyManager =
+        report.reviewedBy ||
+        report.readBy ||
+        report.approvedBy ||
+        report.closedBy ||
+        report.archivedBy ||
+        "—";
+
+      return `
+        <tr>
+          <td>${escapeHtml(report.reportDate || "—")}</td>
+          <td>${escapeHtml(report.normalizedAirline || "—")}</td>
+          <td>${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} min</td>
+          <td>${escapeHtml(report.supervisorReporting || "—")}</td>
+          <td>${escapeHtml(dutyManager)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Delay Summary</title>
+        <style>
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 24px;
+            color: #0f172a;
+          }
+          h1 {
+            margin: 0;
+            font-size: 30px;
+            font-weight: 800;
+          }
+          .subtitle {
+            margin-top: 8px;
+            font-size: 14px;
+            color: #475569;
+            font-weight: 700;
+          }
+          .summary-box {
+            margin-top: 16px;
+            margin-bottom: 18px;
+            background: #f8fbff;
+            border: 1px solid #dbeafe;
+            border-radius: 14px;
+            padding: 14px 16px;
+          }
+          .summary-label {
+            font-size: 12px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+          }
+          .summary-value {
+            margin-top: 6px;
+            font-size: 24px;
+            font-weight: 900;
+            color: #0f172a;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+          }
+          th, td {
+            border: 1px solid #dbeafe;
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 13px;
+          }
+          th {
+            background: #f8fbff;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #475569;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Delay Summary</h1>
+        <div class="subtitle">
+          ${escapeHtml(airline)} · ${escapeHtml(range)}
+        </div>
+
+        <div class="summary-box">
+          <div class="summary-label">Total of Flights Delayed</div>
+          <div class="summary-value">${reports.length}</div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Airline</th>
+              <th>Delayed Time</th>
+              <th>Supervisor on Duty</th>
+              <th>Duty Manager in Charge</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -654,6 +771,7 @@ export default function OperationalReportAdminPage() {
   const [savingId, setSavingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [actionId, setActionId] = useState("");
+  const [selectedDelayAirline, setSelectedDelayAirline] = useState("");
 
   const [filters, setFilters] = useState({
     airline: "all",
@@ -768,34 +886,44 @@ export default function OperationalReportAdminPage() {
 
     delayedReports.forEach((r) => {
       const airline = r.normalizedAirline || "Unknown";
+
       if (!map[airline]) {
         map[airline] = {
           airline,
-          totalDelayed: 0,
-          maxMinutes: 0,
-          totalMinutes: 0,
+          totalDelayedFlights: 0,
           reports: [],
         };
       }
 
-      const minutes = getDelayedMinutes(r);
-
-      map[airline].totalDelayed += 1;
-      map[airline].maxMinutes = Math.max(map[airline].maxMinutes, minutes);
-      map[airline].totalMinutes += minutes;
+      map[airline].totalDelayedFlights += 1;
       map[airline].reports.push(r);
     });
 
     return Object.values(map).sort(
-      (a, b) => b.totalDelayed - a.totalDelayed || a.airline.localeCompare(b.airline)
+      (a, b) =>
+        b.totalDelayedFlights - a.totalDelayedFlights ||
+        a.airline.localeCompare(b.airline)
     );
   }, [delayedReports]);
+
+  const selectedDelayAirlineReports = useMemo(() => {
+    if (!selectedDelayAirline) return [];
+    const found = delayedSummaryByAirline.find(
+      (item) => item.airline === selectedDelayAirline
+    );
+    return found?.reports || [];
+  }, [delayedSummaryByAirline, selectedDelayAirline]);
 
   const alerts = useMemo(() => {
     const rows = [];
 
     delayedSummaryByAirline.forEach((item) => {
-      if (filters.range === "month" && item.totalDelayed > 2) {
+      const maxMinutes = Math.max(
+        ...item.reports.map((report) => Number(report.delayedTimeMinutes || 0)),
+        0
+      );
+
+      if (filters.range === "month" && item.totalDelayedFlights > 2) {
         rows.push({
           type: "followup",
           airline: item.airline,
@@ -803,7 +931,7 @@ export default function OperationalReportAdminPage() {
         });
       }
 
-      if (item.maxMinutes > 4) {
+      if (maxMinutes > 4) {
         rows.push({
           type: "followup",
           airline: item.airline,
@@ -839,6 +967,14 @@ export default function OperationalReportAdminPage() {
       setSelectedId(filteredReports[0]?.id || "");
     }
   }, [filteredReports, selectedId]);
+
+  const handleSelectDelayAirline = (airline) => {
+    setSelectedDelayAirline(airline);
+    const found = delayedSummaryByAirline.find((item) => item.airline === airline);
+    if (found?.reports?.length) {
+      setSelectedId(found.reports[0].id);
+    }
+  };
 
   const startEdit = (report) => {
     setEditingId(report.id);
@@ -1091,6 +1227,35 @@ export default function OperationalReportAdminPage() {
     setTimeout(triggerPrint, 400);
   };
 
+  const handlePrintDelaySummary = () => {
+    if (!selectedDelayAirline || selectedDelayAirlineReports.length === 0) {
+      setStatusMessage("Please select an airline with delayed flights first.");
+      return;
+    }
+
+    const html = buildDelaySummaryPrintableHtml(
+      selectedDelayAirline,
+      selectedDelayAirlineReports,
+      filters.range
+    );
+
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+
+    if (!printWindow) {
+      setStatusMessage("Pop-up blocked. Please allow pop-ups to export/print.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 400);
+  };
+
   if (!canAccess) {
     return (
       <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
@@ -1261,10 +1426,43 @@ export default function OperationalReportAdminPage() {
       )}
 
       <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
-            Delay Summary by Airline
-          </h2>
+        <div
+          style={{
+            marginBottom: 14,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
+              Delay Summary
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Click an airline to view its delayed flight list.
+            </p>
+          </div>
+
+          {selectedDelayAirline && selectedDelayAirlineReports.length > 0 && (
+            <ActionButton variant="secondary" onClick={handlePrintDelaySummary}>
+              Print / Export Delay Summary
+            </ActionButton>
+          )}
         </div>
 
         {delayedSummaryByAirline.length === 0 ? (
@@ -1293,76 +1491,167 @@ export default function OperationalReportAdminPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 860,
+                minWidth: 620,
                 background: "#fff",
               }}
             >
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle()}>Airline</th>
-                  <th style={thStyle()}>Delayed Flights</th>
-                  <th style={thStyle()}>Total Minutes</th>
-                  <th style={thStyle()}>Max Delay</th>
-                  <th style={thStyle()}>Follow Up</th>
+                  <th style={thStyle()}>Total of Flights Delayed</th>
+                  <th style={thStyle({ textAlign: "center" })}>Open</th>
                 </tr>
               </thead>
               <tbody>
-                {delayedSummaryByAirline.map((row, index) => {
-                  const needFollowUp =
-                    (filters.range === "month" && row.totalDelayed > 2) ||
-                    row.maxMinutes > 4;
-
-                  return (
-                    <tr
-                      key={row.airline}
-                      style={{
-                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                      }}
-                    >
-                      <td style={tdStyle}>{row.airline}</td>
-                      <td style={tdStyle}>{row.totalDelayed}</td>
-                      <td style={tdStyle}>{row.totalMinutes} min</td>
-                      <td style={tdStyle}>{row.maxMinutes} min</td>
-                      <td style={tdStyle}>
-                        {needFollowUp ? (
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              padding: "6px 10px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 800,
-                              background: "#fff1f2",
-                              color: "#9f1239",
-                              border: "1px solid #fecdd3",
-                            }}
-                          >
-                            Duty Mgrs Follow up needed
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              padding: "6px 10px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 800,
-                              background: "#dcfce7",
-                              color: "#166534",
-                              border: "1px solid #86efac",
-                            }}
-                          >
-                            Normal
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {delayedSummaryByAirline.map((row, index) => (
+                  <tr
+                    key={row.airline}
+                    style={{
+                      background:
+                        row.airline === selectedDelayAirline
+                          ? "#edf7ff"
+                          : index % 2 === 0
+                          ? "#ffffff"
+                          : "#fbfdff",
+                    }}
+                  >
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectDelayAirline(row.airline)}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: "#1769aa",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        {row.airline}
+                      </button>
+                    </td>
+                    <td style={tdStyle}>{row.totalDelayedFlights}</td>
+                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                      <ActionButton
+                        variant="secondary"
+                        onClick={() => handleSelectDelayAirline(row.airline)}
+                      >
+                        View
+                      </ActionButton>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {selectedDelayAirline && (
+          <div style={{ marginTop: 18 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              <div>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                  }}
+                >
+                  {selectedDelayAirline} Delayed Flights
+                </h3>
+                <p
+                  style={{
+                    margin: "4px 0 0",
+                    fontSize: 13,
+                    color: "#64748b",
+                  }}
+                >
+                  Total delayed flights: {selectedDelayAirlineReports.length}
+                </p>
+              </div>
+            </div>
+
+            {selectedDelayAirlineReports.length === 0 ? (
+              <div
+                style={{
+                  padding: 16,
+                  borderRadius: 16,
+                  background: "#f8fbff",
+                  border: "1px solid #dbeafe",
+                  color: "#64748b",
+                  fontWeight: 600,
+                }}
+              >
+                No delayed reports found for this airline.
+              </div>
+            ) : (
+              <div
+                style={{
+                  overflowX: "auto",
+                  borderRadius: 18,
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "separate",
+                    borderSpacing: 0,
+                    minWidth: 900,
+                    background: "#fff",
+                  }}
+                >
+                  <thead>
+                    <tr style={{ background: "#f8fbff" }}>
+                      <th style={thStyle()}>Date</th>
+                      <th style={thStyle()}>Airline</th>
+                      <th style={thStyle()}>Delayed Time</th>
+                      <th style={thStyle()}>Supervisor on Duty</th>
+                      <th style={thStyle()}>Duty Manager in Charge</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDelayAirlineReports.map((report, index) => {
+                      const dutyManager =
+                        report.reviewedBy ||
+                        report.readBy ||
+                        report.approvedBy ||
+                        report.closedBy ||
+                        report.archivedBy ||
+                        "—";
+
+                      return (
+                        <tr
+                          key={report.id}
+                          style={{
+                            background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                          }}
+                        >
+                          <td style={tdStyle}>{report.reportDate || "—"}</td>
+                          <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
+                          <td style={tdStyle}>
+                            {Number(report.delayedTimeMinutes || 0)} min
+                          </td>
+                          <td style={tdStyle}>{report.supervisorReporting || "—"}</td>
+                          <td style={tdStyle}>{dutyManager}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </PageCard>
