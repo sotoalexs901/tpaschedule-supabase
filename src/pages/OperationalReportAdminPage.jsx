@@ -7,6 +7,7 @@ import {
   orderBy,
   query,
   updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -148,6 +149,93 @@ function formatResponseValue(value) {
   return String(value ?? "—");
 }
 
+function getVisibleUserName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    "Manager"
+  );
+}
+
+function getReviewStatusLabel(status) {
+  const value = String(status || "submitted").toLowerCase();
+
+  if (value === "read") return "Read";
+  if (value === "approved") return "Approved";
+  if (value === "follow_up_required") return "Follow Up Required";
+  if (value === "closed") return "Closed";
+  if (value === "archived") return "Archived";
+  return "Submitted";
+}
+
+function getReviewStatusStyle(status) {
+  const value = String(status || "submitted").toLowerCase();
+
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    border: "1px solid transparent",
+  };
+
+  if (value === "read") {
+    return {
+      ...base,
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      borderColor: "#bfdbfe",
+    };
+  }
+
+  if (value === "approved") {
+    return {
+      ...base,
+      background: "#dcfce7",
+      color: "#166534",
+      borderColor: "#86efac",
+    };
+  }
+
+  if (value === "follow_up_required") {
+    return {
+      ...base,
+      background: "#fff7ed",
+      color: "#9a3412",
+      borderColor: "#fdba74",
+    };
+  }
+
+  if (value === "closed") {
+    return {
+      ...base,
+      background: "#f1f5f9",
+      color: "#334155",
+      borderColor: "#cbd5e1",
+    };
+  }
+
+  if (value === "archived") {
+    return {
+      ...base,
+      background: "#f8fafc",
+      color: "#475569",
+      borderColor: "#e2e8f0",
+    };
+  }
+
+  return {
+    ...base,
+    background: "#edf7ff",
+    color: "#1769aa",
+    borderColor: "#cfe7fb",
+  };
+}
+
 function buildPrintableHtml(report) {
   const responses = report?.responses || {};
   const dynamicBlocks =
@@ -190,6 +278,28 @@ function buildPrintableHtml(report) {
       </div>
     `
     : "";
+
+  const managerSection = `
+    <div class="detail-box">
+      <div class="detail-label">Review Status</div>
+      <div class="detail-value">${escapeHtml(getReviewStatusLabel(report.reviewStatus))}</div>
+    </div>
+
+    <div class="detail-box">
+      <div class="detail-label">Manager Notes</div>
+      <div class="detail-value">${escapeHtml(report.managerNotes || "—").replace(/\n/g, "<br/>")}</div>
+    </div>
+
+    <div class="detail-box">
+      <div class="detail-label">Follow Up Action</div>
+      <div class="detail-value">${escapeHtml(report.followUpAction || "—").replace(/\n/g, "<br/>")}</div>
+    </div>
+
+    <div class="detail-box">
+      <div class="detail-label">Follow Up Details</div>
+      <div class="detail-value">${escapeHtml(report.followUpDetails || "—").replace(/\n/g, "<br/>")}</div>
+    </div>
+  `;
 
   return `
     <!DOCTYPE html>
@@ -344,6 +454,7 @@ function buildPrintableHtml(report) {
           <div class="detail-value">${escapeHtml(report.notes || "—").replace(/\n/g, "<br/>")}</div>
         </div>
 
+        ${managerSection}
         ${dynamicBlocks}
       </body>
     </html>
@@ -542,10 +653,12 @@ export default function OperationalReportAdminPage() {
   const [editingId, setEditingId] = useState("");
   const [savingId, setSavingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
+  const [actionId, setActionId] = useState("");
 
   const [filters, setFilters] = useState({
     airline: "all",
     range: "today",
+    lifecycle: "active",
   });
 
   const [editForm, setEditForm] = useState({
@@ -561,6 +674,11 @@ export default function OperationalReportAdminPage() {
     delayedCodeReported: "",
     needsAttention: false,
     responses: {},
+    reviewStatus: "submitted",
+    managerNotes: "",
+    followUpRequired: false,
+    followUpAction: "",
+    followUpDetails: "",
   });
 
   useEffect(() => {
@@ -572,11 +690,20 @@ export default function OperationalReportAdminPage() {
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-          normalizedAirline: normalizeAirlineName(d.data().airline),
-        }));
+        const rows = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            normalizedAirline: normalizeAirlineName(data.airline),
+            reviewStatus: data.reviewStatus || "submitted",
+            managerNotes: data.managerNotes || "",
+            followUpRequired: Boolean(data.followUpRequired),
+            followUpAction: data.followUpAction || "",
+            followUpDetails: data.followUpDetails || "",
+            archived: Boolean(data.archived),
+          };
+        });
 
         setReports(rows);
       } catch (err) {
@@ -614,6 +741,20 @@ export default function OperationalReportAdminPage() {
         return false;
       }
 
+      const status = String(r.reviewStatus || "submitted").toLowerCase();
+
+      if (filters.lifecycle === "active") {
+        return !["closed", "archived"].includes(status);
+      }
+
+      if (filters.lifecycle === "closed") {
+        return status === "closed";
+      }
+
+      if (filters.lifecycle === "archived") {
+        return status === "archived";
+      }
+
       return true;
     });
   }, [reports, filters]);
@@ -632,6 +773,7 @@ export default function OperationalReportAdminPage() {
           airline,
           totalDelayed: 0,
           maxMinutes: 0,
+          totalMinutes: 0,
           reports: [],
         };
       }
@@ -640,6 +782,7 @@ export default function OperationalReportAdminPage() {
 
       map[airline].totalDelayed += 1;
       map[airline].maxMinutes = Math.max(map[airline].maxMinutes, minutes);
+      map[airline].totalMinutes += minutes;
       map[airline].reports.push(r);
     });
 
@@ -712,6 +855,11 @@ export default function OperationalReportAdminPage() {
       delayedCodeReported: report.delayedCodeReported || "",
       needsAttention: Boolean(report.needsAttention),
       responses: { ...(report.responses || {}) },
+      reviewStatus: report.reviewStatus || "submitted",
+      managerNotes: report.managerNotes || "",
+      followUpRequired: Boolean(report.followUpRequired),
+      followUpAction: report.followUpAction || "",
+      followUpDetails: report.followUpDetails || "",
     });
     setSelectedId(report.id);
   };
@@ -748,6 +896,11 @@ export default function OperationalReportAdminPage() {
         delayedCodeReported: String(editForm.delayedCodeReported || "").trim(),
         needsAttention: Boolean(editForm.needsAttention),
         responses: editForm.responses || {},
+        reviewStatus: editForm.reviewStatus || "submitted",
+        managerNotes: editForm.managerNotes || "",
+        followUpRequired: Boolean(editForm.followUpRequired),
+        followUpAction: editForm.followUpAction || "",
+        followUpDetails: editForm.followUpDetails || "",
       };
 
       await updateDoc(doc(db, "operational_reports", report.id), payload);
@@ -771,6 +924,128 @@ export default function OperationalReportAdminPage() {
       console.error("Error updating operational report:", err);
       setStatusMessage("Could not update operational report.");
       setSavingId("");
+    }
+  };
+
+  const updateWorkflowStatus = async (report, mode) => {
+    try {
+      setActionId(report.id);
+
+      const managerName = getVisibleUserName(user);
+      const managerRole = user?.role || "";
+
+      const payload = {};
+
+      if (mode === "read") {
+        payload.reviewStatus = "read";
+        payload.readAt = serverTimestamp();
+        payload.readBy = managerName;
+        payload.readByRole = managerRole;
+      }
+
+      if (mode === "approved") {
+        payload.reviewStatus = "approved";
+        payload.approvedAt = serverTimestamp();
+        payload.approvedBy = managerName;
+        payload.approvedByRole = managerRole;
+      }
+
+      if (mode === "follow_up_required") {
+        payload.reviewStatus = "follow_up_required";
+        payload.followUpRequired = true;
+        payload.reviewedAt = serverTimestamp();
+        payload.reviewedBy = managerName;
+        payload.reviewedByRole = managerRole;
+      }
+
+      if (mode === "closed") {
+        payload.reviewStatus = "closed";
+        payload.closedAt = serverTimestamp();
+        payload.closedBy = managerName;
+        payload.closedByRole = managerRole;
+      }
+
+      if (mode === "archived") {
+        payload.reviewStatus = "archived";
+        payload.archived = true;
+        payload.archivedAt = serverTimestamp();
+        payload.archivedBy = managerName;
+        payload.archivedByRole = managerRole;
+      }
+
+      await updateDoc(doc(db, "operational_reports", report.id), payload);
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                ...payload,
+              }
+            : item
+        )
+      );
+
+      setStatusMessage(`Report marked as ${getReviewStatusLabel(payload.reviewStatus)}.`);
+    } catch (err) {
+      console.error("Error updating workflow status:", err);
+      setStatusMessage("Could not update report status.");
+    } finally {
+      setActionId("");
+    }
+  };
+
+  const saveFollowUp = async (report) => {
+    const action = String(editForm.followUpAction || "").trim();
+    const details = String(editForm.followUpDetails || "").trim();
+
+    if (!action && !details) {
+      setStatusMessage("Please enter follow up action or follow up details.");
+      return;
+    }
+
+    try {
+      setActionId(report.id);
+
+      const managerName = getVisibleUserName(user);
+      const managerRole = user?.role || "";
+
+      const payload = {
+        followUpRequired: true,
+        reviewStatus: "follow_up_required",
+        followUpAction: action,
+        followUpDetails: details,
+        managerNotes: editForm.managerNotes || "",
+        followUpCompletedAt: serverTimestamp(),
+        followUpCompletedBy: managerName,
+        followUpCompletedByRole: managerRole,
+      };
+
+      await updateDoc(doc(db, "operational_reports", report.id), payload);
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                ...payload,
+              }
+            : item
+        )
+      );
+
+      setEditForm((prev) => ({
+        ...prev,
+        followUpRequired: true,
+        reviewStatus: "follow_up_required",
+      }));
+
+      setStatusMessage("Follow up saved successfully.");
+    } catch (err) {
+      console.error("Error saving follow up:", err);
+      setStatusMessage("Could not save follow up.");
+    } finally {
+      setActionId("");
     }
   };
 
@@ -928,6 +1203,21 @@ export default function OperationalReportAdminPage() {
               ))}
             </SelectInput>
           </div>
+
+          <div>
+            <FieldLabel>View</FieldLabel>
+            <SelectInput
+              value={filters.lifecycle}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, lifecycle: e.target.value }))
+              }
+            >
+              <option value="active">Active Reports</option>
+              <option value="closed">Closed Reports</option>
+              <option value="archived">Archived Reports</option>
+              <option value="all">All</option>
+            </SelectInput>
+          </div>
         </div>
       </PageCard>
 
@@ -1003,7 +1293,7 @@ export default function OperationalReportAdminPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 700,
+                minWidth: 860,
                 background: "#fff",
               }}
             >
@@ -1011,6 +1301,7 @@ export default function OperationalReportAdminPage() {
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle()}>Airline</th>
                   <th style={thStyle()}>Delayed Flights</th>
+                  <th style={thStyle()}>Total Minutes</th>
                   <th style={thStyle()}>Max Delay</th>
                   <th style={thStyle()}>Follow Up</th>
                 </tr>
@@ -1030,6 +1321,7 @@ export default function OperationalReportAdminPage() {
                     >
                       <td style={tdStyle}>{row.airline}</td>
                       <td style={tdStyle}>{row.totalDelayed}</td>
+                      <td style={tdStyle}>{row.totalMinutes} min</td>
                       <td style={tdStyle}>{row.maxMinutes} min</td>
                       <td style={tdStyle}>
                         {needFollowUp ? (
@@ -1079,7 +1371,7 @@ export default function OperationalReportAdminPage() {
         style={{
           display: "grid",
           gridTemplateColumns: selectedReport
-            ? "minmax(320px, 0.95fr) minmax(420px, 1.25fr)"
+            ? "minmax(320px, 0.95fr) minmax(460px, 1.3fr)"
             : "1fr",
           gap: 18,
         }}
@@ -1115,7 +1407,7 @@ export default function OperationalReportAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1120,
+                  minWidth: 1300,
                   background: "#fff",
                 }}
               >
@@ -1127,6 +1419,7 @@ export default function OperationalReportAdminPage() {
                     <th style={thStyle()}>Delayed</th>
                     <th style={thStyle()}>Minutes</th>
                     <th style={thStyle()}>Needs Attention</th>
+                    <th style={thStyle()}>Status</th>
                     <th style={thStyle()}>Created</th>
                     <th style={thStyle({ textAlign: "center" })}>Actions</th>
                   </tr>
@@ -1150,6 +1443,11 @@ export default function OperationalReportAdminPage() {
                       <td style={tdStyle}>{report.delayedFlight ? "Yes" : "No"}</td>
                       <td style={tdStyle}>{Number(report.delayedTimeMinutes || 0)}</td>
                       <td style={tdStyle}>{shouldFlagNeedsAttention(report) ? "Yes" : "No"}</td>
+                      <td style={tdStyle}>
+                        <span style={getReviewStatusStyle(report.reviewStatus)}>
+                          {getReviewStatusLabel(report.reviewStatus)}
+                        </span>
+                      </td>
                       <td style={tdStyle}>{formatDateTime(report.createdAt)}</td>
                       <td style={{ ...tdStyle, textAlign: "center" }}>
                         <div
@@ -1358,6 +1656,70 @@ export default function OperationalReportAdminPage() {
                 </label>
 
                 <div>
+                  <FieldLabel>Manager Notes</FieldLabel>
+                  <TextArea
+                    value={editForm.managerNotes}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        managerNotes: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <label
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontWeight: 700,
+                    color: "#0f172a",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={editForm.followUpRequired}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        followUpRequired: e.target.checked,
+                        reviewStatus: e.target.checked
+                          ? "follow_up_required"
+                          : prev.reviewStatus,
+                      }))
+                    }
+                  />
+                  Follow Up Required
+                </label>
+
+                <div>
+                  <FieldLabel>Follow Up Action</FieldLabel>
+                  <TextArea
+                    value={editForm.followUpAction}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        followUpAction: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Follow Up Details</FieldLabel>
+                  <TextArea
+                    value={editForm.followUpDetails}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        followUpDetails: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
                   <FieldLabel>Dynamic Responses</FieldLabel>
                   <div style={{ display: "grid", gap: 12 }}>
                     {Object.entries(editForm.responses || {}).length === 0 ? (
@@ -1436,10 +1798,33 @@ export default function OperationalReportAdminPage() {
                   <InfoCard label="Delayed Flight" value={selectedReport.delayedFlight ? "Yes" : "No"} />
                   <InfoCard label="Delayed Time" value={`${Number(selectedReport.delayedTimeMinutes || 0)} min`} />
                   <InfoCard label="Delayed Code" value={selectedReport.delayedCodeReported || "—"} />
+                  <InfoCard label="Review Status" value={getReviewStatusLabel(selectedReport.reviewStatus)} />
                 </div>
 
                 <DetailBox label="Delayed Reason" value={selectedReport.delayedReason || "—"} />
                 <DetailBox label="Notes" value={selectedReport.notes || "—"} />
+                <DetailBox label="Manager Notes" value={selectedReport.managerNotes || "—"} />
+                <DetailBox label="Follow Up Action" value={selectedReport.followUpAction || "—"} />
+                <DetailBox label="Follow Up Details" value={selectedReport.followUpDetails || "—"} />
+
+                {(selectedReport.readBy || selectedReport.approvedBy || selectedReport.closedBy || selectedReport.archivedBy) && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <InfoCard label="Read By" value={selectedReport.readBy || "—"} />
+                    <InfoCard label="Read At" value={formatDateTime(selectedReport.readAt)} />
+                    <InfoCard label="Approved By" value={selectedReport.approvedBy || "—"} />
+                    <InfoCard label="Approved At" value={formatDateTime(selectedReport.approvedAt)} />
+                    <InfoCard label="Closed By" value={selectedReport.closedBy || "—"} />
+                    <InfoCard label="Closed At" value={formatDateTime(selectedReport.closedAt)} />
+                    <InfoCard label="Archived By" value={selectedReport.archivedBy || "—"} />
+                    <InfoCard label="Archived At" value={formatDateTime(selectedReport.archivedAt)} />
+                  </div>
+                )}
 
                 {shouldFlagNeedsAttention(selectedReport) && (
                   <div
@@ -1476,6 +1861,144 @@ export default function OperationalReportAdminPage() {
                       : ""}
                   </div>
                 )}
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {selectedReport.reviewStatus !== "read" && (
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => updateWorkflowStatus(selectedReport, "read")}
+                      disabled={actionId === selectedReport.id}
+                    >
+                      Mark Read
+                    </ActionButton>
+                  )}
+
+                  {selectedReport.reviewStatus !== "approved" && (
+                    <ActionButton
+                      variant="success"
+                      onClick={() => updateWorkflowStatus(selectedReport, "approved")}
+                      disabled={actionId === selectedReport.id}
+                    >
+                      Approve
+                    </ActionButton>
+                  )}
+
+                  {selectedReport.reviewStatus !== "follow_up_required" && (
+                    <ActionButton
+                      variant="warning"
+                      onClick={() => updateWorkflowStatus(selectedReport, "follow_up_required")}
+                      disabled={actionId === selectedReport.id}
+                    >
+                      Require Follow Up
+                    </ActionButton>
+                  )}
+
+                  {selectedReport.reviewStatus !== "closed" && (
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => updateWorkflowStatus(selectedReport, "closed")}
+                      disabled={actionId === selectedReport.id}
+                    >
+                      Close Report
+                    </ActionButton>
+                  )}
+
+                  {selectedReport.reviewStatus !== "archived" && (
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => updateWorkflowStatus(selectedReport, "archived")}
+                      disabled={actionId === selectedReport.id}
+                    >
+                      Archive
+                    </ActionButton>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "14px 16px",
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#64748b",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Follow Up Manager Entry
+                  </div>
+
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div>
+                      <FieldLabel>Manager Notes</FieldLabel>
+                      <TextArea
+                        value={editForm.managerNotes}
+                        onChange={(e) =>
+                          setEditForm((prev) => ({
+                            ...prev,
+                            managerNotes: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Follow Up Action</FieldLabel>
+                      <TextArea
+                        value={editForm.followUpAction}
+                        onChange={(e) =>
+                          setEditForm((prev) => ({
+                            ...prev,
+                            followUpAction: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Follow Up Details</FieldLabel>
+                      <TextArea
+                        value={editForm.followUpDetails}
+                        onChange={(e) =>
+                          setEditForm((prev) => ({
+                            ...prev,
+                            followUpDetails: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <ActionButton
+                        variant="warning"
+                        onClick={() => saveFollowUp(selectedReport)}
+                        disabled={actionId === selectedReport.id}
+                      >
+                        Save Follow Up
+                      </ActionButton>
+
+                      <ActionButton
+                        variant="secondary"
+                        onClick={() => startEdit(selectedReport)}
+                      >
+                        Sync From Report
+                      </ActionButton>
+                    </div>
+                  </div>
+                </div>
 
                 <div>
                   <div
