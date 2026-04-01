@@ -206,6 +206,12 @@ export default function AppLayout() {
   const canManageOperationalReportForm =
     user?.role === "station_manager";
 
+  const canAccessWchrTools =
+    user?.role === "agent" ||
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
   const navSections = useMemo(() => {
     const sections = [];
 
@@ -331,13 +337,7 @@ export default function AppLayout() {
       });
     }
 
-    // futuros reportes:
-    // reports.push(
-    //   { to: "/international-trash/submit", label: "International Trash", icon: "🗑️" },
-    //   { to: "/epr/submit", label: "EPR", icon: "📄" }
-    // );
-
-    if (user) {
+    if (canAccessWchrTools) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
         { to: "/wchr/my-reports", label: "My Reports", icon: "📄" }
@@ -369,6 +369,7 @@ export default function AppLayout() {
     canAccessOperationalReports,
     canAccessOperationalReportAdmin,
     canManageOperationalReportForm,
+    canAccessWchrTools,
     unreadMessages,
     pendingTimeOff,
     user,
