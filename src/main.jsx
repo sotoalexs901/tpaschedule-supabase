@@ -173,7 +173,9 @@ function AppRouter() {
           <Route
             path="wchr/scan"
             element={
-              <ProtectedRoute roles={["agent", "supervisor"]}>
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
                 <WCHRScan />
               </ProtectedRoute>
             }
@@ -182,7 +184,9 @@ function AppRouter() {
           <Route
             path="wchr/my-reports"
             element={
-              <ProtectedRoute roles={["agent", "supervisor"]}>
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
                 <MyWCHRReports />
               </ProtectedRoute>
             }
