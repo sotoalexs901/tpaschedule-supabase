@@ -59,11 +59,17 @@ function detectBudgetAirline(value) {
 
   if (!upper) return "";
   if (upper === "SY" || upper.startsWith("SY ")) return "SY";
-  if (upper.includes("WESTJET") || upper.includes("WL HAVANA") || upper === "WL") {
+  if (
+    upper.includes("WESTJET") ||
+    upper.includes("WL HAVANA") ||
+    upper === "WL"
+  ) {
     return "WestJet";
   }
   if (upper.includes("WL INVICTA")) return "WL Invicta";
-  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) return "AV";
+  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) {
+    return "AV";
+  }
   if (upper === "EA" || upper.startsWith("EA ")) return "EA";
   if (upper.includes("WCHR")) return "WCHR";
   if (upper.includes("CABIN")) return "CABIN";
@@ -89,6 +95,17 @@ function getVisibleName(user) {
     user?.username ||
     "User"
   );
+}
+
+function normalizeDepartment(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function isCabinServiceDepartment(value) {
+  return normalizeDepartment(value) === "dl cabin service";
 }
 
 function toMinutes(timeStr) {
@@ -130,7 +147,9 @@ function calculateRowHours(row) {
 function formatDateTime(value) {
   if (!value) return "—";
   try {
-    if (typeof value?.toDate === "function") return value.toDate().toLocaleString();
+    if (typeof value?.toDate === "function") {
+      return value.toDate().toLocaleString();
+    }
     return new Date(value).toLocaleString();
   } catch {
     return "—";
@@ -363,11 +382,59 @@ export default function SupervisorTimesheetPage() {
         const budgetsSnap = results[1];
         const returnedSnap = results[2];
 
-        const employeeList = employeesSnap.docs
-          .map((d) => ({
-            id: d.id,
-            ...d.data(),
-          }))
+        const rawEmployees = employeesSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
+        const currentUsername = String(user?.username || "")
+          .trim()
+          .toLowerCase();
+
+        const currentVisibleName = String(getVisibleName(user) || "")
+          .trim()
+          .toLowerCase();
+
+        const currentEmployeeRecord = rawEmployees.find((item) => {
+          const itemUsername = String(item.username || "")
+            .trim()
+            .toLowerCase();
+
+          const itemName = String(
+            item.name ||
+              item.employeeName ||
+              item.fullName ||
+              item.displayName ||
+              ""
+          )
+            .trim()
+            .toLowerCase();
+
+          return (
+            (currentUsername && itemUsername === currentUsername) ||
+            (currentVisibleName && itemName === currentVisibleName)
+          );
+        });
+
+        const currentRole = String(
+          currentEmployeeRecord?.role || user?.role || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const shouldRestrictToCabinService =
+          isCabinServiceDepartment(currentEmployeeRecord?.department) &&
+          (currentRole === "supervisor" ||
+            currentRole === "ops manager" ||
+            currentRole === "manager");
+
+        const filteredEmployees = shouldRestrictToCabinService
+          ? rawEmployees.filter((item) =>
+              isCabinServiceDepartment(item.department)
+            )
+          : rawEmployees;
+
+        const employeeList = filteredEmployees
           .map((item) => ({
             id: item.id,
             name:
@@ -377,6 +444,8 @@ export default function SupervisorTimesheetPage() {
               item.displayName ||
               item.username ||
               "Unnamed employee",
+            department: item.department || "",
+            role: item.role || "",
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -400,14 +469,16 @@ export default function SupervisorTimesheetPage() {
         setReturnedReports(returned);
       } catch (err) {
         console.error("Error loading supervisor page data:", err);
-        setStatusMessage("Could not load employees, budgets or returned timesheets.");
+        setStatusMessage(
+          "Could not load employees, budgets or returned timesheets."
+        );
       } finally {
         setLoadingEmployees(false);
       }
     }
 
     loadData();
-  }, [user?.id]);
+  }, [user]);
 
   const employeeMap = useMemo(() => {
     const map = {};
@@ -624,7 +695,9 @@ export default function SupervisorTimesheetPage() {
         shift: form.shift || "",
         supervisorReporting: form.supervisorReporting || getVisibleName(user),
         supervisorPosition:
-          form.supervisorPosition || user?.position || getDefaultPosition(user?.role),
+          form.supervisorPosition ||
+          user?.position ||
+          getDefaultPosition(user?.role),
         notes: form.notes || "",
         rows: cleanRows,
         totalHours: totalReportedHours,
@@ -649,7 +722,9 @@ export default function SupervisorTimesheetPage() {
           returnedReason: "",
         });
 
-        setReturnedReports((prev) => prev.filter((item) => item.id !== editingReportId));
+        setReturnedReports((prev) =>
+          prev.filter((item) => item.id !== editingReportId)
+        );
         setStatusMessage("Returned timesheet fixed and resubmitted successfully.");
       } else {
         await addDoc(collection(db, "timesheet_reports"), {
@@ -734,7 +809,9 @@ export default function SupervisorTimesheetPage() {
                 letterSpacing: "-0.04em",
               }}
             >
-              {editingReportId ? "Fix Returned Timesheet" : "Submit Timesheet Report"}
+              {editingReportId
+                ? "Fix Returned Timesheet"
+                : "Submit Timesheet Report"}
             </h1>
 
             <p
@@ -966,7 +1043,9 @@ export default function SupervisorTimesheetPage() {
             <FieldLabel>Supervisor Reporting</FieldLabel>
             <TextInput
               value={form.supervisorReporting}
-              onChange={(e) => handleFormChange("supervisorReporting", e.target.value)}
+              onChange={(e) =>
+                handleFormChange("supervisorReporting", e.target.value)
+              }
             />
           </div>
         </div>
@@ -1079,7 +1158,9 @@ export default function SupervisorTimesheetPage() {
             <FieldLabel>Why are you over budget?</FieldLabel>
             <TextArea
               value={form.overBudgetReason}
-              onChange={(e) => handleFormChange("overBudgetReason", e.target.value)}
+              onChange={(e) =>
+                handleFormChange("overBudgetReason", e.target.value)
+              }
               placeholder="Explain why this operation exceeded the airline daily budget."
             />
           </div>
@@ -1164,7 +1245,9 @@ export default function SupervisorTimesheetPage() {
                   <th style={tableHeaderStyle()}>Break Taken</th>
                   <th style={tableHeaderStyle()}>Reason</th>
                   <th style={tableHeaderStyle()}>Hours</th>
-                  <th style={tableHeaderStyle({ textAlign: "center" })}>Remove</th>
+                  <th style={tableHeaderStyle({ textAlign: "center" })}>
+                    Remove
+                  </th>
                 </tr>
               </thead>
 
@@ -1179,7 +1262,9 @@ export default function SupervisorTimesheetPage() {
                     <td style={tableCellStyle}>
                       <SelectInput
                         value={row.employeeId}
-                        onChange={(e) => handleRowChange(index, "employeeId", e.target.value)}
+                        onChange={(e) =>
+                          handleRowChange(index, "employeeId", e.target.value)
+                        }
                       >
                         <option value="">Select employee</option>
                         {employees.map((emp) => (
@@ -1194,7 +1279,9 @@ export default function SupervisorTimesheetPage() {
                       <TextInput
                         type="time"
                         value={row.punchIn}
-                        onChange={(e) => handleRowChange(index, "punchIn", e.target.value)}
+                        onChange={(e) =>
+                          handleRowChange(index, "punchIn", e.target.value)
+                        }
                       />
                     </td>
 
@@ -1202,7 +1289,9 @@ export default function SupervisorTimesheetPage() {
                       <TextInput
                         type="time"
                         value={row.punchOut}
-                        onChange={(e) => handleRowChange(index, "punchOut", e.target.value)}
+                        onChange={(e) =>
+                          handleRowChange(index, "punchOut", e.target.value)
+                        }
                       />
                     </td>
 
@@ -1240,7 +1329,9 @@ export default function SupervisorTimesheetPage() {
                     <td style={tableCellStyle}>
                       <TextInput
                         value={row.reason}
-                        onChange={(e) => handleRowChange(index, "reason", e.target.value)}
+                        onChange={(e) =>
+                          handleRowChange(index, "reason", e.target.value)
+                        }
                         placeholder="Reason / note"
                       />
                     </td>
@@ -1270,7 +1361,11 @@ export default function SupervisorTimesheetPage() {
 
       <PageCard style={{ padding: 20 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <ActionButton onClick={handleSubmit} variant="primary" disabled={saving}>
+          <ActionButton
+            onClick={handleSubmit}
+            variant="primary"
+            disabled={saving}
+          >
             {saving
               ? "Submitting..."
               : editingReportId
