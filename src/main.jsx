@@ -328,7 +328,7 @@ function AppRouter() {
           <Route
             path="budgets"
             element={
-              <ProtectedRoute roles={["station_manager"]}>
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
                 <BudgetsPage />
               </ProtectedRoute>
             }
