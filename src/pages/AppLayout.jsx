@@ -188,9 +188,15 @@ export default function AppLayout() {
     .trim()
     .toLowerCase();
 
+  const normalizedUsername = String(user?.username || "")
+    .trim()
+    .toLowerCase();
+
   const isDLCabinService =
     normalizedDepartment.includes("dl cabin") ||
     normalizedDepartment.includes("cabin service");
+
+  const isAllowedDutyManagerForDL = normalizedUsername === "hhernadez";
 
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
@@ -200,16 +206,17 @@ export default function AppLayout() {
 
   const canAccessTimesheets =
     user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
+    user?.role === "station_manager" ||
+    (user?.role === "duty_manager" && isAllowedDutyManagerForDL);
 
   const canAccessOperationalReports =
     user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
+    user?.role === "station_manager" ||
+    (user?.role === "duty_manager" && isAllowedDutyManagerForDL);
 
   const canAccessOperationalReportAdmin =
-    user?.role === "duty_manager" || user?.role === "station_manager";
+    user?.role === "station_manager" ||
+    (user?.role === "duty_manager" && isAllowedDutyManagerForDL);
 
   const canManageOperationalReportForm =
     user?.role === "station_manager";
@@ -384,8 +391,6 @@ export default function AppLayout() {
     unreadMessages,
     pendingTimeOff,
     user,
-    user?.role,
-    user?.department,
   ]);
 
   const allSectionsOpen = navSections.every(
