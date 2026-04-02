@@ -14,6 +14,7 @@ import { db } from "../firebase";
 
 async function syncUserLink(employeeId, loginUsername) {
   if (!loginUsername) return;
+
   try {
     const q = query(
       collection(db, "users"),
@@ -27,6 +28,7 @@ async function syncUserLink(employeeId, loginUsername) {
         employeeId,
       })
     );
+
     await Promise.all(updates);
   } catch (err) {
     console.error("Error syncing user link:", err);
@@ -242,13 +244,6 @@ export default function EmployeesPage() {
         return aDepartment.localeCompare(bDepartment);
       }
 
-      const aPosition = normalizeText(a.position);
-      const bPosition = normalizeText(b.position);
-
-      if (aPosition !== bPosition) {
-        return aPosition.localeCompare(bPosition);
-      }
-
       const aInitial = getLastNameInitial(a);
       const bInitial = getLastNameInitial(b);
 
@@ -396,62 +391,126 @@ export default function EmployeesPage() {
 
       const firstLine = lines[0].toLowerCase();
       const hasHeader =
-        firstLine.includes("employee") || firstLine.includes("status");
+        firstLine.includes("employee") ||
+        firstLine.includes("status") ||
+        firstLine.includes("department") ||
+        firstLine.includes("username");
 
       const startIndex = hasHeader ? 1 : 0;
 
       const existingUsernames = new Set(
         employees
-          .map((e) => (e.loginUsername || "").toLowerCase())
+          .map((e) => (e.loginUsername || "").toLowerCase().trim())
           .filter(Boolean)
       );
+
       const batchUsernames = new Set();
 
       let createdCount = 0;
       let skippedDuplicates = 0;
+      let skippedInvalid = 0;
 
       for (let i = startIndex; i < lines.length; i++) {
         const row = lines[i];
         const cells = row.split(/[\t,;]+/).map((c) => c.trim());
+
         if (!cells[0]) continue;
 
-        const employeeName = cells[0];
-        const loginUsername = cells[1] || "";
-        const dept = cells[2] || "";
-        const pos = cells[3] || "";
-        const statusRaw = cells[4] || "Active";
-        const notesVal = cells[5] || "";
+        let employeeName = "";
+        let loginUsername = "";
+        let dept = "";
+        let pos = "";
+        let statusRaw = "Active";
+        let notesVal = "";
+
+        if (cells.length === 4) {
+          employeeName = cells[0] || "";
+          dept = cells[1] || "";
+          pos = cells[2] || "";
+          statusRaw = cells[3] || "Active";
+        } else if (cells.length === 5) {
+          employeeName = cells[0] || "";
+
+          const secondCell = String(cells[1] || "").trim();
+          const fourthCell = String(cells[3] || "").trim().toLowerCase();
+
+          const looksLikeStatus =
+            fourthCell === "active" || fourthCell === "inactive";
+
+          const looksLikeUsername =
+            secondCell &&
+            !secondCell.includes(" ") &&
+            !secondCell.toLowerCase().includes("service") &&
+            !secondCell.toLowerCase().includes("ramp") &&
+            !secondCell.toLowerCase().includes("bso") &&
+            !secondCell.toLowerCase().includes("wchr") &&
+            !secondCell.toLowerCase().includes("tc");
+
+          if (looksLikeUsername && looksLikeStatus) {
+            loginUsername = cells[1] || "";
+            dept = cells[2] || "";
+            pos = cells[3] || "";
+            statusRaw = cells[4] || "Active";
+          } else {
+            dept = cells[1] || "";
+            pos = cells[2] || "";
+            statusRaw = cells[3] || "Active";
+            notesVal = cells[4] || "";
+          }
+        } else if (cells.length >= 6) {
+          employeeName = cells[0] || "";
+          loginUsername = cells[1] || "";
+          dept = cells[2] || "";
+          pos = cells[3] || "";
+          statusRaw = cells[4] || "Active";
+          notesVal = cells.slice(5).join(", ") || "";
+        } else {
+          skippedInvalid++;
+          continue;
+        }
 
         const normalizedStatus =
-          statusRaw.toLowerCase() === "inactive" ? "Inactive" : "Active";
+          String(statusRaw).toLowerCase() === "inactive" ? "Inactive" : "Active";
 
-        if (loginUsername) {
-          const key = loginUsername.toLowerCase();
+        const cleanUsername = String(loginUsername || "").trim();
+
+        if (cleanUsername) {
+          const key = cleanUsername.toLowerCase();
+
           if (existingUsernames.has(key) || batchUsernames.has(key)) {
             skippedDuplicates++;
             continue;
           }
+
           batchUsernames.add(key);
         }
 
         const ref = await addDoc(collection(db, "employees"), {
-          name: employeeName,
-          loginUsername: loginUsername || null,
-          department: dept || null,
-          position: pos || null,
+          name: employeeName.trim(),
+          loginUsername: cleanUsername || null,
+          department: dept.trim() || null,
+          position: pos.trim() || null,
           status: normalizedStatus,
           active: normalizedStatus === "Active",
-          notes: notesVal || null,
+          notes: notesVal.trim() || null,
           createdAt: new Date().toISOString(),
         });
 
-        await syncUserLink(ref.id, loginUsername);
+        if (cleanUsername) {
+          await syncUserLink(ref.id, cleanUsername);
+        }
+
         createdCount++;
       }
 
       let msg = `Imported ${createdCount} employees successfully.`;
+
       if (skippedDuplicates > 0) {
         msg += ` Skipped ${skippedDuplicates} line(s) because username was already used.`;
+      }
+
+      if (skippedInvalid > 0) {
+        msg += ` Skipped ${skippedInvalid} invalid line(s).`;
       }
 
       setImportStatus(msg);
@@ -584,7 +643,7 @@ export default function EmployeesPage() {
             <TextInput
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Same as Login Page"
+              placeholder="Optional"
             />
           </div>
 
@@ -687,20 +746,27 @@ export default function EmployeesPage() {
               lineHeight: 1.6,
             }}
           >
-            Paste rows using comma, tab or semicolon separated values in this
-            format:
+            Paste rows using comma, tab or semicolon separated values.
             <br />
-            <code>
-              Name, Username(optional), Department, Position, Status, Notes
-            </code>
+            Accepted formats:
+            <br />
+            <code>Name, Department, Position, Status</code>
+            <br />
+            <code>Name, Department, Position, Status, Notes</code>
+            <br />
+            <code>Name, Username, Department, Position, Status</code>
+            <br />
+            <code>Name, Username, Department, Position, Status, Notes</code>
           </p>
         </div>
 
         <div style={{ display: "grid", gap: 14 }}>
           <TextArea
             rows={7}
-            placeholder={`Perez Maria, mperez, Ramp, Agent, Active, Full time
-Lopez Juan, jlopez, TC, Lead, Inactive, LOA`}
+            placeholder={`Sanchez Liuvis, DL Cabin Service, Agent, Active
+Pena Yanisleidys, DL Cabin Service, Agent, Active
+Ramos Madeleivi, DL Cabin Service, Agent, Active
+Castro Magalys, DL Cabin Service, Agent, Active`}
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
           />
@@ -798,10 +864,10 @@ Lopez Juan, jlopez, TC, Lead, Inactive, LOA`}
                 >
                   <thead>
                     <tr style={{ background: "#f8fbff" }}>
-                      <th style={thStyle({ textAlign: "left" })}>Position</th>
                       <th style={thStyle({ textAlign: "left" })}>Last Initial</th>
                       <th style={thStyle({ textAlign: "left" })}>Name</th>
                       <th style={thStyle({ textAlign: "left" })}>Username</th>
+                      <th style={thStyle({ textAlign: "left" })}>Position</th>
                       <th style={thStyle({ textAlign: "left" })}>Status</th>
                       <th style={thStyle({ textAlign: "left" })}>Notes</th>
                       <th style={thStyle({ textAlign: "center" })}>Actions</th>
@@ -816,10 +882,10 @@ Lopez Juan, jlopez, TC, Lead, Inactive, LOA`}
                           background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                         }}
                       >
-                        <td style={tdStyle}>{e.position || "—"}</td>
                         <td style={tdStyle}>{getLastNameInitial(e)}</td>
                         <td style={tdStyle}>{e.name}</td>
                         <td style={tdStyle}>{e.loginUsername || "—"}</td>
+                        <td style={tdStyle}>{e.position || "—"}</td>
                         <td style={tdStyle}>
                           <span
                             style={{
