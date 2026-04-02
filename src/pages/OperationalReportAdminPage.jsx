@@ -280,7 +280,9 @@ function buildPrintableHtml(report) {
   const alertDelay = report?.delayedFlight
     ? `
       <div class="alert alert-warning">
-        Delay Alert: ${escapeHtml(report.normalizedAirline || "Unknown")} reported a delay of
+        Delay Alert: ${escapeHtml(report.normalizedAirline || "Unknown")} Flight ${escapeHtml(
+          report.flightNumber || "—"
+        )} reported a delay of
         ${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} minutes.
         ${
           Number(report.delayedTimeMinutes || 0) > 4
@@ -414,7 +416,9 @@ function buildPrintableHtml(report) {
         <div class="header">
           <h1 class="title">Operational Report</h1>
           <div class="subtitle">
-            ${escapeHtml(report.normalizedAirline || "—")} · ${escapeHtml(report.reportDate || "—")}
+            ${escapeHtml(report.normalizedAirline || "—")} · Flight ${escapeHtml(
+    report.flightNumber || "—"
+  )} · ${escapeHtml(report.reportDate || "—")}
           </div>
         </div>
 
@@ -422,6 +426,10 @@ function buildPrintableHtml(report) {
           <div class="info-card">
             <div class="info-label">Airline</div>
             <div class="info-value">${escapeHtml(report.normalizedAirline || "—")}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Flight Number</div>
+            <div class="info-value">${escapeHtml(report.flightNumber || "—")}</div>
           </div>
           <div class="info-card">
             <div class="info-label">Report Date</div>
@@ -488,6 +496,7 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
         <tr>
           <td>${escapeHtml(report.reportDate || "—")}</td>
           <td>${escapeHtml(report.normalizedAirline || "—")}</td>
+          <td>${escapeHtml(report.flightNumber || "—")}</td>
           <td>${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} min</td>
           <td>${escapeHtml(report.supervisorReporting || "—")}</td>
           <td>${escapeHtml(dutyManager)}</td>
@@ -576,6 +585,7 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
             <tr>
               <th>Date</th>
               <th>Airline</th>
+              <th>Flight Number</th>
               <th>Delayed Time</th>
               <th>Supervisor on Duty</th>
               <th>Duty Manager in Charge</th>
@@ -796,6 +806,7 @@ export default function OperationalReportAdminPage() {
 
   const [editForm, setEditForm] = useState({
     airline: "",
+    flightNumber: "",
     reportDate: "",
     shift: "",
     flightsHandled: "",
@@ -978,7 +989,7 @@ export default function OperationalReportAdminPage() {
         rows.push({
           type: "attention",
           airline: r.normalizedAirline || "Unknown",
-          text: `${r.normalizedAirline || "Unknown"}: Report needs attention because operation was not completed without issues.`,
+          text: `${r.normalizedAirline || "Unknown"} Flight ${r.flightNumber || "—"}: Report needs attention because operation was not completed without issues.`,
         });
       }
     });
@@ -1013,6 +1024,7 @@ export default function OperationalReportAdminPage() {
     setEditingId(report.id);
     setEditForm({
       airline: report.airline || "",
+      flightNumber: report.flightNumber || "",
       reportDate: report.reportDate || "",
       shift: report.shift || "",
       flightsHandled: report.flightsHandled || "",
@@ -1054,6 +1066,7 @@ export default function OperationalReportAdminPage() {
 
       const payload = {
         airline: normalizeAirlineName(editForm.airline),
+        flightNumber: String(editForm.flightNumber || "").trim(),
         reportDate: editForm.reportDate,
         shift: editForm.shift,
         flightsHandled: editForm.flightsHandled,
@@ -1691,7 +1704,7 @@ export default function OperationalReportAdminPage() {
                     width: "100%",
                     borderCollapse: "separate",
                     borderSpacing: 0,
-                    minWidth: 900,
+                    minWidth: 1050,
                     background: "#fff",
                   }}
                 >
@@ -1699,6 +1712,7 @@ export default function OperationalReportAdminPage() {
                     <tr style={{ background: "#f8fbff" }}>
                       <th style={thStyle()}>Date</th>
                       <th style={thStyle()}>Airline</th>
+                      <th style={thStyle()}>Flight Number</th>
                       <th style={thStyle()}>Delayed Time</th>
                       <th style={thStyle()}>Supervisor on Duty</th>
                       <th style={thStyle()}>Duty Manager in Charge</th>
@@ -1723,6 +1737,7 @@ export default function OperationalReportAdminPage() {
                         >
                           <td style={tdStyle}>{report.reportDate || "—"}</td>
                           <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
+                          <td style={tdStyle}>{report.flightNumber || "—"}</td>
                           <td style={tdStyle}>
                             {Number(report.delayedTimeMinutes || 0)} min
                           </td>
@@ -1779,13 +1794,14 @@ export default function OperationalReportAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1300,
+                  minWidth: 1450,
                   background: "#fff",
                 }}
               >
                 <thead>
                   <tr style={{ background: "#f8fbff" }}>
                     <th style={thStyle()}>Airline</th>
+                    <th style={thStyle()}>Flight #</th>
                     <th style={thStyle()}>Date</th>
                     <th style={thStyle()}>Supervisor</th>
                     <th style={thStyle()}>Delayed</th>
@@ -1810,6 +1826,7 @@ export default function OperationalReportAdminPage() {
                       }}
                     >
                       <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
+                      <td style={tdStyle}>{report.flightNumber || "—"}</td>
                       <td style={tdStyle}>{report.reportDate || "—"}</td>
                       <td style={tdStyle}>{report.supervisorReporting || "—"}</td>
                       <td style={tdStyle}>{report.delayedFlight ? "Yes" : "No"}</td>
@@ -1899,6 +1916,19 @@ export default function OperationalReportAdminPage() {
                     <TextInput
                       value={editForm.airline}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, airline: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Flight Number</FieldLabel>
+                    <TextInput
+                      value={editForm.flightNumber}
+                      onChange={(e) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          flightNumber: e.target.value,
+                        }))
+                      }
                     />
                   </div>
 
@@ -2140,7 +2170,7 @@ export default function OperationalReportAdminPage() {
                       Report Detail
                     </h2>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
-                      {selectedReport.normalizedAirline || "—"} · {selectedReport.reportDate || "—"}
+                      {selectedReport.normalizedAirline || "—"} · Flight {selectedReport.flightNumber || "—"} · {selectedReport.reportDate || "—"}
                     </p>
                   </div>
 
@@ -2163,6 +2193,7 @@ export default function OperationalReportAdminPage() {
                   }}
                 >
                   <InfoCard label="Airline" value={selectedReport.normalizedAirline || "—"} />
+                  <InfoCard label="Flight Number" value={selectedReport.flightNumber || "—"} />
                   <InfoCard label="Report Date" value={selectedReport.reportDate || "—"} />
                   <InfoCard label="Shift" value={selectedReport.shift || "—"} />
                   <InfoCard label="Flights Handled" value={selectedReport.flightsHandled || "—"} />
@@ -2226,7 +2257,7 @@ export default function OperationalReportAdminPage() {
                       fontSize: 14,
                     }}
                   >
-                    Delay Alert: {selectedReport.normalizedAirline || "Unknown"} reported a delay of{" "}
+                    Delay Alert: {selectedReport.normalizedAirline || "Unknown"} Flight {selectedReport.flightNumber || "—"} reported a delay of{" "}
                     {Number(selectedReport.delayedTimeMinutes || 0)} minutes.
                     {Number(selectedReport.delayedTimeMinutes || 0) > 4
                       ? " Duty Mgrs Follow up needed."
