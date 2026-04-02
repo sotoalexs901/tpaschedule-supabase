@@ -27,6 +27,23 @@ function normalizeAirlineName(value) {
   return airline;
 }
 
+function normalizeCabinServiceValue(value) {
+  const raw = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  if (
+    raw === "cabin service" ||
+    raw === "dl cabin service" ||
+    raw.includes("cabin service")
+  ) {
+    return "cabin_service";
+  }
+
+  return raw;
+}
+
 function tsToDate(value) {
   if (!value) return null;
   if (typeof value?.toDate === "function") return value.toDate();
@@ -280,9 +297,7 @@ function buildPrintableHtml(report) {
   const alertDelay = report?.delayedFlight
     ? `
       <div class="alert alert-warning">
-        Delay Alert: ${escapeHtml(report.normalizedAirline || "Unknown")} Flight ${escapeHtml(
-          report.flightNumber || "—"
-        )} reported a delay of
+        Delay Alert: ${escapeHtml(report.normalizedAirline || "Unknown")} reported a delay of
         ${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} minutes.
         ${
           Number(report.delayedTimeMinutes || 0) > 4
@@ -416,9 +431,7 @@ function buildPrintableHtml(report) {
         <div class="header">
           <h1 class="title">Operational Report</h1>
           <div class="subtitle">
-            ${escapeHtml(report.normalizedAirline || "—")} · Flight ${escapeHtml(
-    report.flightNumber || "—"
-  )} · ${escapeHtml(report.reportDate || "—")}
+            ${escapeHtml(report.normalizedAirline || "—")} · ${escapeHtml(report.reportDate || "—")}
           </div>
         </div>
 
@@ -426,10 +439,6 @@ function buildPrintableHtml(report) {
           <div class="info-card">
             <div class="info-label">Airline</div>
             <div class="info-value">${escapeHtml(report.normalizedAirline || "—")}</div>
-          </div>
-          <div class="info-card">
-            <div class="info-label">Flight Number</div>
-            <div class="info-value">${escapeHtml(report.flightNumber || "—")}</div>
           </div>
           <div class="info-card">
             <div class="info-label">Report Date</div>
@@ -440,8 +449,16 @@ function buildPrintableHtml(report) {
             <div class="info-value">${escapeHtml(report.shift || "—")}</div>
           </div>
           <div class="info-card">
+            <div class="info-label">Flight Number</div>
+            <div class="info-value">${escapeHtml(report.flightNumber || "—")}</div>
+          </div>
+          <div class="info-card">
             <div class="info-label">Flights Handled</div>
             <div class="info-value">${escapeHtml(report.flightsHandled || "—")}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Affected Flight Number</div>
+            <div class="info-value">${escapeHtml(report.affectedFlightNumber || "—")}</div>
           </div>
           <div class="info-card">
             <div class="info-label">Supervisor</div>
@@ -497,6 +514,7 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
           <td>${escapeHtml(report.reportDate || "—")}</td>
           <td>${escapeHtml(report.normalizedAirline || "—")}</td>
           <td>${escapeHtml(report.flightNumber || "—")}</td>
+          <td>${escapeHtml(report.affectedFlightNumber || "—")}</td>
           <td>${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} min</td>
           <td>${escapeHtml(report.supervisorReporting || "—")}</td>
           <td>${escapeHtml(dutyManager)}</td>
@@ -586,6 +604,7 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
               <th>Date</th>
               <th>Airline</th>
               <th>Flight Number</th>
+              <th>Affected Flight</th>
               <th>Delayed Time</th>
               <th>Supervisor on Duty</th>
               <th>Duty Manager in Charge</th>
@@ -779,8 +798,87 @@ const tdStyle = {
   fontSize: 14,
 };
 
+function InfoCard({ label, value }) {
+  return (
+    <div
+      style={{
+        background: "#f8fbff",
+        border: "1px solid #dbeafe",
+        borderRadius: 16,
+        padding: "14px 16px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 16,
+          fontWeight: 800,
+          color: "#0f172a",
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function DetailBox({ label, value }) {
+  return (
+    <div
+      style={{
+        borderRadius: 16,
+        padding: "14px 16px",
+        background: "#f8fbff",
+        border: "1px solid #dbeafe",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 14,
+          color: "#0f172a",
+          whiteSpace: "pre-line",
+          lineHeight: 1.7,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
 export default function OperationalReportAdminPage() {
   const { user } = useUser();
+
+  const normalizedUsername = String(user?.username || "")
+    .trim()
+    .toLowerCase();
+
+  const isCabinDutyManager =
+    user?.role === "duty_manager" && normalizedUsername === "hhernandez";
 
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -806,10 +904,11 @@ export default function OperationalReportAdminPage() {
 
   const [editForm, setEditForm] = useState({
     airline: "",
-    flightNumber: "",
     reportDate: "",
     shift: "",
+    flightNumber: "",
     flightsHandled: "",
+    affectedFlightNumber: "",
     supervisorReporting: "",
     notes: "",
     delayedFlight: false,
@@ -834,12 +933,15 @@ export default function OperationalReportAdminPage() {
         );
 
         const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => {
+        let rows = snap.docs.map((d) => {
           const data = d.data();
           return {
             id: d.id,
             ...data,
             normalizedAirline: normalizeAirlineName(data.airline),
+            normalizedDepartment: normalizeCabinServiceValue(
+              data.department || data.airline
+            ),
             reviewStatus: data.reviewStatus || "submitted",
             managerNotes: data.managerNotes || "",
             followUpRequired: Boolean(data.followUpRequired),
@@ -848,6 +950,10 @@ export default function OperationalReportAdminPage() {
             archived: Boolean(data.archived),
           };
         });
+
+        if (isCabinDutyManager) {
+          rows = rows.filter((row) => row.normalizedDepartment === "cabin_service");
+        }
 
         setReports(rows);
       } catch (err) {
@@ -863,7 +969,7 @@ export default function OperationalReportAdminPage() {
     } else {
       setLoading(false);
     }
-  }, [canAccess]);
+  }, [canAccess, isCabinDutyManager]);
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
@@ -989,7 +1095,7 @@ export default function OperationalReportAdminPage() {
         rows.push({
           type: "attention",
           airline: r.normalizedAirline || "Unknown",
-          text: `${r.normalizedAirline || "Unknown"} Flight ${r.flightNumber || "—"}: Report needs attention because operation was not completed without issues.`,
+          text: `${r.normalizedAirline || "Unknown"}: Report needs attention because operation was not completed without issues.`,
         });
       }
     });
@@ -1024,10 +1130,11 @@ export default function OperationalReportAdminPage() {
     setEditingId(report.id);
     setEditForm({
       airline: report.airline || "",
-      flightNumber: report.flightNumber || "",
       reportDate: report.reportDate || "",
       shift: report.shift || "",
+      flightNumber: report.flightNumber || "",
       flightsHandled: report.flightsHandled || "",
+      affectedFlightNumber: report.affectedFlightNumber || "",
       supervisorReporting: report.supervisorReporting || "",
       notes: report.notes || "",
       delayedFlight: Boolean(report.delayedFlight),
@@ -1066,10 +1173,11 @@ export default function OperationalReportAdminPage() {
 
       const payload = {
         airline: normalizeAirlineName(editForm.airline),
-        flightNumber: String(editForm.flightNumber || "").trim(),
         reportDate: editForm.reportDate,
         shift: editForm.shift,
+        flightNumber: editForm.flightNumber,
         flightsHandled: editForm.flightsHandled,
+        affectedFlightNumber: editForm.affectedFlightNumber,
         supervisorReporting: editForm.supervisorReporting,
         notes: editForm.notes,
         delayedFlight: Boolean(editForm.delayedFlight),
@@ -1704,7 +1812,7 @@ export default function OperationalReportAdminPage() {
                     width: "100%",
                     borderCollapse: "separate",
                     borderSpacing: 0,
-                    minWidth: 1050,
+                    minWidth: 1100,
                     background: "#fff",
                   }}
                 >
@@ -1713,6 +1821,7 @@ export default function OperationalReportAdminPage() {
                       <th style={thStyle()}>Date</th>
                       <th style={thStyle()}>Airline</th>
                       <th style={thStyle()}>Flight Number</th>
+                      <th style={thStyle()}>Affected Flight</th>
                       <th style={thStyle()}>Delayed Time</th>
                       <th style={thStyle()}>Supervisor on Duty</th>
                       <th style={thStyle()}>Duty Manager in Charge</th>
@@ -1738,6 +1847,7 @@ export default function OperationalReportAdminPage() {
                           <td style={tdStyle}>{report.reportDate || "—"}</td>
                           <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
                           <td style={tdStyle}>{report.flightNumber || "—"}</td>
+                          <td style={tdStyle}>{report.affectedFlightNumber || "—"}</td>
                           <td style={tdStyle}>
                             {Number(report.delayedTimeMinutes || 0)} min
                           </td>
@@ -1794,15 +1904,16 @@ export default function OperationalReportAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1450,
+                  minWidth: 1500,
                   background: "#fff",
                 }}
               >
                 <thead>
                   <tr style={{ background: "#f8fbff" }}>
                     <th style={thStyle()}>Airline</th>
-                    <th style={thStyle()}>Flight #</th>
                     <th style={thStyle()}>Date</th>
+                    <th style={thStyle()}>Flight Number</th>
+                    <th style={thStyle()}>Affected Flight</th>
                     <th style={thStyle()}>Supervisor</th>
                     <th style={thStyle()}>Delayed</th>
                     <th style={thStyle()}>Minutes</th>
@@ -1826,8 +1937,9 @@ export default function OperationalReportAdminPage() {
                       }}
                     >
                       <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
-                      <td style={tdStyle}>{report.flightNumber || "—"}</td>
                       <td style={tdStyle}>{report.reportDate || "—"}</td>
+                      <td style={tdStyle}>{report.flightNumber || "—"}</td>
+                      <td style={tdStyle}>{report.affectedFlightNumber || "—"}</td>
                       <td style={tdStyle}>{report.supervisorReporting || "—"}</td>
                       <td style={tdStyle}>{report.delayedFlight ? "Yes" : "No"}</td>
                       <td style={tdStyle}>{Number(report.delayedTimeMinutes || 0)}</td>
@@ -1920,19 +2032,6 @@ export default function OperationalReportAdminPage() {
                   </div>
 
                   <div>
-                    <FieldLabel>Flight Number</FieldLabel>
-                    <TextInput
-                      value={editForm.flightNumber}
-                      onChange={(e) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          flightNumber: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
                     <FieldLabel>Report Date</FieldLabel>
                     <TextInput
                       type="date"
@@ -1950,10 +2049,26 @@ export default function OperationalReportAdminPage() {
                   </div>
 
                   <div>
+                    <FieldLabel>Flight Number</FieldLabel>
+                    <TextInput
+                      value={editForm.flightNumber}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, flightNumber: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
                     <FieldLabel>Flights Handled</FieldLabel>
                     <TextInput
                       value={editForm.flightsHandled}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, flightsHandled: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Affected Flight Number</FieldLabel>
+                    <TextInput
+                      value={editForm.affectedFlightNumber}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, affectedFlightNumber: e.target.value }))}
                     />
                   </div>
 
@@ -2170,7 +2285,7 @@ export default function OperationalReportAdminPage() {
                       Report Detail
                     </h2>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
-                      {selectedReport.normalizedAirline || "—"} · Flight {selectedReport.flightNumber || "—"} · {selectedReport.reportDate || "—"}
+                      {selectedReport.normalizedAirline || "—"} · {selectedReport.reportDate || "—"}
                     </p>
                   </div>
 
@@ -2193,10 +2308,11 @@ export default function OperationalReportAdminPage() {
                   }}
                 >
                   <InfoCard label="Airline" value={selectedReport.normalizedAirline || "—"} />
-                  <InfoCard label="Flight Number" value={selectedReport.flightNumber || "—"} />
                   <InfoCard label="Report Date" value={selectedReport.reportDate || "—"} />
                   <InfoCard label="Shift" value={selectedReport.shift || "—"} />
+                  <InfoCard label="Flight Number" value={selectedReport.flightNumber || "—"} />
                   <InfoCard label="Flights Handled" value={selectedReport.flightsHandled || "—"} />
+                  <InfoCard label="Affected Flight Number" value={selectedReport.affectedFlightNumber || "—"} />
                   <InfoCard label="Supervisor" value={selectedReport.supervisorReporting || "—"} />
                   <InfoCard label="Delayed Flight" value={selectedReport.delayedFlight ? "Yes" : "No"} />
                   <InfoCard label="Delayed Time" value={`${Number(selectedReport.delayedTimeMinutes || 0)} min`} />
@@ -2257,7 +2373,7 @@ export default function OperationalReportAdminPage() {
                       fontSize: 14,
                     }}
                   >
-                    Delay Alert: {selectedReport.normalizedAirline || "Unknown"} Flight {selectedReport.flightNumber || "—"} reported a delay of{" "}
+                    Delay Alert: {selectedReport.normalizedAirline || "Unknown"} reported a delay of{" "}
                     {Number(selectedReport.delayedTimeMinutes || 0)} minutes.
                     {Number(selectedReport.delayedTimeMinutes || 0) > 4
                       ? " Duty Mgrs Follow up needed."
@@ -2476,78 +2592,6 @@ export default function OperationalReportAdminPage() {
             )}
           </PageCard>
         )}
-      </div>
-    </div>
-  );
-}
-
-function InfoCard({ label, value }) {
-  return (
-    <div
-      style={{
-        background: "#f8fbff",
-        border: "1px solid #dbeafe",
-        borderRadius: 16,
-        padding: "14px 16px",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 16,
-          fontWeight: 800,
-          color: "#0f172a",
-          wordBreak: "break-word",
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function DetailBox({ label, value }) {
-  return (
-    <div
-      style={{
-        borderRadius: 16,
-        padding: "14px 16px",
-        background: "#f8fbff",
-        border: "1px solid #dbeafe",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          marginBottom: 6,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 14,
-          color: "#0f172a",
-          whiteSpace: "pre-line",
-          lineHeight: 1.7,
-        }}
-      >
-        {value}
       </div>
     </div>
   );
