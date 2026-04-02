@@ -50,29 +50,35 @@ import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
 
-function ProtectedRoute({ children, roles, blockedDepartments = [] }) {
+function ProtectedRoute({
+  children,
+  roles,
+  blockedDepartments = [],
+  allowedDutyManagerUsernames = [],
+}) {
   const { user } = useUser();
 
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
   const userDepartment = String(user?.department || "").trim().toLowerCase();
+  const normalizedBlockedDepartments = blockedDepartments.map((d) =>
+    String(d || "").trim().toLowerCase()
+  );
 
-  const isBlockedDepartment = blockedDepartments.some((dept) => {
-    const normalized = String(dept || "").trim().toLowerCase();
-
-    return (
-      userDepartment === normalized ||
-      userDepartment.includes(normalized) ||
-      normalized.includes(userDepartment) ||
-      (normalized.includes("dl cabin") && userDepartment.includes("cabin")) ||
-      (normalized.includes("cabin service") &&
-        userDepartment.includes("cabin service"))
-    );
-  });
-
-  if (isBlockedDepartment) {
+  if (normalizedBlockedDepartments.includes(userDepartment)) {
     return <Navigate to="/" replace />;
+  }
+
+  if (user?.role === "duty_manager" && allowedDutyManagerUsernames.length > 0) {
+    const currentUsername = String(user?.username || "").trim().toLowerCase();
+    const normalizedAllowedUsernames = allowedDutyManagerUsernames.map((u) =>
+      String(u || "").trim().toLowerCase()
+    );
+
+    if (!normalizedAllowedUsernames.includes(currentUsername)) {
+      return <Navigate to="/" replace />;
+    }
   }
 
   return children;
@@ -143,6 +149,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["supervisor", "duty_manager", "station_manager"]}
+                allowedDutyManagerUsernames={["hhernadez"]}
               >
                 <SupervisorTimesheetPage />
               </ProtectedRoute>
@@ -165,6 +172,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["supervisor", "duty_manager", "station_manager"]}
+                allowedDutyManagerUsernames={["hhernadez"]}
               >
                 <SupervisorOperationalReportPage />
               </ProtectedRoute>
