@@ -50,35 +50,45 @@ import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
 
-function normalizeCabinServiceValue(value) {
-  const raw = String(value || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-
-  if (
-    raw === "cabin service" ||
-    raw === "dl cabin service" ||
-    raw.includes("cabin service")
-  ) {
-    return "cabin_service";
-  }
-
-  return raw;
-}
-
-function ProtectedRoute({ children, roles, blockedDepartments = [] }) {
+function ProtectedRoute({
+  children,
+  roles,
+  blockedDepartments = [],
+  allowedUsernames = [],
+  blockedUsernames = [],
+}) {
   const { user } = useUser();
 
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
-  const userDepartment = normalizeCabinServiceValue(user?.department);
+  const userDepartment = String(user?.department || "").trim().toLowerCase();
+  const username = String(user?.username || "").trim().toLowerCase();
+
   const normalizedBlockedDepartments = blockedDepartments.map((d) =>
-    normalizeCabinServiceValue(d)
+    String(d || "").trim().toLowerCase()
+  );
+
+  const normalizedAllowedUsernames = allowedUsernames.map((u) =>
+    String(u || "").trim().toLowerCase()
+  );
+
+  const normalizedBlockedUsernames = blockedUsernames.map((u) =>
+    String(u || "").trim().toLowerCase()
   );
 
   if (normalizedBlockedDepartments.includes(userDepartment)) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (
+    normalizedAllowedUsernames.length > 0 &&
+    !normalizedAllowedUsernames.includes(username)
+  ) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (normalizedBlockedUsernames.includes(username)) {
     return <Navigate to="/" replace />;
   }
 
@@ -201,7 +211,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["agent", "supervisor", "duty_manager", "station_manager"]}
-                blockedDepartments={["Cabin Service", "DL Cabin Service"]}
+                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
                 <WCHRScan />
               </ProtectedRoute>
@@ -213,7 +223,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["agent", "supervisor", "duty_manager", "station_manager"]}
-                blockedDepartments={["Cabin Service", "DL Cabin Service"]}
+                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
                 <MyWCHRReports />
               </ProtectedRoute>
@@ -225,7 +235,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["station_manager", "duty_manager"]}
-                blockedDepartments={["Cabin Service", "DL Cabin Service"]}
+                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
                 <WCHRFlights />
               </ProtectedRoute>
@@ -259,7 +269,17 @@ function AppRouter() {
             }
           />
 
-          <Route path="schedule" element={<SchedulePage />} />
+          <Route
+            path="schedule"
+            element={
+              <ProtectedRoute
+                roles={["station_manager", "duty_manager"]}
+                blockedUsernames={["hhernandez", "hhernadez"]}
+              >
+                <SchedulePage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="cabin-service"
@@ -309,7 +329,10 @@ function AppRouter() {
           <Route
             path="approvals"
             element={
-              <ProtectedRoute roles={["station_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager"]}
+                blockedUsernames={["hhernandez", "hhernadez"]}
+              >
                 <ApprovalsPage />
               </ProtectedRoute>
             }
@@ -318,7 +341,10 @@ function AppRouter() {
           <Route
             path="approved"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager", "duty_manager"]}
+                blockedUsernames={["hhernandez", "hhernadez"]}
+              >
                 <ApprovedSchedulesPage />
               </ProtectedRoute>
             }
@@ -327,7 +353,10 @@ function AppRouter() {
           <Route
             path="approved/:id"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager", "duty_manager"]}
+                blockedUsernames={["hhernandez", "hhernadez"]}
+              >
                 <ApprovedScheduleView />
               </ProtectedRoute>
             }
@@ -336,7 +365,10 @@ function AppRouter() {
           <Route
             path="returned"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager", "duty_manager"]}
+                blockedUsernames={["hhernandez", "hhernadez"]}
+              >
                 <ReturnedSchedulesPage />
               </ProtectedRoute>
             }
@@ -354,7 +386,10 @@ function AppRouter() {
           <Route
             path="weekly-summary"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager", "duty_manager"]}
+                blockedUsernames={["hhernandez", "hhernadez"]}
+              >
                 <WeeklyEmployeesSummaryPage />
               </ProtectedRoute>
             }
@@ -390,7 +425,10 @@ function AppRouter() {
           <Route
             path="drafts"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager", "duty_manager"]}
+                blockedUsernames={["hhernandez", "hhernadez"]}
+              >
                 <DraftSchedulesPage />
               </ProtectedRoute>
             }
