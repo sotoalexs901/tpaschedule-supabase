@@ -50,35 +50,36 @@ import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
 
-function ProtectedRoute({
-  children,
-  roles,
-  blockedDepartments = [],
-  allowedDutyManagerUsernames = [],
-}) {
+function normalizeCabinServiceValue(value) {
+  const raw = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  if (
+    raw === "cabin service" ||
+    raw === "dl cabin service" ||
+    raw.includes("cabin service")
+  ) {
+    return "cabin_service";
+  }
+
+  return raw;
+}
+
+function ProtectedRoute({ children, roles, blockedDepartments = [] }) {
   const { user } = useUser();
 
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
-  const userDepartment = String(user?.department || "").trim().toLowerCase();
+  const userDepartment = normalizeCabinServiceValue(user?.department);
   const normalizedBlockedDepartments = blockedDepartments.map((d) =>
-    String(d || "").trim().toLowerCase()
+    normalizeCabinServiceValue(d)
   );
 
   if (normalizedBlockedDepartments.includes(userDepartment)) {
     return <Navigate to="/" replace />;
-  }
-
-  if (user?.role === "duty_manager" && allowedDutyManagerUsernames.length > 0) {
-    const currentUsername = String(user?.username || "").trim().toLowerCase();
-    const normalizedAllowedUsernames = allowedDutyManagerUsernames.map((u) =>
-      String(u || "").trim().toLowerCase()
-    );
-
-    if (!normalizedAllowedUsernames.includes(currentUsername)) {
-      return <Navigate to="/" replace />;
-    }
   }
 
   return children;
@@ -149,7 +150,6 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["supervisor", "duty_manager", "station_manager"]}
-                allowedDutyManagerUsernames={["hhernadez"]}
               >
                 <SupervisorTimesheetPage />
               </ProtectedRoute>
@@ -172,7 +172,6 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["supervisor", "duty_manager", "station_manager"]}
-                allowedDutyManagerUsernames={["hhernadez"]}
               >
                 <SupervisorOperationalReportPage />
               </ProtectedRoute>
@@ -202,7 +201,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["agent", "supervisor", "duty_manager", "station_manager"]}
-                blockedDepartments={["DL Cabin Service"]}
+                blockedDepartments={["Cabin Service", "DL Cabin Service"]}
               >
                 <WCHRScan />
               </ProtectedRoute>
@@ -214,7 +213,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["agent", "supervisor", "duty_manager", "station_manager"]}
-                blockedDepartments={["DL Cabin Service"]}
+                blockedDepartments={["Cabin Service", "DL Cabin Service"]}
               >
                 <MyWCHRReports />
               </ProtectedRoute>
@@ -224,7 +223,10 @@ function AppRouter() {
           <Route
             path="wchr/admin/flights"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager", "duty_manager"]}
+                blockedDepartments={["Cabin Service", "DL Cabin Service"]}
+              >
                 <WCHRFlights />
               </ProtectedRoute>
             }
