@@ -43,19 +43,24 @@ function getEmployeeDisplayName(emp) {
   ).trim();
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function getLastNameInitial(emp) {
   const fullName = getEmployeeDisplayName(emp);
   if (!fullName) return "#";
 
   const parts = fullName.split(/\s+/).filter(Boolean);
-  const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+  const lastName = parts[0] || "";
   const initial = lastName.charAt(0).toUpperCase();
 
   return /[A-Z]/.test(initial) ? initial : "#";
 }
 
-function normalizeText(value) {
-  return String(value || "").trim().toLowerCase();
+function getDepartmentLabel(value) {
+  const clean = String(value || "").trim();
+  return clean || "No Department";
 }
 
 function PageCard({ children, style = {} }) {
@@ -228,8 +233,22 @@ export default function EmployeesPage() {
     loadEmployees().catch(console.error);
   }, []);
 
-  const sortedEmployees = useMemo(() => {
-    return [...employees].sort((a, b) => {
+  const groupedEmployees = useMemo(() => {
+    const sorted = [...employees].sort((a, b) => {
+      const aDepartment = normalizeText(a.department);
+      const bDepartment = normalizeText(b.department);
+
+      if (aDepartment !== bDepartment) {
+        return aDepartment.localeCompare(bDepartment);
+      }
+
+      const aPosition = normalizeText(a.position);
+      const bPosition = normalizeText(b.position);
+
+      if (aPosition !== bPosition) {
+        return aPosition.localeCompare(bPosition);
+      }
+
       const aInitial = getLastNameInitial(a);
       const bInitial = getLastNameInitial(b);
 
@@ -239,20 +258,20 @@ export default function EmployeesPage() {
         return aInitial.localeCompare(bInitial);
       }
 
-      const aDepartment = normalizeText(a.department);
-      const bDepartment = normalizeText(b.department);
-      if (aDepartment !== bDepartment) {
-        return aDepartment.localeCompare(bDepartment);
-      }
-
-      const aPosition = normalizeText(a.position);
-      const bPosition = normalizeText(b.position);
-      if (aPosition !== bPosition) {
-        return aPosition.localeCompare(bPosition);
-      }
-
       return getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b));
     });
+
+    const groups = {};
+
+    sorted.forEach((emp) => {
+      const dept = getDepartmentLabel(emp.department);
+      if (!groups[dept]) groups[dept] = [];
+      groups[dept].push(emp);
+    });
+
+    return Object.entries(groups).sort((a, b) =>
+      a[0].localeCompare(b[0], undefined, { sensitivity: "base" })
+    );
   }, [employees]);
 
   const handleAddOrUpdateEmployee = async (e) => {
@@ -680,8 +699,8 @@ export default function EmployeesPage() {
         <div style={{ display: "grid", gap: 14 }}>
           <TextArea
             rows={7}
-            placeholder={`Maria Perez, mperez, Ramp, Agent, Active, Full time
-Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
+            placeholder={`Perez Maria, mperez, Ramp, Agent, Active, Full time
+Lopez Juan, jlopez, TC, Lead, Inactive, LOA`}
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
           />
@@ -710,149 +729,161 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 18 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Current Employees
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Organized by last name initial, department and position.
-          </p>
-        </div>
-
-        <div
-          style={{
-            overflowX: "auto",
-            borderRadius: 18,
-            border: "1px solid #e2e8f0",
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "separate",
-              borderSpacing: 0,
-              minWidth: 980,
-              background: "#fff",
-            }}
-          >
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                <th style={thStyle({ textAlign: "left" })}>Last Initial</th>
-                <th style={thStyle({ textAlign: "left" })}>Name</th>
-                <th style={thStyle({ textAlign: "left" })}>Username</th>
-                <th style={thStyle({ textAlign: "left" })}>Department</th>
-                <th style={thStyle({ textAlign: "left" })}>Position</th>
-                <th style={thStyle({ textAlign: "left" })}>Status</th>
-                <th style={thStyle({ textAlign: "left" })}>Notes</th>
-                <th style={thStyle({ textAlign: "center" })}>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {sortedEmployees.map((e, index) => (
-                <tr
-                  key={e.id}
-                  style={{
-                    background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                  }}
-                >
-                  <td style={tdStyle}>{getLastNameInitial(e)}</td>
-                  <td style={tdStyle}>{e.name}</td>
-                  <td style={tdStyle}>{e.loginUsername || "—"}</td>
-                  <td style={tdStyle}>{e.department || "—"}</td>
-                  <td style={tdStyle}>{e.position || "—"}</td>
-                  <td style={tdStyle}>
-                    <span
-                      style={{
-                        display: "inline-block",
-                        padding: "6px 10px",
-                        borderRadius: 999,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        background:
-                          (e.status || (e.active ? "Active" : "Inactive")) ===
-                          "Active"
-                            ? "#ecfdf5"
-                            : "#fff1f2",
-                        color:
-                          (e.status || (e.active ? "Active" : "Inactive")) ===
-                          "Active"
-                            ? "#065f46"
-                            : "#9f1239",
-                        border: `1px solid ${
-                          (e.status || (e.active ? "Active" : "Inactive")) ===
-                          "Active"
-                            ? "#a7f3d0"
-                            : "#fecdd3"
-                        }`,
-                      }}
-                    >
-                      {e.status || (e.active ? "Active" : "Inactive")}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>{e.notes || "—"}</td>
-                  <td style={{ ...tdStyle, textAlign: "center" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        justifyContent: "center",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <ActionButton
-                        type="button"
-                        variant="secondary"
-                        onClick={() => handleStartEdit(e)}
-                      >
-                        Edit
-                      </ActionButton>
-                      <ActionButton
-                        type="button"
-                        variant="danger"
-                        onClick={() => handleDelete(e.id)}
-                      >
-                        Delete
-                      </ActionButton>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {sortedEmployees.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={8}
+      <div style={{ display: "grid", gap: 18 }}>
+        {groupedEmployees.length === 0 ? (
+          <PageCard style={{ padding: 18 }}>
+            <div
+              style={{
+                padding: "18px",
+                textAlign: "center",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              No employees yet.
+            </div>
+          </PageCard>
+        ) : (
+          groupedEmployees.map(([dept, deptEmployees]) => (
+            <PageCard key={dept} style={{ padding: 18 }}>
+              <div
+                style={{
+                  marginBottom: 14,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <h2
                     style={{
-                      padding: "18px",
-                      textAlign: "center",
+                      margin: 0,
+                      fontSize: 20,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                      letterSpacing: "-0.02em",
+                    }}
+                  >
+                    Department: {dept}
+                  </h2>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
                       fontSize: 13,
                       color: "#64748b",
                     }}
                   >
-                    No employees yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </PageCard>
+                    Total employees: {deptEmployees.length}
+                  </p>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  overflowX: "auto",
+                  borderRadius: 18,
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "separate",
+                    borderSpacing: 0,
+                    minWidth: 980,
+                    background: "#fff",
+                  }}
+                >
+                  <thead>
+                    <tr style={{ background: "#f8fbff" }}>
+                      <th style={thStyle({ textAlign: "left" })}>Position</th>
+                      <th style={thStyle({ textAlign: "left" })}>Last Initial</th>
+                      <th style={thStyle({ textAlign: "left" })}>Name</th>
+                      <th style={thStyle({ textAlign: "left" })}>Username</th>
+                      <th style={thStyle({ textAlign: "left" })}>Status</th>
+                      <th style={thStyle({ textAlign: "left" })}>Notes</th>
+                      <th style={thStyle({ textAlign: "center" })}>Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {deptEmployees.map((e, index) => (
+                      <tr
+                        key={e.id}
+                        style={{
+                          background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                        }}
+                      >
+                        <td style={tdStyle}>{e.position || "—"}</td>
+                        <td style={tdStyle}>{getLastNameInitial(e)}</td>
+                        <td style={tdStyle}>{e.name}</td>
+                        <td style={tdStyle}>{e.loginUsername || "—"}</td>
+                        <td style={tdStyle}>
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              background:
+                                (e.status || (e.active ? "Active" : "Inactive")) ===
+                                "Active"
+                                  ? "#ecfdf5"
+                                  : "#fff1f2",
+                              color:
+                                (e.status || (e.active ? "Active" : "Inactive")) ===
+                                "Active"
+                                  ? "#065f46"
+                                  : "#9f1239",
+                              border: `1px solid ${
+                                (e.status || (e.active ? "Active" : "Inactive")) ===
+                                "Active"
+                                  ? "#a7f3d0"
+                                  : "#fecdd3"
+                              }`,
+                            }}
+                          >
+                            {e.status || (e.active ? "Active" : "Inactive")}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>{e.notes || "—"}</td>
+                        <td style={{ ...tdStyle, textAlign: "center" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              justifyContent: "center",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <ActionButton
+                              type="button"
+                              variant="secondary"
+                              onClick={() => handleStartEdit(e)}
+                            >
+                              Edit
+                            </ActionButton>
+                            <ActionButton
+                              type="button"
+                              variant="danger"
+                              onClick={() => handleDelete(e.id)}
+                            >
+                              Delete
+                            </ActionButton>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </PageCard>
+          ))
+        )}
+      </div>
     </div>
   );
 }
