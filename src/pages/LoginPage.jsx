@@ -5,6 +5,31 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import "./LoginPage.css";
 
+function normalizeCabinServiceValue(value) {
+  const raw = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  if (
+    raw === "cabin service" ||
+    raw === "dl cabin service" ||
+    raw.includes("cabin service")
+  ) {
+    return "Cabin Service";
+  }
+
+  return String(value || "").trim();
+}
+
+function normalizeSupervisorPosition(value) {
+  const raw = String(value || "").trim().toLowerCase();
+
+  if (raw === "supervisor") return "DL Supervisor";
+  if (raw === "dl supervisor") return "DL Supervisor";
+  return String(value || "").trim();
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const { setUser } = useUser();
@@ -29,19 +54,19 @@ export default function LoginPage() {
     try {
       setLoading(true);
 
-      const q = query(
+      const userQuery = query(
         collection(db, "users"),
         where("username", "==", cleanUsername)
       );
 
-      const snap = await getDocs(q);
+      const userSnap = await getDocs(userQuery);
 
-      if (snap.empty) {
+      if (userSnap.empty) {
         setError("Invalid username or PIN.");
         return;
       }
 
-      const userDoc = snap.docs[0];
+      const userDoc = userSnap.docs[0];
       const userData = { id: userDoc.id, ...userDoc.data() };
 
       if (String(userData.pin || "") !== cleanPin) {
@@ -49,7 +74,57 @@ export default function LoginPage() {
         return;
       }
 
-      setUser(userData);
+      let employeeData = null;
+
+      if (userData.employeeId) {
+        const employeeByIdQuery = query(
+          collection(db, "employees"),
+          where("__name__", "==", userData.employeeId)
+        );
+        const employeeByIdSnap = await getDocs(employeeByIdQuery);
+
+        if (!employeeByIdSnap.empty) {
+          employeeData = {
+            id: employeeByIdSnap.docs[0].id,
+            ...employeeByIdSnap.docs[0].data(),
+          };
+        }
+      }
+
+      if (!employeeData) {
+        const employeeByUsernameQuery = query(
+          collection(db, "employees"),
+          where("loginUsername", "==", cleanUsername)
+        );
+        const employeeByUsernameSnap = await getDocs(employeeByUsernameQuery);
+
+        if (!employeeByUsernameSnap.empty) {
+          employeeData = {
+            id: employeeByUsernameSnap.docs[0].id,
+            ...employeeByUsernameSnap.docs[0].data(),
+          };
+        }
+      }
+
+      const mergedUser = {
+        ...userData,
+        employeeId: userData.employeeId || employeeData?.id || "",
+        department: normalizeCabinServiceValue(
+          employeeData?.department || userData?.department || ""
+        ),
+        position: normalizeSupervisorPosition(
+          employeeData?.position || userData?.position || ""
+        ),
+        employeeName:
+          employeeData?.name ||
+          userData?.displayName ||
+          userData?.fullName ||
+          userData?.name ||
+          userData?.username ||
+          "",
+      };
+
+      setUser(mergedUser);
       navigate("/dashboard");
     } catch (err) {
       console.error("Login error:", err);
