@@ -51,6 +51,23 @@ function getStoredBoolean(key, fallback) {
   }
 }
 
+function normalizeCabinServiceValue(value) {
+  const raw = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  if (
+    raw === "cabin service" ||
+    raw === "dl cabin service" ||
+    raw.includes("cabin service")
+  ) {
+    return "cabin_service";
+  }
+
+  return raw;
+}
+
 export default function AppLayout() {
   const { user, setUser } = useUser();
   const navigate = useNavigate();
@@ -77,6 +94,15 @@ export default function AppLayout() {
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
   const profilePhotoURL = user?.profilePhotoURL || "";
+
+  const normalizedDepartment = normalizeCabinServiceValue(user?.department);
+  const normalizedUsername = String(user?.username || "")
+    .trim()
+    .toLowerCase();
+
+  const isCabinServiceUser = normalizedDepartment === "cabin_service";
+  const isCabinDutyManager =
+    user?.role === "duty_manager" && normalizedUsername === "hhernandez";
 
   const logout = async () => {
     try {
@@ -184,20 +210,6 @@ export default function AppLayout() {
     };
   }, [user, location.pathname]);
 
-  const normalizedDepartment = String(user?.department || "")
-    .trim()
-    .toLowerCase();
-
-  const normalizedUsername = String(user?.username || "")
-    .trim()
-    .toLowerCase();
-
-  const isDLCabinService =
-    normalizedDepartment.includes("dl cabin") ||
-    normalizedDepartment.includes("cabin service");
-
-  const isAllowedDutyManagerForDL = normalizedUsername === "hhernadez";
-
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
 
@@ -207,28 +219,34 @@ export default function AppLayout() {
   const canAccessTimesheets =
     user?.role === "supervisor" ||
     user?.role === "station_manager" ||
-    (user?.role === "duty_manager" && isAllowedDutyManagerForDL);
+    user?.role === "duty_manager";
 
   const canAccessOperationalReports =
     user?.role === "supervisor" ||
     user?.role === "station_manager" ||
-    (user?.role === "duty_manager" && isAllowedDutyManagerForDL);
+    user?.role === "duty_manager";
 
   const canAccessOperationalReportAdmin =
     user?.role === "station_manager" ||
-    (user?.role === "duty_manager" && isAllowedDutyManagerForDL);
+    user?.role === "duty_manager";
 
   const canManageOperationalReportForm =
     user?.role === "station_manager";
 
   const canAccessWchrTools =
-    !isDLCabinService &&
+    !isCabinServiceUser &&
     (
       user?.role === "agent" ||
       user?.role === "supervisor" ||
       user?.role === "duty_manager" ||
       user?.role === "station_manager"
     );
+
+  const canSeeCabinTimesheetTools =
+    user?.role === "station_manager" ||
+    user?.role === "supervisor" ||
+    isCabinDutyManager ||
+    user?.role === "duty_manager";
 
   const navSections = useMemo(() => {
     const sections = [];
@@ -276,11 +294,13 @@ export default function AppLayout() {
         { to: "/blocked", label: "Blocked Employees", icon: "🚫" }
       );
 
-      wchr.push({
-        to: "/wchr/admin/flights",
-        label: "WCHR Close Flight",
-        icon: "♿",
-      });
+      if (!isCabinServiceUser) {
+        wchr.push({
+          to: "/wchr/admin/flights",
+          label: "WCHR Close Flight",
+          icon: "♿",
+        });
+      }
 
       admin.push(
         {
@@ -323,7 +343,7 @@ export default function AppLayout() {
       );
     }
 
-    if (canAccessTimesheets) {
+    if (canSeeCabinTimesheetTools && canAccessTimesheets) {
       reports.push({
         to: "/timesheets/submit",
         label: "Timesheet Submit",
@@ -331,7 +351,7 @@ export default function AppLayout() {
       });
     }
 
-    if (canAccessOperationalReports) {
+    if (canSeeCabinTimesheetTools && canAccessOperationalReports) {
       reports.push({
         to: "/operational-report/submit",
         label: "Supervisor Report",
@@ -339,7 +359,7 @@ export default function AppLayout() {
       });
     }
 
-    if (canAccessTimesheets) {
+    if (canSeeCabinTimesheetTools && canAccessTimesheets) {
       reports.push({
         to: "/timesheets/reports",
         label: "Timesheet Reports",
@@ -372,9 +392,7 @@ export default function AppLayout() {
 
     if (general.length) sections.push({ title: "General", items: general });
     if (schedules.length) sections.push({ title: "Schedules", items: schedules });
-    if (reports.length) {
-      sections.push({ title: "Submission of Reports", items: reports });
-    }
+    if (reports.length) sections.push({ title: "Submission of Reports", items: reports });
     if (timeoff.length) sections.push({ title: "Time Off", items: timeoff });
     if (wchr.length) sections.push({ title: "WCHR", items: wchr });
     if (admin.length) sections.push({ title: "Admin", items: admin });
@@ -383,11 +401,13 @@ export default function AppLayout() {
   }, [
     isManager,
     isAgentOrSupervisor,
+    isCabinServiceUser,
     canAccessTimesheets,
     canAccessOperationalReports,
     canAccessOperationalReportAdmin,
     canManageOperationalReportForm,
     canAccessWchrTools,
+    canSeeCabinTimesheetTools,
     unreadMessages,
     pendingTimeOff,
     user,
