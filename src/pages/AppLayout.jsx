@@ -190,6 +190,10 @@ export default function AppLayout() {
   const isAgentOrSupervisor =
     user?.role === "agent" || user?.role === "supervisor";
 
+  const isDLCabinService =
+    String(user?.department || "").trim().toLowerCase() ===
+    "dl cabin service";
+
   const canAccessTimesheets =
     user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
@@ -207,10 +211,12 @@ export default function AppLayout() {
     user?.role === "station_manager";
 
   const canAccessWchrTools =
-    user?.role === "agent" ||
-    user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
+    (
+      user?.role === "agent" ||
+      user?.role === "supervisor" ||
+      user?.role === "duty_manager" ||
+      user?.role === "station_manager"
+    ) && !isDLCabinService;
 
   const navSections = useMemo(() => {
     const sections = [];
@@ -365,6 +371,7 @@ export default function AppLayout() {
   }, [
     isManager,
     isAgentOrSupervisor,
+    isDLCabinService,
     canAccessTimesheets,
     canAccessOperationalReports,
     canAccessOperationalReportAdmin,
@@ -374,6 +381,7 @@ export default function AppLayout() {
     pendingTimeOff,
     user,
     user?.role,
+    user?.department,
   ]);
 
   const allSectionsOpen = navSections.every(
