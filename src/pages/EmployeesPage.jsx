@@ -1,5 +1,5 @@
 // src/pages/EmployeesPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
   getDocs,
@@ -31,6 +31,31 @@ async function syncUserLink(employeeId, loginUsername) {
   } catch (err) {
     console.error("Error syncing user link:", err);
   }
+}
+
+function getEmployeeDisplayName(emp) {
+  return (
+    emp?.name ||
+    emp?.fullName ||
+    emp?.displayName ||
+    emp?.employeeName ||
+    ""
+  ).trim();
+}
+
+function getLastNameInitial(emp) {
+  const fullName = getEmployeeDisplayName(emp);
+  if (!fullName) return "#";
+
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+  const initial = lastName.charAt(0).toUpperCase();
+
+  return /[A-Z]/.test(initial) ? initial : "#";
+}
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function PageCard({ children, style = {} }) {
@@ -202,6 +227,33 @@ export default function EmployeesPage() {
   useEffect(() => {
     loadEmployees().catch(console.error);
   }, []);
+
+  const sortedEmployees = useMemo(() => {
+    return [...employees].sort((a, b) => {
+      const aInitial = getLastNameInitial(a);
+      const bInitial = getLastNameInitial(b);
+
+      if (aInitial !== bInitial) {
+        if (aInitial === "#") return 1;
+        if (bInitial === "#") return -1;
+        return aInitial.localeCompare(bInitial);
+      }
+
+      const aDepartment = normalizeText(a.department);
+      const bDepartment = normalizeText(b.department);
+      if (aDepartment !== bDepartment) {
+        return aDepartment.localeCompare(bDepartment);
+      }
+
+      const aPosition = normalizeText(a.position);
+      const bPosition = normalizeText(b.position);
+      if (aPosition !== bPosition) {
+        return aPosition.localeCompare(bPosition);
+      }
+
+      return getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b));
+    });
+  }, [employees]);
 
   const handleAddOrUpdateEmployee = async (e) => {
     e.preventDefault();
@@ -678,7 +730,7 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
               color: "#64748b",
             }}
           >
-            Review all employee records and manage linked usernames.
+            Organized by last name initial, department and position.
           </p>
         </div>
 
@@ -700,6 +752,7 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
           >
             <thead>
               <tr style={{ background: "#f8fbff" }}>
+                <th style={thStyle({ textAlign: "left" })}>Last Initial</th>
                 <th style={thStyle({ textAlign: "left" })}>Name</th>
                 <th style={thStyle({ textAlign: "left" })}>Username</th>
                 <th style={thStyle({ textAlign: "left" })}>Department</th>
@@ -711,13 +764,14 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
             </thead>
 
             <tbody>
-              {employees.map((e, index) => (
+              {sortedEmployees.map((e, index) => (
                 <tr
                   key={e.id}
                   style={{
                     background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                   }}
                 >
+                  <td style={tdStyle}>{getLastNameInitial(e)}</td>
                   <td style={tdStyle}>{e.name}</td>
                   <td style={tdStyle}>{e.loginUsername || "—"}</td>
                   <td style={tdStyle}>{e.department || "—"}</td>
@@ -780,10 +834,10 @@ Juan Lopez, jlopez, TC, Lead, Inactive, LOA`}
                 </tr>
               ))}
 
-              {employees.length === 0 && (
+              {sortedEmployees.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     style={{
                       padding: "18px",
                       textAlign: "center",
