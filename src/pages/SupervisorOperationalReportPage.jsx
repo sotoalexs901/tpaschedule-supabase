@@ -511,6 +511,7 @@ export default function SupervisorOperationalReportPage() {
 
   const [form, setForm] = useState({
     airline: "",
+    flightNumber: "",
     reportDate: "",
     department: "",
     shift: "",
@@ -618,6 +619,11 @@ export default function SupervisorOperationalReportPage() {
       return false;
     }
 
+    if (!String(form.flightNumber || "").trim()) {
+      setStatusMessage("Please enter the flight number.");
+      return false;
+    }
+
     if (!form.reportDate) {
       setStatusMessage("Please select the report date.");
       return false;
@@ -672,6 +678,7 @@ export default function SupervisorOperationalReportPage() {
 
       const payload = {
         airline: normalizeAirlineName(form.airline),
+        flightNumber: String(form.flightNumber || "").trim(),
         reportDate: form.reportDate,
         department: String(form.department || "").trim(),
         shift: String(form.shift || "").trim(),
@@ -709,6 +716,7 @@ export default function SupervisorOperationalReportPage() {
 
       setForm({
         airline: "",
+        flightNumber: "",
         reportDate: "",
         department: "",
         shift: "",
@@ -932,6 +940,15 @@ export default function SupervisorOperationalReportPage() {
           </div>
 
           <div>
+            <FieldLabel>Flight Number</FieldLabel>
+            <TextInput
+              value={form.flightNumber}
+              onChange={(e) => handleFormChange("flightNumber", e.target.value)}
+              placeholder="Example: 1234"
+            />
+          </div>
+
+          <div>
             <FieldLabel>Date</FieldLabel>
             <TextInput
               type="date"
@@ -965,6 +982,16 @@ export default function SupervisorOperationalReportPage() {
               onChange={(e) => handleFormChange("flightsHandled", e.target.value)}
               placeholder="Example: 4"
             />
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 11,
+                color: "#64748b",
+                fontWeight: 600,
+              }}
+            >
+              Only Apply for BSO and Cabin Service
+            </div>
           </div>
 
           <div>
