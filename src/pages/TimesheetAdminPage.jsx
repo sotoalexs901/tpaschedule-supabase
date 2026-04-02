@@ -140,13 +140,6 @@ function calculateReportHours(report) {
   return (report?.rows || []).reduce((sum, row) => sum + calculateRowHours(row), 0);
 }
 
-function startOfTodayString() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-}
-
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -772,7 +765,7 @@ export default function TimesheetAdminPage() {
 
   const [filters, setFilters] = useState({
     airline: "all",
-    reportDate: startOfTodayString(),
+    reportDate: "",
     submittedBy: "",
   });
 
@@ -831,7 +824,9 @@ export default function TimesheetAdminPage() {
           .toLowerCase();
 
         const currentEmployeeRecord = employeeRows.find((item) => {
-          const itemUsername = String(item.username || "")
+          const itemUsername = String(
+            item.loginUsername || item.username || ""
+          )
             .trim()
             .toLowerCase();
 
@@ -851,9 +846,7 @@ export default function TimesheetAdminPage() {
           );
         });
 
-        const currentRole = String(
-          currentEmployeeRecord?.role || user?.role || ""
-        )
+        const currentRole = String(user?.role || "")
           .trim()
           .toLowerCase();
 
@@ -2471,25 +2464,27 @@ export default function TimesheetAdminPage() {
                   />
                 </div>
 
-                <div>
-                  <FieldLabel>Reason to return for correction</FieldLabel>
-                  <TextArea
-                    value={returnReason}
-                    onChange={(e) => setReturnReason(e.target.value)}
-                    placeholder="Explain what needs to be fixed before resubmitting."
-                  />
-                  <div style={{ marginTop: 12 }}>
-                    <ActionButton
-                      variant="warning"
-                      onClick={() => handleReturn(selectedReport)}
-                      disabled={returningId === selectedReport.id}
-                    >
-                      {returningId === selectedReport.id
-                        ? "Returning..."
-                        : "Return to Supervisor"}
-                    </ActionButton>
+                {canApprove && (
+                  <div>
+                    <FieldLabel>Reason to return for correction</FieldLabel>
+                    <TextArea
+                      value={returnReason}
+                      onChange={(e) => setReturnReason(e.target.value)}
+                      placeholder="Explain what needs to be fixed before resubmitting."
+                    />
+                    <div style={{ marginTop: 12 }}>
+                      <ActionButton
+                        variant="warning"
+                        onClick={() => handleReturn(selectedReport)}
+                        disabled={returningId === selectedReport.id}
+                      >
+                        {returningId === selectedReport.id
+                          ? "Returning..."
+                          : "Return to Supervisor"}
+                      </ActionButton>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div
                   style={{
