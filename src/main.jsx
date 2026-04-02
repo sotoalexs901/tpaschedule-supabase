@@ -50,11 +50,20 @@ import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
 
-function ProtectedRoute({ children, roles }) {
+function ProtectedRoute({ children, roles, blockedDepartments = [] }) {
   const { user } = useUser();
 
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
+
+  const userDepartment = String(user?.department || "").trim().toLowerCase();
+  const normalizedBlockedDepartments = blockedDepartments.map((d) =>
+    String(d || "").trim().toLowerCase()
+  );
+
+  if (normalizedBlockedDepartments.includes(userDepartment)) {
+    return <Navigate to="/" replace />;
+  }
 
   return children;
 }
@@ -175,6 +184,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+                blockedDepartments={["DL Cabin Service"]}
               >
                 <WCHRScan />
               </ProtectedRoute>
@@ -186,6 +196,7 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+                blockedDepartments={["DL Cabin Service"]}
               >
                 <MyWCHRReports />
               </ProtectedRoute>
