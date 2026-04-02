@@ -19,6 +19,23 @@ function normalizeAirlineName(value) {
   return airline;
 }
 
+function normalizeCabinServiceValue(value) {
+  const raw = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  if (
+    raw === "cabin service" ||
+    raw === "dl cabin service" ||
+    raw.includes("cabin service")
+  ) {
+    return "cabin_service";
+  }
+
+  return raw;
+}
+
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
   if (role === "duty_manager") return "Duty Manager";
@@ -504,17 +521,20 @@ export default function SupervisorOperationalReportPage() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
+  const normalizedDepartment = normalizeCabinServiceValue(user?.department);
+  const isCabinServiceUser = normalizedDepartment === "cabin_service";
+
   const [loadingBuilder, setLoadingBuilder] = useState(true);
   const [dynamicFields, setDynamicFields] = useState(BASE_FIELDS);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   const [form, setForm] = useState({
-    airline: "",
-    flightNumber: "",
+    airline: isCabinServiceUser ? "CABIN" : "",
     reportDate: "",
-    department: "",
+    department: isCabinServiceUser ? "Cabin Service" : "",
     shift: "",
+    flightNumber: "",
     flightsHandled: "",
     supervisorReporting: getVisibleName(user),
     supervisorPosition: user?.position || getDefaultPosition(user?.role),
@@ -580,6 +600,22 @@ export default function SupervisorOperationalReportPage() {
   }, [form.needsAttention, computedNeedsAttention]);
 
   const handleFormChange = (field, value) => {
+    if (isCabinServiceUser && field === "airline") {
+      setForm((prev) => ({
+        ...prev,
+        airline: "CABIN",
+      }));
+      return;
+    }
+
+    if (isCabinServiceUser && field === "department") {
+      setForm((prev) => ({
+        ...prev,
+        department: "Cabin Service",
+      }));
+      return;
+    }
+
     setForm((prev) => ({
       ...prev,
       [field]: value,
@@ -616,11 +652,6 @@ export default function SupervisorOperationalReportPage() {
   const validateRequiredFields = () => {
     if (!form.airline) {
       setStatusMessage("Please select the reporting airline.");
-      return false;
-    }
-
-    if (!String(form.flightNumber || "").trim()) {
-      setStatusMessage("Please enter the flight number.");
       return false;
     }
 
@@ -677,11 +708,13 @@ export default function SupervisorOperationalReportPage() {
       setSaving(true);
 
       const payload = {
-        airline: normalizeAirlineName(form.airline),
-        flightNumber: String(form.flightNumber || "").trim(),
+        airline: isCabinServiceUser ? "CABIN" : normalizeAirlineName(form.airline),
         reportDate: form.reportDate,
-        department: String(form.department || "").trim(),
+        department: isCabinServiceUser
+          ? "Cabin Service"
+          : String(form.department || "").trim(),
         shift: String(form.shift || "").trim(),
+        flightNumber: String(form.flightNumber || "").trim(),
         flightsHandled: String(form.flightsHandled || "").trim(),
         supervisorReporting:
           String(form.supervisorReporting || "").trim() || getVisibleName(user),
@@ -708,6 +741,7 @@ export default function SupervisorOperationalReportPage() {
         submittedByRole: user?.role || "",
         createdAt: serverTimestamp(),
         status: "submitted",
+        reviewStatus: "submitted",
       };
 
       await addDoc(collection(db, "operational_reports"), payload);
@@ -715,11 +749,11 @@ export default function SupervisorOperationalReportPage() {
       setStatusMessage("Operational report submitted successfully.");
 
       setForm({
-        airline: "",
-        flightNumber: "",
+        airline: isCabinServiceUser ? "CABIN" : "",
         reportDate: "",
-        department: "",
+        department: isCabinServiceUser ? "Cabin Service" : "",
         shift: "",
+        flightNumber: "",
         flightsHandled: "",
         supervisorReporting: getVisibleName(user),
         supervisorPosition: user?.position || getDefaultPosition(user?.role),
@@ -929,6 +963,7 @@ export default function SupervisorOperationalReportPage() {
             <SelectInput
               value={form.airline}
               onChange={(e) => handleFormChange("airline", e.target.value)}
+              disabled={isCabinServiceUser}
             >
               <option value="">Select airline</option>
               {AIRLINE_OPTIONS.map((airline) => (
@@ -937,15 +972,6 @@ export default function SupervisorOperationalReportPage() {
                 </option>
               ))}
             </SelectInput>
-          </div>
-
-          <div>
-            <FieldLabel>Flight Number</FieldLabel>
-            <TextInput
-              value={form.flightNumber}
-              onChange={(e) => handleFormChange("flightNumber", e.target.value)}
-              placeholder="Example: 1234"
-            />
           </div>
 
           <div>
@@ -963,6 +989,7 @@ export default function SupervisorOperationalReportPage() {
               value={form.department}
               onChange={(e) => handleFormChange("department", e.target.value)}
               placeholder="Ramp / TC / BSO / WCHR / Cabin"
+              disabled={isCabinServiceUser}
             />
           </div>
 
@@ -972,6 +999,15 @@ export default function SupervisorOperationalReportPage() {
               value={form.shift}
               onChange={(e) => handleFormChange("shift", e.target.value)}
               placeholder="AM / PM / MID"
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Flight Number</FieldLabel>
+            <TextInput
+              value={form.flightNumber}
+              onChange={(e) => handleFormChange("flightNumber", e.target.value)}
+              placeholder="Example: DL1234"
             />
           </div>
 
@@ -990,7 +1026,7 @@ export default function SupervisorOperationalReportPage() {
                 fontWeight: 600,
               }}
             >
-              Only Apply for BSO and Cabin Service
+              Only apply for BSO and Cabin Service
             </div>
           </div>
 
