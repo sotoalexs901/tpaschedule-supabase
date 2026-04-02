@@ -53,23 +53,38 @@ function normalizeAirlineName(value) {
   return airline;
 }
 
+function normalizeCabinServiceValue(value) {
+  const raw = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  if (
+    raw === "cabin service" ||
+    raw === "dl cabin service" ||
+    raw.includes("cabin service")
+  ) {
+    return "cabin_service";
+  }
+
+  return raw;
+}
+
+function isCabinServiceDepartment(value) {
+  return normalizeCabinServiceValue(value) === "cabin_service";
+}
+
 function detectBudgetAirline(value) {
   const raw = String(value || "").trim();
   const upper = raw.toUpperCase();
 
   if (!upper) return "";
   if (upper === "SY" || upper.startsWith("SY ")) return "SY";
-  if (
-    upper.includes("WESTJET") ||
-    upper.includes("WL HAVANA") ||
-    upper === "WL"
-  ) {
+  if (upper.includes("WESTJET") || upper.includes("WL HAVANA") || upper === "WL") {
     return "WestJet";
   }
   if (upper.includes("WL INVICTA")) return "WL Invicta";
-  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) {
-    return "AV";
-  }
+  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) return "AV";
   if (upper === "EA" || upper.startsWith("EA ")) return "EA";
   if (upper.includes("WCHR")) return "WCHR";
   if (upper.includes("CABIN")) return "CABIN";
@@ -95,17 +110,6 @@ function getVisibleName(user) {
     user?.username ||
     "User"
   );
-}
-
-function normalizeDepartment(value) {
-  return String(value || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
-function isCabinServiceDepartment(value) {
-  return normalizeDepartment(value) === "dl cabin service";
 }
 
 function toMinutes(timeStr) {
@@ -147,9 +151,7 @@ function calculateRowHours(row) {
 function formatDateTime(value) {
   if (!value) return "—";
   try {
-    if (typeof value?.toDate === "function") {
-      return value.toDate().toLocaleString();
-    }
+    if (typeof value?.toDate === "function") return value.toDate().toLocaleString();
     return new Date(value).toLocaleString();
   } catch {
     return "—";
@@ -345,14 +347,18 @@ export default function SupervisorTimesheetPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [editingReportId, setEditingReportId] = useState("");
 
+  const normalizedDepartment = normalizeCabinServiceValue(user?.department);
+  const isCabinServiceUser = normalizedDepartment === "cabin_service";
+
   const [form, setForm] = useState({
-    airline: "",
+    airline: isCabinServiceUser ? "CABIN" : "",
     reportDate: "",
     shift: "",
     supervisorReporting: getVisibleName(user),
     supervisorPosition: user?.position || getDefaultPosition(user?.role),
     notes: "",
     overBudgetReason: "",
+    department: isCabinServiceUser ? "Cabin Service" : (user?.department || ""),
   });
 
   const [rows, setRows] = useState([emptyRow()]);
@@ -382,59 +388,11 @@ export default function SupervisorTimesheetPage() {
         const budgetsSnap = results[1];
         const returnedSnap = results[2];
 
-        const rawEmployees = employeesSnap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
-
-        const currentUsername = String(user?.username || "")
-          .trim()
-          .toLowerCase();
-
-        const currentVisibleName = String(getVisibleName(user) || "")
-          .trim()
-          .toLowerCase();
-
-        const currentEmployeeRecord = rawEmployees.find((item) => {
-          const itemUsername = String(item.username || "")
-            .trim()
-            .toLowerCase();
-
-          const itemName = String(
-            item.name ||
-              item.employeeName ||
-              item.fullName ||
-              item.displayName ||
-              ""
-          )
-            .trim()
-            .toLowerCase();
-
-          return (
-            (currentUsername && itemUsername === currentUsername) ||
-            (currentVisibleName && itemName === currentVisibleName)
-          );
-        });
-
-        const currentRole = String(
-          currentEmployeeRecord?.role || user?.role || ""
-        )
-          .trim()
-          .toLowerCase();
-
-        const shouldRestrictToCabinService =
-          isCabinServiceDepartment(currentEmployeeRecord?.department) &&
-          (currentRole === "supervisor" ||
-            currentRole === "ops manager" ||
-            currentRole === "manager");
-
-        const filteredEmployees = shouldRestrictToCabinService
-          ? rawEmployees.filter((item) =>
-              isCabinServiceDepartment(item.department)
-            )
-          : rawEmployees;
-
-        const employeeList = filteredEmployees
+        let employeeList = employeesSnap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
           .map((item) => ({
             id: item.id,
             name:
@@ -445,9 +403,15 @@ export default function SupervisorTimesheetPage() {
               item.username ||
               "Unnamed employee",
             department: item.department || "",
-            role: item.role || "",
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
+          }));
+
+        if (isCabinServiceUser) {
+          employeeList = employeeList.filter((item) =>
+            isCabinServiceDepartment(item.department)
+          );
+        }
+
+        employeeList = employeeList.sort((a, b) => a.name.localeCompare(b.name));
 
         const budgets = budgetsSnap.docs.map((d) => ({
           id: d.id,
@@ -469,16 +433,14 @@ export default function SupervisorTimesheetPage() {
         setReturnedReports(returned);
       } catch (err) {
         console.error("Error loading supervisor page data:", err);
-        setStatusMessage(
-          "Could not load employees, budgets or returned timesheets."
-        );
+        setStatusMessage("Could not load employees, budgets or returned timesheets.");
       } finally {
         setLoadingEmployees(false);
       }
     }
 
     loadData();
-  }, [user]);
+  }, [user?.id, isCabinServiceUser]);
 
   const employeeMap = useMemo(() => {
     const map = {};
@@ -549,6 +511,11 @@ export default function SupervisorTimesheetPage() {
   const overBudgetBy = overBudget ? totalReportedHours - currentBudget : 0;
 
   const handleFormChange = (field, value) => {
+    if (isCabinServiceUser && field === "airline") {
+      setForm((prev) => ({ ...prev, airline: "CABIN" }));
+      return;
+    }
+
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -588,7 +555,7 @@ export default function SupervisorTimesheetPage() {
   const loadReturnedReport = (report) => {
     setEditingReportId(report.id);
     setForm({
-      airline: report.airline || "",
+      airline: report.airline || (isCabinServiceUser ? "CABIN" : ""),
       reportDate: report.reportDate || "",
       shift: report.shift || "",
       supervisorReporting: report.supervisorReporting || getVisibleName(user),
@@ -598,6 +565,9 @@ export default function SupervisorTimesheetPage() {
         getDefaultPosition(user?.role),
       notes: report.notes || "",
       overBudgetReason: report.overBudgetReason || "",
+      department:
+        report.department ||
+        (isCabinServiceUser ? "Cabin Service" : (user?.department || "")),
     });
 
     setRows(
@@ -620,13 +590,14 @@ export default function SupervisorTimesheetPage() {
   const resetForm = () => {
     setEditingReportId("");
     setForm({
-      airline: "",
+      airline: isCabinServiceUser ? "CABIN" : "",
       reportDate: "",
       shift: "",
       supervisorReporting: getVisibleName(user),
       supervisorPosition: user?.position || getDefaultPosition(user?.role),
       notes: "",
       overBudgetReason: "",
+      department: isCabinServiceUser ? "Cabin Service" : (user?.department || ""),
     });
     setRows([emptyRow()]);
   };
@@ -690,15 +661,18 @@ export default function SupervisorTimesheetPage() {
       setSaving(true);
 
       const payload = {
-        airline: normalizeAirlineName(form.airline),
+        airline: isCabinServiceUser
+          ? "CABIN"
+          : normalizeAirlineName(form.airline),
         reportDate: form.reportDate,
         shift: form.shift || "",
         supervisorReporting: form.supervisorReporting || getVisibleName(user),
         supervisorPosition:
-          form.supervisorPosition ||
-          user?.position ||
-          getDefaultPosition(user?.role),
+          form.supervisorPosition || user?.position || getDefaultPosition(user?.role),
         notes: form.notes || "",
+        department: isCabinServiceUser
+          ? "Cabin Service"
+          : String(form.department || user?.department || "").trim(),
         rows: cleanRows,
         totalHours: totalReportedHours,
         budgetHoursDaily: currentBudget,
@@ -722,9 +696,7 @@ export default function SupervisorTimesheetPage() {
           returnedReason: "",
         });
 
-        setReturnedReports((prev) =>
-          prev.filter((item) => item.id !== editingReportId)
-        );
+        setReturnedReports((prev) => prev.filter((item) => item.id !== editingReportId));
         setStatusMessage("Returned timesheet fixed and resubmitted successfully.");
       } else {
         await addDoc(collection(db, "timesheet_reports"), {
@@ -809,9 +781,7 @@ export default function SupervisorTimesheetPage() {
                 letterSpacing: "-0.04em",
               }}
             >
-              {editingReportId
-                ? "Fix Returned Timesheet"
-                : "Submit Timesheet Report"}
+              {editingReportId ? "Fix Returned Timesheet" : "Submit Timesheet Report"}
             </h1>
 
             <p
@@ -1011,6 +981,7 @@ export default function SupervisorTimesheetPage() {
             <SelectInput
               value={form.airline}
               onChange={(e) => handleFormChange("airline", e.target.value)}
+              disabled={isCabinServiceUser}
             >
               <option value="">Select airline</option>
               {AIRLINE_OPTIONS.map((airline) => (
@@ -1043,9 +1014,7 @@ export default function SupervisorTimesheetPage() {
             <FieldLabel>Supervisor Reporting</FieldLabel>
             <TextInput
               value={form.supervisorReporting}
-              onChange={(e) =>
-                handleFormChange("supervisorReporting", e.target.value)
-              }
+              onChange={(e) => handleFormChange("supervisorReporting", e.target.value)}
             />
           </div>
         </div>
@@ -1158,9 +1127,7 @@ export default function SupervisorTimesheetPage() {
             <FieldLabel>Why are you over budget?</FieldLabel>
             <TextArea
               value={form.overBudgetReason}
-              onChange={(e) =>
-                handleFormChange("overBudgetReason", e.target.value)
-              }
+              onChange={(e) => handleFormChange("overBudgetReason", e.target.value)}
               placeholder="Explain why this operation exceeded the airline daily budget."
             />
           </div>
@@ -1245,9 +1212,7 @@ export default function SupervisorTimesheetPage() {
                   <th style={tableHeaderStyle()}>Break Taken</th>
                   <th style={tableHeaderStyle()}>Reason</th>
                   <th style={tableHeaderStyle()}>Hours</th>
-                  <th style={tableHeaderStyle({ textAlign: "center" })}>
-                    Remove
-                  </th>
+                  <th style={tableHeaderStyle({ textAlign: "center" })}>Remove</th>
                 </tr>
               </thead>
 
@@ -1262,9 +1227,7 @@ export default function SupervisorTimesheetPage() {
                     <td style={tableCellStyle}>
                       <SelectInput
                         value={row.employeeId}
-                        onChange={(e) =>
-                          handleRowChange(index, "employeeId", e.target.value)
-                        }
+                        onChange={(e) => handleRowChange(index, "employeeId", e.target.value)}
                       >
                         <option value="">Select employee</option>
                         {employees.map((emp) => (
@@ -1279,9 +1242,7 @@ export default function SupervisorTimesheetPage() {
                       <TextInput
                         type="time"
                         value={row.punchIn}
-                        onChange={(e) =>
-                          handleRowChange(index, "punchIn", e.target.value)
-                        }
+                        onChange={(e) => handleRowChange(index, "punchIn", e.target.value)}
                       />
                     </td>
 
@@ -1289,9 +1250,7 @@ export default function SupervisorTimesheetPage() {
                       <TextInput
                         type="time"
                         value={row.punchOut}
-                        onChange={(e) =>
-                          handleRowChange(index, "punchOut", e.target.value)
-                        }
+                        onChange={(e) => handleRowChange(index, "punchOut", e.target.value)}
                       />
                     </td>
 
@@ -1329,9 +1288,7 @@ export default function SupervisorTimesheetPage() {
                     <td style={tableCellStyle}>
                       <TextInput
                         value={row.reason}
-                        onChange={(e) =>
-                          handleRowChange(index, "reason", e.target.value)
-                        }
+                        onChange={(e) => handleRowChange(index, "reason", e.target.value)}
                         placeholder="Reason / note"
                       />
                     </td>
@@ -1361,11 +1318,7 @@ export default function SupervisorTimesheetPage() {
 
       <PageCard style={{ padding: 20 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <ActionButton
-            onClick={handleSubmit}
-            variant="primary"
-            disabled={saving}
-          >
+          <ActionButton onClick={handleSubmit} variant="primary" disabled={saving}>
             {saving
               ? "Submitting..."
               : editingReportId
