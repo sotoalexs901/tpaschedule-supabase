@@ -34,8 +34,22 @@ function normalizeDepartment(value) {
     .toLowerCase();
 }
 
+function normalizeCabinServiceValue(value) {
+  const raw = normalizeDepartment(value);
+
+  if (
+    raw === "cabin service" ||
+    raw === "dl cabin service" ||
+    raw.includes("cabin service")
+  ) {
+    return "cabin_service";
+  }
+
+  return raw;
+}
+
 function isCabinServiceDepartment(value) {
-  return normalizeDepartment(value) === "dl cabin service";
+  return normalizeCabinServiceValue(value) === "cabin_service";
 }
 
 function detectBudgetAirline(value) {
@@ -138,6 +152,13 @@ function calculateRowHours(row) {
 
 function calculateReportHours(report) {
   return (report?.rows || []).reduce((sum, row) => sum + calculateRowHours(row), 0);
+}
+
+function startOfTodayString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
 }
 
 function PageCard({ children, style = {} }) {
@@ -743,13 +764,20 @@ function emptyEditRow() {
 export default function TimesheetAdminPage() {
   const { user } = useUser();
 
+  const normalizedUsername = String(user?.username || "")
+    .trim()
+    .toLowerCase();
+
+  const isCabinDutyManager =
+    user?.role === "duty_manager" && normalizedUsername === "hhernandez";
+
   const canAccess =
     user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
+    user?.role === "station_manager" ||
+    user?.role === "duty_manager";
 
   const canApprove =
-    user?.role === "duty_manager" || user?.role === "station_manager";
+    user?.role === "station_manager" || user?.role === "duty_manager";
 
   const [reports, setReports] = useState([]);
   const [budgetDocs, setBudgetDocs] = useState([]);
@@ -765,7 +793,7 @@ export default function TimesheetAdminPage() {
 
   const [filters, setFilters] = useState({
     airline: "all",
-    reportDate: "",
+    reportDate: startOfTodayString(),
     submittedBy: "",
   });
 
@@ -846,12 +874,14 @@ export default function TimesheetAdminPage() {
           );
         });
 
-        const currentRole = String(user?.role || "")
+        const currentRole = String(
+          currentEmployeeRecord?.role || user?.role || ""
+        )
           .trim()
           .toLowerCase();
 
         const shouldRestrictCabinSupervisor =
-          isCabinServiceDepartment(currentEmployeeRecord?.department) &&
+          isCabinServiceDepartment(currentEmployeeRecord?.department || user?.department) &&
           currentRole === "supervisor";
 
         setRestrictToOwnReports(shouldRestrictCabinSupervisor);
@@ -928,6 +958,9 @@ export default function TimesheetAdminPage() {
           ? Number(report.totalHours)
           : calculateReportHours(report),
       normalizedAirline: normalizeAirlineName(report.airline),
+      normalizedDepartment: normalizeCabinServiceValue(
+        report.department || report.airline
+      ),
     }));
   }, [reports]);
 
@@ -937,8 +970,12 @@ export default function TimesheetAdminPage() {
         r.submittedByName || r.submittedByUsername || r.supervisorReporting || ""
       ).toLowerCase();
 
-      if (restrictToOwnReports && r.submittedByUserId !== user?.id) {
-        return false;
+      const isCabinReport = r.normalizedDepartment === "cabin_service";
+
+      if (isCabinDutyManager) {
+        if (!isCabinReport) return false;
+      } else if (restrictToOwnReports) {
+        if (r.submittedByUserId !== user?.id) return false;
       }
 
       if (filters.airline !== "all" && r.normalizedAirline !== filters.airline) {
@@ -958,15 +995,15 @@ export default function TimesheetAdminPage() {
 
       return true;
     });
-  }, [reportsWithHours, filters, restrictToOwnReports, user?.id]);
+  }, [reportsWithHours, filters, restrictToOwnReports, user?.id, isCabinDutyManager]);
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
-    reportsWithHours.forEach((r) => {
+    filteredReports.forEach((r) => {
       if (r.normalizedAirline) set.add(r.normalizedAirline);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [reportsWithHours]);
+  }, [filteredReports]);
 
   const airlineHourSummary = useMemo(() => {
     const totals = {};
@@ -2464,27 +2501,25 @@ export default function TimesheetAdminPage() {
                   />
                 </div>
 
-                {canApprove && (
-                  <div>
-                    <FieldLabel>Reason to return for correction</FieldLabel>
-                    <TextArea
-                      value={returnReason}
-                      onChange={(e) => setReturnReason(e.target.value)}
-                      placeholder="Explain what needs to be fixed before resubmitting."
-                    />
-                    <div style={{ marginTop: 12 }}>
-                      <ActionButton
-                        variant="warning"
-                        onClick={() => handleReturn(selectedReport)}
-                        disabled={returningId === selectedReport.id}
-                      >
-                        {returningId === selectedReport.id
-                          ? "Returning..."
-                          : "Return to Supervisor"}
-                      </ActionButton>
-                    </div>
+                <div>
+                  <FieldLabel>Reason to return for correction</FieldLabel>
+                  <TextArea
+                    value={returnReason}
+                    onChange={(e) => setReturnReason(e.target.value)}
+                    placeholder="Explain what needs to be fixed before resubmitting."
+                  />
+                  <div style={{ marginTop: 12 }}>
+                    <ActionButton
+                      variant="warning"
+                      onClick={() => handleReturn(selectedReport)}
+                      disabled={returningId === selectedReport.id}
+                    >
+                      {returningId === selectedReport.id
+                        ? "Returning..."
+                        : "Return to Supervisor"}
+                    </ActionButton>
                   </div>
-                )}
+                </div>
 
                 <div
                   style={{
