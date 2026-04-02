@@ -57,11 +57,21 @@ function ProtectedRoute({ children, roles, blockedDepartments = [] }) {
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
 
   const userDepartment = String(user?.department || "").trim().toLowerCase();
-  const normalizedBlockedDepartments = blockedDepartments.map((d) =>
-    String(d || "").trim().toLowerCase()
-  );
 
-  if (normalizedBlockedDepartments.includes(userDepartment)) {
+  const isBlockedDepartment = blockedDepartments.some((dept) => {
+    const normalized = String(dept || "").trim().toLowerCase();
+
+    return (
+      userDepartment === normalized ||
+      userDepartment.includes(normalized) ||
+      normalized.includes(userDepartment) ||
+      (normalized.includes("dl cabin") && userDepartment.includes("cabin")) ||
+      (normalized.includes("cabin service") &&
+        userDepartment.includes("cabin service"))
+    );
+  });
+
+  if (isBlockedDepartment) {
     return <Navigate to="/" replace />;
   }
 
