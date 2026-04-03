@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
   getDocs,
@@ -6,9 +6,32 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  query,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+
+const AIRLINE_OPTIONS = [
+  { value: "SY", label: "SY" },
+  { value: "WestJet", label: "WestJet" },
+  { value: "WL Invicta", label: "WL Invicta" },
+  { value: "AV", label: "AV" },
+  { value: "EA", label: "EA" },
+  { value: "WCHR", label: "WCHR" },
+  { value: "CABIN", label: "Cabin Service" },
+  { value: "AA-BSO", label: "AA-BSO" },
+  { value: "OTHER", label: "Other" },
+];
+
+const DEPARTMENT_OPTIONS = [
+  "Ramp",
+  "TC",
+  "BSO",
+  "Cabin Service",
+  "WCHR",
+  "Other",
+];
 
 function normalizeAirlineName(name) {
   const value = String(name || "").trim();
@@ -19,9 +42,32 @@ function normalizeAirlineName(name) {
     upper === "WAL HAVANA AIR" ||
     upper === "WAL HAVANA" ||
     upper === "WAL" ||
-    upper === "WL HAVANA"
+    upper === "WL HAVANA" ||
+    upper === "WESTJET"
   ) {
     return "WestJet";
+  }
+
+  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
+    return "CABIN";
+  }
+
+  return value;
+}
+
+function normalizeDepartmentName(name) {
+  const value = String(name || "").trim();
+
+  if (!value) return "";
+
+  const upper = value.toUpperCase();
+
+  if (upper === "TC") return "TC";
+  if (upper === "RAMP") return "Ramp";
+  if (upper === "BSO") return "BSO";
+  if (upper === "WCHR") return "WCHR";
+  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
+    return "Cabin Service";
   }
 
   return value;
@@ -80,6 +126,25 @@ function TextInput(props) {
   );
 }
 
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 function ActionButton({
   children,
   onClick,
@@ -94,6 +159,12 @@ function ActionButton({
       color: "#fff",
       border: "none",
       boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
     },
     danger: {
       background: "#fff1f2",
@@ -124,6 +195,35 @@ function ActionButton({
   );
 }
 
+function TabButton({ active, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        borderRadius: 999,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: "pointer",
+        border: active ? "1px solid #1769aa" : "1px solid #dbeafe",
+        background: active ? "#1769aa" : "#ffffff",
+        color: active ? "#ffffff" : "#1769aa",
+        boxShadow: active ? "0 10px 22px rgba(23,105,170,0.16)" : "none",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function startOfTodayString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
 export default function BudgetsPage() {
   const { user } = useUser();
 
@@ -132,104 +232,240 @@ export default function BudgetsPage() {
 
   const canEditWeekly = isStationManager;
   const canEditDaily = isStationManager || isDutyManager;
-  const canCreateBudget = isStationManager;
-  const canDeleteBudget = isStationManager;
+  const canCreateWeekly = isStationManager;
+  const canCreateDaily = isStationManager || isDutyManager;
+  const canDeleteWeekly = isStationManager;
+  const canDeleteDaily = isStationManager;
 
-  const [budgets, setBudgets] = useState([]);
-  const [airline, setAirline] = useState("");
-  const [department, setDepartment] = useState("");
-  const [weeklyHours, setWeeklyHours] = useState("");
-  const [dailyHours, setDailyHours] = useState("");
+  const [weeklyBudgets, setWeeklyBudgets] = useState([]);
+  const [dailyBudgets, setDailyBudgets] = useState([]);
+  const [selectedAirline, setSelectedAirline] = useState("SY");
   const [statusMessage, setStatusMessage] = useState("");
 
-  const loadBudgets = async () => {
-    const snap = await getDocs(collection(db, "airlineBudgets"));
-    const arr = snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        ...data,
-        airline: normalizeAirlineName(data.airline),
-        budgetHours: Number(data.budgetHours || 0),
-        dailyBudgetHours:
-          data.dailyBudgetHours !== undefined && data.dailyBudgetHours !== null
-            ? Number(data.dailyBudgetHours)
-            : "",
-      };
-    });
-    setBudgets(arr);
+  const [weeklyForm, setWeeklyForm] = useState({
+    department: "",
+    weeklyHours: "",
+  });
+
+  const [dailyForm, setDailyForm] = useState({
+    date: startOfTodayString(),
+    dailyHours: "",
+  });
+
+  const loadData = async () => {
+    try {
+      const [weeklySnap, dailySnap] = await Promise.all([
+        getDocs(collection(db, "airlineBudgets")),
+        getDocs(collection(db, "airlineDailyBudgets")),
+      ]);
+
+      const weeklyRows = weeklySnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          airline: normalizeAirlineName(data.airline),
+          department: normalizeDepartmentName(data.department),
+          budgetHours: Number(data.budgetHours || 0),
+        };
+      });
+
+      const dailyRows = dailySnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          airline: normalizeAirlineName(data.airline),
+          date: String(data.date || ""),
+          dailyBudgetHours:
+            data.dailyBudgetHours === null ||
+            data.dailyBudgetHours === undefined ||
+            data.dailyBudgetHours === ""
+              ? ""
+              : Number(data.dailyBudgetHours),
+        };
+      });
+
+      setWeeklyBudgets(weeklyRows);
+      setDailyBudgets(dailyRows);
+    } catch (err) {
+      console.error("Error loading budgets:", err);
+      setStatusMessage("Could not load budgets.");
+    }
   };
 
   useEffect(() => {
-    loadBudgets();
+    loadData();
   }, []);
 
-  const createBudget = async () => {
-    if (!canCreateBudget) return;
+  const selectedWeeklyBudgets = useMemo(() => {
+    return weeklyBudgets
+      .filter((item) => item.airline === normalizeAirlineName(selectedAirline))
+      .sort((a, b) => a.department.localeCompare(b.department));
+  }, [weeklyBudgets, selectedAirline]);
 
-    if (!airline || !weeklyHours) {
-      setStatusMessage("Missing info.");
+  const selectedDailyBudgets = useMemo(() => {
+    return dailyBudgets
+      .filter((item) => item.airline === normalizeAirlineName(selectedAirline))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [dailyBudgets, selectedAirline]);
+
+  const dailyTotalForSelectedAirline = useMemo(() => {
+    return selectedDailyBudgets.reduce(
+      (sum, item) => sum + Number(item.dailyBudgetHours || 0),
+      0
+    );
+  }, [selectedDailyBudgets]);
+
+  const createWeeklyBudget = async () => {
+    if (!canCreateWeekly) return;
+
+    const airline = normalizeAirlineName(selectedAirline);
+    const department = normalizeDepartmentName(weeklyForm.department);
+    const weeklyHours = Number(weeklyForm.weeklyHours || 0);
+
+    if (!airline || !department || !weeklyHours) {
+      setStatusMessage("Please complete airline, department and weekly budget.");
       return;
     }
 
     try {
-      await addDoc(collection(db, "airlineBudgets"), {
-        airline: normalizeAirlineName(airline),
-        department: String(department || "").trim(),
-        budgetHours: Number(weeklyHours),
-        dailyBudgetHours: dailyHours === "" ? null : Number(dailyHours),
+      const existing = selectedWeeklyBudgets.find(
+        (item) => normalizeDepartmentName(item.department) === department
+      );
+
+      if (existing) {
+        await updateDoc(doc(db, "airlineBudgets", existing.id), {
+          budgetHours: weeklyHours,
+        });
+        setStatusMessage("Weekly budget updated successfully.");
+      } else {
+        await addDoc(collection(db, "airlineBudgets"), {
+          airline,
+          department,
+          budgetHours: weeklyHours,
+        });
+        setStatusMessage("Weekly budget saved successfully.");
+      }
+
+      setWeeklyForm({
+        department: "",
+        weeklyHours: "",
       });
 
-      setAirline("");
-      setDepartment("");
-      setWeeklyHours("");
-      setDailyHours("");
-      setStatusMessage("Budget saved successfully.");
-      loadBudgets();
+      loadData();
     } catch (err) {
-      console.error(err);
-      setStatusMessage("Error saving budget.");
+      console.error("Error saving weekly budget:", err);
+      setStatusMessage("Error saving weekly budget.");
     }
   };
 
-  const updateBudgetField = async (id, field, value) => {
-    try {
-      let finalValue = value;
+  const createDailyBudget = async () => {
+    if (!canCreateDaily) return;
 
-      if (field === "budgetHours") {
-        finalValue = Number(value || 0);
+    const airline = normalizeAirlineName(selectedAirline);
+    const date = String(dailyForm.date || "").trim();
+    const dailyHours = Number(dailyForm.dailyHours || 0);
+
+    if (!airline || !date || !dailyHours) {
+      setStatusMessage("Please complete airline, date and daily budget.");
+      return;
+    }
+
+    try {
+      const q = query(
+        collection(db, "airlineDailyBudgets"),
+        where("airline", "==", airline),
+        where("date", "==", date)
+      );
+
+      const snap = await getDocs(q);
+
+      if (!snap.empty) {
+        const existingDoc = snap.docs[0];
+        await updateDoc(doc(db, "airlineDailyBudgets", existingDoc.id), {
+          dailyBudgetHours: dailyHours,
+        });
+        setStatusMessage("Daily budget updated successfully.");
+      } else {
+        await addDoc(collection(db, "airlineDailyBudgets"), {
+          airline,
+          date,
+          dailyBudgetHours: dailyHours,
+        });
+        setStatusMessage("Daily budget saved successfully.");
       }
 
-      if (field === "dailyBudgetHours") {
-        finalValue =
+      setDailyForm((prev) => ({
+        ...prev,
+        dailyHours: "",
+      }));
+
+      loadData();
+    } catch (err) {
+      console.error("Error saving daily budget:", err);
+      setStatusMessage("Error saving daily budget.");
+    }
+  };
+
+  const updateWeeklyBudgetField = async (id, value) => {
+    if (!canEditWeekly) return;
+
+    try {
+      await updateDoc(doc(db, "airlineBudgets", id), {
+        budgetHours: Number(value || 0),
+      });
+      setStatusMessage("Weekly budget updated.");
+      loadData();
+    } catch (err) {
+      console.error("Error updating weekly budget:", err);
+      setStatusMessage("Error updating weekly budget.");
+    }
+  };
+
+  const updateDailyBudgetField = async (id, value) => {
+    if (!canEditDaily) return;
+
+    try {
+      await updateDoc(doc(db, "airlineDailyBudgets", id), {
+        dailyBudgetHours:
           value === "" || value === null || value === undefined
             ? null
-            : Number(value);
-      }
-
-      await updateDoc(doc(db, "airlineBudgets", id), {
-        [field]: finalValue,
+            : Number(value),
       });
-
-      setStatusMessage("Budget updated.");
-      loadBudgets();
+      setStatusMessage("Daily budget updated.");
+      loadData();
     } catch (err) {
-      console.error(err);
-      setStatusMessage("Error updating budget.");
+      console.error("Error updating daily budget:", err);
+      setStatusMessage("Error updating daily budget.");
     }
   };
 
-  const deleteBudget = async (id) => {
-    if (!canDeleteBudget) return;
-    if (!window.confirm("Delete this budget?")) return;
+  const deleteWeeklyBudget = async (id) => {
+    if (!canDeleteWeekly) return;
+    if (!window.confirm("Delete this weekly budget?")) return;
 
     try {
       await deleteDoc(doc(db, "airlineBudgets", id));
-      setStatusMessage("Budget deleted.");
-      loadBudgets();
+      setStatusMessage("Weekly budget deleted.");
+      loadData();
     } catch (err) {
-      console.error(err);
-      setStatusMessage("Error deleting budget.");
+      console.error("Error deleting weekly budget:", err);
+      setStatusMessage("Error deleting weekly budget.");
+    }
+  };
+
+  const deleteDailyBudget = async (id) => {
+    if (!canDeleteDaily) return;
+    if (!window.confirm("Delete this daily budget?")) return;
+
+    try {
+      await deleteDoc(doc(db, "airlineDailyBudgets", id));
+      setStatusMessage("Daily budget deleted.");
+      loadData();
+    } catch (err) {
+      console.error("Error deleting daily budget:", err);
+      setStatusMessage("Error deleting daily budget.");
     }
   };
 
@@ -304,8 +540,8 @@ export default function BudgetsPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Manage weekly budget hours for schedules and daily budget hours for
-            timesheet control.
+            Weekly budget is managed per airline and department. Daily budget is
+            managed per airline and date for timesheet control.
           </p>
         </div>
       </div>
@@ -328,85 +564,7 @@ export default function BudgetsPage() {
         </PageCard>
       )}
 
-      {canCreateBudget && (
-        <PageCard style={{ padding: 22 }}>
-          <div style={{ marginBottom: 16 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Add / Update Budget
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Weekly budget is used for schedules. Daily budget is used for the
-              Timesheet Reports page.
-            </p>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 14,
-            }}
-          >
-            <div>
-              <FieldLabel>Airline</FieldLabel>
-              <TextInput
-                placeholder="Airline (SY, AV, WestJet...)"
-                value={airline}
-                onChange={(e) => setAirline(normalizeAirlineName(e.target.value))}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Department</FieldLabel>
-              <TextInput
-                placeholder="Department (Ramp, TC, BSO...)"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Weekly Hours</FieldLabel>
-              <TextInput
-                placeholder="Weekly Hours"
-                value={weeklyHours}
-                onChange={(e) => setWeeklyHours(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Daily Hours</FieldLabel>
-              <TextInput
-                placeholder="Daily Hours (for timesheets)"
-                value={dailyHours}
-                onChange={(e) => setDailyHours(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 16 }}>
-            <ActionButton onClick={createBudget} variant="primary">
-              Save Budget
-            </ActionButton>
-          </div>
-        </PageCard>
-      )}
-
-      <PageCard style={{ padding: 18 }}>
+      <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 14 }}>
           <h2
             style={{
@@ -417,7 +575,7 @@ export default function BudgetsPage() {
               letterSpacing: "-0.02em",
             }}
           >
-            Existing Budgets
+            Airline Tabs
           </h2>
           <p
             style={{
@@ -426,22 +584,125 @@ export default function BudgetsPage() {
               color: "#64748b",
             }}
           >
-            Weekly budget stays for scheduling. Daily budget is optional but
-            recommended for Timesheet Admin.
+            Select the airline first, then manage weekly and daily budgets inside
+            that tab.
           </p>
-          {!isStationManager && isDutyManager && (
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {AIRLINE_OPTIONS.map((item) => (
+            <TabButton
+              key={item.value}
+              active={selectedAirline === item.value}
+              onClick={() => setSelectedAirline(item.value)}
+            >
+              {item.label}
+            </TabButton>
+          ))}
+        </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 22 }}>
+        <div
+          style={{
+            marginBottom: 16,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Weekly Budget · {selectedAirline}
+            </h2>
             <p
               style={{
-                margin: "8px 0 0",
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Used to create schedules. Example: SY TC, SY Ramp.
+            </p>
+          </div>
+
+          {!isStationManager && isDutyManager && (
+            <div
+              style={{
                 fontSize: 13,
                 color: "#b45309",
                 fontWeight: 700,
               }}
             >
-              Duty Managers can edit daily budget only.
-            </p>
+              Duty Managers cannot edit weekly budgets.
+            </div>
           )}
         </div>
+
+        {canCreateWeekly && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
+              marginBottom: 18,
+            }}
+          >
+            <div>
+              <FieldLabel>Department</FieldLabel>
+              <SelectInput
+                value={weeklyForm.department}
+                onChange={(e) =>
+                  setWeeklyForm((prev) => ({
+                    ...prev,
+                    department: e.target.value,
+                  }))
+                }
+              >
+                <option value="">Select department</option>
+                {DEPARTMENT_OPTIONS.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Weekly Budget Hours</FieldLabel>
+              <TextInput
+                type="number"
+                step="0.01"
+                value={weeklyForm.weeklyHours}
+                onChange={(e) =>
+                  setWeeklyForm((prev) => ({
+                    ...prev,
+                    weeklyHours: e.target.value,
+                  }))
+                }
+                placeholder="Example: 22"
+              />
+            </div>
+          </div>
+        )}
+
+        {canCreateWeekly && (
+          <div style={{ marginBottom: 18 }}>
+            <ActionButton onClick={createWeeklyBudget}>
+              Save Weekly Budget
+            </ActionButton>
+          </div>
+        )}
 
         <div
           style={{
@@ -455,7 +716,7 @@ export default function BudgetsPage() {
               width: "100%",
               borderCollapse: "separate",
               borderSpacing: 0,
-              minWidth: 900,
+              minWidth: 760,
               background: "#fff",
             }}
           >
@@ -464,75 +725,236 @@ export default function BudgetsPage() {
                 <th style={thStyle({ textAlign: "left" })}>Airline</th>
                 <th style={thStyle({ textAlign: "left" })}>Department</th>
                 <th style={thStyle({ textAlign: "left" })}>Weekly Hours</th>
-                <th style={thStyle({ textAlign: "left" })}>Daily Hours</th>
                 <th style={thStyle({ textAlign: "center" })}>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {budgets.map((b, index) => (
+              {selectedWeeklyBudgets.map((item, index) => (
                 <tr
-                  key={b.id}
+                  key={item.id}
                   style={{
                     background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                   }}
                 >
-                  <td style={tdStyle}>
-                    <span style={{ fontWeight: 700 }}>
-                      {normalizeAirlineName(b.airline)}
-                    </span>
-                  </td>
-
-                  <td style={tdStyle}>{b.department || "—"}</td>
-
+                  <td style={tdStyle}>{item.airline}</td>
+                  <td style={tdStyle}>{item.department || "—"}</td>
                   <td style={tdStyle}>
                     <TextInput
-                      defaultValue={b.budgetHours}
+                      defaultValue={item.budgetHours}
                       disabled={!canEditWeekly}
+                      type="number"
+                      step="0.01"
                       onBlur={(e) =>
                         canEditWeekly &&
-                        updateBudgetField(b.id, "budgetHours", e.target.value)
+                        updateWeeklyBudgetField(item.id, e.target.value)
                       }
                       style={{
-                        maxWidth: 130,
+                        maxWidth: 140,
                         background: canEditWeekly ? "#fff" : "#f8fafc",
                         color: canEditWeekly ? "#0f172a" : "#64748b",
                         cursor: canEditWeekly ? "text" : "not-allowed",
                       }}
                     />
                   </td>
+                  <td style={{ ...tdStyle, textAlign: "center" }}>
+                    {canDeleteWeekly ? (
+                      <ActionButton
+                        variant="danger"
+                        onClick={() => deleteWeeklyBudget(item.id)}
+                      >
+                        Delete
+                      </ActionButton>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#64748b",
+                        }}
+                      >
+                        Weekly locked
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
 
+              {selectedWeeklyBudgets.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    style={{
+                      padding: 18,
+                      textAlign: "center",
+                      fontSize: 13,
+                      color: "#64748b",
+                    }}
+                  >
+                    No weekly budgets found for {selectedAirline}.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 22 }}>
+        <div
+          style={{
+            marginBottom: 16,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Daily Budget · {selectedAirline}
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Used for timesheets. One total daily budget per airline and date.
+            </p>
+          </div>
+
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 14,
+              padding: "12px 14px",
+              fontWeight: 800,
+              color: "#0f172a",
+            }}
+          >
+            Stored Daily Total: {dailyTotalForSelectedAirline.toFixed(2)} hrs
+          </div>
+        </div>
+
+        {canCreateDaily && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
+              marginBottom: 18,
+            }}
+          >
+            <div>
+              <FieldLabel>Date</FieldLabel>
+              <TextInput
+                type="date"
+                value={dailyForm.date}
+                onChange={(e) =>
+                  setDailyForm((prev) => ({
+                    ...prev,
+                    date: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Daily Budget Hours</FieldLabel>
+              <TextInput
+                type="number"
+                step="0.01"
+                value={dailyForm.dailyHours}
+                onChange={(e) =>
+                  setDailyForm((prev) => ({
+                    ...prev,
+                    dailyHours: e.target.value,
+                  }))
+                }
+                placeholder="Example: 44"
+              />
+            </div>
+          </div>
+        )}
+
+        {canCreateDaily && (
+          <div style={{ marginBottom: 18 }}>
+            <ActionButton onClick={createDailyBudget}>
+              Save Daily Budget
+            </ActionButton>
+          </div>
+        )}
+
+        <div
+          style={{
+            overflowX: "auto",
+            borderRadius: 18,
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "separate",
+              borderSpacing: 0,
+              minWidth: 760,
+              background: "#fff",
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f8fbff" }}>
+                <th style={thStyle({ textAlign: "left" })}>Airline</th>
+                <th style={thStyle({ textAlign: "left" })}>Date</th>
+                <th style={thStyle({ textAlign: "left" })}>Daily Hours</th>
+                <th style={thStyle({ textAlign: "center" })}>Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {selectedDailyBudgets.map((item, index) => (
+                <tr
+                  key={item.id}
+                  style={{
+                    background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                  }}
+                >
+                  <td style={tdStyle}>{item.airline}</td>
+                  <td style={tdStyle}>{item.date || "—"}</td>
                   <td style={tdStyle}>
                     <TextInput
-                      defaultValue={
-                        b.dailyBudgetHours === "" || b.dailyBudgetHours === null
-                          ? ""
-                          : b.dailyBudgetHours
-                      }
-                      placeholder="Optional"
+                      defaultValue={item.dailyBudgetHours}
                       disabled={!canEditDaily}
+                      type="number"
+                      step="0.01"
                       onBlur={(e) =>
                         canEditDaily &&
-                        updateBudgetField(
-                          b.id,
-                          "dailyBudgetHours",
-                          e.target.value
-                        )
+                        updateDailyBudgetField(item.id, e.target.value)
                       }
                       style={{
-                        maxWidth: 130,
+                        maxWidth: 140,
                         background: canEditDaily ? "#fff" : "#f8fafc",
                         color: canEditDaily ? "#0f172a" : "#64748b",
                         cursor: canEditDaily ? "text" : "not-allowed",
                       }}
                     />
                   </td>
-
                   <td style={{ ...tdStyle, textAlign: "center" }}>
-                    {canDeleteBudget ? (
+                    {canDeleteDaily ? (
                       <ActionButton
                         variant="danger"
-                        onClick={() => deleteBudget(b.id)}
+                        onClick={() => deleteDailyBudget(item.id)}
                       >
                         Delete
                       </ActionButton>
@@ -551,18 +973,18 @@ export default function BudgetsPage() {
                 </tr>
               ))}
 
-              {budgets.length === 0 && (
+              {selectedDailyBudgets.length === 0 && (
                 <tr>
                   <td
-                    colSpan="5"
+                    colSpan={4}
                     style={{
-                      padding: "18px",
+                      padding: 18,
                       textAlign: "center",
                       fontSize: 13,
                       color: "#64748b",
                     }}
                   >
-                    No budgets found.
+                    No daily budgets found for {selectedAirline}.
                   </td>
                 </tr>
               )}
