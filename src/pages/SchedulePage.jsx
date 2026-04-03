@@ -1,5 +1,5 @@
 // src/pages/SchedulePage.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   collection,
@@ -76,9 +76,6 @@ const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
   return s1 < e2 && s2 < e1;
 };
 
-const buildWeekTag = (days) =>
-  DAY_KEYS.map((k) => days?.[k]?.toString().trim() || "").join("|");
-
 const JS_DAY_TO_KEY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 const normalizeAirlineName = (value) => {
@@ -96,8 +93,74 @@ const normalizeAirlineName = (value) => {
   return airline;
 };
 
+const normalizeDepartmentName = (value) => {
+  const raw = String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+  if (raw === "cabin") return "cabin service";
+  if (raw === "cabin service") return "cabin service";
+  if (raw === "dl cabin service") return "cabin service";
+  if (raw === "ticket counter") return "tc";
+
+  return raw;
+};
+
 const getAirlineLogo = (value) =>
   AIRLINE_LOGOS[normalizeAirlineName(value)] || AIRLINE_LOGOS[value] || null;
+
+function buildDayNumbers(weekStart) {
+  if (!weekStart) {
+    return {
+      mon: "",
+      tue: "",
+      wed: "",
+      thu: "",
+      fri: "",
+      sat: "",
+      sun: "",
+    };
+  }
+
+  const base = new Date(`${weekStart}T00:00:00`);
+  if (Number.isNaN(base.getTime())) {
+    return {
+      mon: "",
+      tue: "",
+      wed: "",
+      thu: "",
+      fri: "",
+      sat: "",
+      sun: "",
+    };
+  }
+
+  const result = {};
+  DAY_KEYS.forEach((key, index) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + index);
+    result[key] = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+  });
+
+  return result;
+}
+
+function buildWeekTagFromWeekStart(weekStart) {
+  return String(weekStart || "").trim();
+}
+
+function emptyRow() {
+  return {
+    employeeId: "",
+    mon: [{ start: "", end: "" }, { start: "", end: "" }],
+    tue: [{ start: "", end: "" }, { start: "", end: "" }],
+    wed: [{ start: "", end: "" }, { start: "", end: "" }],
+    thu: [{ start: "", end: "" }, { start: "", end: "" }],
+    fri: [{ start: "", end: "" }, { start: "", end: "" }],
+    sat: [{ start: "", end: "" }, { start: "", end: "" }],
+    sun: [{ start: "", end: "" }, { start: "", end: "" }],
+  };
+}
 
 function PageCard({ children, style = {} }) {
   return (
@@ -225,17 +288,8 @@ export default function SchedulePage() {
 
   const [airlineKey, setAirlineKey] = useState("");
   const [airlineDisplayName, setAirlineDisplayName] = useState("");
-
   const [department, setDepartment] = useState("");
-  const [dayNumbers, setDayNumbers] = useState({
-    mon: "",
-    tue: "",
-    wed: "",
-    thu: "",
-    fri: "",
-    sat: "",
-    sun: "",
-  });
+  const [weekStart, setWeekStart] = useState("");
 
   const [employees, setEmployees] = useState([]);
   const [rows, setRows] = useState([]);
@@ -243,10 +297,17 @@ export default function SchedulePage() {
   const [blockedByEmployee, setBlockedByEmployee] = useState({});
   const [statusMessage, setStatusMessage] = useState("");
 
+  const dayNumbers = useMemo(() => buildDayNumbers(weekStart), [weekStart]);
+
   useEffect(() => {
     if (location.state?.template) {
-      const { airline, airlineDisplayName, department, days, grid } =
-        location.state.template;
+      const {
+        airline,
+        airlineDisplayName,
+        department,
+        weekStart,
+        grid,
+      } = location.state.template;
 
       if (airline) setAirlineKey(normalizeAirlineName(airline));
       if (airlineDisplayName) {
@@ -256,7 +317,7 @@ export default function SchedulePage() {
       }
 
       if (department) setDepartment(department);
-      if (days) setDayNumbers(days);
+      if (weekStart) setWeekStart(weekStart);
       if (grid) setRows(grid);
     }
   }, [location.state]);
@@ -270,10 +331,18 @@ export default function SchedulePage() {
   useEffect(() => {
     getDocs(collection(db, "airlineBudgets")).then((snap) => {
       const map = {};
+
       snap.docs.forEach((d) => {
         const data = d.data();
-        map[data.airline] = data.budgetHours;
+        const airline = normalizeAirlineName(data.airline);
+        const dept = normalizeDepartmentName(data.department);
+        const start = String(data.weekStart || "").trim();
+
+        if (!airline || !dept || !start) return;
+
+        map[`${airline}__${dept}__${start}`] = Number(data.budgetHours || 0);
       });
+
       setAirlineBudgets(map);
     });
   }, []);
@@ -318,6 +387,12 @@ export default function SchedulePage() {
     loadRestrictions();
   }, []);
 
+  useEffect(() => {
+    if (!rows.length) {
+      setRows([emptyRow()]);
+    }
+  }, [rows.length]);
+
   const diffHours = (start, end) => {
     if (!start || !end || start === "OFF") return 0;
     const s = toMinutes(start);
@@ -361,7 +436,9 @@ export default function SchedulePage() {
         employeeWeekly += employeeDay;
       });
 
-      employeeTotals[r.employeeId] = employeeWeekly;
+      if (r.employeeId) {
+        employeeTotals[r.employeeId] = employeeWeekly;
+      }
       airlineTotal += employeeWeekly;
     });
 
@@ -370,8 +447,14 @@ export default function SchedulePage() {
 
   const { employeeTotals, airlineTotal, dailyTotals } = calculateTotals();
 
+  const budgetKey = `${normalizeAirlineName(airlineKey)}__${normalizeDepartmentName(
+    department
+  )}__${String(weekStart || "").trim()}`;
+
+  const selectedWeeklyBudget = airlineBudgets[budgetKey] || 0;
+
   const checkConflictsWithOtherAirlines = async () => {
-    const weekTag = buildWeekTag(dayNumbers).trim();
+    const weekTag = buildWeekTagFromWeekStart(weekStart).trim();
 
     if (!weekTag) {
       return { conflicts: [], weekTag: null };
@@ -442,13 +525,13 @@ export default function SchedulePage() {
   };
 
   const handleSaveDraft = async () => {
-    if (!airlineKey || !department) {
-      setStatusMessage("Please select airline and department.");
+    if (!airlineKey || !department || !weekStart) {
+      setStatusMessage("Please select airline, department and week start.");
       return;
     }
 
     try {
-      const weekTagToSave = buildWeekTag(dayNumbers);
+      const weekTagToSave = buildWeekTagFromWeekStart(weekStart);
 
       await addDoc(collection(db, "schedules"), {
         createdAt: serverTimestamp(),
@@ -457,16 +540,14 @@ export default function SchedulePage() {
           airlineDisplayName || airlineKey
         ),
         department,
+        weekStart,
         days: dayNumbers,
         weekTag: weekTagToSave,
         grid: rows,
         totals: employeeTotals,
         airlineWeeklyHours: airlineTotal,
         airlineDailyHours: dailyTotals,
-        budget:
-          airlineBudgets[normalizeAirlineName(airlineKey)] ||
-          airlineBudgets[airlineKey] ||
-          0,
+        budget: selectedWeeklyBudget,
         status: "draft",
         createdBy: user?.username || null,
         role: user?.role || null,
@@ -480,8 +561,8 @@ export default function SchedulePage() {
   };
 
   const handleSaveSchedule = async () => {
-    if (!airlineKey || !department) {
-      setStatusMessage("Please select airline and department.");
+    if (!airlineKey || !department || !weekStart) {
+      setStatusMessage("Please select airline, department and week start.");
       return;
     }
 
@@ -511,7 +592,7 @@ export default function SchedulePage() {
     }
 
     try {
-      const weekTagToSave = weekTag || buildWeekTag(dayNumbers);
+      const weekTagToSave = weekTag || buildWeekTagFromWeekStart(weekStart);
 
       await addDoc(collection(db, "schedules"), {
         createdAt: serverTimestamp(),
@@ -520,16 +601,14 @@ export default function SchedulePage() {
           airlineDisplayName || airlineKey
         ),
         department,
+        weekStart,
         days: dayNumbers,
         weekTag: weekTagToSave,
         grid: rows,
         totals: employeeTotals,
         airlineWeeklyHours: airlineTotal,
         airlineDailyHours: dailyTotals,
-        budget:
-          airlineBudgets[normalizeAirlineName(airlineKey)] ||
-          airlineBudgets[airlineKey] ||
-          0,
+        budget: selectedWeeklyBudget,
         status: "pending",
         createdBy: user?.username || null,
         role: user?.role || null,
@@ -581,8 +660,9 @@ export default function SchedulePage() {
       .replace(/\s+/g, "_")
       .replace(/[^\w-]/g, "");
     const safeDept = (department || "DEPT").replace(/\s+/g, "_");
+    const safeWeek = (weekStart || "week").replace(/[^\d-]/g, "");
 
-    pdf.save(`Schedule_${safeAirline}_${safeDept}.pdf`);
+    pdf.save(`Schedule_${safeAirline}_${safeDept}_${safeWeek}.pdf`);
   };
 
   const employeeNameMap = {};
@@ -721,7 +801,7 @@ export default function SchedulePage() {
               color: "#64748b",
             }}
           >
-            Select airline, department and week numbers before assigning shifts.
+            Select airline, department and week start before assigning shifts.
           </p>
         </div>
 
@@ -768,20 +848,6 @@ export default function SchedulePage() {
                   color: canEditWestJetName ? "#0f172a" : "#64748b",
                 }}
               />
-              {canEditWestJetName && (
-                <p
-                  style={{
-                    marginTop: 8,
-                    marginBottom: 0,
-                    fontSize: 12,
-                    color: "#64748b",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  This only changes what you see and print. Budgets and logo
-                  remain linked to “WestJet”.
-                </p>
-              )}
             </div>
           </div>
 
@@ -795,15 +861,24 @@ export default function SchedulePage() {
               <option value="Ramp">Ramp</option>
               <option value="TC">Ticket Counter</option>
               <option value="BSO">BSO</option>
-              <option value="Cabin">Cabin Service</option>
+              <option value="Cabin Service">Cabin Service</option>
               <option value="WCHR">WCHR</option>
               <option value="Other">Other</option>
             </SelectInput>
           </div>
+
+          <div>
+            <FieldLabel>Week Start</FieldLabel>
+            <TextInput
+              type="date"
+              value={weekStart}
+              onChange={(e) => setWeekStart(e.target.value)}
+            />
+          </div>
         </div>
 
         <div style={{ marginTop: 18 }}>
-          <FieldLabel>Day Numbers</FieldLabel>
+          <FieldLabel>Week Dates</FieldLabel>
           <div
             style={{
               display: "grid",
@@ -828,10 +903,14 @@ export default function SchedulePage() {
                 </label>
                 <TextInput
                   value={dayNumbers[key]}
-                  onChange={(e) =>
-                    setDayNumbers({ ...dayNumbers, [key]: e.target.value })
-                  }
-                  style={{ textAlign: "center", padding: "10px 8px" }}
+                  disabled
+                  style={{
+                    textAlign: "center",
+                    padding: "10px 8px",
+                    background: "#f8fafc",
+                    color: "#475569",
+                    fontWeight: 700,
+                  }}
                 />
               </div>
             ))}
@@ -937,7 +1016,7 @@ export default function SchedulePage() {
                 letterSpacing: "0.08em",
               }}
             >
-              Budget
+              Weekly Budget
             </p>
             <p
               style={{
@@ -948,9 +1027,7 @@ export default function SchedulePage() {
                 letterSpacing: "-0.03em",
               }}
             >
-              {airlineBudgets[normalizeAirlineName(airlineKey)] ||
-                airlineBudgets[airlineKey] ||
-                0}
+              {selectedWeeklyBudget}
             </p>
           </div>
         </div>
@@ -995,7 +1072,7 @@ export default function SchedulePage() {
                     letterSpacing: "0.08em",
                   }}
                 >
-                  {DAY_LABELS[dKey]}
+                  {DAY_LABELS[dKey]} {dayNumbers[dKey]}
                 </div>
                 <div
                   style={{
