@@ -474,6 +474,12 @@ export default function SupervisorTimesheetPage() {
 
   const overBudget = currentBudget > 0 && totalReportedHours > currentBudget;
   const overBudgetBy = overBudget ? totalReportedHours - currentBudget : 0;
+  const isErrorStatus =
+    overBudget ||
+    statusMessage.toLowerCase().includes("error") ||
+    statusMessage.toLowerCase().includes("cannot") ||
+    statusMessage.toLowerCase().includes("please") ||
+    statusMessage.toLowerCase().includes("required");
 
   const handleFormChange = (field, value) => {
     if (isCabinServiceUser && field === "airline") {
@@ -598,22 +604,43 @@ export default function SupervisorTimesheetPage() {
           row.punchIn ||
           row.punchOut ||
           row.employeeStatus ||
-          row.breakTaken ||
           row.reason
       );
 
     if (!cleanRows.length) {
-      setStatusMessage("Please add at least one employee row.");
+      setStatusMessage(
+        "Please add at least one employee row before submitting the timesheet."
+      );
       return;
     }
 
-    if (cleanRows.some((row) => !row.employeeId)) {
-      setStatusMessage("Each row must have an employee selected.");
+    if (
+      cleanRows.some(
+        (row) =>
+          !row.employeeId ||
+          !row.employeeName ||
+          !row.punchIn ||
+          !row.punchOut ||
+          !row.employeeStatus ||
+          !row.breakTaken
+      )
+    ) {
+      setStatusMessage(
+        "Timesheet cannot be sent. Every row must have Employee, Punch In, Punch Out, Employee Status and Break Taken completed."
+      );
       return;
     }
 
-    if (cleanRows.some((row) => !row.employeeStatus)) {
-      setStatusMessage("Each row must have an employee status selected.");
+    if (
+      cleanRows.some(
+        (row) =>
+          String(row.breakTaken || "").trim().toLowerCase() === "no" &&
+          !String(row.reason || "").trim()
+      )
+    ) {
+      setStatusMessage(
+        'Timesheet cannot be sent. If "Break Taken" is set to "No", the "Reason" field is required.'
+      );
       return;
     }
 
@@ -662,14 +689,16 @@ export default function SupervisorTimesheetPage() {
         });
 
         setReturnedReports((prev) => prev.filter((item) => item.id !== editingReportId));
-        setStatusMessage("Returned timesheet fixed and resubmitted successfully.");
+        setStatusMessage(
+          "Timesheet corrected and resubmitted for approval successfully."
+        );
       } else {
         await addDoc(collection(db, "timesheet_reports"), {
           ...payload,
           createdAt: serverTimestamp(),
         });
 
-        setStatusMessage("Timesheet submitted successfully.");
+        setStatusMessage("Timesheet submitted for approval successfully.");
       }
 
       resetForm();
@@ -779,21 +808,92 @@ export default function SupervisorTimesheetPage() {
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 20,
+          }}
+          onClick={() => setStatusMessage("")}
+        >
           <div
+            onClick={(e) => e.stopPropagation()}
             style={{
-              background: overBudget ? "#fff1f2" : "#edf7ff",
-              border: `1px solid ${overBudget ? "#fecdd3" : "#cfe7fb"}`,
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: overBudget ? "#9f1239" : "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
+              width: "100%",
+              maxWidth: 520,
+              background: "#ffffff",
+              borderRadius: 24,
+              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              border: "1px solid #e2e8f0",
+              overflow: "hidden",
             }}
           >
-            {statusMessage}
+            <div
+              style={{
+                padding: "18px 20px",
+                background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
+                borderBottom: isErrorStatus
+                  ? "1px solid #fecdd3"
+                  : "1px solid #a7f3d0",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: isErrorStatus ? "#9f1239" : "#065f46",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {isErrorStatus ? "Action Required" : "Success"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "22px 20px 18px",
+                fontSize: 15,
+                lineHeight: 1.65,
+                color: "#0f172a",
+                fontWeight: 700,
+              }}
+            >
+              {statusMessage}
+            </div>
+
+            <div
+              style={{
+                padding: "0 20px 20px",
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setStatusMessage("")}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                  color: "#fff",
+                  borderRadius: 14,
+                  padding: "12px 22px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                }}
+              >
+                OK
+              </button>
+            </div>
           </div>
-        </PageCard>
+        </div>
       )}
 
       {returnedReports.length > 0 && (
