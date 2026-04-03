@@ -1,4 +1,3 @@
-// src/pages/SchedulePage.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -104,44 +103,72 @@ const normalizeDepartmentName = (value) => {
   return raw;
 };
 
-const getAirlineLogo = (value) =>
-  AIRLINE_LOGOS[normalizeAirlineName(value)] || AIRLINE_LOGOS[value] || null;
-
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-
-function normalizeDateForInput(value) {
+function normalizeDateString(value) {
   if (!value) return "";
 
   const raw = String(value).trim();
   if (!raw) return "";
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    return raw;
-  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
 
-  const slashFull = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashFull) {
-    const [, mm, dd, yyyy] = slashFull;
-    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
-  }
-
-  const dashFull = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dashFull) {
-    const [, mm, dd, yyyy] = dashFull;
-    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+  const slashWithYear = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashWithYear) {
+    const [, mm, dd, yyyy] = slashWithYear;
+    return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
   }
 
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(
-      parsed.getDate()
-    )}`;
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(parsed.getDate()).padStart(2, "0")}`;
   }
 
   return "";
 }
+
+function weekStartFromDays(days) {
+  const mon = days?.mon;
+  if (!mon) return "";
+
+  const match = String(mon).trim().match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!match) return "";
+
+  const [, mm, dd] = match;
+
+  const today = new Date();
+  const thisYear = today.getFullYear();
+  const candidateThisYear = new Date(
+    thisYear,
+    Number(mm) - 1,
+    Number(dd)
+  );
+
+  if (!Number.isNaN(candidateThisYear.getTime())) {
+    return `${candidateThisYear.getFullYear()}-${String(
+      candidateThisYear.getMonth() + 1
+    ).padStart(2, "0")}-${String(candidateThisYear.getDate()).padStart(2, "0")}`;
+  }
+
+  return "";
+}
+
+function cloneGrid(grid = []) {
+  return grid.map((row) => ({
+    ...row,
+    mon: (row.mon || []).map((s) => ({ ...s })),
+    tue: (row.tue || []).map((s) => ({ ...s })),
+    wed: (row.wed || []).map((s) => ({ ...s })),
+    thu: (row.thu || []).map((s) => ({ ...s })),
+    fri: (row.fri || []).map((s) => ({ ...s })),
+    sat: (row.sat || []).map((s) => ({ ...s })),
+    sun: (row.sun || []).map((s) => ({ ...s })),
+  }));
+}
+
+const getAirlineLogo = (value) =>
+  AIRLINE_LOGOS[normalizeAirlineName(value)] || AIRLINE_LOGOS[value] || null;
 
 function buildDayNumbers(weekStart) {
   if (!weekStart) {
@@ -156,20 +183,7 @@ function buildDayNumbers(weekStart) {
     };
   }
 
-  const normalized = normalizeDateForInput(weekStart);
-  if (!normalized) {
-    return {
-      mon: "",
-      tue: "",
-      wed: "",
-      thu: "",
-      fri: "",
-      sat: "",
-      sun: "",
-    };
-  }
-
-  const base = new Date(`${normalized}T00:00:00`);
+  const base = new Date(`${weekStart}T00:00:00`);
   if (Number.isNaN(base.getTime())) {
     return {
       mon: "",
@@ -195,7 +209,7 @@ function buildDayNumbers(weekStart) {
 }
 
 function buildWeekTagFromWeekStart(weekStart) {
-  return normalizeDateForInput(weekStart);
+  return String(weekStart || "").trim();
 }
 
 function emptyRow() {
@@ -355,33 +369,42 @@ export default function SchedulePage() {
     statusMessage.toLowerCase().includes("red flag");
 
   useEffect(() => {
-    if (location.state?.template) {
-      const {
-        airline,
-        airlineDisplayName,
-        department,
-        weekStart,
-        grid,
-      } = location.state.template;
+    const template = location.state?.template;
+    if (!template) return;
 
-      if (airline) setAirlineKey(normalizeAirlineName(airline));
+    const resolvedAirline = normalizeAirlineName(
+      template.airlineDisplayName || template.airline || ""
+    );
 
-      if (airlineDisplayName) {
-        setAirlineDisplayName(normalizeAirlineName(airlineDisplayName));
-      } else if (airline) {
-        setAirlineDisplayName(normalizeAirlineName(airline));
-      }
+    const resolvedWeekStart =
+      normalizeDateString(template.weekStart) ||
+      normalizeDateString(template.weekTag) ||
+      weekStartFromDays(template.days);
 
-      if (department) setDepartment(department);
+    if (template.airline) {
+      setAirlineKey(normalizeAirlineName(template.airline));
+    } else if (resolvedAirline) {
+      setAirlineKey(resolvedAirline);
+    }
 
-      const normalizedWeekStart = normalizeDateForInput(weekStart);
-      if (normalizedWeekStart) {
-        setWeekStart(normalizedWeekStart);
-      }
+    if (template.airlineDisplayName) {
+      setAirlineDisplayName(template.airlineDisplayName);
+    } else if (resolvedAirline) {
+      setAirlineDisplayName(resolvedAirline);
+    }
 
-      if (grid) {
-        setRows(grid);
-      }
+    if (template.department) {
+      setDepartment(template.department);
+    }
+
+    if (resolvedWeekStart) {
+      setWeekStart(resolvedWeekStart);
+    }
+
+    if (Array.isArray(template.grid) && template.grid.length) {
+      setRows(cloneGrid(template.grid));
+    } else {
+      setRows([emptyRow()]);
     }
   }, [location.state]);
 
@@ -399,7 +422,7 @@ export default function SchedulePage() {
         const data = d.data();
         const airline = normalizeAirlineName(data.airline);
         const dept = normalizeDepartmentName(data.department);
-        const start = normalizeDateForInput(data.weekStart);
+        const start = String(data.weekStart || "").trim();
 
         if (!airline || !dept || !start) return;
 
@@ -419,26 +442,25 @@ export default function SchedulePage() {
         snap.docs.forEach((docSnap) => {
           const data = docSnap.data();
           const empId = data.employeeId || data.employee_id;
-          const startStr = normalizeDateForInput(data.start_date || data.startDate);
-          const endStr = normalizeDateForInput(
-            data.end_date || data.endDate || data.start_date || data.startDate
-          );
+          const startStr = data.start_date || data.startDate;
+          const endStr = data.end_date || data.endDate || startStr;
 
-          if (!empId || !startStr || !endStr) return;
+          if (!empId || !startStr) return;
 
           const start = new Date(`${startStr}T00:00:00`);
           const end = new Date(`${endStr}T00:00:00`);
 
-          if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
+          if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
 
           let current = new Date(start);
           while (current <= end) {
-            const jsDay = current.getDay();
-            const dayKey = JS_DAY_TO_KEY[jsDay];
-            if (dayKey) {
-              if (!byEmp[empId]) byEmp[empId] = {};
-              byEmp[empId][dayKey] = true;
-            }
+            const dateKey = `${current.getFullYear()}-${String(
+              current.getMonth() + 1
+            ).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+
+            if (!byEmp[empId]) byEmp[empId] = {};
+            byEmp[empId][dateKey] = true;
+
             current.setDate(current.getDate() + 1);
           }
         });
@@ -457,6 +479,39 @@ export default function SchedulePage() {
       setRows([emptyRow()]);
     }
   }, [rows.length]);
+
+  const blockedByEmployeeForSelectedWeek = useMemo(() => {
+    if (!weekStart) return {};
+
+    const weekDates = {};
+    DAY_KEYS.forEach((key, index) => {
+      const base = new Date(`${weekStart}T00:00:00`);
+      if (Number.isNaN(base.getTime())) return;
+
+      const d = new Date(base);
+      d.setDate(base.getDate() + index);
+
+      weekDates[key] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}-${String(d.getDate()).padStart(2, "0")}`;
+    });
+
+    const mapped = {};
+    Object.keys(blockedByEmployee).forEach((empId) => {
+      DAY_KEYS.forEach((dayKey) => {
+        const actualDate = weekDates[dayKey];
+        if (!actualDate) return;
+
+        if (blockedByEmployee[empId]?.[actualDate]) {
+          if (!mapped[empId]) mapped[empId] = {};
+          mapped[empId][dayKey] = true;
+        }
+      });
+    });
+
+    return mapped;
+  }, [blockedByEmployee, weekStart]);
 
   const diffHours = (start, end) => {
     if (!start || !end || start === "OFF") return 0;
@@ -514,7 +569,7 @@ export default function SchedulePage() {
 
   const budgetKey = `${normalizeAirlineName(airlineKey)}__${normalizeDepartmentName(
     department
-  )}__${normalizeDateForInput(weekStart)}`;
+  )}__${String(weekStart || "").trim()}`;
 
   const selectedWeeklyBudget = airlineBudgets[budgetKey] || 0;
 
@@ -587,15 +642,13 @@ export default function SchedulePage() {
   };
 
   const handleSaveDraft = async () => {
-    const normalizedWeekStart = normalizeDateForInput(weekStart);
-
-    if (!airlineKey || !department || !normalizedWeekStart) {
+    if (!airlineKey || !department || !weekStart) {
       setStatusMessage("Please select airline, department and week start.");
       return;
     }
 
     try {
-      const weekTagToSave = buildWeekTagFromWeekStart(normalizedWeekStart);
+      const weekTagToSave = buildWeekTagFromWeekStart(weekStart);
 
       await addDoc(collection(db, "schedules"), {
         createdAt: serverTimestamp(),
@@ -604,8 +657,8 @@ export default function SchedulePage() {
           airlineDisplayName || airlineKey
         ),
         department,
-        weekStart: normalizedWeekStart,
-        days: buildDayNumbers(normalizedWeekStart),
+        weekStart,
+        days: dayNumbers,
         weekTag: weekTagToSave,
         grid: rows,
         totals: employeeTotals,
@@ -625,9 +678,7 @@ export default function SchedulePage() {
   };
 
   const handleSaveSchedule = async () => {
-    const normalizedWeekStart = normalizeDateForInput(weekStart);
-
-    if (!airlineKey || !department || !normalizedWeekStart) {
+    if (!airlineKey || !department || !weekStart) {
       setStatusMessage("Please select airline, department and week start.");
       return;
     }
@@ -658,7 +709,7 @@ export default function SchedulePage() {
     }
 
     try {
-      const weekTagToSave = weekTag || buildWeekTagFromWeekStart(normalizedWeekStart);
+      const weekTagToSave = weekTag || buildWeekTagFromWeekStart(weekStart);
 
       await addDoc(collection(db, "schedules"), {
         createdAt: serverTimestamp(),
@@ -667,8 +718,8 @@ export default function SchedulePage() {
           airlineDisplayName || airlineKey
         ),
         department,
-        weekStart: normalizedWeekStart,
-        days: buildDayNumbers(normalizedWeekStart),
+        weekStart,
+        days: dayNumbers,
         weekTag: weekTagToSave,
         grid: rows,
         totals: employeeTotals,
@@ -726,10 +777,7 @@ export default function SchedulePage() {
       .replace(/\s+/g, "_")
       .replace(/[^\w-]/g, "");
     const safeDept = (department || "DEPT").replace(/\s+/g, "_");
-    const safeWeek = (normalizeDateForInput(weekStart) || "week").replace(
-      /[^\d-]/g,
-      ""
-    );
+    const safeWeek = (weekStart || "week").replace(/[^\d-]/g, "");
 
     pdf.save(`Schedule_${safeAirline}_${safeDept}_${safeWeek}.pdf`);
   };
@@ -1011,7 +1059,7 @@ export default function SchedulePage() {
             <FieldLabel>Week Start</FieldLabel>
             <TextInput
               type="date"
-              value={normalizeDateForInput(weekStart)}
+              value={weekStart}
               onChange={(e) => setWeekStart(e.target.value)}
             />
           </div>
@@ -1068,7 +1116,7 @@ export default function SchedulePage() {
           department={department}
           onSave={handleSaveSchedule}
           onSaveDraft={handleSaveDraft}
-          blockedByEmployee={blockedByEmployee}
+          blockedByEmployee={blockedByEmployeeForSelectedWeek}
         />
       </div>
 
