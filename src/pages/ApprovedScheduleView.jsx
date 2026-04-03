@@ -1,4 +1,3 @@
-// src/pages/ApprovedScheduleView.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -65,7 +64,7 @@ const loadImage = (src) =>
   });
 
 function hexToRgba(hex, alpha) {
-  let h = String(hex || "").replace("#", "");
+  let h = hex.replace("#", "");
   if (h.length === 3) {
     h = h
       .split("")
@@ -93,66 +92,68 @@ const normalizeAirlineName = (value) => {
   return airline;
 };
 
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-
-function normalizeDateForInput(value) {
+function normalizeDateString(value) {
   if (!value) return "";
 
   const raw = String(value).trim();
   if (!raw) return "";
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    return raw;
-  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
 
-  const slashFull = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashFull) {
-    const [, mm, dd, yyyy] = slashFull;
-    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
-  }
-
-  const dashFull = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dashFull) {
-    const [, mm, dd, yyyy] = dashFull;
-    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+  const slashWithYear = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashWithYear) {
+    const [, mm, dd, yyyy] = slashWithYear;
+    return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
   }
 
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(
-      parsed.getDate()
-    )}`;
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(parsed.getDate()).padStart(2, "0")}`;
   }
 
   return "";
 }
 
-function buildDayNumbersFromWeekStart(weekStart) {
-  const normalized = normalizeDateForInput(weekStart);
-  if (!normalized) return null;
+function weekStartFromDays(days) {
+  const mon = days?.mon;
+  if (!mon) return "";
 
-  const base = new Date(`${normalized}T00:00:00`);
-  if (Number.isNaN(base.getTime())) return null;
+  const match = String(mon).trim().match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!match) return "";
 
-  const result = {};
-  DAY_KEYS.forEach((key, index) => {
-    const d = new Date(base);
-    d.setDate(base.getDate() + index);
-    result[key] = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(
-      d.getDate()
-    ).padStart(2, "0")}`;
-  });
+  const [, mm, dd] = match;
 
-  return result;
+  const today = new Date();
+  const thisYear = today.getFullYear();
+  const candidateThisYear = new Date(
+    thisYear,
+    Number(mm) - 1,
+    Number(dd)
+  );
+
+  if (!Number.isNaN(candidateThisYear.getTime())) {
+    return `${candidateThisYear.getFullYear()}-${String(
+      candidateThisYear.getMonth() + 1
+    ).padStart(2, "0")}-${String(candidateThisYear.getDate()).padStart(2, "0")}`;
+  }
+
+  return "";
 }
 
-function resolveScheduleDays(schedule) {
-  const fromWeekStart = buildDayNumbersFromWeekStart(schedule?.weekStart);
-  if (fromWeekStart) return fromWeekStart;
-  if (schedule?.days) return schedule.days;
-  return {};
+function cloneGrid(grid = []) {
+  return grid.map((row) => ({
+    ...row,
+    mon: (row.mon || []).map((s) => ({ ...s })),
+    tue: (row.tue || []).map((s) => ({ ...s })),
+    wed: (row.wed || []).map((s) => ({ ...s })),
+    thu: (row.thu || []).map((s) => ({ ...s })),
+    fri: (row.fri || []).map((s) => ({ ...s })),
+    sat: (row.sat || []).map((s) => ({ ...s })),
+    sun: (row.sun || []).map((s) => ({ ...s })),
+  }));
 }
 
 function getShiftText(shifts, idx) {
@@ -270,8 +271,7 @@ function StatusBadge({ overBudget }) {
 }
 
 function ExcelScheduleTable({ schedule, employees, compact = false }) {
-  const days = resolveScheduleDays(schedule);
-  const { grid, airline, department } = schedule;
+  const { days, grid, airline, department } = schedule;
   const displayAirline = normalizeAirlineName(
     schedule.airlineDisplayName || airline
   );
@@ -402,7 +402,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
           </tr>
         </thead>
         <tbody>
-          {(grid || []).map((row, idx) => {
+          {grid.map((row, idx) => {
             const name = empMap[row.employeeId] || "Unknown";
             const isStriped = idx % 2 === 0;
             const rowBg = isStriped ? stripeBg : plainBg;
@@ -520,15 +520,7 @@ export default function ApprovedScheduleView() {
     async function load() {
       const snap = await getDoc(doc(db, "schedules", id));
       if (snap.exists()) {
-        const data = snap.data();
-        setSchedule({
-          id: snap.id,
-          ...data,
-          weekStart:
-            normalizeDateForInput(data.weekStart) ||
-            normalizeDateForInput(data.weekTag) ||
-            "",
-        });
+        setSchedule({ id: snap.id, ...snap.data() });
       }
 
       const empSnap = await getDocs(collection(db, "employees"));
@@ -563,14 +555,20 @@ export default function ApprovedScheduleView() {
   );
 
   const handleUseAsTemplate = () => {
+    const resolvedWeekStart =
+      normalizeDateString(schedule.weekStart) ||
+      normalizeDateString(schedule.weekTag) ||
+      weekStartFromDays(schedule.days);
+
     navigate("/schedule", {
       state: {
         template: {
           airline: schedule.airline || displayAirline,
           airlineDisplayName: schedule.airlineDisplayName || displayAirline,
           department: schedule.department || "",
-          weekStart: schedule.weekStart || "",
-          grid: schedule.grid || [],
+          weekStart: resolvedWeekStart,
+          days: schedule.days || null,
+          grid: cloneGrid(schedule.grid || []),
         },
       },
     });
