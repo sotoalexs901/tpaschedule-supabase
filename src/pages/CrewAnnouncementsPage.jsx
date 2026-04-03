@@ -1,3 +1,4 @@
+// src/pages/CrewAnnouncementsPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -9,7 +10,11 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -231,7 +236,7 @@ function categoryBadge(category) {
   };
 }
 
-function sanitizeFileName(name) {
+function getSafeFileName(name) {
   return String(name || "image")
     .replace(/\s+/g, "_")
     .replace(/[^\w.-]/g, "");
@@ -248,7 +253,7 @@ export default function CrewAnnouncementsPage() {
   const [pinned, setPinned] = useState(false);
   const [expiresOn, setExpiresOn] = useState("");
   const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState("");
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -264,9 +269,11 @@ export default function CrewAnnouncementsPage() {
 
   useEffect(() => {
     return () => {
-      if (imagePreview) URL.revokeObjectURL(imagePreview);
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
     };
-  }, [imagePreview]);
+  }, [imagePreviewUrl]);
 
   const loadAnnouncements = async () => {
     try {
@@ -289,20 +296,14 @@ export default function CrewAnnouncementsPage() {
     loadAnnouncements();
   }, []);
 
-  const resetForm = () => {
-    setTitle("");
-    setSubtitle("");
-    setBody("");
-    setCategory("general");
-    setPriority("normal");
-    setPinned(false);
-    setExpiresOn("");
+  const resetImageInput = () => {
     setImageFile(null);
-    if (imagePreview) URL.revokeObjectURL(imagePreview);
-    setImagePreview("");
-
-    const fileInput = document.getElementById("crew-announcement-image");
-    if (fileInput) fileInput.value = "";
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl);
+      setImagePreviewUrl("");
+    }
+    const input = document.getElementById("crew-announcement-image-input");
+    if (input) input.value = "";
   };
 
   const handleSubmit = async (e) => {
@@ -318,42 +319,44 @@ export default function CrewAnnouncementsPage() {
       setSaving(true);
 
       let imageUrl = "";
+      let imagePath = "";
+      let imageContentType = "";
 
       if (imageFile) {
         if (!imageFile.type.startsWith("image/")) {
-          setMessage("Selected file is not a valid image.");
-          setSaving(false);
-          return;
+          throw new Error("Please select a valid image file.");
+        }
+
+        if (
+          imageFile.type === "image/heic" ||
+          imageFile.type === "image/heif"
+        ) {
+          throw new Error(
+            "HEIC/HEIF images are not supported here. Please use JPG or PNG."
+          );
         }
 
         if (imageFile.size > 5 * 1024 * 1024) {
-          setMessage("Image must be smaller than 5MB.");
-          setSaving(false);
-          return;
+          throw new Error("Image must be smaller than 5MB.");
         }
 
-        const safeName = sanitizeFileName(imageFile.name);
-        const extension =
-          safeName.includes(".") ? safeName.split(".").pop() : "jpg";
-        const filePath = `employeeAnnouncements/${Date.now()}_${safeName}`;
-        const storageRef = ref(storage, filePath);
+        const safeName = getSafeFileName(imageFile.name);
+        imagePath = `employeeAnnouncements/${Date.now()}_${safeName}`;
+        imageContentType = imageFile.type || "image/jpeg";
 
-        try {
-          const uploadResult = await uploadBytes(storageRef, imageFile, {
-            contentType: imageFile.type || `image/${extension}`,
-          });
+        const storageRef = ref(storage, imagePath);
 
-          imageUrl = await getDownloadURL(uploadResult.ref);
-          console.log("Uploaded image URL:", imageUrl);
-        } catch (uploadErr) {
-          console.error("Error uploading image:", uploadErr);
-          setMessage(
-            uploadErr?.message ||
-              "Image upload failed. Check Firebase Storage rules."
-          );
-          setSaving(false);
-          return;
+        await uploadBytes(storageRef, imageFile, {
+          contentType: imageContentType,
+        });
+
+        imageUrl = await getDownloadURL(storageRef);
+
+        if (!imageUrl) {
+          throw new Error("Image uploaded but URL could not be generated.");
         }
+
+        console.log("Announcement image URL:", imageUrl);
       }
 
       await addDoc(collection(db, "employeeAnnouncements"), {
@@ -365,6 +368,8 @@ export default function CrewAnnouncementsPage() {
         pinned,
         expiresOn: expiresOn || "",
         imageUrl,
+        imagePath,
+        imageContentType,
         createdAt: serverTimestamp(),
         createdBy: visibleName,
         createdByUsername: user?.username || "",
@@ -372,12 +377,19 @@ export default function CrewAnnouncementsPage() {
         createdByPosition: visiblePosition,
       });
 
-      resetForm();
+      setTitle("");
+      setSubtitle("");
+      setBody("");
+      setCategory("general");
+      setPriority("normal");
+      setPinned(false);
+      setExpiresOn("");
+      resetImageInput();
       setMessage("Announcement posted!");
       await loadAnnouncements();
     } catch (err) {
       console.error("Error posting announcement:", err);
-      setMessage("Error posting announcement. Check console for details.");
+      setMessage(err?.message || "Error posting announcement.");
     } finally {
       setSaving(false);
     }
@@ -404,33 +416,38 @@ export default function CrewAnnouncementsPage() {
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
-
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-      setImagePreview("");
-    }
+    setMessage("");
 
     if (!file) {
-      setImageFile(null);
+      resetImageInput();
       return;
     }
 
     if (!file.type.startsWith("image/")) {
-      alert("Please select an image file.");
-      e.target.value = "";
-      setImageFile(null);
+      resetImageInput();
+      setMessage("Please select an image file (jpg, png, webp).");
+      return;
+    }
+
+    if (file.type === "image/heic" || file.type === "image/heif") {
+      resetImageInput();
+      setMessage("HEIC/HEIF is not supported. Please convert it to JPG or PNG.");
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("Image must be smaller than 5MB.");
-      e.target.value = "";
-      setImageFile(null);
+      resetImageInput();
+      setMessage("Image must be smaller than 5MB.");
       return;
     }
 
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl);
+    }
+
+    const preview = URL.createObjectURL(file);
     setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+    setImagePreviewUrl(preview);
   };
 
   const success =
@@ -621,7 +638,8 @@ export default function CrewAnnouncementsPage() {
               color: "#64748b",
             }}
           >
-            Create a visible notice for the dashboard with optional image.
+            Create a visible notice for the dashboard with optional subtitle,
+            image, category and priority.
           </p>
         </div>
 
@@ -646,7 +664,7 @@ export default function CrewAnnouncementsPage() {
             <TextInput
               value={subtitle}
               onChange={(e) => setSubtitle(e.target.value)}
-              placeholder="Short highlight"
+              placeholder="Short highlight or airline/department"
             />
           </div>
 
@@ -734,9 +752,9 @@ export default function CrewAnnouncementsPage() {
           <div>
             <FieldLabel>Image (optional)</FieldLabel>
             <TextInput
-              id="crew-announcement-image"
+              id="crew-announcement-image-input"
               type="file"
-              accept="image/*"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
               onChange={handleImageChange}
               style={{ padding: "10px 12px" }}
             />
@@ -754,25 +772,25 @@ export default function CrewAnnouncementsPage() {
               </p>
             )}
 
-            {imagePreview && (
+            {imagePreviewUrl && (
               <div
                 style={{
                   marginTop: 12,
                   borderRadius: 16,
                   overflow: "hidden",
-                  border: "1px solid #dbeafe",
-                  background: "#f8fbff",
-                  maxWidth: 360,
+                  border: "1px solid #e2e8f0",
+                  maxWidth: 380,
+                  background: "#fff",
                 }}
               >
                 <img
-                  src={imagePreview}
+                  src={imagePreviewUrl}
                   alt="Preview"
                   style={{
-                    width: "100%",
                     display: "block",
+                    width: "100%",
+                    maxHeight: 260,
                     objectFit: "cover",
-                    maxHeight: 240,
                   }}
                 />
               </div>
@@ -985,6 +1003,11 @@ export default function CrewAnnouncementsPage() {
                       Expires on: <b>{a.expiresOn}</b>
                     </span>
                   )}
+                  {a.imagePath && (
+                    <span>
+                      Image path: <b>{a.imagePath}</b>
+                    </span>
+                  )}
                 </div>
 
                 {a.imageUrl && (
@@ -993,6 +1016,7 @@ export default function CrewAnnouncementsPage() {
                       src={a.imageUrl}
                       alt={a.title || "Announcement image"}
                       onError={(e) => {
+                        console.error("Image render failed for:", a.imageUrl);
                         e.currentTarget.style.display = "none";
                       }}
                       style={{
