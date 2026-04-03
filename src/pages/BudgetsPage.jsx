@@ -62,15 +62,48 @@ function normalizeDepartmentName(name) {
 
   const upper = value.toUpperCase();
 
-  if (upper === "TC") return "TC";
+  if (upper === "TC" || upper === "TICKET COUNTER") return "TC";
   if (upper === "RAMP") return "Ramp";
   if (upper === "BSO") return "BSO";
   if (upper === "WCHR") return "WCHR";
-  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
+  if (upper === "CABIN" || upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
     return "Cabin Service";
   }
+  if (upper === "OTHER") return "Other";
 
   return value;
+}
+
+function startOfTodayString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function startOfCurrentWeekString() {
+  const now = new Date();
+  const day = now.getDay(); // 0 sunday
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+
+  return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(
+    monday.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function formatWeekStartLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "No week assigned";
+
+  const d = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return raw;
+
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(
+    2,
+    "0"
+  )}`;
 }
 
 function PageCard({ children, style = {} }) {
@@ -217,13 +250,6 @@ function TabButton({ active, children, onClick }) {
   );
 }
 
-function startOfTodayString() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-}
-
 export default function BudgetsPage() {
   const { user } = useUser();
 
@@ -244,6 +270,7 @@ export default function BudgetsPage() {
 
   const [weeklyForm, setWeeklyForm] = useState({
     department: "",
+    weekStart: startOfCurrentWeekString(),
     weeklyHours: "",
   });
 
@@ -267,6 +294,7 @@ export default function BudgetsPage() {
           airline: normalizeAirlineName(data.airline),
           department: normalizeDepartmentName(data.department),
           budgetHours: Number(data.budgetHours || 0),
+          weekStart: String(data.weekStart || ""),
         };
       });
 
@@ -298,17 +326,23 @@ export default function BudgetsPage() {
     loadData();
   }, []);
 
+  const normalizedSelectedAirline = normalizeAirlineName(selectedAirline);
+
   const selectedWeeklyBudgets = useMemo(() => {
     return weeklyBudgets
-      .filter((item) => item.airline === normalizeAirlineName(selectedAirline))
-      .sort((a, b) => a.department.localeCompare(b.department));
-  }, [weeklyBudgets, selectedAirline]);
+      .filter((item) => item.airline === normalizedSelectedAirline)
+      .sort((a, b) => {
+        const weekCompare = String(b.weekStart || "").localeCompare(String(a.weekStart || ""));
+        if (weekCompare !== 0) return weekCompare;
+        return String(a.department || "").localeCompare(String(b.department || ""));
+      });
+  }, [weeklyBudgets, normalizedSelectedAirline]);
 
   const selectedDailyBudgets = useMemo(() => {
     return dailyBudgets
-      .filter((item) => item.airline === normalizeAirlineName(selectedAirline))
+      .filter((item) => item.airline === normalizedSelectedAirline)
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [dailyBudgets, selectedAirline]);
+  }, [dailyBudgets, normalizedSelectedAirline]);
 
   const dailyTotalForSelectedAirline = useMemo(() => {
     return selectedDailyBudgets.reduce(
@@ -322,20 +356,29 @@ export default function BudgetsPage() {
 
     const airline = normalizeAirlineName(selectedAirline);
     const department = normalizeDepartmentName(weeklyForm.department);
+    const weekStart = String(weeklyForm.weekStart || "").trim();
     const weeklyHours = Number(weeklyForm.weeklyHours || 0);
 
-    if (!airline || !department || !weeklyHours) {
-      setStatusMessage("Please complete airline, department and weekly budget.");
+    if (!airline || !department || !weekStart || !weeklyHours) {
+      setStatusMessage(
+        "Please complete airline, department, week start and weekly budget."
+      );
       return;
     }
 
     try {
-      const existing = selectedWeeklyBudgets.find(
-        (item) => normalizeDepartmentName(item.department) === department
+      const q = query(
+        collection(db, "airlineBudgets"),
+        where("airline", "==", airline),
+        where("department", "==", department),
+        where("weekStart", "==", weekStart)
       );
 
-      if (existing) {
-        await updateDoc(doc(db, "airlineBudgets", existing.id), {
+      const snap = await getDocs(q);
+
+      if (!snap.empty) {
+        const existingDoc = snap.docs[0];
+        await updateDoc(doc(db, "airlineBudgets", existingDoc.id), {
           budgetHours: weeklyHours,
         });
         setStatusMessage("Weekly budget updated successfully.");
@@ -343,15 +386,17 @@ export default function BudgetsPage() {
         await addDoc(collection(db, "airlineBudgets"), {
           airline,
           department,
+          weekStart,
           budgetHours: weeklyHours,
         });
         setStatusMessage("Weekly budget saved successfully.");
       }
 
-      setWeeklyForm({
+      setWeeklyForm((prev) => ({
+        ...prev,
         department: "",
         weeklyHours: "",
-      });
+      }));
 
       loadData();
     } catch (err) {
@@ -420,6 +465,21 @@ export default function BudgetsPage() {
     } catch (err) {
       console.error("Error updating weekly budget:", err);
       setStatusMessage("Error updating weekly budget.");
+    }
+  };
+
+  const updateWeeklyBudgetWeekStart = async (id, value) => {
+    if (!canEditWeekly) return;
+
+    try {
+      await updateDoc(doc(db, "airlineBudgets", id), {
+        weekStart: String(value || "").trim(),
+      });
+      setStatusMessage("Weekly budget week updated.");
+      loadData();
+    } catch (err) {
+      console.error("Error updating weekly budget week:", err);
+      setStatusMessage("Error updating weekly budget week.");
     }
   };
 
@@ -540,8 +600,8 @@ export default function BudgetsPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Weekly budget is managed per airline and department. Daily budget is
-            managed per airline and date for timesheet control.
+            Weekly budget is managed per airline, department and week start.
+            Daily budget is managed per airline and date for timesheet control.
           </p>
         </div>
       </div>
@@ -632,7 +692,7 @@ export default function BudgetsPage() {
                 color: "#64748b",
               }}
             >
-              Used to create schedules. Example: SY TC, SY Ramp.
+              Used to create schedules. Now matched by airline + department + week start.
             </p>
           </div>
 
@@ -679,6 +739,20 @@ export default function BudgetsPage() {
             </div>
 
             <div>
+              <FieldLabel>Week Start</FieldLabel>
+              <TextInput
+                type="date"
+                value={weeklyForm.weekStart}
+                onChange={(e) =>
+                  setWeeklyForm((prev) => ({
+                    ...prev,
+                    weekStart: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
               <FieldLabel>Weekly Budget Hours</FieldLabel>
               <TextInput
                 type="number"
@@ -716,7 +790,7 @@ export default function BudgetsPage() {
               width: "100%",
               borderCollapse: "separate",
               borderSpacing: 0,
-              minWidth: 760,
+              minWidth: 980,
               background: "#fff",
             }}
           >
@@ -724,6 +798,7 @@ export default function BudgetsPage() {
               <tr style={{ background: "#f8fbff" }}>
                 <th style={thStyle({ textAlign: "left" })}>Airline</th>
                 <th style={thStyle({ textAlign: "left" })}>Department</th>
+                <th style={thStyle({ textAlign: "left" })}>Week Start</th>
                 <th style={thStyle({ textAlign: "left" })}>Weekly Hours</th>
                 <th style={thStyle({ textAlign: "center" })}>Actions</th>
               </tr>
@@ -739,6 +814,35 @@ export default function BudgetsPage() {
                 >
                   <td style={tdStyle}>{item.airline}</td>
                   <td style={tdStyle}>{item.department || "—"}</td>
+                  <td style={tdStyle}>
+                    <TextInput
+                      defaultValue={item.weekStart || ""}
+                      disabled={!canEditWeekly}
+                      type="date"
+                      onBlur={(e) =>
+                        canEditWeekly &&
+                        updateWeeklyBudgetWeekStart(item.id, e.target.value)
+                      }
+                      style={{
+                        maxWidth: 170,
+                        background: canEditWeekly ? "#fff" : "#f8fafc",
+                        color: canEditWeekly ? "#0f172a" : "#64748b",
+                        cursor: canEditWeekly ? "text" : "not-allowed",
+                      }}
+                    />
+                    {!item.weekStart && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#b45309",
+                        }}
+                      >
+                        Legacy record without week
+                      </div>
+                    )}
+                  </td>
                   <td style={tdStyle}>
                     <TextInput
                       defaultValue={item.budgetHours}
@@ -783,7 +887,7 @@ export default function BudgetsPage() {
               {selectedWeeklyBudgets.length === 0 && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     style={{
                       padding: 18,
                       textAlign: "center",
@@ -990,6 +1094,24 @@ export default function BudgetsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 20 }}>
+        <div
+          style={{
+            background: "#f8fbff",
+            border: "1px solid #dbeafe",
+            borderRadius: 16,
+            padding: "14px 16px",
+            color: "#475569",
+            fontSize: 13,
+            lineHeight: 1.7,
+          }}
+        >
+          <strong style={{ color: "#0f172a" }}>Important:</strong> old weekly budgets are still preserved.
+          They will continue showing here as legacy records until you assign a <strong>Week Start</strong>.
+          Once a week is added, the regular schedule page can match that budget correctly.
         </div>
       </PageCard>
     </div>
