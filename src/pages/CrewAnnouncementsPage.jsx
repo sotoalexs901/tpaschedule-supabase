@@ -13,57 +13,6 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
-const AIRLINE_OPTIONS = [
-  { value: "SY", label: "SY" },
-  { value: "WestJet", label: "WestJet" },
-  { value: "WL Invicta", label: "WL Invicta" },
-  { value: "AV", label: "AV" },
-  { value: "EA", label: "EA" },
-  { value: "WCHR", label: "WCHR" },
-  { value: "CABIN", label: "Cabin Service" },
-  { value: "AA-BSO", label: "AA-BSO" },
-  { value: "OTHER", label: "Other" },
-];
-
-function normalizeAirlineName(value) {
-  const airline = String(value || "").trim();
-  const upper = airline.toUpperCase();
-
-  if (
-    upper === "WL HAVANA AIR" ||
-    upper === "WAL HAVANA AIR" ||
-    upper === "WAL HAVANA" ||
-    upper === "WESTJET"
-  ) {
-    return "WestJet";
-  }
-
-  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
-    return "CABIN";
-  }
-
-  return airline;
-}
-
-function getDefaultPosition(role) {
-  if (role === "station_manager") return "Station Manager";
-  if (role === "duty_manager") return "Duty Manager";
-  if (role === "supervisor") return "Supervisor";
-  if (role === "agent") return "Agent";
-  return "Team Member";
-}
-
-function getVisibleName(user) {
-  return (
-    user?.displayName ||
-    user?.fullName ||
-    user?.name ||
-    user?.username ||
-    user?.id ||
-    "unknown"
-  );
-}
-
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -206,41 +155,106 @@ function ActionButton({
   );
 }
 
+function getVisibleName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    user?.id ||
+    "unknown"
+  );
+}
+
+function getDefaultPosition(role) {
+  if (role === "station_manager") return "Station Manager";
+  if (role === "duty_manager") return "Duty Manager";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "agent") return "Agent";
+  return "Team Member";
+}
+
+function priorityBadge(priority) {
+  const p = String(priority || "normal").toLowerCase();
+
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    border: "1px solid transparent",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+
+  if (p === "high") {
+    return {
+      ...base,
+      background: "#fff1f2",
+      color: "#be123c",
+      borderColor: "#fecdd3",
+    };
+  }
+
+  if (p === "medium") {
+    return {
+      ...base,
+      background: "#fff7ed",
+      color: "#9a3412",
+      borderColor: "#fed7aa",
+    };
+  }
+
+  return {
+    ...base,
+    background: "#ecfdf5",
+    color: "#065f46",
+    borderColor: "#a7f3d0",
+  };
+}
+
+function categoryBadge(category) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    border: "1px solid #cfe7fb",
+    background: "#edf7ff",
+    color: "#1769aa",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+}
+
+function sanitizeFileName(name) {
+  return String(name || "image")
+    .replace(/\s+/g, "_")
+    .replace(/[^\w.-]/g, "");
+}
+
 export default function CrewAnnouncementsPage() {
   const { user } = useUser();
 
-  const [employees, setEmployees] = useState([]);
+  const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
+  const [body, setBody] = useState("");
+  const [category, setCategory] = useState("general");
+  const [priority, setPriority] = useState("normal");
+  const [pinned, setPinned] = useState(false);
+  const [expiresOn, setExpiresOn] = useState("");
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
 
-  const [announcementTitle, setAnnouncementTitle] = useState("");
-  const [announcementBody, setAnnouncementBody] = useState("");
-  const [announcementLink, setAnnouncementLink] = useState("");
-  const [announcementImageFile, setAnnouncementImageFile] = useState(null);
-  const [announcementImageUrl, setAnnouncementImageUrl] = useState("");
-
-  const [eventTitle, setEventTitle] = useState("");
-  const [eventDate, setEventDate] = useState("");
-  const [eventTime, setEventTime] = useState("");
-  const [eventBody, setEventBody] = useState("");
-  const [eventLink, setEventLink] = useState("");
-
-  const [spotlightAirline, setSpotlightAirline] = useState("SY");
-  const [spotlightDepartment, setSpotlightDepartment] = useState("");
-  const [spotlightEmployeeId, setSpotlightEmployeeId] = useState("");
-  const [spotlightTitle, setSpotlightTitle] = useState("Employee of the Month");
-  const [spotlightBody, setSpotlightBody] = useState("");
-  const [spotlightLink, setSpotlightLink] = useState("");
-  const [spotlightImageFile, setSpotlightImageFile] = useState(null);
-  const [spotlightImageUrl, setSpotlightImageUrl] = useState("");
-
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [spotlights, setSpotlights] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [savingAnnouncement, setSavingAnnouncement] = useState(false);
-  const [savingEvent, setSavingEvent] = useState(false);
-  const [savingSpotlight, setSavingSpotlight] = useState(false);
-  const [deletingId, setDeletingId] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(
@@ -248,240 +262,179 @@ export default function CrewAnnouncementsPage() {
     [user]
   );
 
-  const filteredEmployees = useMemo(() => {
-    const airline = normalizeAirlineName(spotlightAirline);
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+    };
+  }, [imagePreview]);
 
-    return employees.filter((emp) => {
-      const empAirline = normalizeAirlineName(
-        emp.airline || emp.assignedAirline || emp.baseAirline || ""
-      );
-
-      if (!airline) return true;
-      if (!empAirline) return true;
-      return empAirline === airline;
-    });
-  }, [employees, spotlightAirline]);
-
-  const selectedEmployee = useMemo(() => {
-    return filteredEmployees.find((emp) => emp.id === spotlightEmployeeId) || null;
-  }, [filteredEmployees, spotlightEmployeeId]);
-
-  const loadData = async () => {
+  const loadAnnouncements = async () => {
     try {
       setLoading(true);
-
-      const [usersSnap, annSnap, eventSnap, spotlightSnap] = await Promise.all([
-        getDocs(collection(db, "users")),
-        getDocs(query(collection(db, "employeeAnnouncements"), orderBy("createdAt", "desc"))),
-        getDocs(query(collection(db, "employeeUpcomingEvents"), orderBy("createdAt", "desc"))),
-        getDocs(query(collection(db, "employeeSpotlights"), orderBy("createdAt", "desc"))),
-      ]);
-
-      setEmployees(
-        usersSnap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }))
+      const qAnn = query(
+        collection(db, "employeeAnnouncements"),
+        orderBy("createdAt", "desc")
       );
-
-      setAnnouncements(annSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setEvents(eventSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setSpotlights(spotlightSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const snap = await getDocs(qAnn);
+      setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (err) {
-      console.error("Error loading editor data:", err);
-      setMessage("Error loading dashboard content.");
+      console.error("Error loading announcements:", err);
+      setMessage("Error loading announcements. Check console.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadAnnouncements();
   }, []);
 
-  const uploadImageAndGetUrl = async (file, folder) => {
-    if (!file) return "";
+  const resetForm = () => {
+    setTitle("");
+    setSubtitle("");
+    setBody("");
+    setCategory("general");
+    setPriority("normal");
+    setPinned(false);
+    setExpiresOn("");
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview("");
 
-    if (!file.type.startsWith("image/")) {
-      throw new Error("Please select a valid image.");
-    }
-
-    const safeName = file.name.replace(/\s+/g, "_").replace(/[^\w.-]/g, "");
-    const storageRef = ref(storage, `${folder}/${Date.now()}_${safeName}`);
-
-    const snap = await uploadBytes(storageRef, file, {
-      contentType: file.type || "image/jpeg",
-    });
-
-    return await getDownloadURL(snap.ref);
+    const fileInput = document.getElementById("crew-announcement-image");
+    if (fileInput) fileInput.value = "";
   };
 
-  const resolveImage = async (file, url, folder) => {
-    const cleanUrl = String(url || "").trim();
-
-    if (cleanUrl) return cleanUrl;
-    return await uploadImageAndGetUrl(file, folder);
-  };
-
-  const postAnnouncement = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setMessage("");
 
-    if (!announcementTitle.trim() && !announcementBody.trim()) {
-      setMessage("Please enter at least a title or message.");
+    if (!title.trim() && !body.trim()) {
+      setMessage("Please enter at least a title or a message.");
       return;
     }
 
     try {
-      setSavingAnnouncement(true);
+      setSaving(true);
 
-      const imageUrl = await resolveImage(
-        announcementImageFile,
-        announcementImageUrl,
-        "employeeAnnouncements"
-      );
+      let imageUrl = "";
+
+      if (imageFile) {
+        if (!imageFile.type.startsWith("image/")) {
+          setMessage("Selected file is not a valid image.");
+          setSaving(false);
+          return;
+        }
+
+        if (imageFile.size > 5 * 1024 * 1024) {
+          setMessage("Image must be smaller than 5MB.");
+          setSaving(false);
+          return;
+        }
+
+        const safeName = sanitizeFileName(imageFile.name);
+        const extension =
+          safeName.includes(".") ? safeName.split(".").pop() : "jpg";
+        const filePath = `employeeAnnouncements/${Date.now()}_${safeName}`;
+        const storageRef = ref(storage, filePath);
+
+        try {
+          const uploadResult = await uploadBytes(storageRef, imageFile, {
+            contentType: imageFile.type || `image/${extension}`,
+          });
+
+          imageUrl = await getDownloadURL(uploadResult.ref);
+          console.log("Uploaded image URL:", imageUrl);
+        } catch (uploadErr) {
+          console.error("Error uploading image:", uploadErr);
+          setMessage(
+            uploadErr?.message ||
+              "Image upload failed. Check Firebase Storage rules."
+          );
+          setSaving(false);
+          return;
+        }
+      }
 
       await addDoc(collection(db, "employeeAnnouncements"), {
-        title: announcementTitle.trim() || "Announcement",
-        body: announcementBody.trim() || "",
-        link: announcementLink.trim() || "",
+        title: title.trim() || "Announcement",
+        subtitle: subtitle.trim() || "",
+        body: body.trim() || "",
+        category,
+        priority,
+        pinned,
+        expiresOn: expiresOn || "",
         imageUrl,
         createdAt: serverTimestamp(),
         createdBy: visibleName,
         createdByUsername: user?.username || "",
         createdByRole: user?.role || "",
         createdByPosition: visiblePosition,
-        pinned: false,
-        expiresOn: "",
       });
 
-      setAnnouncementTitle("");
-      setAnnouncementBody("");
-      setAnnouncementLink("");
-      setAnnouncementImageFile(null);
-      setAnnouncementImageUrl("");
-      setMessage("Announcement posted.");
-      await loadData();
+      resetForm();
+      setMessage("Announcement posted!");
+      await loadAnnouncements();
     } catch (err) {
       console.error("Error posting announcement:", err);
-      setMessage(err?.message || "Could not post announcement.");
+      setMessage("Error posting announcement. Check console for details.");
     } finally {
-      setSavingAnnouncement(false);
+      setSaving(false);
     }
   };
 
-  const postEvent = async (e) => {
-    e.preventDefault();
-
-    if (!eventTitle.trim() || !eventDate) {
-      setMessage("Event needs title and date.");
-      return;
-    }
-
-    try {
-      setSavingEvent(true);
-
-      await addDoc(collection(db, "employeeUpcomingEvents"), {
-        title: eventTitle.trim(),
-        eventDate,
-        eventTime: eventTime || "",
-        body: eventBody.trim() || "",
-        link: eventLink.trim() || "",
-        createdAt: serverTimestamp(),
-        createdBy: visibleName,
-      });
-
-      setEventTitle("");
-      setEventDate("");
-      setEventTime("");
-      setEventBody("");
-      setEventLink("");
-      setMessage("Upcoming event saved.");
-      await loadData();
-    } catch (err) {
-      console.error("Error posting event:", err);
-      setMessage(err?.message || "Could not save event.");
-    } finally {
-      setSavingEvent(false);
-    }
-  };
-
-  const postSpotlight = async (e) => {
-    e.preventDefault();
-
-    if (!spotlightAirline || !spotlightEmployeeId) {
-      setMessage("Please select airline and employee.");
-      return;
-    }
-
-    try {
-      setSavingSpotlight(true);
-
-      const imageUrl = await resolveImage(
-        spotlightImageFile,
-        spotlightImageUrl,
-        "employeeSpotlights"
-      );
-
-      await addDoc(collection(db, "employeeSpotlights"), {
-        title: spotlightTitle.trim() || "Employee of the Month",
-        airline: normalizeAirlineName(spotlightAirline),
-        department: spotlightDepartment.trim() || "",
-        employeeId: spotlightEmployeeId,
-        employeeName:
-          selectedEmployee?.displayName ||
-          selectedEmployee?.fullName ||
-          selectedEmployee?.name ||
-          selectedEmployee?.username ||
-          "Employee",
-        employeePosition:
-          selectedEmployee?.position ||
-          getDefaultPosition(selectedEmployee?.role),
-        employeePhotoURL: selectedEmployee?.profilePhotoURL || "",
-        imageUrl,
-        body: spotlightBody.trim() || "",
-        link: spotlightLink.trim() || "",
-        active: true,
-        createdAt: serverTimestamp(),
-        createdBy: visibleName,
-      });
-
-      setSpotlightDepartment("");
-      setSpotlightEmployeeId("");
-      setSpotlightTitle("Employee of the Month");
-      setSpotlightBody("");
-      setSpotlightLink("");
-      setSpotlightImageFile(null);
-      setSpotlightImageUrl("");
-      setMessage("Employee spotlight saved.");
-      await loadData();
-    } catch (err) {
-      console.error("Error posting spotlight:", err);
-      setMessage(err?.message || "Could not save employee spotlight.");
-    } finally {
-      setSavingSpotlight(false);
-    }
-  };
-
-  const handleDelete = async (collectionName, id) => {
-    const ok = window.confirm("Delete this item?");
+  const handleDeleteAnnouncement = async (id) => {
+    const ok = window.confirm(
+      "Delete this announcement? This action cannot be undone."
+    );
     if (!ok) return;
 
     try {
       setDeletingId(id);
-      await deleteDoc(doc(db, collectionName, id));
-      setMessage("Deleted successfully.");
-      await loadData();
+      await deleteDoc(doc(db, "employeeAnnouncements", id));
+      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+      setMessage("Announcement deleted.");
     } catch (err) {
-      console.error("Error deleting item:", err);
-      setMessage("Could not delete item.");
+      console.error("Error deleting announcement:", err);
+      setMessage("Error deleting announcement.");
     } finally {
-      setDeletingId("");
+      setDeletingId(null);
     }
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+      setImagePreview("");
+    }
+
+    if (!file) {
+      setImageFile(null);
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file.");
+      e.target.value = "";
+      setImageFile(null);
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be smaller than 5MB.");
+      e.target.value = "";
+      setImageFile(null);
+      return;
+    }
+
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
   };
 
   const success =
     message.toLowerCase().includes("posted") ||
-    message.toLowerCase().includes("saved") ||
     message.toLowerCase().includes("deleted");
 
   if (!user || user.role !== "station_manager") {
@@ -513,7 +466,7 @@ export default function CrewAnnouncementsPage() {
               fontWeight: 700,
             }}
           >
-            TPA OPS · Crew Dashboard Editor
+            TPA OPS · Announcements
           </p>
           <h1
             style={{
@@ -534,9 +487,24 @@ export default function CrewAnnouncementsPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Only Station Managers can manage employee dashboard content.
+            Only Station Managers can post and manage crew announcements.
           </p>
         </div>
+
+        <PageCard style={{ padding: 22 }}>
+          <div
+            style={{
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              borderRadius: 18,
+              padding: "16px 18px",
+              color: "#9f1239",
+              fontWeight: 700,
+            }}
+          >
+            You are not authorized to manage announcements.
+          </div>
+        </PageCard>
       </div>
     );
   }
@@ -547,7 +515,7 @@ export default function CrewAnnouncementsPage() {
         display: "grid",
         gap: 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
-        maxWidth: 1200,
+        maxWidth: 1100,
         margin: "0 auto",
       }}
     >
@@ -559,43 +527,60 @@ export default function CrewAnnouncementsPage() {
           padding: 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <p
+        <div
           style={{
-            margin: 0,
-            fontSize: 12,
-            textTransform: "uppercase",
-            letterSpacing: "0.22em",
-            color: "rgba(255,255,255,0.78)",
-            fontWeight: 700,
+            position: "absolute",
+            width: 220,
+            height: 220,
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.08)",
+            top: -80,
+            right: -40,
           }}
-        >
-          TPA OPS · Crew Dashboard Editor
-        </p>
+        />
 
-        <h1
-          style={{
-            margin: "10px 0 6px",
-            fontSize: 32,
-            lineHeight: 1.05,
-            fontWeight: 800,
-            letterSpacing: "-0.04em",
-          }}
-        >
-          Employee Dashboard Content
-        </h1>
+        <div style={{ position: "relative" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              textTransform: "uppercase",
+              letterSpacing: "0.22em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 700,
+            }}
+          >
+            TPA OPS · Announcements
+          </p>
 
-        <p
-          style={{
-            margin: 0,
-            maxWidth: 760,
-            fontSize: 14,
-            color: "rgba(255,255,255,0.88)",
-          }}
-        >
-          Manage announcements, upcoming events and employee of the month cards.
-        </p>
+          <h1
+            style={{
+              margin: "10px 0 6px",
+              fontSize: 32,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Crew Announcements
+          </h1>
+
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 760,
+              fontSize: 14,
+              color: "rgba(255,255,255,0.88)",
+            }}
+          >
+            Create, publish and manage dashboard announcements for Agents and
+            Supervisors.
+          </p>
+        </div>
       </div>
 
       {message && (
@@ -617,294 +602,216 @@ export default function CrewAnnouncementsPage() {
       )}
 
       <PageCard style={{ padding: 22 }}>
-        <h2
-          style={{
-            margin: "0 0 14px",
-            fontSize: 20,
-            fontWeight: 800,
-            color: "#0f172a",
-          }}
-        >
-          Post Announcement
-        </h2>
+        <div style={{ marginBottom: 16 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Post Announcement
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Create a visible notice for the dashboard with optional image.
+          </p>
+        </div>
 
         <form
-          onSubmit={postAnnouncement}
-          style={{ display: "grid", gap: 14 }}
+          onSubmit={handleSubmit}
+          style={{
+            display: "grid",
+            gap: 14,
+          }}
         >
           <div>
             <FieldLabel>Title</FieldLabel>
             <TextInput
-              value={announcementTitle}
-              onChange={(e) => setAnnouncementTitle(e.target.value)}
-              placeholder="Announcement title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Example: New parking policy, Holiday party, etc."
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Subtitle (optional)</FieldLabel>
+            <TextInput
+              value={subtitle}
+              onChange={(e) => setSubtitle(e.target.value)}
+              placeholder="Short highlight"
             />
           </div>
 
           <div>
             <FieldLabel>Message</FieldLabel>
             <TextArea
-              rows={4}
-              value={announcementBody}
-              onChange={(e) => setAnnouncementBody(e.target.value)}
-              placeholder="Write the announcement..."
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Optional Link</FieldLabel>
-            <TextInput
-              value={announcementLink}
-              onChange={(e) => setAnnouncementLink(e.target.value)}
-              placeholder="https://..."
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Image URL (optional)</FieldLabel>
-            <TextInput
-              value={announcementImageUrl}
-              onChange={(e) => setAnnouncementImageUrl(e.target.value)}
-              placeholder="https://example.com/image.jpg"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Or Upload Image</FieldLabel>
-            <TextInput
-              type="file"
-              accept="image/*"
-              onChange={(e) =>
-                setAnnouncementImageFile(e.target.files?.[0] || null)
-              }
-              style={{ padding: "10px 12px" }}
-            />
-          </div>
-
-          <div>
-            <ActionButton type="submit" disabled={savingAnnouncement}>
-              {savingAnnouncement ? "Posting..." : "Post Announcement"}
-            </ActionButton>
-          </div>
-        </form>
-      </PageCard>
-
-      <PageCard style={{ padding: 22 }}>
-        <h2
-          style={{
-            margin: "0 0 14px",
-            fontSize: 20,
-            fontWeight: 800,
-            color: "#0f172a",
-          }}
-        >
-          Upcoming Events
-        </h2>
-
-        <form onSubmit={postEvent} style={{ display: "grid", gap: 14 }}>
-          <div>
-            <FieldLabel>Title</FieldLabel>
-            <TextInput
-              value={eventTitle}
-              onChange={(e) => setEventTitle(e.target.value)}
-              placeholder="Event title"
+              rows={5}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Details for the crew..."
             />
           </div>
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
               gap: 14,
             }}
           >
             <div>
-              <FieldLabel>Date</FieldLabel>
-              <TextInput
-                type="date"
-                value={eventDate}
-                onChange={(e) => setEventDate(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Time</FieldLabel>
-              <TextInput
-                type="time"
-                value={eventTime}
-                onChange={(e) => setEventTime(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div>
-            <FieldLabel>Body</FieldLabel>
-            <TextArea
-              rows={3}
-              value={eventBody}
-              onChange={(e) => setEventBody(e.target.value)}
-              placeholder="Event details"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Optional Link</FieldLabel>
-            <TextInput
-              value={eventLink}
-              onChange={(e) => setEventLink(e.target.value)}
-              placeholder="https://..."
-            />
-          </div>
-
-          <div>
-            <ActionButton type="submit" disabled={savingEvent}>
-              {savingEvent ? "Saving..." : "Save Event"}
-            </ActionButton>
-          </div>
-        </form>
-      </PageCard>
-
-      <PageCard style={{ padding: 22 }}>
-        <h2
-          style={{
-            margin: "0 0 14px",
-            fontSize: 20,
-            fontWeight: 800,
-            color: "#0f172a",
-          }}
-        >
-          Employee of the Month
-        </h2>
-
-        <form onSubmit={postSpotlight} style={{ display: "grid", gap: 14 }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 14,
-            }}
-          >
-            <div>
-              <FieldLabel>Airline</FieldLabel>
+              <FieldLabel>Category</FieldLabel>
               <SelectInput
-                value={spotlightAirline}
-                onChange={(e) => {
-                  setSpotlightAirline(e.target.value);
-                  setSpotlightEmployeeId("");
-                }}
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
               >
-                {AIRLINE_OPTIONS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
+                <option value="general">General</option>
+                <option value="operations">Operations</option>
+                <option value="schedule">Schedule</option>
+                <option value="training">Training</option>
+                <option value="event">Event</option>
+                <option value="policy">Policy</option>
+                <option value="wchr">WCHR</option>
               </SelectInput>
             </div>
 
             <div>
-              <FieldLabel>Department</FieldLabel>
+              <FieldLabel>Priority</FieldLabel>
+              <SelectInput
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+              >
+                <option value="normal">Normal</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Expires On (optional)</FieldLabel>
               <TextInput
-                value={spotlightDepartment}
-                onChange={(e) => setSpotlightDepartment(e.target.value)}
-                placeholder="Ramp / TC / Cabin Service / etc"
+                type="date"
+                value={expiresOn}
+                onChange={(e) => setExpiresOn(e.target.value)}
               />
             </div>
           </div>
 
-          <div>
-            <FieldLabel>Employee</FieldLabel>
-            <SelectInput
-              value={spotlightEmployeeId}
-              onChange={(e) => setSpotlightEmployeeId(e.target.value)}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <input
+              id="pinned-announcement"
+              type="checkbox"
+              checked={pinned}
+              onChange={(e) => setPinned(e.target.checked)}
+            />
+            <label
+              htmlFor="pinned-announcement"
+              style={{
+                fontSize: 14,
+                color: "#334155",
+                fontWeight: 600,
+              }}
             >
-              <option value="">Select employee</option>
-              {filteredEmployees.map((emp) => {
-                const label =
-                  emp.displayName ||
-                  emp.fullName ||
-                  emp.name ||
-                  emp.username ||
-                  "Employee";
-
-                return (
-                  <option key={emp.id} value={emp.id}>
-                    {label}
-                  </option>
-                );
-              })}
-            </SelectInput>
+              Pin this announcement to dashboard
+            </label>
           </div>
 
           <div>
-            <FieldLabel>Card Title</FieldLabel>
+            <FieldLabel>Image (optional)</FieldLabel>
             <TextInput
-              value={spotlightTitle}
-              onChange={(e) => setSpotlightTitle(e.target.value)}
-              placeholder="Employee of the Month"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Message</FieldLabel>
-            <TextArea
-              rows={4}
-              value={spotlightBody}
-              onChange={(e) => setSpotlightBody(e.target.value)}
-              placeholder="Why this employee is being recognized..."
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Optional Link</FieldLabel>
-            <TextInput
-              value={spotlightLink}
-              onChange={(e) => setSpotlightLink(e.target.value)}
-              placeholder="https://..."
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Image URL (optional)</FieldLabel>
-            <TextInput
-              value={spotlightImageUrl}
-              onChange={(e) => setSpotlightImageUrl(e.target.value)}
-              placeholder="https://example.com/image.jpg"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Or Upload Image</FieldLabel>
-            <TextInput
+              id="crew-announcement-image"
               type="file"
               accept="image/*"
-              onChange={(e) =>
-                setSpotlightImageFile(e.target.files?.[0] || null)
-              }
+              onChange={handleImageChange}
               style={{ padding: "10px 12px" }}
             />
+
+            {imageFile && (
+              <p
+                style={{
+                  marginTop: 8,
+                  marginBottom: 0,
+                  fontSize: 12,
+                  color: "#64748b",
+                }}
+              >
+                Selected: <b>{imageFile.name}</b>
+              </p>
+            )}
+
+            {imagePreview && (
+              <div
+                style={{
+                  marginTop: 12,
+                  borderRadius: 16,
+                  overflow: "hidden",
+                  border: "1px solid #dbeafe",
+                  background: "#f8fbff",
+                  maxWidth: 360,
+                }}
+              >
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  style={{
+                    width: "100%",
+                    display: "block",
+                    objectFit: "cover",
+                    maxHeight: 240,
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           <div>
-            <ActionButton type="submit" disabled={savingSpotlight}>
-              {savingSpotlight ? "Saving..." : "Add Employee Spotlight"}
+            <ActionButton type="submit" variant="primary" disabled={saving}>
+              {saving ? "Posting..." : "Post announcement"}
             </ActionButton>
           </div>
         </form>
       </PageCard>
 
       <PageCard style={{ padding: 20 }}>
-        <h2
-          style={{
-            margin: "0 0 14px",
-            fontSize: 20,
-            fontWeight: 800,
-            color: "#0f172a",
-          }}
-        >
-          Existing Content
-        </h2>
+        <div style={{ marginBottom: 14 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Recent Announcements
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Review recent dashboard notices and remove outdated ones.
+          </p>
+        </div>
 
-        {loading ? (
+        {loading && (
           <div
             style={{
               padding: 14,
@@ -916,148 +823,190 @@ export default function CrewAnnouncementsPage() {
               fontWeight: 600,
             }}
           >
-            Loading...
+            Loading announcements...
           </div>
-        ) : (
-          <div style={{ display: "grid", gap: 18 }}>
-            <div>
-              <h3 style={{ margin: "0 0 10px", color: "#1769aa" }}>Announcements</h3>
-              <div style={{ display: "grid", gap: 10 }}>
-                {announcements.map((a) => (
-                  <div
-                    key={a.id}
-                    style={{
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 18,
-                      padding: 16,
-                      background: "#fff",
-                    }}
-                  >
+        )}
+
+        {!loading && announcements.length === 0 && (
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No announcements yet.
+          </div>
+        )}
+
+        {!loading && announcements.length > 0 && (
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+            }}
+          >
+            {announcements.map((a) => (
+              <div
+                key={a.id}
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 20,
+                  padding: 18,
+                  background: "#ffffff",
+                  boxShadow: "0 8px 22px rgba(15,23,42,0.04)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 16,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
                         display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
+                        gap: 8,
                         flexWrap: "wrap",
-                        alignItems: "flex-start",
+                        marginBottom: 8,
                       }}
                     >
-                      <div>
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                          {a.title}
-                        </div>
-                        {a.body && (
-                          <div style={{ marginTop: 6, color: "#475569", fontSize: 14 }}>
-                            {a.body}
-                          </div>
-                        )}
-                      </div>
-
-                      <ActionButton
-                        variant="danger"
-                        onClick={() => handleDelete("employeeAnnouncements", a.id)}
-                        disabled={deletingId === a.id}
-                      >
-                        {deletingId === a.id ? "Deleting..." : "Delete"}
-                      </ActionButton>
+                      <span style={categoryBadge(a.category)}>
+                        {a.category || "general"}
+                      </span>
+                      <span style={priorityBadge(a.priority)}>
+                        {a.priority || "normal"}
+                      </span>
+                      {a.pinned && (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "6px 10px",
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            border: "1px solid #bfdbfe",
+                            background: "#dbeafe",
+                            color: "#1d4ed8",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                          }}
+                        >
+                          Pinned
+                        </span>
+                      )}
                     </div>
-                  </div>
-                ))}
-                {announcements.length === 0 && <div>No announcements yet.</div>}
-              </div>
-            </div>
 
-            <div>
-              <h3 style={{ margin: "0 0 10px", color: "#1769aa" }}>Upcoming Events</h3>
-              <div style={{ display: "grid", gap: 10 }}>
-                {events.map((a) => (
-                  <div
-                    key={a.id}
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      {a.title}
+                    </h3>
+
+                    {a.createdAt?.toDate && (
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 12,
+                          color: "#64748b",
+                        }}
+                      >
+                        {a.createdAt.toDate().toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+
+                  <ActionButton
+                    variant="danger"
+                    onClick={() => handleDeleteAnnouncement(a.id)}
+                    disabled={deletingId === a.id}
+                  >
+                    {deletingId === a.id ? "Deleting..." : "Delete"}
+                  </ActionButton>
+                </div>
+
+                {a.subtitle && (
+                  <p
                     style={{
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 18,
-                      padding: 16,
-                      background: "#fff",
+                      margin: "10px 0 0",
+                      fontSize: 13,
+                      color: "#64748b",
+                      fontWeight: 600,
                     }}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        flexWrap: "wrap",
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                          {a.title}
-                        </div>
-                        <div style={{ marginTop: 6, color: "#64748b", fontSize: 13 }}>
-                          {a.eventDate} {a.eventTime ? `· ${a.eventTime}` : ""}
-                        </div>
-                      </div>
+                    {a.subtitle}
+                  </p>
+                )}
 
-                      <ActionButton
-                        variant="danger"
-                        onClick={() => handleDelete("employeeUpcomingEvents", a.id)}
-                        disabled={deletingId === a.id}
-                      >
-                        {deletingId === a.id ? "Deleting..." : "Delete"}
-                      </ActionButton>
-                    </div>
-                  </div>
-                ))}
-                {events.length === 0 && <div>No upcoming events yet.</div>}
-              </div>
-            </div>
-
-            <div>
-              <h3 style={{ margin: "0 0 10px", color: "#1769aa" }}>
-                Employee Spotlights
-              </h3>
-              <div style={{ display: "grid", gap: 10 }}>
-                {spotlights.map((a) => (
-                  <div
-                    key={a.id}
+                {a.body && (
+                  <p
                     style={{
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 18,
-                      padding: 16,
-                      background: "#fff",
+                      margin: "10px 0 0",
+                      fontSize: 14,
+                      color: "#334155",
+                      lineHeight: 1.7,
+                      whiteSpace: "pre-line",
                     }}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        flexWrap: "wrap",
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                          {a.employeeName || a.title}
-                        </div>
-                        <div style={{ marginTop: 6, color: "#64748b", fontSize: 13 }}>
-                          {a.airline || "—"} {a.department ? `· ${a.department}` : ""}
-                        </div>
-                      </div>
+                    {a.body}
+                  </p>
+                )}
 
-                      <ActionButton
-                        variant="danger"
-                        onClick={() => handleDelete("employeeSpotlights", a.id)}
-                        disabled={deletingId === a.id}
-                      >
-                        {deletingId === a.id ? "Deleting..." : "Delete"}
-                      </ActionButton>
-                    </div>
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "grid",
+                    gap: 4,
+                    fontSize: 12,
+                    color: "#64748b",
+                  }}
+                >
+                  <span>
+                    Posted by: <b>{a.createdBy || a.createdByUsername || "Unknown"}</b>
+                    {a.createdByPosition ? ` · ${a.createdByPosition}` : ""}
+                  </span>
+                  {a.expiresOn && (
+                    <span>
+                      Expires on: <b>{a.expiresOn}</b>
+                    </span>
+                  )}
+                </div>
+
+                {a.imageUrl && (
+                  <div style={{ marginTop: 14 }}>
+                    <img
+                      src={a.imageUrl}
+                      alt={a.title || "Announcement image"}
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                      style={{
+                        width: "100%",
+                        maxHeight: 320,
+                        objectFit: "cover",
+                        borderRadius: 16,
+                        border: "1px solid #e2e8f0",
+                      }}
+                    />
                   </div>
-                ))}
-                {spotlights.length === 0 && <div>No employee spotlights yet.</div>}
+                )}
               </div>
-            </div>
+            ))}
           </div>
         )}
       </PageCard>
