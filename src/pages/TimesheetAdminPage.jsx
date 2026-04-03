@@ -14,14 +14,19 @@ import { useUser } from "../UserContext.jsx";
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
+  const upper = airline.toUpperCase();
 
   if (
-    airline.toUpperCase() === "WL HAVANA AIR" ||
-    airline.toUpperCase() === "WAL HAVANA AIR" ||
-    airline.toUpperCase() === "WAL HAVANA" ||
-    airline.toUpperCase() === "WESTJET"
+    upper === "WL HAVANA AIR" ||
+    upper === "WAL HAVANA AIR" ||
+    upper === "WAL HAVANA" ||
+    upper === "WESTJET"
   ) {
     return "WestJet";
+  }
+
+  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
+    return "CABIN";
   }
 
   return airline;
@@ -50,55 +55,6 @@ function normalizeCabinServiceValue(value) {
 
 function isCabinServiceDepartment(value) {
   return normalizeCabinServiceValue(value) === "cabin_service";
-}
-
-function detectBudgetAirline(value) {
-  const raw = String(value || "").trim();
-  const upper = raw.toUpperCase();
-
-  if (!upper) return "";
-
-  if (upper === "SY" || upper.startsWith("SY ") || upper.includes(" SY")) {
-    return "SY";
-  }
-
-  if (
-    upper.includes("WESTJET") ||
-    upper.includes("WL HAVANA") ||
-    upper === "WL"
-  ) {
-    return "WestJet";
-  }
-
-  if (upper.includes("WL INVICTA")) {
-    return "WL Invicta";
-  }
-
-  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) {
-    return "AV";
-  }
-
-  if (upper === "EA" || upper.startsWith("EA ")) {
-    return "EA";
-  }
-
-  if (upper.includes("WCHR")) {
-    return "WCHR";
-  }
-
-  if (upper.includes("CABIN")) {
-    return "CABIN";
-  }
-
-  if (upper.includes("AA-BSO") || upper.includes("AA BSO")) {
-    return "AA-BSO";
-  }
-
-  if (upper.includes("OTHER")) {
-    return "OTHER";
-  }
-
-  return normalizeAirlineName(raw);
 }
 
 function tsToDate(value) {
@@ -780,7 +736,7 @@ export default function TimesheetAdminPage() {
     user?.role === "station_manager" || user?.role === "duty_manager";
 
   const [reports, setReports] = useState([]);
-  const [budgetDocs, setBudgetDocs] = useState([]);
+  const [dailyBudgetDocs, setDailyBudgetDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -816,9 +772,9 @@ export default function TimesheetAdminPage() {
           orderBy("createdAt", "desc")
         );
 
-        const [reportsSnap, budgetsSnap, employeesSnap] = await Promise.all([
+        const [reportsSnap, dailyBudgetsSnap, employeesSnap] = await Promise.all([
           getDocs(reportsQuery),
-          getDocs(collection(db, "airlineBudgets")),
+          getDocs(collection(db, "airlineDailyBudgets")),
           getDocs(collection(db, "employees")),
         ]);
 
@@ -827,9 +783,17 @@ export default function TimesheetAdminPage() {
           ...d.data(),
         }));
 
-        const budgetRows = budgetsSnap.docs.map((d) => ({
+        const budgetRows = dailyBudgetsSnap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
+          airline: normalizeAirlineName(d.data().airline),
+          date: String(d.data().date || ""),
+          dailyBudgetHours:
+            d.data().dailyBudgetHours === null ||
+            d.data().dailyBudgetHours === undefined ||
+            d.data().dailyBudgetHours === ""
+              ? 0
+              : Number(d.data().dailyBudgetHours),
         }));
 
         const employeeRows = employeesSnap.docs.map((d) => ({
@@ -886,7 +850,7 @@ export default function TimesheetAdminPage() {
 
         setRestrictToOwnReports(shouldRestrictCabinSupervisor);
         setReports(reportRows);
-        setBudgetDocs(budgetRows);
+        setDailyBudgetDocs(budgetRows);
       } catch (err) {
         console.error("Error loading timesheet reports:", err);
         setStatusMessage("Could not load timesheet reports.");
@@ -902,67 +866,42 @@ export default function TimesheetAdminPage() {
     }
   }, [canAccess, user]);
 
-  const budgetByAirline = useMemo(() => {
-    const totals = {};
+  const dailyBudgetByAirlineAndDate = useMemo(() => {
+    const map = {};
 
-    budgetDocs.forEach((item) => {
-      const source =
-        item.airline ||
-        item.airlineDisplayName ||
-        item.name ||
-        item.code ||
-        item.id ||
-        "";
+    dailyBudgetDocs.forEach((item) => {
+      const airline = normalizeAirlineName(item.airline);
+      const date = String(item.date || "").trim();
 
-      const airline = detectBudgetAirline(source);
-      const weekly = Number(item.budgetHours || 0);
-      const dailyManual =
-        item.dailyBudgetHours === null ||
-        item.dailyBudgetHours === undefined ||
-        item.dailyBudgetHours === ""
-          ? null
-          : Number(item.dailyBudgetHours);
+      if (!airline || !date) return;
 
-      if (!airline) return;
-
-      if (!totals[airline]) {
-        totals[airline] = {
-          daily: 0,
-          weekly: 0,
-          hasManualDaily: false,
-        };
-      }
-
-      totals[airline].weekly += Number.isNaN(weekly) ? 0 : weekly;
-
-      if (dailyManual !== null && !Number.isNaN(dailyManual)) {
-        totals[airline].daily += dailyManual;
-        totals[airline].hasManualDaily = true;
-      }
+      map[`${airline}__${date}`] = Number(item.dailyBudgetHours || 0);
     });
 
-    const finalMap = {};
-    Object.keys(totals).forEach((airline) => {
-      const item = totals[airline];
-      finalMap[airline] = item.hasManualDaily ? item.daily : item.weekly / 7;
-    });
-
-    return finalMap;
-  }, [budgetDocs]);
+    return map;
+  }, [dailyBudgetDocs]);
 
   const reportsWithHours = useMemo(() => {
-    return reports.map((report) => ({
-      ...report,
-      totalHours:
-        report.totalHours !== undefined && report.totalHours !== null
-          ? Number(report.totalHours)
-          : calculateReportHours(report),
-      normalizedAirline: normalizeAirlineName(report.airline),
-      normalizedDepartment: normalizeCabinServiceValue(
-        report.department || report.airline
-      ),
-    }));
-  }, [reports]);
+    return reports.map((report) => {
+      const normalizedAirline = normalizeAirlineName(report.airline);
+      const reportDate = String(report.reportDate || "").trim();
+      const matchingBudget =
+        dailyBudgetByAirlineAndDate[`${normalizedAirline}__${reportDate}`] || 0;
+
+      return {
+        ...report,
+        totalHours:
+          report.totalHours !== undefined && report.totalHours !== null
+            ? Number(report.totalHours)
+            : calculateReportHours(report),
+        normalizedAirline,
+        normalizedDepartment: normalizeCabinServiceValue(
+          report.department || report.airline
+        ),
+        budgetHoursDaily: matchingBudget,
+      };
+    });
+  }, [reports, dailyBudgetByAirlineAndDate]);
 
   const filteredReports = useMemo(() => {
     return reportsWithHours.filter((r) => {
@@ -999,35 +938,48 @@ export default function TimesheetAdminPage() {
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
-    filteredReports.forEach((r) => {
+    reportsWithHours.forEach((r) => {
       if (r.normalizedAirline) set.add(r.normalizedAirline);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [filteredReports]);
+  }, [reportsWithHours]);
 
   const airlineHourSummary = useMemo(() => {
     const totals = {};
 
     filteredReports.forEach((report) => {
       const airline = report.normalizedAirline || "Unknown";
-      totals[airline] = (totals[airline] || 0) + report.totalHours;
+      const date = String(report.reportDate || "").trim();
+      const key = `${airline}__${date}`;
+
+      if (!totals[key]) {
+        totals[key] = {
+          airline,
+          date,
+          hours: 0,
+          budget:
+            dailyBudgetByAirlineAndDate[`${airline}__${date}`] || 0,
+        };
+      }
+
+      totals[key].hours += report.totalHours;
     });
 
-    return Object.entries(totals)
-      .map(([airline, hours]) => {
-        const budget = Number(budgetByAirline[airline] || 0);
-        const overBy = hours > budget ? hours - budget : 0;
+    return Object.values(totals)
+      .map((row) => {
+        const overBy = row.hours > row.budget ? row.hours - row.budget : 0;
 
         return {
-          airline,
-          hours,
-          budget,
+          ...row,
           overBy,
-          overBudget: budget > 0 && hours > budget,
+          overBudget: row.budget > 0 && row.hours > row.budget,
         };
       })
-      .sort((a, b) => b.hours - a.hours || a.airline.localeCompare(b.airline));
-  }, [filteredReports, budgetByAirline]);
+      .sort((a, b) => {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return a.airline.localeCompare(b.airline);
+      });
+  }, [filteredReports, dailyBudgetByAirlineAndDate]);
 
   const totalHoursAllAirlines = useMemo(() => {
     return airlineHourSummary.reduce((sum, row) => sum + row.hours, 0);
@@ -1043,9 +995,12 @@ export default function TimesheetAdminPage() {
 
   const selectedAirlineSummary = useMemo(() => {
     if (!selectedReport) return null;
+
     return (
       airlineHourSummary.find(
-        (row) => row.airline === selectedReport.normalizedAirline
+        (row) =>
+          row.airline === selectedReport.normalizedAirline &&
+          row.date === String(selectedReport.reportDate || "").trim()
       ) || null
     );
   }, [selectedReport, airlineHourSummary]);
@@ -1123,7 +1078,11 @@ export default function TimesheetAdminPage() {
     if (!canApprove) return;
 
     const airlineSummary =
-      airlineHourSummary.find((row) => row.airline === report.normalizedAirline) || null;
+      airlineHourSummary.find(
+        (row) =>
+          row.airline === report.normalizedAirline &&
+          row.date === String(report.reportDate || "").trim()
+      ) || null;
 
     let ok = true;
 
@@ -1318,8 +1277,16 @@ export default function TimesheetAdminPage() {
         0
       );
 
+      const normalizedAirline = normalizeAirlineName(editData.airline);
+      const budgetHoursDaily =
+        dailyBudgetByAirlineAndDate[
+          `${normalizedAirline}__${String(editData.reportDate || "").trim()}`
+        ] || 0;
+      const overBudget = budgetHoursDaily > 0 && totalHours > budgetHoursDaily;
+      const overBudgetBy = overBudget ? totalHours - budgetHoursDaily : 0;
+
       await updateDoc(doc(db, "timesheet_reports", report.id), {
-        airline: normalizeAirlineName(editData.airline),
+        airline: normalizedAirline,
         reportDate: editData.reportDate || "",
         shift: editData.shift || "",
         supervisorReporting: editData.supervisorReporting || "",
@@ -1327,6 +1294,9 @@ export default function TimesheetAdminPage() {
         overBudgetReason: editData.overBudgetReason || "",
         rows: cleanRows,
         totalHours,
+        budgetHoursDaily,
+        overBudget,
+        overBudgetBy,
         lastEditedAt: serverTimestamp(),
         lastEditedByName:
           user?.displayName ||
@@ -1342,7 +1312,7 @@ export default function TimesheetAdminPage() {
           item.id === report.id
             ? {
                 ...item,
-                airline: normalizeAirlineName(editData.airline),
+                airline: normalizedAirline,
                 reportDate: editData.reportDate || "",
                 shift: editData.shift || "",
                 supervisorReporting: editData.supervisorReporting || "",
@@ -1350,6 +1320,9 @@ export default function TimesheetAdminPage() {
                 overBudgetReason: editData.overBudgetReason || "",
                 rows: cleanRows,
                 totalHours,
+                budgetHoursDaily,
+                overBudget,
+                overBudgetBy,
               }
             : item
         )
@@ -1395,6 +1368,14 @@ export default function TimesheetAdminPage() {
         isEditMode && (editData.rows || []).length
           ? editData.rows.reduce((sum, row) => sum + calculateRowHours(row), 0)
           : selectedReport.totalHours,
+      budgetHoursDaily:
+        isEditMode
+          ? dailyBudgetByAirlineAndDate[
+              `${normalizeAirlineName(editData.airline || selectedReport.airline)}__${String(
+                editData.reportDate || selectedReport.reportDate || ""
+              ).trim()}`
+            ] || selectedReport.budgetHoursDaily || 0
+          : selectedReport.budgetHoursDaily || 0,
     };
 
     const html = buildPrintableHtml(printableReport, selectedAirlineSummary);
@@ -1594,7 +1575,7 @@ export default function TimesheetAdminPage() {
             <div style={{ display: "grid", gap: 6 }}>
               {overBudgetAlerts.map((alert) => (
                 <div
-                  key={alert.airline}
+                  key={`${alert.airline}-${alert.date}`}
                   style={{
                     color: "#9f1239",
                     fontSize: 14,
@@ -1602,7 +1583,7 @@ export default function TimesheetAdminPage() {
                   }}
                 >
                   {alert.airline} is over daily budget by {alert.overBy.toFixed(2)} hours
-                  {filters.reportDate ? ` on ${filters.reportDate}` : ""}.
+                  {alert.date ? ` on ${alert.date}` : ""}.
                 </div>
               ))}
             </div>
@@ -1703,7 +1684,7 @@ export default function TimesheetAdminPage() {
                 color: "#64748b",
               }}
             >
-              Uses Daily Budget Hours when configured. Otherwise uses Weekly / 7.
+              Uses daily budget by airline and report date.
             </p>
           </div>
 
@@ -1747,13 +1728,14 @@ export default function TimesheetAdminPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 760,
+                minWidth: 900,
                 background: "#fff",
               }}
             >
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle()}>Airline</th>
+                  <th style={thStyle()}>Date</th>
                   <th style={thStyle()}>Reported Hours</th>
                   <th style={thStyle()}>Daily Budget</th>
                   <th style={thStyle()}>Variance</th>
@@ -1763,12 +1745,13 @@ export default function TimesheetAdminPage() {
               <tbody>
                 {airlineHourSummary.map((row, index) => (
                   <tr
-                    key={row.airline}
+                    key={`${row.airline}-${row.date}`}
                     style={{
                       background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                     }}
                   >
                     <td style={tdStyle}>{row.airline}</td>
+                    <td style={tdStyle}>{row.date || "—"}</td>
                     <td style={tdStyle}>{row.hours.toFixed(2)} hrs</td>
                     <td style={tdStyle}>{row.budget.toFixed(2)} hrs</td>
                     <td style={tdStyle}>
