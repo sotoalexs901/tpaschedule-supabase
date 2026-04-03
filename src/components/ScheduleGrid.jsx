@@ -1,4 +1,3 @@
-// src/components/ScheduleGrid.jsx
 import React from "react";
 
 const AIRLINE_COLORS = {
@@ -21,7 +20,7 @@ const AIRLINE_LOGOS = {
 const TIME_OPTIONS = (() => {
   const arr = ["OFF"];
   for (let h = 0; h < 24; h++) {
-    for (let m of [0, 15, 30, 45]) {
+    for (const m of [0, 15, 30, 45]) {
       const hh = String(h).padStart(2, "0");
       const mm = String(m).padStart(2, "0");
       arr.push(`${hh}:${mm}`);
@@ -42,15 +41,20 @@ const DAY_LABELS = {
 
 function normalizeAirlineName(name) {
   const value = String(name || "").trim();
+  const upper = value.toUpperCase();
 
   if (
-    value.toUpperCase() === "WAL HAVANA AIR" ||
-    value.toUpperCase() === "WAL" ||
-    value.toUpperCase() === "WAL HAVANA" ||
-    value.toUpperCase() === "WL HAVANA AIR" ||
-    value.toUpperCase() === "WESTJET"
+    upper === "WAL HAVANA AIR" ||
+    upper === "WAL" ||
+    upper === "WAL HAVANA" ||
+    upper === "WL HAVANA AIR" ||
+    upper === "WESTJET"
   ) {
     return "WestJet";
+  }
+
+  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
+    return "CABIN";
   }
 
   return value;
