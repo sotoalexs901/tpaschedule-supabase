@@ -1,5 +1,5 @@
 // src/pages/ApprovedSchedulesPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
@@ -15,13 +15,57 @@ const DAY_LABELS = {
   sun: "SUN",
 };
 
-function buildWeekText(days) {
+function buildDayNumbersFromWeekStart(weekStart) {
+  if (!weekStart) return null;
+
+  const base = new Date(`${weekStart}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const result = {};
+  DAY_KEYS.forEach((key, index) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + index);
+    result[key] = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+  });
+
+  return result;
+}
+
+function buildWeekTextFromDays(days) {
   if (!days) return "Week not specified";
+
   return DAY_KEYS.map((k) => {
     const num = days[k];
     const label = DAY_LABELS[k];
     return num ? `${label} ${num}` : label;
   }).join("  |  ");
+}
+
+function buildWeekText(schedule) {
+  const fromWeekStart = buildDayNumbersFromWeekStart(schedule?.weekStart);
+  if (fromWeekStart) {
+    return buildWeekTextFromDays(fromWeekStart);
+  }
+
+  if (schedule?.days) {
+    return buildWeekTextFromDays(schedule.days);
+  }
+
+  return "Week not specified";
+}
+
+function formatWeekTagLabel(weekTag) {
+  if (!weekTag || weekTag === "no-week") return "Unspecified week";
+
+  const d = new Date(`${weekTag}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return weekTag;
+
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function PageCard({ children, style = {} }) {
@@ -93,7 +137,18 @@ export default function ApprovedSchedulesPage() {
           where("status", "==", "approved")
         );
         const snap = await getDocs(qApproved);
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+        const items = snap.docs.map((d) => {
+          const data = d.data();
+          const resolvedWeekTag =
+            String(data.weekStart || data.weekTag || "").trim() || "no-week";
+
+          return {
+            id: d.id,
+            ...data,
+            weekTag: resolvedWeekTag,
+          };
+        });
 
         const grouped = {};
         items.forEach((sch) => {
@@ -103,7 +158,11 @@ export default function ApprovedSchedulesPage() {
         });
 
         const sortedGrouped = Object.fromEntries(
-          Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0]))
+          Object.entries(grouped).sort((a, b) => {
+            if (a[0] === "no-week") return 1;
+            if (b[0] === "no-week") return -1;
+            return b[0].localeCompare(a[0]);
+          })
         );
 
         setGroups(sortedGrouped);
@@ -117,6 +176,8 @@ export default function ApprovedSchedulesPage() {
 
     load().catch(console.error);
   }, []);
+
+  const weekTags = useMemo(() => Object.keys(groups), [groups]);
 
   const handleOpen = (id) => {
     navigate(`/approved/${id}`);
@@ -138,8 +199,6 @@ export default function ApprovedSchedulesPage() {
       </PageCard>
     );
   }
-
-  const weekTags = Object.keys(groups);
 
   if (!weekTags.length) {
     return (
@@ -305,7 +364,7 @@ export default function ApprovedSchedulesPage() {
       {weekTags.map((weekTag) => {
         const list = groups[weekTag];
         const sample = list[0];
-        const weekText = buildWeekText(sample.days);
+        const weekText = buildWeekText(sample);
 
         return (
           <PageCard key={weekTag} style={{ padding: 22 }}>
@@ -356,7 +415,7 @@ export default function ApprovedSchedulesPage() {
                   letterSpacing: "0.06em",
                 }}
               >
-                {weekTag === "no-week" ? "Unspecified week" : weekTag}
+                {formatWeekTagLabel(weekTag)}
               </div>
             </div>
 
@@ -403,6 +462,18 @@ export default function ApprovedSchedulesPage() {
                     >
                       Created by: <b>{sch.createdBy || "N/A"}</b>
                     </p>
+
+                    {sch.weekStart && (
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 12,
+                          color: "#64748b",
+                        }}
+                      >
+                        Week start: <b>{sch.weekStart}</b>
+                      </p>
+                    )}
                   </div>
 
                   <div
@@ -441,7 +512,7 @@ export default function ApprovedSchedulesPage() {
                           letterSpacing: "-0.03em",
                         }}
                       >
-                        {sch.airlineWeeklyHours
+                        {typeof sch.airlineWeeklyHours === "number"
                           ? sch.airlineWeeklyHours.toFixed(2)
                           : "0.00"}
                       </p>
