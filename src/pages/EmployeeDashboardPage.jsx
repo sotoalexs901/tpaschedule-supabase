@@ -4,6 +4,8 @@ import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
+const FIXED_AUTHOR = "TPA Eulen Ops";
+
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
   if (role === "duty_manager") return "Duty Manager";
@@ -1138,26 +1140,12 @@ export default function EmployeeDashboardPage() {
                   <div
                     style={{
                       marginTop: 10,
-                      display: "flex",
-                      gap: 12,
-                      flexWrap: "wrap",
                       fontSize: 12,
                       color: "#64748b",
+                      fontWeight: 700,
                     }}
                   >
-                    {featuredAnnouncement.createdAt?.toDate && (
-                      <span>
-                        {featuredAnnouncement.createdAt
-                          .toDate()
-                          .toLocaleDateString()}
-                      </span>
-                    )}
-
-                    {featuredAnnouncement.createdBy && (
-                      <span>
-                        {t.postedBy}: <b>{featuredAnnouncement.createdBy}</b>
-                      </span>
-                    )}
+                    By {FIXED_AUTHOR}
                   </div>
                 </div>
 
@@ -1285,18 +1273,6 @@ export default function EmployeeDashboardPage() {
                           </p>
                         )}
                       </div>
-
-                      {item.createdAt?.toDate && (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            color: "#64748b",
-                            flexShrink: 0,
-                          }}
-                        >
-                          {item.createdAt.toDate().toLocaleDateString()}
-                        </span>
-                      )}
                     </div>
 
                     {item.body && (
