@@ -24,6 +24,53 @@ const DAY_LABELS = {
   sun: "SUN",
 };
 
+function buildDayNumbersFromWeekStart(weekStart) {
+  if (!weekStart) return null;
+
+  const base = new Date(`${weekStart}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const result = {};
+  DAY_KEYS.forEach((key, index) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + index);
+    result[key] = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+  });
+
+  return result;
+}
+
+function buildWeekTextFromDays(days) {
+  if (!days) return "Week not defined";
+
+  return DAY_KEYS.map((key) => {
+    const label = DAY_LABELS[key];
+    const num = days[key];
+    return num ? `${label} ${num}` : label;
+  }).join("  |  ");
+}
+
+function formatWeekLabelFromSchedule(schedule) {
+  const fromWeekStart = buildDayNumbersFromWeekStart(schedule?.weekStart);
+  if (fromWeekStart) return buildWeekTextFromDays(fromWeekStart);
+  if (schedule?.days) return buildWeekTextFromDays(schedule.days);
+  return "Week not defined";
+}
+
+function formatWeekStartLabel(weekStart) {
+  if (!weekStart) return "Week not specified";
+
+  const d = new Date(`${weekStart}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return weekStart;
+
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function dayShiftsToText(shifts) {
   if (!Array.isArray(shifts) || shifts.length === 0) return "OFF";
 
@@ -35,16 +82,6 @@ function dayShiftsToText(shifts) {
   });
 
   return parts.length ? parts.join(", ") : "OFF";
-}
-
-function formatWeekLabelFromSchedule(schedule) {
-  if (!schedule?.days) return "Week not defined";
-
-  return DAY_KEYS.map((key) => {
-    const label = DAY_LABELS[key];
-    const num = schedule.days[key];
-    return num ? `${label} ${num}` : label;
-  }).join("  |  ");
 }
 
 function PageCard({ children, style = {} }) {
@@ -136,8 +173,19 @@ export default function ReturnedSchedulesPage() {
         const schSnap = await getDocs(qReturned);
 
         const list = schSnap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
+          .map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              ...data,
+              weekTag: String(data.weekStart || data.weekTag || "").trim(),
+            };
+          })
           .sort((a, b) => {
+            const aWeek = a.weekTag || "";
+            const bWeek = b.weekTag || "";
+            if (aWeek !== bWeek) return bWeek.localeCompare(aWeek);
+
             const aTime = a.createdAt?.seconds || 0;
             const bTime = b.createdAt?.seconds || 0;
             return bTime - aTime;
@@ -165,8 +213,9 @@ export default function ReturnedSchedulesPage() {
       state: {
         template: {
           airline: sch.airline,
+          airlineDisplayName: sch.airlineDisplayName || sch.airline,
           department: sch.department,
-          days: sch.days,
+          weekStart: sch.weekStart || sch.weekTag || "",
           grid: sch.grid,
         },
         returnedId: sch.id,
@@ -178,6 +227,7 @@ export default function ReturnedSchedulesPage() {
     try {
       const pdf = new jsPDF("portrait", "pt", "letter");
       const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       const marginX = 40;
       let y = 50;
 
@@ -194,9 +244,15 @@ export default function ReturnedSchedulesPage() {
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
+
       const weekLabel = formatWeekLabelFromSchedule(sch);
       pdf.text(`Week of: ${weekLabel}`, marginX, y);
       y += 16;
+
+      if (sch.weekStart) {
+        pdf.text(`Week start: ${formatWeekStartLabel(sch.weekStart)}`, marginX, y);
+        y += 16;
+      }
 
       if (sch.returnReason || sch.returnComment || sch.reviewNotes) {
         pdf.setFont("helvetica", "bold");
@@ -216,7 +272,7 @@ export default function ReturnedSchedulesPage() {
         );
 
         linesReason.forEach((ln) => {
-          if (y > pdf.internal.pageSize.getHeight() - 40) {
+          if (y > pageHeight - 40) {
             pdf.addPage();
             y = 40;
           }
@@ -241,7 +297,7 @@ export default function ReturnedSchedulesPage() {
         const lines = pdf.splitTextToSize(line, pageWidth - marginX * 2);
 
         lines.forEach((ln) => {
-          if (y > pdf.internal.pageSize.getHeight() - 40) {
+          if (y > pageHeight - 40) {
             pdf.addPage();
             y = 40;
           }
@@ -252,8 +308,9 @@ export default function ReturnedSchedulesPage() {
         y += 6;
       });
 
+      const safeWeek = (sch.weekStart || sch.weekTag || "week").replace(/[^\d-]/g, "");
       pdf.save(
-        `Returned_${sch.airline || "AIRLINE"}_${sch.department || "DEPT"}.pdf`
+        `Returned_${sch.airline || "AIRLINE"}_${sch.department || "DEPT"}_${safeWeek}.pdf`
       );
     } catch (err) {
       console.error("Error exporting returned PDF:", err);
@@ -460,6 +517,19 @@ export default function ReturnedSchedulesPage() {
                     >
                       Week: {formatWeekLabelFromSchedule(sch)}
                     </p>
+
+                    {sch.weekStart && (
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 12,
+                          color: "#64748b",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Week start: {formatWeekStartLabel(sch.weekStart)}
+                      </p>
+                    )}
                   </div>
 
                   <div
