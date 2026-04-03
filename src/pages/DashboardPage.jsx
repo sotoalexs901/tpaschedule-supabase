@@ -11,6 +11,8 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
+const FIXED_AUTHOR = "TPA Eulen Ops";
+
 function formatDateLabel(value) {
   if (!value) return "Not scheduled";
   try {
@@ -251,7 +253,7 @@ export default function DashboardPage() {
         setMainMessage(data.message || "");
         setMainMeta({
           updatedAt: data.updatedAt || null,
-          updatedBy: data.updatedBy || null,
+          updatedBy: data.updatedByLabel || data.updatedBy || FIXED_AUTHOR,
         });
       } else {
         setMainMessage("");
@@ -628,19 +630,17 @@ export default function DashboardPage() {
                 {mainMessage || "No message posted yet."}
               </p>
 
-              {mainMeta?.updatedAt && (
-                <p
-                  style={{
-                    marginTop: 10,
-                    marginBottom: 0,
-                    fontSize: 12,
-                    color: "#64748b",
-                  }}
-                >
-                  Last update: {mainMeta.updatedAt}
-                  {mainMeta.updatedBy ? ` • by ${mainMeta.updatedBy}` : ""}
-                </p>
-              )}
+              <p
+                style={{
+                  marginTop: 10,
+                  marginBottom: 0,
+                  fontSize: 12,
+                  color: "#64748b",
+                  fontWeight: 700,
+                }}
+              >
+                By {FIXED_AUTHOR}
+              </p>
             </div>
           </GlassCard>
 
@@ -699,7 +699,7 @@ export default function DashboardPage() {
                     >
                       <img
                         src={p.url}
-                        alt={p.caption || "Station highlight"}
+                        alt="Station highlight"
                         style={{
                           width: "100%",
                           height: "100%",
@@ -707,19 +707,6 @@ export default function DashboardPage() {
                           display: "block",
                         }}
                       />
-                    </div>
-                    <div style={{ padding: 12 }}>
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: "#475569",
-                          wordBreak: "break-word",
-                        }}
-                      >
-                        {p.caption || "Station highlight"}
-                      </p>
                     </div>
                   </div>
                 ))}
