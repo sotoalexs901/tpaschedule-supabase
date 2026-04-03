@@ -1,3 +1,4 @@
+// src/pages/EmployeeDashboardPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
@@ -94,6 +95,20 @@ function useIsMobile(breakpoint = 900) {
   }, [breakpoint]);
 
   return isMobile;
+}
+
+function formatEventDate(value, language = "en") {
+  if (!value) return "—";
+  try {
+    const date = new Date(`${value}T00:00:00`);
+    return date.toLocaleDateString(language === "es" ? "es-US" : "en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return value;
+  }
 }
 
 function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
@@ -495,6 +510,143 @@ function LeaderRow({ row, accent = "#1769aa" }) {
   );
 }
 
+function SpotlightCard({ item, isMobile, language }) {
+  const fallbackTitle =
+    language === "es" ? "Empleado del Mes" : "Employee of the Month";
+
+  const displayImage = item.imageUrl || item.employeePhotoURL || "";
+
+  return (
+    <div
+      style={{
+        borderRadius: 18,
+        overflow: "hidden",
+        background: "linear-gradient(135deg, #ecfeff 0%, #ffffff 100%)",
+        border: "1px solid #bae6fd",
+        boxShadow: "0 12px 24px rgba(15,23,42,0.05)",
+      }}
+    >
+      {displayImage && (
+        <div
+          style={{
+            width: "100%",
+            height: isMobile ? 180 : 220,
+            background: "#e2e8f0",
+          }}
+        >
+          <img
+            src={displayImage}
+            alt={item.employeeName || fallbackTitle}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+        </div>
+      )}
+
+      <div style={{ padding: 16 }}>
+        <div
+          style={{
+            display: "inline-flex",
+            padding: "6px 10px",
+            borderRadius: 999,
+            background: "#edf7ff",
+            border: "1px solid #cfe7fb",
+            color: "#1769aa",
+            fontSize: 11,
+            fontWeight: 800,
+            marginBottom: 10,
+          }}
+        >
+          {item.department || fallbackTitle}
+        </div>
+
+        <h3
+          style={{
+            margin: 0,
+            fontSize: isMobile ? 18 : 20,
+            fontWeight: 800,
+            color: "#0f172a",
+            letterSpacing: "-0.02em",
+          }}
+        >
+          {item.title || fallbackTitle}
+        </h3>
+
+        <p
+          style={{
+            margin: "8px 0 0",
+            fontSize: 15,
+            color: "#0f172a",
+            fontWeight: 800,
+          }}
+        >
+          {item.employeeName || "—"}
+        </p>
+
+        {item.employeePosition && (
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+              fontWeight: 600,
+            }}
+          >
+            {item.employeePosition}
+          </p>
+        )}
+
+        {item.body && (
+          <p
+            style={{
+              margin: "10px 0 0",
+              fontSize: 13,
+              color: "#475569",
+              lineHeight: 1.7,
+              whiteSpace: "pre-line",
+            }}
+          >
+            {item.body}
+          </p>
+        )}
+
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 12,
+            color: "#64748b",
+            fontWeight: 700,
+          }}
+        >
+          By {FIXED_AUTHOR}
+        </div>
+
+        {item.link && (
+          <a
+            href={item.link}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "inline-block",
+              marginTop: 12,
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#1769aa",
+              textDecoration: "none",
+            }}
+          >
+            {language === "es" ? "Ver más →" : "View more →"}
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function EmployeeDashboardPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -502,6 +654,8 @@ export default function EmployeeDashboardPage() {
 
   const [announcements, setAnnouncements] = useState([]);
   const [birthdays, setBirthdays] = useState([]);
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
+  const [spotlights, setSpotlights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState("en");
 
@@ -538,17 +692,17 @@ export default function EmployeeDashboardPage() {
         timesheetBody:
           "Create and send a station timesheet report for manager review.",
       },
-      bannerTitle: "Schedule update",
-      bannerBody:
-        "We are improving how you view and access your schedules. Stay tuned for upcoming updates and features.",
       announcementsTitle: "Crew Announcements",
       announcementsEmpty: "No announcements available.",
+      upcomingEventsTitle: "Upcoming Events",
+      upcomingEventsEmpty: "No upcoming events available.",
+      employeeMonthTitle: "Employee of the Month",
+      employeeMonthEmpty: "No employee spotlights available.",
       loading: "Loading dashboard...",
-      latestAnnouncement: "Latest Announcement",
-      postedBy: "Posted by",
       portalAccess: "Portal Access",
       modules: "Modules",
       totalNews: "Announcements",
+      totalEvents: "Events",
       birthdaysToday: "Today's Birthdays",
       birthdaysMonth: "This Month's Birthdays",
       birthdaysEmptyToday: "No birthdays today.",
@@ -563,6 +717,9 @@ export default function EmployeeDashboardPage() {
       leaderboard: "Leaderboard",
       today: "Today",
       week: "Week",
+      viewMore: "View more →",
+      by: "By",
+      openLink: "Open link →",
     },
     es: {
       crewPortal: "Portal de Tripulación",
@@ -591,17 +748,17 @@ export default function EmployeeDashboardPage() {
         timesheetBody:
           "Crea y envía un reporte de timesheet de estación para revisión gerencial.",
       },
-      bannerTitle: "Actualización de horarios",
-      bannerBody:
-        "Estamos mejorando la manera en que ves y accedes a tus horarios. Mantente pendiente de las próximas actualizaciones y funciones.",
       announcementsTitle: "Anuncios de Tripulación",
       announcementsEmpty: "No hay anuncios disponibles.",
+      upcomingEventsTitle: "Próximos Eventos",
+      upcomingEventsEmpty: "No hay eventos próximos.",
+      employeeMonthTitle: "Empleado del Mes",
+      employeeMonthEmpty: "No hay reconocimientos disponibles.",
       loading: "Cargando dashboard...",
-      latestAnnouncement: "Último Anuncio",
-      postedBy: "Publicado por",
       portalAccess: "Acceso",
       modules: "Módulos",
       totalNews: "Anuncios",
+      totalEvents: "Eventos",
       birthdaysToday: "Cumpleaños de Hoy",
       birthdaysMonth: "Cumpleaños del Mes",
       birthdaysEmptyToday: "No hay cumpleaños hoy.",
@@ -616,6 +773,9 @@ export default function EmployeeDashboardPage() {
       leaderboard: "Ranking",
       today: "Hoy",
       week: "Semana",
+      viewMore: "Ver más →",
+      by: "Por",
+      openLink: "Abrir enlace →",
     },
   };
 
@@ -624,35 +784,43 @@ export default function EmployeeDashboardPage() {
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        const qAnnouncements = query(
-          collection(db, "employeeAnnouncements"),
-          orderBy("createdAt", "desc")
-        );
-        const announcementsSnap = await getDocs(qAnnouncements);
+        const todayStr = new Date().toISOString().slice(0, 10);
+
+        const [announcementsSnap, usersSnap, eventsSnap, spotlightsSnap] =
+          await Promise.all([
+            getDocs(
+              query(
+                collection(db, "employeeAnnouncements"),
+                orderBy("createdAt", "desc")
+              )
+            ),
+            getDocs(collection(db, "users")),
+            getDocs(
+              query(
+                collection(db, "employeeUpcomingEvents"),
+                orderBy("eventDate", "asc")
+              )
+            ),
+            getDocs(
+              query(
+                collection(db, "employeeSpotlights"),
+                orderBy("slot", "asc")
+              )
+            ),
+          ]);
+
         const announcementList = announcementsSnap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
         }));
 
-        const sortedAnnouncements = announcementList.sort((a, b) => {
-          const aPinned = a.pinned ? 1 : 0;
-          const bPinned = b.pinned ? 1 : 0;
-          if (aPinned !== bPinned) return bPinned - aPinned;
-
-          const aTime = a.createdAt?.seconds || 0;
-          const bTime = b.createdAt?.seconds || 0;
-          return bTime - aTime;
-        });
-
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const filteredAnnouncements = sortedAnnouncements.filter((item) => {
+        const filteredAnnouncements = announcementList.filter((item) => {
           if (!item.expiresOn) return true;
           return item.expiresOn >= todayStr;
         });
 
         setAnnouncements(filteredAnnouncements);
 
-        const usersSnap = await getDocs(collection(db, "users"));
         const birthdayList = usersSnap.docs
           .map((d) => {
             const data = d.data();
@@ -675,6 +843,19 @@ export default function EmployeeDashboardPage() {
           .filter((item) => item.birthDateParsed);
 
         setBirthdays(birthdayList);
+
+        const eventList = eventsSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((item) => !item.eventDate || item.eventDate >= todayStr);
+
+        setUpcomingEvents(eventList);
+
+        const spotlightList = spotlightsSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((item) => item.active !== false)
+          .sort((a, b) => Number(a.slot || 0) - Number(b.slot || 0));
+
+        setSpotlights(spotlightList);
       } catch (err) {
         console.error("Error loading employee dashboard:", err);
       } finally {
@@ -745,8 +926,6 @@ export default function EmployeeDashboardPage() {
     return baseCards;
   }, [t, isSupervisor]);
 
-  const featuredAnnouncement = announcements[0] || null;
-
   const todayBirthdays = useMemo(() => {
     const today = new Date();
     return birthdays.filter((item) =>
@@ -811,8 +990,15 @@ export default function EmployeeDashboardPage() {
         accent: "#f59e0b",
         icon: "📣",
       },
+      {
+        title: t.totalEvents,
+        value: upcomingEvents.length,
+        subtitle: "Upcoming items",
+        accent: "#8b5cf6",
+        icon: "📅",
+      },
     ],
-    [visiblePosition, quickCards.length, announcements.length, t]
+    [visiblePosition, quickCards.length, announcements.length, upcomingEvents.length, t]
   );
 
   return (
@@ -1083,95 +1269,6 @@ export default function EmployeeDashboardPage() {
             </div>
           </GlassCard>
 
-          {!loading && featuredAnnouncement && (
-            <GlassCard
-              title={t.latestAnnouncement}
-              icon="📢"
-              accent="#1f7cc1"
-              isMobile={isMobile}
-            >
-              <div
-                style={{
-                  borderRadius: 18,
-                  overflow: "hidden",
-                  background: "linear-gradient(135deg, #edf7ff 0%, #ffffff 100%)",
-                  border: "1px solid #d6ebff",
-                }}
-              >
-                <div style={{ padding: 16 }}>
-                  <h3
-                    style={{
-                      margin: 0,
-                      fontSize: isMobile ? 18 : 20,
-                      fontWeight: 800,
-                      color: "#0f172a",
-                    }}
-                  >
-                    {featuredAnnouncement.title || "Announcement"}
-                  </h3>
-
-                  {featuredAnnouncement.subtitle && (
-                    <p
-                      style={{
-                        margin: "8px 0 0",
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "#1769aa",
-                      }}
-                    >
-                      {featuredAnnouncement.subtitle}
-                    </p>
-                  )}
-
-                  {featuredAnnouncement.body && (
-                    <p
-                      style={{
-                        margin: "10px 0 0",
-                        fontSize: 14,
-                        color: "#334155",
-                        lineHeight: 1.7,
-                        whiteSpace: "pre-line",
-                      }}
-                    >
-                      {featuredAnnouncement.body}
-                    </p>
-                  )}
-
-                  <div
-                    style={{
-                      marginTop: 10,
-                      fontSize: 12,
-                      color: "#64748b",
-                      fontWeight: 700,
-                    }}
-                  >
-                    By {FIXED_AUTHOR}
-                  </div>
-                </div>
-
-                {featuredAnnouncement.imageUrl && (
-                  <div
-                    style={{
-                      borderTop: "1px solid #dbeafe",
-                      background: "#fff",
-                    }}
-                  >
-                    <img
-                      src={featuredAnnouncement.imageUrl}
-                      alt={featuredAnnouncement.title || "Announcement"}
-                      style={{
-                        width: "100%",
-                        maxHeight: 340,
-                        objectFit: "cover",
-                        display: "block",
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            </GlassCard>
-          )}
-
           <GlassCard
             title={t.announcementsTitle}
             icon="📌"
@@ -1185,95 +1282,186 @@ export default function EmployeeDashboardPage() {
                 {t.announcementsEmpty}
               </p>
             ) : (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gap: 12 }}>
                 {announcements.slice(0, 6).map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      borderRadius: 16,
+                      overflow: "hidden",
+                      background:
+                        "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
+                      border: "1px solid #fde68a",
+                    }}
+                  >
+                    {item.imageUrl && (
+                      <div
+                        style={{
+                          width: "100%",
+                          maxHeight: 260,
+                          background: "#f8fafc",
+                        }}
+                      >
+                        <img
+                          src={item.imageUrl}
+                          alt={item.title || "Announcement"}
+                          style={{
+                            width: "100%",
+                            maxHeight: 260,
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ padding: 14 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {item.category && (
+                          <span
+                            style={{
+                              padding: "5px 9px",
+                              borderRadius: 999,
+                              background: "#fff7ed",
+                              border: "1px solid #fed7aa",
+                              color: "#9a3412",
+                              fontSize: 11,
+                              fontWeight: 800,
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            {item.category}
+                          </span>
+                        )}
+                      </div>
+
+                      <p
+                        style={{
+                          margin: 0,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          fontSize: 15,
+                        }}
+                      >
+                        {item.title || "Announcement"}
+                      </p>
+
+                      {item.subtitle && (
+                        <p
+                          style={{
+                            margin: "6px 0 0",
+                            fontSize: 12,
+                            color: "#b45309",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {item.subtitle}
+                        </p>
+                      )}
+
+                      {item.body && (
+                        <p
+                          style={{
+                            margin: "8px 0 0",
+                            fontSize: 13,
+                            color: "#475569",
+                            lineHeight: 1.6,
+                            whiteSpace: "pre-line",
+                          }}
+                        >
+                          {item.body}
+                        </p>
+                      )}
+
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontSize: 12,
+                          color: "#64748b",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {t.by} {FIXED_AUTHOR}
+                      </div>
+
+                      {item.link && (
+                        <a
+                          href={item.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: "inline-block",
+                            marginTop: 10,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "#1769aa",
+                            textDecoration: "none",
+                          }}
+                        >
+                          {t.openLink}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title={t.upcomingEventsTitle}
+            icon="📅"
+            accent="#8b5cf6"
+            isMobile={isMobile}
+          >
+            {loading ? (
+              <p style={{ margin: 0, color: "#94a3b8" }}>{t.loading}</p>
+            ) : upcomingEvents.length === 0 ? (
+              <p style={{ margin: 0, color: "#64748b" }}>
+                {t.upcomingEventsEmpty}
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {upcomingEvents.slice(0, 6).map((item) => (
                   <div
                     key={item.id}
                     style={{
                       borderRadius: 16,
                       padding: 14,
                       background:
-                        "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
-                      border: "1px solid #fde68a",
+                        "linear-gradient(135deg, #f5f3ff 0%, #ffffff 100%)",
+                      border: "1px solid #ddd6fe",
                     }}
                   >
-                    <div
+                    <p
                       style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        flexWrap: "wrap",
+                        margin: 0,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        fontSize: 15,
                       }}
                     >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            marginBottom: 6,
-                          }}
-                        >
-                          {item.pinned && (
-                            <span
-                              style={{
-                                padding: "5px 9px",
-                                borderRadius: 999,
-                                background: "#dbeafe",
-                                border: "1px solid #bfdbfe",
-                                color: "#1d4ed8",
-                                fontSize: 11,
-                                fontWeight: 800,
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              Pinned
-                            </span>
-                          )}
-                          {item.category && (
-                            <span
-                              style={{
-                                padding: "5px 9px",
-                                borderRadius: 999,
-                                background: "#fff7ed",
-                                border: "1px solid #fed7aa",
-                                color: "#9a3412",
-                                fontSize: 11,
-                                fontWeight: 800,
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              {item.category}
-                            </span>
-                          )}
-                        </div>
+                      {item.title || "Event"}
+                    </p>
 
-                        <p
-                          style={{
-                            margin: 0,
-                            fontWeight: 800,
-                            color: "#0f172a",
-                            fontSize: 15,
-                          }}
-                        >
-                          {item.title || "Announcement"}
-                        </p>
-
-                        {item.subtitle && (
-                          <p
-                            style={{
-                              margin: "6px 0 0",
-                              fontSize: 12,
-                              color: "#b45309",
-                              fontWeight: 700,
-                            }}
-                          >
-                            {item.subtitle}
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                    <p
+                      style={{
+                        margin: "8px 0 0",
+                        fontSize: 12,
+                        color: "#7c3aed",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {formatEventDate(item.eventDate, language)}
+                      {item.eventTime ? ` • ${item.eventTime}` : ""}
+                    </p>
 
                     {item.body && (
                       <p
@@ -1288,7 +1476,70 @@ export default function EmployeeDashboardPage() {
                         {item.body}
                       </p>
                     )}
+
+                    <div
+                      style={{
+                        marginTop: 10,
+                        fontSize: 12,
+                        color: "#64748b",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {t.by} {FIXED_AUTHOR}
+                    </div>
+
+                    {item.link && (
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: "inline-block",
+                          marginTop: 10,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "#1769aa",
+                          textDecoration: "none",
+                        }}
+                      >
+                        {t.openLink}
+                      </a>
+                    )}
                   </div>
+                ))}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title={t.employeeMonthTitle}
+            icon="🏆"
+            accent="#06b6d4"
+            isMobile={isMobile}
+          >
+            {loading ? (
+              <p style={{ margin: 0, color: "#94a3b8" }}>{t.loading}</p>
+            ) : spotlights.length === 0 ? (
+              <p style={{ margin: 0, color: "#64748b" }}>
+                {t.employeeMonthEmpty}
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile
+                    ? "1fr"
+                    : "repeat(auto-fit, minmax(260px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                {spotlights.slice(0, 2).map((item) => (
+                  <SpotlightCard
+                    key={item.id}
+                    item={item}
+                    isMobile={isMobile}
+                    language={language}
+                  />
                 ))}
               </div>
             )}
