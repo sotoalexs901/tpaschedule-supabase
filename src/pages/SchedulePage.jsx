@@ -107,6 +107,18 @@ const normalizeDepartmentName = (value) => {
 const getAirlineLogo = (value) =>
   AIRLINE_LOGOS[normalizeAirlineName(value)] || AIRLINE_LOGOS[value] || null;
 
+function parseLocalDate(dateStr) {
+  const value = String(dateStr || "").trim();
+  if (!value) return null;
+
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
 function buildDayNumbers(weekStart) {
   if (!weekStart) {
     return {
@@ -120,8 +132,8 @@ function buildDayNumbers(weekStart) {
     };
   }
 
-  const base = new Date(`${weekStart}T00:00:00`);
-  if (Number.isNaN(base.getTime())) {
+  const base = parseLocalDate(weekStart);
+  if (!base) {
     return {
       mon: "",
       tue: "",
@@ -160,6 +172,54 @@ function emptyRow() {
     sat: [{ start: "", end: "" }, { start: "", end: "" }],
     sun: [{ start: "", end: "" }, { start: "", end: "" }],
   };
+}
+
+function cloneGrid(grid) {
+  if (!Array.isArray(grid) || !grid.length) return [emptyRow()];
+
+  return grid.map((row) => ({
+    employeeId: row.employeeId || "",
+    mon: Array.isArray(row.mon)
+      ? row.mon.map((s) => ({ start: s?.start || "", end: s?.end || "" }))
+      : [{ start: "", end: "" }, { start: "", end: "" }],
+    tue: Array.isArray(row.tue)
+      ? row.tue.map((s) => ({ start: s?.start || "", end: s?.end || "" }))
+      : [{ start: "", end: "" }, { start: "", end: "" }],
+    wed: Array.isArray(row.wed)
+      ? row.wed.map((s) => ({ start: s?.start || "", end: s?.end || "" }))
+      : [{ start: "", end: "" }, { start: "", end: "" }],
+    thu: Array.isArray(row.thu)
+      ? row.thu.map((s) => ({ start: s?.start || "", end: s?.end || "" }))
+      : [{ start: "", end: "" }, { start: "", end: "" }],
+    fri: Array.isArray(row.fri)
+      ? row.fri.map((s) => ({ start: s?.start || "", end: s?.end || "" }))
+      : [{ start: "", end: "" }, { start: "", end: "" }],
+    sat: Array.isArray(row.sat)
+      ? row.sat.map((s) => ({ start: s?.start || "", end: s?.end || "" }))
+      : [{ start: "", end: "" }, { start: "", end: "" }],
+    sun: Array.isArray(row.sun)
+      ? row.sun.map((s) => ({ start: s?.start || "", end: s?.end || "" }))
+      : [{ start: "", end: "" }, { start: "", end: "" }],
+  }));
+}
+
+function deriveWeekStartFromDays(days) {
+  const mon = String(days?.mon || "").trim();
+  if (!mon || !mon.includes("/")) return "";
+
+  const [month, day] = mon.split("/").map(Number);
+  if (!month || !day) return "";
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const candidate = new Date(year, month - 1, day);
+
+  if (Number.isNaN(candidate.getTime())) return "";
+
+  return `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(candidate.getDate()).padStart(2, "0")}`;
 }
 
 function PageCard({ children, style = {} }) {
@@ -290,6 +350,7 @@ export default function SchedulePage() {
   const [airlineDisplayName, setAirlineDisplayName] = useState("");
   const [department, setDepartment] = useState("");
   const [weekStart, setWeekStart] = useState("");
+  const [loadedFromTemplate, setLoadedFromTemplate] = useState(false);
 
   const [employees, setEmployees] = useState([]);
   const [rows, setRows] = useState([]);
@@ -306,26 +367,32 @@ export default function SchedulePage() {
     statusMessage.toLowerCase().includes("red flag");
 
   useEffect(() => {
-    if (location.state?.template) {
-      const {
-        airline,
-        airlineDisplayName,
-        department,
-        weekStart,
-        grid,
-      } = location.state.template;
+    if (!location.state?.template) return;
 
-      if (airline) setAirlineKey(normalizeAirlineName(airline));
-      if (airlineDisplayName) {
-        setAirlineDisplayName(normalizeAirlineName(airlineDisplayName));
-      } else if (airline) {
-        setAirlineDisplayName(normalizeAirlineName(airline));
-      }
+    const template = location.state.template;
+    const nextWeekStart =
+      template.weekStart ||
+      deriveWeekStartFromDays(template.days) ||
+      "";
 
-      if (department) setDepartment(department);
-      if (weekStart) setWeekStart(weekStart);
-      if (grid) setRows(grid);
+    if (template.airline) {
+      setAirlineKey(normalizeAirlineName(template.airline));
     }
+
+    if (template.airlineDisplayName) {
+      setAirlineDisplayName(normalizeAirlineName(template.airlineDisplayName));
+    } else if (template.airline) {
+      setAirlineDisplayName(normalizeAirlineName(template.airline));
+    }
+
+    if (template.department) {
+      setDepartment(template.department);
+    }
+
+    setWeekStart(nextWeekStart);
+    setRows(cloneGrid(template.grid));
+    setLoadedFromTemplate(true);
+    setStatusMessage("Template loaded. You can reuse it and save as a new schedule.");
   }, [location.state]);
 
   useEffect(() => {
@@ -367,10 +434,10 @@ export default function SchedulePage() {
 
           if (!empId || !startStr) return;
 
-          const start = new Date(startStr);
-          const end = new Date(endStr);
+          const start = parseLocalDate(startStr);
+          const end = parseLocalDate(endStr);
 
-          if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
+          if (!start || !end) return;
 
           let current = new Date(start);
           while (current <= end) {
@@ -768,6 +835,24 @@ export default function SchedulePage() {
           </ActionButton>
         </div>
       </div>
+
+      {loadedFromTemplate && (
+        <PageCard style={{ padding: 16 }}>
+          <div
+            style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#1d4ed8",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            Using approved schedule as template. This will save as a new schedule and will not overwrite the original one.
+          </div>
+        </PageCard>
+      )}
 
       {statusMessage && (
         <div
