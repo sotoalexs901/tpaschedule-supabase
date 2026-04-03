@@ -1,4 +1,3 @@
-// src/pages/CrewAnnouncementsPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -9,14 +8,61 @@ import {
   serverTimestamp,
   deleteDoc,
   doc,
-  updateDoc,
-  where,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
-const EMPLOYEE_MONTH_SLOTS = [1, 2];
+const AIRLINE_OPTIONS = [
+  { value: "SY", label: "SY" },
+  { value: "WestJet", label: "WestJet" },
+  { value: "WL Invicta", label: "WL Invicta" },
+  { value: "AV", label: "AV" },
+  { value: "EA", label: "EA" },
+  { value: "WCHR", label: "WCHR" },
+  { value: "CABIN", label: "Cabin Service" },
+  { value: "AA-BSO", label: "AA-BSO" },
+  { value: "OTHER", label: "Other" },
+];
+
+function normalizeAirlineName(value) {
+  const airline = String(value || "").trim();
+  const upper = airline.toUpperCase();
+
+  if (
+    upper === "WL HAVANA AIR" ||
+    upper === "WAL HAVANA AIR" ||
+    upper === "WAL HAVANA" ||
+    upper === "WESTJET"
+  ) {
+    return "WestJet";
+  }
+
+  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
+    return "CABIN";
+  }
+
+  return airline;
+}
+
+function getDefaultPosition(role) {
+  if (role === "station_manager") return "Station Manager";
+  if (role === "duty_manager") return "Duty Manager";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "agent") return "Agent";
+  return "Team Member";
+}
+
+function getVisibleName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    user?.id ||
+    "unknown"
+  );
+}
 
 function PageCard({ children, style = {} }) {
   return (
@@ -137,12 +183,6 @@ function ActionButton({
       border: "1px solid #cfe7fb",
       boxShadow: "none",
     },
-    success: {
-      background: "#ecfdf5",
-      color: "#065f46",
-      border: "1px solid #a7f3d0",
-      boxShadow: "none",
-    },
   };
 
   return (
@@ -166,69 +206,15 @@ function ActionButton({
   );
 }
 
-function getVisibleName(user) {
-  return (
-    user?.displayName ||
-    user?.fullName ||
-    user?.name ||
-    user?.username ||
-    user?.id ||
-    "unknown"
-  );
-}
-
-function getDefaultPosition(role) {
-  if (role === "station_manager") return "Station Manager";
-  if (role === "duty_manager") return "Duty Manager";
-  if (role === "supervisor") return "Supervisor";
-  if (role === "agent") return "Agent";
-  return "Team Member";
-}
-
-function normalizeDepartmentName(name) {
-  const value = String(name || "").trim();
-
-  if (!value) return "";
-
-  const upper = value.toUpperCase();
-
-  if (upper === "TC") return "TC";
-  if (upper === "RAMP") return "Ramp";
-  if (upper === "BSO") return "BSO";
-  if (upper === "WCHR") return "WCHR";
-  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
-    return "Cabin Service";
-  }
-
-  return value;
-}
-
-function formatDateTime(value) {
-  try {
-    if (!value) return "—";
-    if (typeof value?.toDate === "function") return value.toDate().toLocaleString();
-    return new Date(value).toLocaleString();
-  } catch {
-    return "—";
-  }
-}
-
-function getStoragePathFromUrl(url) {
-  try {
-    const match = decodeURIComponent(url).match(/\/o\/([^?]+)/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function CrewAnnouncementsPage() {
   const { user } = useUser();
 
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [link, setLink] = useState("");
-  const [imageFile, setImageFile] = useState(null);
+  const [employees, setEmployees] = useState([]);
+
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementBody, setAnnouncementBody] = useState("");
+  const [announcementLink, setAnnouncementLink] = useState("");
+  const [announcementImageFile, setAnnouncementImageFile] = useState(null);
 
   const [eventTitle, setEventTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
@@ -236,26 +222,23 @@ export default function CrewAnnouncementsPage() {
   const [eventBody, setEventBody] = useState("");
   const [eventLink, setEventLink] = useState("");
 
-  const [spotlightSlot, setSpotlightSlot] = useState(1);
+  const [spotlightAirline, setSpotlightAirline] = useState("SY");
   const [spotlightDepartment, setSpotlightDepartment] = useState("");
   const [spotlightEmployeeId, setSpotlightEmployeeId] = useState("");
-  const [spotlightTitle, setSpotlightTitle] = useState("");
+  const [spotlightTitle, setSpotlightTitle] = useState("Employee of the Month");
   const [spotlightBody, setSpotlightBody] = useState("");
   const [spotlightLink, setSpotlightLink] = useState("");
   const [spotlightImageFile, setSpotlightImageFile] = useState(null);
-
-  const [employees, setEmployees] = useState([]);
 
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState([]);
   const [events, setEvents] = useState([]);
   const [spotlights, setSpotlights] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
   const [savingEvent, setSavingEvent] = useState(false);
   const [savingSpotlight, setSavingSpotlight] = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
+  const [deletingId, setDeletingId] = useState("");
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(
@@ -263,140 +246,122 @@ export default function CrewAnnouncementsPage() {
     [user]
   );
 
-  const employeeOptions = useMemo(() => {
-    return employees
-      .filter((emp) => {
-        if (!spotlightDepartment) return true;
-        return normalizeDepartmentName(emp.department) === spotlightDepartment;
-      })
-      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-  }, [employees, spotlightDepartment]);
+  const filteredEmployees = useMemo(() => {
+    const airline = normalizeAirlineName(spotlightAirline);
 
-  const loadAll = async () => {
+    return employees.filter((emp) => {
+      const empAirline = normalizeAirlineName(
+        emp.airline || emp.assignedAirline || emp.baseAirline || ""
+      );
+
+      if (!airline) return true;
+      if (!empAirline) return true;
+      return empAirline === airline;
+    });
+  }, [employees, spotlightAirline]);
+
+  const selectedEmployee = useMemo(() => {
+    return filteredEmployees.find((emp) => emp.id === spotlightEmployeeId) || null;
+  }, [filteredEmployees, spotlightEmployeeId]);
+
+  const loadData = async () => {
     try {
       setLoading(true);
 
-      const [
-        announcementsSnap,
-        eventsSnap,
-        spotlightsSnap,
-        employeesSnap,
-      ] = await Promise.all([
+      const [usersSnap, annSnap, eventSnap, spotlightSnap] = await Promise.all([
+        getDocs(collection(db, "users")),
         getDocs(query(collection(db, "employeeAnnouncements"), orderBy("createdAt", "desc"))),
-        getDocs(query(collection(db, "employeeUpcomingEvents"), orderBy("eventDate", "asc"))),
-        getDocs(query(collection(db, "employeeSpotlights"), orderBy("slot", "asc"))),
-        getDocs(collection(db, "employees")),
+        getDocs(query(collection(db, "employeeUpcomingEvents"), orderBy("createdAt", "desc"))),
+        getDocs(query(collection(db, "employeeSpotlights"), orderBy("createdAt", "desc"))),
       ]);
 
-      setAnnouncements(announcementsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setEvents(eventsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setSpotlights(spotlightsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-
       setEmployees(
-        employeesSnap.docs.map((d) => ({
+        usersSnap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
-          name:
-            d.data().name ||
-            d.data().employeeName ||
-            d.data().fullName ||
-            d.data().displayName ||
-            d.data().username ||
-            "Unnamed employee",
-          department: normalizeDepartmentName(d.data().department || ""),
         }))
       );
+
+      setAnnouncements(annSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setEvents(eventSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setSpotlights(spotlightSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (err) {
-      console.error("Error loading crew content:", err);
-      setMessage("Error loading content. Check console.");
+      console.error("Error loading editor data:", err);
+      setMessage("Error loading dashboard content.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadAll();
+    loadData();
   }, []);
 
-  const success =
-    message.toLowerCase().includes("posted") ||
-    message.toLowerCase().includes("saved") ||
-    message.toLowerCase().includes("deleted") ||
-    message.toLowerCase().includes("updated");
-
-  const uploadOptionalImage = async (file, folder) => {
-    if (!file) return { imageUrl: "", storagePath: "" };
+  const uploadImageAndGetUrl = async (file, folder) => {
+    if (!file) return "";
 
     if (!file.type.startsWith("image/")) {
-      throw new Error("Please select a valid image file.");
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      throw new Error("Image must be smaller than 5MB.");
+      throw new Error("Please select a valid image.");
     }
 
     const safeName = file.name.replace(/\s+/g, "_").replace(/[^\w.-]/g, "");
-    const storagePath = `${folder}/${Date.now()}_${safeName}`;
-    const storageRef = ref(storage, storagePath);
+    const storageRef = ref(storage, `${folder}/${Date.now()}_${safeName}`);
 
     const snap = await uploadBytes(storageRef, file, {
       contentType: file.type || "image/jpeg",
     });
-    const imageUrl = await getDownloadURL(snap.ref);
 
-    return { imageUrl, storagePath };
+    return await getDownloadURL(snap.ref);
   };
 
-  const handlePostAnnouncement = async (e) => {
+  const postAnnouncement = async (e) => {
     e.preventDefault();
-    setMessage("");
 
-    if (!title.trim() && !body.trim()) {
-      setMessage("Please enter at least a title or a message.");
+    if (!announcementTitle.trim() && !announcementBody.trim()) {
+      setMessage("Please enter at least a title or message.");
       return;
     }
 
     try {
       setSavingAnnouncement(true);
-
-      const { imageUrl, storagePath } = await uploadOptionalImage(
-        imageFile,
+      const imageUrl = await uploadImageAndGetUrl(
+        announcementImageFile,
         "employeeAnnouncements"
       );
 
       await addDoc(collection(db, "employeeAnnouncements"), {
-        title: title.trim() || "Announcement",
-        body: body.trim() || "",
-        link: link.trim() || "",
+        title: announcementTitle.trim() || "Announcement",
+        body: announcementBody.trim() || "",
+        link: announcementLink.trim() || "",
         imageUrl,
-        storagePath,
         createdAt: serverTimestamp(),
-        createdBy: "TPA Eulen Ops",
+        createdBy: visibleName,
         createdByUsername: user?.username || "",
         createdByRole: user?.role || "",
         createdByPosition: visiblePosition,
+        pinned: false,
+        expiresOn: "",
       });
 
-      setTitle("");
-      setBody("");
-      setLink("");
-      setImageFile(null);
-      setMessage("Announcement posted!");
-      await loadAll();
+      setAnnouncementTitle("");
+      setAnnouncementBody("");
+      setAnnouncementLink("");
+      setAnnouncementImageFile(null);
+      setMessage("Announcement posted.");
+      await loadData();
     } catch (err) {
       console.error("Error posting announcement:", err);
-      setMessage(err?.message || "Error posting announcement.");
+      setMessage(err?.message || "Could not post announcement.");
     } finally {
       setSavingAnnouncement(false);
     }
   };
 
-  const handlePostEvent = async (e) => {
+  const postEvent = async (e) => {
     e.preventDefault();
-    setMessage("");
 
     if (!eventTitle.trim() || !eventDate) {
-      setMessage("Upcoming event needs title and date.");
+      setMessage("Event needs title and date.");
       return;
     }
 
@@ -410,7 +375,7 @@ export default function CrewAnnouncementsPage() {
         body: eventBody.trim() || "",
         link: eventLink.trim() || "",
         createdAt: serverTimestamp(),
-        createdBy: "TPA Eulen Ops",
+        createdBy: visibleName,
       });
 
       setEventTitle("");
@@ -418,120 +383,92 @@ export default function CrewAnnouncementsPage() {
       setEventTime("");
       setEventBody("");
       setEventLink("");
-      setMessage("Upcoming event posted!");
-      await loadAll();
+      setMessage("Upcoming event saved.");
+      await loadData();
     } catch (err) {
       console.error("Error posting event:", err);
-      setMessage("Error posting event.");
+      setMessage(err?.message || "Could not save event.");
     } finally {
       setSavingEvent(false);
     }
   };
 
-  const handleSaveSpotlight = async (e) => {
+  const postSpotlight = async (e) => {
     e.preventDefault();
-    setMessage("");
 
-    if (!spotlightDepartment || !spotlightEmployeeId) {
-      setMessage("Please select department and employee.");
+    if (!spotlightAirline || !spotlightEmployeeId) {
+      setMessage("Please select airline and employee.");
       return;
     }
 
     try {
       setSavingSpotlight(true);
 
-      const selectedEmployee = employees.find((emp) => emp.id === spotlightEmployeeId);
-      if (!selectedEmployee) {
-        setMessage("Selected employee not found.");
-        return;
-      }
-
-      const existingForSlot = spotlights.find(
-        (item) => Number(item.slot) === Number(spotlightSlot)
+      const imageUrl = await uploadImageAndGetUrl(
+        spotlightImageFile,
+        "employeeSpotlights"
       );
 
-      let imageUrl = existingForSlot?.imageUrl || "";
-      let storagePath = existingForSlot?.storagePath || "";
-
-      if (spotlightImageFile) {
-        const uploaded = await uploadOptionalImage(
-          spotlightImageFile,
-          "employeeSpotlights"
-        );
-        imageUrl = uploaded.imageUrl;
-        storagePath = uploaded.storagePath;
-      }
-
-      const payload = {
-        slot: Number(spotlightSlot),
-        department: spotlightDepartment,
-        employeeId: selectedEmployee.id,
-        employeeName: selectedEmployee.name,
-        employeePosition:
-          selectedEmployee.position || getDefaultPosition(selectedEmployee.role),
-        employeePhotoURL: selectedEmployee.profilePhotoURL || "",
+      await addDoc(collection(db, "employeeSpotlights"), {
         title: spotlightTitle.trim() || "Employee of the Month",
+        airline: normalizeAirlineName(spotlightAirline),
+        department: spotlightDepartment.trim() || "",
+        employeeId: spotlightEmployeeId,
+        employeeName:
+          selectedEmployee?.displayName ||
+          selectedEmployee?.fullName ||
+          selectedEmployee?.name ||
+          selectedEmployee?.username ||
+          "Employee",
+        employeePosition:
+          selectedEmployee?.position ||
+          getDefaultPosition(selectedEmployee?.role),
+        employeePhotoURL: selectedEmployee?.profilePhotoURL || "",
+        imageUrl,
         body: spotlightBody.trim() || "",
         link: spotlightLink.trim() || "",
-        imageUrl,
-        storagePath,
-        updatedAt: serverTimestamp(),
-        updatedBy: "TPA Eulen Ops",
         active: true,
-      };
-
-      if (existingForSlot) {
-        await updateDoc(doc(db, "employeeSpotlights", existingForSlot.id), payload);
-        setMessage("Employee of the Month updated.");
-      } else {
-        await addDoc(collection(db, "employeeSpotlights"), {
-          ...payload,
-          createdAt: serverTimestamp(),
-        });
-        setMessage("Employee of the Month saved.");
-      }
+        createdAt: serverTimestamp(),
+        createdBy: visibleName,
+      });
 
       setSpotlightDepartment("");
       setSpotlightEmployeeId("");
-      setSpotlightTitle("");
+      setSpotlightTitle("Employee of the Month");
       setSpotlightBody("");
       setSpotlightLink("");
       setSpotlightImageFile(null);
-
-      await loadAll();
+      setMessage("Employee spotlight saved.");
+      await loadData();
     } catch (err) {
-      console.error("Error saving spotlight:", err);
-      setMessage(err?.message || "Error saving Employee of the Month.");
+      console.error("Error posting spotlight:", err);
+      setMessage(err?.message || "Could not save employee spotlight.");
     } finally {
       setSavingSpotlight(false);
     }
   };
 
-  const deleteFirestoreItem = async ({ collectionName, id, storagePath, confirmText }) => {
-    const ok = window.confirm(confirmText);
+  const handleDelete = async (collectionName, id) => {
+    const ok = window.confirm("Delete this item?");
     if (!ok) return;
 
     try {
       setDeletingId(id);
-
-      if (storagePath) {
-        try {
-          await deleteObject(ref(storage, storagePath));
-        } catch (storageErr) {
-          console.error("Storage delete warning:", storageErr);
-        }
-      }
-
       await deleteDoc(doc(db, collectionName, id));
-      setMessage("Item deleted.");
-      await loadAll();
+      setMessage("Deleted successfully.");
+      await loadData();
     } catch (err) {
       console.error("Error deleting item:", err);
-      setMessage("Error deleting item.");
+      setMessage("Could not delete item.");
     } finally {
-      setDeletingId(null);
+      setDeletingId("");
     }
   };
+
+  const success =
+    message.toLowerCase().includes("posted") ||
+    message.toLowerCase().includes("saved") ||
+    message.toLowerCase().includes("deleted");
 
   if (!user || user.role !== "station_manager") {
     return (
@@ -562,7 +499,7 @@ export default function CrewAnnouncementsPage() {
               fontWeight: 700,
             }}
           >
-            TPA OPS · Employee Content
+            TPA OPS · Crew Dashboard Editor
           </p>
           <h1
             style={{
@@ -608,59 +545,43 @@ export default function CrewAnnouncementsPage() {
           padding: 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          position: "relative",
-          overflow: "hidden",
         }}
       >
-        <div
+        <p
           style={{
-            position: "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
+            margin: 0,
+            fontSize: 12,
+            textTransform: "uppercase",
+            letterSpacing: "0.22em",
+            color: "rgba(255,255,255,0.78)",
+            fontWeight: 700,
           }}
-        />
-        <div style={{ position: "relative" }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
-            TPA OPS · Employee Dashboard Content
-          </p>
+        >
+          TPA OPS · Crew Dashboard Editor
+        </p>
 
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
-            Crew Dashboard Editor
-          </h1>
+        <h1
+          style={{
+            margin: "10px 0 6px",
+            fontSize: 32,
+            lineHeight: 1.05,
+            fontWeight: 800,
+            letterSpacing: "-0.04em",
+          }}
+        >
+          Employee Dashboard Content
+        </h1>
 
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 760,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            Manage employee announcements, upcoming events, links, images and
-            two Employee of the Month spotlight cards.
-          </p>
-        </div>
+        <p
+          style={{
+            margin: 0,
+            maxWidth: 760,
+            fontSize: 14,
+            color: "rgba(255,255,255,0.88)",
+          }}
+        >
+          Manage announcements, upcoming events and employee of the month cards.
+        </p>
       </div>
 
       {message && (
@@ -682,36 +603,27 @@ export default function CrewAnnouncementsPage() {
       )}
 
       <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Simple Announcement
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Simple post with title, message, image and optional link.
-          </p>
-        </div>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Post Announcement
+        </h2>
 
-        <form onSubmit={handlePostAnnouncement} style={{ display: "grid", gap: 14 }}>
+        <form
+          onSubmit={postAnnouncement}
+          style={{ display: "grid", gap: 14 }}
+        >
           <div>
             <FieldLabel>Title</FieldLabel>
             <TextInput
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Example: Holiday parking update"
+              value={announcementTitle}
+              onChange={(e) => setAnnouncementTitle(e.target.value)}
+              placeholder="Announcement title"
             />
           </div>
 
@@ -719,27 +631,29 @@ export default function CrewAnnouncementsPage() {
             <FieldLabel>Message</FieldLabel>
             <TextArea
               rows={4}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Short message for employees..."
+              value={announcementBody}
+              onChange={(e) => setAnnouncementBody(e.target.value)}
+              placeholder="Write the announcement..."
             />
           </div>
 
           <div>
-            <FieldLabel>Link (optional)</FieldLabel>
+            <FieldLabel>Optional Link</FieldLabel>
             <TextInput
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
+              value={announcementLink}
+              onChange={(e) => setAnnouncementLink(e.target.value)}
               placeholder="https://..."
             />
           </div>
 
           <div>
-            <FieldLabel>Image (optional)</FieldLabel>
+            <FieldLabel>Photo</FieldLabel>
             <TextInput
               type="file"
               accept="image/*"
-              onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+              onChange={(e) =>
+                setAnnouncementImageFile(e.target.files?.[0] || null)
+              }
               style={{ padding: "10px 12px" }}
             />
           </div>
@@ -753,34 +667,31 @@ export default function CrewAnnouncementsPage() {
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Upcoming Event
-          </h2>
-        </div>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Upcoming Events
+        </h2>
 
-        <form onSubmit={handlePostEvent} style={{ display: "grid", gap: 14 }}>
+        <form onSubmit={postEvent} style={{ display: "grid", gap: 14 }}>
           <div>
-            <FieldLabel>Event Title</FieldLabel>
+            <FieldLabel>Title</FieldLabel>
             <TextInput
               value={eventTitle}
               onChange={(e) => setEventTitle(e.target.value)}
-              placeholder="Example: Team meeting"
+              placeholder="Event title"
             />
           </div>
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 14,
             }}
           >
@@ -804,17 +715,17 @@ export default function CrewAnnouncementsPage() {
           </div>
 
           <div>
-            <FieldLabel>Details</FieldLabel>
+            <FieldLabel>Body</FieldLabel>
             <TextArea
               rows={3}
               value={eventBody}
               onChange={(e) => setEventBody(e.target.value)}
-              placeholder="Optional details"
+              placeholder="Event details"
             />
           </div>
 
           <div>
-            <FieldLabel>Link (optional)</FieldLabel>
+            <FieldLabel>Optional Link</FieldLabel>
             <TextInput
               value={eventLink}
               onChange={(e) => setEventLink(e.target.value)}
@@ -824,53 +735,44 @@ export default function CrewAnnouncementsPage() {
 
           <div>
             <ActionButton type="submit" disabled={savingEvent}>
-              {savingEvent ? "Saving..." : "Post Upcoming Event"}
+              {savingEvent ? "Saving..." : "Save Event"}
             </ActionButton>
           </div>
         </form>
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Employee of the Month
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Two spotlight cards only. Choose slot 1 or 2, department and employee.
-          </p>
-        </div>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Employee of the Month
+        </h2>
 
-        <form onSubmit={handleSaveSpotlight} style={{ display: "grid", gap: 14 }}>
+        <form onSubmit={postSpotlight} style={{ display: "grid", gap: 14 }}>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 14,
             }}
           >
             <div>
-              <FieldLabel>Spotlight Slot</FieldLabel>
+              <FieldLabel>Airline</FieldLabel>
               <SelectInput
-                value={spotlightSlot}
-                onChange={(e) => setSpotlightSlot(Number(e.target.value))}
+                value={spotlightAirline}
+                onChange={(e) => {
+                  setSpotlightAirline(e.target.value);
+                  setSpotlightEmployeeId("");
+                }}
               >
-                {EMPLOYEE_MONTH_SLOTS.map((slot) => (
-                  <option key={slot} value={slot}>
-                    Slot {slot}
+                {AIRLINE_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </SelectInput>
@@ -878,36 +780,36 @@ export default function CrewAnnouncementsPage() {
 
             <div>
               <FieldLabel>Department</FieldLabel>
-              <SelectInput
+              <TextInput
                 value={spotlightDepartment}
-                onChange={(e) => {
-                  setSpotlightDepartment(e.target.value);
-                  setSpotlightEmployeeId("");
-                }}
-              >
-                <option value="">Select department</option>
-                {["Ramp", "TC", "BSO", "Cabin Service", "WCHR", "Other"].map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
-                  </option>
-                ))}
-              </SelectInput>
+                onChange={(e) => setSpotlightDepartment(e.target.value)}
+                placeholder="Ramp / TC / Cabin Service / etc"
+              />
             </div>
+          </div>
 
-            <div>
-              <FieldLabel>Employee</FieldLabel>
-              <SelectInput
-                value={spotlightEmployeeId}
-                onChange={(e) => setSpotlightEmployeeId(e.target.value)}
-              >
-                <option value="">Select employee</option>
-                {employeeOptions.map((emp) => (
+          <div>
+            <FieldLabel>Employee</FieldLabel>
+            <SelectInput
+              value={spotlightEmployeeId}
+              onChange={(e) => setSpotlightEmployeeId(e.target.value)}
+            >
+              <option value="">Select employee</option>
+              {filteredEmployees.map((emp) => {
+                const label =
+                  emp.displayName ||
+                  emp.fullName ||
+                  emp.name ||
+                  emp.username ||
+                  "Employee";
+
+                return (
                   <option key={emp.id} value={emp.id}>
-                    {emp.name}
+                    {label}
                   </option>
-                ))}
-              </SelectInput>
-            </div>
+                );
+              })}
+            </SelectInput>
           </div>
 
           <div>
@@ -915,22 +817,22 @@ export default function CrewAnnouncementsPage() {
             <TextInput
               value={spotlightTitle}
               onChange={(e) => setSpotlightTitle(e.target.value)}
-              placeholder="Example: Employee of the Month"
+              placeholder="Employee of the Month"
             />
           </div>
 
           <div>
-            <FieldLabel>Description</FieldLabel>
+            <FieldLabel>Message</FieldLabel>
             <TextArea
-              rows={3}
+              rows={4}
               value={spotlightBody}
               onChange={(e) => setSpotlightBody(e.target.value)}
-              placeholder="Optional recognition text"
+              placeholder="Why this employee is being recognized..."
             />
           </div>
 
           <div>
-            <FieldLabel>Link (optional)</FieldLabel>
+            <FieldLabel>Optional Link</FieldLabel>
             <TextInput
               value={spotlightLink}
               onChange={(e) => setSpotlightLink(e.target.value)}
@@ -939,37 +841,36 @@ export default function CrewAnnouncementsPage() {
           </div>
 
           <div>
-            <FieldLabel>Custom Image (optional)</FieldLabel>
+            <FieldLabel>Optional Custom Photo</FieldLabel>
             <TextInput
               type="file"
               accept="image/*"
-              onChange={(e) => setSpotlightImageFile(e.target.files?.[0] || null)}
+              onChange={(e) =>
+                setSpotlightImageFile(e.target.files?.[0] || null)
+              }
               style={{ padding: "10px 12px" }}
             />
           </div>
 
           <div>
             <ActionButton type="submit" disabled={savingSpotlight}>
-              {savingSpotlight ? "Saving..." : "Save Employee of the Month"}
+              {savingSpotlight ? "Saving..." : "Add Employee Spotlight"}
             </ActionButton>
           </div>
         </form>
       </PageCard>
 
       <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Published Announcements
-          </h2>
-        </div>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Existing Content
+        </h2>
 
         {loading ? (
           <div
@@ -983,458 +884,148 @@ export default function CrewAnnouncementsPage() {
               fontWeight: 600,
             }}
           >
-            Loading announcements...
-          </div>
-        ) : announcements.length === 0 ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No announcements yet.
+            Loading...
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {announcements.map((a) => (
-              <div
-                key={a.id}
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 20,
-                  padding: 18,
-                  background: "#ffffff",
-                  boxShadow: "0 8px 22px rgba(15,23,42,0.04)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: 16,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontSize: 18,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                        letterSpacing: "-0.02em",
-                      }}
-                    >
-                      {a.title}
-                    </h3>
-
-                    {a.body && (
-                      <p
-                        style={{
-                          margin: "10px 0 0",
-                          fontSize: 14,
-                          color: "#334155",
-                          lineHeight: 1.7,
-                          whiteSpace: "pre-line",
-                        }}
-                      >
-                        {a.body}
-                      </p>
-                    )}
-
-                    {a.link && (
-                      <a
-                        href={a.link}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "inline-block",
-                          marginTop: 10,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: "#1769aa",
-                          textDecoration: "none",
-                        }}
-                      >
-                        Open link
-                      </a>
-                    )}
-
+          <div style={{ display: "grid", gap: 18 }}>
+            <div>
+              <h3 style={{ margin: "0 0 10px", color: "#1769aa" }}>Announcements</h3>
+              <div style={{ display: "grid", gap: 10 }}>
+                {announcements.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: 16,
+                      background: "#fff",
+                    }}
+                  >
                     <div
                       style={{
-                        marginTop: 10,
-                        fontSize: 12,
-                        color: "#64748b",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        alignItems: "flex-start",
                       }}
                     >
-                      {formatDateTime(a.createdAt)}
+                      <div>
+                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                          {a.title}
+                        </div>
+                        {a.body && (
+                          <div style={{ marginTop: 6, color: "#475569", fontSize: 14 }}>
+                            {a.body}
+                          </div>
+                        )}
+                      </div>
+
+                      <ActionButton
+                        variant="danger"
+                        onClick={() => handleDelete("employeeAnnouncements", a.id)}
+                        disabled={deletingId === a.id}
+                      >
+                        {deletingId === a.id ? "Deleting..." : "Delete"}
+                      </ActionButton>
                     </div>
                   </div>
-
-                  <ActionButton
-                    variant="danger"
-                    onClick={() =>
-                      deleteFirestoreItem({
-                        collectionName: "employeeAnnouncements",
-                        id: a.id,
-                        storagePath: a.storagePath || getStoragePathFromUrl(a.imageUrl),
-                        confirmText: "Delete this announcement?",
-                      })
-                    }
-                    disabled={deletingId === a.id}
-                  >
-                    {deletingId === a.id ? "Deleting..." : "Delete"}
-                  </ActionButton>
-                </div>
-
-                {a.imageUrl && (
-                  <div style={{ marginTop: 14 }}>
-                    <img
-                      src={a.imageUrl}
-                      alt={a.title || "Announcement image"}
-                      style={{
-                        width: "100%",
-                        maxHeight: 320,
-                        objectFit: "cover",
-                        borderRadius: 16,
-                        border: "1px solid #e2e8f0",
-                      }}
-                    />
-                  </div>
-                )}
+                ))}
+                {announcements.length === 0 && <div>No announcements yet.</div>}
               </div>
-            ))}
-          </div>
-        )}
-      </PageCard>
+            </div>
 
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Published Upcoming Events
-          </h2>
-        </div>
-
-        {loading ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Loading events...
-          </div>
-        ) : events.length === 0 ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No upcoming events yet.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {events.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 20,
-                  padding: 18,
-                  background: "#ffffff",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: 16,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontSize: 18,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                      }}
-                    >
-                      {item.title}
-                    </h3>
-                    <p
-                      style={{
-                        margin: "8px 0 0",
-                        fontSize: 13,
-                        color: "#1769aa",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {item.eventDate} {item.eventTime ? `· ${item.eventTime}` : ""}
-                    </p>
-
-                    {item.body && (
-                      <p
-                        style={{
-                          margin: "10px 0 0",
-                          fontSize: 14,
-                          color: "#334155",
-                          lineHeight: 1.7,
-                          whiteSpace: "pre-line",
-                        }}
-                      >
-                        {item.body}
-                      </p>
-                    )}
-
-                    {item.link && (
-                      <a
-                        href={item.link}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "inline-block",
-                          marginTop: 10,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: "#1769aa",
-                          textDecoration: "none",
-                        }}
-                      >
-                        Open link
-                      </a>
-                    )}
-                  </div>
-
-                  <ActionButton
-                    variant="danger"
-                    onClick={() =>
-                      deleteFirestoreItem({
-                        collectionName: "employeeUpcomingEvents",
-                        id: item.id,
-                        storagePath: "",
-                        confirmText: "Delete this upcoming event?",
-                      })
-                    }
-                    disabled={deletingId === item.id}
+            <div>
+              <h3 style={{ margin: "0 0 10px", color: "#1769aa" }}>Upcoming Events</h3>
+              <div style={{ display: "grid", gap: 10 }}>
+                {events.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: 16,
+                      background: "#fff",
+                    }}
                   >
-                    {deletingId === item.id ? "Deleting..." : "Delete"}
-                  </ActionButton>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </PageCard>
-
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Employee of the Month Cards
-          </h2>
-        </div>
-
-        {loading ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Loading spotlight cards...
-          </div>
-        ) : spotlights.length === 0 ? (
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No Employee of the Month cards yet.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {spotlights.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 20,
-                  padding: 18,
-                  background: "#ffffff",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: 16,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        display: "inline-flex",
-                        padding: "6px 10px",
-                        borderRadius: 999,
-                        background: "#edf7ff",
-                        border: "1px solid #cfe7fb",
-                        color: "#1769aa",
-                        fontSize: 11,
-                        fontWeight: 800,
-                        marginBottom: 8,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        alignItems: "flex-start",
                       }}
                     >
-                      Slot {item.slot}
+                      <div>
+                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                          {a.title}
+                        </div>
+                        <div style={{ marginTop: 6, color: "#64748b", fontSize: 13 }}>
+                          {a.eventDate} {a.eventTime ? `· ${a.eventTime}` : ""}
+                        </div>
+                      </div>
+
+                      <ActionButton
+                        variant="danger"
+                        onClick={() => handleDelete("employeeUpcomingEvents", a.id)}
+                        disabled={deletingId === a.id}
+                      >
+                        {deletingId === a.id ? "Deleting..." : "Delete"}
+                      </ActionButton>
                     </div>
-
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontSize: 18,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                      }}
-                    >
-                      {item.title || "Employee of the Month"}
-                    </h3>
-
-                    <p
-                      style={{
-                        margin: "8px 0 0",
-                        fontSize: 14,
-                        color: "#334155",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {item.employeeName} · {item.department}
-                    </p>
-
-                    {item.employeePosition && (
-                      <p
-                        style={{
-                          margin: "6px 0 0",
-                          fontSize: 13,
-                          color: "#64748b",
-                        }}
-                      >
-                        {item.employeePosition}
-                      </p>
-                    )}
-
-                    {item.body && (
-                      <p
-                        style={{
-                          margin: "10px 0 0",
-                          fontSize: 14,
-                          color: "#334155",
-                          lineHeight: 1.7,
-                          whiteSpace: "pre-line",
-                        }}
-                      >
-                        {item.body}
-                      </p>
-                    )}
-
-                    {item.link && (
-                      <a
-                        href={item.link}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "inline-block",
-                          marginTop: 10,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: "#1769aa",
-                          textDecoration: "none",
-                        }}
-                      >
-                        Open link
-                      </a>
-                    )}
                   </div>
-
-                  <ActionButton
-                    variant="danger"
-                    onClick={() =>
-                      deleteFirestoreItem({
-                        collectionName: "employeeSpotlights",
-                        id: item.id,
-                        storagePath: item.storagePath || getStoragePathFromUrl(item.imageUrl),
-                        confirmText: "Delete this Employee of the Month card?",
-                      })
-                    }
-                    disabled={deletingId === item.id}
-                  >
-                    {deletingId === item.id ? "Deleting..." : "Delete"}
-                  </ActionButton>
-                </div>
-
-                {(item.imageUrl || item.employeePhotoURL) && (
-                  <div style={{ marginTop: 14 }}>
-                    <img
-                      src={item.imageUrl || item.employeePhotoURL}
-                      alt={item.employeeName || "Employee spotlight"}
-                      style={{
-                        width: "100%",
-                        maxHeight: 320,
-                        objectFit: "cover",
-                        borderRadius: 16,
-                        border: "1px solid #e2e8f0",
-                      }}
-                    />
-                  </div>
-                )}
+                ))}
+                {events.length === 0 && <div>No upcoming events yet.</div>}
               </div>
-            ))}
+            </div>
+
+            <div>
+              <h3 style={{ margin: "0 0 10px", color: "#1769aa" }}>
+                Employee Spotlights
+              </h3>
+              <div style={{ display: "grid", gap: 10 }}>
+                {spotlights.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: 16,
+                      background: "#fff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                          {a.employeeName || a.title}
+                        </div>
+                        <div style={{ marginTop: 6, color: "#64748b", fontSize: 13 }}>
+                          {a.airline || "—"} {a.department ? `· ${a.department}` : ""}
+                        </div>
+                      </div>
+
+                      <ActionButton
+                        variant="danger"
+                        onClick={() => handleDelete("employeeSpotlights", a.id)}
+                        disabled={deletingId === a.id}
+                      >
+                        {deletingId === a.id ? "Deleting..." : "Delete"}
+                      </ActionButton>
+                    </div>
+                  </div>
+                ))}
+                {spotlights.length === 0 && <div>No employee spotlights yet.</div>}
+              </div>
+            </div>
           </div>
         )}
       </PageCard>
