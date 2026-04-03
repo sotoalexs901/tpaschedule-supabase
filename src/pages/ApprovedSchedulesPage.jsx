@@ -15,10 +15,47 @@ const DAY_LABELS = {
   sun: "SUN",
 };
 
-function buildDayNumbersFromWeekStart(weekStart) {
-  if (!weekStart) return null;
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
 
-  const base = new Date(`${weekStart}T00:00:00`);
+function normalizeDateString(value) {
+  if (!value) return "";
+
+  const raw = String(value).trim();
+  if (!raw) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, mm, dd, yyyy] = slashMatch;
+    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+  }
+
+  const dashMatch = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dashMatch) {
+    const [, mm, dd, yyyy] = dashMatch;
+    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(
+      parsed.getDate()
+    )}`;
+  }
+
+  return "";
+}
+
+function buildDayNumbersFromWeekStart(weekStart) {
+  const normalized = normalizeDateString(weekStart);
+  if (!normalized) return null;
+
+  const base = new Date(`${normalized}T00:00:00`);
   if (Number.isNaN(base.getTime())) return null;
 
   const result = {};
@@ -59,12 +96,16 @@ function buildWeekText(schedule) {
 function formatWeekTagLabel(weekTag) {
   if (!weekTag || weekTag === "no-week") return "Unspecified week";
 
-  const d = new Date(`${weekTag}T00:00:00`);
+  const normalized = normalizeDateString(weekTag);
+  if (!normalized) return weekTag;
+
+  const d = new Date(`${normalized}T00:00:00`);
   if (Number.isNaN(d.getTime())) return weekTag;
 
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    year: "numeric",
   });
 }
 
@@ -140,13 +181,17 @@ export default function ApprovedSchedulesPage() {
 
         const items = snap.docs.map((d) => {
           const data = d.data();
-          const resolvedWeekTag =
-            String(data.weekStart || data.weekTag || "").trim() || "no-week";
+
+          const normalizedWeekStart =
+            normalizeDateString(data.weekStart) ||
+            normalizeDateString(data.weekTag) ||
+            "";
 
           return {
             id: d.id,
             ...data,
-            weekTag: resolvedWeekTag,
+            weekStart: normalizedWeekStart,
+            weekTag: normalizedWeekStart || "no-week",
           };
         });
 
@@ -155,6 +200,18 @@ export default function ApprovedSchedulesPage() {
           const key = sch.weekTag || "no-week";
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(sch);
+        });
+
+        Object.keys(grouped).forEach((key) => {
+          grouped[key].sort((a, b) => {
+            const airlineA = String(a.airline || "").toLowerCase();
+            const airlineB = String(b.airline || "").toLowerCase();
+            if (airlineA !== airlineB) return airlineA.localeCompare(airlineB);
+
+            const deptA = String(a.department || "").toLowerCase();
+            const deptB = String(b.department || "").toLowerCase();
+            return deptA.localeCompare(deptB);
+          });
         });
 
         const sortedGrouped = Object.fromEntries(
@@ -450,7 +507,7 @@ export default function ApprovedSchedulesPage() {
                         lineHeight: 1.2,
                       }}
                     >
-                      {sch.airline} — {sch.department}
+                      {sch.airlineDisplayName || sch.airline} — {sch.department}
                     </p>
 
                     <p
