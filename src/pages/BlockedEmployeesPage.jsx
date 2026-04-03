@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../firebase";
 import {
   collection,
@@ -22,6 +22,62 @@ function PageCard({ children, style = {} }) {
     >
       {children}
     </div>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#475569",
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+function TextInput(props) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
   );
 }
 
@@ -108,11 +164,53 @@ function StatusBadge({ reason }) {
   );
 }
 
+function parseLocalDate(dateStr) {
+  const value = String(dateStr || "").trim();
+  if (!value) return null;
+
+  const parts = value.split("-");
+  if (parts.length !== 3) return null;
+
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+
+  if (!year || !month || !day) return null;
+
+  const date = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function normalizeDateInput(dateStr) {
+  const date = parseLocalDate(dateStr);
+  if (!date) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export default function BlockedEmployeesPage() {
   const [employees, setEmployees] = useState([]);
   const [restrictions, setRestrictions] = useState([]);
   const [status, setStatus] = useState("");
   const { user } = useUser();
+
+  const [form, setForm] = useState({
+    employeeId: "",
+    reason: "PTO",
+    start_date: "",
+    end_date: "",
+  });
 
   if (
     !user ||
@@ -197,45 +295,81 @@ export default function BlockedEmployeesPage() {
       const restSnap = await getDocs(collection(db, "restrictions"));
       setRestrictions(restSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     }
+
     load().catch((err) => {
       console.error(err);
       setStatus("Could not load restrictions.");
     });
   }, []);
 
-  const addRestriction = async () => {
-    const employeeId = prompt("Employee ID (from Employees table)");
-    if (!employeeId) return;
+  const sortedRestrictions = useMemo(() => {
+    return [...restrictions].sort((a, b) => {
+      const aStart = normalizeDateInput(a.start_date || "");
+      const bStart = normalizeDateInput(b.start_date || "");
+      if (aStart !== bStart) return aStart.localeCompare(bStart);
 
-    const reason =
-      prompt("Reason (PTO, Sick, Day Off, Maternity, Suspended)") || "PTO";
-    const start_date = prompt("Start date (YYYY-MM-DD)") || null;
-    const end_date = prompt("End date (YYYY-MM-DD)") || null;
+      const aName = String(a.employeeId || "");
+      const bName = String(b.employeeId || "");
+      return aName.localeCompare(bName);
+    });
+  }, [restrictions]);
+
+  const addRestriction = async () => {
+    const employeeId = String(form.employeeId || "").trim();
+    const reason = String(form.reason || "").trim() || "PTO";
+    const start_date = normalizeDateInput(form.start_date);
+    const end_date = normalizeDateInput(form.end_date || form.start_date);
+
+    if (!employeeId) {
+      setStatus("Please select an employee.");
+      return;
+    }
+
+    if (!start_date) {
+      setStatus("Please select a valid start date.");
+      return;
+    }
+
+    if (!end_date) {
+      setStatus("Please select a valid end date.");
+      return;
+    }
+
+    const startObj = parseLocalDate(start_date);
+    const endObj = parseLocalDate(end_date);
+
+    if (!startObj || !endObj) {
+      setStatus("Invalid date format.");
+      return;
+    }
+
+    if (endObj < startObj) {
+      setStatus("End date cannot be earlier than start date.");
+      return;
+    }
 
     setStatus("Saving restriction...");
 
     try {
-      const ref = await addDoc(collection(db, "restrictions"), {
+      const payload = {
         employeeId,
         reason,
         start_date,
         end_date,
         role: user.role,
         createdBy: user.username || null,
-      });
+      };
 
-      setRestrictions((prev) => [
-        ...prev,
-        {
-          id: ref.id,
-          employeeId,
-          reason,
-          start_date,
-          end_date,
-          role: user.role,
-          createdBy: user.username || null,
-        },
-      ]);
+      const ref = await addDoc(collection(db, "restrictions"), payload);
+
+      setRestrictions((prev) => [...prev, { id: ref.id, ...payload }]);
+
+      setForm({
+        employeeId: "",
+        reason: "PTO",
+        start_date: "",
+        end_date: "",
+      });
 
       setStatus("Restriction added.");
     } catch (err) {
@@ -341,12 +475,108 @@ export default function BlockedEmployeesPage() {
               maternity or suspension to prevent assignment to shifts.
             </p>
           </div>
+        </div>
+      </div>
 
-          <ActionButton onClick={addRestriction} variant="secondary">
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ marginBottom: 16 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Add Restriction
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Use real local dates so restrictions match the correct week start
+            and block only the intended days.
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 14,
+          }}
+        >
+          <div>
+            <FieldLabel>Employee</FieldLabel>
+            <SelectInput
+              value={form.employeeId}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, employeeId: e.target.value }))
+              }
+            >
+              <option value="">Select employee</option>
+              {employees
+                .slice()
+                .sort((a, b) =>
+                  String(a.name || "").localeCompare(String(b.name || ""))
+                )
+                .map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name || emp.id}
+                  </option>
+                ))}
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Reason</FieldLabel>
+            <SelectInput
+              value={form.reason}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, reason: e.target.value }))
+              }
+            >
+              <option value="PTO">PTO</option>
+              <option value="Sick">Sick</option>
+              <option value="Day Off">Day Off</option>
+              <option value="Maternity">Maternity</option>
+              <option value="Suspended">Suspended</option>
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Start Date</FieldLabel>
+            <TextInput
+              type="date"
+              value={form.start_date}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, start_date: e.target.value }))
+              }
+            />
+          </div>
+
+          <div>
+            <FieldLabel>End Date</FieldLabel>
+            <TextInput
+              type="date"
+              value={form.end_date}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, end_date: e.target.value }))
+              }
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <ActionButton onClick={addRestriction} variant="primary">
             Add Restriction
           </ActionButton>
         </div>
-      </div>
+      </PageCard>
 
       <PageCard style={{ padding: 18 }}>
         <p
@@ -431,7 +661,7 @@ export default function BlockedEmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              {restrictions.map((r, index) => (
+              {sortedRestrictions.map((r, index) => (
                 <tr
                   key={r.id}
                   style={{
@@ -457,7 +687,7 @@ export default function BlockedEmployeesPage() {
                 </tr>
               ))}
 
-              {restrictions.length === 0 && (
+              {sortedRestrictions.length === 0 && (
                 <tr>
                   <td
                     colSpan={6}
