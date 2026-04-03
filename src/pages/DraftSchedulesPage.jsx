@@ -57,17 +57,16 @@ const normalizeAirlineName = (value) => {
   return airline;
 };
 
-function dayShiftsToText(shifts) {
-  if (!Array.isArray(shifts) || shifts.length === 0) return "OFF";
+function dayShiftsToLines(shifts) {
+  if (!Array.isArray(shifts) || shifts.length === 0) return ["OFF"];
 
   const parts = [];
   shifts.forEach((s) => {
     if (!s || !s.start || s.start === "OFF") return;
-    const piece = s.end ? `${s.start}-${s.end}` : s.start;
-    parts.push(piece);
+    parts.push(s.end ? `${s.start}-${s.end}` : s.start);
   });
 
-  return parts.length ? parts.join(", ") : "OFF";
+  return parts.length ? parts : ["OFF"];
 }
 
 function formatWeekLabelFromSchedule(schedule) {
@@ -158,6 +157,11 @@ export default function DraftSchedulesPage() {
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
 
+  const isErrorStatus =
+    statusMessage.toLowerCase().includes("error") ||
+    statusMessage.toLowerCase().includes("could not") ||
+    statusMessage.toLowerCase().includes("cannot");
+
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -206,8 +210,9 @@ export default function DraftSchedulesPage() {
       state: {
         template: {
           airline: draft.airline,
+          airlineDisplayName: draft.airlineDisplayName,
           department: draft.department,
-          days: draft.days,
+          weekStart: draft.weekStart || "",
           grid: draft.grid,
         },
       },
@@ -220,7 +225,7 @@ export default function DraftSchedulesPage() {
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
 
-      const margin = 40;
+      const margin = 34;
       let y = margin;
 
       pdf.setFont("helvetica", "bold");
@@ -243,8 +248,10 @@ export default function DraftSchedulesPage() {
       const empColWidth = 130;
       const availableWidth = pageWidth - margin * 2 - empColWidth;
       const dayColWidth = availableWidth / DAY_KEYS.length;
-      const headerRowHeight = 20;
-      const rowHeight = 18;
+      const headerRowHeight = 22;
+      const lineHeight = 10;
+      const cellPaddingTop = 8;
+      const cellPaddingBottom = 6;
 
       const drawTableHeader = () => {
         let x = margin;
@@ -253,13 +260,13 @@ export default function DraftSchedulesPage() {
         pdf.setFontSize(9);
 
         pdf.rect(x, y, empColWidth, headerRowHeight);
-        pdf.text("EMPLOYEE", x + 4, y + 13);
+        pdf.text("EMPLOYEE", x + 4, y + 14);
         x += empColWidth;
 
         DAY_KEYS.forEach((dKey) => {
           const label = DAY_LABELS[dKey];
           pdf.rect(x, y, dayColWidth, headerRowHeight);
-          pdf.text(label, x + 4, y + 13);
+          pdf.text(label, x + 4, y + 14);
           x += dayColWidth;
         });
 
@@ -268,12 +275,32 @@ export default function DraftSchedulesPage() {
 
       drawTableHeader();
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(8);
-
       const rows = draft.grid || [];
 
       rows.forEach((row) => {
+        const empName =
+          employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
+
+        const employeeLines = pdf.splitTextToSize(empName, empColWidth - 8);
+
+        const dayCellLines = DAY_KEYS.map((dKey) => {
+          const rawLines = dayShiftsToLines(row[dKey]);
+          const wrapped = [];
+          rawLines.forEach((line) => {
+            const split = pdf.splitTextToSize(String(line), dayColWidth - 6);
+            wrapped.push(...split);
+          });
+          return wrapped.length ? wrapped : ["OFF"];
+        });
+
+        const maxLines = Math.max(
+          employeeLines.length,
+          ...dayCellLines.map((lines) => lines.length)
+        );
+
+        const rowHeight =
+          cellPaddingTop + maxLines * lineHeight + cellPaddingBottom;
+
         if (y + rowHeight > pageHeight - margin) {
           pdf.addPage("letter", "landscape");
           y = margin;
@@ -290,28 +317,22 @@ export default function DraftSchedulesPage() {
           y += 20;
 
           drawTableHeader();
-          pdf.setFont("helvetica", "normal");
-          pdf.setFontSize(8);
         }
 
         let x = margin;
 
-        const empName =
-          employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
+        pdf.setDrawColor(160, 174, 192);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+
         pdf.rect(x, y, empColWidth, rowHeight);
-        pdf.text(empName, x + 4, y + 12);
+        pdf.text(employeeLines, x + 4, y + cellPaddingTop + 6);
         x += empColWidth;
 
-        DAY_KEYS.forEach((dKey) => {
-          const txt = dayShiftsToText(row[dKey]);
+        DAY_KEYS.forEach((dKey, idx) => {
+          const lines = dayCellLines[idx];
           pdf.rect(x, y, dayColWidth, rowHeight);
-
-          let display = txt;
-          if (display.length > 14) {
-            display = display.slice(0, 13) + "…";
-          }
-
-          pdf.text(display, x + 3, y + 12);
+          pdf.text(lines, x + 3, y + cellPaddingTop + 6);
           x += dayColWidth;
         });
 
@@ -323,7 +344,7 @@ export default function DraftSchedulesPage() {
       );
     } catch (err) {
       console.error("Error exporting draft PDF:", err);
-      alert("Error exporting draft PDF. Check console for details.");
+      setStatusMessage("Error exporting draft PDF.");
     }
   };
 
@@ -452,21 +473,92 @@ export default function DraftSchedulesPage() {
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 20,
+          }}
+          onClick={() => setStatusMessage("")}
+        >
           <div
+            onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#edf7ff",
-              border: "1px solid #cfe7fb",
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
+              width: "100%",
+              maxWidth: 520,
+              background: "#ffffff",
+              borderRadius: 24,
+              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              border: "1px solid #e2e8f0",
+              overflow: "hidden",
             }}
           >
-            {statusMessage}
+            <div
+              style={{
+                padding: "18px 20px",
+                background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
+                borderBottom: isErrorStatus
+                  ? "1px solid #fecdd3"
+                  : "1px solid #a7f3d0",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: isErrorStatus ? "#9f1239" : "#065f46",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {isErrorStatus ? "Action Required" : "Success"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "22px 20px 18px",
+                fontSize: 15,
+                lineHeight: 1.65,
+                color: "#0f172a",
+                fontWeight: 700,
+              }}
+            >
+              {statusMessage}
+            </div>
+
+            <div
+              style={{
+                padding: "0 20px 20px",
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setStatusMessage("")}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                  color: "#fff",
+                  borderRadius: 14,
+                  padding: "12px 22px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                }}
+              >
+                OK
+              </button>
+            </div>
           </div>
-        </PageCard>
+        </div>
       )}
 
       {drafts.length === 0 ? (
