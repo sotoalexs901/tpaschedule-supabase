@@ -65,7 +65,7 @@ const loadImage = (src) =>
   });
 
 function hexToRgba(hex, alpha) {
-  let h = hex.replace("#", "");
+  let h = String(hex || "").replace("#", "");
   if (h.length === 3) {
     h = h
       .split("")
@@ -92,6 +92,68 @@ const normalizeAirlineName = (value) => {
 
   return airline;
 };
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function normalizeDateForInput(value) {
+  if (!value) return "";
+
+  const raw = String(value).trim();
+  if (!raw) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const slashFull = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashFull) {
+    const [, mm, dd, yyyy] = slashFull;
+    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+  }
+
+  const dashFull = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dashFull) {
+    const [, mm, dd, yyyy] = dashFull;
+    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(
+      parsed.getDate()
+    )}`;
+  }
+
+  return "";
+}
+
+function buildDayNumbersFromWeekStart(weekStart) {
+  const normalized = normalizeDateForInput(weekStart);
+  if (!normalized) return null;
+
+  const base = new Date(`${normalized}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const result = {};
+  DAY_KEYS.forEach((key, index) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + index);
+    result[key] = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+  });
+
+  return result;
+}
+
+function resolveScheduleDays(schedule) {
+  const fromWeekStart = buildDayNumbersFromWeekStart(schedule?.weekStart);
+  if (fromWeekStart) return fromWeekStart;
+  if (schedule?.days) return schedule.days;
+  return {};
+}
 
 function getShiftText(shifts, idx) {
   const s = (shifts && shifts[idx]) || null;
@@ -208,7 +270,8 @@ function StatusBadge({ overBudget }) {
 }
 
 function ExcelScheduleTable({ schedule, employees, compact = false }) {
-  const { days, grid, airline, department } = schedule;
+  const days = resolveScheduleDays(schedule);
+  const { grid, airline, department } = schedule;
   const displayAirline = normalizeAirlineName(
     schedule.airlineDisplayName || airline
   );
@@ -339,7 +402,7 @@ function ExcelScheduleTable({ schedule, employees, compact = false }) {
           </tr>
         </thead>
         <tbody>
-          {grid.map((row, idx) => {
+          {(grid || []).map((row, idx) => {
             const name = empMap[row.employeeId] || "Unknown";
             const isStriped = idx % 2 === 0;
             const rowBg = isStriped ? stripeBg : plainBg;
@@ -457,7 +520,15 @@ export default function ApprovedScheduleView() {
     async function load() {
       const snap = await getDoc(doc(db, "schedules", id));
       if (snap.exists()) {
-        setSchedule({ id: snap.id, ...snap.data() });
+        const data = snap.data();
+        setSchedule({
+          id: snap.id,
+          ...data,
+          weekStart:
+            normalizeDateForInput(data.weekStart) ||
+            normalizeDateForInput(data.weekTag) ||
+            "",
+        });
       }
 
       const empSnap = await getDocs(collection(db, "employees"));
@@ -495,10 +566,11 @@ export default function ApprovedScheduleView() {
     navigate("/schedule", {
       state: {
         template: {
-          airline: displayAirline,
-          department: schedule.department,
-          days: schedule.days,
-          grid: schedule.grid,
+          airline: schedule.airline || displayAirline,
+          airlineDisplayName: schedule.airlineDisplayName || displayAirline,
+          department: schedule.department || "",
+          weekStart: schedule.weekStart || "",
+          grid: schedule.grid || [],
         },
       },
     });
