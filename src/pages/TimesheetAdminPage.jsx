@@ -1005,6 +1005,13 @@ export default function TimesheetAdminPage() {
     );
   }, [selectedReport, airlineHourSummary]);
 
+  const isErrorStatus =
+    statusMessage.toLowerCase().includes("error") ||
+    statusMessage.toLowerCase().includes("could not") ||
+    statusMessage.toLowerCase().includes("please") ||
+    statusMessage.toLowerCase().includes("required") ||
+    statusMessage.toLowerCase().includes("cannot");
+
   useEffect(() => {
     if (!selectedId && filteredReports.length) {
       setSelectedId(filteredReports[0].id);
@@ -1065,7 +1072,7 @@ export default function TimesheetAdminPage() {
       setDeletingId(report.id);
       await deleteDoc(doc(db, "timesheet_reports", report.id));
       setReports((prev) => prev.filter((r) => r.id !== report.id));
-      setStatusMessage("Timesheet report deleted.");
+      setStatusMessage("Timesheet report deleted successfully.");
     } catch (err) {
       console.error("Error deleting timesheet:", err);
       setStatusMessage("Could not delete timesheet report.");
@@ -1141,7 +1148,7 @@ export default function TimesheetAdminPage() {
           ).toFixed(2)} hours.`
         );
       } else {
-        setStatusMessage("Timesheet report approved.");
+        setStatusMessage("Timesheet report approved successfully.");
       }
     } catch (err) {
       console.error("Error approving timesheet:", err);
@@ -1263,12 +1270,40 @@ export default function TimesheetAdminPage() {
             row.punchIn ||
             row.punchOut ||
             row.employeeStatus ||
-            row.breakTaken ||
             row.reason
         );
 
       if (!cleanRows.length) {
         setStatusMessage("The timesheet needs at least one employee row.");
+        return;
+      }
+
+      if (
+        cleanRows.some(
+          (row) =>
+            !row.employeeName ||
+            !row.punchIn ||
+            !row.punchOut ||
+            !row.employeeStatus ||
+            !row.breakTaken
+        )
+      ) {
+        setStatusMessage(
+          "Cannot save edits. Every row must have Employee, Punch In, Punch Out, Employee Status and Break Taken completed."
+        );
+        return;
+      }
+
+      if (
+        cleanRows.some(
+          (row) =>
+            String(row.breakTaken || "").trim().toLowerCase() === "no" &&
+            !String(row.reason || "").trim()
+        )
+      ) {
+        setStatusMessage(
+          'Cannot save edits. If "Break Taken" is set to "No", the "Reason" field is required.'
+        );
         return;
       }
 
@@ -1284,6 +1319,11 @@ export default function TimesheetAdminPage() {
         ] || 0;
       const overBudget = budgetHoursDaily > 0 && totalHours > budgetHoursDaily;
       const overBudgetBy = overBudget ? totalHours - budgetHoursDaily : 0;
+
+      if (overBudget && !String(editData.overBudgetReason || "").trim()) {
+        setStatusMessage("Please fill in the over budget reason before saving.");
+        return;
+      }
 
       await updateDoc(doc(db, "timesheet_reports", report.id), {
         airline: normalizedAirline,
@@ -1328,7 +1368,7 @@ export default function TimesheetAdminPage() {
         )
       );
 
-      setStatusMessage("Timesheet changes saved.");
+      setStatusMessage("Timesheet changes saved successfully.");
       setIsEditMode(false);
     } catch (err) {
       console.error("Error saving edits:", err);
@@ -1534,21 +1574,92 @@ export default function TimesheetAdminPage() {
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 20,
+          }}
+          onClick={() => setStatusMessage("")}
+        >
           <div
+            onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#edf7ff",
-              border: "1px solid #cfe7fb",
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
+              width: "100%",
+              maxWidth: 520,
+              background: "#ffffff",
+              borderRadius: 24,
+              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              border: "1px solid #e2e8f0",
+              overflow: "hidden",
             }}
           >
-            {statusMessage}
+            <div
+              style={{
+                padding: "18px 20px",
+                background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
+                borderBottom: isErrorStatus
+                  ? "1px solid #fecdd3"
+                  : "1px solid #a7f3d0",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: isErrorStatus ? "#9f1239" : "#065f46",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {isErrorStatus ? "Action Required" : "Success"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "22px 20px 18px",
+                fontSize: 15,
+                lineHeight: 1.65,
+                color: "#0f172a",
+                fontWeight: 700,
+              }}
+            >
+              {statusMessage}
+            </div>
+
+            <div
+              style={{
+                padding: "0 20px 20px",
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setStatusMessage("")}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                  color: "#fff",
+                  borderRadius: 14,
+                  padding: "12px 22px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                }}
+              >
+                OK
+              </button>
+            </div>
           </div>
-        </PageCard>
+        </div>
       )}
 
       {overBudgetAlerts.length > 0 && (
