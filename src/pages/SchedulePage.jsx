@@ -107,6 +107,42 @@ const normalizeDepartmentName = (value) => {
 const getAirlineLogo = (value) =>
   AIRLINE_LOGOS[normalizeAirlineName(value)] || AIRLINE_LOGOS[value] || null;
 
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function normalizeDateForInput(value) {
+  if (!value) return "";
+
+  const raw = String(value).trim();
+  if (!raw) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const slashFull = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashFull) {
+    const [, mm, dd, yyyy] = slashFull;
+    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+  }
+
+  const dashFull = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dashFull) {
+    const [, mm, dd, yyyy] = dashFull;
+    return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(
+      parsed.getDate()
+    )}`;
+  }
+
+  return "";
+}
+
 function buildDayNumbers(weekStart) {
   if (!weekStart) {
     return {
@@ -120,7 +156,20 @@ function buildDayNumbers(weekStart) {
     };
   }
 
-  const base = new Date(`${weekStart}T00:00:00`);
+  const normalized = normalizeDateForInput(weekStart);
+  if (!normalized) {
+    return {
+      mon: "",
+      tue: "",
+      wed: "",
+      thu: "",
+      fri: "",
+      sat: "",
+      sun: "",
+    };
+  }
+
+  const base = new Date(`${normalized}T00:00:00`);
   if (Number.isNaN(base.getTime())) {
     return {
       mon: "",
@@ -146,7 +195,7 @@ function buildDayNumbers(weekStart) {
 }
 
 function buildWeekTagFromWeekStart(weekStart) {
-  return String(weekStart || "").trim();
+  return normalizeDateForInput(weekStart);
 }
 
 function emptyRow() {
@@ -312,7 +361,6 @@ export default function SchedulePage() {
         airlineDisplayName,
         department,
         weekStart,
-        days,
         grid,
       } = location.state.template;
 
@@ -326,33 +374,13 @@ export default function SchedulePage() {
 
       if (department) setDepartment(department);
 
-      if (weekStart) {
-        setWeekStart(weekStart);
-      } else if (days) {
-        const monValue = String(days.mon || "").trim();
-        const match = monValue.match(/^(\d{1,2})\/(\d{1,2})$/);
-
-        if (match) {
-          const currentYear = new Date().getFullYear();
-          const month = match[1].padStart(2, "0");
-          const day = match[2].padStart(2, "0");
-          setWeekStart(`${currentYear}-${month}-${day}`);
-        }
+      const normalizedWeekStart = normalizeDateForInput(weekStart);
+      if (normalizedWeekStart) {
+        setWeekStart(normalizedWeekStart);
       }
 
-      if (grid && Array.isArray(grid)) {
-        setRows(
-          grid.map((row) => ({
-            ...row,
-            mon: Array.isArray(row.mon) ? row.mon.map((s) => ({ ...s })) : [{ start: "", end: "" }, { start: "", end: "" }],
-            tue: Array.isArray(row.tue) ? row.tue.map((s) => ({ ...s })) : [{ start: "", end: "" }, { start: "", end: "" }],
-            wed: Array.isArray(row.wed) ? row.wed.map((s) => ({ ...s })) : [{ start: "", end: "" }, { start: "", end: "" }],
-            thu: Array.isArray(row.thu) ? row.thu.map((s) => ({ ...s })) : [{ start: "", end: "" }, { start: "", end: "" }],
-            fri: Array.isArray(row.fri) ? row.fri.map((s) => ({ ...s })) : [{ start: "", end: "" }, { start: "", end: "" }],
-            sat: Array.isArray(row.sat) ? row.sat.map((s) => ({ ...s })) : [{ start: "", end: "" }, { start: "", end: "" }],
-            sun: Array.isArray(row.sun) ? row.sun.map((s) => ({ ...s })) : [{ start: "", end: "" }, { start: "", end: "" }],
-          }))
-        );
+      if (grid) {
+        setRows(grid);
       }
     }
   }, [location.state]);
@@ -371,7 +399,7 @@ export default function SchedulePage() {
         const data = d.data();
         const airline = normalizeAirlineName(data.airline);
         const dept = normalizeDepartmentName(data.department);
-        const start = String(data.weekStart || "").trim();
+        const start = normalizeDateForInput(data.weekStart);
 
         if (!airline || !dept || !start) return;
 
@@ -391,13 +419,15 @@ export default function SchedulePage() {
         snap.docs.forEach((docSnap) => {
           const data = docSnap.data();
           const empId = data.employeeId || data.employee_id;
-          const startStr = data.start_date || data.startDate;
-          const endStr = data.end_date || data.endDate || startStr;
+          const startStr = normalizeDateForInput(data.start_date || data.startDate);
+          const endStr = normalizeDateForInput(
+            data.end_date || data.endDate || data.start_date || data.startDate
+          );
 
-          if (!empId || !startStr) return;
+          if (!empId || !startStr || !endStr) return;
 
-          const start = new Date(startStr);
-          const end = new Date(endStr);
+          const start = new Date(`${startStr}T00:00:00`);
+          const end = new Date(`${endStr}T00:00:00`);
 
           if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
 
@@ -484,7 +514,7 @@ export default function SchedulePage() {
 
   const budgetKey = `${normalizeAirlineName(airlineKey)}__${normalizeDepartmentName(
     department
-  )}__${String(weekStart || "").trim()}`;
+  )}__${normalizeDateForInput(weekStart)}`;
 
   const selectedWeeklyBudget = airlineBudgets[budgetKey] || 0;
 
@@ -495,10 +525,7 @@ export default function SchedulePage() {
       return { conflicts: [], weekTag: null };
     }
 
-    const q = query(
-      collection(db, "schedules"),
-      where("weekTag", "==", weekTag)
-    );
+    const q = query(collection(db, "schedules"), where("weekTag", "==", weekTag));
 
     const snap = await getDocs(q);
     const existingSchedules = snap.docs.map((d) => ({
@@ -560,13 +587,15 @@ export default function SchedulePage() {
   };
 
   const handleSaveDraft = async () => {
-    if (!airlineKey || !department || !weekStart) {
+    const normalizedWeekStart = normalizeDateForInput(weekStart);
+
+    if (!airlineKey || !department || !normalizedWeekStart) {
       setStatusMessage("Please select airline, department and week start.");
       return;
     }
 
     try {
-      const weekTagToSave = buildWeekTagFromWeekStart(weekStart);
+      const weekTagToSave = buildWeekTagFromWeekStart(normalizedWeekStart);
 
       await addDoc(collection(db, "schedules"), {
         createdAt: serverTimestamp(),
@@ -575,8 +604,8 @@ export default function SchedulePage() {
           airlineDisplayName || airlineKey
         ),
         department,
-        weekStart,
-        days: dayNumbers,
+        weekStart: normalizedWeekStart,
+        days: buildDayNumbers(normalizedWeekStart),
         weekTag: weekTagToSave,
         grid: rows,
         totals: employeeTotals,
@@ -596,7 +625,9 @@ export default function SchedulePage() {
   };
 
   const handleSaveSchedule = async () => {
-    if (!airlineKey || !department || !weekStart) {
+    const normalizedWeekStart = normalizeDateForInput(weekStart);
+
+    if (!airlineKey || !department || !normalizedWeekStart) {
       setStatusMessage("Please select airline, department and week start.");
       return;
     }
@@ -627,7 +658,7 @@ export default function SchedulePage() {
     }
 
     try {
-      const weekTagToSave = weekTag || buildWeekTagFromWeekStart(weekStart);
+      const weekTagToSave = weekTag || buildWeekTagFromWeekStart(normalizedWeekStart);
 
       await addDoc(collection(db, "schedules"), {
         createdAt: serverTimestamp(),
@@ -636,8 +667,8 @@ export default function SchedulePage() {
           airlineDisplayName || airlineKey
         ),
         department,
-        weekStart,
-        days: dayNumbers,
+        weekStart: normalizedWeekStart,
+        days: buildDayNumbers(normalizedWeekStart),
         weekTag: weekTagToSave,
         grid: rows,
         totals: employeeTotals,
@@ -695,7 +726,10 @@ export default function SchedulePage() {
       .replace(/\s+/g, "_")
       .replace(/[^\w-]/g, "");
     const safeDept = (department || "DEPT").replace(/\s+/g, "_");
-    const safeWeek = (weekStart || "week").replace(/[^\d-]/g, "");
+    const safeWeek = (normalizeDateForInput(weekStart) || "week").replace(
+      /[^\d-]/g,
+      ""
+    );
 
     pdf.save(`Schedule_${safeAirline}_${safeDept}_${safeWeek}.pdf`);
   };
@@ -977,7 +1011,7 @@ export default function SchedulePage() {
             <FieldLabel>Week Start</FieldLabel>
             <TextInput
               type="date"
-              value={weekStart}
+              value={normalizeDateForInput(weekStart)}
               onChange={(e) => setWeekStart(e.target.value)}
             />
           </div>
