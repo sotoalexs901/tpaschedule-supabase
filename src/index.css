@@ -6,52 +6,39 @@
 @tailwind utilities;
 
 /* --------------------------------------------------------- */
-/* RESET BÁSICO (NO interfiere con Tailwind)                 */
+/* RESET BÁSICO                                              */
 /* --------------------------------------------------------- */
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: 'Inter', sans-serif;
-  background-color: #f1f5f9; /* slate-100 */
+  font-family: "Inter", sans-serif;
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+#root {
+  min-height: 100%;
 }
 
 /* --------------------------------------------------------- */
-/* FIX: NAVLINK SIN DECORACIÓN                               */
+/* LINKS                                                     */
 /* --------------------------------------------------------- */
 a {
   text-decoration: none;
+  color: inherit;
 }
 
 /* --------------------------------------------------------- */
-/* CARD ESTÁNDAR (Dashboard, Approvals, Approved, etc.)      */
+/* CARD ESTÁNDAR                                             */
 /* --------------------------------------------------------- */
 .card {
-  background: white;
+  background: #ffffff;
   padding: 18px;
   border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   margin-bottom: 20px;
-}
-
-/* --------------------------------------------------------- */
-/* TABLAS                                                    */
-/* --------------------------------------------------------- */
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th {
-  background: #0A2342;
-  color: white;
-  padding: 10px;
-  font-size: 14px;
-}
-
-td {
-  padding: 8px;
-  font-size: 14px;
 }
 
 /* --------------------------------------------------------- */
@@ -63,11 +50,12 @@ td {
   font-weight: 600;
   cursor: pointer;
   transition: 0.15s;
+  border: none;
 }
 
 .btn-blue {
-  background: #0A2342;
-  color: white;
+  background: #0a2342;
+  color: #ffffff;
 }
 
 .btn-blue:hover {
@@ -75,83 +63,56 @@ td {
 }
 
 /* --------------------------------------------------------- */
-/* SEPARADOR VISUAL ENTRE SIDEBAR Y CONTENIDO                */
+/* ESPACIADO GENERAL DEL CONTENIDO                           */
 /* --------------------------------------------------------- */
 main {
   padding-top: 10px;
 }
 
 /* --------------------------------------------------------- */
-/* OCULTAR ESTILOS QUE ROMPÍAN TODO                          */
+/* TIPOGRAFÍA GLOBAL SUAVE                                   */
 /* --------------------------------------------------------- */
-/* ❌ Esto evita que el dashboard salga todo pegado arriba */
-header, nav {
-  all: unset;
-}
-
-/* Pero restauramos estilos correctos para AppLayout */
-header, nav {
-  display: block;
-}
-
-/* --------------------------------------------------------- */
-/*  TIPOGRAFÍA GLOBAL MEJORADA                               */
-/*  (letras más grandes, oscuras y legibles)                 */
-/* --------------------------------------------------------- */
-
-/* Tamaño base más grande y color más oscuro */
 body {
-  font-size: 16px !important;
-  color: #0f172a !important; /* slate-900 */
+  font-size: 16px;
 }
 
-/* Títulos principales */
 h1 {
-  font-size: 2rem !important;          /* ~32px */
-  font-weight: 700 !important;
-  color: #0f172a !important;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
 }
 
-/* Subtítulos */
 h2 {
-  font-size: 1.25rem !important;       /* ~20px */
-  font-weight: 600 !important;
-  color: #111827 !important;           /* gris muy oscuro */
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
 }
 
-/* Títulos pequeños dentro de tarjetas */
-.card h2 {
-  font-size: 1.2rem !important;
+p {
+  color: #111827;
 }
 
-/* Texto normal (p, labels, etc.) */
-p,
-span,
-label,
-li {
-  font-size: 15px !important;
-  line-height: 1.45 !important;
-  color: #111827 !important;           /* slate-900 */
-}
-
-/* Inputs y selects más claros */
+/* --------------------------------------------------------- */
+/* FORM ELEMENTS                                             */
+/* --------------------------------------------------------- */
 input,
 textarea,
-select {
-  font-size: 15px !important;
-  color: #111827 !important;
-}
-
-/* Botones con texto un poquito más grande */
+select,
 button {
-  font-size: 15px !important;
-  font-weight: 600 !important;
+  font-family: inherit;
 }
 
-/* Overwrite de la clase Tailwind .text-xs para que no sea tan chiquita */
-.text-xs,
-.text-\[11px\],
-.text-\[12px\] {
-  font-size: 0.85rem !important;       /* ~13.6px */
-  color: #374151 !important;           /* slate-700 */
+/* --------------------------------------------------------- */
+/* TABLAS BÁSICAS                                            */
+/* Solo estilo neutral para no romper páginas nuevas         */
+/* --------------------------------------------------------- */
+table {
+  width: 100%;
+}
+
+th,
+td {
+  vertical-align: middle;
 }
