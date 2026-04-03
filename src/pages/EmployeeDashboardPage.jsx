@@ -1,4 +1,3 @@
-// src/pages/EmployeeDashboardPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
@@ -109,6 +108,26 @@ function formatEventDate(value, language = "en") {
   } catch {
     return value;
   }
+}
+
+function normalizeAirlineName(value) {
+  const airline = String(value || "").trim();
+  const upper = airline.toUpperCase();
+
+  if (
+    upper === "WL HAVANA AIR" ||
+    upper === "WAL HAVANA AIR" ||
+    upper === "WAL HAVANA" ||
+    upper === "WESTJET"
+  ) {
+    return "WestJet";
+  }
+
+  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
+    return "CABIN";
+  }
+
+  return airline;
 }
 
 function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
@@ -514,7 +533,8 @@ function SpotlightCard({ item, isMobile, language }) {
   const fallbackTitle =
     language === "es" ? "Empleado del Mes" : "Employee of the Month";
 
-  const displayImage = item.imageUrl || item.employeePhotoURL || "";
+  const displayImage =
+    item.imageUrl || item.employeePhotoURL || item.photoURL || "";
 
   return (
     <div
@@ -550,18 +570,45 @@ function SpotlightCard({ item, isMobile, language }) {
       <div style={{ padding: 16 }}>
         <div
           style={{
-            display: "inline-flex",
-            padding: "6px 10px",
-            borderRadius: 999,
-            background: "#edf7ff",
-            border: "1px solid #cfe7fb",
-            color: "#1769aa",
-            fontSize: 11,
-            fontWeight: 800,
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
             marginBottom: 10,
           }}
         >
-          {item.department || fallbackTitle}
+          {item.airline && (
+            <span
+              style={{
+                display: "inline-flex",
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: "#edf7ff",
+                border: "1px solid #cfe7fb",
+                color: "#1769aa",
+                fontSize: 11,
+                fontWeight: 800,
+              }}
+            >
+              {item.airline}
+            </span>
+          )}
+
+          {item.department && (
+            <span
+              style={{
+                display: "inline-flex",
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                color: "#475569",
+                fontSize: 11,
+                fontWeight: 800,
+              }}
+            >
+              {item.department}
+            </span>
+          )}
         </div>
 
         <h3
@@ -662,7 +709,6 @@ export default function EmployeeDashboardPage() {
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
   const profilePhotoURL = user?.profilePhotoURL || "";
-  const isSupervisor = user?.role === "supervisor";
 
   const copy = {
     en: {
@@ -672,25 +718,9 @@ export default function EmployeeDashboardPage() {
         "Quick overview of your day, requests, WCHR tools and station updates.",
       quickActionsTitle: "Quick Access",
       quickActions: {
-        scheduleTitle: "Schedule",
-        scheduleSubtitle: "My Schedule",
-        scheduleBody: "Review your assigned weekly schedule and shift details.",
-        ptoTitle: "Time Off",
-        ptoSubtitle: "Request PTO",
-        ptoBody: "Submit a PTO or day-off request directly in the portal.",
-        statusTitle: "Requests",
-        statusSubtitle: "PTO Status",
-        statusBody: "Check if your request is pending, approved or returned.",
         wchrScanTitle: "WCHR",
         wchrScanSubtitle: "Scan Boarding Pass",
         wchrScanBody: "Create a new WCHR report from a boarding pass scan.",
-        wchrReportsTitle: "Reports",
-        wchrReportsSubtitle: "My WCHR Reports",
-        wchrReportsBody: "Review, edit and manage your recent WCHR reports.",
-        timesheetTitle: "Timesheets",
-        timesheetSubtitle: "Submit Timesheet",
-        timesheetBody:
-          "Create and send a station timesheet report for manager review.",
       },
       announcementsTitle: "Crew Announcements",
       announcementsEmpty: "No announcements available.",
@@ -717,8 +747,6 @@ export default function EmployeeDashboardPage() {
       leaderboard: "Leaderboard",
       today: "Today",
       week: "Week",
-      viewMore: "View more →",
-      by: "By",
       openLink: "Open link →",
     },
     es: {
@@ -726,27 +754,11 @@ export default function EmployeeDashboardPage() {
       welcome: "Bienvenido(a),",
       intro:
         "Resumen rápido de tu día, solicitudes, herramientas WCHR y actualizaciones de la estación.",
-      quickActionsTitle: "Accesos Rápidos",
+      quickActionsTitle: "Acceso Rápido",
       quickActions: {
-        scheduleTitle: "Horario",
-        scheduleSubtitle: "Mi Horario",
-        scheduleBody: "Revisa tu horario semanal asignado y los detalles de turno.",
-        ptoTitle: "Tiempo Libre",
-        ptoSubtitle: "Solicitar PTO",
-        ptoBody: "Envía una solicitud de PTO o día libre directamente en el portal.",
-        statusTitle: "Solicitudes",
-        statusSubtitle: "Estatus PTO",
-        statusBody: "Verifica si tu solicitud está pendiente, aprobada o devuelta.",
         wchrScanTitle: "WCHR",
         wchrScanSubtitle: "Escanear Boarding Pass",
         wchrScanBody: "Crea un nuevo reporte WCHR desde el escaneo del pase.",
-        wchrReportsTitle: "Reportes",
-        wchrReportsSubtitle: "Mis Reportes WCHR",
-        wchrReportsBody: "Revisa, edita y administra tus reportes WCHR recientes.",
-        timesheetTitle: "Timesheets",
-        timesheetSubtitle: "Enviar Timesheet",
-        timesheetBody:
-          "Crea y envía un reporte de timesheet de estación para revisión gerencial.",
       },
       announcementsTitle: "Anuncios de Tripulación",
       announcementsEmpty: "No hay anuncios disponibles.",
@@ -773,8 +785,6 @@ export default function EmployeeDashboardPage() {
       leaderboard: "Ranking",
       today: "Hoy",
       week: "Semana",
-      viewMore: "Ver más →",
-      by: "Por",
       openLink: "Abrir enlace →",
     },
   };
@@ -804,22 +814,19 @@ export default function EmployeeDashboardPage() {
             getDocs(
               query(
                 collection(db, "employeeSpotlights"),
-                orderBy("slot", "asc")
+                orderBy("createdAt", "desc")
               )
             ),
           ]);
 
-        const announcementList = announcementsSnap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
+        const announcementList = announcementsSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((item) => {
+            if (!item.expiresOn) return true;
+            return item.expiresOn >= todayStr;
+          });
 
-        const filteredAnnouncements = announcementList.filter((item) => {
-          if (!item.expiresOn) return true;
-          return item.expiresOn >= todayStr;
-        });
-
-        setAnnouncements(filteredAnnouncements);
+        setAnnouncements(announcementList);
 
         const birthdayList = usersSnap.docs
           .map((d) => {
@@ -853,7 +860,10 @@ export default function EmployeeDashboardPage() {
         const spotlightList = spotlightsSnap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((item) => item.active !== false)
-          .sort((a, b) => Number(a.slot || 0) - Number(b.slot || 0));
+          .map((item) => ({
+            ...item,
+            airline: normalizeAirlineName(item.airline),
+          }));
 
         setSpotlights(spotlightList);
       } catch (err) {
@@ -868,32 +878,8 @@ export default function EmployeeDashboardPage() {
 
   const goTo = (path) => navigate(path);
 
-  const quickCards = useMemo(() => {
-    const baseCards = [
-      {
-        title: t.quickActions.scheduleTitle,
-        subtitle: t.quickActions.scheduleSubtitle,
-        body: t.quickActions.scheduleBody,
-        onClick: () => goTo("/my-schedule"),
-        accent: "#1f7cc1",
-        icon: "📅",
-      },
-      {
-        title: t.quickActions.ptoTitle,
-        subtitle: t.quickActions.ptoSubtitle,
-        body: t.quickActions.ptoBody,
-        onClick: () => goTo("/request-dayoff-internal"),
-        accent: "#4f46e5",
-        icon: "🌴",
-      },
-      {
-        title: t.quickActions.statusTitle,
-        subtitle: t.quickActions.statusSubtitle,
-        body: t.quickActions.statusBody,
-        onClick: () => goTo("/dayoff-status-internal"),
-        accent: "#0ea5e9",
-        icon: "📍",
-      },
+  const quickCards = useMemo(
+    () => [
       {
         title: t.quickActions.wchrScanTitle,
         subtitle: t.quickActions.wchrScanSubtitle,
@@ -902,29 +888,9 @@ export default function EmployeeDashboardPage() {
         accent: "#14b8a6",
         icon: "🎫",
       },
-      {
-        title: t.quickActions.wchrReportsTitle,
-        subtitle: t.quickActions.wchrReportsSubtitle,
-        body: t.quickActions.wchrReportsBody,
-        onClick: () => goTo("/wchr/my-reports"),
-        accent: "#10b981",
-        icon: "📄",
-      },
-    ];
-
-    if (isSupervisor) {
-      baseCards.unshift({
-        title: t.quickActions.timesheetTitle,
-        subtitle: t.quickActions.timesheetSubtitle,
-        body: t.quickActions.timesheetBody,
-        onClick: () => goTo("/timesheets/submit"),
-        accent: "#f59e0b",
-        icon: "🕒",
-      });
-    }
-
-    return baseCards;
-  }, [t, isSupervisor]);
+    ],
+    [t]
+  );
 
   const todayBirthdays = useMemo(() => {
     const today = new Date();
@@ -940,6 +906,18 @@ export default function EmployeeDashboardPage() {
       .filter((item) => item.birthDateParsed?.getMonth() === today.getMonth())
       .sort((a, b) => a.birthDateParsed.getDate() - b.birthDateParsed.getDate());
   }, [birthdays]);
+
+  const spotlightGroups = useMemo(() => {
+    const map = {};
+
+    spotlights.forEach((item) => {
+      const airline = item.airline || "OTHER";
+      if (!map[airline]) map[airline] = [];
+      map[airline].push(item);
+    });
+
+    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [spotlights]);
 
   const topToday = useMemo(
     () => [
@@ -1243,7 +1221,7 @@ export default function EmployeeDashboardPage() {
           display: "grid",
           gridTemplateColumns: isMobile
             ? "1fr"
-            : "minmax(0, 1.5fr) minmax(320px, 1fr)",
+            : "minmax(0, 1.6fr) minmax(320px, 1fr)",
           gap: 18,
         }}
       >
@@ -1257,9 +1235,7 @@ export default function EmployeeDashboardPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: isMobile
-                  ? "1fr"
-                  : "repeat(auto-fit, minmax(220px, 1fr))",
+                gridTemplateColumns: "1fr",
                 gap: 12,
               }}
             >
@@ -1316,32 +1292,6 @@ export default function EmployeeDashboardPage() {
                     )}
 
                     <div style={{ padding: 14 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          marginBottom: 8,
-                        }}
-                      >
-                        {item.category && (
-                          <span
-                            style={{
-                              padding: "5px 9px",
-                              borderRadius: 999,
-                              background: "#fff7ed",
-                              border: "1px solid #fed7aa",
-                              color: "#9a3412",
-                              fontSize: 11,
-                              fontWeight: 800,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            {item.category}
-                          </span>
-                        )}
-                      </div>
-
                       <p
                         style={{
                           margin: 0,
@@ -1388,7 +1338,7 @@ export default function EmployeeDashboardPage() {
                           fontWeight: 700,
                         }}
                       >
-                        {t.by} {FIXED_AUTHOR}
+                        By {FIXED_AUTHOR}
                       </div>
 
                       {item.link && (
@@ -1429,7 +1379,7 @@ export default function EmployeeDashboardPage() {
               </p>
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
-                {upcomingEvents.slice(0, 6).map((item) => (
+                {upcomingEvents.slice(0, 8).map((item) => (
                   <div
                     key={item.id}
                     style={{
@@ -1485,7 +1435,7 @@ export default function EmployeeDashboardPage() {
                         fontWeight: 700,
                       }}
                     >
-                      {t.by} {FIXED_AUTHOR}
+                      By {FIXED_AUTHOR}
                     </div>
 
                     {item.link && (
@@ -1519,27 +1469,46 @@ export default function EmployeeDashboardPage() {
           >
             {loading ? (
               <p style={{ margin: 0, color: "#94a3b8" }}>{t.loading}</p>
-            ) : spotlights.length === 0 ? (
+            ) : spotlightGroups.length === 0 ? (
               <p style={{ margin: 0, color: "#64748b" }}>
                 {t.employeeMonthEmpty}
               </p>
             ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile
-                    ? "1fr"
-                    : "repeat(auto-fit, minmax(260px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                {spotlights.slice(0, 2).map((item) => (
-                  <SpotlightCard
-                    key={item.id}
-                    item={item}
-                    isMobile={isMobile}
-                    language={language}
-                  />
+              <div style={{ display: "grid", gap: 18 }}>
+                {spotlightGroups.map(([airline, items]) => (
+                  <div key={airline}>
+                    <div
+                      style={{
+                        marginBottom: 10,
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: "#1769aa",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      {airline}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: isMobile
+                          ? "1fr"
+                          : "repeat(auto-fit, minmax(260px, 1fr))",
+                        gap: 12,
+                      }}
+                    >
+                      {items.map((item) => (
+                        <SpotlightCard
+                          key={item.id}
+                          item={item}
+                          isMobile={isMobile}
+                          language={language}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
