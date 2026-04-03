@@ -7,9 +7,15 @@ import {
   collection,
   addDoc,
   serverTimestamp,
+  getDocs,
+  deleteDoc,
+  orderBy,
+  query,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useUser } from "../UserContext.jsx";
+
+const FIXED_AUTHOR = "TPA Eulen Ops";
 
 function SectionCard({ title, subtitle, icon, children, accent = "#1769aa" }) {
   return (
@@ -161,6 +167,28 @@ function PrimaryButton({ children, onClick, disabled = false, type = "button" })
   );
 }
 
+function DangerButton({ children, onClick, disabled = false }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        border: "1px solid #fecdd3",
+        background: disabled ? "#ffe4e6" : "#fff1f2",
+        color: "#b91c1c",
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontWeight: 800,
+        fontSize: 13,
+        cursor: disabled ? "not-allowed" : "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function SecondaryNote({ children }) {
   return (
     <p
@@ -174,6 +202,16 @@ function SecondaryNote({ children }) {
       {children}
     </p>
   );
+}
+
+function formatTimestamp(value) {
+  if (!value) return "—";
+  try {
+    if (typeof value?.toDate === "function") return value.toDate().toLocaleString();
+    return new Date(value).toLocaleString();
+  } catch {
+    return "—";
+  }
 }
 
 export default function DashboardEditorPage() {
@@ -204,17 +242,47 @@ export default function DashboardEditorPage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
 
-  useEffect(() => {
-    async function load() {
+  const [loadingContent, setLoadingContent] = useState(true);
+  const [events, setEvents] = useState([]);
+  const [notices, setNotices] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [docsList, setDocsList] = useState([]);
+
+  const [deletingId, setDeletingId] = useState("");
+
+  const loadDashboardContent = async () => {
+    try {
+      setLoadingContent(true);
+
       const refDoc = doc(db, "dashboard", "main");
-      const snap = await getDoc(refDoc);
-      if (snap.exists()) setMessage(snap.data().message || "");
-    }
-    load().catch((err) => {
+      const [mainSnap, eventsSnap, noticesSnap, photosSnap, docsSnap] =
+        await Promise.all([
+          getDoc(refDoc),
+          getDocs(query(collection(db, "dashboard_events"), orderBy("createdAt", "desc"))),
+          getDocs(query(collection(db, "dashboard_notices"), orderBy("createdAt", "desc"))),
+          getDocs(query(collection(db, "dashboard_photos"), orderBy("createdAt", "desc"))),
+          getDocs(query(collection(db, "dashboard_docs"), orderBy("createdAt", "desc"))),
+        ]);
+
+      if (mainSnap.exists()) {
+        setMessage(mainSnap.data().message || "");
+      }
+
+      setEvents(eventsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setNotices(noticesSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setPhotos(photosSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setDocsList(docsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (err) {
       console.error(err);
       setStatusType("error");
-      setStatus("Could not load dashboard message.");
-    });
+      setStatus("Could not load dashboard content.");
+    } finally {
+      setLoadingContent(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboardContent();
   }, []);
 
   const showStatus = (text, type = "info") => {
@@ -226,11 +294,16 @@ export default function DashboardEditorPage() {
     try {
       setSavingMessage(true);
       const refDoc = doc(db, "dashboard", "main");
-      await setDoc(refDoc, {
-        message,
-        updatedAt: new Date().toISOString(),
-        updatedBy: user?.username || "station_manager",
-      });
+      await setDoc(
+        refDoc,
+        {
+          message,
+          updatedAt: serverTimestamp(),
+          updatedBy: FIXED_AUTHOR,
+          updatedByLabel: FIXED_AUTHOR,
+        },
+        { merge: true }
+      );
       showStatus("Dashboard message saved.", "success");
     } catch (err) {
       console.error("Save message error:", err);
@@ -254,13 +327,15 @@ export default function DashboardEditorPage() {
         time: eventTime || null,
         details: eventDetails || null,
         createdAt: serverTimestamp(),
-        createdBy: user?.username || "station_manager",
+        createdBy: FIXED_AUTHOR,
+        createdByLabel: FIXED_AUTHOR,
       });
 
       setEventTitle("");
       setEventDate("");
       setEventTime("");
       setEventDetails("");
+      await loadDashboardContent();
       showStatus("Event added.", "success");
     } catch (err) {
       console.error("Add event error:", err);
@@ -283,12 +358,14 @@ export default function DashboardEditorPage() {
         body: noticeBody || null,
         link: noticeLink || null,
         createdAt: serverTimestamp(),
-        createdBy: user?.username || "station_manager",
+        createdBy: FIXED_AUTHOR,
+        createdByLabel: FIXED_AUTHOR,
       });
 
       setNoticeTitle("");
       setNoticeBody("");
       setNoticeLink("");
+      await loadDashboardContent();
       showStatus("Notice added.", "success");
     } catch (err) {
       console.error("Add notice error:", err);
@@ -316,15 +393,20 @@ export default function DashboardEditorPage() {
 
       await addDoc(collection(db, "dashboard_photos"), {
         url,
-        caption: photoFile.name,
+        caption: "",
+        title: "",
+        filename: photoFile.name,
+        storagePath: path,
         createdAt: serverTimestamp(),
-        createdBy: user?.username || "station_manager",
+        createdBy: FIXED_AUTHOR,
+        createdByLabel: FIXED_AUTHOR,
       });
 
       setPhotoFile(null);
       const photoInput = document.getElementById("dashboard-photo-input");
       if (photoInput) photoInput.value = "";
 
+      await loadDashboardContent();
       showStatus("Photo uploaded successfully.", "success");
     } catch (err) {
       console.error("Photo upload error:", err);
@@ -357,8 +439,10 @@ export default function DashboardEditorPage() {
         url,
         title: docTitle,
         filename: docFile.name,
+        storagePath: path,
         createdAt: serverTimestamp(),
-        createdBy: user?.username || "station_manager",
+        createdBy: FIXED_AUTHOR,
+        createdByLabel: FIXED_AUTHOR,
       });
 
       setDocFile(null);
@@ -366,6 +450,7 @@ export default function DashboardEditorPage() {
       const docInput = document.getElementById("dashboard-doc-input");
       if (docInput) docInput.value = "";
 
+      await loadDashboardContent();
       showStatus("Document uploaded successfully.", "success");
     } catch (err) {
       console.error("Document upload error:", err);
@@ -375,6 +460,38 @@ export default function DashboardEditorPage() {
       );
     } finally {
       setUploadingDoc(false);
+    }
+  };
+
+  const deleteDashboardItem = async ({
+    collectionName,
+    id,
+    label,
+    storagePath,
+  }) => {
+    const ok = window.confirm(`Delete this ${label}?`);
+    if (!ok) return;
+
+    try {
+      setDeletingId(id);
+
+      await deleteDoc(doc(db, collectionName, id));
+
+      if (storagePath) {
+        try {
+          await deleteObject(ref(storage, storagePath));
+        } catch (storageErr) {
+          console.error("Storage delete warning:", storageErr);
+        }
+      }
+
+      await loadDashboardContent();
+      showStatus(`${label} deleted successfully.`, "success");
+    } catch (err) {
+      console.error(`Delete ${label} error:`, err);
+      showStatus(err?.message || `Could not delete ${label}.`, "error");
+    } finally {
+      setDeletingId("");
     }
   };
 
@@ -462,8 +579,9 @@ export default function DashboardEditorPage() {
               color: "rgba(255,255,255,0.86)",
             }}
           >
-            Update the main station message, create events and notices, and upload
-            dashboard photos and operational documents.
+            Update the main station message, create events and notices, upload
+            dashboard photos and operational documents, and remove published items
+            without opening Firebase.
           </p>
         </div>
       </div>
@@ -501,6 +619,10 @@ export default function DashboardEditorPage() {
               placeholder="Write the main message for the station team..."
             />
           </div>
+
+          <SecondaryNote>
+            Author will be saved as <b>{FIXED_AUTHOR}</b>.
+          </SecondaryNote>
 
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <PrimaryButton onClick={saveMessage} disabled={savingMessage}>
@@ -663,8 +785,7 @@ export default function DashboardEditorPage() {
             )}
 
             <SecondaryNote>
-              This uploads the image to Firebase Storage under
-              <b> dashboard_photos/</b> and saves the reference for the main dashboard.
+              Photos are uploaded without visible caption text.
             </SecondaryNote>
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -718,8 +839,7 @@ export default function DashboardEditorPage() {
             </div>
 
             <SecondaryNote>
-              This uploads the file to Firebase Storage under
-              <b> dashboard_docs/</b> and creates a document record for your team.
+              This uploads the file and saves it with author <b>{FIXED_AUTHOR}</b>.
             </SecondaryNote>
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -730,6 +850,315 @@ export default function DashboardEditorPage() {
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard
+        title="Published Events"
+        subtitle="Review and delete events already posted."
+        icon="🗂️"
+        accent="#1769aa"
+      >
+        {loadingContent ? (
+          <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+            Loading events...
+          </div>
+        ) : events.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+            No events published.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {events.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #dbeafe",
+                  background: "#f8fbff",
+                  borderRadius: 16,
+                  padding: 14,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>
+                    {item.title || "Untitled"}
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 13, color: "#475569" }}>
+                    {item.date || "—"} {item.time ? `· ${item.time}` : ""}
+                  </div>
+                  {item.details && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 13,
+                        color: "#334155",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {item.details}
+                    </div>
+                  )}
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                    By {FIXED_AUTHOR}
+                  </div>
+                </div>
+
+                <DangerButton
+                  disabled={deletingId === item.id}
+                  onClick={() =>
+                    deleteDashboardItem({
+                      collectionName: "dashboard_events",
+                      id: item.id,
+                      label: "event",
+                    })
+                  }
+                >
+                  {deletingId === item.id ? "Deleting..." : "Delete"}
+                </DangerButton>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Published Notices"
+        subtitle="Review and delete notices already posted."
+        icon="📬"
+        accent="#f59e0b"
+      >
+        {loadingContent ? (
+          <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+            Loading notices...
+          </div>
+        ) : notices.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+            No notices published.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {notices.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #fde68a",
+                  background: "#fffbeb",
+                  borderRadius: 16,
+                  padding: 14,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>
+                    {item.title || "Untitled"}
+                  </div>
+                  {item.body && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 13,
+                        color: "#334155",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {item.body}
+                    </div>
+                  )}
+                  {item.link && (
+                    <div style={{ marginTop: 8, fontSize: 13 }}>
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "#1769aa", fontWeight: 700 }}
+                      >
+                        Open link
+                      </a>
+                    </div>
+                  )}
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                    By {FIXED_AUTHOR}
+                  </div>
+                </div>
+
+                <DangerButton
+                  disabled={deletingId === item.id}
+                  onClick={() =>
+                    deleteDashboardItem({
+                      collectionName: "dashboard_notices",
+                      id: item.id,
+                      label: "notice",
+                    })
+                  }
+                >
+                  {deletingId === item.id ? "Deleting..." : "Delete"}
+                </DangerButton>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Published Photos"
+        subtitle="Review and delete photos already uploaded."
+        icon="📷"
+        accent="#5aa9e6"
+      >
+        {loadingContent ? (
+          <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+            Loading photos...
+          </div>
+        ) : photos.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+            No photos published.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: 14,
+            }}
+          >
+            {photos.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #dbeafe",
+                  background: "#f8fbff",
+                  borderRadius: 18,
+                  padding: 12,
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    aspectRatio: "16 / 10",
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    background: "#e2e8f0",
+                  }}
+                >
+                  <img
+                    src={item.url}
+                    alt=""
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                </div>
+
+                <div style={{ fontSize: 12, color: "#64748b" }}>
+                  By {FIXED_AUTHOR}
+                </div>
+
+                <DangerButton
+                  disabled={deletingId === item.id}
+                  onClick={() =>
+                    deleteDashboardItem({
+                      collectionName: "dashboard_photos",
+                      id: item.id,
+                      label: "photo",
+                      storagePath: item.storagePath,
+                    })
+                  }
+                >
+                  {deletingId === item.id ? "Deleting..." : "Delete"}
+                </DangerButton>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Published Documents"
+        subtitle="Review and delete uploaded documents."
+        icon="🗃️"
+        accent="#10b981"
+      >
+        {loadingContent ? (
+          <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+            Loading documents...
+          </div>
+        ) : docsList.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+            No documents published.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {docsList.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #d1fae5",
+                  background: "#ecfdf5",
+                  borderRadius: 16,
+                  padding: 14,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>
+                    {item.title || item.filename || "Untitled document"}
+                  </div>
+                  {item.filename && (
+                    <div style={{ marginTop: 6, fontSize: 13, color: "#475569" }}>
+                      File: {item.filename}
+                    </div>
+                  )}
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                    By {FIXED_AUTHOR}
+                  </div>
+                  {item.url && (
+                    <div style={{ marginTop: 8 }}>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "#1769aa", fontWeight: 700, fontSize: 13 }}
+                      >
+                        Open document
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                <DangerButton
+                  disabled={deletingId === item.id}
+                  onClick={() =>
+                    deleteDashboardItem({
+                      collectionName: "dashboard_docs",
+                      id: item.id,
+                      label: "document",
+                      storagePath: item.storagePath,
+                    })
+                  }
+                >
+                  {deletingId === item.id ? "Deleting..." : "Delete"}
+                </DangerButton>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
     </div>
   );
 }
