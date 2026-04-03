@@ -130,91 +130,6 @@ function normalizeAirlineName(value) {
   return airline;
 }
 
-function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
-  return (
-    <div
-      style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: isMobile ? 18 : 22,
-        padding: isMobile ? 16 : 18,
-        boxShadow: "0 16px 36px rgba(23,105,170,0.08)",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: `linear-gradient(135deg, ${accent}16 0%, transparent 58%)`,
-          pointerEvents: "none",
-        }}
-      />
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 12,
-          position: "relative",
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#64748b",
-            }}
-          >
-            {title}
-          </p>
-          <h3
-            style={{
-              margin: "8px 0 4px",
-              fontSize: isMobile ? 24 : 28,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.03em",
-            }}
-          >
-            {value}
-          </h3>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              color: "#475569",
-            }}
-          >
-            {subtitle}
-          </p>
-        </div>
-
-        <div
-          style={{
-            width: isMobile ? 40 : 44,
-            height: isMobile ? 40 : 44,
-            borderRadius: 14,
-            background: `${accent}18`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: isMobile ? 18 : 20,
-            flexShrink: 0,
-          }}
-        >
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function GlassCard({
   title,
   icon,
@@ -729,10 +644,6 @@ export default function EmployeeDashboardPage() {
       employeeMonthTitle: "Employee of the Month",
       employeeMonthEmpty: "No employee spotlights available.",
       loading: "Loading dashboard...",
-      portalAccess: "Portal Access",
-      modules: "Modules",
-      totalNews: "Announcements",
-      totalEvents: "Events",
       birthdaysToday: "Today's Birthdays",
       birthdaysMonth: "This Month's Birthdays",
       birthdaysEmptyToday: "No birthdays today.",
@@ -767,10 +678,6 @@ export default function EmployeeDashboardPage() {
       employeeMonthTitle: "Empleado del Mes",
       employeeMonthEmpty: "No hay reconocimientos disponibles.",
       loading: "Cargando dashboard...",
-      portalAccess: "Acceso",
-      modules: "Módulos",
-      totalNews: "Anuncios",
-      totalEvents: "Eventos",
       birthdaysToday: "Cumpleaños de Hoy",
       birthdaysMonth: "Cumpleaños del Mes",
       birthdaysEmptyToday: "No hay cumpleaños hoy.",
@@ -943,40 +850,6 @@ export default function EmployeeDashboardPage() {
       },
     ],
     [t]
-  );
-
-  const stats = useMemo(
-    () => [
-      {
-        title: t.portalAccess,
-        value: visiblePosition,
-        subtitle: "TPA OPS",
-        accent: "#1f7cc1",
-        icon: "👤",
-      },
-      {
-        title: t.modules,
-        value: quickCards.length,
-        subtitle: "Active shortcuts",
-        accent: "#10b981",
-        icon: "⚡",
-      },
-      {
-        title: t.totalNews,
-        value: announcements.length,
-        subtitle: "Current updates",
-        accent: "#f59e0b",
-        icon: "📣",
-      },
-      {
-        title: t.totalEvents,
-        value: upcomingEvents.length,
-        subtitle: "Upcoming items",
-        accent: "#8b5cf6",
-        icon: "📅",
-      },
-    ],
-    [visiblePosition, quickCards.length, announcements.length, upcomingEvents.length, t]
   );
 
   return (
@@ -1206,21 +1079,6 @@ export default function EmployeeDashboardPage() {
           display: "grid",
           gridTemplateColumns: isMobile
             ? "1fr"
-            : "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 14,
-          marginBottom: 18,
-        }}
-      >
-        {stats.map((item) => (
-          <StatCard key={item.title} {...item} isMobile={isMobile} />
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isMobile
-            ? "1fr"
             : "minmax(0, 1.6fr) minmax(320px, 1fr)",
           gap: 18,
         }}
@@ -1302,19 +1160,6 @@ export default function EmployeeDashboardPage() {
                       >
                         {item.title || "Announcement"}
                       </p>
-
-                      {item.subtitle && (
-                        <p
-                          style={{
-                            margin: "6px 0 0",
-                            fontSize: 12,
-                            color: "#b45309",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {item.subtitle}
-                        </p>
-                      )}
 
                       {item.body && (
                         <p
