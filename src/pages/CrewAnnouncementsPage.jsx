@@ -215,6 +215,7 @@ export default function CrewAnnouncementsPage() {
   const [announcementBody, setAnnouncementBody] = useState("");
   const [announcementLink, setAnnouncementLink] = useState("");
   const [announcementImageFile, setAnnouncementImageFile] = useState(null);
+  const [announcementImageUrl, setAnnouncementImageUrl] = useState("");
 
   const [eventTitle, setEventTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
@@ -229,6 +230,7 @@ export default function CrewAnnouncementsPage() {
   const [spotlightBody, setSpotlightBody] = useState("");
   const [spotlightLink, setSpotlightLink] = useState("");
   const [spotlightImageFile, setSpotlightImageFile] = useState(null);
+  const [spotlightImageUrl, setSpotlightImageUrl] = useState("");
 
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState([]);
@@ -314,6 +316,13 @@ export default function CrewAnnouncementsPage() {
     return await getDownloadURL(snap.ref);
   };
 
+  const resolveImage = async (file, url, folder) => {
+    const cleanUrl = String(url || "").trim();
+
+    if (cleanUrl) return cleanUrl;
+    return await uploadImageAndGetUrl(file, folder);
+  };
+
   const postAnnouncement = async (e) => {
     e.preventDefault();
 
@@ -324,8 +333,10 @@ export default function CrewAnnouncementsPage() {
 
     try {
       setSavingAnnouncement(true);
-      const imageUrl = await uploadImageAndGetUrl(
+
+      const imageUrl = await resolveImage(
         announcementImageFile,
+        announcementImageUrl,
         "employeeAnnouncements"
       );
 
@@ -347,6 +358,7 @@ export default function CrewAnnouncementsPage() {
       setAnnouncementBody("");
       setAnnouncementLink("");
       setAnnouncementImageFile(null);
+      setAnnouncementImageUrl("");
       setMessage("Announcement posted.");
       await loadData();
     } catch (err) {
@@ -404,8 +416,9 @@ export default function CrewAnnouncementsPage() {
     try {
       setSavingSpotlight(true);
 
-      const imageUrl = await uploadImageAndGetUrl(
+      const imageUrl = await resolveImage(
         spotlightImageFile,
+        spotlightImageUrl,
         "employeeSpotlights"
       );
 
@@ -438,6 +451,7 @@ export default function CrewAnnouncementsPage() {
       setSpotlightBody("");
       setSpotlightLink("");
       setSpotlightImageFile(null);
+      setSpotlightImageUrl("");
       setMessage("Employee spotlight saved.");
       await loadData();
     } catch (err) {
@@ -647,7 +661,16 @@ export default function CrewAnnouncementsPage() {
           </div>
 
           <div>
-            <FieldLabel>Photo</FieldLabel>
+            <FieldLabel>Image URL (optional)</FieldLabel>
+            <TextInput
+              value={announcementImageUrl}
+              onChange={(e) => setAnnouncementImageUrl(e.target.value)}
+              placeholder="https://example.com/image.jpg"
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Or Upload Image</FieldLabel>
             <TextInput
               type="file"
               accept="image/*"
@@ -841,7 +864,16 @@ export default function CrewAnnouncementsPage() {
           </div>
 
           <div>
-            <FieldLabel>Optional Custom Photo</FieldLabel>
+            <FieldLabel>Image URL (optional)</FieldLabel>
+            <TextInput
+              value={spotlightImageUrl}
+              onChange={(e) => setSpotlightImageUrl(e.target.value)}
+              placeholder="https://example.com/image.jpg"
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Or Upload Image</FieldLabel>
             <TextInput
               type="file"
               accept="image/*"
