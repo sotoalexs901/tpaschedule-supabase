@@ -11,7 +11,6 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
-import jsPDF from "jspdf";
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
@@ -57,26 +56,288 @@ const normalizeAirlineName = (value) => {
   return airline;
 };
 
-function dayShiftsToLines(shifts) {
-  if (!Array.isArray(shifts) || shifts.length === 0) return ["OFF"];
+function buildDayNumbersFromWeekStart(weekStart) {
+  if (!weekStart) return null;
 
-  const parts = [];
-  shifts.forEach((s) => {
-    if (!s || !s.start || s.start === "OFF") return;
-    parts.push(s.end ? `${s.start}-${s.end}` : s.start);
+  const base = new Date(`${weekStart}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const result = {};
+  DAY_KEYS.forEach((key, index) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + index);
+    result[key] = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
   });
 
-  return parts.length ? parts : ["OFF"];
+  return result;
+}
+
+function getDayNumbers(schedule) {
+  return buildDayNumbersFromWeekStart(schedule?.weekStart) || schedule?.days || {};
 }
 
 function formatWeekLabelFromSchedule(schedule) {
-  if (!schedule?.days) return "Week not defined";
+  const days = getDayNumbers(schedule);
 
   return DAY_KEYS.map((key) => {
     const label = DAY_LABELS[key];
-    const num = schedule.days[key];
+    const num = days[key];
     return num ? `${label} ${num}` : label;
   }).join("  |  ");
+}
+
+function formatWeekStartLabel(weekStart) {
+  if (!weekStart) return "Week not specified";
+
+  const d = new Date(`${weekStart}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return weekStart;
+
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getShiftLine(shifts, index) {
+  if (!Array.isArray(shifts) || !shifts[index]) return "OFF";
+
+  const shift = shifts[index];
+  if (!shift?.start || shift.start === "OFF") return "OFF";
+  if (!shift?.end) return shift.start;
+
+  return `${shift.start} - ${shift.end}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildDraftPrintableHtml(draft, employeeNameMap) {
+  const displayAirline = normalizeAirlineName(
+    draft.airlineDisplayName || draft.airline
+  );
+  const dayNumbers = getDayNumbers(draft);
+
+  const headerCells = DAY_KEYS.map((key) => {
+    const date = dayNumbers[key] || "";
+    return `<th>${DAY_LABELS[key]}${date ? ` / ${escapeHtml(date)}` : ""}</th>`;
+  }).join("");
+
+  const bodyRows = (draft.grid || [])
+    .map((row, index) => {
+      const employeeName =
+        employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
+
+      const firstShiftRow = DAY_KEYS.map((key) => {
+        return `<td>${escapeHtml(getShiftLine(row[key], 0))}</td>`;
+      }).join("");
+
+      const secondShiftRow = DAY_KEYS.map((key) => {
+        return `<td>${escapeHtml(getShiftLine(row[key], 1))}</td>`;
+      }).join("");
+
+      const stripeClass = index % 2 === 0 ? "stripe-a" : "stripe-b";
+
+      return `
+        <tr class="${stripeClass}">
+          <td class="employee" rowspan="2">${escapeHtml(employeeName)}</td>
+          ${firstShiftRow}
+        </tr>
+        <tr class="${stripeClass}">
+          ${secondShiftRow}
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Draft Schedule</title>
+        <style>
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #111827;
+            background: #ffffff;
+          }
+
+          .sheet {
+            padding: 18px 16px 14px;
+          }
+
+          .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            border: 2px solid #222;
+            border-bottom: none;
+            padding: 14px 16px;
+            background: #f3f4f6;
+          }
+
+          .title {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+          }
+
+          .subtitle {
+            margin-top: 6px;
+            font-size: 13px;
+            color: #374151;
+            font-weight: 700;
+          }
+
+          .status {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid #9ca3af;
+            background: #ffffff;
+            color: #111827;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            white-space: nowrap;
+          }
+
+          .meta {
+            border: 2px solid #222;
+            border-top: none;
+            padding: 10px 16px 12px;
+            background: #fafafa;
+            font-size: 12px;
+            color: #374151;
+            font-weight: 700;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            border: 2px solid #222;
+            margin-top: 0;
+          }
+
+          th, td {
+            border: 2px solid #222;
+            padding: 8px 6px;
+            text-align: center;
+            vertical-align: middle;
+            font-size: 12px;
+            font-weight: 700;
+          }
+
+          th {
+            background: #d1d5db;
+            color: #111827;
+            font-size: 12px;
+            text-transform: uppercase;
+          }
+
+          th:first-child {
+            text-align: left;
+            width: 170px;
+          }
+
+          td.employee {
+            text-align: left;
+            padding: 12px 10px;
+            font-size: 13px;
+            font-weight: 800;
+          }
+
+          .stripe-a td {
+            background: #f9fafb;
+          }
+
+          .stripe-b td {
+            background: #eceff3;
+          }
+
+          .footer {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 11px;
+            color: #4b5563;
+            font-weight: 700;
+          }
+
+          @media print {
+            body {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            .sheet {
+              padding: 8px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="sheet">
+          <div class="topbar">
+            <div>
+              <h1 class="title">${escapeHtml(displayAirline)} — ${escapeHtml(
+    draft.department || "Department"
+  )}</h1>
+              <div class="subtitle">WEEKLY SCHEDULE · ${escapeHtml(
+                formatWeekLabelFromSchedule(draft)
+              )}</div>
+            </div>
+            <div class="status">Draft</div>
+          </div>
+
+          <div class="meta">
+            Week start: ${escapeHtml(formatWeekStartLabel(draft.weekStart))} ·
+            Created by: ${escapeHtml(draft.createdBy || "N/A")} ·
+            Total hours: ${typeof draft.airlineWeeklyHours === "number"
+              ? draft.airlineWeeklyHours.toFixed(2)
+              : "0.00"}
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Employee</th>
+                ${headerCells}
+              </tr>
+            </thead>
+            <tbody>
+              ${bodyRows}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <div>TPA OPS Schedule Draft</div>
+            <div>${escapeHtml(displayAirline)} / ${escapeHtml(
+    draft.department || "Department"
+  )}</div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
 }
 
 function PageCard({ children, style = {} }) {
@@ -157,11 +418,6 @@ export default function DraftSchedulesPage() {
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const isErrorStatus =
-    statusMessage.toLowerCase().includes("error") ||
-    statusMessage.toLowerCase().includes("could not") ||
-    statusMessage.toLowerCase().includes("cannot");
-
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -181,8 +437,16 @@ export default function DraftSchedulesPage() {
         const schSnap = await getDocs(qDrafts);
 
         const draftList = schSnap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+            weekTag: String(d.data().weekStart || d.data().weekTag || "").trim(),
+          }))
           .sort((a, b) => {
+            const aWeek = a.weekTag || "";
+            const bWeek = b.weekTag || "";
+            if (aWeek !== bWeek) return bWeek.localeCompare(aWeek);
+
             const aTime = a.createdAt?.seconds || 0;
             const bTime = b.createdAt?.seconds || 0;
             return bTime - aTime;
@@ -210,9 +474,9 @@ export default function DraftSchedulesPage() {
       state: {
         template: {
           airline: draft.airline,
-          airlineDisplayName: draft.airlineDisplayName,
+          airlineDisplayName: draft.airlineDisplayName || draft.airline,
           department: draft.department,
-          weekStart: draft.weekStart || "",
+          weekStart: draft.weekStart || draft.weekTag || "",
           grid: draft.grid,
         },
       },
@@ -221,130 +485,27 @@ export default function DraftSchedulesPage() {
 
   const handleExportDraft = (draft) => {
     try {
-      const pdf = new jsPDF("landscape", "pt", "letter");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
+      const html = buildDraftPrintableHtml(draft, employeeNameMap);
+      const printWindow = window.open("", "_blank", "width=1400,height=1000");
 
-      const margin = 34;
-      let y = margin;
+      if (!printWindow) {
+        alert("Pop-up blocked. Please allow pop-ups to print/export.");
+        return;
+      }
 
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(14);
-      pdf.text(
-        `Draft Schedule: ${draft.airline || "AIRLINE"} — ${
-          draft.department || "Department"
-        }`,
-        margin,
-        y
-      );
-      y += 18;
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      const weekLabel = formatWeekLabelFromSchedule(draft);
-      pdf.text(`Week of: ${weekLabel}`, margin, y);
-      y += 24;
-
-      const empColWidth = 130;
-      const availableWidth = pageWidth - margin * 2 - empColWidth;
-      const dayColWidth = availableWidth / DAY_KEYS.length;
-      const headerRowHeight = 22;
-      const lineHeight = 10;
-      const cellPaddingTop = 8;
-      const cellPaddingBottom = 6;
-
-      const drawTableHeader = () => {
-        let x = margin;
-
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(9);
-
-        pdf.rect(x, y, empColWidth, headerRowHeight);
-        pdf.text("EMPLOYEE", x + 4, y + 14);
-        x += empColWidth;
-
-        DAY_KEYS.forEach((dKey) => {
-          const label = DAY_LABELS[dKey];
-          pdf.rect(x, y, dayColWidth, headerRowHeight);
-          pdf.text(label, x + 4, y + 14);
-          x += dayColWidth;
-        });
-
-        y += headerRowHeight;
+      const triggerPrint = () => {
+        printWindow.focus();
+        printWindow.print();
       };
 
-      drawTableHeader();
-
-      const rows = draft.grid || [];
-
-      rows.forEach((row) => {
-        const empName =
-          employeeNameMap[row.employeeId] || row.employeeId || "Unknown";
-
-        const employeeLines = pdf.splitTextToSize(empName, empColWidth - 8);
-
-        const dayCellLines = DAY_KEYS.map((dKey) => {
-          const rawLines = dayShiftsToLines(row[dKey]);
-          const wrapped = [];
-          rawLines.forEach((line) => {
-            const split = pdf.splitTextToSize(String(line), dayColWidth - 6);
-            wrapped.push(...split);
-          });
-          return wrapped.length ? wrapped : ["OFF"];
-        });
-
-        const maxLines = Math.max(
-          employeeLines.length,
-          ...dayCellLines.map((lines) => lines.length)
-        );
-
-        const rowHeight =
-          cellPaddingTop + maxLines * lineHeight + cellPaddingBottom;
-
-        if (y + rowHeight > pageHeight - margin) {
-          pdf.addPage("letter", "landscape");
-          y = margin;
-
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(11);
-          pdf.text(
-            `${draft.airline || "AIRLINE"} — ${
-              draft.department || "Department"
-            } (cont.)`,
-            margin,
-            y
-          );
-          y += 20;
-
-          drawTableHeader();
-        }
-
-        let x = margin;
-
-        pdf.setDrawColor(160, 174, 192);
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(8);
-
-        pdf.rect(x, y, empColWidth, rowHeight);
-        pdf.text(employeeLines, x + 4, y + cellPaddingTop + 6);
-        x += empColWidth;
-
-        DAY_KEYS.forEach((dKey, idx) => {
-          const lines = dayCellLines[idx];
-          pdf.rect(x, y, dayColWidth, rowHeight);
-          pdf.text(lines, x + 3, y + cellPaddingTop + 6);
-          x += dayColWidth;
-        });
-
-        y += rowHeight;
-      });
-
-      pdf.save(
-        `Draft_${draft.airline || "AIRLINE"}_${draft.department || "DEPT"}.pdf`
-      );
+      setTimeout(triggerPrint, 400);
     } catch (err) {
-      console.error("Error exporting draft PDF:", err);
-      setStatusMessage("Error exporting draft PDF.");
+      console.error("Error exporting draft:", err);
+      alert("Error exporting draft. Check console for details.");
     }
   };
 
@@ -457,8 +618,8 @@ export default function DraftSchedulesPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Reopen saved drafts, export them to PDF or remove schedules you
-              no longer need.
+              Reopen saved drafts, print/export them or remove schedules you no
+              longer need.
             </p>
           </div>
 
@@ -473,92 +634,21 @@ export default function DraftSchedulesPage() {
       </div>
 
       {statusMessage && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.35)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            padding: 20,
-          }}
-          onClick={() => setStatusMessage("")}
-        >
+        <PageCard style={{ padding: 16 }}>
           <div
-            onClick={(e) => e.stopPropagation()}
             style={{
-              width: "100%",
-              maxWidth: 520,
-              background: "#ffffff",
-              borderRadius: 24,
-              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
-              border: "1px solid #e2e8f0",
-              overflow: "hidden",
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#1769aa",
+              fontSize: 14,
+              fontWeight: 700,
             }}
           >
-            <div
-              style={{
-                padding: "18px 20px",
-                background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
-                borderBottom: isErrorStatus
-                  ? "1px solid #fecdd3"
-                  : "1px solid #a7f3d0",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 900,
-                  color: isErrorStatus ? "#9f1239" : "#065f46",
-                  letterSpacing: "-0.02em",
-                }}
-              >
-                {isErrorStatus ? "Action Required" : "Success"}
-              </div>
-            </div>
-
-            <div
-              style={{
-                padding: "22px 20px 18px",
-                fontSize: 15,
-                lineHeight: 1.65,
-                color: "#0f172a",
-                fontWeight: 700,
-              }}
-            >
-              {statusMessage}
-            </div>
-
-            <div
-              style={{
-                padding: "0 20px 20px",
-                display: "flex",
-                justifyContent: "center",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setStatusMessage("")}
-                style={{
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-                  color: "#fff",
-                  borderRadius: 14,
-                  padding: "12px 22px",
-                  fontWeight: 800,
-                  fontSize: 14,
-                  cursor: "pointer",
-                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
-                }}
-              >
-                OK
-              </button>
-            </div>
+            {statusMessage}
           </div>
-        </div>
+        </PageCard>
       )}
 
       {drafts.length === 0 ? (
@@ -629,6 +719,19 @@ export default function DraftSchedulesPage() {
                       >
                         Week: {formatWeekLabelFromSchedule(draft)}
                       </p>
+
+                      {draft.weekStart && (
+                        <p
+                          style={{
+                            margin: "6px 0 0",
+                            fontSize: 12,
+                            color: "#64748b",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Week start: {formatWeekStartLabel(draft.weekStart)}
+                        </p>
+                      )}
                     </div>
 
                     {logo && (
@@ -759,7 +862,7 @@ export default function DraftSchedulesPage() {
                       variant="success"
                       onClick={() => handleExportDraft(draft)}
                     >
-                      Export PDF
+                      Export / Print
                     </ActionButton>
 
                     <ActionButton
