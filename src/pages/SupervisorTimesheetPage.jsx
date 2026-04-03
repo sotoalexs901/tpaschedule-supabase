@@ -40,14 +40,19 @@ const BREAK_OPTIONS = ["No", "Yes", "30 min", "45 min", "60 min"];
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
+  const upper = airline.toUpperCase();
 
   if (
-    airline.toUpperCase() === "WL HAVANA AIR" ||
-    airline.toUpperCase() === "WAL HAVANA AIR" ||
-    airline.toUpperCase() === "WAL HAVANA" ||
-    airline.toUpperCase() === "WESTJET"
+    upper === "WL HAVANA AIR" ||
+    upper === "WAL HAVANA AIR" ||
+    upper === "WAL HAVANA" ||
+    upper === "WESTJET"
   ) {
     return "WestJet";
+  }
+
+  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE") {
+    return "CABIN";
   }
 
   return airline;
@@ -72,26 +77,6 @@ function normalizeCabinServiceValue(value) {
 
 function isCabinServiceDepartment(value) {
   return normalizeCabinServiceValue(value) === "cabin_service";
-}
-
-function detectBudgetAirline(value) {
-  const raw = String(value || "").trim();
-  const upper = raw.toUpperCase();
-
-  if (!upper) return "";
-  if (upper === "SY" || upper.startsWith("SY ")) return "SY";
-  if (upper.includes("WESTJET") || upper.includes("WL HAVANA") || upper === "WL") {
-    return "WestJet";
-  }
-  if (upper.includes("WL INVICTA")) return "WL Invicta";
-  if (upper === "AV" || upper.startsWith("AV ") || upper.includes("AVIANCA")) return "AV";
-  if (upper === "EA" || upper.startsWith("EA ")) return "EA";
-  if (upper.includes("WCHR")) return "WCHR";
-  if (upper.includes("CABIN")) return "CABIN";
-  if (upper.includes("AA-BSO") || upper.includes("AA BSO")) return "AA-BSO";
-  if (upper.includes("OTHER")) return "OTHER";
-
-  return normalizeAirlineName(raw);
 }
 
 function getDefaultPosition(role) {
@@ -340,7 +325,7 @@ export default function SupervisorTimesheetPage() {
   const navigate = useNavigate();
 
   const [employees, setEmployees] = useState([]);
-  const [budgetDocs, setBudgetDocs] = useState([]);
+  const [dailyBudgetDocs, setDailyBudgetDocs] = useState([]);
   const [returnedReports, setReturnedReports] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -358,7 +343,7 @@ export default function SupervisorTimesheetPage() {
     supervisorPosition: user?.position || getDefaultPosition(user?.role),
     notes: "",
     overBudgetReason: "",
-    department: isCabinServiceUser ? "Cabin Service" : (user?.department || ""),
+    department: isCabinServiceUser ? "Cabin Service" : user?.department || "",
   });
 
   const [rows, setRows] = useState([emptyRow()]);
@@ -368,7 +353,7 @@ export default function SupervisorTimesheetPage() {
       try {
         const requests = [
           getDocs(collection(db, "employees")),
-          getDocs(collection(db, "airlineBudgets")),
+          getDocs(collection(db, "airlineDailyBudgets")),
         ];
 
         if (user?.id) {
@@ -385,7 +370,7 @@ export default function SupervisorTimesheetPage() {
 
         const results = await Promise.all(requests);
         const employeesSnap = results[0];
-        const budgetsSnap = results[1];
+        const dailyBudgetsSnap = results[1];
         const returnedSnap = results[2];
 
         let employeeList = employeesSnap.docs
@@ -413,9 +398,17 @@ export default function SupervisorTimesheetPage() {
 
         employeeList = employeeList.sort((a, b) => a.name.localeCompare(b.name));
 
-        const budgets = budgetsSnap.docs.map((d) => ({
+        const dailyBudgets = dailyBudgetsSnap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
+          airline: normalizeAirlineName(d.data().airline),
+          date: String(d.data().date || ""),
+          dailyBudgetHours:
+            d.data().dailyBudgetHours === null ||
+            d.data().dailyBudgetHours === undefined ||
+            d.data().dailyBudgetHours === ""
+              ? 0
+              : Number(d.data().dailyBudgetHours),
         }));
 
         const returned = returnedSnap
@@ -429,11 +422,11 @@ export default function SupervisorTimesheetPage() {
           : [];
 
         setEmployees(employeeList);
-        setBudgetDocs(budgets);
+        setDailyBudgetDocs(dailyBudgets);
         setReturnedReports(returned);
       } catch (err) {
         console.error("Error loading supervisor page data:", err);
-        setStatusMessage("Could not load employees, budgets or returned timesheets.");
+        setStatusMessage("Could not load employees, daily budgets or returned timesheets.");
       } finally {
         setLoadingEmployees(false);
       }
@@ -450,57 +443,29 @@ export default function SupervisorTimesheetPage() {
     return map;
   }, [employees]);
 
-  const budgetByAirline = useMemo(() => {
-    const totals = {};
+  const dailyBudgetMap = useMemo(() => {
+    const map = {};
 
-    budgetDocs.forEach((item) => {
-      const source =
-        item.airline ||
-        item.airlineDisplayName ||
-        item.name ||
-        item.code ||
-        item.id ||
-        "";
+    dailyBudgetDocs.forEach((item) => {
+      const airline = normalizeAirlineName(item.airline);
+      const date = String(item.date || "").trim();
 
-      const airline = detectBudgetAirline(source);
-      const weekly = Number(item.budgetHours || 0);
-      const dailyManual =
-        item.dailyBudgetHours === null ||
-        item.dailyBudgetHours === undefined ||
-        item.dailyBudgetHours === ""
-          ? null
-          : Number(item.dailyBudgetHours);
+      if (!airline || !date) return;
 
-      if (!airline) return;
-
-      if (!totals[airline]) {
-        totals[airline] = {
-          daily: 0,
-          weekly: 0,
-          hasManualDaily: false,
-        };
-      }
-
-      totals[airline].weekly += Number.isNaN(weekly) ? 0 : weekly;
-
-      if (dailyManual !== null && !Number.isNaN(dailyManual)) {
-        totals[airline].daily += dailyManual;
-        totals[airline].hasManualDaily = true;
-      }
+      map[`${airline}__${date}`] = Number(item.dailyBudgetHours || 0);
     });
 
-    const finalMap = {};
-    Object.keys(totals).forEach((airline) => {
-      const item = totals[airline];
-      finalMap[airline] = item.hasManualDaily ? item.daily : item.weekly / 7;
-    });
+    return map;
+  }, [dailyBudgetDocs]);
 
-    return finalMap;
-  }, [budgetDocs]);
+  const currentBudget = useMemo(() => {
+    const airline = normalizeAirlineName(form.airline);
+    const date = String(form.reportDate || "").trim();
 
-  const currentBudget = Number(
-    budgetByAirline[normalizeAirlineName(form.airline)] || 0
-  );
+    if (!airline || !date) return 0;
+
+    return Number(dailyBudgetMap[`${airline}__${date}`] || 0);
+  }, [dailyBudgetMap, form.airline, form.reportDate]);
 
   const totalReportedHours = useMemo(
     () => rows.reduce((sum, row) => sum + calculateRowHours(row), 0),
@@ -567,7 +532,7 @@ export default function SupervisorTimesheetPage() {
       overBudgetReason: report.overBudgetReason || "",
       department:
         report.department ||
-        (isCabinServiceUser ? "Cabin Service" : (user?.department || "")),
+        (isCabinServiceUser ? "Cabin Service" : user?.department || ""),
     });
 
     setRows(
@@ -597,7 +562,7 @@ export default function SupervisorTimesheetPage() {
       supervisorPosition: user?.position || getDefaultPosition(user?.role),
       notes: "",
       overBudgetReason: "",
-      department: isCabinServiceUser ? "Cabin Service" : (user?.department || ""),
+      department: isCabinServiceUser ? "Cabin Service" : user?.department || "",
     });
     setRows([emptyRow()]);
   };
