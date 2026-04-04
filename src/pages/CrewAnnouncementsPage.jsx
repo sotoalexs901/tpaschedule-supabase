@@ -251,6 +251,10 @@ function getSafeFileName(name) {
     .replace(/[^\w.-]/g, "");
 }
 
+function getEmployeePhoto(emp) {
+  return emp?.profilePhotoURL || "";
+}
+
 export default function CrewAnnouncementsPage() {
   const { user } = useUser();
 
@@ -273,6 +277,8 @@ export default function CrewAnnouncementsPage() {
   const [employeeOfMonthName, setEmployeeOfMonthName] = useState("");
   const [employeeOfMonthAirline, setEmployeeOfMonthAirline] = useState("");
   const [employeeOfMonthDepartment, setEmployeeOfMonthDepartment] = useState("");
+  const [employeeOfMonthPosition, setEmployeeOfMonthPosition] = useState("");
+  const [employeeOfMonthUsername, setEmployeeOfMonthUsername] = useState("");
   const [employeeOfMonthNote, setEmployeeOfMonthNote] = useState("");
   const [employeeOfMonthMonthLabel, setEmployeeOfMonthMonthLabel] = useState("");
   const [employeeOfMonthPhotoFile, setEmployeeOfMonthPhotoFile] = useState(null);
@@ -365,6 +371,11 @@ export default function CrewAnnouncementsPage() {
 
     setEmployeeOfMonthName(found.name || "");
     setEmployeeOfMonthDepartment(found.department || "");
+    setEmployeeOfMonthPosition(found.position || "");
+    setEmployeeOfMonthUsername(found.loginUsername || "");
+    if (!employeeOfMonthPhotoFile) {
+      setEmployeeOfMonthPhotoPreview(getEmployeePhoto(found) || "");
+    }
   }, [selectedEmployeeId, employees]);
 
   const resetAnnouncementForm = () => {
@@ -380,6 +391,18 @@ export default function CrewAnnouncementsPage() {
     setEditingAnnouncementImagePath("");
     setEditingAnnouncementImageContentType("");
     resetImageInput();
+  };
+
+  const resetEmployeeOfMonthForm = () => {
+    setSelectedEmployeeId("");
+    setEmployeeOfMonthName("");
+    setEmployeeOfMonthAirline("");
+    setEmployeeOfMonthDepartment("");
+    setEmployeeOfMonthPosition("");
+    setEmployeeOfMonthUsername("");
+    setEmployeeOfMonthNote("");
+    setEmployeeOfMonthMonthLabel("");
+    resetEmployeeOfMonthImage();
   };
 
   const resetImageInput = () => {
@@ -549,6 +572,8 @@ export default function CrewAnnouncementsPage() {
         });
 
         photoURL = await getDownloadURL(storageRef);
+      } else if (employeeOfMonthPhotoPreview && employeeOfMonthPhotoPreview.startsWith("http")) {
+        photoURL = employeeOfMonthPhotoPreview;
       }
 
       const existingSnap = await getDocs(collection(db, "employee_of_month"));
@@ -563,8 +588,10 @@ export default function CrewAnnouncementsPage() {
       await addDoc(collection(db, "employee_of_month"), {
         active: true,
         employeeName: employeeOfMonthName.trim(),
+        username: employeeOfMonthUsername.trim(),
         airline: employeeOfMonthAirline.trim(),
         department: employeeOfMonthDepartment.trim(),
+        position: employeeOfMonthPosition.trim(),
         note: employeeOfMonthNote.trim(),
         monthLabel: employeeOfMonthMonthLabel.trim(),
         photoURL,
@@ -577,7 +604,6 @@ export default function CrewAnnouncementsPage() {
       });
 
       setMessage("Employee of the month updated!");
-      resetEmployeeOfMonthImage();
       await loadEmployeeOfMonth();
     } catch (err) {
       console.error("Error saving employee of month:", err);
@@ -865,7 +891,7 @@ export default function CrewAnnouncementsPage() {
               color: "#64748b",
             }}
           >
-            Select the employee, airline, department and details to display on the employee dashboard.
+            Select the employee and details to display on the employee dashboard.
           </p>
         </div>
 
@@ -886,7 +912,7 @@ export default function CrewAnnouncementsPage() {
               {employeeOfMonthCurrent.employeeName || "—"}
             </div>
             <div style={{ marginTop: 4, fontSize: 13, color: "#9a3412", fontWeight: 700 }}>
-              {employeeOfMonthCurrent.airline || "—"} · {employeeOfMonthCurrent.department || "—"}
+              {employeeOfMonthCurrent.position || "—"} · {employeeOfMonthCurrent.department || "—"}
             </div>
             {employeeOfMonthCurrent.monthLabel && (
               <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
@@ -924,6 +950,32 @@ export default function CrewAnnouncementsPage() {
               onChange={(e) => setEmployeeOfMonthName(e.target.value)}
               placeholder="Employee name"
             />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>Username</FieldLabel>
+              <TextInput
+                value={employeeOfMonthUsername}
+                onChange={(e) => setEmployeeOfMonthUsername(e.target.value)}
+                placeholder="Login username"
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Position</FieldLabel>
+              <TextInput
+                value={employeeOfMonthPosition}
+                onChange={(e) => setEmployeeOfMonthPosition(e.target.value)}
+                placeholder="Agent, Supervisor, etc."
+              />
+            </div>
           </div>
 
           <div
@@ -1006,13 +1058,20 @@ export default function CrewAnnouncementsPage() {
             )}
           </div>
 
-          <div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <ActionButton
               variant="success"
               onClick={handleSaveEmployeeOfMonth}
               disabled={employeeOfMonthSaving}
             >
               {employeeOfMonthSaving ? "Saving..." : "Save Employee of the Month"}
+            </ActionButton>
+
+            <ActionButton
+              variant="secondary"
+              onClick={resetEmployeeOfMonthForm}
+            >
+              Clear
             </ActionButton>
           </div>
         </div>
