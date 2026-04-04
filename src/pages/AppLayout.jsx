@@ -69,6 +69,7 @@ export default function AppLayout() {
     General: true,
     Schedules: true,
     "Submission of Reports": true,
+    "Management of Reports": true,
     "Time Off": false,
     WCHR: true,
     Admin: false,
@@ -248,7 +249,8 @@ export default function AppLayout() {
     ];
 
     const schedules = [];
-    const reports = [];
+    const submissionReports = [];
+    const managementReports = [];
     const timeoff = [];
     const wchr = [];
     const admin = [];
@@ -338,7 +340,7 @@ export default function AppLayout() {
     }
 
     if (canAccessTimesheets) {
-      reports.push({
+      submissionReports.push({
         to: "/timesheets/submit",
         label: "Timesheet Submit",
         icon: "🕒",
@@ -346,7 +348,7 @@ export default function AppLayout() {
     }
 
     if (canAccessOperationalReports) {
-      reports.push(
+      submissionReports.push(
         {
           to: "/operational-report/submit",
           label: "Supervisor Report",
@@ -361,7 +363,7 @@ export default function AppLayout() {
     }
 
     if (canAccessTimesheets) {
-      reports.push({
+      managementReports.push({
         to: "/timesheets/reports",
         label: "Timesheet Reports",
         icon: "📋",
@@ -369,11 +371,18 @@ export default function AppLayout() {
     }
 
     if (canAccessOperationalReportAdmin) {
-      reports.push({
-        to: "/operational-report/reports",
-        label: "Operational Reports",
-        icon: "📑",
-      });
+      managementReports.push(
+        {
+          to: "/operational-report/reports",
+          label: "Operational Reports",
+          icon: "📑",
+        },
+        {
+          to: "/cleaning-security/reports",
+          label: "Cleaning & Security Reports",
+          icon: "🧾",
+        }
+      );
     }
 
     if (canAccessWchrTools) {
@@ -393,8 +402,17 @@ export default function AppLayout() {
 
     if (general.length) sections.push({ title: "General", items: general });
     if (schedules.length) sections.push({ title: "Schedules", items: schedules });
-    if (reports.length) {
-      sections.push({ title: "Submission of Reports", items: reports });
+    if (submissionReports.length) {
+      sections.push({
+        title: "Submission of Reports",
+        items: submissionReports,
+      });
+    }
+    if (managementReports.length) {
+      sections.push({
+        title: "Management of Reports",
+        items: managementReports,
+      });
     }
     if (timeoff.length) sections.push({ title: "Time Off", items: timeoff });
     if (wchr.length) sections.push({ title: "WCHR", items: wchr });
