@@ -117,6 +117,18 @@ function startOfTodayString() {
   ).padStart(2, "0")}`;
 }
 
+function isCurrentMonthDate(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return false;
+
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth()
+  );
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -438,15 +450,14 @@ function buildPrintableHtml(report, airlineSummary) {
     `
     : "";
 
-  const overBudgetReasonBlock =
-    report.overBudget && report.overBudgetReason
-      ? `
+  const overBudgetReasonBlock = report.overBudgetReason
+    ? `
         <div class="over-budget-reason-box">
           <div class="section-label">Over Budget Reason</div>
           <div>${String(report.overBudgetReason).replace(/\n/g, "<br/>")}</div>
         </div>
       `
-      : "";
+    : "";
 
   const budgetAlert =
     airlineSummary?.overBudget || report.overBudget
@@ -746,6 +757,7 @@ export default function TimesheetAdminPage() {
   const [savingEditId, setSavingEditId] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
   const [restrictToOwnReports, setRestrictToOwnReports] = useState(false);
+  const [showMonthlyOverBudget, setShowMonthlyOverBudget] = useState(false);
 
   const [filters, setFilters] = useState({
     airline: "all",
@@ -903,19 +915,27 @@ export default function TimesheetAdminPage() {
     });
   }, [reports, dailyBudgetByAirlineAndDate]);
 
-  const filteredReports = useMemo(() => {
+  const accessibleReports = useMemo(() => {
     return reportsWithHours.filter((r) => {
-      const submittedBy = String(
-        r.submittedByName || r.submittedByUsername || r.supervisorReporting || ""
-      ).toLowerCase();
-
       const isCabinReport = r.normalizedDepartment === "cabin_service";
 
       if (isCabinDutyManager) {
-        if (!isCabinReport) return false;
-      } else if (restrictToOwnReports) {
-        if (r.submittedByUserId !== user?.id) return false;
+        return isCabinReport;
       }
+
+      if (restrictToOwnReports) {
+        return r.submittedByUserId === user?.id;
+      }
+
+      return true;
+    });
+  }, [reportsWithHours, isCabinDutyManager, restrictToOwnReports, user?.id]);
+
+  const filteredReports = useMemo(() => {
+    return accessibleReports.filter((r) => {
+      const submittedBy = String(
+        r.submittedByName || r.submittedByUsername || r.supervisorReporting || ""
+      ).toLowerCase();
 
       if (filters.airline !== "all" && r.normalizedAirline !== filters.airline) {
         return false;
@@ -934,7 +954,27 @@ export default function TimesheetAdminPage() {
 
       return true;
     });
-  }, [reportsWithHours, filters, restrictToOwnReports, user?.id, isCabinDutyManager]);
+  }, [accessibleReports, filters]);
+
+  const monthlyOverBudgetReports = useMemo(() => {
+    return accessibleReports
+      .filter(
+        (report) =>
+          isCurrentMonthDate(report.reportDate) &&
+          report.budgetHoursDaily > 0 &&
+          report.totalHours > report.budgetHoursDaily
+      )
+      .map((report) => ({
+        ...report,
+        overBudgetBy: report.totalHours - report.budgetHoursDaily,
+      }))
+      .sort((a, b) => {
+        if (a.reportDate !== b.reportDate) {
+          return b.reportDate.localeCompare(a.reportDate);
+        }
+        return (a.normalizedAirline || "").localeCompare(b.normalizedAirline || "");
+      });
+  }, [accessibleReports]);
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
@@ -1091,13 +1131,28 @@ export default function TimesheetAdminPage() {
           row.date === String(report.reportDate || "").trim()
       ) || null;
 
+    const actualOverBudget =
+      airlineSummary?.overBudget ||
+      report.overBudget ||
+      (report.budgetHoursDaily > 0 && report.totalHours > report.budgetHoursDaily);
+
+    const actualOverBy =
+      Number(report.overBudgetBy || airlineSummary?.overBy || 0);
+
+    if (actualOverBudget && !String(report.overBudgetReason || "").trim()) {
+      setStatusMessage(
+        "Please explain the overbudget reason with more details in order to submit your timesheet."
+      );
+      return;
+    }
+
     let ok = true;
 
-    if (airlineSummary?.overBudget || report.overBudget) {
+    if (actualOverBudget) {
       ok = window.confirm(
-        `${report.normalizedAirline} is over daily budget by ${Number(
-          report.overBudgetBy || airlineSummary?.overBy || 0
-        ).toFixed(2)} hours. Approve anyway?`
+        `${report.normalizedAirline} is over daily budget by ${actualOverBy.toFixed(
+          2
+        )} hours. Approve anyway?`
       );
     } else {
       ok = window.confirm("Approve this timesheet report?");
@@ -1141,11 +1196,11 @@ export default function TimesheetAdminPage() {
         )
       );
 
-      if (airlineSummary?.overBudget || report.overBudget) {
+      if (actualOverBudget) {
         setStatusMessage(
-          `${report.normalizedAirline} approved. Alert: over daily budget by ${Number(
-            report.overBudgetBy || airlineSummary?.overBy || 0
-          ).toFixed(2)} hours.`
+          `${report.normalizedAirline} approved. Alert: over daily budget by ${actualOverBy.toFixed(
+            2
+          )} hours.`
         );
       } else {
         setStatusMessage("Timesheet report approved successfully.");
@@ -1321,7 +1376,9 @@ export default function TimesheetAdminPage() {
       const overBudgetBy = overBudget ? totalHours - budgetHoursDaily : 0;
 
       if (overBudget && !String(editData.overBudgetReason || "").trim()) {
-        setStatusMessage("Please fill in the over budget reason before saving.");
+        setStatusMessage(
+          "Please explain the overbudget reason with more details in order to submit your timesheet."
+        );
         return;
       }
 
@@ -1701,6 +1758,160 @@ export default function TimesheetAdminPage() {
           </div>
         </PageCard>
       )}
+
+      <PageCard style={{ padding: 22 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Monthly Over Budget Summary
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Current month summary with department, hours over budget and reason.
+            </p>
+          </div>
+
+          <ActionButton
+            variant="secondary"
+            onClick={() => setShowMonthlyOverBudget((prev) => !prev)}
+          >
+            {showMonthlyOverBudget ? "Hide summary" : "View monthly summary"}
+          </ActionButton>
+        </div>
+
+        {!showMonthlyOverBudget ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontWeight: 600,
+            }}
+          >
+            Click “View monthly summary” to see all over budget timesheets for this month.
+          </div>
+        ) : monthlyOverBudgetReports.length === 0 ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+              color: "#065f46",
+              fontWeight: 700,
+            }}
+          >
+            No over budget reports found for the current month.
+          </div>
+        ) : (
+          <div
+            style={{
+              overflowX: "auto",
+              borderRadius: 18,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                minWidth: 1280,
+                background: "#fff",
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle()}>Date</th>
+                  <th style={thStyle()}>Airline</th>
+                  <th style={thStyle()}>Department</th>
+                  <th style={thStyle()}>Submitted By</th>
+                  <th style={thStyle()}>Report Hours</th>
+                  <th style={thStyle()}>Daily Budget</th>
+                  <th style={thStyle()}>Over Budget By</th>
+                  <th style={thStyle()}>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyOverBudgetReports.map((item, index) => (
+                  <tr
+                    key={item.id}
+                    style={{
+                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                    }}
+                  >
+                    <td style={tdStyle}>{item.reportDate || "—"}</td>
+                    <td style={tdStyle}>{item.normalizedAirline || "—"}</td>
+                    <td style={tdStyle}>
+                      {item.department || item.normalizedDepartment || "—"}
+                    </td>
+                    <td style={tdStyle}>
+                      {item.submittedByName ||
+                        item.submittedByUsername ||
+                        item.supervisorReporting ||
+                        "—"}
+                    </td>
+                    <td style={tdStyle}>{item.totalHours.toFixed(2)} hrs</td>
+                    <td style={tdStyle}>{Number(item.budgetHoursDaily || 0).toFixed(2)} hrs</td>
+                    <td style={tdStyle}>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          fontSize: 12,
+                          fontWeight: 800,
+                          background: "#fff1f2",
+                          color: "#9f1239",
+                          border: "1px solid #fecdd3",
+                        }}
+                      >
+                        {Number(item.overBudgetBy || 0).toFixed(2)} hrs
+                      </span>
+                    </td>
+                    <td style={tdStyle}>
+                      {item.overBudgetReason ? (
+                        <div style={{ whiteSpace: "pre-line", lineHeight: 1.6 }}>
+                          {item.overBudgetReason}
+                        </div>
+                      ) : (
+                        <span style={{ color: "#9f1239", fontWeight: 700 }}>
+                          No reason provided
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </PageCard>
 
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
@@ -2224,7 +2435,7 @@ export default function TimesheetAdminPage() {
                   </div>
                 )}
 
-                {selectedReport.overBudget && selectedReport.overBudgetReason && (
+                {selectedReport.overBudgetReason && (
                   <div
                     style={{
                       borderRadius: 16,
@@ -2592,6 +2803,7 @@ export default function TimesheetAdminPage() {
                     onChange={(e) =>
                       handleEditField("overBudgetReason", e.target.value)
                     }
+                    placeholder="Required if this timesheet is over budget."
                   />
                 </div>
 
