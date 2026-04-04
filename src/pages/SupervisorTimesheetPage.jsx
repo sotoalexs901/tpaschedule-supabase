@@ -645,7 +645,9 @@ export default function SupervisorTimesheetPage() {
     }
 
     if (overBudget && !String(form.overBudgetReason || "").trim()) {
-      setStatusMessage("Please explain why this timesheet is over budget.");
+      setStatusMessage(
+        "Please explain the overbudget reason with more details in order to submit your timesheet."
+      );
       return;
     }
 
