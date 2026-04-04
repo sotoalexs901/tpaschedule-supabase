@@ -52,7 +52,7 @@ function getStoredBoolean(key, fallback) {
 }
 
 export default function AppLayout() {
-  const { user, setUser, logout: contextLogout } = useUser();
+  const { user, logout } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -60,6 +60,8 @@ export default function AppLayout() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
+  const [showIdleWarning, setShowIdleWarning] = useState(false);
+  const [idleResetToken, setIdleResetToken] = useState(0);
 
   const [headerCollapsed, setHeaderCollapsed] = useState(() =>
     getStoredBoolean("tpa_header_collapsed", false)
@@ -78,7 +80,7 @@ export default function AppLayout() {
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
   const profilePhotoURL = user?.profilePhotoURL || "";
 
-  const logoutUser = async () => {
+  const handleLogout = async () => {
     try {
       if (user?.id) {
         await markUserOffline(user);
@@ -86,19 +88,15 @@ export default function AppLayout() {
     } catch (err) {
       console.error("Error marking user offline on logout:", err);
     } finally {
-      try {
-        if (typeof contextLogout === "function") {
-          contextLogout();
-        } else {
-          setUser(null);
-        }
-      } catch (err) {
-        console.error("Error clearing user session:", err);
-        setUser(null);
-      }
-
+      setShowIdleWarning(false);
+      logout();
       navigate("/login", { replace: true });
     }
+  };
+
+  const staySignedIn = () => {
+    setShowIdleWarning(false);
+    setIdleResetToken((prev) => prev + 1);
   };
 
   useEffect(() => {
@@ -176,7 +174,9 @@ export default function AppLayout() {
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "hidden") {
+        markUserOffline(user).catch(() => {});
+      } else {
         updateUserPresence(user, {
           currentPage: location.pathname,
         }).catch(() => {});
@@ -191,6 +191,70 @@ export default function AppLayout() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [user, location.pathname]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const WARNING_TIME = 55 * 60 * 1000;
+    const LOGOUT_TIME = 60 * 60 * 1000;
+
+    let warningTimeout = null;
+    let logoutTimeout = null;
+
+    const clearTimers = () => {
+      if (warningTimeout) window.clearTimeout(warningTimeout);
+      if (logoutTimeout) window.clearTimeout(logoutTimeout);
+    };
+
+    const runAutoLogout = async () => {
+      try {
+        if (user?.id) {
+          await markUserOffline(user);
+        }
+      } catch (err) {
+        console.error("Error marking user offline after inactivity:", err);
+      } finally {
+        setShowIdleWarning(false);
+        logout();
+        navigate("/login", { replace: true });
+      }
+    };
+
+    const resetIdleTimers = () => {
+      clearTimers();
+      setShowIdleWarning(false);
+
+      warningTimeout = window.setTimeout(() => {
+        setShowIdleWarning(true);
+      }, WARNING_TIME);
+
+      logoutTimeout = window.setTimeout(() => {
+        runAutoLogout();
+      }, LOGOUT_TIME);
+    };
+
+    const activityEvents = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, resetIdleTimers, { passive: true });
+    });
+
+    resetIdleTimers();
+
+    return () => {
+      clearTimers();
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, resetIdleTimers);
+      });
+    };
+  }, [user, navigate, logout, idleResetToken]);
 
   const normalizedDepartment = String(user?.department || "")
     .trim()
@@ -232,17 +296,14 @@ export default function AppLayout() {
   const canAccessOperationalReportAdmin =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
-  const canManageOperationalReportForm =
-    user?.role === "station_manager";
+  const canManageOperationalReportForm = user?.role === "station_manager";
 
   const canAccessWchrTools =
     !isDLCabinService &&
-    (
-      user?.role === "agent" ||
+    (user?.role === "agent" ||
       user?.role === "supervisor" ||
       user?.role === "duty_manager" ||
-      user?.role === "station_manager"
-    );
+      user?.role === "station_manager");
 
   const navSections = useMemo(() => {
     const sections = [];
@@ -636,7 +697,7 @@ export default function AppLayout() {
                 </button>
 
                 <button
-                  onClick={logoutUser}
+                  onClick={handleLogout}
                   style={{
                     border: "none",
                     background:
@@ -811,7 +872,7 @@ export default function AppLayout() {
               ))}
 
               <button
-                onClick={logoutUser}
+                onClick={handleLogout}
                 style={{
                   border: "none",
                   background:
@@ -871,6 +932,111 @@ export default function AppLayout() {
 
         <Outlet />
       </main>
+
+      {showIdleWarning && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 99999,
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              background: "#ffffff",
+              borderRadius: 24,
+              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              border: "1px solid #e2e8f0",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "18px 20px",
+                background: "#fff7ed",
+                borderBottom: "1px solid #fed7aa",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: "#9a3412",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                Your session will expire soon
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "22px 20px 18px",
+                fontSize: 15,
+                lineHeight: 1.65,
+                color: "#0f172a",
+                fontWeight: 700,
+              }}
+            >
+              You have been inactive for a while. Your session will close
+              automatically in 5 minutes if there is no activity.
+            </div>
+
+            <div
+              style={{
+                padding: "0 20px 20px",
+                display: "flex",
+                justifyContent: "center",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleLogout}
+                style={{
+                  border: "1px solid #fecdd3",
+                  background: "#fff1f2",
+                  color: "#b91c1c",
+                  borderRadius: 14,
+                  padding: "12px 18px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Logout now
+              </button>
+
+              <button
+                type="button"
+                onClick={staySignedIn}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                  color: "#fff",
+                  borderRadius: 14,
+                  padding: "12px 22px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                }}
+              >
+                Stay signed in
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
