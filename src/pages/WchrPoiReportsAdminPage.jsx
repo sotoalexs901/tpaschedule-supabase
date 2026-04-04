@@ -382,19 +382,38 @@ export default function WchrPoiReportsAdminPage() {
     const all = alertReports.flatMap(buildUnitCasesFromReport);
 
     return all.filter((item) => {
+      const caseStatus = String(item.caseStatus || "").toLowerCase();
+      const backOnService = String(item.backOnService || "").toLowerCase();
+
       if (filters.maintenanceStatus === "all") return true;
       if (filters.maintenanceStatus === "open") {
-        return String(item.caseStatus || "").toLowerCase() !== "closed";
+        return !(caseStatus === "closed" && backOnService === "yes");
       }
       if (filters.maintenanceStatus === "closed") {
-        return String(item.caseStatus || "").toLowerCase() === "closed";
+        return caseStatus === "closed";
       }
       if (filters.maintenanceStatus === "back_on_service") {
-        return String(item.backOnService || "").toLowerCase() === "yes";
+        return backOnService === "yes";
       }
       return true;
     });
   }, [alertReports, filters.maintenanceStatus]);
+
+  const openUnitCases = useMemo(() => {
+    return unitCases.filter((item) => {
+      const caseStatus = String(item.caseStatus || "").toLowerCase();
+      const backOnService = String(item.backOnService || "").toLowerCase();
+      return !(caseStatus === "closed" && backOnService === "yes");
+    });
+  }, [unitCases]);
+
+  const resolvedUnitCases = useMemo(() => {
+    return unitCases.filter((item) => {
+      const caseStatus = String(item.caseStatus || "").toLowerCase();
+      const backOnService = String(item.backOnService || "").toLowerCase();
+      return caseStatus === "closed" && backOnService === "yes";
+    });
+  }, [unitCases]);
 
   const selectedReport = useMemo(() => {
     return visibleReports.find((item) => item.id === selectedId) || null;
@@ -588,6 +607,32 @@ export default function WchrPoiReportsAdminPage() {
 
   const handleSaveUnitCase = async () => {
     if (!selectedUnitCase) return;
+
+    if (!String(selectedUnitCase.takenBy || "").trim()) {
+      setStatusMessage("Please enter who is taking the case.");
+      return;
+    }
+
+    const isClosing =
+      String(selectedUnitCase.caseStatus || "").toLowerCase() === "closed" &&
+      String(selectedUnitCase.backOnService || "").toLowerCase() === "yes";
+
+    if (isClosing) {
+      if (!String(selectedUnitCase.returnDate || "").trim()) {
+        setStatusMessage("Please enter return date before closing the case.");
+        return;
+      }
+
+      if (!String(selectedUnitCase.workPerformed || "").trim()) {
+        setStatusMessage("Please enter what was done before closing the case.");
+        return;
+      }
+
+      if (!String(selectedUnitCase.maintenanceCost || "").trim()) {
+        setStatusMessage("Please enter maintenance cost before closing the case.");
+        return;
+      }
+    }
 
     try {
       setSavingUnitCase(true);
@@ -989,7 +1034,7 @@ export default function WchrPoiReportsAdminPage() {
                 color: "#881337",
               }}
             >
-              {unitCases.filter((item) => item.caseStatus !== "closed").length}
+              {openUnitCases.length}
             </p>
           </div>
 
@@ -1021,11 +1066,7 @@ export default function WchrPoiReportsAdminPage() {
                 color: "#065f46",
               }}
             >
-              {
-                unitCases.filter(
-                  (item) => String(item.backOnService).toLowerCase() === "yes"
-                ).length
-              }
+              {resolvedUnitCases.length}
             </p>
           </div>
 
@@ -1078,13 +1119,11 @@ export default function WchrPoiReportsAdminPage() {
 
         {loading ? (
           <div>Loading...</div>
-        ) : unitCases.length === 0 ? (
-          <div>No out of service cases found.</div>
+        ) : openUnitCases.length === 0 ? (
+          <div>No open out of service cases found.</div>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
-            {unitCases.map((item, index) => {
-              const closed =
-                String(item.caseStatus || "").toLowerCase() === "closed";
+            {openUnitCases.map((item, index) => {
               const backOnService =
                 String(item.backOnService || "").toLowerCase() === "yes";
 
@@ -1092,10 +1131,8 @@ export default function WchrPoiReportsAdminPage() {
                 <div
                   key={`${item.reportId}-${item.unitNumber}-${index}`}
                   style={{
-                    border: `1px solid ${
-                      closed ? "#bbf7d0" : "#fecdd3"
-                    }`,
-                    background: closed ? "#f0fdf4" : "#fff1f2",
+                    border: "1px solid #fecdd3",
+                    background: "#fff1f2",
                     borderRadius: 18,
                     padding: 16,
                     display: "flex",
@@ -1110,7 +1147,7 @@ export default function WchrPoiReportsAdminPage() {
                       style={{
                         fontSize: 18,
                         fontWeight: 900,
-                        color: closed ? "#166534" : "#9f1239",
+                        color: "#9f1239",
                       }}
                     >
                       {item.unitNumber}
@@ -1120,7 +1157,7 @@ export default function WchrPoiReportsAdminPage() {
                       style={{
                         marginTop: 4,
                         fontSize: 13,
-                        color: closed ? "#166534" : "#881337",
+                        color: "#881337",
                         fontWeight: 700,
                       }}
                     >
@@ -1144,14 +1181,97 @@ export default function WchrPoiReportsAdminPage() {
                   </div>
 
                   <ActionButton
-                    variant={closed ? "success" : "warning"}
+                    variant="warning"
                     onClick={() => handleOpenUnitCase(item)}
                   >
-                    {closed ? "View case" : "Open case"}
+                    Open case
                   </ActionButton>
                 </div>
               );
             })}
+          </div>
+        )}
+      </PageCard>
+
+      <PageCard style={{ padding: 22 }}>
+        <h2
+          style={{
+            marginTop: 0,
+            marginBottom: 14,
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Resolved / Returned to Service
+        </h2>
+
+        {loading ? (
+          <div>Loading...</div>
+        ) : resolvedUnitCases.length === 0 ? (
+          <div>No resolved cases yet.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {resolvedUnitCases.map((item, index) => (
+              <div
+                key={`${item.reportId}-${item.unitNumber}-resolved-${index}`}
+                style={{
+                  border: "1px solid #bbf7d0",
+                  background: "#f0fdf4",
+                  borderRadius: 18,
+                  padding: 16,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ minWidth: 220 }}>
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 900,
+                      color: "#166534",
+                    }}
+                  >
+                    {item.unitNumber}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 13,
+                      color: "#166534",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Return date: {item.returnDate || "—"}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 13,
+                      color: "#334155",
+                    }}
+                  >
+                    Taken by: <b>{item.takenBy || "Unassigned"}</b>
+                    {" · "}
+                    Closed by: <b>{item.closedBy || "—"}</b>
+                    {" · "}
+                    Cost: <b>{formatMoney(item.maintenanceCost)}</b>
+                  </div>
+                </div>
+
+                <ActionButton
+                  variant="success"
+                  onClick={() => handleOpenUnitCase(item)}
+                >
+                  View case
+                </ActionButton>
+              </div>
+            ))}
           </div>
         )}
       </PageCard>
