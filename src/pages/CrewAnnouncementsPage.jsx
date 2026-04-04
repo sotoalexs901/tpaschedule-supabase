@@ -1,4 +1,3 @@
-// src/pages/CrewAnnouncementsPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -9,12 +8,10 @@ import {
   serverTimestamp,
   deleteDoc,
   doc,
+  updateDoc,
+  where,
 } from "firebase/firestore";
-import {
-  ref,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -137,6 +134,12 @@ function ActionButton({
       border: "1px solid #cfe7fb",
       boxShadow: "none",
     },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
   };
 
   return (
@@ -255,6 +258,19 @@ export default function CrewAnnouncementsPage() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
 
+  const [employeeOfMonthName, setEmployeeOfMonthName] = useState("");
+  const [employeeOfMonthAirline, setEmployeeOfMonthAirline] = useState("");
+  const [employeeOfMonthDepartment, setEmployeeOfMonthDepartment] = useState("");
+  const [employeeOfMonthNote, setEmployeeOfMonthNote] = useState("");
+  const [employeeOfMonthMonthLabel, setEmployeeOfMonthMonthLabel] = useState("");
+  const [employeeOfMonthPhotoFile, setEmployeeOfMonthPhotoFile] = useState(null);
+  const [employeeOfMonthPhotoPreview, setEmployeeOfMonthPhotoPreview] = useState("");
+  const [employeeOfMonthSaving, setEmployeeOfMonthSaving] = useState(false);
+  const [employeeOfMonthCurrent, setEmployeeOfMonthCurrent] = useState(null);
+
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState([]);
@@ -269,11 +285,10 @@ export default function CrewAnnouncementsPage() {
 
   useEffect(() => {
     return () => {
-      if (imagePreviewUrl) {
-        URL.revokeObjectURL(imagePreviewUrl);
-      }
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+      if (employeeOfMonthPhotoPreview) URL.revokeObjectURL(employeeOfMonthPhotoPreview);
     };
-  }, [imagePreviewUrl]);
+  }, [imagePreviewUrl, employeeOfMonthPhotoPreview]);
 
   const loadAnnouncements = async () => {
     try {
@@ -292,9 +307,53 @@ export default function CrewAnnouncementsPage() {
     }
   };
 
+  const loadEmployees = async () => {
+    try {
+      const snap = await getDocs(collection(db, "employees"));
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) =>
+        String(a.name || "").localeCompare(String(b.name || ""))
+      );
+      setEmployees(list);
+    } catch (err) {
+      console.error("Error loading employees:", err);
+    }
+  };
+
+  const loadEmployeeOfMonth = async () => {
+    try {
+      const qEmployee = query(
+        collection(db, "employee_of_month"),
+        where("active", "==", true)
+      );
+      const snap = await getDocs(qEmployee);
+
+      if (!snap.empty) {
+        const docData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        setEmployeeOfMonthCurrent(docData);
+      } else {
+        setEmployeeOfMonthCurrent(null);
+      }
+    } catch (err) {
+      console.error("Error loading employee of month:", err);
+    }
+  };
+
   useEffect(() => {
     loadAnnouncements();
+    loadEmployees();
+    loadEmployeeOfMonth();
   }, []);
+
+  useEffect(() => {
+    if (!selectedEmployeeId) return;
+
+    const found = employees.find((emp) => emp.id === selectedEmployeeId);
+    if (!found) return;
+
+    setEmployeeOfMonthName(found.name || "");
+    setEmployeeOfMonthDepartment(found.department || "");
+  }, [selectedEmployeeId, employees]);
 
   const resetImageInput = () => {
     setImageFile(null);
@@ -303,6 +362,16 @@ export default function CrewAnnouncementsPage() {
       setImagePreviewUrl("");
     }
     const input = document.getElementById("crew-announcement-image-input");
+    if (input) input.value = "";
+  };
+
+  const resetEmployeeOfMonthImage = () => {
+    setEmployeeOfMonthPhotoFile(null);
+    if (employeeOfMonthPhotoPreview) {
+      URL.revokeObjectURL(employeeOfMonthPhotoPreview);
+      setEmployeeOfMonthPhotoPreview("");
+    }
+    const input = document.getElementById("employee-of-month-image-input");
     if (input) input.value = "";
   };
 
@@ -351,12 +420,6 @@ export default function CrewAnnouncementsPage() {
         });
 
         imageUrl = await getDownloadURL(storageRef);
-
-        if (!imageUrl) {
-          throw new Error("Image uploaded but URL could not be generated.");
-        }
-
-        console.log("Announcement image URL:", imageUrl);
       }
 
       await addDoc(collection(db, "employeeAnnouncements"), {
@@ -392,6 +455,76 @@ export default function CrewAnnouncementsPage() {
       setMessage(err?.message || "Error posting announcement.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveEmployeeOfMonth = async () => {
+    setMessage("");
+
+    if (!employeeOfMonthName.trim()) {
+      setMessage("Please select or enter employee name.");
+      return;
+    }
+
+    try {
+      setEmployeeOfMonthSaving(true);
+
+      let photoURL = employeeOfMonthCurrent?.photoURL || "";
+      let photoPath = employeeOfMonthCurrent?.photoPath || "";
+
+      if (employeeOfMonthPhotoFile) {
+        if (!employeeOfMonthPhotoFile.type.startsWith("image/")) {
+          throw new Error("Please select a valid image file.");
+        }
+
+        if (employeeOfMonthPhotoFile.size > 5 * 1024 * 1024) {
+          throw new Error("Employee of the month image must be smaller than 5MB.");
+        }
+
+        const safeName = getSafeFileName(employeeOfMonthPhotoFile.name);
+        photoPath = `employeeOfMonth/${Date.now()}_${safeName}`;
+
+        const storageRef = ref(storage, photoPath);
+        await uploadBytes(storageRef, employeeOfMonthPhotoFile, {
+          contentType: employeeOfMonthPhotoFile.type || "image/jpeg",
+        });
+
+        photoURL = await getDownloadURL(storageRef);
+      }
+
+      const existingSnap = await getDocs(collection(db, "employee_of_month"));
+
+      for (const item of existingSnap.docs) {
+        await updateDoc(doc(db, "employee_of_month", item.id), {
+          active: false,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      await addDoc(collection(db, "employee_of_month"), {
+        active: true,
+        employeeName: employeeOfMonthName.trim(),
+        airline: employeeOfMonthAirline.trim(),
+        department: employeeOfMonthDepartment.trim(),
+        note: employeeOfMonthNote.trim(),
+        monthLabel: employeeOfMonthMonthLabel.trim(),
+        photoURL,
+        photoPath,
+        selectedEmployeeId: selectedEmployeeId || "",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: visibleName,
+        createdByUsername: user?.username || "",
+      });
+
+      setMessage("Employee of the month updated!");
+      resetEmployeeOfMonthImage();
+      await loadEmployeeOfMonth();
+    } catch (err) {
+      console.error("Error saving employee of month:", err);
+      setMessage(err?.message || "Error saving employee of the month.");
+    } finally {
+      setEmployeeOfMonthSaving(false);
     }
   };
 
@@ -450,9 +583,40 @@ export default function CrewAnnouncementsPage() {
     setImagePreviewUrl(preview);
   };
 
+  const handleEmployeeOfMonthImageChange = (e) => {
+    const file = e.target.files?.[0];
+    setMessage("");
+
+    if (!file) {
+      resetEmployeeOfMonthImage();
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      resetEmployeeOfMonthImage();
+      setMessage("Please select an image file (jpg, png, webp).");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      resetEmployeeOfMonthImage();
+      setMessage("Image must be smaller than 5MB.");
+      return;
+    }
+
+    if (employeeOfMonthPhotoPreview) {
+      URL.revokeObjectURL(employeeOfMonthPhotoPreview);
+    }
+
+    const preview = URL.createObjectURL(file);
+    setEmployeeOfMonthPhotoFile(file);
+    setEmployeeOfMonthPhotoPreview(preview);
+  };
+
   const success =
     message.toLowerCase().includes("posted") ||
-    message.toLowerCase().includes("deleted");
+    message.toLowerCase().includes("deleted") ||
+    message.toLowerCase().includes("updated");
 
   if (!user || user.role !== "station_manager") {
     return (
@@ -483,7 +647,7 @@ export default function CrewAnnouncementsPage() {
               fontWeight: 700,
             }}
           >
-            TPA OPS · Announcements
+            TPA OPS · Dashboard Editor
           </p>
           <h1
             style={{
@@ -504,7 +668,7 @@ export default function CrewAnnouncementsPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Only Station Managers can post and manage crew announcements.
+            Only Station Managers can manage employee dashboard content.
           </p>
         </div>
 
@@ -519,7 +683,7 @@ export default function CrewAnnouncementsPage() {
               fontWeight: 700,
             }}
           >
-            You are not authorized to manage announcements.
+            You are not authorized to manage dashboard content.
           </div>
         </PageCard>
       </div>
@@ -571,7 +735,7 @@ export default function CrewAnnouncementsPage() {
               fontWeight: 700,
             }}
           >
-            TPA OPS · Announcements
+            TPA OPS · Dashboard Editor
           </p>
 
           <h1
@@ -583,7 +747,7 @@ export default function CrewAnnouncementsPage() {
               letterSpacing: "-0.04em",
             }}
           >
-            Crew Announcements
+            Employee Dashboard Content
           </h1>
 
           <p
@@ -594,8 +758,7 @@ export default function CrewAnnouncementsPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Create, publish and manage dashboard announcements for Agents and
-            Supervisors.
+            Manage crew announcements and Employee of the Month for the employee dashboard.
           </p>
         </div>
       </div>
@@ -617,6 +780,179 @@ export default function CrewAnnouncementsPage() {
           </div>
         </PageCard>
       )}
+
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ marginBottom: 16 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Employee of the Month
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Select the employee, airline, department and details to display on the employee dashboard.
+          </p>
+        </div>
+
+        {employeeOfMonthCurrent && (
+          <div
+            style={{
+              marginBottom: 18,
+              padding: 16,
+              borderRadius: 18,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 800, color: "#9a3412", textTransform: "uppercase" }}>
+              Current Employee of the Month
+            </div>
+            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+              {employeeOfMonthCurrent.employeeName || "—"}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 13, color: "#9a3412", fontWeight: 700 }}>
+              {employeeOfMonthCurrent.airline || "—"} · {employeeOfMonthCurrent.department || "—"}
+            </div>
+            {employeeOfMonthCurrent.monthLabel && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
+                {employeeOfMonthCurrent.monthLabel}
+              </div>
+            )}
+            {employeeOfMonthCurrent.note && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
+                {employeeOfMonthCurrent.note}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gap: 14 }}>
+          <div>
+            <FieldLabel>Select Employee from Employee List</FieldLabel>
+            <SelectInput
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+            >
+              <option value="">Select employee</option>
+              {employees.map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name || "Unnamed"} {emp.department ? `· ${emp.department}` : ""}
+                </option>
+              ))}
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Employee Name</FieldLabel>
+            <TextInput
+              value={employeeOfMonthName}
+              onChange={(e) => setEmployeeOfMonthName(e.target.value)}
+              placeholder="Employee name"
+            />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>Airline</FieldLabel>
+              <TextInput
+                value={employeeOfMonthAirline}
+                onChange={(e) => setEmployeeOfMonthAirline(e.target.value)}
+                placeholder="Delta, Avianca, WestJet, etc."
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Department</FieldLabel>
+              <TextInput
+                value={employeeOfMonthDepartment}
+                onChange={(e) => setEmployeeOfMonthDepartment(e.target.value)}
+                placeholder="Ramp, Cabin Service, WCHR, etc."
+              />
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>Month Label</FieldLabel>
+            <TextInput
+              value={employeeOfMonthMonthLabel}
+              onChange={(e) => setEmployeeOfMonthMonthLabel(e.target.value)}
+              placeholder="April 2026"
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Recognition Note</FieldLabel>
+            <TextArea
+              rows={4}
+              value={employeeOfMonthNote}
+              onChange={(e) => setEmployeeOfMonthNote(e.target.value)}
+              placeholder="Excellent performance, attendance, teamwork..."
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Photo (optional)</FieldLabel>
+            <TextInput
+              id="employee-of-month-image-input"
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
+              onChange={handleEmployeeOfMonthImageChange}
+              style={{ padding: "10px 12px" }}
+            />
+
+            {employeeOfMonthPhotoPreview && (
+              <div
+                style={{
+                  marginTop: 12,
+                  borderRadius: 16,
+                  overflow: "hidden",
+                  border: "1px solid #e2e8f0",
+                  maxWidth: 260,
+                  background: "#fff",
+                }}
+              >
+                <img
+                  src={employeeOfMonthPhotoPreview}
+                  alt="Employee of the month preview"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    maxHeight: 260,
+                    objectFit: "cover",
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <ActionButton
+              variant="success"
+              onClick={handleSaveEmployeeOfMonth}
+              disabled={employeeOfMonthSaving}
+            >
+              {employeeOfMonthSaving ? "Saving..." : "Save Employee of the Month"}
+            </ActionButton>
+          </div>
+        </div>
+      </PageCard>
 
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
