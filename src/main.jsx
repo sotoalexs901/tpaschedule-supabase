@@ -471,7 +471,9 @@ function AppRouter() {
           <Route
             path="operational-report/reports"
             element={
-              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
                 <OperationalReportAdminPage />
               </ProtectedRoute>
             }
