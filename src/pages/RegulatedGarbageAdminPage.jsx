@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  addDoc,
   collection,
-  deleteDoc,
   doc,
   getDocs,
   orderBy,
@@ -195,17 +195,83 @@ function ActionButton({
 }
 
 const DEFAULT_INVENTORY_ITEMS = [
-  { productKey: "disinfectant", productLabel: "Disinfectant", unit: "units", minimumQty: 1, location: "Office / Storage" },
-  { productKey: "detergent", productLabel: "Detergent", unit: "units", minimumQty: 1, location: "Office / Storage" },
-  { productKey: "clean_water", productLabel: "Clean Water", unit: "units", minimumQty: 1, location: "Office / Storage" },
-  { productKey: "whisk_broom_dustpan", productLabel: "Whisk Broom / Dustpan", unit: "units", minimumQty: 1, location: "Office / Storage" },
-  { productKey: "scrub_brush", productLabel: "Scrub Brush", unit: "units", minimumQty: 1, location: "Office / Storage" },
-  { productKey: "zip_ties", productLabel: "Zip Ties", unit: "units", minimumQty: 5, location: "Office / Storage" },
-  { productKey: "paper_towels", productLabel: "Paper Towels", unit: "units", minimumQty: 3, location: "Office / Storage" },
-  { productKey: "orange_bags", productLabel: "Orange Bags", unit: "bags", minimumQty: 20, location: "Office / Storage" },
-  { productKey: "ppe_goggles_gloves", productLabel: "PPE (Goggles / Gloves)", unit: "sets", minimumQty: 2, location: "Office / Storage" },
-  { productKey: "spill_kit_contents_copy", productLabel: "Copy of Spill Kit Contents", unit: "copies", minimumQty: 1, location: "Office / Storage" },
-  { productKey: "plastic_bags", productLabel: "Plastic Bags", unit: "bags", minimumQty: 10, location: "Office / Storage" },
+  {
+    productKey: "disinfectant",
+    productLabel: "Disinfectant",
+    unit: "units",
+    minimumQty: 1,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "detergent",
+    productLabel: "Detergent",
+    unit: "units",
+    minimumQty: 1,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "clean_water",
+    productLabel: "Clean Water",
+    unit: "units",
+    minimumQty: 1,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "whisk_broom_dustpan",
+    productLabel: "Whisk Broom / Dustpan",
+    unit: "units",
+    minimumQty: 1,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "scrub_brush",
+    productLabel: "Scrub Brush",
+    unit: "units",
+    minimumQty: 1,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "zip_ties",
+    productLabel: "Zip Ties",
+    unit: "units",
+    minimumQty: 5,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "paper_towels",
+    productLabel: "Paper Towels",
+    unit: "units",
+    minimumQty: 3,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "orange_bags",
+    productLabel: "Orange Bags",
+    unit: "bags",
+    minimumQty: 20,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "ppe_goggles_gloves",
+    productLabel: "PPE (Goggles / Gloves)",
+    unit: "sets",
+    minimumQty: 2,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "spill_kit_contents_copy",
+    productLabel: "Copy of Spill Kit Contents",
+    unit: "copies",
+    minimumQty: 1,
+    location: "Office / Storage",
+  },
+  {
+    productKey: "plastic_bags",
+    productLabel: "Plastic Bags",
+    unit: "bags",
+    minimumQty: 10,
+    location: "Office / Storage",
+  },
 ];
 
 function getStatusPill(status) {
@@ -271,6 +337,7 @@ export default function RegulatedGarbageAdminPage() {
   const [selectedReportId, setSelectedReportId] = useState("");
   const [savingAlertId, setSavingAlertId] = useState("");
   const [savingInventoryId, setSavingInventoryId] = useState("");
+  const [creatingInventory, setCreatingInventory] = useState(false);
   const [inventoryDrafts, setInventoryDrafts] = useState({});
   const [alertEdit, setAlertEdit] = useState({
     assignedManagerName: "",
@@ -286,34 +353,23 @@ export default function RegulatedGarbageAdminPage() {
       try {
         const [inventorySnap, reportsSnap, alertsSnap] = await Promise.all([
           getDocs(collection(db, "regulated_garbage_inventory")),
-          getDocs(query(collection(db, "regulated_garbage_reports"), orderBy("createdAt", "desc"))),
-          getDocs(query(collection(db, "regulated_garbage_supply_alerts"), orderBy("createdAt", "desc"))),
+          getDocs(
+            query(collection(db, "regulated_garbage_reports"), orderBy("createdAt", "desc"))
+          ),
+          getDocs(
+            query(
+              collection(db, "regulated_garbage_supply_alerts"),
+              orderBy("createdAt", "desc")
+            )
+          ),
         ]);
 
-        let inventory = inventorySnap.docs.map((d) => ({
+        const inventory = inventorySnap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
+          stockQty: safeNumber(d.data().stockQty),
+          minimumQty: safeNumber(d.data().minimumQty),
         }));
-
-        if (inventory.length === 0) {
-          setInventoryRows(
-            DEFAULT_INVENTORY_ITEMS.map((item, index) => ({
-              id: `local-${index}`,
-              ...item,
-              stockQty: 0,
-              updatedAt: null,
-              updatedByName: "",
-            }))
-          );
-        } else {
-          setInventoryRows(
-            inventory.map((item) => ({
-              ...item,
-              stockQty: safeNumber(item.stockQty),
-              minimumQty: safeNumber(item.minimumQty),
-            }))
-          );
-        }
 
         const reports = reportsSnap.docs.map((d) => ({
           id: d.id,
@@ -325,6 +381,7 @@ export default function RegulatedGarbageAdminPage() {
           ...d.data(),
         }));
 
+        setInventoryRows(inventory);
         setReportRows(reports);
         setAlertRows(alerts);
       } catch (err) {
@@ -343,7 +400,9 @@ export default function RegulatedGarbageAdminPage() {
   }, [canAccess]);
 
   const openAlerts = useMemo(() => {
-    return alertRows.filter((item) => String(item.status || "open").toLowerCase() !== "closed");
+    return alertRows.filter(
+      (item) => String(item.status || "open").toLowerCase() !== "closed"
+    );
   }, [alertRows]);
 
   const selectedAlert = useMemo(() => {
@@ -397,27 +456,66 @@ export default function RegulatedGarbageAdminPage() {
     return inventoryDrafts[row.id]?.[field] ?? row[field] ?? "";
   };
 
+  const createInitialInventory = async () => {
+    try {
+      setCreatingInventory(true);
+
+      const createdDocs = [];
+
+      for (const item of DEFAULT_INVENTORY_ITEMS) {
+        const payload = {
+          productKey: item.productKey,
+          productLabel: item.productLabel,
+          stockQty: 0,
+          minimumQty: safeNumber(item.minimumQty),
+          unit: item.unit,
+          location: item.location,
+          updatedAt: serverTimestamp(),
+          updatedByName: getVisibleUserName(user),
+        };
+
+        const ref = await addDoc(
+          collection(db, "regulated_garbage_inventory"),
+          payload
+        );
+
+        createdDocs.push({
+          id: ref.id,
+          ...payload,
+          updatedAt: new Date(),
+        });
+      }
+
+      setInventoryRows(createdDocs);
+      setStatusMessage("Inventory base created successfully.");
+    } catch (err) {
+      console.error("Error creating initial inventory:", err);
+      setStatusMessage("Could not create initial inventory.");
+    } finally {
+      setCreatingInventory(false);
+    }
+  };
+
   const saveInventoryRow = async (row) => {
     try {
       setSavingInventoryId(row.id);
 
       const payload = {
-        productKey: String(getInventoryField(row, "productKey") || row.productKey || "").trim(),
-        productLabel: String(getInventoryField(row, "productLabel") || row.productLabel || "").trim(),
+        productKey: String(
+          getInventoryField(row, "productKey") || row.productKey || ""
+        ).trim(),
+        productLabel: String(
+          getInventoryField(row, "productLabel") || row.productLabel || ""
+        ).trim(),
         stockQty: safeNumber(getInventoryField(row, "stockQty")),
         minimumQty: safeNumber(getInventoryField(row, "minimumQty")),
         unit: String(getInventoryField(row, "unit") || row.unit || "").trim(),
-        location: String(getInventoryField(row, "location") || row.location || "").trim(),
+        location: String(
+          getInventoryField(row, "location") || row.location || ""
+        ).trim(),
         updatedAt: serverTimestamp(),
         updatedByName: getVisibleUserName(user),
       };
-
-      if (String(row.id || "").startsWith("local-")) {
-        setStatusMessage(
-          "If inventory collection is empty, create the docs first from Firestore console or tell me and I’ll prepare a seeded version for you."
-        );
-        return;
-      }
 
       await updateDoc(doc(db, "regulated_garbage_inventory", row.id), payload);
 
@@ -427,10 +525,17 @@ export default function RegulatedGarbageAdminPage() {
             ? {
                 ...item,
                 ...payload,
+                updatedAt: new Date(),
               }
             : item
         )
       );
+
+      setInventoryDrafts((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
 
       setStatusMessage("Inventory updated successfully.");
     } catch (err) {
@@ -470,7 +575,9 @@ export default function RegulatedGarbageAdminPage() {
         actualReplacementDate: alertEdit.actualReplacementDate || "",
         restockInProgressMessage:
           String(alertEdit.restockInProgressMessage || "").trim() ||
-          `Replacement in progress. Management team has been informed by ${selectedAlert.reportedBySupervisorName || "Supervisor"}.`,
+          `Replacement in progress. Management team has been informed by ${
+            selectedAlert.reportedBySupervisorName || "Supervisor"
+          }.`,
         status: nextStatus,
         updatedAt: serverTimestamp(),
       };
@@ -556,16 +663,19 @@ export default function RegulatedGarbageAdminPage() {
 
       const managerName = getVisibleUserName(user);
 
-      await updateDoc(doc(db, "regulated_garbage_supply_alerts", selectedAlert.id), {
-        status: "closed",
-        followUpStatus: "closed",
-        actualReplacementDate: alertEdit.actualReplacementDate || "",
-        assignedManagerName:
-          String(alertEdit.assignedManagerName || "").trim() || managerName,
-        assignedManagerId: user?.id || "",
-        managerNotes: String(alertEdit.managerNotes || "").trim(),
-        updatedAt: serverTimestamp(),
-      });
+      await updateDoc(
+        doc(db, "regulated_garbage_supply_alerts", selectedAlert.id),
+        {
+          status: "closed",
+          followUpStatus: "closed",
+          actualReplacementDate: alertEdit.actualReplacementDate || "",
+          assignedManagerName:
+            String(alertEdit.assignedManagerName || "").trim() || managerName,
+          assignedManagerId: user?.id || "",
+          managerNotes: String(alertEdit.managerNotes || "").trim(),
+          updatedAt: serverTimestamp(),
+        }
+      );
 
       setAlertRows((prev) =>
         prev.map((item) =>
@@ -686,7 +796,8 @@ export default function RegulatedGarbageAdminPage() {
             color: "rgba(255,255,255,0.88)",
           }}
         >
-          Review shortages, track replacements, manage restock cases and office inventory.
+          Review shortages, track replacements, manage restock cases and office
+          inventory.
         </p>
       </div>
 
@@ -709,21 +820,65 @@ export default function RegulatedGarbageAdminPage() {
       )}
 
       <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
-            Inventory
-          </h2>
+        <div
+          style={{
+            marginBottom: 16,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
+              Inventory
+            </h2>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: "#64748b",
+              }}
+            >
+              Manage office / storage quantities used by regulated garbage alerts.
+            </p>
+          </div>
+
+          {inventoryRows.length === 0 && !loading && (
+            <ActionButton
+              variant="primary"
+              onClick={createInitialInventory}
+              disabled={creatingInventory}
+            >
+              {creatingInventory ? "Creating..." : "Create Initial Inventory"}
+            </ActionButton>
+          )}
         </div>
 
         {loading ? (
           <div>Loading...</div>
+        ) : inventoryRows.length === 0 ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontWeight: 600,
+            }}
+          >
+            No inventory exists yet. Click <b>Create Initial Inventory</b> to seed
+            the default products.
+          </div>
         ) : (
           <div style={{ display: "grid", gap: 14 }}>
             {inventoryRows.map((row) => (
@@ -748,7 +903,11 @@ export default function RegulatedGarbageAdminPage() {
                     <TextInput
                       value={getInventoryField(row, "productLabel")}
                       onChange={(e) =>
-                        handleInventoryDraftChange(row.id, "productLabel", e.target.value)
+                        handleInventoryDraftChange(
+                          row.id,
+                          "productLabel",
+                          e.target.value
+                        )
                       }
                     />
                   </div>
@@ -759,7 +918,11 @@ export default function RegulatedGarbageAdminPage() {
                       type="number"
                       value={getInventoryField(row, "stockQty")}
                       onChange={(e) =>
-                        handleInventoryDraftChange(row.id, "stockQty", e.target.value)
+                        handleInventoryDraftChange(
+                          row.id,
+                          "stockQty",
+                          e.target.value
+                        )
                       }
                     />
                   </div>
@@ -770,7 +933,11 @@ export default function RegulatedGarbageAdminPage() {
                       type="number"
                       value={getInventoryField(row, "minimumQty")}
                       onChange={(e) =>
-                        handleInventoryDraftChange(row.id, "minimumQty", e.target.value)
+                        handleInventoryDraftChange(
+                          row.id,
+                          "minimumQty",
+                          e.target.value
+                        )
                       }
                     />
                   </div>
@@ -790,8 +957,20 @@ export default function RegulatedGarbageAdminPage() {
                     <TextInput
                       value={getInventoryField(row, "location")}
                       onChange={(e) =>
-                        handleInventoryDraftChange(row.id, "location", e.target.value)
+                        handleInventoryDraftChange(
+                          row.id,
+                          "location",
+                          e.target.value
+                        )
                       }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Last Updated</FieldLabel>
+                    <TextInput
+                      value={formatDateTime(row.updatedAt)}
+                      disabled
                     />
                   </div>
                 </div>
@@ -867,7 +1046,9 @@ export default function RegulatedGarbageAdminPage() {
                     }}
                   >
                     <span>{item.productLabel}</span>
-                    <span style={getStatusPill(item.status)}>{item.status || "open"}</span>
+                    <span style={getStatusPill(item.status)}>
+                      {item.status || "open"}
+                    </span>
                   </div>
 
                   <div
@@ -877,7 +1058,8 @@ export default function RegulatedGarbageAdminPage() {
                       marginTop: 4,
                     }}
                   >
-                    {item.airline || "—"} · {item.cartType || "—"} · {item.reportDate || "—"}
+                    {item.airline || "—"} · {item.cartType || "—"} ·{" "}
+                    {item.reportDate || "—"}
                   </div>
 
                   <div
@@ -918,7 +1100,8 @@ export default function RegulatedGarbageAdminPage() {
                       color: "#64748b",
                     }}
                   >
-                    {selectedAlert.productLabel} · {selectedAlert.airline || "—"} · {selectedAlert.cartType || "—"}
+                    {selectedAlert.productLabel} · {selectedAlert.airline || "—"} ·{" "}
+                    {selectedAlert.cartType || "—"}
                   </p>
                 </div>
 
@@ -937,10 +1120,23 @@ export default function RegulatedGarbageAdminPage() {
                       background: "#f8fbff",
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                      }}
+                    >
                       Alert Type
                     </div>
-                    <div style={{ marginTop: 4, fontWeight: 800, color: "#0f172a" }}>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                      }}
+                    >
                       {selectedAlert.alertType || "—"}
                     </div>
                   </div>
@@ -953,10 +1149,23 @@ export default function RegulatedGarbageAdminPage() {
                       background: "#f8fbff",
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                      }}
+                    >
                       Office Stock at Submission
                     </div>
-                    <div style={{ marginTop: 4, fontWeight: 800, color: "#0f172a" }}>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                      }}
+                    >
                       {safeNumber(selectedAlert.officeStockAtSubmission)}
                     </div>
                   </div>
@@ -969,10 +1178,23 @@ export default function RegulatedGarbageAdminPage() {
                       background: "#f8fbff",
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                      }}
+                    >
                       Estimated Restock
                     </div>
-                    <div style={{ marginTop: 4, fontWeight: 800, color: "#0f172a" }}>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                      }}
+                    >
                       {selectedAlert.estimatedRestockDate || "—"}
                     </div>
                   </div>
@@ -1078,7 +1300,9 @@ export default function RegulatedGarbageAdminPage() {
                     onClick={saveAlertFollowUp}
                     disabled={savingAlertId === selectedAlert.id}
                   >
-                    {savingAlertId === selectedAlert.id ? "Saving..." : "Save Follow Up"}
+                    {savingAlertId === selectedAlert.id
+                      ? "Saving..."
+                      : "Save Follow Up"}
                   </ActionButton>
 
                   <ActionButton
@@ -1086,7 +1310,9 @@ export default function RegulatedGarbageAdminPage() {
                     onClick={closeAlert}
                     disabled={savingAlertId === selectedAlert.id}
                   >
-                    {savingAlertId === selectedAlert.id ? "Closing..." : "Close Alert"}
+                    {savingAlertId === selectedAlert.id
+                      ? "Closing..."
+                      : "Close Alert"}
                   </ActionButton>
                 </div>
 
@@ -1119,13 +1345,33 @@ export default function RegulatedGarbageAdminPage() {
                         border: "1px solid #dbeafe",
                       }}
                     >
-                      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
-                        Submitted by {selectedReport.supervisorName || "—"} · {selectedReport.reportDate || "—"}
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Submitted by {selectedReport.supervisorName || "—"} ·{" "}
+                        {selectedReport.reportDate || "—"}
                       </div>
-                      <div style={{ marginTop: 6, fontWeight: 800, color: "#0f172a" }}>
-                        {selectedReport.airline || "—"} · {selectedReport.internationalCart || "—"}
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {selectedReport.airline || "—"} ·{" "}
+                        {selectedReport.internationalCart || "—"}
                       </div>
-                      <div style={{ marginTop: 6, fontSize: 13, color: "#334155" }}>
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 13,
+                          color: "#334155",
+                        }}
+                      >
                         Review Status: {selectedReport.reviewStatus || "submitted"}
                       </div>
                     </div>
