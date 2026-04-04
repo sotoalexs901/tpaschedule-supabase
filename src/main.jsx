@@ -49,6 +49,7 @@ import WCHRFlights from "./pages/WCHRFlights.jsx";
 import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
+import SupervisorCleaningSecurityPage from "./pages/SupervisorCleaningSecurityPage.jsx";
 
 function ProtectedRoute({
   children,
@@ -106,7 +107,6 @@ function DashboardEntry() {
 }
 
 function UpdatePrompt() {
-  const { user } = useUser();
   const [showPrompt, setShowPrompt] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
 
@@ -184,19 +184,16 @@ function UpdatePrompt() {
       if (response.ok) {
         const data = await response.json();
         const incomingVersion = String(data?.version || "").trim();
-
         if (incomingVersion) {
           localStorage.setItem("tpa_app_version", incomingVersion);
         }
       }
     } catch (error) {
-      console.error("Could not save version before reload:", error);
+      console.error("Could not refresh saved version before reload:", error);
     }
 
     window.location.reload();
   };
-
-  if (!user) return null;
 
   return (
     <>
@@ -278,7 +275,7 @@ function UpdatePrompt() {
               }}
             >
               A newer version of TPA Schedule is available. Refresh the app to
-              load the latest changes.
+              load the latest changes without logging out manually.
             </div>
 
             <div
@@ -414,6 +411,17 @@ function AppRouter() {
                 roles={["supervisor", "duty_manager", "station_manager"]}
               >
                 <SupervisorOperationalReportPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="cleaning-security/submit"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <SupervisorCleaningSecurityPage />
               </ProtectedRoute>
             }
           />
