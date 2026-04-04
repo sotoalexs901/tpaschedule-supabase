@@ -1,4 +1,3 @@
-// src/pages/EmployeesPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -219,6 +218,7 @@ export default function EmployeesPage() {
   const [position, setPosition] = useState("");
   const [status, setStatus] = useState("Active");
   const [notes, setNotes] = useState("");
+  const [showInStationTeam, setShowInStationTeam] = useState(true);
 
   const [editingId, setEditingId] = useState(null);
   const [formMessage, setFormMessage] = useState("");
@@ -306,6 +306,7 @@ export default function EmployeesPage() {
           status,
           active: status.toLowerCase() === "active",
           notes: notes.trim() || null,
+          showInStationTeam,
         });
 
         await syncUserLink(editingId, cleanUsername);
@@ -319,6 +320,7 @@ export default function EmployeesPage() {
           status,
           active: status.toLowerCase() === "active",
           notes: notes.trim() || null,
+          showInStationTeam,
           createdAt: new Date().toISOString(),
         });
 
@@ -332,6 +334,7 @@ export default function EmployeesPage() {
       setPosition("");
       setStatus("Active");
       setNotes("");
+      setShowInStationTeam(true);
       setEditingId(null);
 
       await loadEmployees();
@@ -349,6 +352,7 @@ export default function EmployeesPage() {
     setPosition("");
     setStatus("Active");
     setNotes("");
+    setShowInStationTeam(true);
     setFormMessage("");
   };
 
@@ -366,8 +370,28 @@ export default function EmployeesPage() {
     setPosition(emp.position || "");
     setStatus(emp.status || (emp.active ? "Active" : "Inactive"));
     setNotes(emp.notes || "");
+    setShowInStationTeam(emp.showInStationTeam !== false);
     setFormMessage("");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleToggleStationTeam = async (emp) => {
+    try {
+      await updateDoc(doc(db, "employees", emp.id), {
+        showInStationTeam: emp.showInStationTeam === false,
+      });
+
+      setEmployees((prev) =>
+        prev.map((item) =>
+          item.id === emp.id
+            ? { ...item, showInStationTeam: item.showInStationTeam === false }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      setFormMessage("Could not update Station Team visibility.");
+    }
   };
 
   const handleBulkImport = async () => {
@@ -493,6 +517,7 @@ export default function EmployeesPage() {
           status: normalizedStatus,
           active: normalizedStatus === "Active",
           notes: notesVal.trim() || null,
+          showInStationTeam: true,
           createdAt: new Date().toISOString(),
         });
 
@@ -671,6 +696,17 @@ export default function EmployeesPage() {
             >
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Show in Station Team</FieldLabel>
+            <SelectInput
+              value={showInStationTeam ? "yes" : "no"}
+              onChange={(e) => setShowInStationTeam(e.target.value === "yes")}
+            >
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
             </SelectInput>
           </div>
 
@@ -858,7 +894,7 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                     width: "100%",
                     borderCollapse: "separate",
                     borderSpacing: 0,
-                    minWidth: 980,
+                    minWidth: 1120,
                     background: "#fff",
                   }}
                 >
@@ -869,6 +905,7 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                       <th style={thStyle({ textAlign: "left" })}>Username</th>
                       <th style={thStyle({ textAlign: "left" })}>Position</th>
                       <th style={thStyle({ textAlign: "left" })}>Status</th>
+                      <th style={thStyle({ textAlign: "left" })}>Station Team</th>
                       <th style={thStyle({ textAlign: "left" })}>Notes</th>
                       <th style={thStyle({ textAlign: "center" })}>Actions</th>
                     </tr>
@@ -915,6 +952,32 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                             {e.status || (e.active ? "Active" : "Inactive")}
                           </span>
                         </td>
+                        <td style={tdStyle}>
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              background:
+                                e.showInStationTeam === false
+                                  ? "#fff1f2"
+                                  : "#ecfdf5",
+                              color:
+                                e.showInStationTeam === false
+                                  ? "#9f1239"
+                                  : "#065f46",
+                              border: `1px solid ${
+                                e.showInStationTeam === false
+                                  ? "#fecdd3"
+                                  : "#a7f3d0"
+                              }`,
+                            }}
+                          >
+                            {e.showInStationTeam === false ? "Hidden" : "Shown"}
+                          </span>
+                        </td>
                         <td style={tdStyle}>{e.notes || "—"}</td>
                         <td style={{ ...tdStyle, textAlign: "center" }}>
                           <div
@@ -932,6 +995,15 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                             >
                               Edit
                             </ActionButton>
+
+                            <ActionButton
+                              type="button"
+                              variant="warning"
+                              onClick={() => handleToggleStationTeam(e)}
+                            >
+                              {e.showInStationTeam === false ? "Show" : "Hide"}
+                            </ActionButton>
+
                             <ActionButton
                               type="button"
                               variant="danger"
