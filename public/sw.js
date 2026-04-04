@@ -1,18 +1,66 @@
-// public/sw.js
+const CACHE_NAME = "tpa-app-shell-v1";
+const APP_SHELL = ["/", "/index.html"];
 
-// Se instala el SW
 self.addEventListener("install", (event) => {
-  console.log("Service worker instalado.");
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+  );
 });
 
-// Se activa el SW
 self.addEventListener("activate", (event) => {
-  console.log("Service worker activo.");
-  clients.claim();
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      )
+    ).then(() => self.clients.claim())
+  );
 });
 
-// Por ahora NO interceptamos nada
-self.addEventListener("fetch", () => {
-  // Puedes implementar cache en una fase futura
+self.addEventListener("message", (event) => {
+  if (event.data === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+
+  const url = new URL(event.request.url);
+
+  if (url.origin !== self.location.origin) return;
+
+  if (url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" }).catch(() =>
+        caches.match(event.request)
+      )
+    );
+    return;
+  }
+
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" }).catch(() =>
+        caches.match("/index.html")
+      )
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      return (
+        cached ||
+        fetch(event.request, { cache: "no-store" }).then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+      );
+    })
+  );
 });
