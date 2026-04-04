@@ -96,6 +96,81 @@ function useIsMobile(breakpoint = 900) {
   return isMobile;
 }
 
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function startOfWeekMonday() {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+
+function toJsDate(value) {
+  if (!value) return null;
+
+  if (typeof value?.toDate === "function") {
+    return value.toDate();
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function getAgentNameFromWchr(item) {
+  return (
+    item?.agentName ||
+    item?.employeeName ||
+    item?.submittedByName ||
+    item?.createdByName ||
+    item?.userName ||
+    item?.username ||
+    "Unknown"
+  );
+}
+
+function getTopAgent(items, fromDate, label) {
+  const counts = {};
+
+  items.forEach((item) => {
+    const createdAt = toJsDate(item?.createdAt || item?.timestamp || item?.date);
+    if (!createdAt) return;
+    if (createdAt < fromDate) return;
+
+    const role = String(item?.role || item?.submittedByRole || "").toLowerCase();
+    if (role && role !== "agent") return;
+
+    const agentName = getAgentNameFromWchr(item);
+    counts[agentName] = (counts[agentName] || 0) + 1;
+  });
+
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  if (!entries.length) {
+    return {
+      rank: 1,
+      name: "No activity",
+      position: "Agent",
+      value: "0",
+      label,
+    };
+  }
+
+  return {
+    rank: 1,
+    name: entries[0][0],
+    position: "Agent",
+    value: String(entries[0][1]),
+    label,
+  };
+}
+
 function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
   return (
     <div
@@ -503,7 +578,9 @@ export default function EmployeeDashboardPage() {
   const [announcements, setAnnouncements] = useState([]);
   const [birthdays, setBirthdays] = useState([]);
   const [photos, setPhotos] = useState([]);
+  const [wchrReports, setWchrReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [wchrLoading, setWchrLoading] = useState(true);
   const [language, setLanguage] = useState("en");
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
@@ -560,8 +637,9 @@ export default function EmployeeDashboardPage() {
       topWeekSub: "Weekly WCHR performance ranking.",
       comingSoon: "Coming Soon",
       leaderboard: "Leaderboard",
-      today: "Today",
-      week: "Week",
+      today: "WCHRs today",
+      week: "WCHRs this week",
+      loadingWchr: "Loading WCHR ranking...",
     },
     es: {
       crewPortal: "Portal de Tripulación",
@@ -611,8 +689,9 @@ export default function EmployeeDashboardPage() {
       topWeekSub: "Ranking semanal de desempeño WCHR.",
       comingSoon: "Próximamente",
       leaderboard: "Ranking",
-      today: "Hoy",
-      week: "Semana",
+      today: "WCHRs hoy",
+      week: "WCHRs esta semana",
+      loadingWchr: "Cargando ranking WCHR...",
     },
   };
 
@@ -691,6 +770,29 @@ export default function EmployeeDashboardPage() {
     }
 
     loadDashboardData().catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    async function loadWchrReports() {
+      try {
+        setWchrLoading(true);
+
+        const snap = await getDocs(collection(db, "wchr_reports"));
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
+        setWchrReports(list);
+      } catch (err) {
+        console.error("Error loading WCHR reports:", err);
+        setWchrReports([]);
+      } finally {
+        setWchrLoading(false);
+      }
+    }
+
+    loadWchrReports().catch(console.error);
   }, []);
 
   const goTo = (path) => navigate(path);
@@ -772,28 +874,16 @@ export default function EmployeeDashboardPage() {
 
   const topToday = useMemo(
     () => [
-      {
-        rank: 1,
-        name: t.comingSoon,
-        position: t.leaderboard,
-        value: "—",
-        label: t.today,
-      },
+      getTopAgent(wchrReports, startOfToday(), t.today),
     ],
-    [t]
+    [wchrReports, t]
   );
 
   const topWeek = useMemo(
     () => [
-      {
-        rank: 1,
-        name: t.comingSoon,
-        position: t.leaderboard,
-        value: "—",
-        label: t.week,
-      },
+      getTopAgent(wchrReports, startOfWeekMonday(), t.week),
     ],
-    [t]
+    [wchrReports, t]
   );
 
   const stats = useMemo(
@@ -1454,11 +1544,19 @@ export default function EmployeeDashboardPage() {
             >
               {t.topTodaySub}
             </p>
-            <div style={{ display: "grid", gap: 10 }}>
-              {topToday.map((row) => (
-                <LeaderRow key={`${row.name}-${row.rank}`} row={row} accent="#0ea5e9" />
-              ))}
-            </div>
+            {wchrLoading ? (
+              <p style={{ margin: 0, color: "#94a3b8" }}>{t.loadingWchr}</p>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {topToday.map((row) => (
+                  <LeaderRow
+                    key={`${row.name}-${row.rank}`}
+                    row={row}
+                    accent="#0ea5e9"
+                  />
+                ))}
+              </div>
+            )}
           </GlassCard>
 
           <GlassCard
@@ -1476,11 +1574,19 @@ export default function EmployeeDashboardPage() {
             >
               {t.topWeekSub}
             </p>
-            <div style={{ display: "grid", gap: 10 }}>
-              {topWeek.map((row) => (
-                <LeaderRow key={`${row.name}-${row.rank}`} row={row} accent="#10b981" />
-              ))}
-            </div>
+            {wchrLoading ? (
+              <p style={{ margin: 0, color: "#94a3b8" }}>{t.loadingWchr}</p>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {topWeek.map((row) => (
+                  <LeaderRow
+                    key={`${row.name}-${row.rank}`}
+                    row={row}
+                    accent="#10b981"
+                  />
+                ))}
+              </div>
+            )}
           </GlassCard>
         </div>
       </div>
