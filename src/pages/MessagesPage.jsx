@@ -1,4 +1,3 @@
-// src/pages/MessagesPage.jsx
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   collection,
@@ -15,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 function PageCard({ children, style = {} }) {
   return (
@@ -122,9 +121,21 @@ function TextArea(props) {
   );
 }
 
+function getUserLabel(u) {
+  return (
+    u?.displayName ||
+    u?.fullName ||
+    u?.name ||
+    u?.username ||
+    u?.loginUsername ||
+    "(unknown user)"
+  );
+}
+
 export default function MessagesPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [allUsers, setAllUsers] = useState([]);
   const [conversations, setConversations] = useState([]);
@@ -139,6 +150,8 @@ export default function MessagesPage() {
   const [statusMessage, setStatusMessage] = useState("");
 
   const bottomRef = useRef(null);
+  const prefillAppliedRef = useRef(false);
+
   const myId = user?.id;
 
   const isManager =
@@ -154,10 +167,9 @@ export default function MessagesPage() {
           .filter((u) => u.id !== user.id);
 
         list.sort((a, b) =>
-          (a.username || a.loginUsername || "")
-            .toLowerCase()
-            .localeCompare((b.username || b.loginUsername || "").toLowerCase())
+          getUserLabel(a).toLowerCase().localeCompare(getUserLabel(b).toLowerCase())
         );
+
         setAllUsers(list);
       } catch (err) {
         console.error("Error loading users for messages:", err);
@@ -166,6 +178,7 @@ export default function MessagesPage() {
         setLoadingUsers(false);
       }
     }
+
     loadUsers();
   }, [user]);
 
@@ -304,6 +317,70 @@ export default function MessagesPage() {
     });
   }, [myId, selectedUserId, messages]);
 
+  useEffect(() => {
+    if (loadingUsers) return;
+    if (prefillAppliedRef.current) return;
+    if (!allUsers.length) return;
+
+    const incomingState = location.state || {};
+    const recipientUserId = String(incomingState.recipientUserId || "").trim();
+    const recipientUsername = String(incomingState.recipientUsername || "")
+      .trim()
+      .toLowerCase();
+    const recipientName = String(incomingState.recipientName || "").trim();
+    const prefilledMessage = String(incomingState.prefilledMessage || "").trim();
+
+    if (!recipientUserId && !recipientUsername && !recipientName && !prefilledMessage) {
+      return;
+    }
+
+    let foundUser = null;
+
+    if (recipientUserId) {
+      foundUser = allUsers.find((u) => u.id === recipientUserId) || null;
+    }
+
+    if (!foundUser && recipientUsername) {
+      foundUser =
+        allUsers.find(
+          (u) =>
+            String(u.username || "").trim().toLowerCase() === recipientUsername ||
+            String(u.loginUsername || "").trim().toLowerCase() === recipientUsername
+        ) || null;
+    }
+
+    if (!foundUser && recipientName) {
+      foundUser =
+        allUsers.find((u) => {
+          const full =
+            String(
+              u.displayName ||
+                u.fullName ||
+                u.name ||
+                u.username ||
+                u.loginUsername ||
+                ""
+            )
+              .trim()
+              .toLowerCase();
+          return full === recipientName.toLowerCase();
+        }) || null;
+    }
+
+    if (foundUser) {
+      setSelectedUserId(foundUser.id);
+      setSelectedUser(foundUser);
+    }
+
+    if (prefilledMessage) {
+      setText(prefilledMessage);
+    }
+
+    prefillAppliedRef.current = true;
+
+    window.history.replaceState({}, document.title);
+  }, [loadingUsers, allUsers, location.state]);
+
   const handleChangeUser = (id) => {
     setSelectedUserId(id || "");
     const found = allUsers.find((u) => u.id === id) || null;
@@ -350,7 +427,7 @@ export default function MessagesPage() {
     if (!isManager) return;
 
     const other = selectedUser;
-    const name = other?.username || other?.loginUsername || "this user";
+    const name = getUserLabel(other);
 
     const ok = window.confirm(
       `Delete entire conversation with ${name}? This cannot be undone.`
@@ -563,8 +640,7 @@ export default function MessagesPage() {
           >
             {conversations.map((c) => {
               const other = allUsers.find((u) => u.id === c.otherUserId) || {};
-              const name =
-                other.username || other.loginUsername || "(unknown user)";
+              const name = getUserLabel(other);
               const preview = c.lastFromMe ? `You: ${c.lastText}` : c.lastText;
               const isActive = selectedUserId === c.otherUserId;
 
@@ -663,7 +739,7 @@ export default function MessagesPage() {
                 <option value="">Select a user</option>
                 {allUsers.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.username || u.loginUsername || "(no username)"} · {u.role}
+                    {getUserLabel(u)} · {u.role}
                   </option>
                 ))}
               </SelectInput>
@@ -677,7 +753,7 @@ export default function MessagesPage() {
                 border: "1px solid #dbeafe",
                 borderRadius: 14,
                 padding: "12px 14px",
-                minWidth: 200,
+                minWidth: 220,
               }}
             >
               <div
@@ -699,7 +775,7 @@ export default function MessagesPage() {
                   fontWeight: 800,
                 }}
               >
-                {selectedUser.username || selectedUser.loginUsername}
+                {getUserLabel(selectedUser)}
               </div>
               <div
                 style={{
@@ -710,6 +786,17 @@ export default function MessagesPage() {
               >
                 Role: {selectedUser.role || "N/A"}
               </div>
+              {(selectedUser.username || selectedUser.loginUsername) && (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: 12,
+                    color: "#64748b",
+                  }}
+                >
+                  @{selectedUser.username || selectedUser.loginUsername}
+                </div>
+              )}
             </div>
           )}
         </div>
