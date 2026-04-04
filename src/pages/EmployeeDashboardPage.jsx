@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -125,6 +125,8 @@ function toJsDate(value) {
 
 function getAgentNameFromWchr(item) {
   return (
+    item?.employee_login ||
+    item?.employee_name ||
     item?.agentName ||
     item?.employeeName ||
     item?.submittedByName ||
@@ -139,12 +141,11 @@ function getTopAgent(items, fromDate, label) {
   const counts = {};
 
   items.forEach((item) => {
-    const createdAt = toJsDate(item?.createdAt || item?.timestamp || item?.date);
+    const createdAt = toJsDate(
+      item?.submitted_at || item?.createdAt || item?.timestamp || item?.date
+    );
     if (!createdAt) return;
     if (createdAt < fromDate) return;
-
-    const role = String(item?.role || item?.submittedByRole || "").toLowerCase();
-    if (role && role !== "agent") return;
 
     const agentName = getAgentNameFromWchr(item);
     counts[agentName] = (counts[agentName] || 0) + 1;
@@ -570,6 +571,159 @@ function LeaderRow({ row, accent = "#1769aa" }) {
   );
 }
 
+function EmployeeOfMonthCard({ data, isMobile, language }) {
+  const title = language === "es" ? "Empleado del Mes" : "Employee of the Month";
+  const noSelection = language === "es" ? "No seleccionado" : "No employee selected";
+
+  const initials = getInitials(data?.employeeName || "E");
+
+  return (
+    <div
+      style={{
+        background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
+        border: "1px solid #fed7aa",
+        borderRadius: isMobile ? 20 : 24,
+        padding: isMobile ? 16 : 20,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 14,
+            background: "#f59e0b22",
+            color: "#b45309",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 18,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          🏆
+        </div>
+
+        <h2
+          style={{
+            margin: 0,
+            fontSize: isMobile ? 17 : 19,
+            fontWeight: 800,
+            color: "#0f172a",
+            letterSpacing: "-0.02em",
+          }}
+        >
+          {title}
+        </h2>
+      </div>
+
+      {!data ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 14,
+            color: "#64748b",
+            fontWeight: 700,
+          }}
+        >
+          {noSelection}
+        </p>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              width: 62,
+              height: 62,
+              borderRadius: 18,
+              overflow: "hidden",
+              background: "#ffedd5",
+              border: "1px solid #fdba74",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#9a3412",
+              fontWeight: 800,
+              fontSize: 20,
+              flexShrink: 0,
+            }}
+          >
+            {data.photoURL ? (
+              <img
+                src={data.photoURL}
+                alt={data.employeeName}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
+            ) : (
+              <span>{initials}</span>
+            )}
+          </div>
+
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 800,
+                color: "#0f172a",
+                lineHeight: 1.2,
+                wordBreak: "break-word",
+              }}
+            >
+              {data.employeeName || noSelection}
+            </div>
+
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 13,
+                color: "#9a3412",
+                fontWeight: 700,
+              }}
+            >
+              {data.airline || "—"} · {data.department || "—"}
+            </div>
+
+            {(data.monthLabel || data.note) && (
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre-line",
+                }}
+              >
+                {data.monthLabel ? `${data.monthLabel}` : ""}
+                {data.monthLabel && data.note ? " · " : ""}
+                {data.note || ""}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EmployeeDashboardPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -579,6 +733,7 @@ export default function EmployeeDashboardPage() {
   const [birthdays, setBirthdays] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [wchrReports, setWchrReports] = useState([]);
+  const [employeeOfMonth, setEmployeeOfMonth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [wchrLoading, setWchrLoading] = useState(true);
   const [language, setLanguage] = useState("en");
@@ -635,8 +790,6 @@ export default function EmployeeDashboardPage() {
       wchrTopWeek: "Top WCHR This Week",
       topTodaySub: "Daily WCHR performance ranking.",
       topWeekSub: "Weekly WCHR performance ranking.",
-      comingSoon: "Coming Soon",
-      leaderboard: "Leaderboard",
       today: "WCHRs today",
       week: "WCHRs this week",
       loadingWchr: "Loading WCHR ranking...",
@@ -687,8 +840,6 @@ export default function EmployeeDashboardPage() {
       wchrTopWeek: "Top WCHR Semana",
       topTodaySub: "Ranking diario de desempeño WCHR.",
       topWeekSub: "Ranking semanal de desempeño WCHR.",
-      comingSoon: "Próximamente",
-      leaderboard: "Ranking",
       today: "WCHRs hoy",
       week: "WCHRs esta semana",
       loadingWchr: "Cargando ranking WCHR...",
@@ -762,6 +913,27 @@ export default function EmployeeDashboardPage() {
           .filter((item) => item.birthDateParsed);
 
         setBirthdays(birthdayList);
+
+        try {
+          const qEmployeeOfMonth = query(
+            collection(db, "employee_of_month"),
+            where("active", "==", true)
+          );
+          const employeeOfMonthSnap = await getDocs(qEmployeeOfMonth);
+
+          if (!employeeOfMonthSnap.empty) {
+            const first = employeeOfMonthSnap.docs[0];
+            setEmployeeOfMonth({
+              id: first.id,
+              ...first.data(),
+            });
+          } else {
+            setEmployeeOfMonth(null);
+          }
+        } catch (err) {
+          console.error("Error loading employee of month:", err);
+          setEmployeeOfMonth(null);
+        }
       } catch (err) {
         console.error("Error loading employee dashboard:", err);
       } finally {
@@ -777,7 +949,7 @@ export default function EmployeeDashboardPage() {
       try {
         setWchrLoading(true);
 
-        const snap = await getDocs(collection(db, "wchr_reports"));
+        const snap = await getDocs(collection(db, "wch_reports"));
         const list = snap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
@@ -873,16 +1045,12 @@ export default function EmployeeDashboardPage() {
   }, [birthdays]);
 
   const topToday = useMemo(
-    () => [
-      getTopAgent(wchrReports, startOfToday(), t.today),
-    ],
+    () => [getTopAgent(wchrReports, startOfToday(), t.today)],
     [wchrReports, t]
   );
 
   const topWeek = useMemo(
-    () => [
-      getTopAgent(wchrReports, startOfWeekMonday(), t.week),
-    ],
+    () => [getTopAgent(wchrReports, startOfWeekMonday(), t.week)],
     [wchrReports, t]
   );
 
@@ -1180,6 +1348,12 @@ export default function EmployeeDashboardPage() {
               ))}
             </div>
           </GlassCard>
+
+          <EmployeeOfMonthCard
+            data={employeeOfMonth}
+            isMobile={isMobile}
+            language={language}
+          />
 
           <GlassCard
             title={t.stationHighlights}
