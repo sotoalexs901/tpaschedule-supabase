@@ -58,7 +58,6 @@ function normalizeLower(value) {
 function PersonCard({ person, large = false }) {
   const visibleName = getVisibleName(person);
   const position = person.position || getDefaultPosition(person.role);
-  const airline = normalizeText(person.airline);
   const department = normalizeText(person.department);
   const photo = person.profilePhotoURL || "";
 
@@ -139,7 +138,7 @@ function PersonCard({ person, large = false }) {
             {position}
           </div>
 
-          {(airline || department) && (
+          {department && (
             <div
               style={{
                 marginTop: 4,
@@ -148,9 +147,7 @@ function PersonCard({ person, large = false }) {
                 lineHeight: 1.5,
               }}
             >
-              {airline || "No Airline"}
-              {airline || department ? " · " : ""}
-              {department || "No Department"}
+              {department}
             </div>
           )}
         </div>
@@ -303,7 +300,6 @@ export default function StationTeamPage() {
             id: usr.id,
             ...usr,
             employeeName: emp?.name || "",
-            airline: emp?.airline || usr?.airline || "",
             department: emp?.department || usr?.department || "",
             position:
               emp?.position ||
@@ -350,11 +346,9 @@ export default function StationTeamPage() {
 
     const grouped = {};
     rows.forEach((person) => {
-      const airline = normalizeText(person.airline) || "No Airline";
       const department = normalizeText(person.department) || "No Department";
-      const key = `${airline} · ${department}`;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(person);
+      if (!grouped[department]) grouped[department] = [];
+      grouped[department].push(person);
     });
 
     return Object.fromEntries(
@@ -369,11 +363,9 @@ export default function StationTeamPage() {
 
     const grouped = {};
     rows.forEach((person) => {
-      const airline = normalizeText(person.airline) || "No Airline";
       const department = normalizeText(person.department) || "No Department";
-      const key = `${airline} · ${department}`;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(person);
+      if (!grouped[department]) grouped[department] = [];
+      grouped[department].push(person);
     });
 
     return Object.fromEntries(
@@ -447,7 +439,7 @@ export default function StationTeamPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            View the Eulen team structure at TPA by role, airline and department.
+            View the Eulen team structure at TPA by role and department.
           </p>
         </div>
       </div>
