@@ -191,12 +191,13 @@ function getVisibleUserName(user) {
 function getReviewStatusLabel(status) {
   const value = String(status || "submitted").toLowerCase();
 
-  if (value === "read") return "Read";
-  if (value === "approved") return "Approved";
+  if (value === "submitted") return "Received";
+  if (value === "read") return "Reviewed";
+  if (value === "approved") return "Accepted";
   if (value === "follow_up_required") return "Follow Up Required";
   if (value === "closed") return "Closed";
   if (value === "archived") return "Archived";
-  return "Submitted";
+  return "Received";
 }
 
 function getReviewStatusStyle(status) {
@@ -265,6 +266,28 @@ function getReviewStatusStyle(status) {
   };
 }
 
+function getSupervisorFollowUpBy(report) {
+  return (
+    report.followUpCompletedBy ||
+    report.reviewedBy ||
+    report.readBy ||
+    report.approvedBy ||
+    report.closedBy ||
+    report.archivedBy ||
+    "—"
+  );
+}
+
+function getSupervisorComments(report) {
+  return (
+    report.managerComments ||
+    report.managerNotes ||
+    report.followUpDetails ||
+    report.followUpAction ||
+    "—"
+  );
+}
+
 function buildPrintableHtml(report) {
   const responses = report?.responses || {};
   const dynamicBlocks =
@@ -315,8 +338,12 @@ function buildPrintableHtml(report) {
     </div>
 
     <div class="detail-box">
-      <div class="detail-label">Manager Notes</div>
-      <div class="detail-value">${escapeHtml(report.managerNotes || "—").replace(/\n/g, "<br/>")}</div>
+      <div class="detail-label">Manager Notes / Comments</div>
+      <div class="detail-value">${escapeHtml(
+        report.managerComments ||
+          report.managerNotes ||
+          "—"
+      ).replace(/\n/g, "<br/>")}</div>
     </div>
 
     <div class="detail-box">
@@ -327,6 +354,11 @@ function buildPrintableHtml(report) {
     <div class="detail-box">
       <div class="detail-label">Follow Up Details</div>
       <div class="detail-value">${escapeHtml(report.followUpDetails || "—").replace(/\n/g, "<br/>")}</div>
+    </div>
+
+    <div class="detail-box">
+      <div class="detail-label">Follow Up By</div>
+      <div class="detail-value">${escapeHtml(getSupervisorFollowUpBy(report))}</div>
     </div>
   `;
 
@@ -501,13 +533,7 @@ function buildPrintableHtml(report) {
 function buildDelaySummaryPrintableHtml(airline, reports, range) {
   const rowsHtml = reports
     .map((report) => {
-      const dutyManager =
-        report.reviewedBy ||
-        report.readBy ||
-        report.approvedBy ||
-        report.closedBy ||
-        report.archivedBy ||
-        "—";
+      const dutyManager = getSupervisorFollowUpBy(report);
 
       return `
         <tr>
@@ -880,8 +906,14 @@ export default function OperationalReportAdminPage() {
   const isCabinDutyManager =
     user?.role === "duty_manager" && normalizedUsername === "hhernandez";
 
-  const canAccess =
+  const isSupervisor = user?.role === "supervisor";
+  const canManage =
     user?.role === "duty_manager" || user?.role === "station_manager";
+
+  const canAccess =
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager" ||
+    user?.role === "supervisor";
 
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -919,6 +951,7 @@ export default function OperationalReportAdminPage() {
     responses: {},
     reviewStatus: "submitted",
     managerNotes: "",
+    managerComments: "",
     followUpRequired: false,
     followUpAction: "",
     followUpDetails: "",
@@ -944,6 +977,7 @@ export default function OperationalReportAdminPage() {
             ),
             reviewStatus: data.reviewStatus || "submitted",
             managerNotes: data.managerNotes || "",
+            managerComments: data.managerComments || "",
             followUpRequired: Boolean(data.followUpRequired),
             followUpAction: data.followUpAction || "",
             followUpDetails: data.followUpDetails || "",
@@ -953,6 +987,25 @@ export default function OperationalReportAdminPage() {
 
         if (isCabinDutyManager) {
           rows = rows.filter((row) => row.normalizedDepartment === "cabin_service");
+        }
+
+        if (isSupervisor) {
+          const myUserId = String(user?.id || "").trim();
+          const myUsername = String(user?.username || "")
+            .trim()
+            .toLowerCase();
+
+          rows = rows.filter((row) => {
+            const rowUserId = String(row.submittedByUserId || "").trim();
+            const rowUsername = String(row.submittedByUsername || "")
+              .trim()
+              .toLowerCase();
+
+            return (
+              (myUserId && rowUserId === myUserId) ||
+              (myUsername && rowUsername === myUsername)
+            );
+          });
         }
 
         setReports(rows);
@@ -969,7 +1022,7 @@ export default function OperationalReportAdminPage() {
     } else {
       setLoading(false);
     }
-  }, [canAccess, isCabinDutyManager]);
+  }, [canAccess, isCabinDutyManager, isSupervisor, user?.id, user?.username]);
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
@@ -1127,6 +1180,8 @@ export default function OperationalReportAdminPage() {
   };
 
   const startEdit = (report) => {
+    if (!canManage) return;
+
     setEditingId(report.id);
     setEditForm({
       airline: report.airline || "",
@@ -1145,6 +1200,7 @@ export default function OperationalReportAdminPage() {
       responses: { ...(report.responses || {}) },
       reviewStatus: report.reviewStatus || "submitted",
       managerNotes: report.managerNotes || "",
+      managerComments: report.managerComments || "",
       followUpRequired: Boolean(report.followUpRequired),
       followUpAction: report.followUpAction || "",
       followUpDetails: report.followUpDetails || "",
@@ -1168,6 +1224,8 @@ export default function OperationalReportAdminPage() {
   };
 
   const saveEdit = async (report) => {
+    if (!canManage) return;
+
     try {
       setSavingId(report.id);
 
@@ -1188,6 +1246,7 @@ export default function OperationalReportAdminPage() {
         responses: editForm.responses || {},
         reviewStatus: editForm.reviewStatus || "submitted",
         managerNotes: editForm.managerNotes || "",
+        managerComments: editForm.managerComments || editForm.managerNotes || "",
         followUpRequired: Boolean(editForm.followUpRequired),
         followUpAction: editForm.followUpAction || "",
         followUpDetails: editForm.followUpDetails || "",
@@ -1218,6 +1277,8 @@ export default function OperationalReportAdminPage() {
   };
 
   const updateWorkflowStatus = async (report, mode) => {
+    if (!canManage) return;
+
     try {
       setActionId(report.id);
 
@@ -1286,11 +1347,13 @@ export default function OperationalReportAdminPage() {
   };
 
   const saveFollowUp = async (report) => {
+    if (!canManage) return;
+
     const action = String(editForm.followUpAction || "").trim();
     const details = String(editForm.followUpDetails || "").trim();
 
-    if (!action && !details) {
-      setStatusMessage("Please enter follow up action or follow up details.");
+    if (!action && !details && !String(editForm.managerNotes || "").trim()) {
+      setStatusMessage("Please enter manager notes, follow up action, or follow up details.");
       return;
     }
 
@@ -1306,6 +1369,7 @@ export default function OperationalReportAdminPage() {
         followUpAction: action,
         followUpDetails: details,
         managerNotes: editForm.managerNotes || "",
+        managerComments: editForm.managerNotes || "",
         followUpCompletedAt: serverTimestamp(),
         followUpCompletedBy: managerName,
         followUpCompletedByRole: managerRole,
@@ -1340,6 +1404,8 @@ export default function OperationalReportAdminPage() {
   };
 
   const deleteReport = async (report) => {
+    if (!canManage) return;
+
     const ok = window.confirm(
       `Delete operational report for ${report.normalizedAirline || "Unknown"}?`
     );
@@ -1435,7 +1501,7 @@ export default function OperationalReportAdminPage() {
             Access denied
           </h1>
           <p style={{ margin: 0, maxWidth: 700, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
-            Only Duty Managers and Station Managers can view operational reports.
+            Only Supervisors, Duty Managers and Station Managers can view operational reports.
           </p>
         </div>
       </div>
@@ -1458,10 +1524,12 @@ export default function OperationalReportAdminPage() {
           TPA OPS · Operational Reports
         </p>
         <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-0.04em" }}>
-          Operational Report Admin
+          {isSupervisor ? "My Operational Reports" : "Operational Report Admin"}
         </h1>
         <p style={{ margin: 0, maxWidth: 760, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
-          Review delays, alerts, follow-up cases, and manage submitted operational reports.
+          {isSupervisor
+            ? "Review the operational reports submitted by you, track their status, see duty manager follow-up and comments."
+            : "Review delays, alerts, follow-up cases, and manage submitted operational reports."}
         </p>
       </div>
 
@@ -1587,7 +1655,7 @@ export default function OperationalReportAdminPage() {
         </div>
       </PageCard>
 
-      {alerts.length > 0 && (
+      {!isSupervisor && alerts.length > 0 && (
         <PageCard style={{ padding: 18 }}>
           <div
             style={{
@@ -1626,243 +1694,239 @@ export default function OperationalReportAdminPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
-        <div
-          style={{
-            marginBottom: 14,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-              }}
-            >
-              Delay Summary
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Click an airline to view its delayed flight list.
-              {filters.dateMode === "custom"
-                ? ` Filter: ${filters.fromDate || "Start"} to ${filters.toDate || "End"}`
-                : ` Filter: ${filters.range}`}
-            </p>
-          </div>
-
-          {selectedDelayAirline && selectedDelayAirlineReports.length > 0 && (
-            <ActionButton variant="secondary" onClick={handlePrintDelaySummary}>
-              Print / Export Delay Summary
-            </ActionButton>
-          )}
-        </div>
-
-        {delayedSummaryByAirline.length === 0 ? (
+      {!isSupervisor && (
+        <PageCard style={{ padding: 22 }}>
           <div
             style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
+              marginBottom: 14,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
             }}
           >
-            No delayed flights found for this filter.
-          </div>
-        ) : (
-          <div
-            style={{
-              overflowX: "auto",
-              borderRadius: 18,
-              border: "1px solid #e2e8f0",
-            }}
-          >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                minWidth: 620,
-                background: "#fff",
-              }}
-            >
-              <thead>
-                <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle()}>Airline</th>
-                  <th style={thStyle()}>Total of Flights Delayed</th>
-                  <th style={thStyle({ textAlign: "center" })}>Open</th>
-                </tr>
-              </thead>
-              <tbody>
-                {delayedSummaryByAirline.map((row, index) => (
-                  <tr
-                    key={row.airline}
-                    style={{
-                      background:
-                        row.airline === selectedDelayAirline
-                          ? "#edf7ff"
-                          : index % 2 === 0
-                          ? "#ffffff"
-                          : "#fbfdff",
-                    }}
-                  >
-                    <td style={tdStyle}>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectDelayAirline(row.airline)}
-                        style={{
-                          border: "none",
-                          background: "transparent",
-                          color: "#1769aa",
-                          fontWeight: 800,
-                          cursor: "pointer",
-                          padding: 0,
-                        }}
-                      >
-                        {row.airline}
-                      </button>
-                    </td>
-                    <td style={tdStyle}>{row.totalDelayedFlights}</td>
-                    <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <ActionButton
-                        variant="secondary"
-                        onClick={() => handleSelectDelayAirline(row.airline)}
-                      >
-                        View
-                      </ActionButton>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {selectedDelayAirline && (
-          <div style={{ marginTop: 18 }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                flexWrap: "wrap",
-                alignItems: "center",
-                marginBottom: 12,
-              }}
-            >
-              <div>
-                <h3
-                  style={{
-                    margin: 0,
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  {selectedDelayAirline} Delayed Flights
-                </h3>
-                <p
-                  style={{
-                    margin: "4px 0 0",
-                    fontSize: 13,
-                    color: "#64748b",
-                  }}
-                >
-                  Total delayed flights: {selectedDelayAirlineReports.length}
-                </p>
-              </div>
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
+                Delay Summary
+              </h2>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 13,
+                  color: "#64748b",
+                }}
+              >
+                Click an airline to view its delayed flight list.
+                {filters.dateMode === "custom"
+                  ? ` Filter: ${filters.fromDate || "Start"} to ${filters.toDate || "End"}`
+                  : ` Filter: ${filters.range}`}
+              </p>
             </div>
 
-            {selectedDelayAirlineReports.length === 0 ? (
-              <div
-                style={{
-                  padding: 16,
-                  borderRadius: 16,
-                  background: "#f8fbff",
-                  border: "1px solid #dbeafe",
-                  color: "#64748b",
-                  fontWeight: 600,
-                }}
-              >
-                No delayed reports found for this airline.
-              </div>
-            ) : (
-              <div
-                style={{
-                  overflowX: "auto",
-                  borderRadius: 18,
-                  border: "1px solid #e2e8f0",
-                }}
-              >
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "separate",
-                    borderSpacing: 0,
-                    minWidth: 1100,
-                    background: "#fff",
-                  }}
-                >
-                  <thead>
-                    <tr style={{ background: "#f8fbff" }}>
-                      <th style={thStyle()}>Date</th>
-                      <th style={thStyle()}>Airline</th>
-                      <th style={thStyle()}>Flight Number</th>
-                      <th style={thStyle()}>Affected Flight</th>
-                      <th style={thStyle()}>Delayed Time</th>
-                      <th style={thStyle()}>Supervisor on Duty</th>
-                      <th style={thStyle()}>Duty Manager in Charge</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedDelayAirlineReports.map((report, index) => {
-                      const dutyManager =
-                        report.reviewedBy ||
-                        report.readBy ||
-                        report.approvedBy ||
-                        report.closedBy ||
-                        report.archivedBy ||
-                        "—";
-
-                      return (
-                        <tr
-                          key={report.id}
-                          style={{
-                            background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                          }}
-                        >
-                          <td style={tdStyle}>{report.reportDate || "—"}</td>
-                          <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
-                          <td style={tdStyle}>{report.flightNumber || "—"}</td>
-                          <td style={tdStyle}>{report.affectedFlightNumber || "—"}</td>
-                          <td style={tdStyle}>
-                            {Number(report.delayedTimeMinutes || 0)} min
-                          </td>
-                          <td style={tdStyle}>{report.supervisorReporting || "—"}</td>
-                          <td style={tdStyle}>{dutyManager}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            {selectedDelayAirline && selectedDelayAirlineReports.length > 0 && (
+              <ActionButton variant="secondary" onClick={handlePrintDelaySummary}>
+                Print / Export Delay Summary
+              </ActionButton>
             )}
           </div>
-        )}
-      </PageCard>
+
+          {delayedSummaryByAirline.length === 0 ? (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 16,
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                color: "#64748b",
+                fontWeight: 600,
+              }}
+            >
+              No delayed flights found for this filter.
+            </div>
+          ) : (
+            <div
+              style={{
+                overflowX: "auto",
+                borderRadius: 18,
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "separate",
+                  borderSpacing: 0,
+                  minWidth: 620,
+                  background: "#fff",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f8fbff" }}>
+                    <th style={thStyle()}>Airline</th>
+                    <th style={thStyle()}>Total of Flights Delayed</th>
+                    <th style={thStyle({ textAlign: "center" })}>Open</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {delayedSummaryByAirline.map((row, index) => (
+                    <tr
+                      key={row.airline}
+                      style={{
+                        background:
+                          row.airline === selectedDelayAirline
+                            ? "#edf7ff"
+                            : index % 2 === 0
+                            ? "#ffffff"
+                            : "#fbfdff",
+                      }}
+                    >
+                      <td style={tdStyle}>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDelayAirline(row.airline)}
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            color: "#1769aa",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                            padding: 0,
+                          }}
+                        >
+                          {row.airline}
+                        </button>
+                      </td>
+                      <td style={tdStyle}>{row.totalDelayedFlights}</td>
+                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                        <ActionButton
+                          variant="secondary"
+                          onClick={() => handleSelectDelayAirline(row.airline)}
+                        >
+                          View
+                        </ActionButton>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {selectedDelayAirline && (
+            <div style={{ marginTop: 18 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  marginBottom: 12,
+                }}
+              >
+                <div>
+                  <h3
+                    style={{
+                      margin: 0,
+                      fontSize: 18,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {selectedDelayAirline} Delayed Flights
+                  </h3>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 13,
+                      color: "#64748b",
+                    }}
+                  >
+                    Total delayed flights: {selectedDelayAirlineReports.length}
+                  </p>
+                </div>
+              </div>
+
+              {selectedDelayAirlineReports.length === 0 ? (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 16,
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                    color: "#64748b",
+                    fontWeight: 600,
+                  }}
+                >
+                  No delayed reports found for this airline.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    overflowX: "auto",
+                    borderRadius: 18,
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "separate",
+                      borderSpacing: 0,
+                      minWidth: 1100,
+                      background: "#fff",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#f8fbff" }}>
+                        <th style={thStyle()}>Date</th>
+                        <th style={thStyle()}>Airline</th>
+                        <th style={thStyle()}>Flight Number</th>
+                        <th style={thStyle()}>Affected Flight</th>
+                        <th style={thStyle()}>Delayed Time</th>
+                        <th style={thStyle()}>Supervisor on Duty</th>
+                        <th style={thStyle()}>Duty Manager in Charge</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedDelayAirlineReports.map((report, index) => {
+                        const dutyManager = getSupervisorFollowUpBy(report);
+
+                        return (
+                          <tr
+                            key={report.id}
+                            style={{
+                              background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                            }}
+                          >
+                            <td style={tdStyle}>{report.reportDate || "—"}</td>
+                            <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
+                            <td style={tdStyle}>{report.flightNumber || "—"}</td>
+                            <td style={tdStyle}>{report.affectedFlightNumber || "—"}</td>
+                            <td style={tdStyle}>
+                              {Number(report.delayedTimeMinutes || 0)} min
+                            </td>
+                            <td style={tdStyle}>{report.supervisorReporting || "—"}</td>
+                            <td style={tdStyle}>{dutyManager}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </PageCard>
+      )}
 
       <div
         style={{
@@ -1876,7 +1940,7 @@ export default function OperationalReportAdminPage() {
         <PageCard style={{ padding: 18, overflow: "hidden" }}>
           <div style={{ marginBottom: 14 }}>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
-              Submitted Reports
+              {isSupervisor ? "My Submitted Reports" : "Submitted Reports"}
             </h2>
             <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
               Total found: {filteredReports.length}
@@ -1904,7 +1968,7 @@ export default function OperationalReportAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1500,
+                  minWidth: isSupervisor ? 1100 : 1500,
                   background: "#fff",
                 }}
               >
@@ -1963,17 +2027,21 @@ export default function OperationalReportAdminPage() {
                             View
                           </ActionButton>
 
-                          <ActionButton variant="warning" onClick={() => startEdit(report)}>
-                            Edit
-                          </ActionButton>
+                          {canManage && (
+                            <>
+                              <ActionButton variant="warning" onClick={() => startEdit(report)}>
+                                Edit
+                              </ActionButton>
 
-                          <ActionButton
-                            variant="danger"
-                            onClick={() => deleteReport(report)}
-                            disabled={deletingId === report.id}
-                          >
-                            {deletingId === report.id ? "Deleting..." : "Delete"}
-                          </ActionButton>
+                              <ActionButton
+                                variant="danger"
+                                onClick={() => deleteReport(report)}
+                                disabled={deletingId === report.id}
+                              >
+                                {deletingId === report.id ? "Deleting..." : "Delete"}
+                              </ActionButton>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1986,7 +2054,7 @@ export default function OperationalReportAdminPage() {
 
         {selectedReport && (
           <PageCard style={{ padding: 20 }}>
-            {editingId === selectedReport.id ? (
+            {editingId === selectedReport.id && canManage ? (
               <div style={{ display: "grid", gap: 16 }}>
                 <div
                   style={{
@@ -2173,13 +2241,14 @@ export default function OperationalReportAdminPage() {
                 </label>
 
                 <div>
-                  <FieldLabel>Manager Notes</FieldLabel>
+                  <FieldLabel>Manager Notes / Comments</FieldLabel>
                   <TextArea
                     value={editForm.managerNotes}
                     onChange={(e) =>
                       setEditForm((prev) => ({
                         ...prev,
                         managerNotes: e.target.value,
+                        managerComments: e.target.value,
                       }))
                     }
                   />
@@ -2282,7 +2351,7 @@ export default function OperationalReportAdminPage() {
                 >
                   <div>
                     <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
-                      Report Detail
+                      {isSupervisor ? "My Report Detail" : "Report Detail"}
                     </h2>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
                       {selectedReport.normalizedAirline || "—"} · {selectedReport.reportDate || "—"}
@@ -2294,9 +2363,11 @@ export default function OperationalReportAdminPage() {
                       Print / Export PDF
                     </ActionButton>
 
-                    <ActionButton variant="warning" onClick={() => startEdit(selectedReport)}>
-                      Edit
-                    </ActionButton>
+                    {canManage && (
+                      <ActionButton variant="warning" onClick={() => startEdit(selectedReport)}>
+                        Edit
+                      </ActionButton>
+                    )}
                   </div>
                 </div>
 
@@ -2317,33 +2388,35 @@ export default function OperationalReportAdminPage() {
                   <InfoCard label="Delayed Flight" value={selectedReport.delayedFlight ? "Yes" : "No"} />
                   <InfoCard label="Delayed Time" value={`${Number(selectedReport.delayedTimeMinutes || 0)} min`} />
                   <InfoCard label="Delayed Code" value={selectedReport.delayedCodeReported || "—"} />
-                  <InfoCard label="Review Status" value={getReviewStatusLabel(selectedReport.reviewStatus)} />
+                  <InfoCard label="Status" value={getReviewStatusLabel(selectedReport.reviewStatus)} />
+                  <InfoCard label="Follow Up By" value={getSupervisorFollowUpBy(selectedReport)} />
                 </div>
 
                 <DetailBox label="Delayed Reason" value={selectedReport.delayedReason || "—"} />
                 <DetailBox label="Notes" value={selectedReport.notes || "—"} />
-                <DetailBox label="Manager Notes" value={selectedReport.managerNotes || "—"} />
+                <DetailBox
+                  label="Manager Notes / Comments"
+                  value={getSupervisorComments(selectedReport)}
+                />
                 <DetailBox label="Follow Up Action" value={selectedReport.followUpAction || "—"} />
                 <DetailBox label="Follow Up Details" value={selectedReport.followUpDetails || "—"} />
 
-                {(selectedReport.readBy || selectedReport.approvedBy || selectedReport.closedBy || selectedReport.archivedBy) && (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <InfoCard label="Read By" value={selectedReport.readBy || "—"} />
-                    <InfoCard label="Read At" value={formatDateTime(selectedReport.readAt)} />
-                    <InfoCard label="Approved By" value={selectedReport.approvedBy || "—"} />
-                    <InfoCard label="Approved At" value={formatDateTime(selectedReport.approvedAt)} />
-                    <InfoCard label="Closed By" value={selectedReport.closedBy || "—"} />
-                    <InfoCard label="Closed At" value={formatDateTime(selectedReport.closedAt)} />
-                    <InfoCard label="Archived By" value={selectedReport.archivedBy || "—"} />
-                    <InfoCard label="Archived At" value={formatDateTime(selectedReport.archivedAt)} />
-                  </div>
-                )}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  <InfoCard label="Received At" value={formatDateTime(selectedReport.createdAt)} />
+                  <InfoCard label="Reviewed At" value={formatDateTime(selectedReport.readAt || selectedReport.reviewedAt)} />
+                  <InfoCard label="Accepted At" value={formatDateTime(selectedReport.approvedAt)} />
+                  <InfoCard label="Closed At" value={formatDateTime(selectedReport.closedAt)} />
+                  <InfoCard label="Reviewed By" value={selectedReport.readBy || selectedReport.reviewedBy || "—"} />
+                  <InfoCard label="Accepted By" value={selectedReport.approvedBy || "—"} />
+                  <InfoCard label="Closed By" value={selectedReport.closedBy || "—"} />
+                  <InfoCard label="Archived By" value={selectedReport.archivedBy || "—"} />
+                </div>
 
                 {shouldFlagNeedsAttention(selectedReport) && (
                   <div
@@ -2381,143 +2454,148 @@ export default function OperationalReportAdminPage() {
                   </div>
                 )}
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {selectedReport.reviewStatus !== "read" && (
-                    <ActionButton
-                      variant="secondary"
-                      onClick={() => updateWorkflowStatus(selectedReport, "read")}
-                      disabled={actionId === selectedReport.id}
+                {canManage && (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
                     >
-                      Mark Read
-                    </ActionButton>
-                  )}
+                      {selectedReport.reviewStatus !== "read" && (
+                        <ActionButton
+                          variant="secondary"
+                          onClick={() => updateWorkflowStatus(selectedReport, "read")}
+                          disabled={actionId === selectedReport.id}
+                        >
+                          Mark Reviewed
+                        </ActionButton>
+                      )}
 
-                  {selectedReport.reviewStatus !== "approved" && (
-                    <ActionButton
-                      variant="success"
-                      onClick={() => updateWorkflowStatus(selectedReport, "approved")}
-                      disabled={actionId === selectedReport.id}
-                    >
-                      Approve
-                    </ActionButton>
-                  )}
+                      {selectedReport.reviewStatus !== "approved" && (
+                        <ActionButton
+                          variant="success"
+                          onClick={() => updateWorkflowStatus(selectedReport, "approved")}
+                          disabled={actionId === selectedReport.id}
+                        >
+                          Accept
+                        </ActionButton>
+                      )}
 
-                  {selectedReport.reviewStatus !== "follow_up_required" && (
-                    <ActionButton
-                      variant="warning"
-                      onClick={() => updateWorkflowStatus(selectedReport, "follow_up_required")}
-                      disabled={actionId === selectedReport.id}
-                    >
-                      Require Follow Up
-                    </ActionButton>
-                  )}
+                      {selectedReport.reviewStatus !== "follow_up_required" && (
+                        <ActionButton
+                          variant="warning"
+                          onClick={() => updateWorkflowStatus(selectedReport, "follow_up_required")}
+                          disabled={actionId === selectedReport.id}
+                        >
+                          Require Follow Up
+                        </ActionButton>
+                      )}
 
-                  {selectedReport.reviewStatus !== "closed" && (
-                    <ActionButton
-                      variant="secondary"
-                      onClick={() => updateWorkflowStatus(selectedReport, "closed")}
-                      disabled={actionId === selectedReport.id}
-                    >
-                      Close Report
-                    </ActionButton>
-                  )}
+                      {selectedReport.reviewStatus !== "closed" && (
+                        <ActionButton
+                          variant="secondary"
+                          onClick={() => updateWorkflowStatus(selectedReport, "closed")}
+                          disabled={actionId === selectedReport.id}
+                        >
+                          Close Report
+                        </ActionButton>
+                      )}
 
-                  {selectedReport.reviewStatus !== "archived" && (
-                    <ActionButton
-                      variant="secondary"
-                      onClick={() => updateWorkflowStatus(selectedReport, "archived")}
-                      disabled={actionId === selectedReport.id}
-                    >
-                      Archive
-                    </ActionButton>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    borderRadius: 16,
-                    padding: "14px 16px",
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                      marginBottom: 8,
-                    }}
-                  >
-                    Follow Up Manager Entry
-                  </div>
-
-                  <div style={{ display: "grid", gap: 12 }}>
-                    <div>
-                      <FieldLabel>Manager Notes</FieldLabel>
-                      <TextArea
-                        value={editForm.managerNotes}
-                        onChange={(e) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            managerNotes: e.target.value,
-                          }))
-                        }
-                      />
+                      {selectedReport.reviewStatus !== "archived" && (
+                        <ActionButton
+                          variant="secondary"
+                          onClick={() => updateWorkflowStatus(selectedReport, "archived")}
+                          disabled={actionId === selectedReport.id}
+                        >
+                          Archive
+                        </ActionButton>
+                      )}
                     </div>
 
-                    <div>
-                      <FieldLabel>Follow Up Action</FieldLabel>
-                      <TextArea
-                        value={editForm.followUpAction}
-                        onChange={(e) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            followUpAction: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <FieldLabel>Follow Up Details</FieldLabel>
-                      <TextArea
-                        value={editForm.followUpDetails}
-                        onChange={(e) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            followUpDetails: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <ActionButton
-                        variant="warning"
-                        onClick={() => saveFollowUp(selectedReport)}
-                        disabled={actionId === selectedReport.id}
+                    <div
+                      style={{
+                        borderRadius: 16,
+                        padding: "14px 16px",
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          marginBottom: 8,
+                        }}
                       >
-                        Save Follow Up
-                      </ActionButton>
+                        Follow Up Manager Entry
+                      </div>
 
-                      <ActionButton
-                        variant="secondary"
-                        onClick={() => startEdit(selectedReport)}
-                      >
-                        Sync From Report
-                      </ActionButton>
+                      <div style={{ display: "grid", gap: 12 }}>
+                        <div>
+                          <FieldLabel>Manager Notes / Comments</FieldLabel>
+                          <TextArea
+                            value={editForm.managerNotes}
+                            onChange={(e) =>
+                              setEditForm((prev) => ({
+                                ...prev,
+                                managerNotes: e.target.value,
+                                managerComments: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+
+                        <div>
+                          <FieldLabel>Follow Up Action</FieldLabel>
+                          <TextArea
+                            value={editForm.followUpAction}
+                            onChange={(e) =>
+                              setEditForm((prev) => ({
+                                ...prev,
+                                followUpAction: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+
+                        <div>
+                          <FieldLabel>Follow Up Details</FieldLabel>
+                          <TextArea
+                            value={editForm.followUpDetails}
+                            onChange={(e) =>
+                              setEditForm((prev) => ({
+                                ...prev,
+                                followUpDetails: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <ActionButton
+                            variant="warning"
+                            onClick={() => saveFollowUp(selectedReport)}
+                            disabled={actionId === selectedReport.id}
+                          >
+                            Save Follow Up
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="secondary"
+                            onClick={() => startEdit(selectedReport)}
+                          >
+                            Sync From Report
+                          </ActionButton>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                )}
 
                 <div>
                   <div
