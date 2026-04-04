@@ -58,6 +58,7 @@ function normalizeLower(value) {
 function PersonCard({ person, large = false }) {
   const visibleName = getVisibleName(person);
   const position = person.position || getDefaultPosition(person.role);
+  const airline = normalizeText(person.airline);
   const department = normalizeText(person.department);
   const photo = person.profilePhotoURL || "";
 
@@ -138,7 +139,7 @@ function PersonCard({ person, large = false }) {
             {position}
           </div>
 
-          {department && (
+          {(airline || department) && (
             <div
               style={{
                 marginTop: 4,
@@ -147,7 +148,9 @@ function PersonCard({ person, large = false }) {
                 lineHeight: 1.5,
               }}
             >
-              {department}
+              {airline || "No Airline"}
+              {airline || department ? " · " : ""}
+              {department || "No Department"}
             </div>
           )}
 
@@ -157,7 +160,6 @@ function PersonCard({ person, large = false }) {
                 marginTop: 4,
                 fontSize: 12,
                 color: "#94a3b8",
-                lineHeight: 1.5,
               }}
             >
               @{person.username}
@@ -299,82 +301,121 @@ export default function StationTeamPage() {
 
         users.forEach((usr) => {
           const employeeIdKey = normalizeText(usr.employeeId);
-          const usernameKey = normalizeLower(usr.username);
+          const usernameKey = normalizeLower(usr.username || usr.loginUsername);
 
-          if (employeeIdKey) usersByEmployeeId.set(employeeIdKey, usr);
-          if (usernameKey) usersByUsername.set(usernameKey, usr);
+          if (employeeIdKey) {
+            usersByEmployeeId.set(employeeIdKey, usr);
+          }
+
+          if (usernameKey) {
+            usersByUsername.set(usernameKey, usr);
+          }
         });
 
         const mergedFromEmployees = employees.map((emp) => {
-          const matchedUserById = usersByEmployeeId.get(normalizeText(emp.id));
-          const matchedUserByUsername = usersByUsername.get(
-            normalizeLower(emp.loginUsername)
-          );
-          const matchedUser = matchedUserById || matchedUserByUsername || null;
+          const empIdKey = normalizeText(emp.id);
+          const loginKey = normalizeLower(emp.loginUsername);
+
+          const matchedUser =
+            usersByEmployeeId.get(empIdKey) ||
+            usersByUsername.get(loginKey) ||
+            null;
 
           return {
-            id: `emp-${emp.id}`,
-            sourceId: emp.id,
-            role: matchedUser?.role || "",
-            username: matchedUser?.username || emp?.loginUsername || "",
+            id: `employee-${emp.id}`,
+            sourceEmployeeId: emp.id,
+            sourceUserId: matchedUser?.id || "",
+            role: matchedUser?.role || normalizeLower(emp.role) || "agent",
+            username:
+              matchedUser?.username ||
+              matchedUser?.loginUsername ||
+              emp?.loginUsername ||
+              "",
             displayName:
               matchedUser?.displayName ||
               matchedUser?.fullName ||
               matchedUser?.name ||
               emp?.name ||
               "",
-            fullName: matchedUser?.fullName || emp?.name || "",
+            fullName:
+              matchedUser?.fullName ||
+              matchedUser?.displayName ||
+              emp?.name ||
+              "",
             name: emp?.name || matchedUser?.name || "",
             employeeName: emp?.name || "",
+            airline: emp?.airline || matchedUser?.airline || "",
             department: emp?.department || matchedUser?.department || "",
             position:
-              matchedUser?.position ||
               emp?.position ||
-              getDefaultPosition(matchedUser?.role),
-            profilePhotoURL: matchedUser?.profilePhotoURL || "",
-            employeeId: emp?.id || matchedUser?.employeeId || "",
+              matchedUser?.position ||
+              getDefaultPosition(matchedUser?.role || emp?.role),
+            profilePhotoURL:
+              matchedUser?.profilePhotoURL ||
+              emp?.profilePhotoURL ||
+              "",
+            active:
+              emp?.active === false
+                ? false
+                : String(emp?.status || "Active").toLowerCase() !== "inactive",
           };
         });
 
-        const coveredUserIds = new Set(
+        const linkedEmployeeIds = new Set(
+          mergedFromEmployees.map((item) => normalizeText(item.sourceEmployeeId))
+        );
+        const linkedUserIds = new Set(
           mergedFromEmployees
-            .map((item) => {
-              const foundByEmpId = usersByEmployeeId.get(normalizeText(item.sourceId));
-              return foundByEmpId?.id || "";
-            })
+            .map((item) => normalizeText(item.sourceUserId))
             .filter(Boolean)
         );
 
-        mergedFromEmployees.forEach((item) => {
-          const byUsername = usersByUsername.get(normalizeLower(item.username));
-          if (byUsername?.id) coveredUserIds.add(byUsername.id);
-        });
+        const extraUsersWithoutEmployee = users
+          .filter((usr) => {
+            const userIdKey = normalizeText(usr.id);
+            const employeeIdKey = normalizeText(usr.employeeId);
 
-        const usersWithoutEmployee = users
-          .filter((usr) => !coveredUserIds.has(usr.id))
+            if (linkedUserIds.has(userIdKey)) return false;
+            if (employeeIdKey && linkedEmployeeIds.has(employeeIdKey)) return false;
+
+            return true;
+          })
           .map((usr) => ({
             id: `user-${usr.id}`,
-            sourceId: usr.id,
+            sourceEmployeeId: normalizeText(usr.employeeId),
+            sourceUserId: usr.id,
             role: usr?.role || "",
-            username: usr?.username || "",
+            username: usr?.username || usr?.loginUsername || "",
             displayName:
               usr?.displayName ||
               usr?.fullName ||
               usr?.name ||
               usr?.username ||
               "",
-            fullName: usr?.fullName || "",
-            name: usr?.name || "",
+            fullName:
+              usr?.fullName ||
+              usr?.displayName ||
+              usr?.name ||
+              "",
+            name: usr?.name || usr?.displayName || usr?.username || "",
             employeeName: "",
+            airline: usr?.airline || "",
             department: usr?.department || "",
             position: usr?.position || getDefaultPosition(usr?.role),
             profilePhotoURL: usr?.profilePhotoURL || "",
-            employeeId: usr?.employeeId || "",
+            active: true,
           }));
 
-        const merged = [...mergedFromEmployees, ...usersWithoutEmployee];
+        const finalList = [...mergedFromEmployees, ...extraUsersWithoutEmployee]
+          .filter((item) => item.active !== false)
+          .filter(
+            (item) =>
+              normalizeText(item.displayName) ||
+              normalizeText(item.employeeName) ||
+              normalizeText(item.username)
+          );
 
-        setPeople(merged);
+        setPeople(finalList);
       } catch (err) {
         console.error("Error loading station team:", err);
         setPeople([]);
@@ -422,7 +463,9 @@ export default function StationTeamPage() {
   }, [sortedPeople]);
 
   const agentsGrouped = useMemo(() => {
-    const rows = sortedPeople.filter((p) => normalizeLower(p.role) === "agent");
+    const rows = sortedPeople.filter(
+      (p) => normalizeLower(p.role) === "agent"
+    );
 
     const grouped = {};
     rows.forEach((person) => {
@@ -522,13 +565,23 @@ export default function StationTeamPage() {
         </PageCard>
       ) : (
         <>
-          <GroupSection title="Station Manager" people={stationManagers} large />
+          <GroupSection
+            title="Station Manager"
+            people={stationManagers}
+            large
+          />
+
           <GroupSection title="Duty Managers" people={dutyManagers} />
+
           <GroupedDepartmentSection
             title="Supervisors"
             groups={supervisorsGrouped}
           />
-          <GroupedDepartmentSection title="Agents" groups={agentsGrouped} />
+
+          <GroupedDepartmentSection
+            title="Agents"
+            groups={agentsGrouped}
+          />
         </>
       )}
     </div>
