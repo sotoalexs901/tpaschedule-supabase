@@ -1,14 +1,6 @@
 import React, { useMemo, useState } from "react";
-import {
-  addDoc,
-  collection,
-  serverTimestamp,
-} from "firebase/firestore";
-import {
-  ref,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
@@ -192,7 +184,12 @@ function YesNoField({ label, value, onChange }) {
   );
 }
 
-function SignatureBox({ label, value, onChange, placeholder = "Type full name as signature" }) {
+function SignatureBox({
+  label,
+  value,
+  onChange,
+  placeholder = "Type full name as signature",
+}) {
   return (
     <div>
       <FieldLabel>{label}</FieldLabel>
@@ -224,7 +221,7 @@ function emptyDistribution() {
   };
 }
 
-function initialChecklist() {
+function initialCleaningChecklist() {
   return {
     basuraRemovida: "",
     bolsillosOrganizados: "",
@@ -282,7 +279,7 @@ export default function SupervisorCleaningSecurityPage() {
     supervisorSignature: "",
     airlineRepSignature: "",
     distribution: emptyDistribution(),
-    limpieza: initialChecklist(),
+    limpieza: initialCleaningChecklist(),
     limpiezaObservaciones: "",
     security: initialSecurityChecklist(),
     securityObservaciones: "",
@@ -352,14 +349,18 @@ export default function SupervisorCleaningSecurityPage() {
     if (!form.flightNo.trim()) return "Please enter the flight number.";
     if (!form.tailNo.trim()) return "Please enter the tail number.";
     if (!form.supervisorName.trim()) return "Please enter the supervisor name.";
-    if (!form.supervisorSignature.trim()) return "Please add supervisor signature.";
-    if (!form.airlineRep.trim()) return "Please enter airline representative name.";
+    if (!form.supervisorSignature.trim()) {
+      return "Please add supervisor signature.";
+    }
+    if (!form.airlineRep.trim()) {
+      return "Please enter airline representative name.";
+    }
     if (!form.airlineRepSignature.trim()) {
       return "Please add airline representative signature.";
     }
 
-    const limpiezaValues = Object.values(form.limpieza);
-    if (limpiezaValues.some((v) => !v)) {
+    const cleaningValues = Object.values(form.limpieza);
+    if (cleaningValues.some((v) => !v)) {
       return "Please complete all cleaning checklist fields.";
     }
 
@@ -399,7 +400,7 @@ export default function SupervisorCleaningSecurityPage() {
       supervisorSignature: "",
       airlineRepSignature: "",
       distribution: emptyDistribution(),
-      limpieza: initialChecklist(),
+      limpieza: initialCleaningChecklist(),
       limpiezaObservaciones: "",
       security: initialSecurityChecklist(),
       securityObservaciones: "",
@@ -488,7 +489,9 @@ export default function SupervisorCleaningSecurityPage() {
         reportType: "cleaning_and_security_search_report",
       });
 
-      setStatusMessage("Cleaning and Security Search Report submitted successfully.");
+      setStatusMessage(
+        "Cleaning and Security Search Report submitted successfully."
+      );
       resetForm();
     } catch (err) {
       console.error("Error saving cleaning/security report:", err);
@@ -500,7 +503,13 @@ export default function SupervisorCleaningSecurityPage() {
 
   if (!canAccess) {
     return (
-      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+      <div
+        style={{
+          display: "grid",
+          gap: 18,
+          fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        }}
+      >
         <div
           style={{
             background:
@@ -625,7 +634,8 @@ export default function SupervisorCleaningSecurityPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Supervisor form for cleaning distribution, security search, photos and airline representative sign-off.
+              Supervisor form for cleaning distribution, security search, photos
+              and airline representative sign-off.
             </p>
           </div>
 
@@ -840,7 +850,14 @@ export default function SupervisorCleaningSecurityPage() {
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
-        <h2 style={{ margin: "0 0 14px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
           Work Distribution
         </h2>
 
@@ -855,7 +872,9 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Galley & Lav</FieldLabel>
             <TextInput
               value={form.distribution.galleyLav}
-              onChange={(e) => setNestedField("distribution", "galleyLav", e.target.value)}
+              onChange={(e) =>
+                setNestedField("distribution", "galleyLav", e.target.value)
+              }
             />
           </div>
 
@@ -863,7 +882,9 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Left Row 1 to 11</FieldLabel>
             <TextInput
               value={form.distribution.left1to11}
-              onChange={(e) => setNestedField("distribution", "left1to11", e.target.value)}
+              onChange={(e) =>
+                setNestedField("distribution", "left1to11", e.target.value)
+              }
             />
           </div>
 
@@ -871,7 +892,9 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Right Row 1 to 11</FieldLabel>
             <TextInput
               value={form.distribution.right1to11}
-              onChange={(e) => setNestedField("distribution", "right1to11", e.target.value)}
+              onChange={(e) =>
+                setNestedField("distribution", "right1to11", e.target.value)
+              }
             />
           </div>
 
@@ -879,7 +902,9 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Left Row 12 to 21</FieldLabel>
             <TextInput
               value={form.distribution.left12to21}
-              onChange={(e) => setNestedField("distribution", "left12to21", e.target.value)}
+              onChange={(e) =>
+                setNestedField("distribution", "left12to21", e.target.value)
+              }
             />
           </div>
 
@@ -887,7 +912,9 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Right Row 12 to 21</FieldLabel>
             <TextInput
               value={form.distribution.right12to21}
-              onChange={(e) => setNestedField("distribution", "right12to21", e.target.value)}
+              onChange={(e) =>
+                setNestedField("distribution", "right12to21", e.target.value)
+              }
             />
           </div>
 
@@ -895,7 +922,9 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Left Row 22 to 31</FieldLabel>
             <TextInput
               value={form.distribution.left22to31}
-              onChange={(e) => setNestedField("distribution", "left22to31", e.target.value)}
+              onChange={(e) =>
+                setNestedField("distribution", "left22to31", e.target.value)
+              }
             />
           </div>
 
@@ -903,7 +932,9 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Right Row 22 to 31</FieldLabel>
             <TextInput
               value={form.distribution.right22to31}
-              onChange={(e) => setNestedField("distribution", "right22to31", e.target.value)}
+              onChange={(e) =>
+                setNestedField("distribution", "right22to31", e.target.value)
+              }
             />
           </div>
 
@@ -911,52 +942,81 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Vacuum</FieldLabel>
             <TextInput
               value={form.distribution.vacuum}
-              onChange={(e) => setNestedField("distribution", "vacuum", e.target.value)}
+              onChange={(e) =>
+                setNestedField("distribution", "vacuum", e.target.value)
+              }
             />
           </div>
         </div>
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
-        <h2 style={{ margin: "0 0 14px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
           Cleaning Checklist
         </h2>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 14,
+          }}
+        >
           <YesNoField
             label="Trash removed from seats and bins"
             value={form.limpieza.basuraRemovida}
-            onChange={(value) => setNestedField("limpieza", "basuraRemovida", value)}
+            onChange={(value) =>
+              setNestedField("limpieza", "basuraRemovida", value)
+            }
           />
           <YesNoField
             label="Seat pockets organized / empty"
             value={form.limpieza.bolsillosOrganizados}
-            onChange={(value) => setNestedField("limpieza", "bolsillosOrganizados", value)}
+            onChange={(value) =>
+              setNestedField("limpieza", "bolsillosOrganizados", value)
+            }
           />
           <YesNoField
             label="Tray tables cleaned"
             value={form.limpieza.bandejasLimpias}
-            onChange={(value) => setNestedField("limpieza", "bandejasLimpias", value)}
+            onChange={(value) =>
+              setNestedField("limpieza", "bandejasLimpias", value)
+            }
           />
           <YesNoField
             label="Carpet / floor vacuumed"
             value={form.limpieza.alfombraAspirada}
-            onChange={(value) => setNestedField("limpieza", "alfombraAspirada", value)}
+            onChange={(value) =>
+              setNestedField("limpieza", "alfombraAspirada", value)
+            }
           />
           <YesNoField
             label="Lavatories checked and cleaned"
             value={form.limpieza.lavRevisados}
-            onChange={(value) => setNestedField("limpieza", "lavRevisados", value)}
+            onChange={(value) =>
+              setNestedField("limpieza", "lavRevisados", value)
+            }
           />
           <YesNoField
             label="Galley cleaned"
             value={form.limpieza.galleyLimpios}
-            onChange={(value) => setNestedField("limpieza", "galleyLimpios", value)}
+            onChange={(value) =>
+              setNestedField("limpieza", "galleyLimpios", value)
+            }
           />
           <YesNoField
             label="Lavatory supplies replenished"
             value={form.limpieza.suministrosBanos}
-            onChange={(value) => setNestedField("limpieza", "suministrosBanos", value)}
+            onChange={(value) =>
+              setNestedField("limpieza", "suministrosBanos", value)
+            }
           />
         </div>
 
@@ -970,53 +1030,86 @@ export default function SupervisorCleaningSecurityPage() {
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
-        <h2 style={{ margin: "0 0 14px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
           Security Search Checklist
         </h2>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 14,
+          }}
+        >
           <YesNoField
             label="Under all seats checked"
             value={form.security.debajoAsientos}
-            onChange={(value) => setNestedField("security", "debajoAsientos", value)}
+            onChange={(value) =>
+              setNestedField("security", "debajoAsientos", value)
+            }
           />
           <YesNoField
             label="Seat pockets verified"
             value={form.security.bolsillosVerificados}
-            onChange={(value) => setNestedField("security", "bolsillosVerificados", value)}
+            onChange={(value) =>
+              setNestedField("security", "bolsillosVerificados", value)
+            }
           />
           <YesNoField
             label="Jump seats inspected"
             value={form.security.jumpSeats}
-            onChange={(value) => setNestedField("security", "jumpSeats", value)}
+            onChange={(value) =>
+              setNestedField("security", "jumpSeats", value)
+            }
           />
           <YesNoField
             label="Lavatories inspected"
             value={form.security.lavabos}
-            onChange={(value) => setNestedField("security", "lavabos", value)}
+            onChange={(value) =>
+              setNestedField("security", "lavabos", value)
+            }
           />
           <YesNoField
             label="Closets / cabinets verified"
             value={form.security.armarios}
-            onChange={(value) => setNestedField("security", "armarios", value)}
+            onChange={(value) =>
+              setNestedField("security", "armarios", value)
+            }
           />
           <YesNoField
             label="Emergency compartments checked"
             value={form.security.compartimientosEmergencia}
             onChange={(value) =>
-              setNestedField("security", "compartimientosEmergencia", value)
+              setNestedField(
+                "security",
+                "compartimientosEmergencia",
+                value
+              )
             }
           />
           <YesNoField
             label="Seat backs checked"
             value={form.security.espaldarAsientos}
-            onChange={(value) => setNestedField("security", "espaldarAsientos", value)}
+            onChange={(value) =>
+              setNestedField("security", "espaldarAsientos", value)
+            }
           />
           <YesNoField
             label="Overhead bins checked"
             value={form.security.compartimientosSuperiores}
             onChange={(value) =>
-              setNestedField("security", "compartimientosSuperiores", value)
+              setNestedField(
+                "security",
+                "compartimientosSuperiores",
+                value
+              )
             }
           />
         </div>
@@ -1031,25 +1124,56 @@ export default function SupervisorCleaningSecurityPage() {
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
-        <h2 style={{ margin: "0 0 14px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
           Final Confirmation
         </h2>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 14,
+          }}
+        >
           <YesNoField
             label="Cleaning completed"
             value={form.finalConfirmation.limpiezaCompletada}
-            onChange={(value) => setNestedField("finalConfirmation", "limpiezaCompletada", value)}
+            onChange={(value) =>
+              setNestedField(
+                "finalConfirmation",
+                "limpiezaCompletada",
+                value
+              )
+            }
           />
           <YesNoField
             label="Security search completed"
             value={form.finalConfirmation.securityCompletado}
-            onChange={(value) => setNestedField("finalConfirmation", "securityCompletado", value)}
+            onChange={(value) =>
+              setNestedField(
+                "finalConfirmation",
+                "securityCompletado",
+                value
+              )
+            }
           />
           <YesNoField
             label="Any suspicious item found?"
             value={form.finalConfirmation.articuloSospechoso}
-            onChange={(value) => setNestedField("finalConfirmation", "articuloSospechoso", value)}
+            onChange={(value) =>
+              setNestedField(
+                "finalConfirmation",
+                "articuloSospechoso",
+                value
+              )
+            }
           />
         </div>
 
@@ -1058,7 +1182,9 @@ export default function SupervisorCleaningSecurityPage() {
             <FieldLabel>Suspicious item details</FieldLabel>
             <TextArea
               value={form.suspiciousItemDetails}
-              onChange={(e) => setField("suspiciousItemDetails", e.target.value)}
+              onChange={(e) =>
+                setField("suspiciousItemDetails", e.target.value)
+              }
               placeholder="Explain the suspicious item found."
             />
           </div>
@@ -1066,7 +1192,14 @@ export default function SupervisorCleaningSecurityPage() {
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
-        <h2 style={{ margin: "0 0 14px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
           Photos and Signatures
         </h2>
 
@@ -1118,7 +1251,11 @@ export default function SupervisorCleaningSecurityPage() {
 
       <PageCard style={{ padding: 20 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <ActionButton onClick={handleSubmit} variant="primary" disabled={saving}>
+          <ActionButton
+            onClick={handleSubmit}
+            variant="primary"
+            disabled={saving}
+          >
             {saving ? "Submitting..." : "Submit report"}
           </ActionButton>
 
