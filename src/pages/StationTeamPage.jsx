@@ -55,6 +55,13 @@ function normalizeLower(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeNameKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 function PersonCard({ person, large = false }) {
   const visibleName = getVisibleName(person);
   const position = person.position || getDefaultPosition(person.role);
@@ -283,18 +290,46 @@ export default function StationTeamPage() {
 
         const employeesByLogin = new Map();
         const employeesById = new Map();
+        const employeesByName = new Map();
 
         employees.forEach((emp) => {
           const loginUsername = normalizeLower(emp.loginUsername);
-          if (loginUsername) employeesByLogin.set(loginUsername, emp);
+          if (loginUsername) {
+            employeesByLogin.set(loginUsername, emp);
+          }
+
           employeesById.set(emp.id, emp);
+
+          const empNameKey = normalizeNameKey(emp.name);
+          if (empNameKey && !employeesByName.has(empNameKey)) {
+            employeesByName.set(empNameKey, emp);
+          }
         });
 
         const merged = users.map((usr) => {
           const username = normalizeLower(usr.username);
-          const empByLogin = employeesByLogin.get(username);
+
+          const userDisplayNameKey = normalizeNameKey(usr.displayName);
+          const userFullNameKey = normalizeNameKey(usr.fullName);
+          const userNameKey = normalizeNameKey(usr.name);
+
           const empById = usr.employeeId ? employeesById.get(usr.employeeId) : null;
-          const emp = empById || empByLogin || null;
+          const empByLogin = employeesByLogin.get(username);
+          const empByDisplayName = userDisplayNameKey
+            ? employeesByName.get(userDisplayNameKey)
+            : null;
+          const empByFullName = userFullNameKey
+            ? employeesByName.get(userFullNameKey)
+            : null;
+          const empByName = userNameKey ? employeesByName.get(userNameKey) : null;
+
+          const emp =
+            empById ||
+            empByLogin ||
+            empByDisplayName ||
+            empByFullName ||
+            empByName ||
+            null;
 
           return {
             id: usr.id,
@@ -465,10 +500,7 @@ export default function StationTeamPage() {
             large
           />
 
-          <GroupSection
-            title="Duty Managers"
-            people={dutyManagers}
-          />
+          <GroupSection title="Duty Managers" people={dutyManagers} />
 
           <GroupedDepartmentSection
             title="Supervisors"
