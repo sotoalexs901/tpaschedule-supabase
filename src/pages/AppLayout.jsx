@@ -224,7 +224,9 @@ export default function AppLayout() {
     user?.role === "station_manager";
 
   const canAccessOperationalReportAdmin =
-    user?.role === "duty_manager" || user?.role === "station_manager";
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const canManageOperationalReportForm = user?.role === "station_manager";
 
@@ -408,18 +410,22 @@ export default function AppLayout() {
     }
 
     if (canAccessOperationalReportAdmin) {
-      managementReports.push(
-        {
-          to: "/operational-report/reports",
-          label: "Operational Reports",
-          icon: "📑",
-        },
-        {
-          to: "/cleaning-security/reports",
-          label: "Cleaning & Security Reports",
-          icon: "🗂️",
-        }
-      );
+      managementReports.push({
+        to: "/operational-report/reports",
+        label:
+          user?.role === "supervisor"
+            ? "Supervisor Operational Reports"
+            : "Operational Reports",
+        icon: "📑",
+      });
+    }
+
+    if (user?.role === "duty_manager" || user?.role === "station_manager") {
+      managementReports.push({
+        to: "/cleaning-security/reports",
+        label: "Cleaning & Security Reports",
+        icon: "🗂️",
+      });
     }
 
     if (canManageOperationsRequests) {
