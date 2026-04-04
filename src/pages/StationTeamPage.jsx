@@ -26,21 +26,6 @@ function getDefaultPosition(role) {
   return "Team Member";
 }
 
-function normalizeText(value) {
-  return String(value || "").trim();
-}
-
-function normalizeLower(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function normalizeNameKey(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
 function getVisibleName(person) {
   return (
     person?.displayName ||
@@ -62,20 +47,12 @@ function getInitials(name) {
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
-function resolveRole(userRecord, employeeRecord) {
-  return (
-    normalizeText(userRecord?.role) ||
-    normalizeText(employeeRecord?.role) ||
-    ""
-  );
+function normalizeText(value) {
+  return String(value || "").trim();
 }
 
-function resolvePosition(userRecord, employeeRecord) {
-  return (
-    normalizeText(employeeRecord?.position) ||
-    normalizeText(userRecord?.position) ||
-    getDefaultPosition(resolveRole(userRecord, employeeRecord))
-  );
+function normalizeLower(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function PersonCard({ person, large = false }) {
@@ -171,6 +148,19 @@ function PersonCard({ person, large = false }) {
               }}
             >
               {department}
+            </div>
+          )}
+
+          {person.username && (
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                color: "#94a3b8",
+                lineHeight: 1.5,
+              }}
+            >
+              @{person.username}
             </div>
           )}
         </div>
@@ -306,98 +296,83 @@ export default function StationTeamPage() {
 
         const usersByEmployeeId = new Map();
         const usersByUsername = new Map();
-        const usersByName = new Map();
 
         users.forEach((usr) => {
-          const employeeId = normalizeText(usr.employeeId);
-          const username = normalizeLower(usr.username);
-          const displayNameKey = normalizeNameKey(usr.displayName);
-          const fullNameKey = normalizeNameKey(usr.fullName);
-          const nameKey = normalizeNameKey(usr.name);
+          const employeeIdKey = normalizeText(usr.employeeId);
+          const usernameKey = normalizeLower(usr.username);
 
-          if (employeeId) usersByEmployeeId.set(employeeId, usr);
-          if (username) usersByUsername.set(username, usr);
-
-          [displayNameKey, fullNameKey, nameKey].forEach((key) => {
-            if (key && !usersByName.has(key)) {
-              usersByName.set(key, usr);
-            }
-          });
+          if (employeeIdKey) usersByEmployeeId.set(employeeIdKey, usr);
+          if (usernameKey) usersByUsername.set(usernameKey, usr);
         });
 
-        const mergedFromEmployees = employees
-          .filter((emp) => emp.showInStationTeam !== false)
-          .map((emp) => {
-            const loginUsername = normalizeLower(emp.loginUsername);
-            const employeeId = normalizeText(emp.id);
-            const employeeNameKey = normalizeNameKey(emp.name);
+        const mergedFromEmployees = employees.map((emp) => {
+          const matchedUserById = usersByEmployeeId.get(normalizeText(emp.id));
+          const matchedUserByUsername = usersByUsername.get(
+            normalizeLower(emp.loginUsername)
+          );
+          const matchedUser = matchedUserById || matchedUserByUsername || null;
 
-            const matchedUser =
-              usersByEmployeeId.get(employeeId) ||
-              usersByUsername.get(loginUsername) ||
-              usersByName.get(employeeNameKey) ||
-              null;
+          return {
+            id: `emp-${emp.id}`,
+            sourceId: emp.id,
+            role: matchedUser?.role || "",
+            username: matchedUser?.username || emp?.loginUsername || "",
+            displayName:
+              matchedUser?.displayName ||
+              matchedUser?.fullName ||
+              matchedUser?.name ||
+              emp?.name ||
+              "",
+            fullName: matchedUser?.fullName || emp?.name || "",
+            name: emp?.name || matchedUser?.name || "",
+            employeeName: emp?.name || "",
+            department: emp?.department || matchedUser?.department || "",
+            position:
+              matchedUser?.position ||
+              emp?.position ||
+              getDefaultPosition(matchedUser?.role),
+            profilePhotoURL: matchedUser?.profilePhotoURL || "",
+            employeeId: emp?.id || matchedUser?.employeeId || "",
+          };
+        });
 
-            const role = resolveRole(matchedUser, emp);
-            const position = resolvePosition(matchedUser, emp);
-
-            return {
-              id: `employee-${emp.id}`,
-              source: "employee",
-              employeeDocId: emp.id,
-              userId: matchedUser?.id || "",
-              username: matchedUser?.username || emp?.loginUsername || "",
-              displayName:
-                matchedUser?.displayName ||
-                matchedUser?.fullName ||
-                matchedUser?.name ||
-                "",
-              fullName: matchedUser?.fullName || "",
-              name: matchedUser?.name || "",
-              employeeName: emp?.name || "",
-              role,
-              position,
-              department: emp?.department || matchedUser?.department || "",
-              profilePhotoURL:
-                matchedUser?.profilePhotoURL || emp?.profilePhotoURL || "",
-              showInStationTeam: emp.showInStationTeam !== false,
-            };
-          });
-
-        const employeeIdsIncluded = new Set(
+        const coveredUserIds = new Set(
           mergedFromEmployees
-            .map((item) => normalizeText(item.userId))
+            .map((item) => {
+              const foundByEmpId = usersByEmployeeId.get(normalizeText(item.sourceId));
+              return foundByEmpId?.id || "";
+            })
             .filter(Boolean)
         );
 
-        const extraUsers = users
-          .filter((usr) => {
-            const userId = normalizeText(usr.id);
-            return (
-              !employeeIdsIncluded.has(userId) &&
-              ["station_manager", "duty_manager", "supervisor", "agent"].includes(
-                normalizeLower(usr.role)
-              )
-            );
-          })
+        mergedFromEmployees.forEach((item) => {
+          const byUsername = usersByUsername.get(normalizeLower(item.username));
+          if (byUsername?.id) coveredUserIds.add(byUsername.id);
+        });
+
+        const usersWithoutEmployee = users
+          .filter((usr) => !coveredUserIds.has(usr.id))
           .map((usr) => ({
             id: `user-${usr.id}`,
-            source: "user",
-            employeeDocId: normalizeText(usr.employeeId),
-            userId: usr.id,
-            username: usr.username || "",
-            displayName: usr.displayName || "",
-            fullName: usr.fullName || "",
-            name: usr.name || "",
+            sourceId: usr.id,
+            role: usr?.role || "",
+            username: usr?.username || "",
+            displayName:
+              usr?.displayName ||
+              usr?.fullName ||
+              usr?.name ||
+              usr?.username ||
+              "",
+            fullName: usr?.fullName || "",
+            name: usr?.name || "",
             employeeName: "",
-            role: usr.role || "",
-            position: usr.position || getDefaultPosition(usr.role),
-            department: usr.department || "",
-            profilePhotoURL: usr.profilePhotoURL || "",
-            showInStationTeam: true,
+            department: usr?.department || "",
+            position: usr?.position || getDefaultPosition(usr?.role),
+            profilePhotoURL: usr?.profilePhotoURL || "",
+            employeeId: usr?.employeeId || "",
           }));
 
-        const merged = [...mergedFromEmployees, ...extraUsers];
+        const merged = [...mergedFromEmployees, ...usersWithoutEmployee];
 
         setPeople(merged);
       } catch (err) {
@@ -447,9 +422,7 @@ export default function StationTeamPage() {
   }, [sortedPeople]);
 
   const agentsGrouped = useMemo(() => {
-    const rows = sortedPeople.filter(
-      (p) => normalizeLower(p.role) === "agent"
-    );
+    const rows = sortedPeople.filter((p) => normalizeLower(p.role) === "agent");
 
     const grouped = {};
     rows.forEach((person) => {
@@ -549,23 +522,13 @@ export default function StationTeamPage() {
         </PageCard>
       ) : (
         <>
-          <GroupSection
-            title="Station Manager"
-            people={stationManagers}
-            large
-          />
-
+          <GroupSection title="Station Manager" people={stationManagers} large />
           <GroupSection title="Duty Managers" people={dutyManagers} />
-
           <GroupedDepartmentSection
             title="Supervisors"
             groups={supervisorsGrouped}
           />
-
-          <GroupedDepartmentSection
-            title="Agents"
-            groups={agentsGrouped}
-          />
+          <GroupedDepartmentSection title="Agents" groups={agentsGrouped} />
         </>
       )}
     </div>
