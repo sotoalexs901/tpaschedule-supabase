@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import "./styles.css";
@@ -105,9 +105,187 @@ function DashboardEntry() {
   return <DashboardPage />;
 }
 
+function UpdatePrompt() {
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  useEffect(() => {
+    let intervalId = null;
+    let stopped = false;
+
+    const STORAGE_KEY = "tpa_app_version";
+
+    async function removeOldServiceWorkers() {
+      if (!("serviceWorker" in navigator)) return;
+
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      } catch (error) {
+        console.error("Error removing service workers:", error);
+      }
+    }
+
+    async function checkVersion() {
+      try {
+        const response = await fetch(`/version.json?t=${Date.now()}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const incomingVersion = String(data?.version || "").trim();
+
+        if (!incomingVersion) return;
+
+        const savedVersion = localStorage.getItem(STORAGE_KEY);
+
+        if (!savedVersion) {
+          localStorage.setItem(STORAGE_KEY, incomingVersion);
+          return;
+        }
+
+        if (savedVersion !== incomingVersion) {
+          localStorage.setItem(STORAGE_KEY, incomingVersion);
+          setShowPrompt(true);
+        }
+      } catch (error) {
+        console.error("Version check failed:", error);
+      }
+    }
+
+    async function start() {
+      await removeOldServiceWorkers();
+      if (stopped) return;
+
+      await checkVersion();
+      if (stopped) return;
+
+      intervalId = window.setInterval(checkVersion, 60000);
+    }
+
+    start();
+
+    return () => {
+      stopped = true;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, []);
+
+  if (!showPrompt) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99999,
+        padding: 20,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          background: "#ffffff",
+          borderRadius: 24,
+          boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+          border: "1px solid #e2e8f0",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 20px",
+            background: "#edf7ff",
+            borderBottom: "1px solid #cfe7fb",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 900,
+              color: "#1769aa",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            New update available
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: "22px 20px 18px",
+            fontSize: 15,
+            lineHeight: 1.65,
+            color: "#0f172a",
+            fontWeight: 700,
+          }}
+        >
+          A new version of TPA Schedule is ready. Refresh to load the latest changes.
+        </div>
+
+        <div
+          style={{
+            padding: "0 20px 20px",
+            display: "flex",
+            justifyContent: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setShowPrompt(false)}
+            style={{
+              border: "1px solid #cfe7fb",
+              background: "#ffffff",
+              color: "#1769aa",
+              borderRadius: 14,
+              padding: "12px 18px",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Later
+          </button>
+
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              border: "none",
+              background:
+                "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+              color: "#fff",
+              borderRadius: 14,
+              padding: "12px 22px",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: "pointer",
+              boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+            }}
+          >
+            Refresh now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AppRouter() {
   return (
     <BrowserRouter>
+      <UpdatePrompt />
+
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 
@@ -446,11 +624,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     </UserProvider>
   </React.StrictMode>
 );
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((err) => {
-      console.error("Error registrando el service worker:", err);
-    });
-  });
-}
