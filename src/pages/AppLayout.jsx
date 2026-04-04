@@ -204,6 +204,7 @@ export default function AppLayout() {
   const isManager =
     user?.role === "station_manager" || user?.role === "duty_manager";
 
+  const isAgent = user?.role === "agent";
   const isAgentOrSupervisor =
     user?.role === "agent" || user?.role === "supervisor";
 
@@ -226,6 +227,23 @@ export default function AppLayout() {
     user?.role === "duty_manager" || user?.role === "station_manager";
 
   const canManageOperationalReportForm = user?.role === "station_manager";
+
+  const canSubmitOperationsRequests =
+    user?.role === "agent" ||
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageOperationsRequests =
+    user?.role === "duty_manager" || user?.role === "station_manager";
+
+  const canSubmitWchrPoi =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageWchrPoi =
+    user?.role === "duty_manager" || user?.role === "station_manager";
 
   const canAccessWchrTools =
     !isDLCabinService &&
@@ -362,6 +380,24 @@ export default function AppLayout() {
       );
     }
 
+    if (canSubmitOperationsRequests) {
+      submissionReports.push({
+        to: "/operations-requests/submit",
+        label: isAgent
+          ? "Supplies / Uniform Requests"
+          : "Supplies, Uniform & OT Requests",
+        icon: "📦",
+      });
+    }
+
+    if (canSubmitWchrPoi) {
+      submissionReports.push({
+        to: "/wchr-poi/submit",
+        label: "WCHR POI",
+        icon: "🦽",
+      });
+    }
+
     if (canAccessTimesheets) {
       managementReports.push({
         to: "/timesheets/reports",
@@ -380,9 +416,25 @@ export default function AppLayout() {
         {
           to: "/cleaning-security/reports",
           label: "Cleaning & Security Reports",
-          icon: "🧾",
+          icon: "🗂️",
         }
       );
+    }
+
+    if (canManageOperationsRequests) {
+      managementReports.push({
+        to: "/operations-requests/reports",
+        label: "Operations Requests Reports",
+        icon: "📦",
+      });
+    }
+
+    if (canManageWchrPoi) {
+      managementReports.push({
+        to: "/wchr-poi/reports",
+        label: "WCHR POI Reports",
+        icon: "🦽",
+      });
     }
 
     if (canAccessWchrTools) {
@@ -403,16 +455,10 @@ export default function AppLayout() {
     if (general.length) sections.push({ title: "General", items: general });
     if (schedules.length) sections.push({ title: "Schedules", items: schedules });
     if (submissionReports.length) {
-      sections.push({
-        title: "Submission of Reports",
-        items: submissionReports,
-      });
+      sections.push({ title: "Submission of Reports", items: submissionReports });
     }
     if (managementReports.length) {
-      sections.push({
-        title: "Management of Reports",
-        items: managementReports,
-      });
+      sections.push({ title: "Management of Reports", items: managementReports });
     }
     if (timeoff.length) sections.push({ title: "Time Off", items: timeoff });
     if (wchr.length) sections.push({ title: "WCHR", items: wchr });
@@ -428,11 +474,15 @@ export default function AppLayout() {
     canAccessOperationalReportAdmin,
     canManageOperationalReportForm,
     canAccessWchrTools,
+    canSubmitOperationsRequests,
+    canManageOperationsRequests,
+    canSubmitWchrPoi,
+    canManageWchrPoi,
     unreadMessages,
     pendingTimeOff,
     user,
     user?.role,
-    user?.department,
+    isAgent,
   ]);
 
   const allSectionsOpen = navSections.every(
