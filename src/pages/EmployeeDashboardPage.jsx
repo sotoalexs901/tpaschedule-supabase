@@ -581,7 +581,8 @@ function EmployeeOfMonthCard({ data, isMobile, language, onCongratulate }) {
   const airlineText = language === "es" ? "Aerolínea" : "Airline";
 
   const initials = getInitials(data?.employeeName || "E");
-  const canWrite = Boolean(data?.username);
+  const canWrite = Boolean(data?.userId || data?.username);
+  const profileImage = data?.photoURL || data?.profilePhotoURL || "";
 
   return (
     <div
@@ -670,9 +671,9 @@ function EmployeeOfMonthCard({ data, isMobile, language, onCongratulate }) {
                 flexShrink: 0,
               }}
             >
-              {data.photoURL ? (
+              {profileImage ? (
                 <img
-                  src={data.photoURL}
+                  src={profileImage}
                   alt={data.employeeName}
                   style={{
                     width: "100%",
@@ -1129,7 +1130,7 @@ export default function EmployeeDashboardPage() {
   const goTo = (path) => navigate(path);
 
   const handleCongratulateEmployeeOfMonth = () => {
-    if (!employeeOfMonth?.username) return;
+    if (!employeeOfMonth?.userId && !employeeOfMonth?.username) return;
 
     const personName = employeeOfMonth.employeeName || "team member";
     const messageText =
@@ -1139,6 +1140,7 @@ export default function EmployeeDashboardPage() {
 
     navigate("/messages", {
       state: {
+        recipientUserId: employeeOfMonth.userId || "",
         recipientUsername: employeeOfMonth.username || "",
         recipientName: employeeOfMonth.employeeName || "",
         prefilledMessage: messageText,
