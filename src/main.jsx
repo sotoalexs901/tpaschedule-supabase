@@ -53,6 +53,12 @@ import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
 import SupervisorCleaningSecurityPage from "./pages/SupervisorCleaningSecurityPage.jsx";
 import CleaningSecurityReportsAdminPage from "./pages/CleaningSecurityReportsAdminPage.jsx";
 
+import SupervisorOperationsRequestsPage from "./pages/SupervisorOperationsRequestsPage.jsx";
+import OperationsRequestsReportsAdminPage from "./pages/OperationsRequestsReportsAdminPage.jsx";
+
+import SupervisorWchrPoiPage from "./pages/SupervisorWchrPoiPage.jsx";
+import WchrPoiReportsAdminPage from "./pages/WchrPoiReportsAdminPage.jsx";
+
 function ProtectedRoute({
   children,
   roles,
@@ -429,6 +435,28 @@ function AppRouter() {
           />
 
           <Route
+            path="operations-requests/submit"
+            element={
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
+                <SupervisorOperationsRequestsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="wchr-poi/submit"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <SupervisorWchrPoiPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="operational-report/reports"
             element={
               <ProtectedRoute roles={["duty_manager", "station_manager"]}>
@@ -442,6 +470,24 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["duty_manager", "station_manager"]}>
                 <CleaningSecurityReportsAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="operations-requests/reports"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <OperationsRequestsReportsAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="wchr-poi/reports"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <WchrPoiReportsAdminPage />
               </ProtectedRoute>
             }
           />
