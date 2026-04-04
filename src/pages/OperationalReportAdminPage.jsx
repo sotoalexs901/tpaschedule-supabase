@@ -191,13 +191,12 @@ function getVisibleUserName(user) {
 function getReviewStatusLabel(status) {
   const value = String(status || "submitted").toLowerCase();
 
-  if (value === "submitted") return "Received";
-  if (value === "read") return "Reviewed";
-  if (value === "approved") return "Accepted";
+  if (value === "read") return "Read";
+  if (value === "approved") return "Approved";
   if (value === "follow_up_required") return "Follow Up Required";
   if (value === "closed") return "Closed";
   if (value === "archived") return "Archived";
-  return "Received";
+  return "Submitted";
 }
 
 function getReviewStatusStyle(status) {
@@ -266,28 +265,6 @@ function getReviewStatusStyle(status) {
   };
 }
 
-function getSupervisorFollowUpBy(report) {
-  return (
-    report.followUpCompletedBy ||
-    report.reviewedBy ||
-    report.readBy ||
-    report.approvedBy ||
-    report.closedBy ||
-    report.archivedBy ||
-    "—"
-  );
-}
-
-function getSupervisorComments(report) {
-  return (
-    report.managerComments ||
-    report.managerNotes ||
-    report.followUpDetails ||
-    report.followUpAction ||
-    "—"
-  );
-}
-
 function buildPrintableHtml(report) {
   const responses = report?.responses || {};
   const dynamicBlocks =
@@ -338,12 +315,8 @@ function buildPrintableHtml(report) {
     </div>
 
     <div class="detail-box">
-      <div class="detail-label">Manager Notes / Comments</div>
-      <div class="detail-value">${escapeHtml(
-        report.managerComments ||
-          report.managerNotes ||
-          "—"
-      ).replace(/\n/g, "<br/>")}</div>
+      <div class="detail-label">Manager Notes</div>
+      <div class="detail-value">${escapeHtml(report.managerNotes || "—").replace(/\n/g, "<br/>")}</div>
     </div>
 
     <div class="detail-box">
@@ -354,11 +327,6 @@ function buildPrintableHtml(report) {
     <div class="detail-box">
       <div class="detail-label">Follow Up Details</div>
       <div class="detail-value">${escapeHtml(report.followUpDetails || "—").replace(/\n/g, "<br/>")}</div>
-    </div>
-
-    <div class="detail-box">
-      <div class="detail-label">Follow Up By</div>
-      <div class="detail-value">${escapeHtml(getSupervisorFollowUpBy(report))}</div>
     </div>
   `;
 
@@ -533,7 +501,13 @@ function buildPrintableHtml(report) {
 function buildDelaySummaryPrintableHtml(airline, reports, range) {
   const rowsHtml = reports
     .map((report) => {
-      const dutyManager = getSupervisorFollowUpBy(report);
+      const dutyManager =
+        report.reviewedBy ||
+        report.readBy ||
+        report.approvedBy ||
+        report.closedBy ||
+        report.archivedBy ||
+        "—";
 
       return `
         <tr>
@@ -907,13 +881,13 @@ export default function OperationalReportAdminPage() {
     user?.role === "duty_manager" && normalizedUsername === "hhernandez";
 
   const isSupervisor = user?.role === "supervisor";
-  const canManage =
+  const isManager =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
   const canAccess =
+    user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
-    user?.role === "station_manager" ||
-    user?.role === "supervisor";
+    user?.role === "station_manager";
 
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -951,7 +925,6 @@ export default function OperationalReportAdminPage() {
     responses: {},
     reviewStatus: "submitted",
     managerNotes: "",
-    managerComments: "",
     followUpRequired: false,
     followUpAction: "",
     followUpDetails: "",
@@ -977,7 +950,6 @@ export default function OperationalReportAdminPage() {
             ),
             reviewStatus: data.reviewStatus || "submitted",
             managerNotes: data.managerNotes || "",
-            managerComments: data.managerComments || "",
             followUpRequired: Boolean(data.followUpRequired),
             followUpAction: data.followUpAction || "",
             followUpDetails: data.followUpDetails || "",
@@ -987,25 +959,6 @@ export default function OperationalReportAdminPage() {
 
         if (isCabinDutyManager) {
           rows = rows.filter((row) => row.normalizedDepartment === "cabin_service");
-        }
-
-        if (isSupervisor) {
-          const myUserId = String(user?.id || "").trim();
-          const myUsername = String(user?.username || "")
-            .trim()
-            .toLowerCase();
-
-          rows = rows.filter((row) => {
-            const rowUserId = String(row.submittedByUserId || "").trim();
-            const rowUsername = String(row.submittedByUsername || "")
-              .trim()
-              .toLowerCase();
-
-            return (
-              (myUserId && rowUserId === myUserId) ||
-              (myUsername && rowUsername === myUsername)
-            );
-          });
         }
 
         setReports(rows);
@@ -1022,7 +975,7 @@ export default function OperationalReportAdminPage() {
     } else {
       setLoading(false);
     }
-  }, [canAccess, isCabinDutyManager, isSupervisor, user?.id, user?.username]);
+  }, [canAccess, isCabinDutyManager]);
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
@@ -1041,7 +994,41 @@ export default function OperationalReportAdminPage() {
         ? getCustomDateRange(filters.fromDate, filters.toDate)
         : null;
 
-    return reports.filter((r) => {
+    let baseReports = reports;
+
+    if (isSupervisor) {
+      const myUserId = String(user?.id || "").trim();
+      const myUsername = String(user?.username || "").trim().toLowerCase();
+      const myName = String(
+        user?.displayName ||
+          user?.fullName ||
+          user?.name ||
+          user?.username ||
+          ""
+      )
+        .trim()
+        .toLowerCase();
+
+      baseReports = reports.filter((r) => {
+        const submittedUserId = String(r.submittedByUserId || "").trim();
+        const submittedUsername = String(r.submittedByUsername || "")
+          .trim()
+          .toLowerCase();
+        const submittedName = String(
+          r.submittedByName || r.supervisorReporting || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        return (
+          (myUserId && submittedUserId === myUserId) ||
+          (myUsername && submittedUsername === myUsername) ||
+          (myName && submittedName === myName)
+        );
+      });
+    }
+
+    return baseReports.filter((r) => {
       const created = tsToDate(r.createdAt);
       if (!created) return false;
 
@@ -1073,7 +1060,7 @@ export default function OperationalReportAdminPage() {
 
       return true;
     });
-  }, [reports, filters]);
+  }, [reports, filters, isSupervisor, user]);
 
   const delayedReports = useMemo(() => {
     return filteredReports.filter((r) => Boolean(r.delayedFlight));
@@ -1180,7 +1167,7 @@ export default function OperationalReportAdminPage() {
   };
 
   const startEdit = (report) => {
-    if (!canManage) return;
+    if (!isManager) return;
 
     setEditingId(report.id);
     setEditForm({
@@ -1200,7 +1187,6 @@ export default function OperationalReportAdminPage() {
       responses: { ...(report.responses || {}) },
       reviewStatus: report.reviewStatus || "submitted",
       managerNotes: report.managerNotes || "",
-      managerComments: report.managerComments || "",
       followUpRequired: Boolean(report.followUpRequired),
       followUpAction: report.followUpAction || "",
       followUpDetails: report.followUpDetails || "",
@@ -1224,7 +1210,7 @@ export default function OperationalReportAdminPage() {
   };
 
   const saveEdit = async (report) => {
-    if (!canManage) return;
+    if (!isManager) return;
 
     try {
       setSavingId(report.id);
@@ -1246,7 +1232,6 @@ export default function OperationalReportAdminPage() {
         responses: editForm.responses || {},
         reviewStatus: editForm.reviewStatus || "submitted",
         managerNotes: editForm.managerNotes || "",
-        managerComments: editForm.managerComments || editForm.managerNotes || "",
         followUpRequired: Boolean(editForm.followUpRequired),
         followUpAction: editForm.followUpAction || "",
         followUpDetails: editForm.followUpDetails || "",
@@ -1277,7 +1262,7 @@ export default function OperationalReportAdminPage() {
   };
 
   const updateWorkflowStatus = async (report, mode) => {
-    if (!canManage) return;
+    if (!isManager) return;
 
     try {
       setActionId(report.id);
@@ -1347,13 +1332,13 @@ export default function OperationalReportAdminPage() {
   };
 
   const saveFollowUp = async (report) => {
-    if (!canManage) return;
+    if (!isManager) return;
 
     const action = String(editForm.followUpAction || "").trim();
     const details = String(editForm.followUpDetails || "").trim();
 
-    if (!action && !details && !String(editForm.managerNotes || "").trim()) {
-      setStatusMessage("Please enter manager notes, follow up action, or follow up details.");
+    if (!action && !details) {
+      setStatusMessage("Please enter follow up action or follow up details.");
       return;
     }
 
@@ -1369,7 +1354,6 @@ export default function OperationalReportAdminPage() {
         followUpAction: action,
         followUpDetails: details,
         managerNotes: editForm.managerNotes || "",
-        managerComments: editForm.managerNotes || "",
         followUpCompletedAt: serverTimestamp(),
         followUpCompletedBy: managerName,
         followUpCompletedByRole: managerRole,
@@ -1404,7 +1388,7 @@ export default function OperationalReportAdminPage() {
   };
 
   const deleteReport = async (report) => {
-    if (!canManage) return;
+    if (!isManager) return;
 
     const ok = window.confirm(
       `Delete operational report for ${report.normalizedAirline || "Unknown"}?`
@@ -1501,7 +1485,7 @@ export default function OperationalReportAdminPage() {
             Access denied
           </h1>
           <p style={{ margin: 0, maxWidth: 700, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
-            Only Supervisors, Duty Managers and Station Managers can view operational reports.
+            You do not have permission to view operational reports.
           </p>
         </div>
       </div>
@@ -1524,11 +1508,11 @@ export default function OperationalReportAdminPage() {
           TPA OPS · Operational Reports
         </p>
         <h1 style={{ margin: "10px 0 6px", fontSize: 32, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-0.04em" }}>
-          {isSupervisor ? "My Operational Reports" : "Operational Report Admin"}
+          {isSupervisor ? "My Supervisor Operational Reports" : "Operational Report Admin"}
         </h1>
         <p style={{ margin: 0, maxWidth: 760, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
           {isSupervisor
-            ? "Review the operational reports submitted by you, track their status, see duty manager follow-up and comments."
+            ? "Review the operational reports submitted by you, including review status, follow up, and manager comments."
             : "Review delays, alerts, follow-up cases, and manage submitted operational reports."}
         </p>
       </div>
@@ -1898,7 +1882,13 @@ export default function OperationalReportAdminPage() {
                     </thead>
                     <tbody>
                       {selectedDelayAirlineReports.map((report, index) => {
-                        const dutyManager = getSupervisorFollowUpBy(report);
+                        const dutyManager =
+                          report.reviewedBy ||
+                          report.readBy ||
+                          report.approvedBy ||
+                          report.closedBy ||
+                          report.archivedBy ||
+                          "—";
 
                         return (
                           <tr
@@ -1968,7 +1958,7 @@ export default function OperationalReportAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: isSupervisor ? 1100 : 1500,
+                  minWidth: 1500,
                   background: "#fff",
                 }}
               >
@@ -2027,20 +2017,20 @@ export default function OperationalReportAdminPage() {
                             View
                           </ActionButton>
 
-                          {canManage && (
-                            <>
-                              <ActionButton variant="warning" onClick={() => startEdit(report)}>
-                                Edit
-                              </ActionButton>
+                          {isManager && (
+                            <ActionButton variant="warning" onClick={() => startEdit(report)}>
+                              Edit
+                            </ActionButton>
+                          )}
 
-                              <ActionButton
-                                variant="danger"
-                                onClick={() => deleteReport(report)}
-                                disabled={deletingId === report.id}
-                              >
-                                {deletingId === report.id ? "Deleting..." : "Delete"}
-                              </ActionButton>
-                            </>
+                          {isManager && (
+                            <ActionButton
+                              variant="danger"
+                              onClick={() => deleteReport(report)}
+                              disabled={deletingId === report.id}
+                            >
+                              {deletingId === report.id ? "Deleting..." : "Delete"}
+                            </ActionButton>
                           )}
                         </div>
                       </td>
@@ -2054,7 +2044,7 @@ export default function OperationalReportAdminPage() {
 
         {selectedReport && (
           <PageCard style={{ padding: 20 }}>
-            {editingId === selectedReport.id && canManage ? (
+            {editingId === selectedReport.id && isManager ? (
               <div style={{ display: "grid", gap: 16 }}>
                 <div
                   style={{
@@ -2241,14 +2231,13 @@ export default function OperationalReportAdminPage() {
                 </label>
 
                 <div>
-                  <FieldLabel>Manager Notes / Comments</FieldLabel>
+                  <FieldLabel>Manager Notes</FieldLabel>
                   <TextArea
                     value={editForm.managerNotes}
                     onChange={(e) =>
                       setEditForm((prev) => ({
                         ...prev,
                         managerNotes: e.target.value,
-                        managerComments: e.target.value,
                       }))
                     }
                   />
@@ -2351,7 +2340,7 @@ export default function OperationalReportAdminPage() {
                 >
                   <div>
                     <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
-                      {isSupervisor ? "My Report Detail" : "Report Detail"}
+                      Report Detail
                     </h2>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
                       {selectedReport.normalizedAirline || "—"} · {selectedReport.reportDate || "—"}
@@ -2363,7 +2352,7 @@ export default function OperationalReportAdminPage() {
                       Print / Export PDF
                     </ActionButton>
 
-                    {canManage && (
+                    {isManager && (
                       <ActionButton variant="warning" onClick={() => startEdit(selectedReport)}>
                         Edit
                       </ActionButton>
@@ -2388,35 +2377,33 @@ export default function OperationalReportAdminPage() {
                   <InfoCard label="Delayed Flight" value={selectedReport.delayedFlight ? "Yes" : "No"} />
                   <InfoCard label="Delayed Time" value={`${Number(selectedReport.delayedTimeMinutes || 0)} min`} />
                   <InfoCard label="Delayed Code" value={selectedReport.delayedCodeReported || "—"} />
-                  <InfoCard label="Status" value={getReviewStatusLabel(selectedReport.reviewStatus)} />
-                  <InfoCard label="Follow Up By" value={getSupervisorFollowUpBy(selectedReport)} />
+                  <InfoCard label="Review Status" value={getReviewStatusLabel(selectedReport.reviewStatus)} />
                 </div>
 
                 <DetailBox label="Delayed Reason" value={selectedReport.delayedReason || "—"} />
                 <DetailBox label="Notes" value={selectedReport.notes || "—"} />
-                <DetailBox
-                  label="Manager Notes / Comments"
-                  value={getSupervisorComments(selectedReport)}
-                />
+                <DetailBox label="Manager Notes" value={selectedReport.managerNotes || "—"} />
                 <DetailBox label="Follow Up Action" value={selectedReport.followUpAction || "—"} />
                 <DetailBox label="Follow Up Details" value={selectedReport.followUpDetails || "—"} />
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <InfoCard label="Received At" value={formatDateTime(selectedReport.createdAt)} />
-                  <InfoCard label="Reviewed At" value={formatDateTime(selectedReport.readAt || selectedReport.reviewedAt)} />
-                  <InfoCard label="Accepted At" value={formatDateTime(selectedReport.approvedAt)} />
-                  <InfoCard label="Closed At" value={formatDateTime(selectedReport.closedAt)} />
-                  <InfoCard label="Reviewed By" value={selectedReport.readBy || selectedReport.reviewedBy || "—"} />
-                  <InfoCard label="Accepted By" value={selectedReport.approvedBy || "—"} />
-                  <InfoCard label="Closed By" value={selectedReport.closedBy || "—"} />
-                  <InfoCard label="Archived By" value={selectedReport.archivedBy || "—"} />
-                </div>
+                {(selectedReport.readBy || selectedReport.approvedBy || selectedReport.closedBy || selectedReport.archivedBy) && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <InfoCard label="Read By" value={selectedReport.readBy || "—"} />
+                    <InfoCard label="Read At" value={formatDateTime(selectedReport.readAt)} />
+                    <InfoCard label="Approved By" value={selectedReport.approvedBy || "—"} />
+                    <InfoCard label="Approved At" value={formatDateTime(selectedReport.approvedAt)} />
+                    <InfoCard label="Closed By" value={selectedReport.closedBy || "—"} />
+                    <InfoCard label="Closed At" value={formatDateTime(selectedReport.closedAt)} />
+                    <InfoCard label="Archived By" value={selectedReport.archivedBy || "—"} />
+                    <InfoCard label="Archived At" value={formatDateTime(selectedReport.archivedAt)} />
+                  </div>
+                )}
 
                 {shouldFlagNeedsAttention(selectedReport) && (
                   <div
@@ -2454,7 +2441,7 @@ export default function OperationalReportAdminPage() {
                   </div>
                 )}
 
-                {canManage && (
+                {isManager && (
                   <>
                     <div
                       style={{
@@ -2469,7 +2456,7 @@ export default function OperationalReportAdminPage() {
                           onClick={() => updateWorkflowStatus(selectedReport, "read")}
                           disabled={actionId === selectedReport.id}
                         >
-                          Mark Reviewed
+                          Mark Read
                         </ActionButton>
                       )}
 
@@ -2479,7 +2466,7 @@ export default function OperationalReportAdminPage() {
                           onClick={() => updateWorkflowStatus(selectedReport, "approved")}
                           disabled={actionId === selectedReport.id}
                         >
-                          Accept
+                          Approve
                         </ActionButton>
                       )}
 
@@ -2537,14 +2524,13 @@ export default function OperationalReportAdminPage() {
 
                       <div style={{ display: "grid", gap: 12 }}>
                         <div>
-                          <FieldLabel>Manager Notes / Comments</FieldLabel>
+                          <FieldLabel>Manager Notes</FieldLabel>
                           <TextArea
                             value={editForm.managerNotes}
                             onChange={(e) =>
                               setEditForm((prev) => ({
                                 ...prev,
                                 managerNotes: e.target.value,
-                                managerComments: e.target.value,
                               }))
                             }
                           />
