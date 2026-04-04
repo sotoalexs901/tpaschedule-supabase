@@ -571,18 +571,298 @@ function LeaderRow({ row, accent = "#1769aa" }) {
   );
 }
 
-function EmployeeOfMonthCard({ data, isMobile, language, onCongratulate }) {
-  const title = language === "es" ? "Empleado del Mes" : "Employee of the Month";
-  const noSelection = language === "es" ? "No seleccionado" : "No employee selected";
-  const writeText = language === "es" ? "Escribir felicitación" : "Write congratulations";
+function RecognizedEmployeeCard({ item, isMobile, language, onCongratulate }) {
+  const writeText =
+    language === "es" ? "Escribir felicitación" : "Write congratulations";
   const monthText = language === "es" ? "Mes" : "Month";
   const departmentText = language === "es" ? "Departamento" : "Department";
   const positionText = language === "es" ? "Posición" : "Position";
   const airlineText = language === "es" ? "Aerolínea" : "Airline";
+  const initials = getInitials(item?.employeeName || "E");
+  const profileImage = item?.photoURL || item?.profilePhotoURL || "";
+  const canWrite = Boolean(item?.userId || item?.username);
 
-  const initials = getInitials(data?.employeeName || "E");
-  const canWrite = Boolean(data?.userId || data?.username);
-  const profileImage = data?.photoURL || data?.profilePhotoURL || "";
+  return (
+    <div
+      style={{
+        background: "#ffffff",
+        border: "1px solid #fde68a",
+        borderRadius: 18,
+        padding: 16,
+        boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
+        display: "grid",
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          minWidth: 0,
+        }}
+      >
+        <div
+          style={{
+            width: isMobile ? 56 : 62,
+            height: isMobile ? 56 : 62,
+            borderRadius: 18,
+            overflow: "hidden",
+            background: "#ffedd5",
+            border: "1px solid #fdba74",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#9a3412",
+            fontWeight: 800,
+            fontSize: 20,
+            flexShrink: 0,
+          }}
+        >
+          {profileImage ? (
+            <img
+              src={profileImage}
+              alt={item.employeeName}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+            />
+          ) : (
+            <span>{initials}</span>
+          )}
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 800,
+              color: "#0f172a",
+              lineHeight: 1.2,
+              wordBreak: "break-word",
+            }}
+          >
+            {item.employeeName || "—"}
+          </div>
+
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 13,
+              color: "#9a3412",
+              fontWeight: 700,
+            }}
+          >
+            {item.position || "—"}
+          </div>
+
+          {item.username && (
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                color: "#64748b",
+              }}
+            >
+              @{item.username}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            borderRadius: 12,
+            background: "#fffdf7",
+            border: "1px solid #fde68a",
+            padding: "8px 10px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 800,
+              color: "#64748b",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            {positionText}
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#0f172a",
+            }}
+          >
+            {item.position || "—"}
+          </div>
+        </div>
+
+        <div
+          style={{
+            borderRadius: 12,
+            background: "#fffdf7",
+            border: "1px solid #fde68a",
+            padding: "8px 10px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 800,
+              color: "#64748b",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            {departmentText}
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#0f172a",
+            }}
+          >
+            {item.department || "—"}
+          </div>
+        </div>
+
+        <div
+          style={{
+            borderRadius: 12,
+            background: "#fffdf7",
+            border: "1px solid #fde68a",
+            padding: "8px 10px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 800,
+              color: "#64748b",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            {airlineText}
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#0f172a",
+            }}
+          >
+            {item.airline || "—"}
+          </div>
+        </div>
+
+        <div
+          style={{
+            borderRadius: 12,
+            background: "#fffdf7",
+            border: "1px solid #fde68a",
+            padding: "8px 10px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 800,
+              color: "#64748b",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            {monthText}
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#0f172a",
+            }}
+          >
+            {item.monthLabel || "—"}
+          </div>
+        </div>
+      </div>
+
+      {item.note && (
+        <div
+          style={{
+            borderRadius: 12,
+            background: "#fffdf7",
+            border: "1px solid #fde68a",
+            padding: "10px 12px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              color: "#475569",
+              lineHeight: 1.6,
+              whiteSpace: "pre-line",
+            }}
+          >
+            {item.note}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <button
+          type="button"
+          onClick={() => onCongratulate(item)}
+          disabled={!canWrite}
+          style={{
+            border: "none",
+            background: canWrite
+              ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)"
+              : "#cbd5e1",
+            color: "#fff",
+            borderRadius: 14,
+            padding: "11px 14px",
+            fontWeight: 800,
+            fontSize: 13,
+            cursor: canWrite ? "pointer" : "not-allowed",
+            boxShadow: canWrite
+              ? "0 12px 24px rgba(23,105,170,0.18)"
+              : "none",
+            opacity: canWrite ? 1 : 0.8,
+            width: "100%",
+          }}
+        >
+          {writeText}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecognizedEmployeesBanner({ items, isMobile, language, onCongratulate }) {
+  const title =
+    language === "es" ? "Reconocimientos del Mes" : "Recognized Employees";
+  const emptyText =
+    language === "es"
+      ? "No hay perfiles reconocidos."
+      : "No recognized employees selected.";
 
   return (
     <div
@@ -633,7 +913,7 @@ function EmployeeOfMonthCard({ data, isMobile, language, onCongratulate }) {
         </h2>
       </div>
 
-      {!data ? (
+      {items.length === 0 ? (
         <p
           style={{
             margin: 0,
@@ -642,269 +922,27 @@ function EmployeeOfMonthCard({ data, isMobile, language, onCongratulate }) {
             fontWeight: 700,
           }}
         >
-          {noSelection}
+          {emptyText}
         </p>
       ) : (
-        <div style={{ display: "grid", gap: 14 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 14,
-              minWidth: 0,
-            }}
-          >
-            <div
-              style={{
-                width: 68,
-                height: 68,
-                borderRadius: 20,
-                overflow: "hidden",
-                background: "#ffedd5",
-                border: "1px solid #fdba74",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#9a3412",
-                fontWeight: 800,
-                fontSize: 22,
-                flexShrink: 0,
-              }}
-            >
-              {profileImage ? (
-                <img
-                  src={profileImage}
-                  alt={data.employeeName}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                  }}
-                />
-              ) : (
-                <span>{initials}</span>
-              )}
-            </div>
-
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  color: "#0f172a",
-                  lineHeight: 1.2,
-                  wordBreak: "break-word",
-                }}
-              >
-                {data.employeeName || noSelection}
-              </div>
-
-              {data.position && (
-                <div
-                  style={{
-                    marginTop: 4,
-                    fontSize: 13,
-                    color: "#9a3412",
-                    fontWeight: 700,
-                  }}
-                >
-                  {data.position}
-                </div>
-              )}
-
-              {data.username && (
-                <div
-                  style={{
-                    marginTop: 4,
-                    fontSize: 12,
-                    color: "#64748b",
-                  }}
-                >
-                  @{data.username}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-              gap: 10,
-            }}
-          >
-            <div
-              style={{
-                borderRadius: 14,
-                background: "#ffffff",
-                border: "1px solid #fde68a",
-                padding: "10px 12px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "#64748b",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {positionText}
-              </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  color: "#0f172a",
-                }}
-              >
-                {data.position || "—"}
-              </div>
-            </div>
-
-            <div
-              style={{
-                borderRadius: 14,
-                background: "#ffffff",
-                border: "1px solid #fde68a",
-                padding: "10px 12px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "#64748b",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {departmentText}
-              </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  color: "#0f172a",
-                }}
-              >
-                {data.department || "—"}
-              </div>
-            </div>
-
-            <div
-              style={{
-                borderRadius: 14,
-                background: "#ffffff",
-                border: "1px solid #fde68a",
-                padding: "10px 12px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "#64748b",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {airlineText}
-              </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  color: "#0f172a",
-                }}
-              >
-                {data.airline || "—"}
-              </div>
-            </div>
-
-            <div
-              style={{
-                borderRadius: 14,
-                background: "#ffffff",
-                border: "1px solid #fde68a",
-                padding: "10px 12px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "#64748b",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {monthText}
-              </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  color: "#0f172a",
-                }}
-              >
-                {data.monthLabel || "—"}
-              </div>
-            </div>
-          </div>
-
-          {data.note && (
-            <div
-              style={{
-                borderRadius: 14,
-                background: "#ffffff",
-                border: "1px solid #fde68a",
-                padding: "12px 14px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "#475569",
-                  lineHeight: 1.7,
-                  whiteSpace: "pre-line",
-                }}
-              >
-                {data.note}
-              </div>
-            </div>
-          )}
-
-          <div>
-            <button
-              type="button"
-              onClick={onCongratulate}
-              disabled={!canWrite}
-              style={{
-                border: "none",
-                background: canWrite
-                  ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)"
-                  : "#cbd5e1",
-                color: "#fff",
-                borderRadius: 14,
-                padding: "12px 16px",
-                fontWeight: 800,
-                fontSize: 14,
-                cursor: canWrite ? "pointer" : "not-allowed",
-                boxShadow: canWrite
-                  ? "0 12px 24px rgba(23,105,170,0.18)"
-                  : "none",
-                opacity: canWrite ? 1 : 0.8,
-              }}
-            >
-              {writeText}
-            </button>
-          </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: 14,
+          }}
+        >
+          {items.slice(0, 6).map((item) => (
+            <RecognizedEmployeeCard
+              key={item.id}
+              item={item}
+              isMobile={isMobile}
+              language={language}
+              onCongratulate={onCongratulate}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -920,7 +958,7 @@ export default function EmployeeDashboardPage() {
   const [birthdays, setBirthdays] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [wchrReports, setWchrReports] = useState([]);
-  const [employeeOfMonth, setEmployeeOfMonth] = useState(null);
+  const [recognizedEmployees, setRecognizedEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [wchrLoading, setWchrLoading] = useState(true);
   const [language, setLanguage] = useState("en");
@@ -965,7 +1003,7 @@ export default function EmployeeDashboardPage() {
       loadingWchr: "Loading WCHR ranking...",
       congratsPrefix: "Congratulations",
       congratsBody:
-        "You were selected as Employee of the Month. Great job and thank you for your hard work!",
+        "You were selected for the recognition board this month. Great job and thank you for your hard work!",
     },
     es: {
       crewPortal: "Portal de Tripulación",
@@ -1002,7 +1040,7 @@ export default function EmployeeDashboardPage() {
       loadingWchr: "Cargando ranking WCHR...",
       congratsPrefix: "Felicidades",
       congratsBody:
-        "Fuiste seleccionado(a) como Empleado del Mes. ¡Gran trabajo y gracias por tu esfuerzo!",
+        "Fuiste seleccionado(a) para el mural de reconocimiento este mes. ¡Gran trabajo y gracias por tu esfuerzo!",
     },
   };
 
@@ -1075,24 +1113,27 @@ export default function EmployeeDashboardPage() {
         setBirthdays(birthdayList);
 
         try {
-          const qEmployeeOfMonth = query(
+          const qRecognized = query(
             collection(db, "employee_of_month"),
             where("active", "==", true)
           );
-          const employeeOfMonthSnap = await getDocs(qEmployeeOfMonth);
+          const recognizedSnap = await getDocs(qRecognized);
 
-          if (!employeeOfMonthSnap.empty) {
-            const first = employeeOfMonthSnap.docs[0];
-            setEmployeeOfMonth({
-              id: first.id,
-              ...first.data(),
+          const recognizedList = recognizedSnap.docs
+            .map((d) => ({
+              id: d.id,
+              ...d.data(),
+            }))
+            .sort((a, b) => {
+              const aTime = a.createdAt?.seconds || 0;
+              const bTime = b.createdAt?.seconds || 0;
+              return bTime - aTime;
             });
-          } else {
-            setEmployeeOfMonth(null);
-          }
+
+          setRecognizedEmployees(recognizedList);
         } catch (err) {
-          console.error("Error loading employee of month:", err);
-          setEmployeeOfMonth(null);
+          console.error("Error loading recognized employees:", err);
+          setRecognizedEmployees([]);
         }
       } catch (err) {
         console.error("Error loading employee dashboard:", err);
@@ -1129,10 +1170,10 @@ export default function EmployeeDashboardPage() {
 
   const goTo = (path) => navigate(path);
 
-  const handleCongratulateEmployeeOfMonth = () => {
-    if (!employeeOfMonth?.userId && !employeeOfMonth?.username) return;
+  const handleCongratulateRecognizedEmployee = (person) => {
+    if (!person?.userId && !person?.username) return;
 
-    const personName = employeeOfMonth.employeeName || "team member";
+    const personName = person.employeeName || "team member";
     const messageText =
       language === "es"
         ? `${t.congratsPrefix} ${personName}. ${t.congratsBody}`
@@ -1140,9 +1181,9 @@ export default function EmployeeDashboardPage() {
 
     navigate("/messages", {
       state: {
-        recipientUserId: employeeOfMonth.userId || "",
-        recipientUsername: employeeOfMonth.username || "",
-        recipientName: employeeOfMonth.employeeName || "",
+        recipientUserId: person.userId || "",
+        recipientUsername: person.username || "",
+        recipientName: person.employeeName || "",
         prefilledMessage: messageText,
       },
     });
@@ -1482,11 +1523,11 @@ export default function EmployeeDashboardPage() {
             </div>
           </GlassCard>
 
-          <EmployeeOfMonthCard
-            data={employeeOfMonth}
+          <RecognizedEmployeesBanner
+            items={recognizedEmployees}
             isMobile={isMobile}
             language={language}
-            onCongratulate={handleCongratulateEmployeeOfMonth}
+            onCongratulate={handleCongratulateRecognizedEmployee}
           />
 
           <GlassCard
