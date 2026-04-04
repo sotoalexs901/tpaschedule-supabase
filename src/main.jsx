@@ -34,6 +34,7 @@ import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import AdminActivityDashboard from "./pages/AdminActivityDashboard.jsx";
+import StationTeamPage from "./pages/StationTeamPage.jsx";
 
 import SupervisorTimesheetPage from "./pages/SupervisorTimesheetPage.jsx";
 import TimesheetAdminPage from "./pages/TimesheetAdminPage.jsx";
@@ -362,6 +363,17 @@ function AppRouter() {
 
           <Route path="profile" element={<ProfilePage />} />
           <Route path="messages" element={<MessagesPage />} />
+
+          <Route
+            path="station-team"
+            element={
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
+                <StationTeamPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="my-schedule"
