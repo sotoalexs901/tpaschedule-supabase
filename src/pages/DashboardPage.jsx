@@ -51,6 +51,14 @@ function useIsMobile(breakpoint = 900) {
   return isMobile;
 }
 
+function getInitials(name) {
+  const clean = String(name || "").trim();
+  if (!clean) return "U";
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+}
+
 function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
   return (
     <div
@@ -213,6 +221,338 @@ function GlassCard({
   );
 }
 
+function EmployeeOfMonthCard({ data, isMobile, onMessage }) {
+  const initials = getInitials(data?.employeeName || "E");
+  const profileImage = data?.photoURL || data?.profilePhotoURL || "";
+  const canMessage = Boolean(data?.userId || data?.username);
+
+  return (
+    <div
+      style={{
+        background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
+        border: "1px solid #fed7aa",
+        borderRadius: isMobile ? 20 : 24,
+        padding: isMobile ? 16 : 20,
+        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 14,
+            background: "#f59e0b22",
+            color: "#b45309",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 18,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          🏆
+        </div>
+
+        <h2
+          style={{
+            margin: 0,
+            fontSize: isMobile ? 17 : 19,
+            fontWeight: 800,
+            color: "#0f172a",
+            letterSpacing: "-0.02em",
+          }}
+        >
+          Employee of the Month
+        </h2>
+      </div>
+
+      {!data ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 14,
+            color: "#64748b",
+            fontWeight: 700,
+          }}
+        >
+          No employee selected.
+        </p>
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              minWidth: 0,
+            }}
+          >
+            <div
+              style={{
+                width: 68,
+                height: 68,
+                borderRadius: 20,
+                overflow: "hidden",
+                background: "#ffedd5",
+                border: "1px solid #fdba74",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#9a3412",
+                fontWeight: 800,
+                fontSize: 22,
+                flexShrink: 0,
+              }}
+            >
+              {profileImage ? (
+                <img
+                  src={profileImage}
+                  alt={data.employeeName}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <span>{initials}</span>
+              )}
+            </div>
+
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  lineHeight: 1.2,
+                  wordBreak: "break-word",
+                }}
+              >
+                {data.employeeName || "No employee selected"}
+              </div>
+
+              {data.position && (
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 13,
+                    color: "#9a3412",
+                    fontWeight: 700,
+                  }}
+                >
+                  {data.position}
+                </div>
+              )}
+
+              {data.username && (
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 12,
+                    color: "#64748b",
+                  }}
+                >
+                  @{data.username}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                borderRadius: 14,
+                background: "#ffffff",
+                border: "1px solid #fde68a",
+                padding: "10px 12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                Position
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                }}
+              >
+                {data.position || "—"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                borderRadius: 14,
+                background: "#ffffff",
+                border: "1px solid #fde68a",
+                padding: "10px 12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                Department
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                }}
+              >
+                {data.department || "—"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                borderRadius: 14,
+                background: "#ffffff",
+                border: "1px solid #fde68a",
+                padding: "10px 12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                Airline
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                }}
+              >
+                {data.airline || "—"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                borderRadius: 14,
+                background: "#ffffff",
+                border: "1px solid #fde68a",
+                padding: "10px 12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                Month
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                }}
+              >
+                {data.monthLabel || "—"}
+              </div>
+            </div>
+          </div>
+
+          {data.note && (
+            <div
+              style={{
+                borderRadius: 14,
+                background: "#ffffff",
+                border: "1px solid #fde68a",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#475569",
+                  lineHeight: 1.7,
+                  whiteSpace: "pre-line",
+                }}
+              >
+                {data.note}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <button
+              type="button"
+              onClick={onMessage}
+              disabled={!canMessage}
+              style={{
+                border: "none",
+                background: canMessage
+                  ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)"
+                  : "#cbd5e1",
+                color: "#fff",
+                borderRadius: 14,
+                padding: "12px 16px",
+                fontWeight: 800,
+                fontSize: 14,
+                cursor: canMessage ? "pointer" : "not-allowed",
+                boxShadow: canMessage
+                  ? "0 12px 24px rgba(23,105,170,0.18)"
+                  : "none",
+                opacity: canMessage ? 1 : 0.8,
+              }}
+            >
+              Send message
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -240,6 +580,9 @@ export default function DashboardPage() {
   const [pendingTimesheets, setPendingTimesheets] = useState([]);
   const [loadingTimesheets, setLoadingTimesheets] = useState(false);
 
+  const [employeeOfMonth, setEmployeeOfMonth] = useState(null);
+  const [loadingEmployeeOfMonth, setLoadingEmployeeOfMonth] = useState(false);
+
   const canTrackTimesheets =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
@@ -261,6 +604,32 @@ export default function DashboardPage() {
       }
     } catch (err) {
       console.error("Error loading main dashboard message:", err);
+    }
+  };
+
+  const fetchEmployeeOfMonth = async () => {
+    setLoadingEmployeeOfMonth(true);
+    try {
+      const qEmployee = query(
+        collection(db, "employee_of_month"),
+        where("active", "==", true)
+      );
+      const snap = await getDocs(qEmployee);
+
+      if (!snap.empty) {
+        const first = snap.docs[0];
+        setEmployeeOfMonth({
+          id: first.id,
+          ...first.data(),
+        });
+      } else {
+        setEmployeeOfMonth(null);
+      }
+    } catch (err) {
+      console.error("Error loading employee of the month:", err);
+      setEmployeeOfMonth(null);
+    } finally {
+      setLoadingEmployeeOfMonth(false);
     }
   };
 
@@ -402,6 +771,7 @@ export default function DashboardPage() {
 
   const reloadAll = () => {
     fetchMainMessage();
+    fetchEmployeeOfMonth();
     fetchEvents();
     fetchNotices();
     fetchBlockedEmployees();
@@ -413,6 +783,22 @@ export default function DashboardPage() {
   useEffect(() => {
     reloadAll();
   }, [user?.role]);
+
+  const handleMessageEmployeeOfMonth = () => {
+    if (!employeeOfMonth?.userId && !employeeOfMonth?.username) return;
+
+    const personName = employeeOfMonth.employeeName || "team member";
+    const messageText = `Congratulations ${personName}! You were selected as Employee of the Month. Great job and thank you for your hard work!`;
+
+    navigate("/messages", {
+      state: {
+        recipientUserId: employeeOfMonth.userId || "",
+        recipientUsername: employeeOfMonth.username || "",
+        recipientName: employeeOfMonth.employeeName || "",
+        prefilledMessage: messageText,
+      },
+    });
+  };
 
   const stats = useMemo(() => {
     const base = [
@@ -639,9 +1025,28 @@ export default function DashboardPage() {
                   fontWeight: 700,
                 }}
               >
-                By {FIXED_AUTHOR}
+                By {mainMeta?.updatedBy || FIXED_AUTHOR}
               </p>
             </div>
+          </GlassCard>
+
+          <GlassCard
+            title="Employee Recognition"
+            icon="🏆"
+            accent="#f59e0b"
+            isMobile={isMobile}
+          >
+            {loadingEmployeeOfMonth ? (
+              <p style={{ margin: 0, color: "#94a3b8" }}>
+                Loading employee of the month...
+              </p>
+            ) : (
+              <EmployeeOfMonthCard
+                data={employeeOfMonth}
+                isMobile={isMobile}
+                onMessage={handleMessageEmployeeOfMonth}
+              />
+            )}
           </GlassCard>
 
           <GlassCard
