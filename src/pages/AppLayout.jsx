@@ -247,6 +247,14 @@ export default function AppLayout() {
   const canManageWchrPoi =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
+  const canSubmitRegulatedGarbage =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageRegulatedGarbage =
+    user?.role === "duty_manager" || user?.role === "station_manager";
+
   const canAccessWchrTools =
     !isDLCabinService &&
     (user?.role === "agent" ||
@@ -383,6 +391,14 @@ export default function AppLayout() {
       );
     }
 
+    if (canSubmitRegulatedGarbage) {
+      submissionReports.push({
+        to: "/regulated-garbage/submit",
+        label: "Regulated Garbage",
+        icon: "🗑️",
+      });
+    }
+
     if (canSubmitOperationsRequests) {
       submissionReports.push({
         to: "/operations-requests/submit",
@@ -417,6 +433,14 @@ export default function AppLayout() {
             ? "Supervisor Operational Reports"
             : "Operational Reports",
         icon: "📑",
+      });
+    }
+
+    if (canManageRegulatedGarbage) {
+      managementReports.push({
+        to: "/regulated-garbage/reports",
+        label: "Regulated Garbage Reports",
+        icon: "🗑️",
       });
     }
 
@@ -485,6 +509,8 @@ export default function AppLayout() {
     canManageOperationsRequests,
     canSubmitWchrPoi,
     canManageWchrPoi,
+    canSubmitRegulatedGarbage,
+    canManageRegulatedGarbage,
     unreadMessages,
     pendingTimeOff,
     user,
