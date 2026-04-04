@@ -140,6 +140,12 @@ function ActionButton({
       border: "none",
       boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
     },
+    warning: {
+      background: "#f59e0b",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
+    },
   };
 
   return (
@@ -258,6 +264,12 @@ export default function CrewAnnouncementsPage() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
 
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState("");
+  const [editingAnnouncementImageUrl, setEditingAnnouncementImageUrl] = useState("");
+  const [editingAnnouncementImagePath, setEditingAnnouncementImagePath] = useState("");
+  const [editingAnnouncementImageContentType, setEditingAnnouncementImageContentType] =
+    useState("");
+
   const [employeeOfMonthName, setEmployeeOfMonthName] = useState("");
   const [employeeOfMonthAirline, setEmployeeOfMonthAirline] = useState("");
   const [employeeOfMonthDepartment, setEmployeeOfMonthDepartment] = useState("");
@@ -355,6 +367,21 @@ export default function CrewAnnouncementsPage() {
     setEmployeeOfMonthDepartment(found.department || "");
   }, [selectedEmployeeId, employees]);
 
+  const resetAnnouncementForm = () => {
+    setTitle("");
+    setSubtitle("");
+    setBody("");
+    setCategory("general");
+    setPriority("normal");
+    setPinned(false);
+    setExpiresOn("");
+    setEditingAnnouncementId("");
+    setEditingAnnouncementImageUrl("");
+    setEditingAnnouncementImagePath("");
+    setEditingAnnouncementImageContentType("");
+    resetImageInput();
+  };
+
   const resetImageInput = () => {
     setImageFile(null);
     if (imagePreviewUrl) {
@@ -387,9 +414,9 @@ export default function CrewAnnouncementsPage() {
     try {
       setSaving(true);
 
-      let imageUrl = "";
-      let imagePath = "";
-      let imageContentType = "";
+      let imageUrl = editingAnnouncementImageUrl || "";
+      let imagePath = editingAnnouncementImagePath || "";
+      let imageContentType = editingAnnouncementImageContentType || "";
 
       if (imageFile) {
         if (!imageFile.type.startsWith("image/")) {
@@ -422,7 +449,7 @@ export default function CrewAnnouncementsPage() {
         imageUrl = await getDownloadURL(storageRef);
       }
 
-      await addDoc(collection(db, "employeeAnnouncements"), {
+      const payload = {
         title: title.trim() || "Announcement",
         subtitle: subtitle.trim() || "",
         body: body.trim() || "",
@@ -433,29 +460,61 @@ export default function CrewAnnouncementsPage() {
         imageUrl,
         imagePath,
         imageContentType,
-        createdAt: serverTimestamp(),
-        createdBy: visibleName,
-        createdByUsername: user?.username || "",
-        createdByRole: user?.role || "",
-        createdByPosition: visiblePosition,
-      });
+        updatedAt: serverTimestamp(),
+        updatedBy: visibleName,
+        updatedByUsername: user?.username || "",
+      };
 
-      setTitle("");
-      setSubtitle("");
-      setBody("");
-      setCategory("general");
-      setPriority("normal");
-      setPinned(false);
-      setExpiresOn("");
-      resetImageInput();
-      setMessage("Announcement posted!");
+      if (editingAnnouncementId) {
+        await updateDoc(
+          doc(db, "employeeAnnouncements", editingAnnouncementId),
+          payload
+        );
+
+        setMessage("Announcement updated!");
+      } else {
+        await addDoc(collection(db, "employeeAnnouncements"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          createdBy: visibleName,
+          createdByUsername: user?.username || "",
+          createdByRole: user?.role || "",
+          createdByPosition: visiblePosition,
+        });
+
+        setMessage("Announcement posted!");
+      }
+
+      resetAnnouncementForm();
       await loadAnnouncements();
     } catch (err) {
-      console.error("Error posting announcement:", err);
-      setMessage(err?.message || "Error posting announcement.");
+      console.error("Error saving announcement:", err);
+      setMessage(err?.message || "Error saving announcement.");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleEditAnnouncement = (announcement) => {
+    setTitle(announcement.title || "");
+    setSubtitle(announcement.subtitle || "");
+    setBody(announcement.body || "");
+    setCategory(announcement.category || "general");
+    setPriority(announcement.priority || "normal");
+    setPinned(Boolean(announcement.pinned));
+    setExpiresOn(announcement.expiresOn || "");
+    setEditingAnnouncementId(announcement.id);
+    setEditingAnnouncementImageUrl(announcement.imageUrl || "");
+    setEditingAnnouncementImagePath(announcement.imagePath || "");
+    setEditingAnnouncementImageContentType(announcement.imageContentType || "");
+    resetImageInput();
+    setMessage("Editing announcement.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleCancelEditAnnouncement = () => {
+    resetAnnouncementForm();
+    setMessage("Edit cancelled.");
   };
 
   const handleSaveEmployeeOfMonth = async () => {
@@ -538,6 +597,11 @@ export default function CrewAnnouncementsPage() {
       setDeletingId(id);
       await deleteDoc(doc(db, "employeeAnnouncements", id));
       setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+
+      if (editingAnnouncementId === id) {
+        resetAnnouncementForm();
+      }
+
       setMessage("Announcement deleted.");
     } catch (err) {
       console.error("Error deleting announcement:", err);
@@ -965,7 +1029,7 @@ export default function CrewAnnouncementsPage() {
               letterSpacing: "-0.02em",
             }}
           >
-            Post Announcement
+            {editingAnnouncementId ? "Edit Announcement" : "Post Announcement"}
           </h2>
           <p
             style={{
@@ -1095,6 +1159,30 @@ export default function CrewAnnouncementsPage() {
               style={{ padding: "10px 12px" }}
             />
 
+            {editingAnnouncementImageUrl && !imagePreviewUrl && (
+              <div
+                style={{
+                  marginTop: 12,
+                  borderRadius: 16,
+                  overflow: "hidden",
+                  border: "1px solid #e2e8f0",
+                  maxWidth: 380,
+                  background: "#fff",
+                }}
+              >
+                <img
+                  src={editingAnnouncementImageUrl}
+                  alt="Current announcement"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    maxHeight: 260,
+                    objectFit: "cover",
+                  }}
+                />
+              </div>
+            )}
+
             {imageFile && (
               <p
                 style={{
@@ -1133,10 +1221,32 @@ export default function CrewAnnouncementsPage() {
             )}
           </div>
 
-          <div>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
             <ActionButton type="submit" variant="primary" disabled={saving}>
-              {saving ? "Posting..." : "Post announcement"}
+              {saving
+                ? editingAnnouncementId
+                  ? "Updating..."
+                  : "Posting..."
+                : editingAnnouncementId
+                ? "Update announcement"
+                : "Post announcement"}
             </ActionButton>
+
+            {editingAnnouncementId && (
+              <ActionButton
+                type="button"
+                variant="secondary"
+                onClick={handleCancelEditAnnouncement}
+              >
+                Cancel edit
+              </ActionButton>
+            )}
           </div>
         </form>
       </PageCard>
@@ -1161,7 +1271,7 @@ export default function CrewAnnouncementsPage() {
               color: "#64748b",
             }}
           >
-            Review recent dashboard notices and remove outdated ones.
+            Review recent dashboard notices and edit or remove outdated ones.
           </p>
         </div>
 
@@ -1285,13 +1395,28 @@ export default function CrewAnnouncementsPage() {
                     )}
                   </div>
 
-                  <ActionButton
-                    variant="danger"
-                    onClick={() => handleDeleteAnnouncement(a.id)}
-                    disabled={deletingId === a.id}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
                   >
-                    {deletingId === a.id ? "Deleting..." : "Delete"}
-                  </ActionButton>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => handleEditAnnouncement(a)}
+                    >
+                      Edit
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="danger"
+                      onClick={() => handleDeleteAnnouncement(a.id)}
+                      disabled={deletingId === a.id}
+                    >
+                      {deletingId === a.id ? "Deleting..." : "Delete"}
+                    </ActionButton>
+                  </div>
                 </div>
 
                 {a.subtitle && (
