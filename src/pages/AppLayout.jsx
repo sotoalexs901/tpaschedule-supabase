@@ -258,6 +258,7 @@ export default function AppLayout() {
     const general = [
       { to: "/dashboard", label: "Dashboard", icon: "🏠" },
       { to: "/profile", label: "My Profile", icon: "👤" },
+      { to: "/station-team", label: "Station Team", icon: "🧑‍🤝‍🧑" },
       {
         to: "/messages",
         label: "Messages",
