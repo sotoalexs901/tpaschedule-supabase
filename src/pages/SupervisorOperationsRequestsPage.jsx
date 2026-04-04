@@ -45,7 +45,26 @@ function TextInput(props) {
       style={{
         width: "100%",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
         fontSize: 14,
@@ -64,34 +83,15 @@ function TextArea(props) {
       style={{
         width: "100%",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
-        minHeight: 120,
+        minHeight: 110,
         fontFamily: "inherit",
-        ...props.style,
-      }}
-    />
-  );
-}
-
-function SelectInput(props) {
-  return (
-    <select
-      {...props}
-      style={{
-        width: "100%",
-        border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
-        fontSize: 14,
-        color: "#0f172a",
-        outline: "none",
         ...props.style,
       }}
     />
@@ -152,11 +152,27 @@ function getVisibleName(user) {
   );
 }
 
+function getRequestTypeLabel(value) {
+  const v = String(value || "").trim().toLowerCase();
+
+  if (v === "supplies") return "Supplies Request";
+  if (v === "uniform") return "Uniform Submit";
+  if (v === "aa_ot") return "AA OT Request";
+  if (v === "sy_ot") return "SY OT Request";
+  if (v === "wl_ot") return "WL OT Request";
+  if (v === "av_ot") return "AV OT Request";
+
+  return value || "—";
+}
+
 function getAirlineFromRequestType(type) {
-  if (type === "aa_ot") return "American Airlines";
-  if (type === "sy_ot") return "Sun Country";
-  if (type === "wl_ot") return "World Atlantic";
-  if (type === "av_ot") return "Avianca";
+  const v = String(type || "").trim().toLowerCase();
+
+  if (v === "aa_ot") return "American Airlines";
+  if (v === "sy_ot") return "Sun Country";
+  if (v === "wl_ot") return "World Atlantic";
+  if (v === "av_ot") return "Avianca";
+
   return "";
 }
 
@@ -168,24 +184,27 @@ export default function SupervisorOperationsRequestsPage() {
   const [statusMessage, setStatusMessage] = useState("");
 
   const isAgent = user?.role === "agent";
+  const canUseOt =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const requestTypeOptions = useMemo(() => {
-    if (isAgent) {
-      return [
-        { value: "supplies", label: "Supplies Request" },
-        { value: "uniform", label: "Uniform Submit" },
-      ];
-    }
-
-    return [
+    const base = [
       { value: "supplies", label: "Supplies Request" },
       { value: "uniform", label: "Uniform Submit" },
+    ];
+
+    if (!canUseOt) return base;
+
+    return [
+      ...base,
       { value: "aa_ot", label: "AA OT Request" },
       { value: "sy_ot", label: "SY OT Request" },
       { value: "wl_ot", label: "WL OT Request" },
       { value: "av_ot", label: "AV OT Request" },
     ];
-  }, [isAgent]);
+  }, [canUseOt]);
 
   const [form, setForm] = useState({
     requestType: isAgent ? "supplies" : "",
@@ -212,15 +231,40 @@ export default function SupervisorOperationsRequestsPage() {
     status: "submitted",
   });
 
+  const isSupplies = form.requestType === "supplies";
+  const isUniform = form.requestType === "uniform";
+  const isOt =
+    form.requestType === "aa_ot" ||
+    form.requestType === "sy_ot" ||
+    form.requestType === "wl_ot" ||
+    form.requestType === "av_ot";
+
   const handleChange = (field, value) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
 
       if (field === "requestType") {
-        const otAirline = getAirlineFromRequestType(value);
-        if (otAirline) {
-          next.airline = otAirline;
-        } else if (value !== "supplies") {
+        const forcedAirline = getAirlineFromRequestType(value);
+
+        next.items = "";
+        next.pictureNotes = "";
+        next.employeeName = "";
+        next.employeeNumber = "";
+        next.phoneNumber = "";
+        next.totalAmount = "";
+        next.receiptNotes = "";
+        next.employeeSignature = "";
+        next.flightNumber = "";
+        next.tailNumber = "";
+        next.delayedTime = "";
+        next.delayedCode = "";
+        next.reason = "";
+        next.requestedHours = "";
+        next.requestedBy = "";
+
+        if (forcedAirline) {
+          next.airline = forcedAirline;
+        } else {
           next.airline = "";
         }
       }
@@ -229,13 +273,32 @@ export default function SupervisorOperationsRequestsPage() {
     });
   };
 
-  const isSupplies = form.requestType === "supplies";
-  const isUniform = form.requestType === "uniform";
-  const isOt =
-    form.requestType === "aa_ot" ||
-    form.requestType === "sy_ot" ||
-    form.requestType === "wl_ot" ||
-    form.requestType === "av_ot";
+  const resetForm = () => {
+    setForm({
+      requestType: isAgent ? "supplies" : "",
+      date: "",
+      airline: "",
+      department: user?.department || "",
+      submittedBy: getVisibleName(user),
+      email: "",
+      items: "",
+      pictureNotes: "",
+      employeeName: "",
+      employeeNumber: "",
+      phoneNumber: "",
+      totalAmount: "",
+      receiptNotes: "",
+      employeeSignature: "",
+      flightNumber: "",
+      tailNumber: "",
+      delayedTime: "",
+      delayedCode: "",
+      reason: "",
+      requestedHours: "",
+      requestedBy: "",
+      status: "submitted",
+    });
+  };
 
   const handleSubmit = async () => {
     setStatusMessage("");
@@ -246,27 +309,47 @@ export default function SupervisorOperationsRequestsPage() {
     }
 
     if (!form.date) {
-      setStatusMessage("Please select a date.");
+      setStatusMessage("Please select the date.");
       return;
     }
 
     if (isSupplies) {
-      if (!form.department || !form.items) {
-        setStatusMessage("Please complete department and items.");
+      if (!String(form.department || "").trim()) {
+        setStatusMessage("Please enter the department.");
+        return;
+      }
+
+      if (!String(form.items || "").trim()) {
+        setStatusMessage("Please enter the requested supplies.");
         return;
       }
     }
 
     if (isUniform) {
-      if (!form.employeeName || !form.employeeNumber) {
-        setStatusMessage("Please complete employee name and employee number.");
+      if (!String(form.employeeName || "").trim()) {
+        setStatusMessage("Please enter employee name.");
+        return;
+      }
+
+      if (!String(form.employeeNumber || "").trim()) {
+        setStatusMessage("Please enter employee number.");
         return;
       }
     }
 
     if (isOt) {
-      if (!form.flightNumber || !form.airline || !form.reason) {
-        setStatusMessage("Please complete airline, flight number and reason.");
+      if (!String(form.airline || "").trim()) {
+        setStatusMessage("Please confirm the airline.");
+        return;
+      }
+
+      if (!String(form.flightNumber || "").trim()) {
+        setStatusMessage("Please enter the flight number.");
+        return;
+      }
+
+      if (!String(form.reason || "").trim()) {
+        setStatusMessage("Please enter the reason for the OT request.");
         return;
       }
     }
@@ -275,40 +358,38 @@ export default function SupervisorOperationsRequestsPage() {
       setSaving(true);
 
       await addDoc(collection(db, "supplies_uniform_ot_requests"), {
-        ...form,
+        requestType: form.requestType,
+        requestTypeLabel: getRequestTypeLabel(form.requestType),
+        date: form.date,
+        airline: form.airline || "",
+        department: form.department || "",
+        submittedBy: form.submittedBy || "",
+        email: form.email || "",
+        items: form.items || "",
+        pictureNotes: form.pictureNotes || "",
+        employeeName: form.employeeName || "",
+        employeeNumber: form.employeeNumber || "",
+        phoneNumber: form.phoneNumber || "",
+        totalAmount: form.totalAmount || "",
+        receiptNotes: form.receiptNotes || "",
+        employeeSignature: form.employeeSignature || "",
+        flightNumber: form.flightNumber || "",
+        tailNumber: form.tailNumber || "",
+        delayedTime: form.delayedTime || "",
+        delayedCode: form.delayedCode || "",
+        reason: form.reason || "",
+        requestedHours: form.requestedHours || "",
+        requestedBy: form.requestedBy || "",
+        status: "submitted",
+        archived: false,
         submittedByUserId: user?.id || "",
         submittedByUsername: user?.username || "",
         submittedByRole: user?.role || "",
         createdAt: serverTimestamp(),
-        archived: false,
       });
 
       setStatusMessage("Request submitted successfully.");
-
-      setForm({
-        requestType: isAgent ? "supplies" : "",
-        date: "",
-        airline: "",
-        department: user?.department || "",
-        submittedBy: getVisibleName(user),
-        email: "",
-        items: "",
-        pictureNotes: "",
-        employeeName: "",
-        employeeNumber: "",
-        phoneNumber: "",
-        totalAmount: "",
-        receiptNotes: "",
-        employeeSignature: "",
-        flightNumber: "",
-        tailNumber: "",
-        delayedTime: "",
-        delayedCode: "",
-        reason: "",
-        requestedHours: "",
-        requestedBy: "",
-        status: "submitted",
-      });
+      resetForm();
     } catch (err) {
       console.error("Error saving request:", err);
       setStatusMessage("Could not submit request.");
@@ -347,6 +428,7 @@ export default function SupervisorOperationsRequestsPage() {
         >
           TPA OPS · Requests
         </p>
+
         <h1
           style={{
             margin: "10px 0 6px",
@@ -358,6 +440,7 @@ export default function SupervisorOperationsRequestsPage() {
         >
           Supplies, Uniform & OT Requests
         </h1>
+
         <p
           style={{
             margin: 0,
@@ -366,7 +449,7 @@ export default function SupervisorOperationsRequestsPage() {
             color: "rgba(255,255,255,0.88)",
           }}
         >
-          Submit supplies requests, uniform requests, and overtime requests.
+          Submit supplies requests, uniform orders and overtime requests from one place.
         </p>
       </div>
 
@@ -431,9 +514,10 @@ export default function SupervisorOperationsRequestsPage() {
           <div>
             <FieldLabel>Email</FieldLabel>
             <TextInput
+              type="email"
               value={form.email}
               onChange={(e) => handleChange("email", e.target.value)}
-              placeholder="email@example.com"
+              placeholder="name@email.com"
             />
           </div>
         </div>
@@ -441,7 +525,16 @@ export default function SupervisorOperationsRequestsPage() {
 
       {isSupplies && (
         <PageCard style={{ padding: 22 }}>
-          <h2 style={{ marginTop: 0 }}>Supplies Request</h2>
+          <h2
+            style={{
+              marginTop: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+            }}
+          >
+            Supplies Request
+          </h2>
 
           <div
             style={{
@@ -464,7 +557,7 @@ export default function SupervisorOperationsRequestsPage() {
             <TextArea
               value={form.items}
               onChange={(e) => handleChange("items", e.target.value)}
-              placeholder="List requested supplies"
+              placeholder="List the supplies needed"
             />
           </div>
 
@@ -473,7 +566,7 @@ export default function SupervisorOperationsRequestsPage() {
             <TextArea
               value={form.pictureNotes}
               onChange={(e) => handleChange("pictureNotes", e.target.value)}
-              placeholder="Describe photos or attached items"
+              placeholder="Describe photos or attached files"
             />
           </div>
         </PageCard>
@@ -481,7 +574,16 @@ export default function SupervisorOperationsRequestsPage() {
 
       {isUniform && (
         <PageCard style={{ padding: 22 }}>
-          <h2 style={{ marginTop: 0 }}>Uniform Submit</h2>
+          <h2
+            style={{
+              marginTop: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+            }}
+          >
+            Uniform Submit
+          </h2>
 
           <div
             style={{
@@ -528,7 +630,7 @@ export default function SupervisorOperationsRequestsPage() {
             <TextArea
               value={form.receiptNotes}
               onChange={(e) => handleChange("receiptNotes", e.target.value)}
-              placeholder="Receipt info or upload reference"
+              placeholder="Receipt reference, notes or upload description"
             />
           </div>
 
@@ -537,7 +639,7 @@ export default function SupervisorOperationsRequestsPage() {
             <TextInput
               value={form.employeeSignature}
               onChange={(e) => handleChange("employeeSignature", e.target.value)}
-              placeholder="Type employee name as signature"
+              placeholder="Type full name as signature"
             />
           </div>
         </PageCard>
@@ -545,7 +647,16 @@ export default function SupervisorOperationsRequestsPage() {
 
       {isOt && (
         <PageCard style={{ padding: 22 }}>
-          <h2 style={{ marginTop: 0 }}>Overtime Request</h2>
+          <h2
+            style={{
+              marginTop: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+            }}
+          >
+            {getRequestTypeLabel(form.requestType)}
+          </h2>
 
           <div
             style={{
@@ -580,6 +691,7 @@ export default function SupervisorOperationsRequestsPage() {
               <TextInput
                 value={form.delayedTime}
                 onChange={(e) => handleChange("delayedTime", e.target.value)}
+                placeholder="Example: 02:30"
               />
             </div>
 
@@ -613,7 +725,7 @@ export default function SupervisorOperationsRequestsPage() {
             <TextArea
               value={form.reason}
               onChange={(e) => handleChange("reason", e.target.value)}
-              placeholder="Explain the overtime request"
+              placeholder="Explain why OT is being requested"
             />
           </div>
         </PageCard>
@@ -627,6 +739,10 @@ export default function SupervisorOperationsRequestsPage() {
             disabled={saving}
           >
             {saving ? "Submitting..." : "Submit Request"}
+          </ActionButton>
+
+          <ActionButton onClick={resetForm} variant="secondary">
+            Clear
           </ActionButton>
 
           <ActionButton
