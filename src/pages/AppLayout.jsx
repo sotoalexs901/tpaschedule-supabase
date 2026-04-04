@@ -52,7 +52,7 @@ function getStoredBoolean(key, fallback) {
 }
 
 export default function AppLayout() {
-  const { user, setUser } = useUser();
+  const { user, setUser, logout: contextLogout } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -78,7 +78,7 @@ export default function AppLayout() {
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
   const profilePhotoURL = user?.profilePhotoURL || "";
 
-  const logout = async () => {
+  const logoutUser = async () => {
     try {
       if (user?.id) {
         await markUserOffline(user);
@@ -86,8 +86,18 @@ export default function AppLayout() {
     } catch (err) {
       console.error("Error marking user offline on logout:", err);
     } finally {
-      setUser(null);
-      navigate("/login");
+      try {
+        if (typeof contextLogout === "function") {
+          contextLogout();
+        } else {
+          setUser(null);
+        }
+      } catch (err) {
+        console.error("Error clearing user session:", err);
+        setUser(null);
+      }
+
+      navigate("/login", { replace: true });
     }
   };
 
@@ -166,9 +176,7 @@ export default function AppLayout() {
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        markUserOffline(user).catch(() => {});
-      } else {
+      if (document.visibilityState === "visible") {
         updateUserPresence(user, {
           currentPage: location.pathname,
         }).catch(() => {});
@@ -628,7 +636,7 @@ export default function AppLayout() {
                 </button>
 
                 <button
-                  onClick={logout}
+                  onClick={logoutUser}
                   style={{
                     border: "none",
                     background:
@@ -803,7 +811,7 @@ export default function AppLayout() {
               ))}
 
               <button
-                onClick={logout}
+                onClick={logoutUser}
                 style={{
                   border: "none",
                   background:
