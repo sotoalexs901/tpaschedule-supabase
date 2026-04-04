@@ -60,6 +60,9 @@ import OperationsRequestsReportsAdminPage from "./pages/OperationsRequestsReport
 import SupervisorWchrPoiPage from "./pages/SupervisorWchrPoiPage.jsx";
 import WchrPoiReportsAdminPage from "./pages/WchrPoiReportsAdminPage.jsx";
 
+import SupervisorRegulatedGarbagePage from "./pages/SupervisorRegulatedGarbagePage.jsx";
+import RegulatedGarbageAdminPage from "./pages/RegulatedGarbageAdminPage.jsx";
+
 function ProtectedRoute({
   children,
   roles,
@@ -436,6 +439,17 @@ function AppRouter() {
           />
 
           <Route
+            path="regulated-garbage/submit"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <SupervisorRegulatedGarbagePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="cleaning-security/submit"
             element={
               <ProtectedRoute
@@ -475,6 +489,15 @@ function AppRouter() {
                 roles={["supervisor", "duty_manager", "station_manager"]}
               >
                 <OperationalReportAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="regulated-garbage/reports"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <RegulatedGarbageAdminPage />
               </ProtectedRoute>
             }
           />
