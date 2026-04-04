@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
@@ -32,15 +32,24 @@ function normalizeSupervisorPosition(value) {
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { setUser } = useUser();
+  const { user, setUser } = useUser();
 
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (user) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [user, navigate]);
+
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    if (loading) return;
+
     setError("");
 
     const cleanUsername = username.trim();
@@ -81,6 +90,7 @@ export default function LoginPage() {
           collection(db, "employees"),
           where("__name__", "==", userData.employeeId)
         );
+
         const employeeByIdSnap = await getDocs(employeeByIdQuery);
 
         if (!employeeByIdSnap.empty) {
@@ -96,6 +106,7 @@ export default function LoginPage() {
           collection(db, "employees"),
           where("loginUsername", "==", cleanUsername)
         );
+
         const employeeByUsernameSnap = await getDocs(employeeByUsernameQuery);
 
         if (!employeeByUsernameSnap.empty) {
@@ -125,7 +136,7 @@ export default function LoginPage() {
       };
 
       setUser(mergedUser);
-      navigate("/dashboard");
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       console.error("Login error:", err);
       setError("There was a problem signing in. Please try again.");
@@ -185,6 +196,7 @@ export default function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
+                disabled={loading}
               />
             </div>
 
@@ -200,6 +212,7 @@ export default function LoginPage() {
                   setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
                 }
                 autoComplete="current-password"
+                disabled={loading}
               />
             </div>
 
