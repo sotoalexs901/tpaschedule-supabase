@@ -140,12 +140,6 @@ function ActionButton({
       border: "none",
       boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
     },
-    warning: {
-      background: "#f59e0b",
-      color: "#fff",
-      border: "none",
-      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
-    },
   };
 
   return (
@@ -255,6 +249,14 @@ function normalizeLower(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function getInitials(name) {
+  const clean = String(name || "").trim();
+  if (!clean) return "U";
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+}
+
 export default function CrewAnnouncementsPage() {
   const { user } = useUser();
 
@@ -269,8 +271,10 @@ export default function CrewAnnouncementsPage() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
 
   const [editingAnnouncementId, setEditingAnnouncementId] = useState("");
-  const [editingAnnouncementImageUrl, setEditingAnnouncementImageUrl] = useState("");
-  const [editingAnnouncementImagePath, setEditingAnnouncementImagePath] = useState("");
+  const [editingAnnouncementImageUrl, setEditingAnnouncementImageUrl] =
+    useState("");
+  const [editingAnnouncementImagePath, setEditingAnnouncementImagePath] =
+    useState("");
   const [editingAnnouncementImageContentType, setEditingAnnouncementImageContentType] =
     useState("");
 
@@ -283,9 +287,9 @@ export default function CrewAnnouncementsPage() {
   const [employeeOfMonthNote, setEmployeeOfMonthNote] = useState("");
   const [employeeOfMonthMonthLabel, setEmployeeOfMonthMonthLabel] = useState("");
   const [employeeOfMonthPhotoFile, setEmployeeOfMonthPhotoFile] = useState(null);
-  const [employeeOfMonthPhotoPreview, setEmployeeOfMonthPhotoPreview] = useState("");
+  const [employeeOfMonthPhotoPreview, setEmployeeOfMonthPhotoPreview] =
+    useState("");
   const [employeeOfMonthSaving, setEmployeeOfMonthSaving] = useState(false);
-  const [employeeOfMonthCurrent, setEmployeeOfMonthCurrent] = useState(null);
 
   const [employees, setEmployees] = useState([]);
   const [usersMapByUsername, setUsersMapByUsername] = useState({});
@@ -294,8 +298,10 @@ export default function CrewAnnouncementsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState([]);
+  const [recognizedEmployees, setRecognizedEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+  const [deletingRecognizedId, setDeletingRecognizedId] = useState("");
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(
@@ -363,12 +369,6 @@ export default function CrewAnnouncementsPage() {
           ...emp,
           linkedUserId: linkedUser?.id || "",
           linkedProfilePhotoURL: linkedUser?.profilePhotoURL || "",
-          linkedDisplayName:
-            linkedUser?.displayName ||
-            linkedUser?.fullName ||
-            linkedUser?.name ||
-            linkedUser?.username ||
-            "",
         };
       });
 
@@ -382,29 +382,33 @@ export default function CrewAnnouncementsPage() {
     }
   };
 
-  const loadEmployeeOfMonth = async () => {
+  const loadRecognizedEmployees = async () => {
     try {
-      const qEmployee = query(
+      const qRecognized = query(
         collection(db, "employee_of_month"),
         where("active", "==", true)
       );
-      const snap = await getDocs(qEmployee);
+      const snap = await getDocs(qRecognized);
 
-      if (!snap.empty) {
-        const docData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-        setEmployeeOfMonthCurrent(docData);
-      } else {
-        setEmployeeOfMonthCurrent(null);
-      }
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const ta = a.createdAt?.seconds || 0;
+          const tb = b.createdAt?.seconds || 0;
+          return tb - ta;
+        });
+
+      setRecognizedEmployees(list);
     } catch (err) {
-      console.error("Error loading employee of month:", err);
+      console.error("Error loading recognized employees:", err);
+      setRecognizedEmployees([]);
     }
   };
 
   useEffect(() => {
     loadAnnouncements();
     loadEmployeesAndUsers();
-    loadEmployeeOfMonth();
+    loadRecognizedEmployees();
   }, []);
 
   useEffect(() => {
@@ -421,9 +425,7 @@ export default function CrewAnnouncementsPage() {
 
     if (!employeeOfMonthPhotoFile) {
       const linkedPhoto = found.linkedProfilePhotoURL || "";
-      if (linkedPhoto) {
-        setEmployeeOfMonthPhotoPreview(linkedPhoto);
-      }
+      setEmployeeOfMonthPhotoPreview(linkedPhoto || "");
     }
   }, [selectedEmployeeId, employees, employeeOfMonthPhotoFile]);
 
@@ -467,7 +469,7 @@ export default function CrewAnnouncementsPage() {
     resetImageInput();
   };
 
-  const resetEmployeeOfMonthForm = () => {
+  const resetRecognizedForm = () => {
     setSelectedEmployeeId("");
     setEmployeeOfMonthName("");
     setEmployeeOfMonthAirline("");
@@ -591,29 +593,7 @@ export default function CrewAnnouncementsPage() {
     }
   };
 
-  const handleEditAnnouncement = (announcement) => {
-    setTitle(announcement.title || "");
-    setSubtitle(announcement.subtitle || "");
-    setBody(announcement.body || "");
-    setCategory(announcement.category || "general");
-    setPriority(announcement.priority || "normal");
-    setPinned(Boolean(announcement.pinned));
-    setExpiresOn(announcement.expiresOn || "");
-    setEditingAnnouncementId(announcement.id);
-    setEditingAnnouncementImageUrl(announcement.imageUrl || "");
-    setEditingAnnouncementImagePath(announcement.imagePath || "");
-    setEditingAnnouncementImageContentType(announcement.imageContentType || "");
-    resetImageInput();
-    setMessage("Editing announcement.");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleCancelEditAnnouncement = () => {
-    resetAnnouncementForm();
-    setMessage("Edit cancelled.");
-  };
-
-  const handleSaveEmployeeOfMonth = async () => {
+  const handleSaveRecognizedEmployee = async () => {
     setMessage("");
 
     if (!employeeOfMonthName.trim()) {
@@ -621,11 +601,16 @@ export default function CrewAnnouncementsPage() {
       return;
     }
 
+    if (recognizedEmployees.length >= 6) {
+      setMessage("You can only keep 6 recognized employees active at the same time.");
+      return;
+    }
+
     try {
       setEmployeeOfMonthSaving(true);
 
-      let photoURL = employeeOfMonthCurrent?.photoURL || "";
-      let photoPath = employeeOfMonthCurrent?.photoPath || "";
+      let photoURL = "";
+      let photoPath = "";
 
       if (employeeOfMonthPhotoFile) {
         if (!employeeOfMonthPhotoFile.type.startsWith("image/")) {
@@ -633,7 +618,7 @@ export default function CrewAnnouncementsPage() {
         }
 
         if (employeeOfMonthPhotoFile.size > 5 * 1024 * 1024) {
-          throw new Error("Employee of the month image must be smaller than 5MB.");
+          throw new Error("Recognition image must be smaller than 5MB.");
         }
 
         const safeName = getSafeFileName(employeeOfMonthPhotoFile.name);
@@ -665,15 +650,6 @@ export default function CrewAnnouncementsPage() {
       const resolvedUsername =
         employeeOfMonthUsername.trim() || linkedUser?.username || "";
 
-      const existingSnap = await getDocs(collection(db, "employee_of_month"));
-
-      for (const item of existingSnap.docs) {
-        await updateDoc(doc(db, "employee_of_month", item.id), {
-          active: false,
-          updatedAt: serverTimestamp(),
-        });
-      }
-
       await addDoc(collection(db, "employee_of_month"), {
         active: true,
         employeeName: employeeOfMonthName.trim(),
@@ -693,14 +669,56 @@ export default function CrewAnnouncementsPage() {
         createdByUsername: user?.username || "",
       });
 
-      setMessage("Employee of the month updated!");
-      await loadEmployeeOfMonth();
+      setMessage("Recognized employee added!");
+      resetRecognizedForm();
+      await loadRecognizedEmployees();
     } catch (err) {
-      console.error("Error saving employee of month:", err);
-      setMessage(err?.message || "Error saving employee of the month.");
+      console.error("Error saving recognized employee:", err);
+      setMessage(err?.message || "Error saving recognized employee.");
     } finally {
       setEmployeeOfMonthSaving(false);
     }
+  };
+
+  const handleDeleteRecognizedEmployee = async (id) => {
+    const ok = window.confirm(
+      "Remove this recognized employee from the dashboard?"
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingRecognizedId(id);
+      await deleteDoc(doc(db, "employee_of_month", id));
+      setMessage("Recognized employee removed.");
+      await loadRecognizedEmployees();
+    } catch (err) {
+      console.error("Error deleting recognized employee:", err);
+      setMessage("Error removing recognized employee.");
+    } finally {
+      setDeletingRecognizedId("");
+    }
+  };
+
+  const handleEditAnnouncement = (announcement) => {
+    setTitle(announcement.title || "");
+    setSubtitle(announcement.subtitle || "");
+    setBody(announcement.body || "");
+    setCategory(announcement.category || "general");
+    setPriority(announcement.priority || "normal");
+    setPinned(Boolean(announcement.pinned));
+    setExpiresOn(announcement.expiresOn || "");
+    setEditingAnnouncementId(announcement.id);
+    setEditingAnnouncementImageUrl(announcement.imageUrl || "");
+    setEditingAnnouncementImagePath(announcement.imagePath || "");
+    setEditingAnnouncementImageContentType(announcement.imageContentType || "");
+    resetImageInput();
+    setMessage("Editing announcement.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleCancelEditAnnouncement = () => {
+    resetAnnouncementForm();
+    setMessage("Edit cancelled.");
   };
 
   const handleDeleteAnnouncement = async (id) => {
@@ -799,7 +817,9 @@ export default function CrewAnnouncementsPage() {
   const success =
     message.toLowerCase().includes("posted") ||
     message.toLowerCase().includes("deleted") ||
-    message.toLowerCase().includes("updated");
+    message.toLowerCase().includes("updated") ||
+    message.toLowerCase().includes("added") ||
+    message.toLowerCase().includes("removed");
 
   if (!user || user.role !== "station_manager") {
     return (
@@ -941,7 +961,7 @@ export default function CrewAnnouncementsPage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Manage crew announcements and Employee of the Month for the employee dashboard.
+            Manage crew announcements and recognized employees for the employee dashboard.
           </p>
         </div>
       </div>
@@ -975,7 +995,7 @@ export default function CrewAnnouncementsPage() {
               letterSpacing: "-0.02em",
             }}
           >
-            Employee of the Month
+            Add Recognized Employee
           </h2>
           <p
             style={{
@@ -984,68 +1004,9 @@ export default function CrewAnnouncementsPage() {
               color: "#64748b",
             }}
           >
-            Select the employee and details to display on the employee dashboard.
+            Add up to 6 recognized employees for the dashboard recognition banner.
           </p>
         </div>
-
-        {employeeOfMonthCurrent && (
-          <div
-            style={{
-              marginBottom: 18,
-              padding: 16,
-              borderRadius: 18,
-              background: "#fff7ed",
-              border: "1px solid #fed7aa",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                color: "#9a3412",
-                textTransform: "uppercase",
-              }}
-            >
-              Current Employee of the Month
-            </div>
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: 18,
-                fontWeight: 800,
-                color: "#0f172a",
-              }}
-            >
-              {employeeOfMonthCurrent.employeeName || "—"}
-            </div>
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: 13,
-                color: "#9a3412",
-                fontWeight: 700,
-              }}
-            >
-              {employeeOfMonthCurrent.position || "—"} ·{" "}
-              {employeeOfMonthCurrent.department || "—"}
-            </div>
-            {employeeOfMonthCurrent.username && (
-              <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                @{employeeOfMonthCurrent.username}
-              </div>
-            )}
-            {employeeOfMonthCurrent.monthLabel && (
-              <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                {employeeOfMonthCurrent.monthLabel}
-              </div>
-            )}
-            {employeeOfMonthCurrent.note && (
-              <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                {employeeOfMonthCurrent.note}
-              </div>
-            )}
-          </div>
-        )}
 
         <div style={{ display: "grid", gap: 14 }}>
           <div>
@@ -1166,7 +1127,7 @@ export default function CrewAnnouncementsPage() {
               >
                 <img
                   src={employeeOfMonthPhotoPreview}
-                  alt="Employee of the month preview"
+                  alt="Recognition preview"
                   style={{
                     display: "block",
                     width: "100%",
@@ -1181,17 +1142,188 @@ export default function CrewAnnouncementsPage() {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <ActionButton
               variant="success"
-              onClick={handleSaveEmployeeOfMonth}
+              onClick={handleSaveRecognizedEmployee}
               disabled={employeeOfMonthSaving}
             >
-              {employeeOfMonthSaving ? "Saving..." : "Save Employee of the Month"}
+              {employeeOfMonthSaving ? "Saving..." : "Add recognized employee"}
             </ActionButton>
 
-            <ActionButton variant="secondary" onClick={resetEmployeeOfMonthForm}>
+            <ActionButton variant="secondary" onClick={resetRecognizedForm}>
               Clear
             </ActionButton>
           </div>
         </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 20 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Current Recognized Employees
+          </h2>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Active on dashboard: {recognizedEmployees.length}/6
+          </p>
+        </div>
+
+        {recognizedEmployees.length === 0 ? (
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              color: "#64748b",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            No recognized employees yet.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: 14,
+            }}
+          >
+            {recognizedEmployees.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 20,
+                  padding: 16,
+                  background: "#ffffff",
+                  boxShadow: "0 8px 22px rgba(15,23,42,0.04)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 58,
+                      height: 58,
+                      borderRadius: 18,
+                      overflow: "hidden",
+                      background: "#fff7ed",
+                      border: "1px solid #fed7aa",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#9a3412",
+                      fontWeight: 800,
+                      fontSize: 18,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {item.photoURL ? (
+                      <img
+                        src={item.photoURL}
+                        alt={item.employeeName}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <span>{getInitials(item.employeeName)}</span>
+                    )}
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {item.employeeName || "—"}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 13,
+                        color: "#1769aa",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {item.position || "—"}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 12,
+                        color: "#64748b",
+                      }}
+                    >
+                      {item.department || "—"}
+                    </div>
+                    {item.username && (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 12,
+                          color: "#94a3b8",
+                        }}
+                      >
+                        @{item.username}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {(item.monthLabel || item.note) && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      fontSize: 12,
+                      color: "#64748b",
+                      lineHeight: 1.6,
+                      whiteSpace: "pre-line",
+                    }}
+                  >
+                    {item.monthLabel || ""}
+                    {item.monthLabel && item.note ? " · " : ""}
+                    {item.note || ""}
+                  </div>
+                )}
+
+                <div style={{ marginTop: 14 }}>
+                  <ActionButton
+                    variant="danger"
+                    onClick={() => handleDeleteRecognizedEmployee(item.id)}
+                    disabled={deletingRecognizedId === item.id}
+                  >
+                    {deletingRecognizedId === item.id ? "Removing..." : "Remove"}
+                  </ActionButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
