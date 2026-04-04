@@ -209,6 +209,10 @@ export default function SupervisorWchrPoiPage() {
     ...buildInitialInspectionState(),
   });
 
+  const isErrorStatus =
+    statusMessage.toLowerCase().includes("could not") ||
+    statusMessage.toLowerCase().includes("please");
+
   const handleChange = (field, value) => {
     setForm((prev) => ({
       ...prev,
@@ -277,10 +281,7 @@ export default function SupervisorWchrPoiPage() {
       return;
     }
 
-    if (
-      form.anyInopWchr === "yes" ||
-      hasAnyNo
-    ) {
+    if (form.anyInopWchr === "yes" || hasAnyNo) {
       if (!String(form.outOfServiceUnits || "").trim()) {
         setStatusMessage(
           "Please list the out of service wheelchair unit number(s)."
@@ -398,21 +399,92 @@ export default function SupervisorWchrPoiPage() {
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 20,
+          }}
+          onClick={() => setStatusMessage("")}
+        >
           <div
+            onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#edf7ff",
-              border: "1px solid #cfe7fb",
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
+              width: "100%",
+              maxWidth: 520,
+              background: "#ffffff",
+              borderRadius: 24,
+              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              border: "1px solid #e2e8f0",
+              overflow: "hidden",
             }}
           >
-            {statusMessage}
+            <div
+              style={{
+                padding: "18px 20px",
+                background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
+                borderBottom: isErrorStatus
+                  ? "1px solid #fecdd3"
+                  : "1px solid #a7f3d0",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: isErrorStatus ? "#9f1239" : "#065f46",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {isErrorStatus ? "Action Required" : "Inspection Saved"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "22px 20px 18px",
+                fontSize: 15,
+                lineHeight: 1.65,
+                color: "#0f172a",
+                fontWeight: 700,
+              }}
+            >
+              {statusMessage}
+            </div>
+
+            <div
+              style={{
+                padding: "0 20px 20px",
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setStatusMessage("")}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                  color: "#fff",
+                  borderRadius: 14,
+                  padding: "12px 22px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                }}
+              >
+                OK
+              </button>
+            </div>
           </div>
-        </PageCard>
+        </div>
       )}
 
       <PageCard style={{ padding: 22 }}>
