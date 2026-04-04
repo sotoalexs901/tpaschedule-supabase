@@ -29,10 +29,6 @@ function getVisibleName(user) {
   );
 }
 
-function normalizeText(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
 function safeNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -217,12 +213,24 @@ const CHECKLIST_ITEMS = [
   { key: "disinfectant", label: "Disinfectant", inventoryKey: "disinfectant" },
   { key: "detergent", label: "Detergent", inventoryKey: "detergent" },
   { key: "clean_water", label: "Clean Water", inventoryKey: "clean_water" },
-  { key: "whisk_broom_dustpan", label: "Whisk Broom / Dustpan", inventoryKey: "whisk_broom_dustpan" },
+  {
+    key: "whisk_broom_dustpan",
+    label: "Whisk Broom / Dustpan",
+    inventoryKey: "whisk_broom_dustpan",
+  },
   { key: "scrub_brush", label: "Scrub Brush", inventoryKey: "scrub_brush" },
   { key: "zip_ties", label: "Zip Ties", inventoryKey: "zip_ties" },
   { key: "paper_towels", label: "Paper Towels", inventoryKey: "paper_towels" },
-  { key: "ppe_goggles_gloves", label: "PPE (Goggles / Gloves)", inventoryKey: "ppe_goggles_gloves" },
-  { key: "spill_kit_contents_copy", label: "Copy of Spill Kit Contents", inventoryKey: "spill_kit_contents_copy" },
+  {
+    key: "ppe_goggles_gloves",
+    label: "PPE (Goggles / Gloves)",
+    inventoryKey: "ppe_goggles_gloves",
+  },
+  {
+    key: "spill_kit_contents_copy",
+    label: "Copy of Spill Kit Contents",
+    inventoryKey: "spill_kit_contents_copy",
+  },
   { key: "plastic_bags", label: "Plastic Bags", inventoryKey: "plastic_bags" },
 ];
 
@@ -254,6 +262,76 @@ function buildInitialItems() {
   return map;
 }
 
+function ModalShell({ title, tone = "info", children }) {
+  const toneStyles = {
+    info: {
+      headerBg: "#edf7ff",
+      headerBorder: "#cfe7fb",
+      headerColor: "#1769aa",
+    },
+    warning: {
+      headerBg: "#fff7ed",
+      headerBorder: "#fdba74",
+      headerColor: "#9a3412",
+    },
+    success: {
+      headerBg: "#ecfdf5",
+      headerBorder: "#a7f3d0",
+      headerColor: "#065f46",
+    },
+  };
+
+  const current = toneStyles[tone] || toneStyles.info;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99999,
+        padding: 20,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 620,
+          background: "#ffffff",
+          borderRadius: 24,
+          boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+          border: "1px solid #e2e8f0",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 20px",
+            background: current.headerBg,
+            borderBottom: `1px solid ${current.headerBorder}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 900,
+              color: current.headerColor,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {title}
+          </div>
+        </div>
+
+        <div style={{ padding: 20 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function SupervisorRegulatedGarbagePage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -270,6 +348,10 @@ export default function SupervisorRegulatedGarbagePage() {
   const [inventory, setInventory] = useState({});
   const [myReports, setMyReports] = useState([]);
   const [activeTab, setActiveTab] = useState("submit");
+
+  const [missingQueue, setMissingQueue] = useState([]);
+  const [activeMissingKey, setActiveMissingKey] = useState("");
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const [form, setForm] = useState({
     reportDate: todayString(),
@@ -291,9 +373,7 @@ export default function SupervisorRegulatedGarbagePage() {
         setLoadingInventory(true);
         setLoadingMyReports(true);
 
-        const requests = [
-          getDocs(collection(db, "regulated_garbage_inventory")),
-        ];
+        const requests = [getDocs(collection(db, "regulated_garbage_inventory"))];
 
         if (user?.id) {
           requests.push(
@@ -367,7 +447,11 @@ export default function SupervisorRegulatedGarbagePage() {
     const orangeQty = safeNumber(form.items.orange_bags_quantity?.quantityOnCart);
 
     if (String(form.items.orange_bags_quantity?.quantityOnCart || "").trim() !== "") {
-      if (orangeQty < 10 && orangeStock > 0 && !form.items.orange_bags_quantity?.collectedFromOffice) {
+      if (
+        orangeQty < 10 &&
+        orangeStock > 0 &&
+        !form.items.orange_bags_quantity?.collectedFromOffice
+      ) {
         rows.push({
           key: "orange_bags_quantity",
           text: `Orange Bags: low stock on cart (${orangeQty}). Office inventory shows ${orangeStock} available.`,
@@ -377,6 +461,13 @@ export default function SupervisorRegulatedGarbagePage() {
 
     return rows;
   }, [form.items, inventory]);
+
+  const currentAirlineLabel =
+    form.airline === "Other" ? String(form.airlineOther || "").trim() : form.airline;
+
+  const reportNeedsAttention = useMemo(() => {
+    return officeAlerts.length > 0;
+  }, [officeAlerts]);
 
   const resetForm = () => {
     setForm({
@@ -392,6 +483,8 @@ export default function SupervisorRegulatedGarbagePage() {
       photoUrl: "",
       items: buildInitialItems(),
     });
+    setMissingQueue([]);
+    setActiveMissingKey("");
   };
 
   const handleFieldChange = (field, value) => {
@@ -401,25 +494,109 @@ export default function SupervisorRegulatedGarbagePage() {
     }));
   };
 
-  const handleItemChange = (itemKey, field, value) => {
-    setForm((prev) => ({
-      ...prev,
-      items: {
-        ...prev.items,
-        [itemKey]: {
-          ...prev.items[itemKey],
-          [field]: value,
-        },
-      },
-    }));
+  const openMissingModal = (itemKey) => {
+    setMissingQueue((prev) => {
+      if (prev.includes(itemKey)) return prev;
+      return [...prev, itemKey];
+    });
+    setActiveMissingKey((prev) => prev || itemKey);
   };
 
-  const currentAirlineLabel =
-    form.airline === "Other" ? String(form.airlineOther || "").trim() : form.airline;
+  const closeResolvedMissingModal = () => {
+    if (!activeMissingKey) return;
 
-  const reportNeedsAttention = useMemo(() => {
-    return officeAlerts.length > 0;
-  }, [officeAlerts]);
+    setMissingQueue((prev) => {
+      const next = prev.filter((key) => key !== activeMissingKey);
+      setActiveMissingKey(next[0] || "");
+      return next;
+    });
+  };
+
+  const validateMissingModal = (itemKey) => {
+    const current = form.items[itemKey];
+    if (!current) return true;
+
+    if (!String(current.replacementDate || "").trim()) {
+      setStatusMessage("Please add the replacement date before continuing.");
+      return false;
+    }
+
+    if (current.replacementDate > form.reportDate) {
+      if (!String(current.cannotReplaceReason || "").trim()) {
+        setStatusMessage("Please explain why it cannot be replaced the same day.");
+        return false;
+      }
+
+      if (!String(current.estimatedRestockDate || "").trim()) {
+        setStatusMessage("Please estimate when it will be back on stock.");
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const validateOrangeModal = () => {
+    const current = form.items.orange_bags_quantity;
+
+    if (!String(current.quantityOnCart || "").trim()) {
+      setStatusMessage("Please enter Orange Bags quantity on cart.");
+      return false;
+    }
+
+    const orangeQty = safeNumber(current.quantityOnCart);
+
+    if (orangeQty < 10) {
+      if (!String(current.replacementDate || "").trim()) {
+        setStatusMessage("Please add replacement date for Orange Bags.");
+        return false;
+      }
+
+      if (current.replacementDate > form.reportDate) {
+        if (!String(current.cannotReplaceReason || "").trim()) {
+          setStatusMessage(
+            "Please explain why Orange Bags cannot be replaced the same day."
+          );
+          return false;
+        }
+
+        if (!String(current.estimatedRestockDate || "").trim()) {
+          setStatusMessage("Please estimate when Orange Bags will be back in stock.");
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  const handleItemChange = (itemKey, field, value) => {
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        items: {
+          ...prev.items,
+          [itemKey]: {
+            ...prev.items[itemKey],
+            [field]: value,
+          },
+        },
+      };
+
+      return next;
+    });
+
+    if (field === "available" && value === "No") {
+      openMissingModal(itemKey);
+    }
+
+    if (field === "available" && value === "Yes") {
+      setMissingQueue((prev) => prev.filter((key) => key !== itemKey));
+      if (activeMissingKey === itemKey) {
+        setActiveMissingKey("");
+      }
+    }
+  };
 
   const validateForm = () => {
     if (!form.reportDate) {
@@ -461,25 +638,9 @@ export default function SupervisorRegulatedGarbagePage() {
       }
 
       if (current.available === "No") {
-        if (!current.replacementDate) {
-          setStatusMessage(`Please add replacement date for ${item.label}.`);
+        if (!validateMissingModal(item.key)) {
+          openMissingModal(item.key);
           return false;
-        }
-
-        if (current.replacementDate > form.reportDate) {
-          if (!String(current.cannotReplaceReason || "").trim()) {
-            setStatusMessage(
-              `Please explain why ${item.label} cannot be replaced the same day.`
-            );
-            return false;
-          }
-
-          if (!String(current.estimatedRestockDate || "").trim()) {
-            setStatusMessage(
-              `Please estimate when ${item.label} will be back in stock.`
-            );
-            return false;
-          }
         }
       }
     }
@@ -493,26 +654,11 @@ export default function SupervisorRegulatedGarbagePage() {
     const orangeQty = safeNumber(orangeQtyRaw);
 
     if (orangeQty < 10) {
-      if (!String(form.items.orange_bags_quantity?.replacementDate || "").trim()) {
-        setStatusMessage("Please add replacement date for Orange Bags.");
-        return false;
-      }
-
-      if (
-        form.items.orange_bags_quantity.replacementDate > form.reportDate &&
-        !String(form.items.orange_bags_quantity?.cannotReplaceReason || "").trim()
-      ) {
-        setStatusMessage(
-          "Please explain why Orange Bags cannot be replaced the same day."
-        );
-        return false;
-      }
-
-      if (
-        form.items.orange_bags_quantity.replacementDate > form.reportDate &&
-        !String(form.items.orange_bags_quantity?.estimatedRestockDate || "").trim()
-      ) {
-        setStatusMessage("Please estimate when Orange Bags will be back in stock.");
+      if (!validateOrangeModal()) {
+        setActiveMissingKey("orange_bags_quantity");
+        if (!missingQueue.includes("orange_bags_quantity")) {
+          setMissingQueue((prev) => [...prev, "orange_bags_quantity"]);
+        }
         return false;
       }
     }
@@ -657,9 +803,8 @@ export default function SupervisorRegulatedGarbagePage() {
         );
       }
 
-      setStatusMessage("Regulated garbage checklist submitted successfully.");
       resetForm();
-      setActiveTab("my_reports");
+      setShowSuccessModal(true);
 
       const reportsSnap = await getDocs(
         query(
@@ -684,6 +829,21 @@ export default function SupervisorRegulatedGarbagePage() {
       setSaving(false);
     }
   };
+
+  const currentModalItem = useMemo(() => {
+    if (!activeMissingKey) return null;
+
+    if (activeMissingKey === "orange_bags_quantity") {
+      return {
+        key: "orange_bags_quantity",
+        label: "Orange Bags",
+        inventoryKey: "orange_bags",
+        isOrange: true,
+      };
+    }
+
+    return CHECKLIST_ITEMS.find((item) => item.key === activeMissingKey) || null;
+  }, [activeMissingKey]);
 
   if (!canAccess) {
     return (
@@ -848,10 +1008,16 @@ export default function SupervisorRegulatedGarbagePage() {
             <ActionButton variant="secondary" onClick={() => setActiveTab("submit")}>
               Submit Form
             </ActionButton>
-            <ActionButton variant="secondary" onClick={() => setActiveTab("my_reports")}>
+            <ActionButton
+              variant="secondary"
+              onClick={() => setActiveTab("my_reports")}
+            >
               My Submitted Reports
             </ActionButton>
-            <ActionButton variant="secondary" onClick={() => navigate("/dashboard")}>
+            <ActionButton
+              variant="secondary"
+              onClick={() => navigate("/dashboard")}
+            >
               ← Back to Dashboard
             </ActionButton>
           </div>
@@ -967,7 +1133,8 @@ export default function SupervisorRegulatedGarbagePage() {
                           fontWeight: 700,
                         }}
                       >
-                        {report.reportDate || "—"} · Submitted {formatDateTime(report.createdAt)}
+                        {report.reportDate || "—"} · Submitted{" "}
+                        {formatDateTime(report.createdAt)}
                       </div>
                     </div>
 
@@ -1407,97 +1574,24 @@ export default function SupervisorRegulatedGarbagePage() {
 
                       <div>
                         <FieldLabel>Office Inventory</FieldLabel>
-                        <TextInput
-                          value={String(officeStock)}
-                          disabled
-                        />
+                        <TextInput value={String(officeStock)} disabled />
                       </div>
-
-                      {current.available === "No" && (
-                        <>
-                          <div>
-                            <FieldLabel>Replacement Date</FieldLabel>
-                            <TextInput
-                              type="date"
-                              value={current.replacementDate}
-                              onChange={(e) =>
-                                handleItemChange(
-                                  item.key,
-                                  "replacementDate",
-                                  e.target.value
-                                )
-                              }
-                            />
-                          </div>
-
-                          <div>
-                            <FieldLabel>Collected From Office</FieldLabel>
-                            <SelectInput
-                              value={current.collectedFromOffice ? "Yes" : "No"}
-                              onChange={(e) =>
-                                handleItemChange(
-                                  item.key,
-                                  "collectedFromOffice",
-                                  e.target.value === "Yes"
-                                )
-                              }
-                            >
-                              <option value="No">No</option>
-                              <option value="Yes">Yes</option>
-                            </SelectInput>
-                          </div>
-                        </>
-                      )}
                     </div>
 
-                    {current.available === "No" && current.replacementDate > form.reportDate && (
+                    {current.available === "No" && (
                       <div
                         style={{
                           marginTop: 14,
-                          display: "grid",
-                          gap: 14,
+                          borderRadius: 14,
+                          padding: "12px 14px",
+                          background: "#fff7ed",
+                          border: "1px solid #fdba74",
+                          color: "#9a3412",
+                          fontWeight: 700,
+                          fontSize: 14,
                         }}
                       >
-                        <div>
-                          <FieldLabel>Why can it not be replaced today?</FieldLabel>
-                          <TextArea
-                            value={current.cannotReplaceReason}
-                            onChange={(e) =>
-                              handleItemChange(
-                                item.key,
-                                "cannotReplaceReason",
-                                e.target.value
-                              )
-                            }
-                          />
-                        </div>
-
-                        <div>
-                          <FieldLabel>Estimated Back on Stock</FieldLabel>
-                          <TextInput
-                            type="date"
-                            value={current.estimatedRestockDate}
-                            onChange={(e) =>
-                              handleItemChange(
-                                item.key,
-                                "estimatedRestockDate",
-                                e.target.value
-                              )
-                            }
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {current.available === "No" && (
-                      <div style={{ marginTop: 14 }}>
-                        <FieldLabel>Additional Notes</FieldLabel>
-                        <TextArea
-                          value={current.additionalNotes}
-                          onChange={(e) =>
-                            handleItemChange(item.key, "additionalNotes", e.target.value)
-                          }
-                        />
+                        This item requires mandatory follow-up details. Complete the popup in the center to continue.
                       </div>
                     )}
                   </div>
@@ -1525,13 +1619,25 @@ export default function SupervisorRegulatedGarbagePage() {
                       type="number"
                       min="0"
                       value={form.items.orange_bags_quantity.quantityOnCart}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const value = e.target.value;
                         handleItemChange(
                           "orange_bags_quantity",
                           "quantityOnCart",
-                          e.target.value
-                        )
-                      }
+                          value
+                        );
+
+                        if (
+                          String(value || "").trim() !== "" &&
+                          safeNumber(value) < 10
+                        ) {
+                          setMissingQueue((prev) => {
+                            if (prev.includes("orange_bags_quantity")) return prev;
+                            return [...prev, "orange_bags_quantity"];
+                          });
+                          setActiveMissingKey((prev) => prev || "orange_bags_quantity");
+                        }
+                      }}
                     />
                   </div>
 
@@ -1546,104 +1652,19 @@ export default function SupervisorRegulatedGarbagePage() {
 
                 {safeNumber(form.items.orange_bags_quantity.quantityOnCart) < 10 &&
                   String(form.items.orange_bags_quantity.quantityOnCart || "").trim() !== "" && (
-                    <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
-                      <div>
-                        <FieldLabel>Low Stock Reason</FieldLabel>
-                        <TextArea
-                          value={form.items.orange_bags_quantity.lowStockReason}
-                          onChange={(e) =>
-                            handleItemChange(
-                              "orange_bags_quantity",
-                              "lowStockReason",
-                              e.target.value
-                            )
-                          }
-                        />
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(220px, 1fr))",
-                          gap: 14,
-                        }}
-                      >
-                        <div>
-                          <FieldLabel>Replacement Date</FieldLabel>
-                          <TextInput
-                            type="date"
-                            value={form.items.orange_bags_quantity.replacementDate}
-                            onChange={(e) =>
-                              handleItemChange(
-                                "orange_bags_quantity",
-                                "replacementDate",
-                                e.target.value
-                              )
-                            }
-                          />
-                        </div>
-
-                        <div>
-                          <FieldLabel>Collected From Office</FieldLabel>
-                          <SelectInput
-                            value={
-                              form.items.orange_bags_quantity.collectedFromOffice
-                                ? "Yes"
-                                : "No"
-                            }
-                            onChange={(e) =>
-                              handleItemChange(
-                                "orange_bags_quantity",
-                                "collectedFromOffice",
-                                e.target.value === "Yes"
-                              )
-                            }
-                          >
-                            <option value="No">No</option>
-                            <option value="Yes">Yes</option>
-                          </SelectInput>
-                        </div>
-                      </div>
-
-                      {form.items.orange_bags_quantity.replacementDate > form.reportDate && (
-                        <>
-                          <div>
-                            <FieldLabel>
-                              Why can Orange Bags not be replaced today?
-                            </FieldLabel>
-                            <TextArea
-                              value={
-                                form.items.orange_bags_quantity.cannotReplaceReason
-                              }
-                              onChange={(e) =>
-                                handleItemChange(
-                                  "orange_bags_quantity",
-                                  "cannotReplaceReason",
-                                  e.target.value
-                                )
-                              }
-                            />
-                          </div>
-
-                          <div>
-                            <FieldLabel>Estimated Back on Stock</FieldLabel>
-                            <TextInput
-                              type="date"
-                              value={
-                                form.items.orange_bags_quantity.estimatedRestockDate
-                              }
-                              onChange={(e) =>
-                                handleItemChange(
-                                  "orange_bags_quantity",
-                                  "estimatedRestockDate",
-                                  e.target.value
-                                )
-                              }
-                            />
-                          </div>
-                        </>
-                      )}
+                    <div
+                      style={{
+                        marginTop: 14,
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                        background: "#fff7ed",
+                        border: "1px solid #fdba74",
+                        color: "#9a3412",
+                        fontWeight: 700,
+                        fontSize: 14,
+                      }}
+                    >
+                      Orange Bags are below minimum. Complete the mandatory popup in the center to continue.
                     </div>
                   )}
               </div>
@@ -1655,7 +1676,7 @@ export default function SupervisorRegulatedGarbagePage() {
               <ActionButton
                 onClick={handleSubmit}
                 variant="primary"
-                disabled={saving || loadingInventory}
+                disabled={saving || loadingInventory || !!activeMissingKey}
               >
                 {saving ? "Submitting..." : "Submit Regulated Garbage Checklist"}
               </ActionButton>
@@ -1666,6 +1687,310 @@ export default function SupervisorRegulatedGarbagePage() {
             </div>
           </PageCard>
         </>
+      )}
+
+      {currentModalItem && (
+        <ModalShell
+          title={
+            currentModalItem.isOrange
+              ? "Orange Bags Follow Up Required"
+              : `${currentModalItem.label} Follow Up Required`
+          }
+          tone="warning"
+        >
+          <div style={{ display: "grid", gap: 14 }}>
+            {currentModalItem.isOrange ? (
+              <>
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "#9a3412",
+                    fontWeight: 700,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Orange Bags are below minimum. You must complete these fields before continuing.
+                </div>
+
+                <div>
+                  <FieldLabel>Low Stock Reason</FieldLabel>
+                  <TextArea
+                    value={form.items.orange_bags_quantity.lowStockReason}
+                    onChange={(e) =>
+                      handleItemChange(
+                        "orange_bags_quantity",
+                        "lowStockReason",
+                        e.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 14,
+                  }}
+                >
+                  <div>
+                    <FieldLabel>Replacement Date</FieldLabel>
+                    <TextInput
+                      type="date"
+                      value={form.items.orange_bags_quantity.replacementDate}
+                      onChange={(e) =>
+                        handleItemChange(
+                          "orange_bags_quantity",
+                          "replacementDate",
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Collected From Office</FieldLabel>
+                    <SelectInput
+                      value={
+                        form.items.orange_bags_quantity.collectedFromOffice
+                          ? "Yes"
+                          : "No"
+                      }
+                      onChange={(e) =>
+                        handleItemChange(
+                          "orange_bags_quantity",
+                          "collectedFromOffice",
+                          e.target.value === "Yes"
+                        )
+                      }
+                    >
+                      <option value="No">No</option>
+                      <option value="Yes">Yes</option>
+                    </SelectInput>
+                  </div>
+                </div>
+
+                {form.items.orange_bags_quantity.replacementDate > form.reportDate && (
+                  <>
+                    <div>
+                      <FieldLabel>Why can Orange Bags not be replaced today?</FieldLabel>
+                      <TextArea
+                        value={
+                          form.items.orange_bags_quantity.cannotReplaceReason
+                        }
+                        onChange={(e) =>
+                          handleItemChange(
+                            "orange_bags_quantity",
+                            "cannotReplaceReason",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Estimated Back on Stock</FieldLabel>
+                      <TextInput
+                        type="date"
+                        value={
+                          form.items.orange_bags_quantity.estimatedRestockDate
+                        }
+                        onChange={(e) =>
+                          handleItemChange(
+                            "orange_bags_quantity",
+                            "estimatedRestockDate",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <FieldLabel>Additional Notes</FieldLabel>
+                  <TextArea
+                    value={form.items.orange_bags_quantity.additionalNotes}
+                    onChange={(e) =>
+                      handleItemChange(
+                        "orange_bags_quantity",
+                        "additionalNotes",
+                        e.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <ActionButton
+                    variant="primary"
+                    onClick={() => {
+                      if (!validateOrangeModal()) return;
+                      closeResolvedMissingModal();
+                    }}
+                  >
+                    Save and Continue
+                  </ActionButton>
+                </div>
+              </>
+            ) : (
+              <>
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "#9a3412",
+                    fontWeight: 700,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  This item is marked as <b>No</b>. Complete these fields before continuing.
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 14,
+                  }}
+                >
+                  <div>
+                    <FieldLabel>Replacement Date</FieldLabel>
+                    <TextInput
+                      type="date"
+                      value={form.items[currentModalItem.key].replacementDate}
+                      onChange={(e) =>
+                        handleItemChange(
+                          currentModalItem.key,
+                          "replacementDate",
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Collected From Office</FieldLabel>
+                    <SelectInput
+                      value={
+                        form.items[currentModalItem.key].collectedFromOffice
+                          ? "Yes"
+                          : "No"
+                      }
+                      onChange={(e) =>
+                        handleItemChange(
+                          currentModalItem.key,
+                          "collectedFromOffice",
+                          e.target.value === "Yes"
+                        )
+                      }
+                    >
+                      <option value="No">No</option>
+                      <option value="Yes">Yes</option>
+                    </SelectInput>
+                  </div>
+                </div>
+
+                {form.items[currentModalItem.key].replacementDate > form.reportDate && (
+                  <>
+                    <div>
+                      <FieldLabel>Why can it not be replaced today?</FieldLabel>
+                      <TextArea
+                        value={
+                          form.items[currentModalItem.key].cannotReplaceReason
+                        }
+                        onChange={(e) =>
+                          handleItemChange(
+                            currentModalItem.key,
+                            "cannotReplaceReason",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Estimated Back on Stock</FieldLabel>
+                      <TextInput
+                        type="date"
+                        value={
+                          form.items[currentModalItem.key].estimatedRestockDate
+                        }
+                        onChange={(e) =>
+                          handleItemChange(
+                            currentModalItem.key,
+                            "estimatedRestockDate",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <FieldLabel>Additional Notes</FieldLabel>
+                  <TextArea
+                    value={form.items[currentModalItem.key].additionalNotes}
+                    onChange={(e) =>
+                      handleItemChange(
+                        currentModalItem.key,
+                        "additionalNotes",
+                        e.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <ActionButton
+                    variant="primary"
+                    onClick={() => {
+                      if (!validateMissingModal(currentModalItem.key)) return;
+                      closeResolvedMissingModal();
+                    }}
+                  >
+                    Save and Continue
+                  </ActionButton>
+                </div>
+              </>
+            )}
+          </div>
+        </ModalShell>
+      )}
+
+      {showSuccessModal && (
+        <ModalShell title="Success" tone="success">
+          <div
+            style={{
+              display: "grid",
+              gap: 18,
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 15,
+                lineHeight: 1.7,
+                color: "#0f172a",
+                fontWeight: 700,
+              }}
+            >
+              Regulated garbage checklist submitted successfully.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <ActionButton
+                variant="primary"
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  setActiveTab("my_reports");
+                }}
+              >
+                OK
+              </ActionButton>
+            </div>
+          </div>
+        </ModalShell>
       )}
     </div>
   );
