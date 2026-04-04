@@ -49,7 +49,9 @@ import WCHRFlights from "./pages/WCHRFlights.jsx";
 import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
+
 import SupervisorCleaningSecurityPage from "./pages/SupervisorCleaningSecurityPage.jsx";
+import CleaningSecurityReportsAdminPage from "./pages/CleaningSecurityReportsAdminPage.jsx";
 
 function ProtectedRoute({
   children,
@@ -431,6 +433,15 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["duty_manager", "station_manager"]}>
                 <OperationalReportAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="cleaning-security/reports"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <CleaningSecurityReportsAdminPage />
               </ProtectedRoute>
             }
           />
