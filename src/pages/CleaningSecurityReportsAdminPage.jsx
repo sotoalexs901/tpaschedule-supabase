@@ -4,10 +4,15 @@ import {
   getDocs,
   orderBy,
   query,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
+import jsPDF from "jspdf";
 
 function formatDateTime(value) {
   if (!value) return "—";
@@ -74,6 +79,28 @@ function TextInput(props) {
   );
 }
 
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        resize: "vertical",
+        minHeight: 110,
+        fontFamily: "inherit",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 function SelectInput(props) {
   return (
     <select
@@ -98,6 +125,7 @@ function ActionButton({
   onClick,
   variant = "primary",
   type = "button",
+  disabled = false,
 }) {
   const styles = {
     primary: {
@@ -113,18 +141,38 @@ function ActionButton({
       border: "1px solid #cfe7fb",
       boxShadow: "none",
     },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+    warning: {
+      background: "#f59e0b",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
+    },
+    danger: {
+      background: "#dc2626",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(220,38,38,0.18)",
+    },
   };
 
   return (
     <button
       type={type}
       onClick={onClick}
+      disabled={disabled}
       style={{
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
         fontWeight: 800,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
         whiteSpace: "nowrap",
         ...styles[variant],
       }}
@@ -195,6 +243,69 @@ function YesNoBadge({ value }) {
   );
 }
 
+function normalizeReportForEdit(report) {
+  return {
+    fecha: report?.fecha || "",
+    horaIn: report?.horaIn || "",
+    horaTerminacion: report?.horaTerminacion || "",
+    airline: report?.airline || "",
+    flightNo: report?.flightNo || "",
+    tailNo: report?.tailNo || "",
+    supervisorName: report?.supervisorName || "",
+    supervisorPosition: report?.supervisorPosition || "",
+    airlineRep: report?.airlineRep || "",
+    verifiedByAirlineRep: report?.verifiedByAirlineRep || "",
+    supervisorSignature: report?.supervisorSignature || "",
+    airlineRepSignature: report?.airlineRepSignature || "",
+    limpiezaObservaciones: report?.limpiezaObservaciones || "",
+    securityObservaciones: report?.securityObservaciones || "",
+    suspiciousItemDetails: report?.suspiciousItemDetails || "",
+    attachmentsNotes: report?.attachmentsNotes || "",
+
+    distribution: {
+      galleyLav: report?.distribution?.galleyLav || "",
+      left1to11: report?.distribution?.left1to11 || "",
+      right1to11: report?.distribution?.right1to11 || "",
+      left12to21: report?.distribution?.left12to21 || "",
+      right12to21: report?.distribution?.right12to21 || "",
+      left22to31: report?.distribution?.left22to31 || "",
+      right22to31: report?.distribution?.right22to31 || "",
+      vacuum: report?.distribution?.vacuum || "",
+    },
+
+    limpieza: {
+      basuraRemovida: report?.limpieza?.basuraRemovida || "",
+      bolsillosOrganizados: report?.limpieza?.bolsillosOrganizados || "",
+      bandejasLimpias: report?.limpieza?.bandejasLimpias || "",
+      alfombraAspirada: report?.limpieza?.alfombraAspirada || "",
+      lavRevisados: report?.limpieza?.lavRevisados || "",
+      galleyLimpios: report?.limpieza?.galleyLimpios || "",
+      suministrosBanos: report?.limpieza?.suministrosBanos || "",
+    },
+
+    security: {
+      debajoAsientos: report?.security?.debajoAsientos || "",
+      bolsillosVerificados: report?.security?.bolsillosVerificados || "",
+      jumpSeats: report?.security?.jumpSeats || "",
+      lavabos: report?.security?.lavabos || "",
+      armarios: report?.security?.armarios || "",
+      compartimientosEmergencia: report?.security?.compartimientosEmergencia || "",
+      espaldarAsientos: report?.security?.espaldarAsientos || "",
+      compartimientosSuperiores:
+        report?.security?.compartimientosSuperiores || "",
+    },
+
+    finalConfirmation: {
+      limpiezaCompletada:
+        report?.finalConfirmation?.limpiezaCompletada || "",
+      securityCompletado:
+        report?.finalConfirmation?.securityCompletado || "",
+      articuloSospechoso:
+        report?.finalConfirmation?.articuloSospechoso || "",
+    },
+  };
+}
+
 export default function CleaningSecurityReportsAdminPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -203,12 +314,18 @@ export default function CleaningSecurityReportsAdminPage() {
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [savingId, setSavingId] = useState("");
+  const [archivingId, setArchivingId] = useState("");
+  const [deletingId, setDeletingId] = useState("");
 
   const [filters, setFilters] = useState({
     airline: "all",
     date: "",
     supervisor: "",
   });
+
+  const [editData, setEditData] = useState(normalizeReportForEdit(null));
 
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -273,7 +390,7 @@ export default function CleaningSecurityReportsAdminPage() {
         return false;
       }
 
-      return true;
+      return String(item.status || "").toLowerCase() !== "archived";
     });
   }, [reports, filters]);
 
@@ -291,6 +408,268 @@ export default function CleaningSecurityReportsAdminPage() {
       setSelectedId(filteredReports[0]?.id || "");
     }
   }, [filteredReports, selectedId]);
+
+  useEffect(() => {
+    if (!selectedReport) {
+      setEditData(normalizeReportForEdit(null));
+      setIsEditMode(false);
+      return;
+    }
+    setEditData(normalizeReportForEdit(selectedReport));
+  }, [selectedReport]);
+
+  const handleEditField = (field, value) => {
+    setEditData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleNestedField = (group, field, value) => {
+    setEditData((prev) => ({
+      ...prev,
+      [group]: {
+        ...(prev[group] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSaveEdits = async () => {
+    if (!selectedReport) return;
+
+    try {
+      setSavingId(selectedReport.id);
+
+      const payload = {
+        ...editData,
+        lastEditedAt: serverTimestamp(),
+        lastEditedByName:
+          user?.displayName ||
+          user?.fullName ||
+          user?.name ||
+          user?.username ||
+          "Manager",
+        lastEditedByRole: user?.role || "",
+      };
+
+      await updateDoc(doc(db, "cleaning_security_reports", selectedReport.id), payload);
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === selectedReport.id
+            ? {
+                ...item,
+                ...editData,
+                lastEditedAt: new Date(),
+                lastEditedByName:
+                  user?.displayName ||
+                  user?.fullName ||
+                  user?.name ||
+                  user?.username ||
+                  "Manager",
+                lastEditedByRole: user?.role || "",
+              }
+            : item
+        )
+      );
+
+      setStatusMessage("Report updated successfully.");
+      setIsEditMode(false);
+    } catch (err) {
+      console.error("Error saving report edits:", err);
+      setStatusMessage("Could not save report changes.");
+    } finally {
+      setSavingId("");
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!selectedReport) return;
+
+    const ok = window.confirm("Archive this report?");
+    if (!ok) return;
+
+    try {
+      setArchivingId(selectedReport.id);
+
+      await updateDoc(doc(db, "cleaning_security_reports", selectedReport.id), {
+        status: "archived",
+        archivedAt: serverTimestamp(),
+        archivedByName:
+          user?.displayName ||
+          user?.fullName ||
+          user?.name ||
+          user?.username ||
+          "Manager",
+        archivedByRole: user?.role || "",
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === selectedReport.id
+            ? {
+                ...item,
+                status: "archived",
+                archivedAt: new Date(),
+                archivedByName:
+                  user?.displayName ||
+                  user?.fullName ||
+                  user?.name ||
+                  user?.username ||
+                  "Manager",
+                archivedByRole: user?.role || "",
+              }
+            : item
+        )
+      );
+
+      setStatusMessage("Report archived.");
+    } catch (err) {
+      console.error("Error archiving report:", err);
+      setStatusMessage("Could not archive report.");
+    } finally {
+      setArchivingId("");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedReport) return;
+
+    const ok = window.confirm(
+      "Delete this report permanently? This cannot be undone."
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingId(selectedReport.id);
+      await deleteDoc(doc(db, "cleaning_security_reports", selectedReport.id));
+      setReports((prev) => prev.filter((item) => item.id !== selectedReport.id));
+      setStatusMessage("Report deleted.");
+    } catch (err) {
+      console.error("Error deleting report:", err);
+      setStatusMessage("Could not delete report.");
+    } finally {
+      setDeletingId("");
+    }
+  };
+
+  const exportPDF = () => {
+    if (!selectedReport) return;
+
+    try {
+      const pdf = new jsPDF("p", "pt", "letter");
+      const marginX = 40;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      let y = 40;
+
+      const lineGap = 14;
+
+      const addLine = (label, value) => {
+        const text = `${label}: ${value || "—"}`;
+        const lines = pdf.splitTextToSize(text, pageWidth - marginX * 2);
+
+        lines.forEach((line) => {
+          if (y > pageHeight - 40) {
+            pdf.addPage();
+            y = 40;
+          }
+          pdf.text(line, marginX, y);
+          y += lineGap;
+        });
+      };
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(16);
+      pdf.text("Cleaning and Security Search Report", marginX, y);
+      y += 24;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+
+      addLine("Date", selectedReport.fecha);
+      addLine("Hora In", selectedReport.horaIn);
+      addLine("Hora Terminacion", selectedReport.horaTerminacion);
+      addLine("Airline", selectedReport.airline);
+      addLine("Flight No", selectedReport.flightNo);
+      addLine("Tail No", selectedReport.tailNo);
+      addLine("Supervisor", selectedReport.supervisorName);
+      addLine("Supervisor Position", selectedReport.supervisorPosition);
+      addLine("Airline Representative", selectedReport.airlineRep);
+      addLine("Verified by Airline Rep", selectedReport.verifiedByAirlineRep);
+      addLine("Supervisor Signature", selectedReport.supervisorSignature);
+      addLine("Airline Rep Signature", selectedReport.airlineRepSignature);
+
+      y += 8;
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Work Distribution", marginX, y);
+      y += 18;
+      pdf.setFont("helvetica", "normal");
+
+      Object.entries(selectedReport.distribution || {}).forEach(([key, value]) => {
+        addLine(key, value);
+      });
+
+      y += 8;
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Cleaning Checklist", marginX, y);
+      y += 18;
+      pdf.setFont("helvetica", "normal");
+
+      Object.entries(selectedReport.limpieza || {}).forEach(([key, value]) => {
+        addLine(key, value);
+      });
+      addLine("Cleaning Observations", selectedReport.limpiezaObservaciones);
+
+      y += 8;
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Security Search Checklist", marginX, y);
+      y += 18;
+      pdf.setFont("helvetica", "normal");
+
+      Object.entries(selectedReport.security || {}).forEach(([key, value]) => {
+        addLine(key, value);
+      });
+      addLine("Security Observations", selectedReport.securityObservaciones);
+
+      y += 8;
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Final Confirmation", marginX, y);
+      y += 18;
+      pdf.setFont("helvetica", "normal");
+
+      Object.entries(selectedReport.finalConfirmation || {}).forEach(([key, value]) => {
+        addLine(key, value);
+      });
+      addLine("Suspicious Item Details", selectedReport.suspiciousItemDetails);
+      addLine("Attachment Notes", selectedReport.attachmentsNotes);
+
+      if (Array.isArray(selectedReport.photos) && selectedReport.photos.length > 0) {
+        y += 8;
+        pdf.setFont("helvetica", "bold");
+        pdf.text("Photos", marginX, y);
+        y += 18;
+        pdf.setFont("helvetica", "normal");
+
+        selectedReport.photos.forEach((photo, index) => {
+          addLine(`Photo ${index + 1}`, photo?.url || photo?.name || "—");
+        });
+      }
+
+      const safeAirline = String(selectedReport.airline || "Airline")
+        .replace(/\s+/g, "_")
+        .replace(/[^\w-]/g, "");
+      const safeFlight = String(selectedReport.flightNo || "Flight")
+        .replace(/\s+/g, "_")
+        .replace(/[^\w-]/g, "");
+
+      pdf.save(`CleaningSecurity_${safeAirline}_${safeFlight}.pdf`);
+    } catch (err) {
+      console.error("Error exporting PDF:", err);
+      setStatusMessage("Could not export PDF.");
+    }
+  };
 
   if (!canAccess) {
     return (
@@ -425,7 +804,7 @@ export default function CleaningSecurityReportsAdminPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Review all submitted supervisor reports, photos, signatures and checklist details.
+              Review, edit, archive, export and manage submitted reports.
             </p>
           </div>
 
@@ -580,16 +959,14 @@ export default function CleaningSecurityReportsAdminPage() {
               No reports found.
             </div>
           ) : (
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-              }}
-            >
+            <div style={{ display: "grid", gap: 10 }}>
               {filteredReports.map((report) => (
                 <div
                   key={report.id}
-                  onClick={() => setSelectedId(report.id)}
+                  onClick={() => {
+                    setSelectedId(report.id);
+                    setIsEditMode(false);
+                  }}
                   style={{
                     borderRadius: 18,
                     padding: 16,
@@ -654,83 +1031,69 @@ export default function CleaningSecurityReportsAdminPage() {
 
         {selectedReport && (
           <PageCard style={{ padding: 20 }}>
-            <div style={{ display: "grid", gap: 16 }}>
-              <div>
-                <h2
+            {!isEditMode ? (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div
                   style={{
-                    margin: 0,
-                    fontSize: 22,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                    letterSpacing: "-0.02em",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "flex-start",
                   }}
                 >
-                  Report Detail
-                </h2>
-                <p
-                  style={{
-                    margin: "4px 0 0",
-                    fontSize: 13,
-                    color: "#64748b",
-                  }}
-                >
-                  {selectedReport.airline || "—"} · Flight {selectedReport.flightNo || "—"}
-                </p>
-              </div>
+                  <div>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 22,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      Report Detail
+                    </h2>
+                    <p
+                      style={{
+                        margin: "4px 0 0",
+                        fontSize: 13,
+                        color: "#64748b",
+                      }}
+                    >
+                      {selectedReport.airline || "—"} · Flight {selectedReport.flightNo || "—"}
+                    </p>
+                  </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                <DetailRow label="Date" value={selectedReport.fecha} />
-                <DetailRow label="Hora In" value={selectedReport.horaIn} />
-                <DetailRow
-                  label="Hora Terminación"
-                  value={selectedReport.horaTerminacion}
-                />
-                <DetailRow label="Airline" value={selectedReport.airline} />
-                <DetailRow label="Flight No" value={selectedReport.flightNo} />
-                <DetailRow label="Tail No" value={selectedReport.tailNo} />
-                <DetailRow
-                  label="Supervisor"
-                  value={selectedReport.supervisorName}
-                />
-                <DetailRow
-                  label="Supervisor Position"
-                  value={selectedReport.supervisorPosition}
-                />
-                <DetailRow
-                  label="Airline Representative"
-                  value={selectedReport.airlineRep}
-                />
-                <DetailRow
-                  label="Verified by Airline Rep"
-                  value={selectedReport.verifiedByAirlineRep}
-                />
-                <DetailRow
-                  label="Supervisor Signature"
-                  value={selectedReport.supervisorSignature}
-                />
-                <DetailRow
-                  label="Airline Rep Signature"
-                  value={selectedReport.airlineRepSignature}
-                />
-              </div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <ActionButton variant="secondary" onClick={exportPDF}>
+                      Export PDF
+                    </ActionButton>
 
-              <PageCard style={{ padding: 18, background: "#fcfdff" }}>
-                <h3
-                  style={{
-                    margin: "0 0 12px",
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  Work Distribution
-                </h3>
+                    <ActionButton
+                      variant="primary"
+                      onClick={() => setIsEditMode(true)}
+                    >
+                      Edit
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="warning"
+                      onClick={handleArchive}
+                      disabled={archivingId === selectedReport.id}
+                    >
+                      {archivingId === selectedReport.id ? "Archiving..." : "Archive"}
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="danger"
+                      onClick={handleDelete}
+                      disabled={deletingId === selectedReport.id}
+                    >
+                      {deletingId === selectedReport.id ? "Deleting..." : "Delete"}
+                    </ActionButton>
+                  </div>
+                </div>
 
                 <div
                   style={{
@@ -739,231 +1102,554 @@ export default function CleaningSecurityReportsAdminPage() {
                     gap: 12,
                   }}
                 >
+                  <DetailRow label="Date" value={selectedReport.fecha} />
+                  <DetailRow label="Hora In" value={selectedReport.horaIn} />
                   <DetailRow
-                    label="Galley & Lav"
-                    value={selectedReport.distribution?.galleyLav}
+                    label="Hora Terminación"
+                    value={selectedReport.horaTerminacion}
+                  />
+                  <DetailRow label="Airline" value={selectedReport.airline} />
+                  <DetailRow label="Flight No" value={selectedReport.flightNo} />
+                  <DetailRow label="Tail No" value={selectedReport.tailNo} />
+                  <DetailRow
+                    label="Supervisor"
+                    value={selectedReport.supervisorName}
                   />
                   <DetailRow
-                    label="Left Row 1 to 11"
-                    value={selectedReport.distribution?.left1to11}
+                    label="Supervisor Position"
+                    value={selectedReport.supervisorPosition}
                   />
                   <DetailRow
-                    label="Right Row 1 to 11"
-                    value={selectedReport.distribution?.right1to11}
+                    label="Airline Representative"
+                    value={selectedReport.airlineRep}
                   />
                   <DetailRow
-                    label="Left Row 12 to 21"
-                    value={selectedReport.distribution?.left12to21}
+                    label="Verified by Airline Rep"
+                    value={selectedReport.verifiedByAirlineRep}
                   />
                   <DetailRow
-                    label="Right Row 12 to 21"
-                    value={selectedReport.distribution?.right12to21}
+                    label="Supervisor Signature"
+                    value={selectedReport.supervisorSignature}
                   />
                   <DetailRow
-                    label="Left Row 22 to 31"
-                    value={selectedReport.distribution?.left22to31}
-                  />
-                  <DetailRow
-                    label="Right Row 22 to 31"
-                    value={selectedReport.distribution?.right22to31}
-                  />
-                  <DetailRow
-                    label="Vacuum"
-                    value={selectedReport.distribution?.vacuum}
-                  />
-                </div>
-              </PageCard>
-
-              <PageCard style={{ padding: 18, background: "#fcfdff" }}>
-                <h3
-                  style={{
-                    margin: "0 0 12px",
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  Cleaning Checklist
-                </h3>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <div><FieldLabel>Trash removed</FieldLabel><YesNoBadge value={selectedReport.limpieza?.basuraRemovida} /></div>
-                  <div><FieldLabel>Seat pockets organized</FieldLabel><YesNoBadge value={selectedReport.limpieza?.bolsillosOrganizados} /></div>
-                  <div><FieldLabel>Tray tables cleaned</FieldLabel><YesNoBadge value={selectedReport.limpieza?.bandejasLimpias} /></div>
-                  <div><FieldLabel>Carpet vacuumed</FieldLabel><YesNoBadge value={selectedReport.limpieza?.alfombraAspirada} /></div>
-                  <div><FieldLabel>Lavatories checked</FieldLabel><YesNoBadge value={selectedReport.limpieza?.lavRevisados} /></div>
-                  <div><FieldLabel>Galley cleaned</FieldLabel><YesNoBadge value={selectedReport.limpieza?.galleyLimpios} /></div>
-                  <div><FieldLabel>Lav supplies replenished</FieldLabel><YesNoBadge value={selectedReport.limpieza?.suministrosBanos} /></div>
-                </div>
-
-                <div style={{ marginTop: 14 }}>
-                  <DetailRow
-                    label="Cleaning observations"
-                    value={selectedReport.limpiezaObservaciones}
+                    label="Airline Rep Signature"
+                    value={selectedReport.airlineRepSignature}
                   />
                 </div>
-              </PageCard>
 
-              <PageCard style={{ padding: 18, background: "#fcfdff" }}>
-                <h3
-                  style={{
-                    margin: "0 0 12px",
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  Security Search Checklist
-                </h3>
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Work Distribution
+                  </h3>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <div><FieldLabel>Under seats checked</FieldLabel><YesNoBadge value={selectedReport.security?.debajoAsientos} /></div>
-                  <div><FieldLabel>Seat pockets verified</FieldLabel><YesNoBadge value={selectedReport.security?.bolsillosVerificados} /></div>
-                  <div><FieldLabel>Jump seats inspected</FieldLabel><YesNoBadge value={selectedReport.security?.jumpSeats} /></div>
-                  <div><FieldLabel>Lavatories inspected</FieldLabel><YesNoBadge value={selectedReport.security?.lavabos} /></div>
-                  <div><FieldLabel>Closets verified</FieldLabel><YesNoBadge value={selectedReport.security?.armarios} /></div>
-                  <div><FieldLabel>Emergency compartments checked</FieldLabel><YesNoBadge value={selectedReport.security?.compartimientosEmergencia} /></div>
-                  <div><FieldLabel>Seat backs checked</FieldLabel><YesNoBadge value={selectedReport.security?.espaldarAsientos} /></div>
-                  <div><FieldLabel>Overhead bins checked</FieldLabel><YesNoBadge value={selectedReport.security?.compartimientosSuperiores} /></div>
-                </div>
-
-                <div style={{ marginTop: 14 }}>
-                  <DetailRow
-                    label="Security observations"
-                    value={selectedReport.securityObservaciones}
-                  />
-                </div>
-              </PageCard>
-
-              <PageCard style={{ padding: 18, background: "#fcfdff" }}>
-                <h3
-                  style={{
-                    margin: "0 0 12px",
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  Final Confirmation
-                </h3>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <div><FieldLabel>Cleaning completed</FieldLabel><YesNoBadge value={selectedReport.finalConfirmation?.limpiezaCompletada} /></div>
-                  <div><FieldLabel>Security completed</FieldLabel><YesNoBadge value={selectedReport.finalConfirmation?.securityCompletado} /></div>
-                  <div><FieldLabel>Suspicious item found</FieldLabel><YesNoBadge value={selectedReport.finalConfirmation?.articuloSospechoso} /></div>
-                </div>
-
-                <div style={{ marginTop: 14 }}>
-                  <DetailRow
-                    label="Suspicious item details"
-                    value={selectedReport.suspiciousItemDetails}
-                  />
-                </div>
-              </PageCard>
-
-              <PageCard style={{ padding: 18, background: "#fcfdff" }}>
-                <h3
-                  style={{
-                    margin: "0 0 12px",
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  Photos
-                </h3>
-
-                {Array.isArray(selectedReport.photos) && selectedReport.photos.length > 0 ? (
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
-                    {selectedReport.photos.map((photo, index) => (
-                      <a
-                        key={`${photo.url}-${index}`}
-                        href={photo.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "block",
-                          textDecoration: "none",
-                          border: "1px solid #dbeafe",
-                          borderRadius: 16,
-                          overflow: "hidden",
-                          background: "#fff",
-                        }}
-                      >
-                        <img
-                          src={photo.url}
-                          alt={photo.name || `Photo ${index + 1}`}
-                          style={{
-                            width: "100%",
-                            height: 180,
-                            objectFit: "cover",
-                            display: "block",
-                          }}
-                        />
-                        <div
-                          style={{
-                            padding: 10,
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: "#334155",
-                            wordBreak: "break-word",
-                          }}
-                        >
-                          {photo.name || `Photo ${index + 1}`}
-                        </div>
-                      </a>
-                    ))}
+                    <DetailRow label="Galley & Lav" value={selectedReport.distribution?.galleyLav} />
+                    <DetailRow label="Left Row 1 to 11" value={selectedReport.distribution?.left1to11} />
+                    <DetailRow label="Right Row 1 to 11" value={selectedReport.distribution?.right1to11} />
+                    <DetailRow label="Left Row 12 to 21" value={selectedReport.distribution?.left12to21} />
+                    <DetailRow label="Right Row 12 to 21" value={selectedReport.distribution?.right12to21} />
+                    <DetailRow label="Left Row 22 to 31" value={selectedReport.distribution?.left22to31} />
+                    <DetailRow label="Right Row 22 to 31" value={selectedReport.distribution?.right22to31} />
+                    <DetailRow label="Vacuum" value={selectedReport.distribution?.vacuum} />
                   </div>
-                ) : (
+                </PageCard>
+
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Cleaning Checklist
+                  </h3>
+
                   <div
                     style={{
-                      padding: 16,
-                      borderRadius: 16,
-                      background: "#f8fbff",
-                      border: "1px solid #dbeafe",
-                      color: "#64748b",
-                      fontWeight: 600,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
                     }}
                   >
-                    No photos attached.
+                    <div><FieldLabel>Trash removed</FieldLabel><YesNoBadge value={selectedReport.limpieza?.basuraRemovida} /></div>
+                    <div><FieldLabel>Seat pockets organized</FieldLabel><YesNoBadge value={selectedReport.limpieza?.bolsillosOrganizados} /></div>
+                    <div><FieldLabel>Tray tables cleaned</FieldLabel><YesNoBadge value={selectedReport.limpieza?.bandejasLimpias} /></div>
+                    <div><FieldLabel>Carpet vacuumed</FieldLabel><YesNoBadge value={selectedReport.limpieza?.alfombraAspirada} /></div>
+                    <div><FieldLabel>Lavatories checked</FieldLabel><YesNoBadge value={selectedReport.limpieza?.lavRevisados} /></div>
+                    <div><FieldLabel>Galley cleaned</FieldLabel><YesNoBadge value={selectedReport.limpieza?.galleyLimpios} /></div>
+                    <div><FieldLabel>Lav supplies replenished</FieldLabel><YesNoBadge value={selectedReport.limpieza?.suministrosBanos} /></div>
                   </div>
-                )}
-              </PageCard>
 
-              <DetailRow
-                label="Attachment notes"
-                value={selectedReport.attachmentsNotes}
-              />
+                  <div style={{ marginTop: 14 }}>
+                    <DetailRow
+                      label="Cleaning observations"
+                      value={selectedReport.limpiezaObservaciones}
+                    />
+                  </div>
+                </PageCard>
 
-              <DetailRow
-                label="Submitted at"
-                value={formatDateTime(selectedReport.createdAt)}
-              />
-            </div>
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Security Search Checklist
+                  </h3>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <div><FieldLabel>Under seats checked</FieldLabel><YesNoBadge value={selectedReport.security?.debajoAsientos} /></div>
+                    <div><FieldLabel>Seat pockets verified</FieldLabel><YesNoBadge value={selectedReport.security?.bolsillosVerificados} /></div>
+                    <div><FieldLabel>Jump seats inspected</FieldLabel><YesNoBadge value={selectedReport.security?.jumpSeats} /></div>
+                    <div><FieldLabel>Lavatories inspected</FieldLabel><YesNoBadge value={selectedReport.security?.lavabos} /></div>
+                    <div><FieldLabel>Closets verified</FieldLabel><YesNoBadge value={selectedReport.security?.armarios} /></div>
+                    <div><FieldLabel>Emergency compartments checked</FieldLabel><YesNoBadge value={selectedReport.security?.compartimientosEmergencia} /></div>
+                    <div><FieldLabel>Seat backs checked</FieldLabel><YesNoBadge value={selectedReport.security?.espaldarAsientos} /></div>
+                    <div><FieldLabel>Overhead bins checked</FieldLabel><YesNoBadge value={selectedReport.security?.compartimientosSuperiores} /></div>
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <DetailRow
+                      label="Security observations"
+                      value={selectedReport.securityObservaciones}
+                    />
+                  </div>
+                </PageCard>
+
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Final Confirmation
+                  </h3>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <div><FieldLabel>Cleaning completed</FieldLabel><YesNoBadge value={selectedReport.finalConfirmation?.limpiezaCompletada} /></div>
+                    <div><FieldLabel>Security completed</FieldLabel><YesNoBadge value={selectedReport.finalConfirmation?.securityCompletado} /></div>
+                    <div><FieldLabel>Suspicious item found</FieldLabel><YesNoBadge value={selectedReport.finalConfirmation?.articuloSospechoso} /></div>
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <DetailRow
+                      label="Suspicious item details"
+                      value={selectedReport.suspiciousItemDetails}
+                    />
+                  </div>
+                </PageCard>
+
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Photos
+                  </h3>
+
+                  {Array.isArray(selectedReport.photos) && selectedReport.photos.length > 0 ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 12,
+                      }}
+                    >
+                      {selectedReport.photos.map((photo, index) => (
+                        <a
+                          key={`${photo.url}-${index}`}
+                          href={photo.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: "block",
+                            textDecoration: "none",
+                            border: "1px solid #dbeafe",
+                            borderRadius: 16,
+                            overflow: "hidden",
+                            background: "#fff",
+                          }}
+                        >
+                          <img
+                            src={photo.url}
+                            alt={photo.name || `Photo ${index + 1}`}
+                            style={{
+                              width: "100%",
+                              height: 180,
+                              objectFit: "cover",
+                              display: "block",
+                            }}
+                          />
+                          <div
+                            style={{
+                              padding: 10,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: "#334155",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {photo.name || `Photo ${index + 1}`}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: 16,
+                        borderRadius: 16,
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
+                        color: "#64748b",
+                        fontWeight: 600,
+                      }}
+                    >
+                      No photos attached.
+                    </div>
+                  )}
+                </PageCard>
+
+                <DetailRow
+                  label="Attachment notes"
+                  value={selectedReport.attachmentsNotes}
+                />
+
+                <DetailRow
+                  label="Submitted at"
+                  value={formatDateTime(selectedReport.createdAt)}
+                />
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 22,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      Edit Report
+                    </h2>
+                    <p
+                      style={{
+                        margin: "4px 0 0",
+                        fontSize: 13,
+                        color: "#64748b",
+                      }}
+                    >
+                      {selectedReport.airline || "—"} · Flight {selectedReport.flightNo || "—"}
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => setIsEditMode(false)}
+                    >
+                      Cancel
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="primary"
+                      onClick={handleSaveEdits}
+                      disabled={savingId === selectedReport.id}
+                    >
+                      {savingId === selectedReport.id ? "Saving..." : "Save Changes"}
+                    </ActionButton>
+                  </div>
+                </div>
+
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <FieldLabel>Date</FieldLabel>
+                      <TextInput
+                        type="date"
+                        value={editData.fecha}
+                        onChange={(e) => handleEditField("fecha", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Hora In</FieldLabel>
+                      <TextInput
+                        value={editData.horaIn}
+                        onChange={(e) => handleEditField("horaIn", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Hora Terminación</FieldLabel>
+                      <TextInput
+                        value={editData.horaTerminacion}
+                        onChange={(e) =>
+                          handleEditField("horaTerminacion", e.target.value)
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Airline</FieldLabel>
+                      <TextInput
+                        value={editData.airline}
+                        onChange={(e) => handleEditField("airline", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Flight No</FieldLabel>
+                      <TextInput
+                        value={editData.flightNo}
+                        onChange={(e) => handleEditField("flightNo", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Tail No</FieldLabel>
+                      <TextInput
+                        value={editData.tailNo}
+                        onChange={(e) => handleEditField("tailNo", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Supervisor Name</FieldLabel>
+                      <TextInput
+                        value={editData.supervisorName}
+                        onChange={(e) =>
+                          handleEditField("supervisorName", e.target.value)
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Supervisor Position</FieldLabel>
+                      <TextInput
+                        value={editData.supervisorPosition}
+                        onChange={(e) =>
+                          handleEditField("supervisorPosition", e.target.value)
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Airline Representative</FieldLabel>
+                      <TextInput
+                        value={editData.airlineRep}
+                        onChange={(e) => handleEditField("airlineRep", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Verified by Airline Rep</FieldLabel>
+                      <TextInput
+                        value={editData.verifiedByAirlineRep}
+                        onChange={(e) =>
+                          handleEditField("verifiedByAirlineRep", e.target.value)
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Supervisor Signature</FieldLabel>
+                      <TextInput
+                        value={editData.supervisorSignature}
+                        onChange={(e) =>
+                          handleEditField("supervisorSignature", e.target.value)
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Airline Rep Signature</FieldLabel>
+                      <TextInput
+                        value={editData.airlineRepSignature}
+                        onChange={(e) =>
+                          handleEditField("airlineRepSignature", e.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                </PageCard>
+
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Work Distribution
+                  </h3>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {Object.keys(editData.distribution || {}).map((key) => (
+                      <div key={key}>
+                        <FieldLabel>{key}</FieldLabel>
+                        <TextInput
+                          value={editData.distribution[key]}
+                          onChange={(e) =>
+                            handleNestedField("distribution", key, e.target.value)
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </PageCard>
+
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Cleaning Checklist
+                  </h3>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {Object.keys(editData.limpieza || {}).map((key) => (
+                      <div key={key}>
+                        <FieldLabel>{key}</FieldLabel>
+                        <SelectInput
+                          value={editData.limpieza[key]}
+                          onChange={(e) =>
+                            handleNestedField("limpieza", key, e.target.value)
+                          }
+                        >
+                          <option value="">Select</option>
+                          <option value="Yes">Yes</option>
+                          <option value="No">No</option>
+                        </SelectInput>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <FieldLabel>Cleaning observations</FieldLabel>
+                    <TextArea
+                      value={editData.limpiezaObservaciones}
+                      onChange={(e) =>
+                        handleEditField("limpiezaObservaciones", e.target.value)
+                      }
+                    />
+                  </div>
+                </PageCard>
+
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Security Search Checklist
+                  </h3>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {Object.keys(editData.security || {}).map((key) => (
+                      <div key={key}>
+                        <FieldLabel>{key}</FieldLabel>
+                        <SelectInput
+                          value={editData.security[key]}
+                          onChange={(e) =>
+                            handleNestedField("security", key, e.target.value)
+                          }
+                        >
+                          <option value="">Select</option>
+                          <option value="Yes">Yes</option>
+                          <option value="No">No</option>
+                        </SelectInput>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <FieldLabel>Security observations</FieldLabel>
+                    <TextArea
+                      value={editData.securityObservaciones}
+                      onChange={(e) =>
+                        handleEditField("securityObservaciones", e.target.value)
+                      }
+                    />
+                  </div>
+                </PageCard>
+
+                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                    Final Confirmation
+                  </h3>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {Object.keys(editData.finalConfirmation || {}).map((key) => (
+                      <div key={key}>
+                        <FieldLabel>{key}</FieldLabel>
+                        <SelectInput
+                          value={editData.finalConfirmation[key]}
+                          onChange={(e) =>
+                            handleNestedField("finalConfirmation", key, e.target.value)
+                          }
+                        >
+                          <option value="">Select</option>
+                          <option value="Yes">Yes</option>
+                          <option value="No">No</option>
+                        </SelectInput>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <FieldLabel>Suspicious item details</FieldLabel>
+                    <TextArea
+                      value={editData.suspiciousItemDetails}
+                      onChange={(e) =>
+                        handleEditField("suspiciousItemDetails", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <FieldLabel>Attachment notes</FieldLabel>
+                    <TextArea
+                      value={editData.attachmentsNotes}
+                      onChange={(e) =>
+                        handleEditField("attachmentsNotes", e.target.value)
+                      }
+                    />
+                  </div>
+                </PageCard>
+              </div>
+            )}
           </PageCard>
         )}
       </div>
