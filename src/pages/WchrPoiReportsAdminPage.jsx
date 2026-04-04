@@ -212,6 +212,13 @@ function formatDateTime(value) {
   }
 }
 
+function formatMoney(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  return `$${num.toFixed(2)}`;
+}
+
 function isAlertReport(report) {
   const anyInop = String(report?.anyInopWchr || "").toLowerCase() === "yes";
   const hasOutOfServiceUnits = normalizeUnitList(report?.outOfServiceUnits).length > 0;
@@ -227,6 +234,30 @@ function isAlertReport(report) {
   return anyInop || hasOutOfServiceUnits || hasFailedChecks;
 }
 
+function buildUnitCasesFromReport(report) {
+  const units = normalizeUnitList(report?.outOfServiceUnits);
+  return units.map((unit) => ({
+    unitNumber: unit,
+    reportId: report.id,
+    reportDate: report.date || "",
+    reportTime: report.time || "",
+    location: report.location || "",
+    inspectorName: report.inspectorName || "",
+    damageDetails: report.damageDetails || "",
+    photoNotes: report.photoNotes || "",
+    takenBy: report?.maintenanceCase?.[unit]?.takenBy || "",
+    caseStatus: report?.maintenanceCase?.[unit]?.caseStatus || "open",
+    backOnService: report?.maintenanceCase?.[unit]?.backOnService || "no",
+    returnDate: report?.maintenanceCase?.[unit]?.returnDate || "",
+    workPerformed: report?.maintenanceCase?.[unit]?.workPerformed || "",
+    partsChanged: report?.maintenanceCase?.[unit]?.partsChanged || "",
+    maintenanceCost: report?.maintenanceCase?.[unit]?.maintenanceCost || "",
+    notes: report?.maintenanceCase?.[unit]?.notes || "",
+    closedBy: report?.maintenanceCase?.[unit]?.closedBy || "",
+    closedAt: report?.maintenanceCase?.[unit]?.closedAt || "",
+  }));
+}
+
 export default function WchrPoiReportsAdminPage() {
   const { user } = useUser();
 
@@ -240,11 +271,15 @@ export default function WchrPoiReportsAdminPage() {
   const [savingEditId, setSavingEditId] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
 
+  const [selectedUnitCase, setSelectedUnitCase] = useState(null);
+  const [savingUnitCase, setSavingUnitCase] = useState(false);
+
   const [filters, setFilters] = useState({
     dateFrom: "",
     dateTo: "",
     location: "all",
     alertsOnly: "all",
+    maintenanceStatus: "all",
     search: "",
   });
 
@@ -342,6 +377,24 @@ export default function WchrPoiReportsAdminPage() {
   const normalReports = useMemo(() => {
     return visibleReports.filter((item) => !isAlertReport(item));
   }, [visibleReports]);
+
+  const unitCases = useMemo(() => {
+    const all = alertReports.flatMap(buildUnitCasesFromReport);
+
+    return all.filter((item) => {
+      if (filters.maintenanceStatus === "all") return true;
+      if (filters.maintenanceStatus === "open") {
+        return String(item.caseStatus || "").toLowerCase() !== "closed";
+      }
+      if (filters.maintenanceStatus === "closed") {
+        return String(item.caseStatus || "").toLowerCase() === "closed";
+      }
+      if (filters.maintenanceStatus === "back_on_service") {
+        return String(item.backOnService || "").toLowerCase() === "yes";
+      }
+      return true;
+    });
+  }, [alertReports, filters.maintenanceStatus]);
 
   const selectedReport = useMemo(() => {
     return visibleReports.find((item) => item.id === selectedId) || null;
@@ -522,6 +575,87 @@ export default function WchrPoiReportsAdminPage() {
     }
   };
 
+  const handleOpenUnitCase = (unitCase) => {
+    setSelectedUnitCase({ ...unitCase });
+  };
+
+  const handleUnitCaseField = (field, value) => {
+    setSelectedUnitCase((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleSaveUnitCase = async () => {
+    if (!selectedUnitCase) return;
+
+    try {
+      setSavingUnitCase(true);
+
+      const reportRef = doc(db, "wchr_poi_reports", selectedUnitCase.reportId);
+      const report = reports.find((r) => r.id === selectedUnitCase.reportId);
+      const currentMaintenanceCase = report?.maintenanceCase || {};
+      const unitKey = selectedUnitCase.unitNumber;
+
+      const nextMaintenanceCase = {
+        ...currentMaintenanceCase,
+        [unitKey]: {
+          takenBy: selectedUnitCase.takenBy || "",
+          caseStatus: selectedUnitCase.caseStatus || "open",
+          backOnService: selectedUnitCase.backOnService || "no",
+          returnDate: selectedUnitCase.returnDate || "",
+          workPerformed: selectedUnitCase.workPerformed || "",
+          partsChanged: selectedUnitCase.partsChanged || "",
+          maintenanceCost: selectedUnitCase.maintenanceCost || "",
+          notes: selectedUnitCase.notes || "",
+          closedBy:
+            selectedUnitCase.caseStatus === "closed"
+              ? user?.displayName ||
+                user?.fullName ||
+                user?.name ||
+                user?.username ||
+                "Duty Manager"
+              : "",
+          closedAt:
+            selectedUnitCase.caseStatus === "closed"
+              ? new Date().toISOString()
+              : "",
+          updatedAt: new Date().toISOString(),
+          updatedBy:
+            user?.displayName ||
+            user?.fullName ||
+            user?.name ||
+            user?.username ||
+            "Duty Manager",
+        },
+      };
+
+      await updateDoc(reportRef, {
+        maintenanceCase: nextMaintenanceCase,
+        updatedAt: serverTimestamp(),
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === selectedUnitCase.reportId
+            ? {
+                ...item,
+                maintenanceCase: nextMaintenanceCase,
+              }
+            : item
+        )
+      );
+
+      setStatusMessage(`Case for ${selectedUnitCase.unitNumber} updated.`);
+      setSelectedUnitCase(null);
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Could not save WCHR case.");
+    } finally {
+      setSavingUnitCase(false);
+    }
+  };
+
   const handleExportPdf = () => {
     if (!selectedReport) return;
 
@@ -631,28 +765,6 @@ export default function WchrPoiReportsAdminPage() {
             )}</div></div>
           </div>
 
-          <h2 style="margin-top:24px;">Inspection Results</h2>
-          <div class="grid">
-            ${(Array.isArray(selectedReport.inspectionResults)
-              ? selectedReport.inspectionResults
-              : []
-            )
-              .map(
-                (item) => `
-                <div class="card ${
-                  String(item?.result || "").toLowerCase() === "no"
-                    ? "alert"
-                    : ""
-                }">
-                  <div class="label">Item ${item?.itemNumber || ""}</div>
-                  <div class="value">${safeValue(item?.label)}</div>
-                  <div class="value">Result: ${safeValue(item?.result)}</div>
-                </div>
-              `
-              )
-              .join("")}
-          </div>
-
           <script>
             window.onload = function() {
               window.print();
@@ -721,13 +833,13 @@ export default function WchrPoiReportsAdminPage() {
         <p
           style={{
             margin: 0,
-            maxWidth: 760,
+            maxWidth: 900,
             fontSize: 14,
             color: "rgba(255,255,255,0.88)",
           }}
         >
-          Review wheelchair inspections, follow up on out of service units,
-          edit reports, archive, delete, and export to PDF.
+          Review wheelchair inspections, track out of service units, assign duty
+          manager follow-up, return units to service, and close cases.
         </p>
       </div>
 
@@ -797,7 +909,7 @@ export default function WchrPoiReportsAdminPage() {
           </div>
 
           <div>
-            <FieldLabel>Type</FieldLabel>
+            <FieldLabel>Report Type</FieldLabel>
             <SelectInput
               value={filters.alertsOnly}
               onChange={(e) =>
@@ -805,8 +917,26 @@ export default function WchrPoiReportsAdminPage() {
               }
             >
               <option value="all">All Reports</option>
-              <option value="alerts">Out of Service Alerts Only</option>
-              <option value="normal">Normal Reports Only</option>
+              <option value="alerts">Out of Service Reported</option>
+              <option value="normal">Normal Reports</option>
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Maintenance Status</FieldLabel>
+            <SelectInput
+              value={filters.maintenanceStatus}
+              onChange={(e) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  maintenanceStatus: e.target.value,
+                }))
+              }
+            >
+              <option value="all">All Cases</option>
+              <option value="open">Open Cases</option>
+              <option value="closed">Closed Cases</option>
+              <option value="back_on_service">Back On Service</option>
             </SelectInput>
           </div>
 
@@ -849,7 +979,7 @@ export default function WchrPoiReportsAdminPage() {
                 letterSpacing: "0.08em",
               }}
             >
-              Out of Service Alerts
+              Out of Service Reported
             </p>
             <p
               style={{
@@ -859,7 +989,7 @@ export default function WchrPoiReportsAdminPage() {
                 color: "#881337",
               }}
             >
-              {alertReports.length}
+              {unitCases.filter((item) => item.caseStatus !== "closed").length}
             </p>
           </div>
 
@@ -881,7 +1011,7 @@ export default function WchrPoiReportsAdminPage() {
                 letterSpacing: "0.08em",
               }}
             >
-              Normal Reports
+              Back On Service
             </p>
             <p
               style={{
@@ -891,10 +1021,139 @@ export default function WchrPoiReportsAdminPage() {
                 color: "#065f46",
               }}
             >
+              {
+                unitCases.filter(
+                  (item) => String(item.backOnService).toLowerCase() === "yes"
+                ).length
+              }
+            </p>
+          </div>
+
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 16,
+              padding: "16px 18px",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 800,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Normal Reports
+            </p>
+            <p
+              style={{
+                margin: "6px 0 0",
+                fontSize: 28,
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
               {normalReports.length}
             </p>
           </div>
         </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 22 }}>
+        <h2
+          style={{
+            marginTop: 0,
+            marginBottom: 14,
+            fontSize: 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Out of Service Reported
+        </h2>
+
+        {loading ? (
+          <div>Loading...</div>
+        ) : unitCases.length === 0 ? (
+          <div>No out of service cases found.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {unitCases.map((item, index) => {
+              const closed =
+                String(item.caseStatus || "").toLowerCase() === "closed";
+              const backOnService =
+                String(item.backOnService || "").toLowerCase() === "yes";
+
+              return (
+                <div
+                  key={`${item.reportId}-${item.unitNumber}-${index}`}
+                  style={{
+                    border: `1px solid ${
+                      closed ? "#bbf7d0" : "#fecdd3"
+                    }`,
+                    background: closed ? "#f0fdf4" : "#fff1f2",
+                    borderRadius: 18,
+                    padding: 16,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ minWidth: 220 }}>
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 900,
+                        color: closed ? "#166534" : "#9f1239",
+                      }}
+                    >
+                      {item.unitNumber}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 13,
+                        color: closed ? "#166534" : "#881337",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {item.reportDate || "—"} · {item.location || "—"} ·{" "}
+                      {item.inspectorName || "—"}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 13,
+                        color: "#334155",
+                      }}
+                    >
+                      Taken by: <b>{item.takenBy || "Unassigned"}</b>
+                      {" · "}
+                      Status: <b>{item.caseStatus || "open"}</b>
+                      {" · "}
+                      Back on service: <b>{backOnService ? "Yes" : "No"}</b>
+                    </div>
+                  </div>
+
+                  <ActionButton
+                    variant={closed ? "success" : "warning"}
+                    onClick={() => handleOpenUnitCase(item)}
+                  >
+                    {closed ? "View case" : "Open case"}
+                  </ActionButton>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </PageCard>
 
       <div
@@ -916,87 +1175,16 @@ export default function WchrPoiReportsAdminPage() {
               color: "#0f172a",
             }}
           >
-            Out of Service Alerts
+            Reports
           </h2>
 
           {loading ? (
             <div>Loading...</div>
-          ) : alertReports.length === 0 ? (
-            <div>No alert reports found.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
-              {alertReports.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => {
-                    setSelectedId(item.id);
-                    setIsEditMode(false);
-                  }}
-                  style={{
-                    cursor: "pointer",
-                    border:
-                      item.id === selectedId
-                        ? "1px solid #fda4af"
-                        : "1px solid #fecdd3",
-                    background: item.id === selectedId ? "#ffe4e6" : "#fff1f2",
-                    borderRadius: 16,
-                    padding: 14,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 800,
-                      color: "#9f1239",
-                    }}
-                  >
-                    {item.date || "—"} · {item.location || "—"}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#881337",
-                      marginTop: 4,
-                    }}
-                  >
-                    Inspector: {item.inspectorName || "—"}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#881337",
-                      marginTop: 4,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Out of Service:{" "}
-                    {normalizeUnitList(item.outOfServiceUnits).join(", ") || "Check details"}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <h2
-            style={{
-              marginTop: 0,
-              marginBottom: 14,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
-            Normal Reports
-          </h2>
-
-          {loading ? (
-            <div>Loading...</div>
-          ) : normalReports.length === 0 ? (
-            <div>No normal reports found.</div>
+          ) : visibleReports.length === 0 ? (
+            <div>No reports found.</div>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
-              {normalReports.map((item) => (
+              {visibleReports.map((item) => (
                 <div
                   key={item.id}
                   onClick={() => {
@@ -1031,12 +1219,14 @@ export default function WchrPoiReportsAdminPage() {
                   <div
                     style={{
                       fontSize: 13,
-                      color: "#1769aa",
+                      color: isAlertReport(item) ? "#9f1239" : "#1769aa",
                       marginTop: 4,
                       fontWeight: 700,
                     }}
                   >
-                    Units: {item.unitNumbersInspected || "—"}
+                    {isAlertReport(item)
+                      ? `Alert: ${normalizeUnitList(item.outOfServiceUnits).join(", ") || "Issue reported"}`
+                      : `Units: ${item.unitNumbersInspected || "—"}`}
                   </div>
                 </div>
               ))}
@@ -1082,10 +1272,7 @@ export default function WchrPoiReportsAdminPage() {
                   </div>
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <ActionButton
-                      variant="secondary"
-                      onClick={handleExportPdf}
-                    >
+                    <ActionButton variant="secondary" onClick={handleExportPdf}>
                       Export PDF
                     </ActionButton>
 
@@ -1097,41 +1284,6 @@ export default function WchrPoiReportsAdminPage() {
                     </ActionButton>
                   </div>
                 </div>
-
-                {isAlertReport(selectedReport) && (
-                  <div
-                    style={{
-                      background: "#fff1f2",
-                      border: "1px solid #fecdd3",
-                      borderRadius: 16,
-                      padding: "14px 16px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: "#9f1239",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                      }}
-                    >
-                      Alert / Follow-up Required
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: 14,
-                        color: "#881337",
-                        fontWeight: 700,
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      Out of service units:{" "}
-                      {normalizeUnitList(selectedReport.outOfServiceUnits).join(", ") || "N/A"}
-                    </div>
-                  </div>
-                )}
 
                 <div style={{ display: "grid", gap: 10 }}>
                   {[
@@ -1187,70 +1339,6 @@ export default function WchrPoiReportsAdminPage() {
                   ))}
                 </div>
 
-                <div>
-                  <h3
-                    style={{
-                      margin: "8px 0 10px",
-                      fontSize: 16,
-                      fontWeight: 800,
-                      color: "#0f172a",
-                    }}
-                  >
-                    Inspection Results
-                  </h3>
-
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {(Array.isArray(selectedReport.inspectionResults)
-                      ? selectedReport.inspectionResults
-                      : []
-                    ).map((item, index) => {
-                      const failed =
-                        String(item?.result || "").toLowerCase() === "no";
-
-                      return (
-                        <div
-                          key={index}
-                          style={{
-                            border: `1px solid ${failed ? "#fecdd3" : "#dbeafe"}`,
-                            borderRadius: 14,
-                            padding: "10px 12px",
-                            background: failed ? "#fff1f2" : "#f8fbff",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 800,
-                              color: failed ? "#9f1239" : "#64748b",
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            Item {item?.itemNumber || index + 1}
-                          </div>
-                          <div
-                            style={{
-                              marginTop: 4,
-                              fontWeight: 700,
-                              color: "#0f172a",
-                            }}
-                          >
-                            {safeValue(item?.label)}
-                          </div>
-                          <div
-                            style={{
-                              marginTop: 6,
-                              fontWeight: 800,
-                              color: failed ? "#9f1239" : "#065f46",
-                            }}
-                          >
-                            Result: {safeValue(item?.result)}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 <div
                   style={{
                     display: "flex",
@@ -1264,9 +1352,7 @@ export default function WchrPoiReportsAdminPage() {
                     onClick={handleArchive}
                     disabled={archivingId === selectedReport.id}
                   >
-                    {archivingId === selectedReport.id
-                      ? "Archiving..."
-                      : "Archive"}
+                    {archivingId === selectedReport.id ? "Archiving..." : "Archive"}
                   </ActionButton>
 
                   <ActionButton
@@ -1274,9 +1360,7 @@ export default function WchrPoiReportsAdminPage() {
                     onClick={handleDelete}
                     disabled={deletingId === selectedReport.id}
                   >
-                    {deletingId === selectedReport.id
-                      ? "Deleting..."
-                      : "Delete"}
+                    {deletingId === selectedReport.id ? "Deleting..." : "Delete"}
                   </ActionButton>
                 </div>
               </div>
@@ -1302,15 +1386,6 @@ export default function WchrPoiReportsAdminPage() {
                     >
                       Edit WCHR POI
                     </h2>
-                    <p
-                      style={{
-                        margin: "4px 0 0",
-                        fontSize: 13,
-                        color: "#64748b",
-                      }}
-                    >
-                      Update inspection details and follow-up notes.
-                    </p>
                   </div>
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1326,9 +1401,7 @@ export default function WchrPoiReportsAdminPage() {
                       onClick={handleSaveEdits}
                       disabled={savingEditId === selectedReport.id}
                     >
-                      {savingEditId === selectedReport.id
-                        ? "Saving..."
-                        : "Save Edits"}
+                      {savingEditId === selectedReport.id ? "Saving..." : "Save Edits"}
                     </ActionButton>
                   </div>
                 </div>
@@ -1355,9 +1428,7 @@ export default function WchrPoiReportsAdminPage() {
                     <TextInput
                       type="date"
                       value={editData.date}
-                      onChange={(e) =>
-                        handleEditField("date", e.target.value)
-                      }
+                      onChange={(e) => handleEditField("date", e.target.value)}
                     />
                   </div>
 
@@ -1366,9 +1437,7 @@ export default function WchrPoiReportsAdminPage() {
                     <TextInput
                       type="time"
                       value={editData.time}
-                      onChange={(e) =>
-                        handleEditField("time", e.target.value)
-                      }
+                      onChange={(e) => handleEditField("time", e.target.value)}
                     />
                   </div>
 
@@ -1376,9 +1445,7 @@ export default function WchrPoiReportsAdminPage() {
                     <FieldLabel>Location</FieldLabel>
                     <SelectInput
                       value={editData.location}
-                      onChange={(e) =>
-                        handleEditField("location", e.target.value)
-                      }
+                      onChange={(e) => handleEditField("location", e.target.value)}
                     >
                       <option value="">Select location</option>
                       <option value="Gate">Gate</option>
@@ -1387,59 +1454,6 @@ export default function WchrPoiReportsAdminPage() {
                       <option value="Curbside">Curbside</option>
                       <option value="Other">Other</option>
                     </SelectInput>
-                  </div>
-
-                  <div>
-                    <FieldLabel>Total Inventory</FieldLabel>
-                    <TextInput
-                      value={editData.totalInventory}
-                      onChange={(e) =>
-                        handleEditField("totalInventory", e.target.value)
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Total WCHRs Inspected</FieldLabel>
-                    <TextInput
-                      value={editData.totalWchrsInspected}
-                      onChange={(e) =>
-                        handleEditField("totalWchrsInspected", e.target.value)
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Total WCHRs Available</FieldLabel>
-                    <TextInput
-                      value={editData.totalWchrsAvailable}
-                      onChange={(e) =>
-                        handleEditField("totalWchrsAvailable", e.target.value)
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Any INOP WCHR</FieldLabel>
-                    <SelectInput
-                      value={editData.anyInopWchr}
-                      onChange={(e) =>
-                        handleEditField("anyInopWchr", e.target.value)
-                      }
-                    >
-                      <option value="no">No</option>
-                      <option value="yes">Yes</option>
-                    </SelectInput>
-                  </div>
-
-                  <div>
-                    <FieldLabel>Status</FieldLabel>
-                    <TextInput
-                      value={editData.status}
-                      onChange={(e) =>
-                        handleEditField("status", e.target.value)
-                      }
-                    />
                   </div>
                 </div>
 
@@ -1581,6 +1595,362 @@ export default function WchrPoiReportsAdminPage() {
           </PageCard>
         )}
       </div>
+
+      {selectedUnitCase && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 20,
+          }}
+          onClick={() => setSelectedUnitCase(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 760,
+              maxHeight: "90vh",
+              overflowY: "auto",
+              background: "#ffffff",
+              borderRadius: 24,
+              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              border: "1px solid #e2e8f0",
+              overflowX: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "18px 20px",
+                background:
+                  String(selectedUnitCase.caseStatus || "").toLowerCase() === "closed"
+                    ? "#ecfdf5"
+                    : "#fff1f2",
+                borderBottom:
+                  String(selectedUnitCase.caseStatus || "").toLowerCase() === "closed"
+                    ? "1px solid #a7f3d0"
+                    : "1px solid #fecdd3",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color:
+                    String(selectedUnitCase.caseStatus || "").toLowerCase() === "closed"
+                      ? "#065f46"
+                      : "#9f1239",
+                }}
+              >
+                Out of Service Reported · {selectedUnitCase.unitNumber}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "#475569",
+                }}
+              >
+                {selectedUnitCase.reportDate || "—"} · {selectedUnitCase.reportTime || "—"} ·{" "}
+                {selectedUnitCase.location || "—"}
+              </div>
+            </div>
+
+            <div style={{ padding: 20, display: "grid", gap: 16 }}>
+              <div
+                style={{
+                  background: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: "#9a3412",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Damage reported
+                </div>
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: "#7c2d12",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {safeValue(selectedUnitCase.damageDetails)}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <div>
+                  <FieldLabel>Duty Manager Taking Case</FieldLabel>
+                  <TextInput
+                    value={selectedUnitCase.takenBy}
+                    onChange={(e) => handleUnitCaseField("takenBy", e.target.value)}
+                    placeholder="Who is taking this case?"
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Case Status</FieldLabel>
+                  <SelectInput
+                    value={selectedUnitCase.caseStatus}
+                    onChange={(e) =>
+                      handleUnitCaseField("caseStatus", e.target.value)
+                    }
+                  >
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="closed">Closed</option>
+                  </SelectInput>
+                </div>
+
+                <div>
+                  <FieldLabel>Back On Service</FieldLabel>
+                  <SelectInput
+                    value={selectedUnitCase.backOnService}
+                    onChange={(e) =>
+                      handleUnitCaseField("backOnService", e.target.value)
+                    }
+                  >
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </SelectInput>
+                </div>
+
+                <div>
+                  <FieldLabel>Return Date</FieldLabel>
+                  <TextInput
+                    type="date"
+                    value={selectedUnitCase.returnDate}
+                    onChange={(e) =>
+                      handleUnitCaseField("returnDate", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Maintenance Cost</FieldLabel>
+                  <TextInput
+                    type="number"
+                    step="0.01"
+                    value={selectedUnitCase.maintenanceCost}
+                    onChange={(e) =>
+                      handleUnitCaseField("maintenanceCost", e.target.value)
+                    }
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>What Was Done</FieldLabel>
+                <TextArea
+                  value={selectedUnitCase.workPerformed}
+                  onChange={(e) =>
+                    handleUnitCaseField("workPerformed", e.target.value)
+                  }
+                  placeholder="Explain what was repaired or serviced"
+                />
+              </div>
+
+              <div>
+                <FieldLabel>What Was Changed</FieldLabel>
+                <TextArea
+                  value={selectedUnitCase.partsChanged}
+                  onChange={(e) =>
+                    handleUnitCaseField("partsChanged", e.target.value)
+                  }
+                  placeholder="Parts replaced, adjusted, or removed"
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Case Notes</FieldLabel>
+                <TextArea
+                  value={selectedUnitCase.notes}
+                  onChange={(e) =>
+                    handleUnitCaseField("notes", e.target.value)
+                  }
+                  placeholder="Additional follow-up notes"
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <div
+                  style={{
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                    borderRadius: 14,
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "#64748b",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Reported By
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {safeValue(selectedUnitCase.inspectorName)}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                    borderRadius: 14,
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "#64748b",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Closed By
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {safeValue(selectedUnitCase.closedBy)}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                    borderRadius: 14,
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "#64748b",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Closed At
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {safeValue(selectedUnitCase.closedAt)}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                    borderRadius: 14,
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "#64748b",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Maintenance Cost
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {formatMoney(selectedUnitCase.maintenanceCost)}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                }}
+              >
+                <ActionButton
+                  variant="secondary"
+                  onClick={() => setSelectedUnitCase(null)}
+                >
+                  Cancel
+                </ActionButton>
+
+                <ActionButton
+                  variant="success"
+                  onClick={handleSaveUnitCase}
+                  disabled={savingUnitCase}
+                >
+                  {savingUnitCase ? "Saving..." : "Save Case"}
+                </ActionButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
