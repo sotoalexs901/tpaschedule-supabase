@@ -107,25 +107,13 @@ function DashboardEntry() {
 
 function UpdatePrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
+  const [updateReady, setUpdateReady] = useState(false);
 
   useEffect(() => {
     let intervalId = null;
-    let stopped = false;
+    let cancelled = false;
 
     const STORAGE_KEY = "tpa_app_version";
-
-    async function removeOldServiceWorkers() {
-      if (!("serviceWorker" in navigator)) return;
-
-      try {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const registration of registrations) {
-          await registration.unregister();
-        }
-      } catch (error) {
-        console.error("Error removing service workers:", error);
-      }
-    }
 
     async function checkVersion() {
       try {
@@ -137,7 +125,6 @@ function UpdatePrompt() {
 
         const data = await response.json();
         const incomingVersion = String(data?.version || "").trim();
-
         if (!incomingVersion) return;
 
         const savedVersion = localStorage.getItem(STORAGE_KEY);
@@ -148,7 +135,7 @@ function UpdatePrompt() {
         }
 
         if (savedVersion !== incomingVersion) {
-          localStorage.setItem(STORAGE_KEY, incomingVersion);
+          setUpdateReady(true);
           setShowPrompt(true);
         }
       } catch (error) {
@@ -156,128 +143,189 @@ function UpdatePrompt() {
       }
     }
 
-    async function start() {
-      await removeOldServiceWorkers();
-      if (stopped) return;
+    checkVersion();
 
-      await checkVersion();
-      if (stopped) return;
+    intervalId = window.setInterval(() => {
+      if (!cancelled) checkVersion();
+    }, 60000);
 
-      intervalId = window.setInterval(checkVersion, 60000);
-    }
+    const onFocus = () => {
+      if (!cancelled) checkVersion();
+    };
 
-    start();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && !cancelled) {
+        checkVersion();
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      stopped = true;
+      cancelled = true;
       if (intervalId) window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
-  if (!showPrompt) return null;
+  const handleLater = () => {
+    setShowPrompt(false);
+  };
+
+  const handleRefresh = async () => {
+    try {
+      const response = await fetch(`/version.json?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const incomingVersion = String(data?.version || "").trim();
+        if (incomingVersion) {
+          localStorage.setItem("tpa_app_version", incomingVersion);
+        }
+      }
+    } catch (error) {
+      console.error("Could not refresh saved version before reload:", error);
+    }
+
+    window.location.reload();
+  };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15,23,42,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 99999,
-        padding: 20,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 520,
-          background: "#ffffff",
-          borderRadius: 24,
-          boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
-          border: "1px solid #e2e8f0",
-          overflow: "hidden",
-        }}
-      >
+    <>
+      {updateReady && !showPrompt && (
+        <button
+          type="button"
+          onClick={() => setShowPrompt(true)}
+          style={{
+            position: "fixed",
+            right: 20,
+            bottom: 20,
+            zIndex: 9999,
+            border: "none",
+            background:
+              "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+            color: "#fff",
+            borderRadius: 999,
+            padding: "14px 18px",
+            fontWeight: 800,
+            fontSize: 14,
+            cursor: "pointer",
+            boxShadow: "0 16px 30px rgba(23,105,170,0.28)",
+          }}
+        >
+          Refresh app
+        </button>
+      )}
+
+      {showPrompt && (
         <div
           style={{
-            padding: "18px 20px",
-            background: "#edf7ff",
-            borderBottom: "1px solid #cfe7fb",
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 99999,
+            padding: 20,
           }}
         >
           <div
             style={{
-              fontSize: 18,
-              fontWeight: 900,
-              color: "#1769aa",
-              letterSpacing: "-0.02em",
+              width: "100%",
+              maxWidth: 540,
+              background: "#ffffff",
+              borderRadius: 24,
+              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              border: "1px solid #e2e8f0",
+              overflow: "hidden",
             }}
           >
-            New update available
+            <div
+              style={{
+                padding: "18px 20px",
+                background: "#edf7ff",
+                borderBottom: "1px solid #cfe7fb",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: "#1769aa",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                App update ready
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "22px 20px 18px",
+                fontSize: 15,
+                lineHeight: 1.65,
+                color: "#0f172a",
+                fontWeight: 700,
+              }}
+            >
+              A newer version of TPA Schedule is available. Refresh the app to
+              load the latest changes without logging out manually.
+            </div>
+
+            <div
+              style={{
+                padding: "0 20px 20px",
+                display: "flex",
+                justifyContent: "center",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleLater}
+                style={{
+                  border: "1px solid #cfe7fb",
+                  background: "#ffffff",
+                  color: "#1769aa",
+                  borderRadius: 14,
+                  padding: "12px 18px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Later
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRefresh}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                  color: "#fff",
+                  borderRadius: 14,
+                  padding: "12px 22px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                }}
+              >
+                Refresh app
+              </button>
+            </div>
           </div>
         </div>
-
-        <div
-          style={{
-            padding: "22px 20px 18px",
-            fontSize: 15,
-            lineHeight: 1.65,
-            color: "#0f172a",
-            fontWeight: 700,
-          }}
-        >
-          A new version of TPA Schedule is ready. Refresh to load the latest changes.
-        </div>
-
-        <div
-          style={{
-            padding: "0 20px 20px",
-            display: "flex",
-            justifyContent: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setShowPrompt(false)}
-            style={{
-              border: "1px solid #cfe7fb",
-              background: "#ffffff",
-              color: "#1769aa",
-              borderRadius: 14,
-              padding: "12px 18px",
-              fontWeight: 800,
-              fontSize: 14,
-              cursor: "pointer",
-            }}
-          >
-            Later
-          </button>
-
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            style={{
-              border: "none",
-              background:
-                "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-              color: "#fff",
-              borderRadius: 14,
-              padding: "12px 22px",
-              fontWeight: 800,
-              fontSize: 14,
-              cursor: "pointer",
-              boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
-            }}
-          >
-            Refresh now
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
