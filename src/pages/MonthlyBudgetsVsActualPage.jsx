@@ -170,6 +170,15 @@ function getMonthDateRange(monthValue) {
   return { from: start, to: end };
 }
 
+function isFullMonthRange(monthValue, fromDate, toDate) {
+  const monthRange = getMonthDateRange(monthValue);
+
+  return (
+    String(fromDate || "") === String(monthRange.from || "") &&
+    String(toDate || "") === String(monthRange.to || "")
+  );
+}
+
 function toMinutes(timeStr) {
   if (!timeStr) return null;
   const [h, m] = String(timeStr).split(":").map(Number);
@@ -641,6 +650,9 @@ export default function MonthlyBudgetsVsActualPage() {
     if (!selectedMonth) return;
 
     const monthRange = getMonthDateRange(selectedMonth);
+    const today = startOfTodayString();
+    const adjustedTo =
+      monthRange.to && monthRange.to > today ? today : monthRange.to;
 
     setDateRange((prev) => ({
       from:
@@ -650,7 +662,7 @@ export default function MonthlyBudgetsVsActualPage() {
       to:
         prev.to && isSameMonth(prev.to, selectedMonth)
           ? prev.to
-          : monthRange.to,
+          : adjustedTo,
     }));
   }, [selectedMonth]);
 
@@ -802,7 +814,10 @@ export default function MonthlyBudgetsVsActualPage() {
   const allMonthSummaries = useMemo(() => {
     return monthOptions.map((monthItem) => {
       const monthRange = getMonthDateRange(monthItem.value);
-      const rows = buildDetailRowsForMonth(monthItem.value, monthRange.from, monthRange.to);
+      const today = startOfTodayString();
+      const cappedTo = monthRange.to > today ? today : monthRange.to;
+
+      const rows = buildDetailRowsForMonth(monthItem.value, monthRange.from, cappedTo);
 
       const rawBudget = rows.reduce((sum, row) => sum + Number(row.budget || 0), 0);
       const actual = rows.reduce((sum, row) => sum + Number(row.actual || 0), 0);
@@ -837,6 +852,11 @@ export default function MonthlyBudgetsVsActualPage() {
 
   const selectedMonthAirlineSummaryAll = useMemo(() => {
     const map = {};
+    const fullMonthSelected = isFullMonthRange(
+      selectedMonth,
+      dateRange.from,
+      dateRange.to
+    );
 
     selectedMonthDetailRowsAll.forEach((row) => {
       const airline = row.airline || "Unknown";
@@ -871,8 +891,9 @@ export default function MonthlyBudgetsVsActualPage() {
 
     return Object.values(map).map((row) => {
       const override = overrideMap[`${selectedMonth}__${row.airline}`];
+
       const finalBudget =
-        override && Number(override.budgetHours || 0) > 0
+        fullMonthSelected && override && Number(override.budgetHours || 0) > 0
           ? Number(override.budgetHours)
           : row.rawBudget;
 
@@ -887,9 +908,17 @@ export default function MonthlyBudgetsVsActualPage() {
         approvedByText: Array.from(row.approvedBySet).join(", "),
         overtimeReasonText: Array.from(row.overtimeReasonsSet).join(" | "),
         overrideDocId: override?.id || "",
+        isUsingMonthlyOverride:
+          fullMonthSelected && override && Number(override.budgetHours || 0) > 0,
       };
     });
-  }, [selectedMonthDetailRowsAll, overrideMap, selectedMonth]);
+  }, [
+    selectedMonthDetailRowsAll,
+    overrideMap,
+    selectedMonth,
+    dateRange.from,
+    dateRange.to,
+  ]);
 
   const filteredAirlineSummary = useMemo(() => {
     let rows = [...selectedMonthAirlineSummaryAll];
@@ -948,6 +977,11 @@ export default function MonthlyBudgetsVsActualPage() {
 
     if (!selectedMonth || !airline || !nextBudget) {
       setStatusMessage("Please enter a valid final monthly budget.");
+      return;
+    }
+
+    if (!isFullMonthRange(selectedMonth, dateRange.from, dateRange.to)) {
+      setStatusMessage("Monthly final budget can only be edited when the full month is selected.");
       return;
     }
 
@@ -1351,7 +1385,13 @@ export default function MonthlyBudgetsVsActualPage() {
                   }))
                 }
                 min={dateRange.from || getMonthDateRange(selectedMonth).from}
-                max={getMonthDateRange(selectedMonth).to}
+                max={
+                  (() => {
+                    const monthRange = getMonthDateRange(selectedMonth);
+                    const today = startOfTodayString();
+                    return monthRange.to > today ? today : monthRange.to;
+                  })()
+                }
               />
             </div>
 
@@ -1409,7 +1449,19 @@ export default function MonthlyBudgetsVsActualPage() {
                         <strong>{row.airline}</strong>
                       </td>
                       <td style={tdStyle}>{formatHours(row.rawBudget)} hrs</td>
-                      <td style={tdStyle}>{formatHours(row.finalBudget)} hrs</td>
+                      <td style={tdStyle}>
+                        {formatHours(row.finalBudget)} hrs
+                        {!row.isUsingMonthlyOverride && (
+                          <div style={{ marginTop: 4 }}>
+                            {smallPill("Range budget", "blue")}
+                          </div>
+                        )}
+                        {row.isUsingMonthlyOverride && (
+                          <div style={{ marginTop: 4 }}>
+                            {smallPill("Monthly override", "green")}
+                          </div>
+                        )}
+                      </td>
                       <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
                       <td style={tdStyle}>
                         {row.variance >= 0
@@ -1449,9 +1501,24 @@ export default function MonthlyBudgetsVsActualPage() {
                               }))
                             }
                           />
+
+                          {!isFullMonthRange(selectedMonth, dateRange.from, dateRange.to) && (
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: "#b45309",
+                                fontWeight: 700,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              Monthly final budget can only be edited when the full month is selected.
+                            </div>
+                          )}
+
                           <ActionButton
                             variant="success"
                             onClick={() => saveMonthlyOverride(row.airline)}
+                            disabled={!isFullMonthRange(selectedMonth, dateRange.from, dateRange.to)}
                           >
                             Save Final Budget
                           </ActionButton>
