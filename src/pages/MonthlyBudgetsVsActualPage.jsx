@@ -5,8 +5,6 @@ import {
   addDoc,
   updateDoc,
   doc,
-  query,
-  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -137,6 +135,39 @@ function isOnOrBeforeToday(dateString) {
   if (!today) return false;
 
   return d.getTime() <= today.getTime();
+}
+
+function isDateWithinRange(dateString, fromDate, toDate) {
+  const d = parseDateSafe(dateString);
+  if (!d) return false;
+
+  const from = fromDate ? parseDateSafe(fromDate) : null;
+  const to = toDate ? parseDateSafe(toDate) : null;
+
+  if (from && d.getTime() < from.getTime()) return false;
+  if (to && d.getTime() > to.getTime()) return false;
+
+  return true;
+}
+
+function getMonthDateRange(monthValue) {
+  const [year, month] = String(monthValue || "").split("-").map(Number);
+  if (!year || !month) {
+    return {
+      from: "",
+      to: "",
+    };
+  }
+
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endDate = new Date(year, month, 0);
+
+  const end = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(endDate.getDate()).padStart(2, "0")}`;
+
+  return { from: start, to: end };
 }
 
 function toMinutes(timeStr) {
@@ -501,6 +532,11 @@ export default function MonthlyBudgetsVsActualPage() {
   const [sortBy, setSortBy] = useState("airline");
   const [sortDirection, setSortDirection] = useState("asc");
 
+  const [dateRange, setDateRange] = useState({
+    from: "",
+    to: "",
+  });
+
   const [showMonthlyDetails, setShowMonthlyDetails] = useState(false);
   const [showDailyDetail, setShowDailyDetail] = useState(false);
 
@@ -601,6 +637,23 @@ export default function MonthlyBudgetsVsActualPage() {
     }
   }, [monthOptions, selectedMonth]);
 
+  useEffect(() => {
+    if (!selectedMonth) return;
+
+    const monthRange = getMonthDateRange(selectedMonth);
+
+    setDateRange((prev) => ({
+      from:
+        prev.from && isSameMonth(prev.from, selectedMonth)
+          ? prev.from
+          : monthRange.from,
+      to:
+        prev.to && isSameMonth(prev.to, selectedMonth)
+          ? prev.to
+          : monthRange.to,
+    }));
+  }, [selectedMonth]);
+
   const dailyBudgetMap = useMemo(() => {
     const map = {};
     dailyBudgets.forEach((item) => {
@@ -641,10 +694,11 @@ export default function MonthlyBudgetsVsActualPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [approvedTimesheets, weeklyBudgets, dailyBudgets]);
 
-  function buildDetailRowsForMonth(monthValue) {
+  function buildDetailRowsForMonth(monthValue, fromDate = "", toDate = "") {
     const visibleApproved = approvedTimesheets.filter((row) => {
       if (!row.reportDate || !isOnOrBeforeToday(row.reportDate)) return false;
       if (!isSameMonth(row.reportDate, monthValue)) return false;
+      if (!isDateWithinRange(row.reportDate, fromDate, toDate)) return false;
       return true;
     });
 
@@ -747,7 +801,9 @@ export default function MonthlyBudgetsVsActualPage() {
 
   const allMonthSummaries = useMemo(() => {
     return monthOptions.map((monthItem) => {
-      const rows = buildDetailRowsForMonth(monthItem.value);
+      const monthRange = getMonthDateRange(monthItem.value);
+      const rows = buildDetailRowsForMonth(monthItem.value, monthRange.from, monthRange.to);
+
       const rawBudget = rows.reduce((sum, row) => sum + Number(row.budget || 0), 0);
       const actual = rows.reduce((sum, row) => sum + Number(row.actual || 0), 0);
       const variance = getVariance(rawBudget, actual);
@@ -769,8 +825,15 @@ export default function MonthlyBudgetsVsActualPage() {
 
   const selectedMonthDetailRowsAll = useMemo(() => {
     if (!selectedMonth) return [];
-    return buildDetailRowsForMonth(selectedMonth);
-  }, [selectedMonth, approvedTimesheets, dailyBudgetMap, weeklyBudgetMap]);
+    return buildDetailRowsForMonth(selectedMonth, dateRange.from, dateRange.to);
+  }, [
+    selectedMonth,
+    dateRange.from,
+    dateRange.to,
+    approvedTimesheets,
+    dailyBudgetMap,
+    weeklyBudgetMap,
+  ]);
 
   const selectedMonthAirlineSummaryAll = useMemo(() => {
     const map = {};
@@ -1005,7 +1068,8 @@ export default function MonthlyBudgetsVsActualPage() {
           }}
         >
           Summary by month, station totals, airline filters, sortable monthly detail,
-          collapsible daily department detail, and editable final monthly budget by airline.
+          collapsible daily department detail, editable final monthly budget by airline,
+          and range totals between selected dates.
         </p>
       </div>
 
@@ -1117,14 +1181,19 @@ export default function MonthlyBudgetsVsActualPage() {
                     <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>
                       Revenue
                     </div>
-                    <div style={{ marginTop: 3 }}>{smallPill(`${formatHours(month.revenue)} hrs`, "green")}</div>
+                    <div style={{ marginTop: 3 }}>
+                      {smallPill(`${formatHours(month.revenue)} hrs`, "green")}
+                    </div>
                   </div>
                   <div>
                     <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>
                       Overtime
                     </div>
                     <div style={{ marginTop: 3 }}>
-                      {smallPill(`${formatHours(month.overtime)} hrs`, month.overtime > 0 ? "red" : "default")}
+                      {smallPill(
+                        `${formatHours(month.overtime)} hrs`,
+                        month.overtime > 0 ? "red" : "default"
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1163,7 +1232,7 @@ export default function MonthlyBudgetsVsActualPage() {
                 color: "#64748b",
               }}
             >
-              Click below to open monthly airline detail.
+              Totals shown for {formatDateLabel(dateRange.from)} to {formatDateLabel(dateRange.to)}.
             </p>
           </div>
 
@@ -1212,7 +1281,7 @@ export default function MonthlyBudgetsVsActualPage() {
                 ? "1fr"
                 : isTablet
                 ? "repeat(2, minmax(0, 1fr))"
-                : "repeat(4, minmax(0, 1fr))",
+                : "repeat(6, minmax(0, 1fr))",
               gap: 14,
             }}
           >
@@ -1252,6 +1321,38 @@ export default function MonthlyBudgetsVsActualPage() {
                 <option value="asc">Ascending</option>
                 <option value="desc">Descending</option>
               </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>From Date</FieldLabel>
+              <TextInput
+                type="date"
+                value={dateRange.from}
+                onChange={(e) =>
+                  setDateRange((prev) => ({
+                    ...prev,
+                    from: e.target.value,
+                  }))
+                }
+                min={getMonthDateRange(selectedMonth).from}
+                max={dateRange.to || getMonthDateRange(selectedMonth).to}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>To Date</FieldLabel>
+              <TextInput
+                type="date"
+                value={dateRange.to}
+                onChange={(e) =>
+                  setDateRange((prev) => ({
+                    ...prev,
+                    to: e.target.value,
+                  }))
+                }
+                min={dateRange.from || getMonthDateRange(selectedMonth).from}
+                max={getMonthDateRange(selectedMonth).to}
+              />
             </div>
 
             <div style={{ display: "flex", alignItems: "end" }}>
