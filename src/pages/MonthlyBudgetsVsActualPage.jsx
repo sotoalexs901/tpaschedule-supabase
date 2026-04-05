@@ -1,9 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  doc,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
-/* -------------------- Normalizers (aligned with your existing pages) -------------------- */
+/* -------------------- Normalizers -------------------- */
 
 function normalizeAirlineName(name) {
   const value = String(name || "").trim();
@@ -81,28 +89,6 @@ function startOfTodayString() {
   ).padStart(2, "0")}`;
 }
 
-function startOfCurrentMonthString() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-}
-
-function getMonthOptions() {
-  const now = new Date();
-  const options = [];
-
-  for (let i = 0; i < 12; i += 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleString("en-US", {
-      month: "long",
-      year: "numeric",
-    });
-    options.push({ value, label });
-  }
-
-  return options;
-}
-
 function parseDateSafe(value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -123,7 +109,7 @@ function getWeekStart(dateString) {
   const d = parseDateSafe(dateString);
   if (!d) return "";
 
-  const day = d.getDay(); // 0 sunday
+  const day = d.getDay();
   const diffToMonday = day === 0 ? -6 : 1 - day;
   const monday = new Date(d);
   monday.setDate(d.getDate() + diffToMonday);
@@ -151,10 +137,6 @@ function isOnOrBeforeToday(dateString) {
   if (!today) return false;
 
   return d.getTime() <= today.getTime();
-}
-
-function sumHoursFromRows(rows = []) {
-  return rows.reduce((sum, row) => sum + calculateRowHours(row), 0);
 }
 
 function toMinutes(timeStr) {
@@ -193,6 +175,10 @@ function calculateRowHours(row) {
   return minutes / 60;
 }
 
+function sumHoursFromRows(rows = []) {
+  return rows.reduce((sum, row) => sum + calculateRowHours(row), 0);
+}
+
 function formatHours(value) {
   return Number(value || 0).toFixed(2);
 }
@@ -212,7 +198,52 @@ function getOvertime(budget, actual) {
     : 0;
 }
 
-/* -------------------- Shared UI -------------------- */
+function getMonthOptionsFromData(approvedTimesheets) {
+  const set = new Set();
+
+  approvedTimesheets.forEach((row) => {
+    const d = parseDateSafe(row.reportDate);
+    if (!d) return;
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    set.add(value);
+  });
+
+  if (!set.size) {
+    const now = new Date();
+    set.add(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+  }
+
+  return Array.from(set)
+    .sort((a, b) => b.localeCompare(a))
+    .map((value) => {
+      const [year, month] = value.split("-").map(Number);
+      const d = new Date(year, month - 1, 1);
+      return {
+        value,
+        label: d.toLocaleString("en-US", { month: "long", year: "numeric" }),
+      };
+    });
+}
+
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
+/* -------------------- UI helpers -------------------- */
 
 function PageCard({ children, style = {} }) {
   return (
@@ -286,28 +317,62 @@ function SelectInput(props) {
   );
 }
 
+function ActionButton({
+  children,
+  onClick,
+  variant = "primary",
+  disabled = false,
+  type = "button",
+}) {
+  const styles = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    success: {
+      background: "#16a34a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
+        whiteSpace: "nowrap",
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function InfoCard({ label, value, tone = "default" }) {
   const tones = {
-    default: {
-      bg: "#f8fbff",
-      border: "#dbeafe",
-      color: "#0f172a",
-    },
-    green: {
-      bg: "#ecfdf5",
-      border: "#a7f3d0",
-      color: "#166534",
-    },
-    red: {
-      bg: "#fff1f2",
-      border: "#fecdd3",
-      color: "#9f1239",
-    },
-    amber: {
-      bg: "#fff7ed",
-      border: "#fdba74",
-      color: "#9a3412",
-    },
+    default: { bg: "#f8fbff", border: "#dbeafe", color: "#0f172a" },
+    green: { bg: "#ecfdf5", border: "#a7f3d0", color: "#166534" },
+    red: { bg: "#fff1f2", border: "#fecdd3", color: "#9f1239" },
+    blue: { bg: "#edf7ff", border: "#cfe7fb", color: "#1769aa" },
   };
 
   const current = tones[tone] || tones.default;
@@ -347,29 +412,6 @@ function InfoCard({ label, value, tone = "default" }) {
   );
 }
 
-function thStyle(extra = {}) {
-  return {
-    padding: "14px 14px",
-    fontSize: 12,
-    fontWeight: 800,
-    color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    whiteSpace: "nowrap",
-    textAlign: "left",
-    borderBottom: "1px solid #e2e8f0",
-    ...extra,
-  };
-}
-
-const tdStyle = {
-  padding: "14px",
-  borderBottom: "1px solid #eef2f7",
-  verticalAlign: "top",
-  color: "#0f172a",
-  fontSize: 14,
-};
-
 function smallPill(text, tone = "default") {
   const tones = {
     default: {
@@ -386,11 +428,6 @@ function smallPill(text, tone = "default") {
       background: "#fff1f2",
       color: "#9f1239",
       border: "#fecdd3",
-    },
-    amber: {
-      background: "#fff7ed",
-      color: "#9a3412",
-      border: "#fdba74",
     },
     blue: {
       background: "#edf7ff",
@@ -420,177 +457,200 @@ function smallPill(text, tone = "default") {
   );
 }
 
-/* -------------------- Main Page -------------------- */
+function thStyle(extra = {}) {
+  return {
+    padding: "14px 14px",
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    whiteSpace: "nowrap",
+    textAlign: "left",
+    borderBottom: "1px solid #e2e8f0",
+    ...extra,
+  };
+}
+
+const tdStyle = {
+  padding: "14px",
+  borderBottom: "1px solid #eef2f7",
+  verticalAlign: "top",
+  color: "#0f172a",
+  fontSize: 14,
+};
+
+/* -------------------- Page -------------------- */
 
 export default function MonthlyBudgetsVsActualPage() {
   const { user } = useUser();
+  const { isMobile, isTablet } = useViewport();
 
   const canAccess = user?.role === "station_manager";
 
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const monthOptions = useMemo(() => getMonthOptions(), []);
-  const [filters, setFilters] = useState({
-    month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
-    airline: "all",
-    department: "all",
-  });
-
   const [weeklyBudgets, setWeeklyBudgets] = useState([]);
   const [dailyBudgets, setDailyBudgets] = useState([]);
   const [approvedTimesheets, setApprovedTimesheets] = useState([]);
+  const [monthlyOverrides, setMonthlyOverrides] = useState([]);
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [weeklySnap, dailySnap, timesheetSnap] = await Promise.all([
-          getDocs(collection(db, "airlineBudgets")),
-          getDocs(collection(db, "airlineDailyBudgets")),
-          getDocs(collection(db, "timesheet_reports")),
-        ]);
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const [selectedAirline, setSelectedAirline] = useState("all");
+  const [sortBy, setSortBy] = useState("airline");
+  const [sortDirection, setSortDirection] = useState("asc");
 
-        const weeklyRows = weeklySnap.docs.map((d) => {
+  const [showMonthlyDetails, setShowMonthlyDetails] = useState(false);
+  const [showDailyDetail, setShowDailyDetail] = useState(false);
+
+  const [editingOverride, setEditingOverride] = useState({});
+
+  async function loadData() {
+    try {
+      const [weeklySnap, dailySnap, timesheetSnap, overridesSnap] = await Promise.all([
+        getDocs(collection(db, "airlineBudgets")),
+        getDocs(collection(db, "airlineDailyBudgets")),
+        getDocs(collection(db, "timesheet_reports")),
+        getDocs(collection(db, "monthlyBudgetOverrides")),
+      ]);
+
+      const weeklyRows = weeklySnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          airline: normalizeAirlineName(data.airline),
+          department: normalizeDepartmentName(data.department),
+          weekStart: String(data.weekStart || ""),
+          budgetHours: Number(data.budgetHours || 0),
+        };
+      });
+
+      const dailyRows = dailySnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          airline: normalizeAirlineName(data.airline),
+          date: String(data.date || ""),
+          dailyBudgetHours:
+            data.dailyBudgetHours === null ||
+            data.dailyBudgetHours === undefined ||
+            data.dailyBudgetHours === ""
+              ? 0
+              : Number(data.dailyBudgetHours),
+        };
+      });
+
+      const approvedRows = timesheetSnap.docs
+        .map((d) => {
           const data = d.data();
+          const totalHours =
+            data.totalHours !== undefined && data.totalHours !== null
+              ? Number(data.totalHours)
+              : sumHoursFromRows(data.rows || []);
+
           return {
             id: d.id,
+            ...data,
             airline: normalizeAirlineName(data.airline),
-            department: normalizeDepartmentName(data.department),
-            weekStart: String(data.weekStart || ""),
-            budgetHours: Number(data.budgetHours || 0),
+            department: normalizeDepartmentName(data.department || data.airline),
+            reportDate: String(data.reportDate || ""),
+            status: String(data.status || "").toLowerCase(),
+            totalHours,
+            approvedByName: String(data.approvedByName || "").trim(),
+            overBudgetReason: String(data.overBudgetReason || "").trim(),
           };
-        });
+        })
+        .filter((row) => row.status === "approved");
 
-        const dailyRows = dailySnap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            airline: normalizeAirlineName(data.airline),
-            date: String(data.date || ""),
-            dailyBudgetHours:
-              data.dailyBudgetHours === null ||
-              data.dailyBudgetHours === undefined ||
-              data.dailyBudgetHours === ""
-                ? 0
-                : Number(data.dailyBudgetHours),
-          };
-        });
+      const overridesRows = overridesSnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          month: String(data.month || ""),
+          airline: normalizeAirlineName(data.airline),
+          budgetHours: Number(data.budgetHours || 0),
+        };
+      });
 
-        const approvedRows = timesheetSnap.docs
-          .map((d) => {
-            const data = d.data();
-
-            const totalHours =
-              data.totalHours !== undefined && data.totalHours !== null
-                ? Number(data.totalHours)
-                : sumHoursFromRows(data.rows || []);
-
-            return {
-              id: d.id,
-              ...data,
-              airline: normalizeAirlineName(data.airline),
-              department: normalizeDepartmentName(data.department || data.airline),
-              reportDate: String(data.reportDate || ""),
-              status: String(data.status || "").toLowerCase(),
-              totalHours,
-              approvedByName: String(data.approvedByName || "").trim(),
-              overBudgetReason: String(data.overBudgetReason || "").trim(),
-            };
-          })
-          .filter((row) => row.status === "approved");
-
-        setWeeklyBudgets(weeklyRows);
-        setDailyBudgets(dailyRows);
-        setApprovedTimesheets(approvedRows);
-      } catch (err) {
-        console.error("Error loading monthly budgets vs actual:", err);
-        setStatusMessage("Could not load Monthly Budgets vs Actual report.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    if (canAccess) {
-      loadData();
-    } else {
+      setWeeklyBudgets(weeklyRows);
+      setDailyBudgets(dailyRows);
+      setApprovedTimesheets(approvedRows);
+      setMonthlyOverrides(overridesRows);
+    } catch (err) {
+      console.error("Error loading monthly budgets vs actual:", err);
+      setStatusMessage("Could not load Monthly Budgets vs Actual report.");
+    } finally {
       setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    if (!canAccess) {
+      setLoading(false);
+      return;
+    }
+    loadData();
   }, [canAccess]);
+
+  const monthOptions = useMemo(() => getMonthOptionsFromData(approvedTimesheets), [approvedTimesheets]);
+
+  useEffect(() => {
+    if (!selectedMonth && monthOptions.length) {
+      setSelectedMonth(monthOptions[0].value);
+    }
+  }, [monthOptions, selectedMonth]);
 
   const dailyBudgetMap = useMemo(() => {
     const map = {};
-
     dailyBudgets.forEach((item) => {
       const airline = normalizeAirlineName(item.airline);
       const date = String(item.date || "").trim();
       if (!airline || !date) return;
       map[`${airline}__${date}`] = Number(item.dailyBudgetHours || 0);
     });
-
     return map;
   }, [dailyBudgets]);
 
   const weeklyBudgetMap = useMemo(() => {
     const map = {};
-
     weeklyBudgets.forEach((item) => {
       const airline = normalizeAirlineName(item.airline);
       const department = normalizeDepartmentName(item.department);
       const weekStart = String(item.weekStart || "").trim();
-
       if (!airline || !department || !weekStart) return;
-
       map[`${airline}__${department}__${weekStart}`] = Number(item.budgetHours || 0);
     });
-
     return map;
   }, [weeklyBudgets]);
 
+  const overrideMap = useMemo(() => {
+    const map = {};
+    monthlyOverrides.forEach((item) => {
+      if (!item.month || !item.airline) return;
+      map[`${item.month}__${item.airline}`] = item;
+    });
+    return map;
+  }, [monthlyOverrides]);
+
   const allAirlines = useMemo(() => {
     const set = new Set();
-
+    approvedTimesheets.forEach((row) => row.airline && set.add(row.airline));
     weeklyBudgets.forEach((row) => row.airline && set.add(row.airline));
     dailyBudgets.forEach((row) => row.airline && set.add(row.airline));
-    approvedTimesheets.forEach((row) => row.airline && set.add(row.airline));
-
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [weeklyBudgets, dailyBudgets, approvedTimesheets]);
+  }, [approvedTimesheets, weeklyBudgets, dailyBudgets]);
 
-  const allDepartments = useMemo(() => {
-    const set = new Set();
-
-    weeklyBudgets.forEach((row) => row.department && set.add(prettifyDepartment(row.department)));
-    approvedTimesheets.forEach((row) =>
-      row.department && set.add(prettifyDepartment(row.department))
-    );
-
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [weeklyBudgets, approvedTimesheets]);
-
-  const visibleApprovedTimesheets = useMemo(() => {
-    return approvedTimesheets.filter((row) => {
+  function buildDetailRowsForMonth(monthValue) {
+    const visibleApproved = approvedTimesheets.filter((row) => {
       if (!row.reportDate || !isOnOrBeforeToday(row.reportDate)) return false;
-      if (!isSameMonth(row.reportDate, filters.month)) return false;
-
-      if (filters.airline !== "all" && row.airline !== filters.airline) {
-        return false;
-      }
-
-      if (
-        filters.department !== "all" &&
-        prettifyDepartment(row.department) !== filters.department
-      ) {
-        return false;
-      }
-
+      if (!isSameMonth(row.reportDate, monthValue)) return false;
       return true;
     });
-  }, [approvedTimesheets, filters]);
 
-  const detailRows = useMemo(() => {
     const map = {};
 
-    visibleApprovedTimesheets.forEach((report) => {
+    visibleApproved.forEach((report) => {
       const airline = normalizeAirlineName(report.airline);
       const department = normalizeDepartmentName(report.department);
       const reportDate = String(report.reportDate || "").trim();
@@ -604,11 +664,8 @@ export default function MonthlyBudgetsVsActualPage() {
       );
 
       const fallbackDepartmentDailyBudget = weeklyBudget > 0 ? weeklyBudget / 7 : 0;
-
-      // Important:
-      // - If there is a daily airline budget, we still keep department budget from weekly if available.
-      // - If department weekly budget is missing, fallback to airline daily budget only when department breakdown doesn't exist.
-      const budget = fallbackDepartmentDailyBudget > 0 ? fallbackDepartmentDailyBudget : dailyBudget;
+      const budget =
+        fallbackDepartmentDailyBudget > 0 ? fallbackDepartmentDailyBudget : dailyBudget;
 
       const key = `${airline}__${department}__${reportDate}`;
 
@@ -628,30 +685,19 @@ export default function MonthlyBudgetsVsActualPage() {
       map[key].budget = budget;
       map[key].actual += Number(report.totalHours || 0);
 
-      if (report.approvedByName) {
-        map[key].approvedBy.add(report.approvedByName);
-      }
-
-      if (report.overBudgetReason) {
-        map[key].overtimeReasons.add(report.overBudgetReason);
-      }
+      if (report.approvedByName) map[key].approvedBy.add(report.approvedByName);
+      if (report.overBudgetReason) map[key].overtimeReasons.add(report.overBudgetReason);
     });
 
     const rows = Object.values(map)
-      .map((row) => {
-        const variance = getVariance(row.budget, row.actual);
-        const revenue = getRevenue(row.budget, row.actual);
-        const overtime = getOvertime(row.budget, row.actual);
-
-        return {
-          ...row,
-          variance,
-          revenue,
-          overtime,
-          approvedByText: Array.from(row.approvedBy).join(", "),
-          overtimeReasonText: Array.from(row.overtimeReasons).join(" | "),
-        };
-      })
+      .map((row) => ({
+        ...row,
+        variance: getVariance(row.budget, row.actual),
+        revenue: getRevenue(row.budget, row.actual),
+        overtime: getOvertime(row.budget, row.actual),
+        approvedByText: Array.from(row.approvedBy).join(", "),
+        overtimeReasonText: Array.from(row.overtimeReasons).join(" | "),
+      }))
       .sort((a, b) => {
         if (a.reportDate !== b.reportDate) return a.reportDate.localeCompare(b.reportDate);
         if (a.airline !== b.airline) return a.airline.localeCompare(b.airline);
@@ -661,134 +707,213 @@ export default function MonthlyBudgetsVsActualPage() {
     let currentWeekKey = "";
     let weekBudgetRunning = 0;
     let weekActualRunning = 0;
-    let weekRevenueRunning = 0;
-    let weekOvertimeRunning = 0;
 
-    let currentMonthAirlineDeptKey = "";
+    let currentMonthKey = "";
     let monthBudgetRunning = 0;
     let monthActualRunning = 0;
-    let monthRevenueRunning = 0;
-    let monthOvertimeRunning = 0;
 
     return rows.map((row) => {
       const weekKey = `${row.airline}__${row.department}__${row.weekStart}`;
-      const monthKey = `${row.airline}__${row.department}__${filters.month}`;
+      const monthKey = `${row.airline}__${row.department}__${monthValue}`;
 
       if (currentWeekKey !== weekKey) {
         currentWeekKey = weekKey;
         weekBudgetRunning = 0;
         weekActualRunning = 0;
-        weekRevenueRunning = 0;
-        weekOvertimeRunning = 0;
       }
 
-      if (currentMonthAirlineDeptKey !== monthKey) {
-        currentMonthAirlineDeptKey = monthKey;
+      if (currentMonthKey !== monthKey) {
+        currentMonthKey = monthKey;
         monthBudgetRunning = 0;
         monthActualRunning = 0;
-        monthRevenueRunning = 0;
-        monthOvertimeRunning = 0;
       }
 
       weekBudgetRunning += row.budget;
       weekActualRunning += row.actual;
-      weekRevenueRunning += row.revenue;
-      weekOvertimeRunning += row.overtime;
-
       monthBudgetRunning += row.budget;
       monthActualRunning += row.actual;
-      monthRevenueRunning += row.revenue;
-      monthOvertimeRunning += row.overtime;
 
       return {
         ...row,
         weekBudgetRunning,
         weekActualRunning,
         weekVarianceRunning: getVariance(weekBudgetRunning, weekActualRunning),
-        weekRevenueRunning,
-        weekOvertimeRunning,
         monthBudgetRunning,
         monthActualRunning,
         monthVarianceRunning: getVariance(monthBudgetRunning, monthActualRunning),
-        monthRevenueRunning,
-        monthOvertimeRunning,
       };
     });
-  }, [visibleApprovedTimesheets, dailyBudgetMap, weeklyBudgetMap, filters.month]);
+  }
 
-  const airlineSummary = useMemo(() => {
-    const summaryMap = {};
+  const allMonthSummaries = useMemo(() => {
+    return monthOptions.map((monthItem) => {
+      const rows = buildDetailRowsForMonth(monthItem.value);
+      const rawBudget = rows.reduce((sum, row) => sum + Number(row.budget || 0), 0);
+      const actual = rows.reduce((sum, row) => sum + Number(row.actual || 0), 0);
+      const variance = getVariance(rawBudget, actual);
+      const revenue = getRevenue(rawBudget, actual);
+      const overtime = getOvertime(rawBudget, actual);
 
-    detailRows.forEach((row) => {
+      return {
+        month: monthItem.value,
+        label: monthItem.label,
+        budget: rawBudget,
+        actual,
+        variance,
+        revenue,
+        overtime,
+        rowsCount: rows.length,
+      };
+    });
+  }, [monthOptions, approvedTimesheets, dailyBudgetMap, weeklyBudgetMap]);
+
+  const selectedMonthDetailRowsAll = useMemo(() => {
+    if (!selectedMonth) return [];
+    return buildDetailRowsForMonth(selectedMonth);
+  }, [selectedMonth, approvedTimesheets, dailyBudgetMap, weeklyBudgetMap]);
+
+  const selectedMonthAirlineSummaryAll = useMemo(() => {
+    const map = {};
+
+    selectedMonthDetailRowsAll.forEach((row) => {
       const airline = row.airline || "Unknown";
 
-      if (!summaryMap[airline]) {
-        summaryMap[airline] = {
+      if (!map[airline]) {
+        map[airline] = {
           airline,
-          budget: 0,
+          rawBudget: 0,
           actual: 0,
           approvedBySet: new Set(),
           overtimeReasonsSet: new Set(),
         };
       }
 
-      summaryMap[airline].budget += Number(row.budget || 0);
-      summaryMap[airline].actual += Number(row.actual || 0);
+      map[airline].rawBudget += Number(row.budget || 0);
+      map[airline].actual += Number(row.actual || 0);
 
       if (row.approvedByText) {
         row.approvedByText.split(",").forEach((item) => {
           const clean = String(item || "").trim();
-          if (clean) summaryMap[airline].approvedBySet.add(clean);
+          if (clean) map[airline].approvedBySet.add(clean);
         });
       }
 
       if (row.overtimeReasonText) {
         row.overtimeReasonText.split("|").forEach((item) => {
           const clean = String(item || "").trim();
-          if (clean) summaryMap[airline].overtimeReasonsSet.add(clean);
+          if (clean) map[airline].overtimeReasonsSet.add(clean);
         });
       }
     });
 
-    return Object.values(summaryMap)
-      .map((row) => {
-        const variance = getVariance(row.budget, row.actual);
-        const revenue = getRevenue(row.budget, row.actual);
-        const overtime = getOvertime(row.budget, row.actual);
+    return Object.values(map).map((row) => {
+      const override = overrideMap[`${selectedMonth}__${row.airline}`];
+      const finalBudget =
+        override && Number(override.budgetHours || 0) > 0
+          ? Number(override.budgetHours)
+          : row.rawBudget;
 
-        return {
-          airline: row.airline,
-          budget: row.budget,
-          actual: row.actual,
-          variance,
-          revenue,
-          overtime,
-          approvedByText: Array.from(row.approvedBySet).join(", "),
-          overtimeReasonText: Array.from(row.overtimeReasonsSet).join(" | "),
-        };
-      })
-      .sort((a, b) => a.airline.localeCompare(b.airline));
-  }, [detailRows]);
+      return {
+        airline: row.airline,
+        rawBudget: row.rawBudget,
+        finalBudget,
+        actual: row.actual,
+        variance: getVariance(finalBudget, row.actual),
+        revenue: getRevenue(finalBudget, row.actual),
+        overtime: getOvertime(finalBudget, row.actual),
+        approvedByText: Array.from(row.approvedBySet).join(", "),
+        overtimeReasonText: Array.from(row.overtimeReasonsSet).join(" | "),
+        overrideDocId: override?.id || "",
+      };
+    });
+  }, [selectedMonthDetailRowsAll, overrideMap, selectedMonth]);
 
-  const totals = useMemo(() => {
-    const budget = airlineSummary.reduce((sum, row) => sum + Number(row.budget || 0), 0);
-    const actual = airlineSummary.reduce((sum, row) => sum + Number(row.actual || 0), 0);
-    const variance = getVariance(budget, actual);
-    const revenue = getRevenue(budget, actual);
-    const overtime = getOvertime(budget, actual);
+  const filteredAirlineSummary = useMemo(() => {
+    let rows = [...selectedMonthAirlineSummaryAll];
 
-    return { budget, actual, variance, revenue, overtime };
-  }, [airlineSummary]);
+    if (selectedAirline !== "all") {
+      rows = rows.filter((row) => row.airline === selectedAirline);
+    }
+
+    rows.sort((a, b) => {
+      let left = a[sortBy];
+      let right = b[sortBy];
+
+      if (sortBy === "airline") {
+        left = String(left || "");
+        right = String(right || "");
+        return sortDirection === "asc"
+          ? left.localeCompare(right)
+          : right.localeCompare(left);
+      }
+
+      left = Number(left || 0);
+      right = Number(right || 0);
+      return sortDirection === "asc" ? left - right : right - left;
+    });
+
+    return rows;
+  }, [selectedMonthAirlineSummaryAll, selectedAirline, sortBy, sortDirection]);
+
+  const filteredDetailRows = useMemo(() => {
+    if (selectedAirline === "all") return selectedMonthDetailRowsAll;
+    return selectedMonthDetailRowsAll.filter((row) => row.airline === selectedAirline);
+  }, [selectedMonthDetailRowsAll, selectedAirline]);
+
+  const stationTotals = useMemo(() => {
+    const budget = filteredAirlineSummary.reduce(
+      (sum, row) => sum + Number(row.finalBudget || 0),
+      0
+    );
+    const actual = filteredAirlineSummary.reduce(
+      (sum, row) => sum + Number(row.actual || 0),
+      0
+    );
+    return {
+      budget,
+      actual,
+      variance: getVariance(budget, actual),
+      revenue: getRevenue(budget, actual),
+      overtime: getOvertime(budget, actual),
+    };
+  }, [filteredAirlineSummary]);
+
+  async function saveMonthlyOverride(airline) {
+    const key = `${selectedMonth}__${airline}`;
+    const rawValue = editingOverride[key];
+    const nextBudget = Number(rawValue || 0);
+
+    if (!selectedMonth || !airline || !nextBudget) {
+      setStatusMessage("Please enter a valid final monthly budget.");
+      return;
+    }
+
+    try {
+      const existing = overrideMap[key];
+
+      if (existing?.id) {
+        await updateDoc(doc(db, "monthlyBudgetOverrides", existing.id), {
+          budgetHours: nextBudget,
+        });
+      } else {
+        await addDoc(collection(db, "monthlyBudgetOverrides"), {
+          month: selectedMonth,
+          airline,
+          budgetHours: nextBudget,
+        });
+      }
+
+      setStatusMessage(`Final monthly budget saved for ${airline}.`);
+      await loadData();
+    } catch (err) {
+      console.error("Error saving monthly override:", err);
+      setStatusMessage("Could not save final monthly budget.");
+    }
+  }
 
   if (!canAccess) {
     return (
-      <div
-        style={{
-          display: "grid",
-          gap: 18,
-          fontFamily: "Poppins, Inter, system-ui, sans-serif",
-        }}
-      >
+      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
         <div
           style={{
             background:
@@ -822,16 +947,6 @@ export default function MonthlyBudgetsVsActualPage() {
           >
             Access denied
           </h1>
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 700,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            This page is only available for Station Manager.
-          </p>
         </div>
       </div>
     );
@@ -841,7 +956,7 @@ export default function MonthlyBudgetsVsActualPage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 14 : 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
@@ -849,76 +964,60 @@ export default function MonthlyBudgetsVsActualPage() {
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 16 : isTablet ? 20 : 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          position: "relative",
-          overflow: "hidden",
         }}
       >
-        <div
+        <p
           style={{
-            position: "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
+            margin: 0,
+            fontSize: isMobile ? 10 : 12,
+            textTransform: "uppercase",
+            letterSpacing: "0.22em",
+            color: "rgba(255,255,255,0.78)",
+            fontWeight: 700,
           }}
-        />
+        >
+          TPA OPS · Station Manager
+        </p>
 
-        <div style={{ position: "relative" }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
-            TPA OPS · Station Manager
-          </p>
+        <h1
+          style={{
+            margin: "10px 0 6px",
+            fontSize: isMobile ? 26 : 32,
+            lineHeight: 1.05,
+            fontWeight: 800,
+            letterSpacing: "-0.04em",
+          }}
+        >
+          Monthly Budgets vs Actual
+        </h1>
 
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
-            Monthly Budgets vs Actual
-          </h1>
-
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 850,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            Monthly view up to today using weekly/daily budgets and approved timesheets.
-            Shows budget, actual used hours, variance, revenue from unused hours, overtime,
-            approved by, overtime reason, and running weekly/monthly totals.
-          </p>
-        </div>
+        <p
+          style={{
+            margin: 0,
+            maxWidth: 900,
+            fontSize: isMobile ? 12 : 14,
+            color: "rgba(255,255,255,0.88)",
+            lineHeight: 1.6,
+          }}
+        >
+          Summary by month, station totals, airline filters, sortable monthly detail,
+          collapsible daily department detail, and editable final monthly budget by airline.
+        </p>
       </div>
 
       {statusMessage && (
         <PageCard style={{ padding: 16 }}>
           <div
             style={{
-              background: "#fff1f2",
-              border: "1px solid #fecdd3",
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
               borderRadius: 16,
               padding: "14px 16px",
-              color: "#9f1239",
+              color: "#1769aa",
               fontSize: 14,
               fontWeight: 700,
             }}
@@ -928,188 +1027,243 @@ export default function MonthlyBudgetsVsActualPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
+        <div style={{ marginBottom: 14 }}>
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: isMobile ? 18 : 20,
               fontWeight: 800,
               color: "#0f172a",
               letterSpacing: "-0.02em",
             }}
           >
-            Filters
+            Monthly Summary
           </h2>
           <p
             style={{
               margin: "4px 0 0",
-              fontSize: 13,
+              fontSize: isMobile ? 12 : 13,
               color: "#64748b",
             }}
           >
-            Filter the monthly report by month, airline, and department.
+            Click a month to open station totals and details.
           </p>
         </div>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : isTablet
+              ? "repeat(2, minmax(0, 1fr))"
+              : "repeat(3, minmax(0, 1fr))",
+            gap: 12,
           }}
         >
-          <div>
-            <FieldLabel>Month</FieldLabel>
-            <SelectInput
-              value={filters.month}
-              onChange={(e) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  month: e.target.value,
-                }))
-              }
-            >
-              {monthOptions.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </SelectInput>
-          </div>
+          {allMonthSummaries.map((month) => {
+            const isActive = selectedMonth === month.month;
+            return (
+              <button
+                key={month.month}
+                type="button"
+                onClick={() => setSelectedMonth(month.month)}
+                style={{
+                  textAlign: "left",
+                  borderRadius: 18,
+                  border: isActive ? "1px solid #1769aa" : "1px solid #e2e8f0",
+                  background: isActive ? "#edf7ff" : "#ffffff",
+                  padding: 14,
+                  cursor: "pointer",
+                  boxShadow: isActive ? "0 10px 22px rgba(23,105,170,0.10)" : "none",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 900,
+                    color: "#0f172a",
+                  }}
+                >
+                  {month.label}
+                </div>
 
-          <div>
-            <FieldLabel>Airline</FieldLabel>
-            <SelectInput
-              value={filters.airline}
-              onChange={(e) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  airline: e.target.value,
-                }))
-              }
-            >
-              <option value="all">All</option>
-              {allAirlines.map((airline) => (
-                <option key={airline} value={airline}>
-                  {airline}
-                </option>
-              ))}
-            </SelectInput>
-          </div>
-
-          <div>
-            <FieldLabel>Department</FieldLabel>
-            <SelectInput
-              value={filters.department}
-              onChange={(e) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  department: e.target.value,
-                }))
-              }
-            >
-              <option value="all">All</option>
-              {allDepartments.map((department) => (
-                <option key={department} value={department}>
-                  {department}
-                </option>
-              ))}
-            </SelectInput>
-          </div>
-
-          <div>
-            <FieldLabel>Up To Today</FieldLabel>
-            <TextInput value={startOfTodayString()} disabled />
-          </div>
+                <div
+                  style={{
+                    marginTop: 10,
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>
+                      Budget
+                    </div>
+                    <div style={{ marginTop: 3, fontSize: 14, fontWeight: 800 }}>
+                      {formatHours(month.budget)} hrs
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>
+                      Used
+                    </div>
+                    <div style={{ marginTop: 3, fontSize: 14, fontWeight: 800 }}>
+                      {formatHours(month.actual)} hrs
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>
+                      Revenue
+                    </div>
+                    <div style={{ marginTop: 3 }}>{smallPill(`${formatHours(month.revenue)} hrs`, "green")}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>
+                      Overtime
+                    </div>
+                    <div style={{ marginTop: 3 }}>
+                      {smallPill(`${formatHours(month.overtime)} hrs`, month.overtime > 0 ? "red" : "default")}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </PageCard>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 14,
-        }}
-      >
-        <InfoCard label="Total Budget" value={`${formatHours(totals.budget)} hrs`} />
-        <InfoCard label="Total Actual" value={`${formatHours(totals.actual)} hrs`} tone="blue" />
-        <InfoCard
-          label="Total Revenue"
-          value={`${formatHours(totals.revenue)} hrs`}
-          tone="green"
-        />
-        <InfoCard
-          label="Total Overtime"
-          value={`${formatHours(totals.overtime)} hrs`}
-          tone={totals.overtime > 0 ? "red" : "default"}
-        />
-      </div>
-
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
         <div
           style={{
-            marginBottom: 14,
             display: "flex",
             justifyContent: "space-between",
             gap: 12,
             flexWrap: "wrap",
             alignItems: "center",
+            marginBottom: 16,
           }}
         >
           <div>
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: isMobile ? 18 : 20,
                 fontWeight: 800,
                 color: "#0f172a",
-                letterSpacing: "-0.02em",
               }}
             >
-              Airline Summary
+              Station Total · {monthOptions.find((m) => m.value === selectedMonth)?.label || "—"}
             </h2>
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: 13,
+                fontSize: isMobile ? 12 : 13,
                 color: "#64748b",
               }}
             >
-              Consolidated by airline. Example: SY = SY TC + SY Ramp + all SY departments.
+              Click below to open monthly airline detail.
             </p>
           </div>
 
-          <div>{smallPill(`Rows: ${airlineSummary.length}`, "blue")}</div>
+          <ActionButton
+            variant="secondary"
+            onClick={() => setShowMonthlyDetails((prev) => !prev)}
+          >
+            {showMonthlyDetails ? "Hide Details" : "Show Details"}
+          </ActionButton>
         </div>
 
-        {loading ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : isTablet
+              ? "repeat(2, minmax(0, 1fr))"
+              : "repeat(5, minmax(0, 1fr))",
+            gap: 12,
+          }}
+        >
+          <InfoCard label="Station Budget" value={`${formatHours(stationTotals.budget)} hrs`} />
+          <InfoCard label="Total Used" value={`${formatHours(stationTotals.actual)} hrs`} tone="blue" />
+          <InfoCard
+            label="Variance"
+            value={`${formatHours(stationTotals.variance)} hrs`}
+            tone={stationTotals.variance >= 0 ? "green" : "red"}
+          />
+          <InfoCard label="Revenue" value={`${formatHours(stationTotals.revenue)} hrs`} tone="green" />
+          <InfoCard
+            label="Overtime"
+            value={`${formatHours(stationTotals.overtime)} hrs`}
+            tone={stationTotals.overtime > 0 ? "red" : "default"}
+          />
+        </div>
+      </PageCard>
+
+      {showMonthlyDetails && (
+        <PageCard style={{ padding: isMobile ? 16 : 22 }}>
           <div
             style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
+              marginBottom: 16,
+              display: "grid",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : isTablet
+                ? "repeat(2, minmax(0, 1fr))"
+                : "repeat(4, minmax(0, 1fr))",
+              gap: 14,
             }}
           >
-            Loading report...
+            <div>
+              <FieldLabel>Airline Filter</FieldLabel>
+              <SelectInput
+                value={selectedAirline}
+                onChange={(e) => setSelectedAirline(e.target.value)}
+              >
+                <option value="all">All</option>
+                {allAirlines.map((airline) => (
+                  <option key={airline} value={airline}>
+                    {airline}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Sort By</FieldLabel>
+              <SelectInput value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="airline">Airline</option>
+                <option value="finalBudget">Final Budget</option>
+                <option value="actual">Actual</option>
+                <option value="variance">Variance</option>
+                <option value="revenue">Revenue</option>
+                <option value="overtime">Overtime</option>
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Direction</FieldLabel>
+              <SelectInput
+                value={sortDirection}
+                onChange={(e) => setSortDirection(e.target.value)}
+              >
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </SelectInput>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "end" }}>
+              <ActionButton
+                variant="secondary"
+                onClick={() => setShowDailyDetail((prev) => !prev)}
+              >
+                {showDailyDetail ? "Hide Daily Detail" : "Open Daily Detail"}
+              </ActionButton>
+            </div>
           </div>
-        ) : airlineSummary.length === 0 ? (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
-            }}
-          >
-            No monthly data found for this filter.
-          </div>
-        ) : (
+
           <div
             style={{
               overflowX: "auto",
@@ -1122,240 +1276,240 @@ export default function MonthlyBudgetsVsActualPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 1180,
+                minWidth: 1400,
                 background: "#fff",
               }}
             >
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle()}>Airline</th>
-                  <th style={thStyle()}>Budget</th>
-                  <th style={thStyle()}>Actual</th>
+                  <th style={thStyle()}>Raw Budget</th>
+                  <th style={thStyle()}>Final Budget</th>
+                  <th style={thStyle()}>Actual Used</th>
                   <th style={thStyle()}>Variance</th>
                   <th style={thStyle()}>Revenue</th>
                   <th style={thStyle()}>Overtime</th>
                   <th style={thStyle()}>Approved By</th>
                   <th style={thStyle()}>Overtime Reason</th>
+                  <th style={thStyle()}>Edit Final Budget</th>
                 </tr>
               </thead>
               <tbody>
-                {airlineSummary.map((row, index) => (
-                  <tr
-                    key={row.airline}
-                    style={{
-                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                    }}
-                  >
-                    <td style={tdStyle}>
-                      <strong>{row.airline}</strong>
-                    </td>
-                    <td style={tdStyle}>{formatHours(row.budget)} hrs</td>
-                    <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
-                    <td style={tdStyle}>
-                      {row.variance >= 0
-                        ? smallPill(`${formatHours(row.variance)} hrs`, "green")
-                        : smallPill(`${formatHours(row.variance)} hrs`, "red")}
-                    </td>
-                    <td style={tdStyle}>
-                      {row.revenue > 0
-                        ? smallPill(`${formatHours(row.revenue)} hrs`, "green")
-                        : smallPill(`${formatHours(row.revenue)} hrs`, "default")}
-                    </td>
-                    <td style={tdStyle}>
-                      {row.overtime > 0
-                        ? smallPill(`${formatHours(row.overtime)} hrs`, "red")
-                        : smallPill(`${formatHours(row.overtime)} hrs`, "default")}
-                    </td>
-                    <td style={tdStyle}>{row.approvedByText || "—"}</td>
-                    <td style={tdStyle}>
-                      <div style={{ minWidth: 220, whiteSpace: "pre-line", lineHeight: 1.6 }}>
-                        {row.overtimeReasonText || "—"}
-                      </div>
+                {filteredAirlineSummary.map((row, index) => {
+                  const editKey = `${selectedMonth}__${row.airline}`;
+                  return (
+                    <tr
+                      key={row.airline}
+                      style={{
+                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                      }}
+                    >
+                      <td style={tdStyle}>
+                        <strong>{row.airline}</strong>
+                      </td>
+                      <td style={tdStyle}>{formatHours(row.rawBudget)} hrs</td>
+                      <td style={tdStyle}>{formatHours(row.finalBudget)} hrs</td>
+                      <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
+                      <td style={tdStyle}>
+                        {row.variance >= 0
+                          ? smallPill(`${formatHours(row.variance)} hrs`, "green")
+                          : smallPill(`${formatHours(row.variance)} hrs`, "red")}
+                      </td>
+                      <td style={tdStyle}>
+                        {row.revenue > 0
+                          ? smallPill(`${formatHours(row.revenue)} hrs`, "green")
+                          : smallPill(`${formatHours(row.revenue)} hrs`, "default")}
+                      </td>
+                      <td style={tdStyle}>
+                        {row.overtime > 0
+                          ? smallPill(`${formatHours(row.overtime)} hrs`, "red")
+                          : smallPill(`${formatHours(row.overtime)} hrs`, "default")}
+                      </td>
+                      <td style={tdStyle}>{row.approvedByText || "—"}</td>
+                      <td style={tdStyle}>
+                        <div style={{ minWidth: 260, whiteSpace: "pre-line", lineHeight: 1.6 }}>
+                          {row.overtimeReasonText || "—"}
+                        </div>
+                      </td>
+                      <td style={tdStyle}>
+                        <div style={{ display: "grid", gap: 8, minWidth: 180 }}>
+                          <TextInput
+                            type="number"
+                            step="0.01"
+                            value={
+                              editingOverride[editKey] !== undefined
+                                ? editingOverride[editKey]
+                                : row.finalBudget
+                            }
+                            onChange={(e) =>
+                              setEditingOverride((prev) => ({
+                                ...prev,
+                                [editKey]: e.target.value,
+                              }))
+                            }
+                          />
+                          <ActionButton
+                            variant="success"
+                            onClick={() => saveMonthlyOverride(row.airline)}
+                          >
+                            Save Final Budget
+                          </ActionButton>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredAirlineSummary.length === 0 && (
+                  <tr>
+                    <td colSpan={10} style={{ ...tdStyle, textAlign: "center" }}>
+                      No airline rows found.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
-        )}
-      </PageCard>
+        </PageCard>
+      )}
 
-      <PageCard style={{ padding: 22 }}>
-        <div
-          style={{
-            marginBottom: 14,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Daily Department Detail
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Department-level detail with daily row, approved by, overtime reason, and
-              running weekly/monthly totals.
-            </p>
-          </div>
-
-          <div>{smallPill(`Rows: ${detailRows.length}`, "blue")}</div>
-        </div>
-
-        {loading ? (
-          <div
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
+        <details open={showDailyDetail} onToggle={(e) => setShowDailyDetail(e.target.open)}>
+          <summary
             style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
+              cursor: "pointer",
+              listStyle: "none",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
             }}
           >
-            Loading detail...
-          </div>
-        ) : detailRows.length === 0 ? (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
-            }}
-          >
-            No detail rows found for this filter.
-          </div>
-        ) : (
-          <div
-            style={{
-              overflowX: "auto",
-              borderRadius: 18,
-              border: "1px solid #e2e8f0",
-            }}
-          >
-            <table
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: isMobile ? 18 : 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
+                Daily Department Detail
+              </h2>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: isMobile ? 12 : 13,
+                  color: "#64748b",
+                }}
+              >
+                Dropdown section. Open only when you need the daily detail.
+              </p>
+            </div>
+
+            <div>{smallPill(`${filteredDetailRows.length} rows`, "blue")}</div>
+          </summary>
+
+          <div style={{ marginTop: 16 }}>
+            <div
               style={{
-                width: "100%",
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                minWidth: 2200,
-                background: "#fff",
+                overflowX: "auto",
+                borderRadius: 18,
+                border: "1px solid #e2e8f0",
               }}
             >
-              <thead>
-                <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle()}>Airline</th>
-                  <th style={thStyle()}>Department</th>
-                  <th style={thStyle()}>Date</th>
-                  <th style={thStyle()}>Budget</th>
-                  <th style={thStyle()}>Actual</th>
-                  <th style={thStyle()}>Variance</th>
-                  <th style={thStyle()}>Revenue</th>
-                  <th style={thStyle()}>Overtime</th>
-                  <th style={thStyle()}>Approved By</th>
-                  <th style={thStyle()}>Overtime Reason</th>
-                  <th style={thStyle()}>Weekly Budget Running</th>
-                  <th style={thStyle()}>Weekly Actual Running</th>
-                  <th style={thStyle()}>Weekly Variance Running</th>
-                  <th style={thStyle()}>Monthly Budget Running</th>
-                  <th style={thStyle()}>Monthly Actual Running</th>
-                  <th style={thStyle()}>Monthly Variance Running</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detailRows.map((row, index) => (
-                  <tr
-                    key={`${row.airline}-${row.department}-${row.reportDate}`}
-                    style={{
-                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                    }}
-                  >
-                    <td style={tdStyle}>{row.airline}</td>
-                    <td style={tdStyle}>{prettifyDepartment(row.department)}</td>
-                    <td style={tdStyle}>{formatDateLabel(row.reportDate)}</td>
-                    <td style={tdStyle}>{formatHours(row.budget)} hrs</td>
-                    <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
-                    <td style={tdStyle}>
-                      {row.variance >= 0
-                        ? smallPill(`${formatHours(row.variance)} hrs`, "green")
-                        : smallPill(`${formatHours(row.variance)} hrs`, "red")}
-                    </td>
-                    <td style={tdStyle}>
-                      {row.revenue > 0
-                        ? smallPill(`${formatHours(row.revenue)} hrs`, "green")
-                        : smallPill(`${formatHours(row.revenue)} hrs`, "default")}
-                    </td>
-                    <td style={tdStyle}>
-                      {row.overtime > 0
-                        ? smallPill(`${formatHours(row.overtime)} hrs`, "red")
-                        : smallPill(`${formatHours(row.overtime)} hrs`, "default")}
-                    </td>
-                    <td style={tdStyle}>{row.approvedByText || "—"}</td>
-                    <td style={tdStyle}>
-                      <div style={{ minWidth: 240, whiteSpace: "pre-line", lineHeight: 1.6 }}>
-                        {row.overtimeReasonText || "—"}
-                      </div>
-                    </td>
-                    <td style={tdStyle}>{formatHours(row.weekBudgetRunning)} hrs</td>
-                    <td style={tdStyle}>{formatHours(row.weekActualRunning)} hrs</td>
-                    <td style={tdStyle}>
-                      {row.weekVarianceRunning >= 0
-                        ? smallPill(`${formatHours(row.weekVarianceRunning)} hrs`, "green")
-                        : smallPill(`${formatHours(row.weekVarianceRunning)} hrs`, "red")}
-                    </td>
-                    <td style={tdStyle}>{formatHours(row.monthBudgetRunning)} hrs</td>
-                    <td style={tdStyle}>{formatHours(row.monthActualRunning)} hrs</td>
-                    <td style={tdStyle}>
-                      {row.monthVarianceRunning >= 0
-                        ? smallPill(`${formatHours(row.monthVarianceRunning)} hrs`, "green")
-                        : smallPill(`${formatHours(row.monthVarianceRunning)} hrs`, "red")}
-                    </td>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "separate",
+                  borderSpacing: 0,
+                  minWidth: 2200,
+                  background: "#fff",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f8fbff" }}>
+                    <th style={thStyle()}>Airline</th>
+                    <th style={thStyle()}>Department</th>
+                    <th style={thStyle()}>Date</th>
+                    <th style={thStyle()}>Budget</th>
+                    <th style={thStyle()}>Actual</th>
+                    <th style={thStyle()}>Variance</th>
+                    <th style={thStyle()}>Revenue</th>
+                    <th style={thStyle()}>Overtime</th>
+                    <th style={thStyle()}>Approved By</th>
+                    <th style={thStyle()}>Overtime Reason</th>
+                    <th style={thStyle()}>Weekly Budget Running</th>
+                    <th style={thStyle()}>Weekly Actual Running</th>
+                    <th style={thStyle()}>Weekly Variance Running</th>
+                    <th style={thStyle()}>Monthly Budget Running</th>
+                    <th style={thStyle()}>Monthly Actual Running</th>
+                    <th style={thStyle()}>Monthly Variance Running</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </PageCard>
+                </thead>
+                <tbody>
+                  {filteredDetailRows.map((row, index) => (
+                    <tr
+                      key={`${row.airline}-${row.department}-${row.reportDate}`}
+                      style={{
+                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                      }}
+                    >
+                      <td style={tdStyle}>{row.airline}</td>
+                      <td style={tdStyle}>{prettifyDepartment(row.department)}</td>
+                      <td style={tdStyle}>{formatDateLabel(row.reportDate)}</td>
+                      <td style={tdStyle}>{formatHours(row.budget)} hrs</td>
+                      <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
+                      <td style={tdStyle}>
+                        {row.variance >= 0
+                          ? smallPill(`${formatHours(row.variance)} hrs`, "green")
+                          : smallPill(`${formatHours(row.variance)} hrs`, "red")}
+                      </td>
+                      <td style={tdStyle}>
+                        {row.revenue > 0
+                          ? smallPill(`${formatHours(row.revenue)} hrs`, "green")
+                          : smallPill(`${formatHours(row.revenue)} hrs`, "default")}
+                      </td>
+                      <td style={tdStyle}>
+                        {row.overtime > 0
+                          ? smallPill(`${formatHours(row.overtime)} hrs`, "red")
+                          : smallPill(`${formatHours(row.overtime)} hrs`, "default")}
+                      </td>
+                      <td style={tdStyle}>{row.approvedByText || "—"}</td>
+                      <td style={tdStyle}>
+                        <div style={{ minWidth: 240, whiteSpace: "pre-line", lineHeight: 1.6 }}>
+                          {row.overtimeReasonText || "—"}
+                        </div>
+                      </td>
+                      <td style={tdStyle}>{formatHours(row.weekBudgetRunning)} hrs</td>
+                      <td style={tdStyle}>{formatHours(row.weekActualRunning)} hrs</td>
+                      <td style={tdStyle}>
+                        {row.weekVarianceRunning >= 0
+                          ? smallPill(`${formatHours(row.weekVarianceRunning)} hrs`, "green")
+                          : smallPill(`${formatHours(row.weekVarianceRunning)} hrs`, "red")}
+                      </td>
+                      <td style={tdStyle}>{formatHours(row.monthBudgetRunning)} hrs</td>
+                      <td style={tdStyle}>{formatHours(row.monthActualRunning)} hrs</td>
+                      <td style={tdStyle}>
+                        {row.monthVarianceRunning >= 0
+                          ? smallPill(`${formatHours(row.monthVarianceRunning)} hrs`, "green")
+                          : smallPill(`${formatHours(row.monthVarianceRunning)} hrs`, "red")}
+                      </td>
+                    </tr>
+                  ))}
 
-      <PageCard style={{ padding: 20 }}>
-        <div
-          style={{
-            background: "#f8fbff",
-            border: "1px solid #dbeafe",
-            borderRadius: 16,
-            padding: "14px 16px",
-            color: "#475569",
-            fontSize: 13,
-            lineHeight: 1.7,
-          }}
-        >
-          <strong style={{ color: "#0f172a" }}>Logic used:</strong> approved timesheets are
-          the actual used hours. Revenue is the unused portion of budget. Overtime is the
-          portion above budget. Daily budget is taken first from{" "}
-          <strong>airlineDailyBudgets</strong>. If department daily budget is not explicitly
-          available, the page falls back to <strong>airlineBudgets / 7</strong> using airline
-          + department + week start.
-        </div>
+                  {filteredDetailRows.length === 0 && (
+                    <tr>
+                      <td colSpan={16} style={{ ...tdStyle, textAlign: "center" }}>
+                        No daily detail rows found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </details>
       </PageCard>
     </div>
   );
