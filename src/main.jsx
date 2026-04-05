@@ -17,6 +17,7 @@ import ApprovalsPage from "./pages/ApprovalsPage.jsx";
 import ApprovedSchedulesPage from "./pages/ApprovedSchedulesPage.jsx";
 import ApprovedScheduleView from "./pages/ApprovedScheduleView.jsx";
 import BudgetsPage from "./pages/BudgetsPage.jsx";
+import MonthlyBudgetsVsActualPage from "./pages/MonthlyBudgetsVsActualPage.jsx";
 import CreateUserPage from "./pages/CreateUserPage.jsx";
 import EditUsersPage from "./pages/EditUsersPage.jsx";
 import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
@@ -732,6 +733,15 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["station_manager", "duty_manager"]}>
                 <BudgetsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="monthly-budgets-vs-actual"
+            element={
+              <ProtectedRoute roles={["station_manager"]}>
+                <MonthlyBudgetsVsActualPage />
               </ProtectedRoute>
             }
           />
