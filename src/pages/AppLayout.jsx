@@ -323,7 +323,12 @@ export default function AppLayout() {
           icon: "📣",
         },
         { to: "/dashboard-editor", label: "Dashboard Editor", icon: "🎛️" },
-        { to: "/budgets", label: "Budgets", icon: "💰" }
+        { to: "/budgets", label: "Budgets", icon: "💰" },
+        {
+          to: "/monthly-budgets-vs-actual",
+          label: "Monthly Budgets vs Actual",
+          icon: "📈",
+        }
       );
     }
 
