@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDocs,
   orderBy,
@@ -194,6 +195,28 @@ function ActionButton({
   );
 }
 
+function TabButton({ active, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        borderRadius: 999,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: "pointer",
+        border: active ? "1px solid #1769aa" : "1px solid #dbeafe",
+        background: active ? "#1769aa" : "#ffffff",
+        color: active ? "#ffffff" : "#1769aa",
+        boxShadow: active ? "0 10px 22px rgba(23,105,170,0.16)" : "none",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 const DEFAULT_INVENTORY_ITEMS = [
   {
     productKey: "disinfectant",
@@ -287,7 +310,7 @@ function getStatusPill(status) {
     border: "1px solid transparent",
   };
 
-  if (value === "closed") {
+  if (value === "closed" || value === "approved") {
     return {
       ...base,
       background: "#dcfce7",
@@ -296,7 +319,16 @@ function getStatusPill(status) {
     };
   }
 
-  if (value === "processing" || value === "assigned") {
+  if (value === "archived") {
+    return {
+      ...base,
+      background: "#f8fafc",
+      color: "#334155",
+      borderColor: "#e2e8f0",
+    };
+  }
+
+  if (value === "processing" || value === "assigned" || value === "follow_up") {
     return {
       ...base,
       background: "#fff7ed",
@@ -328,17 +360,30 @@ export default function RegulatedGarbageAdminPage() {
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
+  const [activeTab, setActiveTab] = useState("reports");
+
   const [inventoryRows, setInventoryRows] = useState([]);
   const [reportRows, setReportRows] = useState([]);
   const [alertRows, setAlertRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
+
   const [selectedAlertId, setSelectedAlertId] = useState("");
   const [selectedReportId, setSelectedReportId] = useState("");
+  const [selectedInventoryId, setSelectedInventoryId] = useState("");
+
   const [savingAlertId, setSavingAlertId] = useState("");
   const [savingInventoryId, setSavingInventoryId] = useState("");
+  const [savingReportId, setSavingReportId] = useState("");
   const [creatingInventory, setCreatingInventory] = useState(false);
+
   const [inventoryDrafts, setInventoryDrafts] = useState({});
+  const [reportEdit, setReportEdit] = useState({
+    reviewStatus: "submitted",
+    managerNotes: "",
+    followUpAction: "",
+    followUpDetails: "",
+  });
   const [alertEdit, setAlertEdit] = useState({
     assignedManagerName: "",
     managerNotes: "",
@@ -399,20 +444,53 @@ export default function RegulatedGarbageAdminPage() {
     }
   }, [canAccess]);
 
-  const openAlerts = useMemo(() => {
+  const visibleReports = useMemo(() => {
+    return reportRows.filter(
+      (item) => String(item.archived || "").toLowerCase() !== "true"
+    );
+  }, [reportRows]);
+
+  const visibleAlerts = useMemo(() => {
     return alertRows.filter(
-      (item) => String(item.status || "open").toLowerCase() !== "closed"
+      (item) => String(item.archived || "").toLowerCase() !== "true"
     );
   }, [alertRows]);
 
+  const openAlerts = useMemo(() => {
+    return visibleAlerts.filter(
+      (item) => String(item.status || "open").toLowerCase() !== "closed"
+    );
+  }, [visibleAlerts]);
+
   const selectedAlert = useMemo(() => {
-    return openAlerts.find((a) => a.id === selectedAlertId) || openAlerts[0] || null;
-  }, [openAlerts, selectedAlertId]);
+    return visibleAlerts.find((a) => a.id === selectedAlertId) || null;
+  }, [visibleAlerts, selectedAlertId]);
 
   const selectedReport = useMemo(() => {
-    if (!selectedReportId) return null;
-    return reportRows.find((r) => r.id === selectedReportId) || null;
-  }, [reportRows, selectedReportId]);
+    return visibleReports.find((r) => r.id === selectedReportId) || null;
+  }, [visibleReports, selectedReportId]);
+
+  const selectedInventory = useMemo(() => {
+    return inventoryRows.find((r) => r.id === selectedInventoryId) || null;
+  }, [inventoryRows, selectedInventoryId]);
+
+  useEffect(() => {
+    if (!selectedReport && visibleReports.length) {
+      setSelectedReportId(visibleReports[0].id);
+    }
+  }, [visibleReports, selectedReport]);
+
+  useEffect(() => {
+    if (!selectedAlert && openAlerts.length) {
+      setSelectedAlertId(openAlerts[0].id);
+    }
+  }, [openAlerts, selectedAlert]);
+
+  useEffect(() => {
+    if (!selectedInventory && inventoryRows.length) {
+      setSelectedInventoryId(inventoryRows[0].id);
+    }
+  }, [inventoryRows, selectedInventory]);
 
   useEffect(() => {
     if (!selectedAlert) {
@@ -441,6 +519,25 @@ export default function RegulatedGarbageAdminPage() {
       setSelectedReportId(selectedAlert.reportId);
     }
   }, [selectedAlert, user]);
+
+  useEffect(() => {
+    if (!selectedReport) {
+      setReportEdit({
+        reviewStatus: "submitted",
+        managerNotes: "",
+        followUpAction: "",
+        followUpDetails: "",
+      });
+      return;
+    }
+
+    setReportEdit({
+      reviewStatus: selectedReport.reviewStatus || "submitted",
+      managerNotes: selectedReport.managerNotes || "",
+      followUpAction: selectedReport.followUpAction || "",
+      followUpDetails: selectedReport.followUpDetails || "",
+    });
+  }, [selectedReport]);
 
   const handleInventoryDraftChange = (id, field, value) => {
     setInventoryDrafts((prev) => ({
@@ -546,6 +643,123 @@ export default function RegulatedGarbageAdminPage() {
     }
   };
 
+  const approveReport = async (report) => {
+    try {
+      setSavingReportId(report.id);
+
+      const payload = {
+        reviewStatus: "approved",
+        reviewedBy: getVisibleUserName(user),
+        reviewedAt: serverTimestamp(),
+        managerNotes: String(reportEdit.managerNotes || "").trim(),
+        followUpAction: String(reportEdit.followUpAction || "").trim(),
+        followUpDetails: String(reportEdit.followUpDetails || "").trim(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await updateDoc(doc(db, "regulated_garbage_reports", report.id), payload);
+
+      setReportRows((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                ...payload,
+                reviewedAt: new Date(),
+              }
+            : item
+        )
+      );
+
+      setStatusMessage("Report approved successfully.");
+    } catch (err) {
+      console.error("Error approving report:", err);
+      setStatusMessage("Could not approve report.");
+    } finally {
+      setSavingReportId("");
+    }
+  };
+
+  const followUpReport = async (report) => {
+    try {
+      setSavingReportId(report.id);
+
+      const payload = {
+        reviewStatus: "follow_up",
+        followUpRequired: true,
+        reviewedBy: getVisibleUserName(user),
+        reviewedAt: serverTimestamp(),
+        managerNotes: String(reportEdit.managerNotes || "").trim(),
+        followUpAction: String(reportEdit.followUpAction || "").trim() || "Follow Up",
+        followUpDetails: String(reportEdit.followUpDetails || "").trim(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await updateDoc(doc(db, "regulated_garbage_reports", report.id), payload);
+
+      setReportRows((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                ...payload,
+                reviewedAt: new Date(),
+              }
+            : item
+        )
+      );
+
+      setStatusMessage("Report marked for follow up.");
+    } catch (err) {
+      console.error("Error updating report follow up:", err);
+      setStatusMessage("Could not update report.");
+    } finally {
+      setSavingReportId("");
+    }
+  };
+
+  const archiveReport = async (report) => {
+    try {
+      await updateDoc(doc(db, "regulated_garbage_reports", report.id), {
+        archived: true,
+        archivedAt: serverTimestamp(),
+        archivedBy: getVisibleUserName(user),
+      });
+
+      setReportRows((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                archived: true,
+              }
+            : item
+        )
+      );
+
+      setSelectedReportId("");
+      setStatusMessage("Report archived successfully.");
+    } catch (err) {
+      console.error("Error archiving report:", err);
+      setStatusMessage("Could not archive report.");
+    }
+  };
+
+  const deleteReportPermanently = async (report) => {
+    const ok = window.confirm("Delete this report permanently?");
+    if (!ok) return;
+
+    try {
+      await deleteDoc(doc(db, "regulated_garbage_reports", report.id));
+      setReportRows((prev) => prev.filter((item) => item.id !== report.id));
+      setSelectedReportId("");
+      setStatusMessage("Report deleted successfully.");
+    } catch (err) {
+      console.error("Error deleting report:", err);
+      setStatusMessage("Could not delete report.");
+    }
+  };
+
   const saveAlertFollowUp = async () => {
     if (!selectedAlert) return;
 
@@ -564,6 +778,10 @@ export default function RegulatedGarbageAdminPage() {
 
       if (alertEdit.followUpStatus === "closed") {
         nextStatus = "closed";
+      }
+
+      if (alertEdit.followUpStatus === "assigned") {
+        nextStatus = "assigned";
       }
 
       const payload = {
@@ -607,6 +825,8 @@ export default function RegulatedGarbageAdminPage() {
               ? "Restock in place"
               : alertEdit.followUpStatus === "closed"
               ? "Closed"
+              : alertEdit.followUpStatus === "assigned"
+              ? "Assigned"
               : "Processing",
           followUpDetails:
             String(alertEdit.restockInProgressMessage || "").trim() || "",
@@ -617,6 +837,8 @@ export default function RegulatedGarbageAdminPage() {
               ? "closed"
               : nextStatus === "restock_in_place"
               ? "processing"
+              : nextStatus === "assigned"
+              ? "follow_up"
               : "processing",
           restockStatus:
             nextStatus === "closed"
@@ -737,6 +959,48 @@ export default function RegulatedGarbageAdminPage() {
     }
   };
 
+  const archiveAlert = async (alert) => {
+    try {
+      await updateDoc(doc(db, "regulated_garbage_supply_alerts", alert.id), {
+        archived: true,
+        archivedAt: serverTimestamp(),
+        archivedBy: getVisibleUserName(user),
+      });
+
+      setAlertRows((prev) =>
+        prev.map((item) =>
+          item.id === alert.id
+            ? {
+                ...item,
+                archived: true,
+              }
+            : item
+        )
+      );
+
+      setSelectedAlertId("");
+      setStatusMessage("Alert archived successfully.");
+    } catch (err) {
+      console.error("Error archiving alert:", err);
+      setStatusMessage("Could not archive alert.");
+    }
+  };
+
+  const deleteAlertPermanently = async (alert) => {
+    const ok = window.confirm("Delete this alert permanently?");
+    if (!ok) return;
+
+    try {
+      await deleteDoc(doc(db, "regulated_garbage_supply_alerts", alert.id));
+      setAlertRows((prev) => prev.filter((item) => item.id !== alert.id));
+      setSelectedAlertId("");
+      setStatusMessage("Alert deleted successfully.");
+    } catch (err) {
+      console.error("Error deleting alert:", err);
+      setStatusMessage("Could not delete alert.");
+    }
+  };
+
   if (!canAccess) {
     return (
       <PageCard style={{ padding: 22 }}>
@@ -785,7 +1049,7 @@ export default function RegulatedGarbageAdminPage() {
             letterSpacing: "-0.04em",
           }}
         >
-          Regulated Garbage Reports & Inventory
+          Regulated Garbage Reports, Inventory & Alerts
         </h1>
 
         <p
@@ -796,8 +1060,8 @@ export default function RegulatedGarbageAdminPage() {
             color: "rgba(255,255,255,0.88)",
           }}
         >
-          Review shortages, track replacements, manage restock cases and office
-          inventory.
+          Review received reports, manage inventory, process alerts, approve or
+          follow up, and archive or delete records when needed.
         </p>
       </div>
 
@@ -820,77 +1084,385 @@ export default function RegulatedGarbageAdminPage() {
       )}
 
       <PageCard style={{ padding: 22 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <TabButton
+            active={activeTab === "reports"}
+            onClick={() => setActiveTab("reports")}
+          >
+            Reportes Recibidos ({visibleReports.length})
+          </TabButton>
+
+          <TabButton
+            active={activeTab === "inventory"}
+            onClick={() => setActiveTab("inventory")}
+          >
+            Inventario ({inventoryRows.length})
+          </TabButton>
+
+          <TabButton
+            active={activeTab === "alerts"}
+            onClick={() => setActiveTab("alerts")}
+          >
+            Alertas ({openAlerts.length})
+          </TabButton>
+        </div>
+      </PageCard>
+
+      {activeTab === "reports" && (
         <div
           style={{
-            marginBottom: 16,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
+            display: "grid",
+            gridTemplateColumns: selectedReport
+              ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
+              : "1fr",
+            gap: 18,
           }}
         >
-          <div>
+          <PageCard style={{ padding: 18 }}>
             <h2
               style={{
-                margin: 0,
+                marginTop: 0,
+                marginBottom: 14,
                 fontSize: 20,
                 fontWeight: 800,
                 color: "#0f172a",
               }}
             >
-              Inventory
+              Reportes Recibidos
             </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Manage office / storage quantities used by regulated garbage alerts.
-            </p>
-          </div>
 
-          {inventoryRows.length === 0 && !loading && (
-            <ActionButton
-              variant="primary"
-              onClick={createInitialInventory}
-              disabled={creatingInventory}
-            >
-              {creatingInventory ? "Creating..." : "Create Initial Inventory"}
-            </ActionButton>
+            {loading ? (
+              <div>Loading...</div>
+            ) : visibleReports.length === 0 ? (
+              <div>No reports received.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {visibleReports.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedReportId(item.id)}
+                    style={{
+                      cursor: "pointer",
+                      border:
+                        item.id === selectedReport?.id
+                          ? "1px solid #bfe0fb"
+                          : "1px solid #e2e8f0",
+                      background: item.id === selectedReport?.id ? "#edf7ff" : "#fff",
+                      borderRadius: 16,
+                      padding: 14,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span>{item.productLabel || item.airline || "Report"}</span>
+                      <span style={getStatusPill(item.reviewStatus || "submitted")}>
+                        {item.reviewStatus || "submitted"}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "#64748b",
+                        marginTop: 4,
+                      }}
+                    >
+                      {item.airline || "—"} · {item.internationalCart || item.cartType || "—"} ·{" "}
+                      {item.reportDate || "—"}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "#1769aa",
+                        marginTop: 4,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Supervisor: {item.supervisorName || item.reportedBySupervisorName || "—"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </PageCard>
+
+          {selectedReport && (
+            <PageCard style={{ padding: 20 }}>
+              <div style={{ display: "grid", gap: 16 }}>
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: 22,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    Report Detail
+                  </h2>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 13,
+                      color: "#64748b",
+                    }}
+                  >
+                    {selectedReport.airline || "—"} ·{" "}
+                    {selectedReport.internationalCart || selectedReport.cartType || "—"} ·{" "}
+                    {selectedReport.reportDate || "—"}
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  <TextInfoCard
+                    label="Supervisor"
+                    value={selectedReport.supervisorName || selectedReport.reportedBySupervisorName || "—"}
+                  />
+                  <TextInfoCard
+                    label="Created"
+                    value={formatDateTime(selectedReport.createdAt)}
+                  />
+                  <TextInfoCard
+                    label="Review Status"
+                    value={selectedReport.reviewStatus || "submitted"}
+                  />
+                  <TextInfoCard
+                    label="Restock Status"
+                    value={selectedReport.restockStatus || "—"}
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Manager Notes</FieldLabel>
+                  <TextArea
+                    value={reportEdit.managerNotes}
+                    onChange={(e) =>
+                      setReportEdit((prev) => ({
+                        ...prev,
+                        managerNotes: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Follow Up Action</FieldLabel>
+                  <TextInput
+                    value={reportEdit.followUpAction}
+                    onChange={(e) =>
+                      setReportEdit((prev) => ({
+                        ...prev,
+                        followUpAction: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Follow Up Details</FieldLabel>
+                  <TextArea
+                    value={reportEdit.followUpDetails}
+                    onChange={(e) =>
+                      setReportEdit((prev) => ({
+                        ...prev,
+                        followUpDetails: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <ActionButton
+                    variant="success"
+                    onClick={() => approveReport(selectedReport)}
+                    disabled={savingReportId === selectedReport.id}
+                  >
+                    {savingReportId === selectedReport.id ? "Saving..." : "Approve"}
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="warning"
+                    onClick={() => followUpReport(selectedReport)}
+                    disabled={savingReportId === selectedReport.id}
+                  >
+                    {savingReportId === selectedReport.id ? "Saving..." : "Follow Up"}
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="secondary"
+                    onClick={() => archiveReport(selectedReport)}
+                  >
+                    Archive
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="danger"
+                    onClick={() => deleteReportPermanently(selectedReport)}
+                  >
+                    Delete
+                  </ActionButton>
+                </div>
+
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "14px 16px",
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                    whiteSpace: "pre-line",
+                    lineHeight: 1.7,
+                    color: "#0f172a",
+                  }}
+                >
+                  <strong>Full Report:</strong>
+                  {"\n\n"}
+                  {JSON.stringify(selectedReport, null, 2)}
+                </div>
+              </div>
+            </PageCard>
           )}
         </div>
+      )}
 
-        {loading ? (
-          <div>Loading...</div>
-        ) : inventoryRows.length === 0 ? (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
-            }}
-          >
-            No inventory exists yet. Click <b>Create Initial Inventory</b> to seed
-            the default products.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {inventoryRows.map((row) => (
+      {activeTab === "inventory" && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: selectedInventory
+              ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
+              : "1fr",
+            gap: 18,
+          }}
+        >
+          <PageCard style={{ padding: 22 }}>
+            <div
+              style={{
+                marginBottom: 16,
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                  }}
+                >
+                  Inventario
+                </h2>
+                <p
+                  style={{
+                    margin: "4px 0 0",
+                    fontSize: 13,
+                    color: "#64748b",
+                  }}
+                >
+                  Click one item to open and edit full inventory information.
+                </p>
+              </div>
+
+              {inventoryRows.length === 0 && !loading && (
+                <ActionButton
+                  variant="primary"
+                  onClick={createInitialInventory}
+                  disabled={creatingInventory}
+                >
+                  {creatingInventory ? "Creating..." : "Create Initial Inventory"}
+                </ActionButton>
+              )}
+            </div>
+
+            {loading ? (
+              <div>Loading...</div>
+            ) : inventoryRows.length === 0 ? (
               <div
-                key={row.id}
                 style={{
-                  borderRadius: 18,
                   padding: 16,
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  borderRadius: 16,
+                  background: "#f8fbff",
+                  border: "1px solid #dbeafe",
+                  color: "#64748b",
+                  fontWeight: 600,
                 }}
               >
+                No inventory exists yet.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {inventoryRows.map((row) => (
+                  <div
+                    key={row.id}
+                    onClick={() => setSelectedInventoryId(row.id)}
+                    style={{
+                      cursor: "pointer",
+                      border:
+                        row.id === selectedInventory?.id
+                          ? "1px solid #bfe0fb"
+                          : "1px solid #e2e8f0",
+                      background: row.id === selectedInventory?.id ? "#edf7ff" : "#fff",
+                      borderRadius: 16,
+                      padding: 14,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                      {row.productLabel}
+                    </div>
+                    <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
+                      Qty: {safeNumber(row.stockQty)} · Min: {safeNumber(row.minimumQty)} ·{" "}
+                      {row.location || "—"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </PageCard>
+
+          {selectedInventory && (
+            <PageCard style={{ padding: 20 }}>
+              <div style={{ display: "grid", gap: 16 }}>
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: 22,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    Inventory Detail
+                  </h2>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 13,
+                      color: "#64748b",
+                    }}
+                  >
+                    Edit and save this inventory item.
+                  </p>
+                </div>
+
                 <div
                   style={{
                     display: "grid",
@@ -901,10 +1473,10 @@ export default function RegulatedGarbageAdminPage() {
                   <div>
                     <FieldLabel>Product</FieldLabel>
                     <TextInput
-                      value={getInventoryField(row, "productLabel")}
+                      value={getInventoryField(selectedInventory, "productLabel")}
                       onChange={(e) =>
                         handleInventoryDraftChange(
-                          row.id,
+                          selectedInventory.id,
                           "productLabel",
                           e.target.value
                         )
@@ -916,10 +1488,10 @@ export default function RegulatedGarbageAdminPage() {
                     <FieldLabel>Stock Qty</FieldLabel>
                     <TextInput
                       type="number"
-                      value={getInventoryField(row, "stockQty")}
+                      value={getInventoryField(selectedInventory, "stockQty")}
                       onChange={(e) =>
                         handleInventoryDraftChange(
-                          row.id,
+                          selectedInventory.id,
                           "stockQty",
                           e.target.value
                         )
@@ -931,10 +1503,10 @@ export default function RegulatedGarbageAdminPage() {
                     <FieldLabel>Minimum Qty</FieldLabel>
                     <TextInput
                       type="number"
-                      value={getInventoryField(row, "minimumQty")}
+                      value={getInventoryField(selectedInventory, "minimumQty")}
                       onChange={(e) =>
                         handleInventoryDraftChange(
-                          row.id,
+                          selectedInventory.id,
                           "minimumQty",
                           e.target.value
                         )
@@ -945,9 +1517,9 @@ export default function RegulatedGarbageAdminPage() {
                   <div>
                     <FieldLabel>Unit</FieldLabel>
                     <TextInput
-                      value={getInventoryField(row, "unit")}
+                      value={getInventoryField(selectedInventory, "unit")}
                       onChange={(e) =>
-                        handleInventoryDraftChange(row.id, "unit", e.target.value)
+                        handleInventoryDraftChange(selectedInventory.id, "unit", e.target.value)
                       }
                     />
                   </div>
@@ -955,10 +1527,10 @@ export default function RegulatedGarbageAdminPage() {
                   <div>
                     <FieldLabel>Location</FieldLabel>
                     <TextInput
-                      value={getInventoryField(row, "location")}
+                      value={getInventoryField(selectedInventory, "location")}
                       onChange={(e) =>
                         handleInventoryDraftChange(
-                          row.id,
+                          selectedInventory.id,
                           "location",
                           e.target.value
                         )
@@ -969,418 +1541,394 @@ export default function RegulatedGarbageAdminPage() {
                   <div>
                     <FieldLabel>Last Updated</FieldLabel>
                     <TextInput
-                      value={formatDateTime(row.updatedAt)}
+                      value={formatDateTime(selectedInventory.updatedAt)}
                       disabled
                     />
                   </div>
                 </div>
 
-                <div style={{ marginTop: 14 }}>
+                <div>
                   <ActionButton
                     variant="secondary"
-                    onClick={() => saveInventoryRow(row)}
-                    disabled={savingInventoryId === row.id}
+                    onClick={() => saveInventoryRow(selectedInventory)}
+                    disabled={savingInventoryId === selectedInventory.id}
                   >
-                    {savingInventoryId === row.id ? "Saving..." : "Save Inventory"}
+                    {savingInventoryId === selectedInventory.id ? "Saving..." : "Save Inventory"}
                   </ActionButton>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </PageCard>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            selectedAlert || selectedReport
-              ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
-              : "1fr",
-          gap: 18,
-        }}
-      >
-        <PageCard style={{ padding: 18 }}>
-          <h2
-            style={{
-              marginTop: 0,
-              marginBottom: 14,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
-            Open Alerts
-          </h2>
-
-          {openAlerts.length === 0 ? (
-            <div>No active alerts.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {openAlerts.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => {
-                    setSelectedAlertId(item.id);
-                    if (item.reportId) setSelectedReportId(item.reportId);
-                  }}
-                  style={{
-                    cursor: "pointer",
-                    border:
-                      item.id === selectedAlert?.id
-                        ? "1px solid #bfe0fb"
-                        : "1px solid #e2e8f0",
-                    background: item.id === selectedAlert?.id ? "#edf7ff" : "#fff",
-                    borderRadius: 16,
-                    padding: 14,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 800,
-                      color: "#0f172a",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <span>{item.productLabel}</span>
-                    <span style={getStatusPill(item.status)}>
-                      {item.status || "open"}
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#64748b",
-                      marginTop: 4,
-                    }}
-                  >
-                    {item.airline || "—"} · {item.cartType || "—"} ·{" "}
-                    {item.reportDate || "—"}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#1769aa",
-                      marginTop: 4,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Reported by {item.reportedBySupervisorName || "—"}
-                  </div>
-                </div>
-              ))}
-            </div>
+            </PageCard>
           )}
-        </PageCard>
+        </div>
+      )}
 
-        {(selectedAlert || selectedReport) && (
-          <PageCard style={{ padding: 20 }}>
-            {selectedAlert && (
-              <div style={{ display: "grid", gap: 16 }}>
-                <div>
-                  <h2
-                    style={{
-                      margin: 0,
-                      fontSize: 22,
-                      fontWeight: 800,
-                      color: "#0f172a",
-                    }}
-                  >
-                    Alert Detail
-                  </h2>
-                  <p
-                    style={{
-                      margin: "4px 0 0",
-                      fontSize: 13,
-                      color: "#64748b",
-                    }}
-                  >
-                    {selectedAlert.productLabel} · {selectedAlert.airline || "—"} ·{" "}
-                    {selectedAlert.cartType || "—"}
-                  </p>
-                </div>
+      {activeTab === "alerts" && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              selectedAlert || selectedReport
+                ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
+                : "1fr",
+            gap: 18,
+          }}
+        >
+          <PageCard style={{ padding: 18 }}>
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 14,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
+              Alertas
+            </h2>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
-                  }}
-                >
+            {openAlerts.length === 0 ? (
+              <div>No active alerts.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {openAlerts.map((item) => (
                   <div
+                    key={item.id}
+                    onClick={() => {
+                      setSelectedAlertId(item.id);
+                      if (item.reportId) setSelectedReportId(item.reportId);
+                    }}
                     style={{
-                      border: "1px solid #dbeafe",
-                      borderRadius: 14,
-                      padding: "12px 14px",
-                      background: "#f8fbff",
+                      cursor: "pointer",
+                      border:
+                        item.id === selectedAlert?.id
+                          ? "1px solid #bfe0fb"
+                          : "1px solid #e2e8f0",
+                      background: item.id === selectedAlert?.id ? "#edf7ff" : "#fff",
+                      borderRadius: 16,
+                      padding: 14,
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: "#64748b",
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Alert Type
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 4,
                         fontWeight: 800,
                         color: "#0f172a",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
-                      {selectedAlert.alertType || "—"}
+                      <span>{item.productLabel}</span>
+                      <span style={getStatusPill(item.status)}>
+                        {item.status || "open"}
+                      </span>
                     </div>
-                  </div>
 
-                  <div
-                    style={{
-                      border: "1px solid #dbeafe",
-                      borderRadius: 14,
-                      padding: "12px 14px",
-                      background: "#f8fbff",
-                    }}
-                  >
                     <div
                       style={{
-                        fontSize: 11,
-                        fontWeight: 800,
+                        fontSize: 13,
                         color: "#64748b",
-                        textTransform: "uppercase",
+                        marginTop: 4,
                       }}
                     >
-                      Office Stock at Submission
+                      {item.airline || "—"} · {item.cartType || "—"} ·{" "}
+                      {item.reportDate || "—"}
                     </div>
+
                     <div
                       style={{
+                        fontSize: 13,
+                        color: "#1769aa",
                         marginTop: 4,
-                        fontWeight: 800,
-                        color: "#0f172a",
+                        fontWeight: 700,
                       }}
                     >
-                      {safeNumber(selectedAlert.officeStockAtSubmission)}
+                      Reported by {item.reportedBySupervisorName || "—"}
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </PageCard>
 
-                  <div
-                    style={{
-                      border: "1px solid #dbeafe",
-                      borderRadius: 14,
-                      padding: "12px 14px",
-                      background: "#f8fbff",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: "#64748b",
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Estimated Restock
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                      }}
-                    >
-                      {selectedAlert.estimatedRestockDate || "—"}
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <FieldLabel>Assigned Manager</FieldLabel>
-                  <TextInput
-                    value={alertEdit.assignedManagerName}
-                    onChange={(e) =>
-                      setAlertEdit((prev) => ({
-                        ...prev,
-                        assignedManagerName: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Manager Notes</FieldLabel>
-                  <TextArea
-                    value={alertEdit.managerNotes}
-                    onChange={(e) =>
-                      setAlertEdit((prev) => ({
-                        ...prev,
-                        managerNotes: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Follow Up Status</FieldLabel>
-                  <SelectInput
-                    value={alertEdit.followUpStatus}
-                    onChange={(e) =>
-                      setAlertEdit((prev) => ({
-                        ...prev,
-                        followUpStatus: e.target.value,
-                      }))
-                    }
-                  >
-                    <option value="submitted">Submitted</option>
-                    <option value="assigned">Assigned</option>
-                    <option value="processing">Processing</option>
-                    <option value="restock_in_place">Restock In Place</option>
-                    <option value="closed">Closed</option>
-                  </SelectInput>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 14,
-                  }}
-                >
+          {(selectedAlert || selectedReport) && (
+            <PageCard style={{ padding: 20 }}>
+              {selectedAlert && (
+                <div style={{ display: "grid", gap: 16 }}>
                   <div>
-                    <FieldLabel>Estimated Restock Date</FieldLabel>
-                    <TextInput
-                      type="date"
-                      value={alertEdit.estimatedRestockDate}
-                      onChange={(e) =>
-                        setAlertEdit((prev) => ({
-                          ...prev,
-                          estimatedRestockDate: e.target.value,
-                        }))
-                      }
-                    />
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 22,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                      }}
+                    >
+                      Alert Detail
+                    </h2>
+                    <p
+                      style={{
+                        margin: "4px 0 0",
+                        fontSize: 13,
+                        color: "#64748b",
+                      }}
+                    >
+                      {selectedAlert.productLabel} · {selectedAlert.airline || "—"} ·{" "}
+                      {selectedAlert.cartType || "—"}
+                    </p>
                   </div>
 
-                  <div>
-                    <FieldLabel>Actual Replacement Date</FieldLabel>
-                    <TextInput
-                      type="date"
-                      value={alertEdit.actualReplacementDate}
-                      onChange={(e) =>
-                        setAlertEdit((prev) => ({
-                          ...prev,
-                          actualReplacementDate: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <FieldLabel>Restock Progress Message</FieldLabel>
-                  <TextArea
-                    value={alertEdit.restockInProgressMessage}
-                    onChange={(e) =>
-                      setAlertEdit((prev) => ({
-                        ...prev,
-                        restockInProgressMessage: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <ActionButton
-                    variant="warning"
-                    onClick={saveAlertFollowUp}
-                    disabled={savingAlertId === selectedAlert.id}
-                  >
-                    {savingAlertId === selectedAlert.id
-                      ? "Saving..."
-                      : "Save Follow Up"}
-                  </ActionButton>
-
-                  <ActionButton
-                    variant="success"
-                    onClick={closeAlert}
-                    disabled={savingAlertId === selectedAlert.id}
-                  >
-                    {savingAlertId === selectedAlert.id
-                      ? "Closing..."
-                      : "Close Alert"}
-                  </ActionButton>
-                </div>
-
-                {selectedReport && (
                   <div
                     style={{
-                      marginTop: 8,
-                      borderTop: "1px solid #e2e8f0",
-                      paddingTop: 16,
                       display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontSize: 18,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                      }}
-                    >
-                      Linked Report
-                    </h3>
+                    <TextInfoCard
+                      label="Alert Type"
+                      value={selectedAlert.alertType || "—"}
+                    />
+                    <TextInfoCard
+                      label="Office Stock at Submission"
+                      value={safeNumber(selectedAlert.officeStockAtSubmission)}
+                    />
+                    <TextInfoCard
+                      label="Estimated Restock"
+                      value={selectedAlert.estimatedRestockDate || "—"}
+                    />
+                  </div>
 
+                  <div>
+                    <FieldLabel>Assigned Manager</FieldLabel>
+                    <TextInput
+                      value={alertEdit.assignedManagerName}
+                      onChange={(e) =>
+                        setAlertEdit((prev) => ({
+                          ...prev,
+                          assignedManagerName: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Manager Notes</FieldLabel>
+                    <TextArea
+                      value={alertEdit.managerNotes}
+                      onChange={(e) =>
+                        setAlertEdit((prev) => ({
+                          ...prev,
+                          managerNotes: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Follow Up Status</FieldLabel>
+                    <SelectInput
+                      value={alertEdit.followUpStatus}
+                      onChange={(e) =>
+                        setAlertEdit((prev) => ({
+                          ...prev,
+                          followUpStatus: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="submitted">Submitted</option>
+                      <option value="assigned">Assigned</option>
+                      <option value="processing">Processing</option>
+                      <option value="restock_in_place">Restock In Place</option>
+                      <option value="closed">Closed</option>
+                    </SelectInput>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 14,
+                    }}
+                  >
+                    <div>
+                      <FieldLabel>Estimated Restock Date</FieldLabel>
+                      <TextInput
+                        type="date"
+                        value={alertEdit.estimatedRestockDate}
+                        onChange={(e) =>
+                          setAlertEdit((prev) => ({
+                            ...prev,
+                            estimatedRestockDate: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Actual Replacement Date</FieldLabel>
+                      <TextInput
+                        type="date"
+                        value={alertEdit.actualReplacementDate}
+                        onChange={(e) =>
+                          setAlertEdit((prev) => ({
+                            ...prev,
+                            actualReplacementDate: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <FieldLabel>Restock Progress Message</FieldLabel>
+                    <TextArea
+                      value={alertEdit.restockInProgressMessage}
+                      onChange={(e) =>
+                        setAlertEdit((prev) => ({
+                          ...prev,
+                          restockInProgressMessage: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <ActionButton
+                      variant="warning"
+                      onClick={saveAlertFollowUp}
+                      disabled={savingAlertId === selectedAlert.id}
+                    >
+                      {savingAlertId === selectedAlert.id
+                        ? "Saving..."
+                        : "Save Follow Up"}
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="success"
+                      onClick={closeAlert}
+                      disabled={savingAlertId === selectedAlert.id}
+                    >
+                      {savingAlertId === selectedAlert.id
+                        ? "Closing..."
+                        : "Close Alert"}
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => archiveAlert(selectedAlert)}
+                    >
+                      Archive
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="danger"
+                      onClick={() => deleteAlertPermanently(selectedAlert)}
+                    >
+                      Delete
+                    </ActionButton>
+                  </div>
+
+                  {selectedReport && (
                     <div
                       style={{
-                        borderRadius: 14,
-                        padding: "12px 14px",
-                        background: "#f8fbff",
-                        border: "1px solid #dbeafe",
+                        marginTop: 8,
+                        borderTop: "1px solid #e2e8f0",
+                        paddingTop: 16,
+                        display: "grid",
+                        gap: 12,
                       }}
                     >
-                      <div
+                      <h3
                         style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          fontWeight: 700,
-                        }}
-                      >
-                        Submitted by {selectedReport.supervisorName || "—"} ·{" "}
-                        {selectedReport.reportDate || "—"}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 6,
+                          margin: 0,
+                          fontSize: 18,
                           fontWeight: 800,
                           color: "#0f172a",
                         }}
                       >
-                        {selectedReport.airline || "—"} ·{" "}
-                        {selectedReport.internationalCart || "—"}
-                      </div>
+                        Linked Report
+                      </h3>
+
                       <div
                         style={{
-                          marginTop: 6,
-                          fontSize: 13,
-                          color: "#334155",
+                          borderRadius: 14,
+                          padding: "12px 14px",
+                          background: "#f8fbff",
+                          border: "1px solid #dbeafe",
                         }}
                       >
-                        Review Status: {selectedReport.reviewStatus || "submitted"}
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Submitted by {selectedReport.supervisorName || "—"} ·{" "}
+                          {selectedReport.reportDate || "—"}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontWeight: 800,
+                            color: "#0f172a",
+                          }}
+                        >
+                          {selectedReport.airline || "—"} ·{" "}
+                          {selectedReport.internationalCart || "—"}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 13,
+                            color: "#334155",
+                          }}
+                        >
+                          Review Status: {selectedReport.reviewStatus || "submitted"}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </PageCard>
-        )}
+                  )}
+                </div>
+              )}
+            </PageCard>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TextInfoCard({ label, value }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #dbeafe",
+        borderRadius: 14,
+        padding: "12px 14px",
+        background: "#f8fbff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          fontWeight: 800,
+          color: "#0f172a",
+          whiteSpace: "pre-line",
+        }}
+      >
+        {String(value ?? "—")}
       </div>
     </div>
   );
