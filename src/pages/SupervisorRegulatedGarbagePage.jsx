@@ -94,7 +94,7 @@ function TextInput(props) {
       style={{
         width: "100%",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
         fontSize: 14,
@@ -113,7 +113,7 @@ function SelectInput(props) {
       style={{
         width: "100%",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
         fontSize: 14,
@@ -132,7 +132,7 @@ function TextArea(props) {
       style={{
         width: "100%",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
         fontSize: 14,
@@ -197,6 +197,78 @@ function ActionButton({
   );
 }
 
+function CenterModal({ title, children, onClose, hideClose = false }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.38)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99999,
+        padding: 20,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 780,
+          background: "#ffffff",
+          borderRadius: 28,
+          boxShadow: "0 30px 70px rgba(15,23,42,0.24)",
+          border: "1px solid #e2e8f0",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "20px 24px",
+            background: "#fff7ed",
+            borderBottom: "1px solid #fdba74",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 900,
+              color: "#9a3412",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {title}
+          </div>
+
+          {!hideClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                border: "1px solid #fdba74",
+                background: "#ffffff",
+                color: "#9a3412",
+                borderRadius: 12,
+                padding: "8px 12px",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              Close
+            </button>
+          )}
+        </div>
+
+        <div style={{ padding: 24 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 const AIRLINE_OPTIONS = [
   "Delta",
   "Avianca",
@@ -220,7 +292,11 @@ const CHECKLIST_ITEMS = [
   },
   { key: "scrub_brush", label: "Scrub Brush", inventoryKey: "scrub_brush" },
   { key: "zip_ties", label: "Zip Ties", inventoryKey: "zip_ties" },
-  { key: "paper_towels", label: "Paper Towels", inventoryKey: "paper_towels" },
+  {
+    key: "paper_towels",
+    label: "Paper Towels",
+    inventoryKey: "paper_towels",
+  },
   {
     key: "ppe_goggles_gloves",
     label: "PPE (Goggles / Gloves)",
@@ -231,7 +307,11 @@ const CHECKLIST_ITEMS = [
     label: "Copy of Spill Kit Contents",
     inventoryKey: "spill_kit_contents_copy",
   },
-  { key: "plastic_bags", label: "Plastic Bags", inventoryKey: "plastic_bags" },
+  {
+    key: "plastic_bags",
+    label: "Plastic Bags",
+    inventoryKey: "plastic_bags",
+  },
 ];
 
 function buildInitialItems() {
@@ -262,76 +342,6 @@ function buildInitialItems() {
   return map;
 }
 
-function ModalShell({ title, tone = "info", children }) {
-  const toneStyles = {
-    info: {
-      headerBg: "#edf7ff",
-      headerBorder: "#cfe7fb",
-      headerColor: "#1769aa",
-    },
-    warning: {
-      headerBg: "#fff7ed",
-      headerBorder: "#fdba74",
-      headerColor: "#9a3412",
-    },
-    success: {
-      headerBg: "#ecfdf5",
-      headerBorder: "#a7f3d0",
-      headerColor: "#065f46",
-    },
-  };
-
-  const current = toneStyles[tone] || toneStyles.info;
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15,23,42,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 99999,
-        padding: 20,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 620,
-          background: "#ffffff",
-          borderRadius: 24,
-          boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
-          border: "1px solid #e2e8f0",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "18px 20px",
-            background: current.headerBg,
-            borderBottom: `1px solid ${current.headerBorder}`,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 900,
-              color: current.headerColor,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            {title}
-          </div>
-        </div>
-
-        <div style={{ padding: 20 }}>{children}</div>
-      </div>
-    </div>
-  );
-}
-
 export default function SupervisorRegulatedGarbagePage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -349,9 +359,17 @@ export default function SupervisorRegulatedGarbagePage() {
   const [myReports, setMyReports] = useState([]);
   const [activeTab, setActiveTab] = useState("submit");
 
-  const [missingQueue, setMissingQueue] = useState([]);
-  const [activeMissingKey, setActiveMissingKey] = useState("");
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [modalState, setModalState] = useState({
+    open: false,
+    type: "",
+    title: "",
+    message: "",
+  });
+
+  const [requiredModal, setRequiredModal] = useState({
+    open: false,
+    itemKey: "",
+  });
 
   const [form, setForm] = useState({
     reportDate: todayString(),
@@ -438,7 +456,8 @@ export default function SupervisorRegulatedGarbagePage() {
       if (value?.available === "No" && stock > 0 && !value?.collectedFromOffice) {
         rows.push({
           key: item.key,
-          text: `${item.label}: office inventory shows ${stock} available.`,
+          text:
+            "Notice: According to office inventory, this product is available in stock. Please proceed with the replacement before submitting the report.",
         });
       }
     });
@@ -454,20 +473,14 @@ export default function SupervisorRegulatedGarbagePage() {
       ) {
         rows.push({
           key: "orange_bags_quantity",
-          text: `Orange Bags: low stock on cart (${orangeQty}). Office inventory shows ${orangeStock} available.`,
+          text:
+            "Notice: According to office inventory, this product is available in stock. Please proceed with the replacement before submitting the report.",
         });
       }
     }
 
     return rows;
   }, [form.items, inventory]);
-
-  const currentAirlineLabel =
-    form.airline === "Other" ? String(form.airlineOther || "").trim() : form.airline;
-
-  const reportNeedsAttention = useMemo(() => {
-    return officeAlerts.length > 0;
-  }, [officeAlerts]);
 
   const resetForm = () => {
     setForm({
@@ -483,8 +496,6 @@ export default function SupervisorRegulatedGarbagePage() {
       photoUrl: "",
       items: buildInitialItems(),
     });
-    setMissingQueue([]);
-    setActiveMissingKey("");
   };
 
   const handleFieldChange = (field, value) => {
@@ -494,108 +505,28 @@ export default function SupervisorRegulatedGarbagePage() {
     }));
   };
 
-  const openMissingModal = (itemKey) => {
-    setMissingQueue((prev) => {
-      if (prev.includes(itemKey)) return prev;
-      return [...prev, itemKey];
-    });
-    setActiveMissingKey((prev) => prev || itemKey);
-  };
-
-  const closeResolvedMissingModal = () => {
-    if (!activeMissingKey) return;
-
-    setMissingQueue((prev) => {
-      const next = prev.filter((key) => key !== activeMissingKey);
-      setActiveMissingKey(next[0] || "");
-      return next;
-    });
-  };
-
-  const validateMissingModal = (itemKey) => {
-    const current = form.items[itemKey];
-    if (!current) return true;
-
-    if (!String(current.replacementDate || "").trim()) {
-      setStatusMessage("Please add the replacement date before continuing.");
-      return false;
-    }
-
-    if (current.replacementDate > form.reportDate) {
-      if (!String(current.cannotReplaceReason || "").trim()) {
-        setStatusMessage("Please explain why it cannot be replaced the same day.");
-        return false;
-      }
-
-      if (!String(current.estimatedRestockDate || "").trim()) {
-        setStatusMessage("Please estimate when it will be back on stock.");
-        return false;
-      }
-    }
-
-    return true;
-  };
-
-  const validateOrangeModal = () => {
-    const current = form.items.orange_bags_quantity;
-
-    if (!String(current.quantityOnCart || "").trim()) {
-      setStatusMessage("Please enter Orange Bags quantity on cart.");
-      return false;
-    }
-
-    const orangeQty = safeNumber(current.quantityOnCart);
-
-    if (orangeQty < 10) {
-      if (!String(current.replacementDate || "").trim()) {
-        setStatusMessage("Please add replacement date for Orange Bags.");
-        return false;
-      }
-
-      if (current.replacementDate > form.reportDate) {
-        if (!String(current.cannotReplaceReason || "").trim()) {
-          setStatusMessage(
-            "Please explain why Orange Bags cannot be replaced the same day."
-          );
-          return false;
-        }
-
-        if (!String(current.estimatedRestockDate || "").trim()) {
-          setStatusMessage("Please estimate when Orange Bags will be back in stock.");
-          return false;
-        }
-      }
-    }
-
-    return true;
-  };
-
   const handleItemChange = (itemKey, field, value) => {
-    setForm((prev) => {
-      const next = {
-        ...prev,
-        items: {
-          ...prev.items,
-          [itemKey]: {
-            ...prev.items[itemKey],
-            [field]: value,
-          },
+    setForm((prev) => ({
+      ...prev,
+      items: {
+        ...prev.items,
+        [itemKey]: {
+          ...prev.items[itemKey],
+          [field]: value,
         },
-      };
+      },
+    }));
+  };
 
-      return next;
-    });
+  const currentAirlineLabel =
+    form.airline === "Other" ? String(form.airlineOther || "").trim() : form.airline;
 
-    if (field === "available" && value === "No") {
-      openMissingModal(itemKey);
-    }
+  const reportNeedsAttention = useMemo(() => {
+    return officeAlerts.length > 0;
+  }, [officeAlerts]);
 
-    if (field === "available" && value === "Yes") {
-      setMissingQueue((prev) => prev.filter((key) => key !== itemKey));
-      if (activeMissingKey === itemKey) {
-        setActiveMissingKey("");
-      }
-    }
+  const needsSameDayReason = (replacementDate, reportDate) => {
+    return replacementDate && reportDate && replacementDate > reportDate;
   };
 
   const validateForm = () => {
@@ -638,8 +569,29 @@ export default function SupervisorRegulatedGarbagePage() {
       }
 
       if (current.available === "No") {
-        if (!validateMissingModal(item.key)) {
-          openMissingModal(item.key);
+        if (!current.replacementDate) {
+          setStatusMessage(`Please add replacement date for ${item.label}.`);
+          return false;
+        }
+
+        if (needsSameDayReason(current.replacementDate, form.reportDate)) {
+          if (!String(current.cannotReplaceReason || "").trim()) {
+            setStatusMessage(
+              `Please explain why ${item.label} cannot be replaced the same day.`
+            );
+            return false;
+          }
+
+          if (!String(current.estimatedRestockDate || "").trim()) {
+            setStatusMessage(
+              `Please estimate when ${item.label} will be back in stock.`
+            );
+            return false;
+          }
+        }
+
+        if (!String(current.additionalNotes || "").trim()) {
+          setStatusMessage(`Please add additional notes for ${item.label}.`);
           return false;
         }
       }
@@ -654,11 +606,37 @@ export default function SupervisorRegulatedGarbagePage() {
     const orangeQty = safeNumber(orangeQtyRaw);
 
     if (orangeQty < 10) {
-      if (!validateOrangeModal()) {
-        setActiveMissingKey("orange_bags_quantity");
-        if (!missingQueue.includes("orange_bags_quantity")) {
-          setMissingQueue((prev) => [...prev, "orange_bags_quantity"]);
-        }
+      if (!String(form.items.orange_bags_quantity?.replacementDate || "").trim()) {
+        setStatusMessage("Please add replacement date for Orange Bags.");
+        return false;
+      }
+
+      if (
+        needsSameDayReason(
+          form.items.orange_bags_quantity.replacementDate,
+          form.reportDate
+        ) &&
+        !String(form.items.orange_bags_quantity?.cannotReplaceReason || "").trim()
+      ) {
+        setStatusMessage(
+          "Please explain why Orange Bags cannot be replaced the same day."
+        );
+        return false;
+      }
+
+      if (
+        needsSameDayReason(
+          form.items.orange_bags_quantity.replacementDate,
+          form.reportDate
+        ) &&
+        !String(form.items.orange_bags_quantity?.estimatedRestockDate || "").trim()
+      ) {
+        setStatusMessage("Please estimate when Orange Bags will be back in stock.");
+        return false;
+      }
+
+      if (!String(form.items.orange_bags_quantity?.lowStockReason || "").trim()) {
+        setStatusMessage("Please add the low stock reason for Orange Bags.");
         return false;
       }
     }
@@ -745,8 +723,117 @@ export default function SupervisorRegulatedGarbagePage() {
     return alerts;
   };
 
+  const saveRequiredItemModal = () => {
+    const itemKey = requiredModal.itemKey;
+    if (!itemKey) return;
+
+    if (itemKey === "orange_bags_quantity") {
+      const item = form.items.orange_bags_quantity;
+      const qty = safeNumber(item.quantityOnCart);
+
+      if (!String(item.replacementDate || "").trim()) {
+        setStatusMessage("Please complete the replacement date.");
+        return;
+      }
+
+      if (!String(item.lowStockReason || "").trim()) {
+        setStatusMessage("Please complete the additional notes / low stock reason.");
+        return;
+      }
+
+      if (needsSameDayReason(item.replacementDate, form.reportDate)) {
+        if (!String(item.cannotReplaceReason || "").trim()) {
+          setStatusMessage("Please explain why it cannot be replaced the same day.");
+          return;
+        }
+
+        if (!String(item.estimatedRestockDate || "").trim()) {
+          setStatusMessage("Please estimate when it will be back in stock.");
+          return;
+        }
+      }
+
+      if (qty < 10) {
+        setRequiredModal({ open: false, itemKey: "" });
+        setStatusMessage("");
+        return;
+      }
+    } else {
+      const item = form.items[itemKey];
+
+      if (!String(item.replacementDate || "").trim()) {
+        setStatusMessage("Please complete the replacement date.");
+        return;
+      }
+
+      if (!String(item.additionalNotes || "").trim()) {
+        setStatusMessage("Please complete the additional notes.");
+        return;
+      }
+
+      if (needsSameDayReason(item.replacementDate, form.reportDate)) {
+        if (!String(item.cannotReplaceReason || "").trim()) {
+          setStatusMessage("Please explain why it cannot be replaced the same day.");
+          return;
+        }
+
+        if (!String(item.estimatedRestockDate || "").trim()) {
+          setStatusMessage("Please estimate when it will be back in stock.");
+          return;
+        }
+      }
+    }
+
+    setRequiredModal({ open: false, itemKey: "" });
+    setStatusMessage("");
+  };
+
+  const handleAvailabilityChange = (itemKey, value) => {
+    handleItemChange(itemKey, "available", value);
+
+    if (value === "No") {
+      const currentStock = safeNumber(
+        inventory[CHECKLIST_ITEMS.find((x) => x.key === itemKey)?.inventoryKey]?.stockQty
+      );
+
+      handleItemChange(itemKey, "officeStockAtSubmission", currentStock);
+
+      setRequiredModal({
+        open: true,
+        itemKey,
+      });
+    }
+  };
+
+  const handleOrangeQtyChange = (value) => {
+    handleItemChange("orange_bags_quantity", "quantityOnCart", value);
+
+    const qty = safeNumber(value);
+    const stock = safeNumber(inventory.orange_bags?.stockQty);
+
+    handleItemChange(
+      "orange_bags_quantity",
+      "officeStockAtSubmission",
+      stock
+    );
+
+    if (String(value || "").trim() !== "" && qty < 10) {
+      setRequiredModal({
+        open: true,
+        itemKey: "orange_bags_quantity",
+      });
+    }
+  };
+
   const handleSubmit = async () => {
     setStatusMessage("");
+
+    if (requiredModal.open) {
+      setStatusMessage(
+        "Please complete the required follow up popup before submitting the report."
+      );
+      return;
+    }
 
     if (!validateForm()) return;
 
@@ -804,7 +891,7 @@ export default function SupervisorRegulatedGarbagePage() {
       }
 
       resetForm();
-      setShowSuccessModal(true);
+      setActiveTab("my_reports");
 
       const reportsSnap = await getDocs(
         query(
@@ -822,6 +909,14 @@ export default function SupervisorRegulatedGarbagePage() {
         });
 
       setMyReports(refreshedReports);
+
+      setModalState({
+        open: true,
+        type: "success",
+        title: "Report Submitted Successfully",
+        message:
+          "Your regulated garbage checklist has been submitted successfully. You can now track its status, manager notes, and follow up progress in My Submitted Reports.",
+      });
     } catch (err) {
       console.error("Error submitting regulated garbage checklist:", err);
       setStatusMessage("Could not submit regulated garbage checklist.");
@@ -830,24 +925,15 @@ export default function SupervisorRegulatedGarbagePage() {
     }
   };
 
-  const currentModalItem = useMemo(() => {
-    if (!activeMissingKey) return null;
-
-    if (activeMissingKey === "orange_bags_quantity") {
-      return {
-        key: "orange_bags_quantity",
-        label: "Orange Bags",
-        inventoryKey: "orange_bags",
-        isOrange: true,
-      };
-    }
-
-    return CHECKLIST_ITEMS.find((item) => item.key === activeMissingKey) || null;
-  }, [activeMissingKey]);
-
   if (!canAccess) {
     return (
-      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+      <div
+        style={{
+          display: "grid",
+          gap: 18,
+          fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        }}
+      >
         <div
           style={{
             background:
@@ -896,6 +982,26 @@ export default function SupervisorRegulatedGarbagePage() {
     );
   }
 
+  const modalItem =
+    requiredModal.itemKey === "orange_bags_quantity"
+      ? {
+          label: "Orange Bags",
+          data: form.items.orange_bags_quantity,
+          officeStock: safeNumber(inventory.orange_bags?.stockQty),
+        }
+      : requiredModal.itemKey
+      ? {
+          label:
+            CHECKLIST_ITEMS.find((x) => x.key === requiredModal.itemKey)?.label || "",
+          data: form.items[requiredModal.itemKey],
+          officeStock: safeNumber(
+            inventory[
+              CHECKLIST_ITEMS.find((x) => x.key === requiredModal.itemKey)?.inventoryKey
+            ]?.stockQty
+          ),
+        }
+      : null;
+
   return (
     <div
       style={{
@@ -904,6 +1010,205 @@ export default function SupervisorRegulatedGarbagePage() {
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
+      {requiredModal.open && modalItem && (
+        <CenterModal
+          title={`${modalItem.label} Follow Up Required`}
+          hideClose
+        >
+          <div style={{ display: "grid", gap: 16 }}>
+            <div
+              style={{
+                fontSize: 15,
+                lineHeight: 1.7,
+                color: "#9a3412",
+                fontWeight: 800,
+              }}
+            >
+              This item is marked as No. Complete these fields before continuing.
+            </div>
+
+            {modalItem.officeStock > 0 && (
+              <div
+                style={{
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                  background: "#fff7ed",
+                  border: "1px solid #fdba74",
+                  color: "#9a3412",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  lineHeight: 1.7,
+                }}
+              >
+                Notice: According to office inventory, this product is available in stock. Please proceed with the replacement before submitting the report.
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 14,
+              }}
+            >
+              <div>
+                <FieldLabel>Replacement Date</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={modalItem.data.replacementDate || ""}
+                  onChange={(e) =>
+                    handleItemChange(
+                      requiredModal.itemKey,
+                      "replacementDate",
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Collected From Office</FieldLabel>
+                <SelectInput
+                  value={modalItem.data.collectedFromOffice ? "Yes" : "No"}
+                  onChange={(e) =>
+                    handleItemChange(
+                      requiredModal.itemKey,
+                      "collectedFromOffice",
+                      e.target.value === "Yes"
+                    )
+                  }
+                >
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </SelectInput>
+              </div>
+            </div>
+
+            {requiredModal.itemKey === "orange_bags_quantity" ? (
+              <div>
+                <FieldLabel>Additional Notes</FieldLabel>
+                <TextArea
+                  value={modalItem.data.lowStockReason || ""}
+                  onChange={(e) =>
+                    handleItemChange(
+                      "orange_bags_quantity",
+                      "lowStockReason",
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
+            ) : (
+              <div>
+                <FieldLabel>Additional Notes</FieldLabel>
+                <TextArea
+                  value={modalItem.data.additionalNotes || ""}
+                  onChange={(e) =>
+                    handleItemChange(
+                      requiredModal.itemKey,
+                      "additionalNotes",
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
+            )}
+
+            {needsSameDayReason(modalItem.data.replacementDate, form.reportDate) && (
+              <>
+                <div>
+                  <FieldLabel>Why can it not be replaced today?</FieldLabel>
+                  <TextArea
+                    value={modalItem.data.cannotReplaceReason || ""}
+                    onChange={(e) =>
+                      handleItemChange(
+                        requiredModal.itemKey,
+                        "cannotReplaceReason",
+                        e.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Estimated Back on Stock</FieldLabel>
+                  <TextInput
+                    type="date"
+                    value={modalItem.data.estimatedRestockDate || ""}
+                    onChange={(e) =>
+                      handleItemChange(
+                        requiredModal.itemKey,
+                        "estimatedRestockDate",
+                        e.target.value
+                      )
+                    }
+                  />
+                </div>
+              </>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: 4,
+              }}
+            >
+              <ActionButton variant="primary" onClick={saveRequiredItemModal}>
+                Save and Continue
+              </ActionButton>
+            </div>
+          </div>
+        </CenterModal>
+      )}
+
+      {modalState.open && (
+        <CenterModal
+          title={modalState.title}
+          onClose={() =>
+            setModalState({
+              open: false,
+              type: "",
+              title: "",
+              message: "",
+            })
+          }
+        >
+          <div
+            style={{
+              fontSize: 15,
+              lineHeight: 1.75,
+              color: "#0f172a",
+              fontWeight: 700,
+            }}
+          >
+            {modalState.message}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginTop: 20,
+            }}
+          >
+            <ActionButton
+              variant="primary"
+              onClick={() =>
+                setModalState({
+                  open: false,
+                  type: "",
+                  title: "",
+                  message: "",
+                })
+              }
+            >
+              OK
+            </ActionButton>
+          </div>
+        </CenterModal>
+      )}
+
       <div
         style={{
           background:
@@ -1400,7 +1705,9 @@ export default function SupervisorRegulatedGarbagePage() {
                 <FieldLabel>International Cart</FieldLabel>
                 <SelectInput
                   value={form.internationalCart}
-                  onChange={(e) => handleFieldChange("internationalCart", e.target.value)}
+                  onChange={(e) =>
+                    handleFieldChange("internationalCart", e.target.value)
+                  }
                 >
                   <option value="">Select cart</option>
                   {CART_OPTIONS.map((option) => (
@@ -1431,7 +1738,9 @@ export default function SupervisorRegulatedGarbagePage() {
                   <FieldLabel>Additional Airline</FieldLabel>
                   <TextInput
                     value={form.airlineOther}
-                    onChange={(e) => handleFieldChange("airlineOther", e.target.value)}
+                    onChange={(e) =>
+                      handleFieldChange("airlineOther", e.target.value)
+                    }
                     placeholder="Write airline name"
                   />
                 </div>
@@ -1441,7 +1750,9 @@ export default function SupervisorRegulatedGarbagePage() {
                 <FieldLabel>Supervisor Name</FieldLabel>
                 <TextInput
                   value={form.supervisorName}
-                  onChange={(e) => handleFieldChange("supervisorName", e.target.value)}
+                  onChange={(e) =>
+                    handleFieldChange("supervisorName", e.target.value)
+                  }
                 />
               </div>
 
@@ -1540,6 +1851,10 @@ export default function SupervisorRegulatedGarbagePage() {
               {CHECKLIST_ITEMS.map((item) => {
                 const current = form.items[item.key];
                 const officeStock = safeNumber(inventory[item.inventoryKey]?.stockQty);
+                const showInventoryNotice =
+                  current.available === "No" &&
+                  officeStock > 0 &&
+                  !current.collectedFromOffice;
 
                 return (
                   <div
@@ -1563,7 +1878,7 @@ export default function SupervisorRegulatedGarbagePage() {
                         <SelectInput
                           value={current.available}
                           onChange={(e) =>
-                            handleItemChange(item.key, "available", e.target.value)
+                            handleAvailabilityChange(item.key, e.target.value)
                           }
                         >
                           <option value="">Select</option>
@@ -1578,20 +1893,21 @@ export default function SupervisorRegulatedGarbagePage() {
                       </div>
                     </div>
 
-                    {current.available === "No" && (
+                    {showInventoryNotice && (
                       <div
                         style={{
                           marginTop: 14,
-                          borderRadius: 14,
-                          padding: "12px 14px",
+                          borderRadius: 16,
+                          padding: "14px 16px",
                           background: "#fff7ed",
                           border: "1px solid #fdba74",
                           color: "#9a3412",
-                          fontWeight: 700,
+                          fontWeight: 800,
                           fontSize: 14,
+                          lineHeight: 1.7,
                         }}
                       >
-                        This item requires mandatory follow-up details. Complete the popup in the center to continue.
+                        Notice: According to office inventory, this product is available in stock. Please proceed with the replacement before submitting the report.
                       </div>
                     )}
                   </div>
@@ -1619,25 +1935,7 @@ export default function SupervisorRegulatedGarbagePage() {
                       type="number"
                       min="0"
                       value={form.items.orange_bags_quantity.quantityOnCart}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        handleItemChange(
-                          "orange_bags_quantity",
-                          "quantityOnCart",
-                          value
-                        );
-
-                        if (
-                          String(value || "").trim() !== "" &&
-                          safeNumber(value) < 10
-                        ) {
-                          setMissingQueue((prev) => {
-                            if (prev.includes("orange_bags_quantity")) return prev;
-                            return [...prev, "orange_bags_quantity"];
-                          });
-                          setActiveMissingKey((prev) => prev || "orange_bags_quantity");
-                        }
-                      }}
+                      onChange={(e) => handleOrangeQtyChange(e.target.value)}
                     />
                   </div>
 
@@ -1650,21 +1948,24 @@ export default function SupervisorRegulatedGarbagePage() {
                   </div>
                 </div>
 
-                {safeNumber(form.items.orange_bags_quantity.quantityOnCart) < 10 &&
-                  String(form.items.orange_bags_quantity.quantityOnCart || "").trim() !== "" && (
+                {String(form.items.orange_bags_quantity.quantityOnCart || "").trim() !== "" &&
+                  safeNumber(form.items.orange_bags_quantity.quantityOnCart) < 10 &&
+                  safeNumber(inventory.orange_bags?.stockQty) > 0 &&
+                  !form.items.orange_bags_quantity.collectedFromOffice && (
                     <div
                       style={{
                         marginTop: 14,
-                        borderRadius: 14,
-                        padding: "12px 14px",
+                        borderRadius: 16,
+                        padding: "14px 16px",
                         background: "#fff7ed",
                         border: "1px solid #fdba74",
                         color: "#9a3412",
-                        fontWeight: 700,
+                        fontWeight: 800,
                         fontSize: 14,
+                        lineHeight: 1.7,
                       }}
                     >
-                      Orange Bags are below minimum. Complete the mandatory popup in the center to continue.
+                      Notice: According to office inventory, this product is available in stock. Please proceed with the replacement before submitting the report.
                     </div>
                   )}
               </div>
@@ -1676,7 +1977,7 @@ export default function SupervisorRegulatedGarbagePage() {
               <ActionButton
                 onClick={handleSubmit}
                 variant="primary"
-                disabled={saving || loadingInventory || !!activeMissingKey}
+                disabled={saving || loadingInventory}
               >
                 {saving ? "Submitting..." : "Submit Regulated Garbage Checklist"}
               </ActionButton>
@@ -1687,310 +1988,6 @@ export default function SupervisorRegulatedGarbagePage() {
             </div>
           </PageCard>
         </>
-      )}
-
-      {currentModalItem && (
-        <ModalShell
-          title={
-            currentModalItem.isOrange
-              ? "Orange Bags Follow Up Required"
-              : `${currentModalItem.label} Follow Up Required`
-          }
-          tone="warning"
-        >
-          <div style={{ display: "grid", gap: 14 }}>
-            {currentModalItem.isOrange ? (
-              <>
-                <div
-                  style={{
-                    fontSize: 14,
-                    color: "#9a3412",
-                    fontWeight: 700,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Orange Bags are below minimum. You must complete these fields before continuing.
-                </div>
-
-                <div>
-                  <FieldLabel>Low Stock Reason</FieldLabel>
-                  <TextArea
-                    value={form.items.orange_bags_quantity.lowStockReason}
-                    onChange={(e) =>
-                      handleItemChange(
-                        "orange_bags_quantity",
-                        "lowStockReason",
-                        e.target.value
-                      )
-                    }
-                  />
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 14,
-                  }}
-                >
-                  <div>
-                    <FieldLabel>Replacement Date</FieldLabel>
-                    <TextInput
-                      type="date"
-                      value={form.items.orange_bags_quantity.replacementDate}
-                      onChange={(e) =>
-                        handleItemChange(
-                          "orange_bags_quantity",
-                          "replacementDate",
-                          e.target.value
-                        )
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Collected From Office</FieldLabel>
-                    <SelectInput
-                      value={
-                        form.items.orange_bags_quantity.collectedFromOffice
-                          ? "Yes"
-                          : "No"
-                      }
-                      onChange={(e) =>
-                        handleItemChange(
-                          "orange_bags_quantity",
-                          "collectedFromOffice",
-                          e.target.value === "Yes"
-                        )
-                      }
-                    >
-                      <option value="No">No</option>
-                      <option value="Yes">Yes</option>
-                    </SelectInput>
-                  </div>
-                </div>
-
-                {form.items.orange_bags_quantity.replacementDate > form.reportDate && (
-                  <>
-                    <div>
-                      <FieldLabel>Why can Orange Bags not be replaced today?</FieldLabel>
-                      <TextArea
-                        value={
-                          form.items.orange_bags_quantity.cannotReplaceReason
-                        }
-                        onChange={(e) =>
-                          handleItemChange(
-                            "orange_bags_quantity",
-                            "cannotReplaceReason",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <FieldLabel>Estimated Back on Stock</FieldLabel>
-                      <TextInput
-                        type="date"
-                        value={
-                          form.items.orange_bags_quantity.estimatedRestockDate
-                        }
-                        onChange={(e) =>
-                          handleItemChange(
-                            "orange_bags_quantity",
-                            "estimatedRestockDate",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div>
-                  <FieldLabel>Additional Notes</FieldLabel>
-                  <TextArea
-                    value={form.items.orange_bags_quantity.additionalNotes}
-                    onChange={(e) =>
-                      handleItemChange(
-                        "orange_bags_quantity",
-                        "additionalNotes",
-                        e.target.value
-                      )
-                    }
-                  />
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <ActionButton
-                    variant="primary"
-                    onClick={() => {
-                      if (!validateOrangeModal()) return;
-                      closeResolvedMissingModal();
-                    }}
-                  >
-                    Save and Continue
-                  </ActionButton>
-                </div>
-              </>
-            ) : (
-              <>
-                <div
-                  style={{
-                    fontSize: 14,
-                    color: "#9a3412",
-                    fontWeight: 700,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  This item is marked as <b>No</b>. Complete these fields before continuing.
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 14,
-                  }}
-                >
-                  <div>
-                    <FieldLabel>Replacement Date</FieldLabel>
-                    <TextInput
-                      type="date"
-                      value={form.items[currentModalItem.key].replacementDate}
-                      onChange={(e) =>
-                        handleItemChange(
-                          currentModalItem.key,
-                          "replacementDate",
-                          e.target.value
-                        )
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Collected From Office</FieldLabel>
-                    <SelectInput
-                      value={
-                        form.items[currentModalItem.key].collectedFromOffice
-                          ? "Yes"
-                          : "No"
-                      }
-                      onChange={(e) =>
-                        handleItemChange(
-                          currentModalItem.key,
-                          "collectedFromOffice",
-                          e.target.value === "Yes"
-                        )
-                      }
-                    >
-                      <option value="No">No</option>
-                      <option value="Yes">Yes</option>
-                    </SelectInput>
-                  </div>
-                </div>
-
-                {form.items[currentModalItem.key].replacementDate > form.reportDate && (
-                  <>
-                    <div>
-                      <FieldLabel>Why can it not be replaced today?</FieldLabel>
-                      <TextArea
-                        value={
-                          form.items[currentModalItem.key].cannotReplaceReason
-                        }
-                        onChange={(e) =>
-                          handleItemChange(
-                            currentModalItem.key,
-                            "cannotReplaceReason",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <FieldLabel>Estimated Back on Stock</FieldLabel>
-                      <TextInput
-                        type="date"
-                        value={
-                          form.items[currentModalItem.key].estimatedRestockDate
-                        }
-                        onChange={(e) =>
-                          handleItemChange(
-                            currentModalItem.key,
-                            "estimatedRestockDate",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div>
-                  <FieldLabel>Additional Notes</FieldLabel>
-                  <TextArea
-                    value={form.items[currentModalItem.key].additionalNotes}
-                    onChange={(e) =>
-                      handleItemChange(
-                        currentModalItem.key,
-                        "additionalNotes",
-                        e.target.value
-                      )
-                    }
-                  />
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <ActionButton
-                    variant="primary"
-                    onClick={() => {
-                      if (!validateMissingModal(currentModalItem.key)) return;
-                      closeResolvedMissingModal();
-                    }}
-                  >
-                    Save and Continue
-                  </ActionButton>
-                </div>
-              </>
-            )}
-          </div>
-        </ModalShell>
-      )}
-
-      {showSuccessModal && (
-        <ModalShell title="Success" tone="success">
-          <div
-            style={{
-              display: "grid",
-              gap: 18,
-              textAlign: "center",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 15,
-                lineHeight: 1.7,
-                color: "#0f172a",
-                fontWeight: 700,
-              }}
-            >
-              Regulated garbage checklist submitted successfully.
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "center" }}>
-              <ActionButton
-                variant="primary"
-                onClick={() => {
-                  setShowSuccessModal(false);
-                  setActiveTab("my_reports");
-                }}
-              >
-                OK
-              </ActionButton>
-            </div>
-          </div>
-        </ModalShell>
       )}
     </div>
   );
