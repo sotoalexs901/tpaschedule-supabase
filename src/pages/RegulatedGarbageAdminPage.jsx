@@ -40,6 +40,38 @@ function formatDateTime(value) {
   }
 }
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
+function prettifyItemKey(key) {
+  return String(key || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function formatBooleanLabel(value) {
+  if (value === true) return "Yes";
+  if (value === false) return "No";
+  const text = String(value || "").trim();
+  if (!text) return "—";
+  return text;
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -217,6 +249,41 @@ function TabButton({ active, children, onClick }) {
   );
 }
 
+function TextInfoCard({ label, value }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #dbeafe",
+        borderRadius: 14,
+        padding: "12px 14px",
+        background: "#f8fbff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          fontWeight: 800,
+          color: "#0f172a",
+          whiteSpace: "pre-line",
+          lineHeight: 1.6,
+        }}
+      >
+        {String(value ?? "—")}
+      </div>
+    </div>
+  );
+}
+
 const DEFAULT_INVENTORY_ITEMS = [
   {
     productKey: "disinfectant",
@@ -356,6 +423,7 @@ function getStatusPill(status) {
 
 export default function RegulatedGarbageAdminPage() {
   const { user } = useUser();
+  const { isMobile, isTablet } = useViewport();
 
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -1021,8 +1089,8 @@ export default function RegulatedGarbageAdminPage() {
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 16 : isTablet ? 20 : 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
         }}
@@ -1030,7 +1098,7 @@ export default function RegulatedGarbageAdminPage() {
         <p
           style={{
             margin: 0,
-            fontSize: 12,
+            fontSize: isMobile ? 10 : 12,
             textTransform: "uppercase",
             letterSpacing: "0.22em",
             color: "rgba(255,255,255,0.78)",
@@ -1043,7 +1111,7 @@ export default function RegulatedGarbageAdminPage() {
         <h1
           style={{
             margin: "10px 0 6px",
-            fontSize: 32,
+            fontSize: isMobile ? 24 : 32,
             lineHeight: 1.05,
             fontWeight: 800,
             letterSpacing: "-0.04em",
@@ -1056,8 +1124,9 @@ export default function RegulatedGarbageAdminPage() {
           style={{
             margin: 0,
             maxWidth: 760,
-            fontSize: 14,
+            fontSize: isMobile ? 12 : 14,
             color: "rgba(255,255,255,0.88)",
+            lineHeight: 1.6,
           }}
         >
           Review received reports, manage inventory, process alerts, approve or
@@ -1083,7 +1152,7 @@ export default function RegulatedGarbageAdminPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <TabButton
             active={activeTab === "reports"}
@@ -1112,18 +1181,21 @@ export default function RegulatedGarbageAdminPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: selectedReport
-              ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
-              : "1fr",
+            gridTemplateColumns:
+              isMobile || isTablet
+                ? "1fr"
+                : selectedReport
+                ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
+                : "1fr",
             gap: 18,
           }}
         >
-          <PageCard style={{ padding: 18 }}>
+          <PageCard style={{ padding: isMobile ? 16 : 18 }}>
             <h2
               style={{
                 marginTop: 0,
                 marginBottom: 14,
-                fontSize: 20,
+                fontSize: isMobile ? 18 : 20,
                 fontWeight: 800,
                 color: "#0f172a",
               }}
@@ -1196,13 +1268,13 @@ export default function RegulatedGarbageAdminPage() {
           </PageCard>
 
           {selectedReport && (
-            <PageCard style={{ padding: 20 }}>
+            <PageCard style={{ padding: isMobile ? 16 : 20 }}>
               <div style={{ display: "grid", gap: 16 }}>
                 <div>
                   <h2
                     style={{
                       margin: 0,
-                      fontSize: 22,
+                      fontSize: isMobile ? 20 : 22,
                       fontWeight: 800,
                       color: "#0f172a",
                     }}
@@ -1225,7 +1297,9 @@ export default function RegulatedGarbageAdminPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                     gap: 12,
                   }}
                 >
@@ -1286,7 +1360,14 @@ export default function RegulatedGarbageAdminPage() {
                   />
                 </div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
                   <ActionButton
                     variant="success"
                     onClick={() => approveReport(selectedReport)}
@@ -1324,14 +1405,142 @@ export default function RegulatedGarbageAdminPage() {
                     padding: "14px 16px",
                     background: "#f8fbff",
                     border: "1px solid #dbeafe",
-                    whiteSpace: "pre-line",
-                    lineHeight: 1.7,
                     color: "#0f172a",
                   }}
                 >
-                  <strong>Full Report:</strong>
-                  {"\n\n"}
-                  {JSON.stringify(selectedReport, null, 2)}
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 800,
+                      marginBottom: 14,
+                    }}
+                  >
+                    Full Report
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <TextInfoCard
+                      label="Supervisor"
+                      value={selectedReport.supervisorName || selectedReport.reportedBySupervisorName || "—"}
+                    />
+                    <TextInfoCard
+                      label="Airline"
+                      value={selectedReport.airline || "—"}
+                    />
+                    <TextInfoCard
+                      label="Cart"
+                      value={selectedReport.internationalCart || selectedReport.cartType || "—"}
+                    />
+                    <TextInfoCard
+                      label="Report Date"
+                      value={selectedReport.reportDate || "—"}
+                    />
+                    <TextInfoCard
+                      label="Created"
+                      value={formatDateTime(selectedReport.createdAt)}
+                    />
+                    <TextInfoCard
+                      label="Review Status"
+                      value={selectedReport.reviewStatus || "submitted"}
+                    />
+                  </div>
+
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                      }}
+                    >
+                      Items Reported
+                    </div>
+
+                    {selectedReport.items && Object.keys(selectedReport.items).length > 0 ? (
+                      Object.entries(selectedReport.items).map(([itemKey, itemValue]) => (
+                        <div
+                          key={itemKey}
+                          style={{
+                            border: "1px solid #dbeafe",
+                            borderRadius: 16,
+                            background: "#ffffff",
+                            padding: 14,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 15,
+                              fontWeight: 800,
+                              color: "#0f172a",
+                              marginBottom: 12,
+                            }}
+                          >
+                            {prettifyItemKey(itemKey)}
+                          </div>
+
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(200px, 1fr))",
+                              gap: 10,
+                            }}
+                          >
+                            <TextInfoCard
+                              label="Available"
+                              value={formatBooleanLabel(itemValue?.available)}
+                            />
+                            <TextInfoCard
+                              label="Office Stock At Submission"
+                              value={safeNumber(itemValue?.officeStockAtSubmission)}
+                            />
+                            <TextInfoCard
+                              label="Collected From Office"
+                              value={formatBooleanLabel(itemValue?.collectedFromOffice)}
+                            />
+                            <TextInfoCard
+                              label="Estimated Restock Date"
+                              value={itemValue?.estimatedRestockDate || "—"}
+                            />
+                            <TextInfoCard
+                              label="Replacement Date"
+                              value={itemValue?.replacementDate || "—"}
+                            />
+                            <TextInfoCard
+                              label="Cannot Replace Reason"
+                              value={itemValue?.cannotReplaceReason || "—"}
+                            />
+                          </div>
+
+                          <div style={{ marginTop: 10 }}>
+                            <TextInfoCard
+                              label="Additional Notes"
+                              value={itemValue?.additionalNotes || "—"}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div
+                        style={{
+                          border: "1px solid #dbeafe",
+                          borderRadius: 14,
+                          background: "#ffffff",
+                          padding: 14,
+                          color: "#64748b",
+                          fontWeight: 600,
+                        }}
+                      >
+                        No structured items found in this report.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </PageCard>
@@ -1343,13 +1552,16 @@ export default function RegulatedGarbageAdminPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: selectedInventory
-              ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
-              : "1fr",
+            gridTemplateColumns:
+              isMobile || isTablet
+                ? "1fr"
+                : selectedInventory
+                ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
+                : "1fr",
             gap: 18,
           }}
         >
-          <PageCard style={{ padding: 22 }}>
+          <PageCard style={{ padding: isMobile ? 16 : 22 }}>
             <div
               style={{
                 marginBottom: 16,
@@ -1364,7 +1576,7 @@ export default function RegulatedGarbageAdminPage() {
                 <h2
                   style={{
                     margin: 0,
-                    fontSize: 20,
+                    fontSize: isMobile ? 18 : 20,
                     fontWeight: 800,
                     color: "#0f172a",
                   }}
@@ -1439,13 +1651,13 @@ export default function RegulatedGarbageAdminPage() {
           </PageCard>
 
           {selectedInventory && (
-            <PageCard style={{ padding: 20 }}>
+            <PageCard style={{ padding: isMobile ? 16 : 20 }}>
               <div style={{ display: "grid", gap: 16 }}>
                 <div>
                   <h2
                     style={{
                       margin: 0,
-                      fontSize: 22,
+                      fontSize: isMobile ? 20 : 22,
                       fontWeight: 800,
                       color: "#0f172a",
                     }}
@@ -1466,7 +1678,9 @@ export default function RegulatedGarbageAdminPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                    gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(180px, 1fr))",
                     gap: 14,
                   }}
                 >
@@ -1547,7 +1761,14 @@ export default function RegulatedGarbageAdminPage() {
                   </div>
                 </div>
 
-                <div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
                   <ActionButton
                     variant="secondary"
                     onClick={() => saveInventoryRow(selectedInventory)}
@@ -1567,18 +1788,20 @@ export default function RegulatedGarbageAdminPage() {
           style={{
             display: "grid",
             gridTemplateColumns:
-              selectedAlert || selectedReport
+              isMobile || isTablet
+                ? "1fr"
+                : selectedAlert || selectedReport
                 ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
                 : "1fr",
             gap: 18,
           }}
         >
-          <PageCard style={{ padding: 18 }}>
+          <PageCard style={{ padding: isMobile ? 16 : 18 }}>
             <h2
               style={{
                 marginTop: 0,
                 marginBottom: 14,
-                fontSize: 20,
+                fontSize: isMobile ? 18 : 20,
                 fontWeight: 800,
                 color: "#0f172a",
               }}
@@ -1652,14 +1875,14 @@ export default function RegulatedGarbageAdminPage() {
           </PageCard>
 
           {(selectedAlert || selectedReport) && (
-            <PageCard style={{ padding: 20 }}>
+            <PageCard style={{ padding: isMobile ? 16 : 20 }}>
               {selectedAlert && (
                 <div style={{ display: "grid", gap: 16 }}>
                   <div>
                     <h2
                       style={{
                         margin: 0,
-                        fontSize: 22,
+                        fontSize: isMobile ? 20 : 22,
                         fontWeight: 800,
                         color: "#0f172a",
                       }}
@@ -1681,7 +1904,9 @@ export default function RegulatedGarbageAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                        ? "1fr"
+                        : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1747,7 +1972,9 @@ export default function RegulatedGarbageAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                        ? "1fr"
+                        : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 14,
                     }}
                   >
@@ -1793,7 +2020,14 @@ export default function RegulatedGarbageAdminPage() {
                     />
                   </div>
 
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                  >
                     <ActionButton
                       variant="warning"
                       onClick={saveAlertFollowUp}
@@ -1896,40 +2130,6 @@ export default function RegulatedGarbageAdminPage() {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function TextInfoCard({ label, value }) {
-  return (
-    <div
-      style={{
-        border: "1px solid #dbeafe",
-        borderRadius: 14,
-        padding: "12px 14px",
-        background: "#f8fbff",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop: 4,
-          fontWeight: 800,
-          color: "#0f172a",
-          whiteSpace: "pre-line",
-        }}
-      >
-        {String(value ?? "—")}
-      </div>
     </div>
   );
 }
