@@ -1,64 +1,136 @@
+# TPA OPS Platform
 
-# TPA Schedule — Firebase Edition (Dashboard + Schedule + Budget)
+Internal web application for airport/station operations management, built with **React + Vite + Firebase**.
 
-## Features
+This project centralizes day-to-day operational workflows in a single app, including:
 
-- Login by **user + PIN** with roles:
-  - `anapoles` → Station Manager
-  - `amartinez`, `ogiraldo`, `gmoya` → Duty Managers
-- Dashboard for Duty Managers:
-  - Station Manager message
-  - Photos (metadata)
-  - Documents (metadata)
-  - Events
-  - Notices / invitations
-- Dashboard Editor for Station Manager.
-- Employees management (replaces Employee Database sheet).
-- Blocked Employees (PTO, Sick, Day Off, Maternity, Suspended).
-- Weekly Schedule builder:
-  - Multiple rows per employee (two shifts / 24h coverage).
-  - Hours sum per employee.
-  - Hours per airline vs weekly budget.
-  - Submit schedule for approval.
-- Approval screen for Station Manager.
+- staff schedules
+- employee records
+- time off requests
+- messages and announcements
+- budget tracking
+- timesheets
+- operational reports
+- WCHR workflows
+- cabin service scheduling
 
-## Firestore Collections (minimal)
+> **Note:** the repository folder may still contain the old name `tpaschedule-supabase-main`, but the current implementation uses **Firebase**, not Supabase.
 
-- `users`:
-  - `username`, `pin`, `role`
+---
 
-- `employees`:
-  - `name`, `position`, `department`, `status`
+## Main Modules
 
-- `restrictions`:
-  - `employeeId`, `reason`, `start_date`, `end_date`
+### Authentication and access
+- Login with **username + PIN**
+- Role-based access
+- Session persistence in local storage
+- Inactivity timeout with warning modal
 
-- `airlineBudgets`:
-  - `airline`, `weekStart`, `budgetHours`
+### Dashboard
+- Manager dashboard
+- Employee dashboard
+- Dashboard editor for station leadership
+- Announcements, events, notices, and shared content
 
-- `schedules`:
-  - `weekStart`, `status`, `createdAt`
+### Employees
+- Employee directory and management
+- User/account linking
+- Team and profile views
+- Department and position-based visibility
 
-- `schedules/{scheduleId}/shifts`:
-  - `dateDay`, `employeeId`, `airline`, `role`, `start`, `end`
+### Schedule Management
+- Weekly schedule builder
+- Multiple shifts per employee per day
+- Draft, returned, pending approval, and approved schedule flows
+- Weekly employee summary
+- Approved schedule viewer
+- PDF export support
 
-- `dashboard` (doc `main`):
-  - `message`, `updatedAt`, `updatedBy`
+### Budgets and Staffing Control
+- Airline weekly budgets
+- Daily staffing/budget comparison
+- Scheduled hours vs budget tracking
 
-- `dashboard_photos`, `dashboard_docs`, `dashboard_events`, `dashboard_notices`
+### Time Off Management
+- Time off request form
+- Employee request status view
+- Public request status page
+- Admin approval / rejection flow
+- Restriction/block creation based on approved requests
 
+### Blocked Employees / Restrictions
+- PTO
+- Sick leave
+- Day off
+- Maternity
+- Suspension
+- Other operational restrictions
 
-## Setup
+### Internal Communication
+- Direct internal messaging
+- Unread message tracking
+- Crew announcements
 
-1. Create a Firebase project and a Web App.
-2. Enable **Cloud Firestore**.
-3. Copy `.env.example` to `.env` and fill Firebase config.
-4. Create the collections above, insert documents from `users_initial.json` into `users`.
-5. Install dependencies and run:
+### Timesheets
+- Supervisor timesheet submission
+- Administrative review and management
 
-```bash
-npm install
-npm run dev
-```
+### Operational Reports
+- Operational report submission
+- Dynamic operational report form builder
+- Admin management views for reports
 
-Then deploy with your preferred hosting (Firebase Hosting, Netlify, Vercel, etc.).
+### Additional Report Modules
+- Cleaning & Security reports
+- Operations Requests reports
+- WCHR POI reports
+- Regulated Garbage reports
+
+### WCHR
+- WCHR scan workflow
+- My WCHR reports
+- WCHR flights administration
+
+### Cabin Service
+- Cabin service schedule generation
+- Cabin saved schedules
+- Cabin schedule roster and detail views
+- Utility functions for parsing flight data and generating shifts
+
+### Admin / Monitoring
+- Activity dashboard
+- Presence tracking
+- Current page tracking for active users
+
+### App Update / PWA Support
+- Web app manifest
+- Service worker assets
+- Version check prompt to refresh when a new release is available
+
+---
+
+## Tech Stack
+
+- **React 18**
+- **Vite**
+- **React Router DOM**
+- **Firebase Firestore**
+- **Firebase Storage**
+- **jsPDF**
+- **html2canvas**
+- **Tailwind CSS**
+- **PostCSS / Autoprefixer**
+
+---
+
+## Project Structure
+
+```text
+src/
+  components/
+  pages/
+  services/
+  utils/
+  firebase.js
+  UserContext.jsx
+  main.jsx
