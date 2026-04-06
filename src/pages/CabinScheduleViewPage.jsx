@@ -1,4 +1,3 @@
-// src/pages/CabinScheduleViewPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -8,6 +7,8 @@ import {
   getDoc,
   query,
   where,
+  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import {
@@ -166,7 +167,7 @@ function statusBadge(status) {
     };
   }
 
-  if (s === "rejected") {
+  if (s === "rejected" || s === "returned") {
     return {
       ...base,
       background: "#fff1f2",
@@ -183,6 +184,120 @@ function statusBadge(status) {
   };
 }
 
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeLookup(value) {
+  return normalizeText(value).toLowerCase();
+}
+
+function prettifyCodeName(value) {
+  const clean = normalizeText(value);
+  if (!clean) return "Open";
+
+  if (
+    clean.includes(" ") &&
+    !clean.includes("_") &&
+    !clean.includes(".") &&
+    !/@/.test(clean)
+  ) {
+    return clean;
+  }
+
+  if (/^[a-z]+\.[a-z]+$/i.test(clean)) {
+    return clean
+      .split(".")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (/^[a-z]+_[a-z]+$/i.test(clean)) {
+    return clean
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (/@/.test(clean)) {
+    const left = clean.split("@")[0] || clean;
+    return prettifyCodeName(left);
+  }
+
+  if (/^[a-z]+[0-9]*$/i.test(clean) && clean === clean.toLowerCase()) {
+    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  }
+
+  return clean;
+}
+
+function getEmployeeVisibleName(emp) {
+  return (
+    emp?.name ||
+    emp?.fullName ||
+    emp?.employeeName ||
+    emp?.displayName ||
+    emp?.username ||
+    emp?.loginUsername ||
+    "Unnamed Employee"
+  );
+}
+
+function resolveCreatedByName(schedule, employeeMap) {
+  const possibleValues = [
+    schedule?.createdByName,
+    schedule?.createdByDisplayName,
+    schedule?.createdByFullName,
+    schedule?.createdBy,
+    schedule?.createdByUsername,
+    schedule?.createdByUserName,
+    schedule?.createdByEmail,
+    schedule?.submittedBy,
+    schedule?.savedBy,
+  ].filter(Boolean);
+
+  for (const value of possibleValues) {
+    const direct = normalizeText(value);
+    const lookup = normalizeLookup(value);
+
+    if (!direct) continue;
+
+    if (
+      direct.includes(" ") &&
+      !direct.includes("_") &&
+      !direct.includes(".") &&
+      !/@/.test(direct)
+    ) {
+      return direct;
+    }
+
+    if (employeeMap[lookup]) {
+      return employeeMap[lookup];
+    }
+  }
+
+  return prettifyCodeName(possibleValues[0] || "-");
+}
+
+function resolveSlotEmployeeName(slot, employeeMap) {
+  const directName = normalizeText(slot?.employeeName);
+  const employeeId = normalizeText(slot?.employeeId);
+
+  if (directName && directName.toLowerCase() !== "open") {
+    const lookupFromName = employeeMap[normalizeLookup(directName)];
+    if (lookupFromName) return lookupFromName;
+    return prettifyCodeName(directName);
+  }
+
+  if (employeeId) {
+    const lookupFromId = employeeMap[normalizeLookup(employeeId)];
+    if (lookupFromId) return lookupFromId;
+    return prettifyCodeName(employeeId);
+  }
+
+  return "";
+}
+
 export default function CabinScheduleViewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -197,9 +312,36 @@ export default function CabinScheduleViewPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [addingDayKey, setAddingDayKey] = useState("");
   const [error, setError] = useState("");
   const [viewMode, setViewMode] = useState("detail");
   const [editMode, setEditMode] = useState(false);
+
+  const employeeMap = useMemo(() => {
+    const map = {};
+
+    employees.forEach((emp) => {
+      const visibleName = getEmployeeVisibleName(emp);
+
+      [
+        emp?.id,
+        emp?.username,
+        emp?.loginUsername,
+        emp?.email,
+        emp?.displayName,
+        emp?.fullName,
+        emp?.name,
+        emp?.employeeName,
+      ]
+        .map((value) => normalizeLookup(value))
+        .filter(Boolean)
+        .forEach((key) => {
+          map[key] = visibleName;
+        });
+    });
+
+    return map;
+  }, [employees]);
 
   useEffect(() => {
     async function loadScheduleView() {
@@ -242,10 +384,50 @@ export default function CabinScheduleViewPage() {
           getDocs(collection(db, "employees")),
         ]);
 
-        const slots = slotsSnap.docs.map((d) => ({
-          ...d.data(),
-          firestoreId: d.id,
-        }));
+        const employeeList = employeesSnap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
+          .filter((emp) => emp.active !== false)
+          .map((emp) => ({
+            id: emp.id,
+            ...emp,
+            name: getEmployeeVisibleName(emp),
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        const tempEmployeeMap = {};
+        employeeList.forEach((emp) => {
+          [
+            emp?.id,
+            emp?.username,
+            emp?.loginUsername,
+            emp?.email,
+            emp?.displayName,
+            emp?.fullName,
+            emp?.name,
+            emp?.employeeName,
+          ]
+            .map((value) => normalizeLookup(value))
+            .filter(Boolean)
+            .forEach((key) => {
+              tempEmployeeMap[key] = emp.name;
+            });
+        });
+
+        const slots = slotsSnap.docs.map((d) => {
+          const raw = d.data();
+          const resolvedName = resolveSlotEmployeeName(raw, tempEmployeeMap);
+
+          return {
+            ...raw,
+            firestoreId: d.id,
+            id: raw.id || d.id,
+            employeeName: resolvedName,
+            status: resolvedName || raw.employeeId ? "assigned" : "open",
+          };
+        });
 
         const flights = flightsSnap.docs.map((d) => ({
           ...d.data(),
@@ -256,23 +438,6 @@ export default function CabinScheduleViewPage() {
           ...d.data(),
           firestoreId: d.id,
         }));
-
-        const employeeList = employeesSnap.docs
-          .map((d) => ({
-            id: d.id,
-            ...d.data(),
-          }))
-          .filter((emp) => emp.active !== false)
-          .map((emp) => ({
-            id: emp.id,
-            name:
-              emp.name ||
-              emp.fullName ||
-              emp.employeeName ||
-              emp.username ||
-              "Unnamed Employee",
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
 
         setEmployees(employeeList);
         setSlotsByDay(groupByDay(slots, sortSlots));
@@ -290,6 +455,11 @@ export default function CabinScheduleViewPage() {
       loadScheduleView();
     }
   }, [id]);
+
+  const resolvedCreatedBy = useMemo(() => {
+    if (!schedule) return "-";
+    return resolveCreatedByName(schedule, employeeMap);
+  }, [schedule, employeeMap]);
 
   const totalFlights = useMemo(
     () =>
@@ -343,6 +513,9 @@ export default function CabinScheduleViewPage() {
             updated.employeeId = value;
             updated.employeeName = selectedEmployee?.name || "";
             updated.status = value ? "assigned" : "open";
+          } else if (field === "employeeName") {
+            updated.employeeName = prettifyCodeName(value);
+            updated.status = value ? "assigned" : "open";
           } else {
             updated[field] = value;
           }
@@ -383,7 +556,7 @@ export default function CabinScheduleViewPage() {
             end: slot.end || "",
             role: slot.role || "",
             employeeId: slot.employeeId || "",
-            employeeName: slot.employeeName || "",
+            employeeName: prettifyCodeName(slot.employeeName || ""),
             status: slot.employeeId || slot.employeeName ? "assigned" : "open",
             calendarHours: calcCalendarHours(slot.start, slot.end),
             paidHours: calcPaidHours(slot.start, slot.end),
@@ -399,6 +572,47 @@ export default function CabinScheduleViewPage() {
       alert(err.message || "Error saving changes.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleAddShiftRow(dayKey) {
+    try {
+      setAddingDayKey(dayKey);
+
+      const payload = {
+        scheduleId: id,
+        dayKey,
+        start: "",
+        end: "",
+        role: "Agent",
+        employeeId: "",
+        employeeName: "",
+        status: "open",
+        calendarHours: 0,
+        paidHours: 0,
+        createdAt: serverTimestamp(),
+      };
+
+      const ref = await addDoc(collection(db, "cabinScheduleSlots"), payload);
+
+      const newSlot = {
+        ...payload,
+        firestoreId: ref.id,
+        id: ref.id,
+      };
+
+      setSlotsByDay((prev) => {
+        const nextDaySlots = [...(prev[dayKey] || []), newSlot].sort(sortSlots);
+        return {
+          ...prev,
+          [dayKey]: nextDaySlots,
+        };
+      });
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Error adding shift row.");
+    } finally {
+      setAddingDayKey("");
     }
   }
 
@@ -458,7 +672,9 @@ export default function CabinScheduleViewPage() {
         .flat()
         .forEach((slot) => {
           const slotGroup = getShiftGroup(slot);
-          const slotEmployee = slot.employeeName || slot.employeeId || "Open";
+          const slotEmployee = prettifyCodeName(
+            slot.employeeName || slot.employeeId || "Open"
+          );
 
           if (
             slotGroup === groupName &&
@@ -707,7 +923,7 @@ export default function CabinScheduleViewPage() {
       <PageCard style={{ padding: 20 }}>
         <div style={summaryGridStyle}>
           <SummaryBox label="Week Start" value={schedule?.weekStartDate || "-"} />
-          <SummaryBox label="Created By" value={schedule?.createdBy || "-"} />
+          <SummaryBox label="Created By" value={resolvedCreatedBy} />
           <SummaryBox
             label="Status"
             value={<span style={statusBadge(schedule?.status)}>{schedule?.status || "draft"}</span>}
@@ -787,8 +1003,8 @@ export default function CabinScheduleViewPage() {
               fontWeight: 700,
             }}
           >
-            Edit Mode is ON. You can change employee, start time, end time, and
-            role directly in the table.
+            Edit Mode is ON. You can change employee, start time, end time, role,
+            and add new shift rows directly in each day section.
           </div>
         )}
 
@@ -844,7 +1060,7 @@ export default function CabinScheduleViewPage() {
             const flights = flightsByDay[dayKey] || [];
             const demandBlocks = demandByDay[dayKey] || [];
 
-            if (!slots.length && !flights.length && !demandBlocks.length) {
+            if (!slots.length && !flights.length && !demandBlocks.length && !editMode) {
               return null;
             }
 
@@ -863,23 +1079,45 @@ export default function CabinScheduleViewPage() {
 
             return (
               <PageCard key={dayKey} style={{ padding: 20 }}>
-                <h2
+                <div
                   style={{
-                    margin: 0,
-                    fontSize: 20,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                    letterSpacing: "-0.02em",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
                   }}
                 >
-                  {DAY_LABELS[dayKey]}
-                </h2>
+                  <div>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 20,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      {DAY_LABELS[dayKey]}
+                    </h2>
 
-                <div style={dayStatsStyle}>
-                  <span>Flights: <b>{flights.length}</b></span>
-                  <span>Arrivals: <b>{arrivals}</b></span>
-                  <span>Departures: <b>{departures}</b></span>
-                  <span>Peak Agents: <b>{peakAgents}</b></span>
+                    <div style={dayStatsStyle}>
+                      <span>Flights: <b>{flights.length}</b></span>
+                      <span>Arrivals: <b>{arrivals}</b></span>
+                      <span>Departures: <b>{departures}</b></span>
+                      <span>Peak Agents: <b>{peakAgents}</b></span>
+                    </div>
+                  </div>
+
+                  {editMode && (
+                    <ActionButton
+                      onClick={() => handleAddShiftRow(dayKey)}
+                      variant="primary"
+                      disabled={addingDayKey === dayKey || deleting || saving}
+                    >
+                      {addingDayKey === dayKey ? "Adding..." : "+ Add Shift Row"}
+                    </ActionButton>
+                  )}
                 </div>
 
                 <div style={{ marginTop: 20 }}>
@@ -1007,7 +1245,7 @@ export default function CabinScheduleViewPage() {
                                   ))}
                                 </select>
                               ) : (
-                                slot.employeeName || slot.employeeId || "Open"
+                                slot.employeeName || prettifyCodeName(slot.employeeId) || "Open"
                               )}
                             </td>
 
@@ -1041,6 +1279,21 @@ export default function CabinScheduleViewPage() {
                             )}
                           </tr>
                         ))}
+
+                        {slots.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={editMode ? 7 : 6}
+                              style={{
+                                ...thTdStyle,
+                                color: "#64748b",
+                                fontWeight: 600,
+                              }}
+                            >
+                              No assigned shifts yet.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1069,6 +1322,21 @@ export default function CabinScheduleViewPage() {
                             <td style={thTdStyle}>{flight.aircraft || "-"}</td>
                           </tr>
                         ))}
+
+                        {flights.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={5}
+                              style={{
+                                ...thTdStyle,
+                                color: "#64748b",
+                                fontWeight: 600,
+                              }}
+                            >
+                              No flights for this day.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1187,7 +1455,9 @@ function buildRosterGroups(slotsByDay) {
 
   Object.entries(slotsByDay || {}).forEach(([dayKey, slots]) => {
     slots.forEach((slot) => {
-      const employeeName = slot.employeeName || slot.employeeId || "Open";
+      const employeeName = prettifyCodeName(
+        slot.employeeName || slot.employeeId || "Open"
+      );
       const groupName = getShiftGroup(slot);
       const shiftLabel = buildShiftLabel(slot);
 
@@ -1327,7 +1597,7 @@ function minifySlotForCompare(slot) {
     end: slot.end || "",
     role: slot.role || "",
     employeeId: slot.employeeId || "",
-    employeeName: slot.employeeName || "",
+    employeeName: prettifyCodeName(slot.employeeName || ""),
   };
 }
 
