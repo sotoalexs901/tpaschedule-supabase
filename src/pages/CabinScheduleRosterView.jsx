@@ -1,4 +1,3 @@
-// src/components/CabinScheduleRosterView.jsx
 import React, { useMemo } from "react";
 
 const DAY_KEYS = [
@@ -21,11 +20,83 @@ const DAY_LABELS = {
   sunday: "SUN",
 };
 
-function getShiftGroup(slot) {
-  const start = slot.start || "";
+function safeString(value) {
+  return String(value || "").trim();
+}
 
-  if (slot.role === "LAV") return "LAV";
-  if (slot.role === "Supervisor") return "SUPERVISOR";
+function prettifyCodeName(value) {
+  const clean = safeString(value);
+  if (!clean) return "";
+
+  if (
+    clean.includes(" ") &&
+    !clean.includes("_") &&
+    !clean.includes(".") &&
+    !/@/.test(clean)
+  ) {
+    return clean;
+  }
+
+  if (/^[a-z]+\.[a-z]+$/i.test(clean)) {
+    return clean
+      .split(".")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (/^[a-z]+_[a-z]+$/i.test(clean)) {
+    return clean
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (/@/.test(clean)) {
+    const left = clean.split("@")[0] || clean;
+    return prettifyCodeName(left);
+  }
+
+  if (/^[a-z]+[0-9]*$/i.test(clean) && clean === clean.toLowerCase()) {
+    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  }
+
+  return clean;
+}
+
+function normalizeTimeForCompare(value) {
+  const str = safeString(value);
+  if (!str) return "";
+
+  if (/^\d{1,2}:\d{2}$/.test(str)) {
+    const [h, m] = str.split(":");
+    return `${h.padStart(2, "0")}:${m}`;
+  }
+
+  return str;
+}
+
+function compactTime(value) {
+  const str = safeString(value);
+  if (!str.includes(":")) return str;
+
+  const [hh, mm] = str.split(":");
+  return `${hh}${mm}`;
+}
+
+function buildShiftLabel(slot) {
+  const start = compactTime(slot.start);
+  const end = compactTime(slot.end);
+
+  if (!start || !end) return "SHIFT";
+  return `${start}-${end}`;
+}
+
+function getShiftGroup(slot) {
+  const start = normalizeTimeForCompare(slot.start || "");
+  const role = safeString(slot.role);
+
+  if (role === "LAV") return "LAV";
+  if (role === "Supervisor") return "SUPERVISOR";
 
   if (start >= "04:00" && start < "07:00") return "TEAM 1";
   if (start >= "07:00" && start < "11:00") return "TEAM 2";
@@ -33,26 +104,47 @@ function getShiftGroup(slot) {
   return "NIGHT SHIFT";
 }
 
+function getVisibleEmployeeName(slot) {
+  return (
+    prettifyCodeName(slot.employeeName) ||
+    prettifyCodeName(slot.employeeId) ||
+    "UNASSIGNED"
+  );
+}
+
 function buildRoster(slotsByDay) {
   const roster = {};
 
   Object.entries(slotsByDay || {}).forEach(([dayKey, slots]) => {
-    slots.forEach((slot) => {
-      const empName = slot.employeeName || "UNASSIGNED";
+    (slots || []).forEach((slot) => {
+      const empName = getVisibleEmployeeName(slot);
+      const slotGroup = getShiftGroup(slot);
+      const shiftLabel = buildShiftLabel(slot);
 
       if (!roster[empName]) {
         roster[empName] = {
           name: empName,
-          group: getShiftGroup(slot),
+          group: slotGroup,
           days: {},
         };
       }
 
-      roster[empName].days[dayKey] = `${slot.start}-${slot.end}`;
+      if (!roster[empName].days[dayKey]) {
+        roster[empName].days[dayKey] = shiftLabel;
+      } else {
+        const existing = roster[empName].days[dayKey];
+        if (!existing.split(" / ").includes(shiftLabel)) {
+          roster[empName].days[dayKey] = `${existing} / ${shiftLabel}`;
+        }
+      }
+
+      if (roster[empName].group === "NIGHT SHIFT" && slotGroup !== "NIGHT SHIFT") {
+        roster[empName].group = slotGroup;
+      }
     });
   });
 
-  return Object.values(roster);
+  return Object.values(roster).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export default function CabinScheduleRosterView({ slotsByDay }) {
@@ -124,7 +216,7 @@ export default function CabinScheduleRosterView({ slotsByDay }) {
               <table
                 style={{
                   width: "100%",
-                  minWidth: 860,
+                  minWidth: 820,
                   borderCollapse: "separate",
                   borderSpacing: 0,
                   background: "#ffffff",
@@ -135,7 +227,7 @@ export default function CabinScheduleRosterView({ slotsByDay }) {
                     <th
                       style={{
                         ...headerCellStyle,
-                        minWidth: 240,
+                        minWidth: 220,
                         textAlign: "left",
                       }}
                     >
@@ -153,7 +245,7 @@ export default function CabinScheduleRosterView({ slotsByDay }) {
                 <tbody>
                   {employees.map((emp, index) => (
                     <tr
-                      key={emp.name}
+                      key={`${groupName}-${emp.name}-${index}`}
                       style={{
                         background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                       }}
@@ -161,7 +253,7 @@ export default function CabinScheduleRosterView({ slotsByDay }) {
                       <td
                         style={{
                           ...nameCellStyle,
-                          minWidth: 240,
+                          minWidth: 220,
                         }}
                       >
                         {emp.name}
