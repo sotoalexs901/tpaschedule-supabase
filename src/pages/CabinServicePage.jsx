@@ -1,4 +1,3 @@
-// src/pages/CabinServicePage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { useUser } from "../UserContext.jsx";
@@ -27,6 +26,8 @@ const DAY_LABELS = {
   saturday: "Saturday",
   sunday: "Sunday",
 };
+
+const ROLE_OPTIONS = ["Supervisor", "LAV", "Agent"];
 
 function PageCard({ children, style = {} }) {
   return (
@@ -71,6 +72,18 @@ function ActionButton({
       border: "none",
       boxShadow: "0 12px 24px rgba(15,23,42,0.14)",
     },
+    success: {
+      background: "#ecfdf5",
+      color: "#065f46",
+      border: "1px solid #a7f3d0",
+      boxShadow: "none",
+    },
+    danger: {
+      background: "#fff1f2",
+      color: "#b91c1c",
+      border: "1px solid #fecdd3",
+      boxShadow: "none",
+    },
   };
 
   return (
@@ -92,6 +105,118 @@ function ActionButton({
       {children}
     </button>
   );
+}
+
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function prettifyCodeName(value) {
+  const clean = normalizeText(value);
+  if (!clean) return "";
+
+  if (
+    clean.includes(" ") &&
+    !clean.includes("_") &&
+    !clean.includes(".") &&
+    !/@/.test(clean)
+  ) {
+    return clean;
+  }
+
+  if (/^[a-z]+\.[a-z]+$/i.test(clean)) {
+    return clean
+      .split(".")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (/^[a-z]+_[a-z]+$/i.test(clean)) {
+    return clean
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (/@/.test(clean)) {
+    const left = clean.split("@")[0] || clean;
+    return prettifyCodeName(left);
+  }
+
+  if (/^[a-z]+[0-9]*$/i.test(clean) && clean === clean.toLowerCase()) {
+    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  }
+
+  return clean;
+}
+
+function getEmployeeVisibleName(emp) {
+  return (
+    emp?.name ||
+    emp?.fullName ||
+    emp?.employeeName ||
+    emp?.displayName ||
+    emp?.username ||
+    emp?.loginUsername ||
+    "Unnamed Employee"
+  );
+}
+
+function toMinutes(hhmm) {
+  if (!hhmm || !String(hhmm).includes(":")) return 0;
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function calcCalendarHours(start, end) {
+  if (!start || !end) return 0;
+
+  let s = toMinutes(start);
+  let e = toMinutes(end);
+
+  if (e <= s) e += 24 * 60;
+
+  return Number(((e - s) / 60).toFixed(2));
+}
+
+function calcPaidHours(start, end) {
+  if (!start || !end) return 0;
+
+  let s = toMinutes(start);
+  let e = toMinutes(end);
+
+  if (e <= s) e += 24 * 60;
+
+  let minutes = e - s;
+
+  if (minutes >= 361) {
+    minutes -= 30;
+  }
+
+  return Number((minutes / 60).toFixed(2));
+}
+
+function summarizeShifts(slots) {
+  const map = new Map();
+
+  for (const slot of slots) {
+    const key = `${slot.start}|${slot.end}|${slot.role}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        start: slot.start,
+        end: slot.end,
+        role: slot.role,
+        count: 0,
+      });
+    }
+    map.get(key).count += 1;
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    if ((a.start || "") !== (b.start || "")) return (a.start || "").localeCompare(b.start || "");
+    if ((a.end || "") !== (b.end || "")) return (a.end || "").localeCompare(b.end || "");
+    return (a.role || "").localeCompare(b.role || "");
+  });
 }
 
 export default function CabinServicePage() {
@@ -133,12 +258,8 @@ export default function CabinServicePage() {
           .filter((emp) => emp.active !== false)
           .map((emp) => ({
             id: emp.id,
-            name:
-              emp.name ||
-              emp.fullName ||
-              emp.employeeName ||
-              emp.username ||
-              "Unnamed Employee",
+            ...emp,
+            name: getEmployeeVisibleName(emp),
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -161,7 +282,7 @@ export default function CabinServicePage() {
   const assignedCount = useMemo(() => {
     return Object.values(weeklySlots)
       .flat()
-      .filter((slot) => slot.employeeId).length;
+      .filter((slot) => slot.employeeId || slot.employeeName).length;
   }, [weeklySlots]);
 
   const totalSlots = useMemo(() => {
@@ -200,7 +321,15 @@ export default function CabinServicePage() {
 
         const flights = await parseCabinFlights(file);
         const demandBlocks = buildDemandBlocks(flights);
-        const slots = generateCabinShifts(demandBlocks, dayKey);
+        const slots = generateCabinShifts(demandBlocks, dayKey).map((slot) => ({
+          ...slot,
+          employeeId: slot.employeeId || "",
+          employeeName: prettifyCodeName(slot.employeeName || ""),
+          role: slot.role || "Agent",
+          calendarHours: calcCalendarHours(slot.start, slot.end),
+          paidHours: calcPaidHours(slot.start, slot.end),
+          status: slot.employeeId || slot.employeeName ? "assigned" : "open",
+        }));
 
         parsedByDay[dayKey] = flights;
         demandByDay[dayKey] = demandBlocks;
@@ -224,16 +353,97 @@ export default function CabinServicePage() {
       const daySlots = prev[dayKey] || [];
       return {
         ...prev,
-        [dayKey]: daySlots.map((slot) =>
-          slot.id === slotId
-            ? {
-                ...slot,
-                employeeId,
-              }
-            : slot
-        ),
+        [dayKey]: daySlots.map((slot) => {
+          if (slot.id !== slotId) return slot;
+
+          const selectedEmployee = employees.find((emp) => emp.id === employeeId);
+
+          return {
+            ...slot,
+            employeeId,
+            employeeName: selectedEmployee?.name || "",
+            status: employeeId ? "assigned" : "open",
+          };
+        }),
       };
     });
+  }
+
+  function handleSlotFieldChange(dayKey, slotId, field, value) {
+    setWeeklySlots((prev) => {
+      const daySlots = prev[dayKey] || [];
+
+      return {
+        ...prev,
+        [dayKey]: daySlots.map((slot) => {
+          if (slot.id !== slotId) return slot;
+
+          const updated = { ...slot };
+
+          if (field === "employeeId") {
+            const selectedEmployee = employees.find((emp) => emp.id === value);
+            updated.employeeId = value;
+            updated.employeeName = selectedEmployee?.name || "";
+            updated.status = value ? "assigned" : "open";
+          } else if (field === "employeeName") {
+            updated.employeeName = prettifyCodeName(value);
+            updated.status = value ? "assigned" : "open";
+          } else {
+            updated[field] = value;
+          }
+
+          if (field === "start" || field === "end") {
+            updated.calendarHours = calcCalendarHours(
+              field === "start" ? value : updated.start,
+              field === "end" ? value : updated.end
+            );
+            updated.paidHours = calcPaidHours(
+              field === "start" ? value : updated.start,
+              field === "end" ? value : updated.end
+            );
+          }
+
+          return updated;
+        }),
+      };
+    });
+  }
+
+  function handleAddShiftRow(dayKey) {
+    const newRowId = `manual-${dayKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    setWeeklySlots((prev) => {
+      const currentDaySlots = prev[dayKey] || [];
+      return {
+        ...prev,
+        [dayKey]: [
+          ...currentDaySlots,
+          {
+            id: newRowId,
+            dayKey,
+            start: "",
+            end: "",
+            role: "Agent",
+            employeeId: "",
+            employeeName: "",
+            calendarHours: 0,
+            paidHours: 0,
+            status: "open",
+            source: "manual",
+          },
+        ],
+      };
+    });
+  }
+
+  function handleDeleteShiftRow(dayKey, slotId) {
+    const confirmed = window.confirm("Delete this shift row?");
+    if (!confirmed) return;
+
+    setWeeklySlots((prev) => ({
+      ...prev,
+      [dayKey]: (prev[dayKey] || []).filter((slot) => slot.id !== slotId),
+    }));
   }
 
   function handleBackToUpload() {
@@ -248,12 +458,34 @@ export default function CabinServicePage() {
     try {
       setSaving(true);
 
+      const cleanedWeeklySlots = Object.fromEntries(
+        Object.entries(weeklySlots).map(([dayKey, slots]) => [
+          dayKey,
+          (slots || []).map((slot) => ({
+            ...slot,
+            employeeName: prettifyCodeName(slot.employeeName || ""),
+            calendarHours: calcCalendarHours(slot.start, slot.end),
+            paidHours: calcPaidHours(slot.start, slot.end),
+            status: slot.employeeId || slot.employeeName ? "assigned" : "open",
+          })),
+        ])
+      );
+
+      const createdByName =
+        user?.displayName ||
+        user?.fullName ||
+        user?.name ||
+        prettifyCodeName(user?.username) ||
+        user?.username ||
+        user?.id ||
+        "";
+
       const scheduleId = await saveCabinWeeklySchedule({
         weekStartDate,
         weeklyFlights,
         weeklyDemandBlocks,
-        weeklySlots,
-        createdBy: user?.username || user?.id || "",
+        weeklySlots: cleanedWeeklySlots,
+        createdBy: createdByName,
       });
 
       alert(`Weekly schedule saved successfully. ID: ${scheduleId}`);
@@ -331,8 +563,8 @@ export default function CabinServicePage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Upload daily flight files, generate the weekly staffing plan and
-            assign employees before saving the final schedule.
+            Upload daily flight files, generate the weekly staffing plan,
+            add extra shift rows if needed, assign employees, and save the final schedule.
           </p>
         </div>
       </div>
@@ -522,28 +754,47 @@ export default function CabinServicePage() {
 
             return (
               <PageCard key={dayKey} style={{ padding: 20 }}>
-                <h2
+                <div
                   style={{
-                    margin: 0,
-                    fontSize: 20,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                    letterSpacing: "-0.02em",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
                   }}
                 >
-                  {DAY_LABELS[dayKey]}
-                </h2>
+                  <div>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 20,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        letterSpacing: "-0.02em",
+                      }}
+                    >
+                      {DAY_LABELS[dayKey]}
+                    </h2>
 
-                <div style={dayStatsStyle}>
-                  <span>
-                    Flights: <b>{flights.length}</b>
-                  </span>
-                  <span>
-                    Slots: <b>{slots.length}</b>
-                  </span>
-                  <span>
-                    Peak Agents: <b>{peakAgents}</b>
-                  </span>
+                    <div style={dayStatsStyle}>
+                      <span>
+                        Flights: <b>{flights.length}</b>
+                      </span>
+                      <span>
+                        Slots: <b>{slots.length}</b>
+                      </span>
+                      <span>
+                        Peak Agents: <b>{peakAgents}</b>
+                      </span>
+                    </div>
+                  </div>
+
+                  <ActionButton
+                    onClick={() => handleAddShiftRow(dayKey)}
+                    variant="primary"
+                  >
+                    + Add Shift Row
+                  </ActionButton>
                 </div>
 
                 <div style={{ marginTop: 18 }}>
@@ -555,7 +806,7 @@ export default function CabinServicePage() {
                           key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
                           style={chipStyle}
                         >
-                          {item.start}–{item.end} | {item.role} x{item.count}
+                          {item.start || "--:--"}–{item.end || "--:--"} | {item.role || "Agent"} x{item.count}
                         </div>
                       ))}
                     </div>
@@ -605,18 +856,57 @@ export default function CabinServicePage() {
                           <th style={thTdStyle}>Role</th>
                           <th style={thTdStyle}>Paid Hours</th>
                           <th style={thTdStyle}>Employee</th>
+                          <th style={thTdStyle}>Delete</th>
                         </tr>
                       </thead>
                       <tbody>
                         {slots.map((slot) => (
                           <tr key={`${dayKey}-${slot.id}`}>
-                            <td style={thTdStyle}>{slot.start}</td>
-                            <td style={thTdStyle}>{slot.end}</td>
-                            <td style={thTdStyle}>{slot.role}</td>
-                            <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
+                            <td style={thTdStyle}>
+                              <input
+                                type="time"
+                                value={slot.start || ""}
+                                onChange={(e) =>
+                                  handleSlotFieldChange(dayKey, slot.id, "start", e.target.value)
+                                }
+                                style={miniInputStyle}
+                              />
+                            </td>
+
+                            <td style={thTdStyle}>
+                              <input
+                                type="time"
+                                value={slot.end || ""}
+                                onChange={(e) =>
+                                  handleSlotFieldChange(dayKey, slot.id, "end", e.target.value)
+                                }
+                                style={miniInputStyle}
+                              />
+                            </td>
+
                             <td style={thTdStyle}>
                               <select
-                                value={slot.employeeId}
+                                value={slot.role || "Agent"}
+                                onChange={(e) =>
+                                  handleSlotFieldChange(dayKey, slot.id, "role", e.target.value)
+                                }
+                                style={selectStyle}
+                              >
+                                {ROLE_OPTIONS.map((role) => (
+                                  <option key={role} value={role}>
+                                    {role}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+
+                            <td style={thTdStyle}>
+                              {calcPaidHours(slot.start, slot.end).toFixed(2)}
+                            </td>
+
+                            <td style={thTdStyle}>
+                              <select
+                                value={slot.employeeId || ""}
                                 onChange={(e) =>
                                   handleAssign(dayKey, slot.id, e.target.value)
                                 }
@@ -630,8 +920,32 @@ export default function CabinServicePage() {
                                 ))}
                               </select>
                             </td>
+
+                            <td style={thTdStyle}>
+                              <ActionButton
+                                onClick={() => handleDeleteShiftRow(dayKey, slot.id)}
+                                variant="danger"
+                              >
+                                Delete
+                              </ActionButton>
+                            </td>
                           </tr>
                         ))}
+
+                        {slots.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={6}
+                              style={{
+                                ...thTdStyle,
+                                color: "#64748b",
+                                fontWeight: 600,
+                              }}
+                            >
+                              No slots for this day.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -670,29 +984,6 @@ function SummaryBox({ label, value }) {
   );
 }
 
-function summarizeShifts(slots) {
-  const map = new Map();
-
-  for (const slot of slots) {
-    const key = `${slot.start}|${slot.end}|${slot.role}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        start: slot.start,
-        end: slot.end,
-        role: slot.role,
-        count: 0,
-      });
-    }
-    map.get(key).count += 1;
-  }
-
-  return Array.from(map.values()).sort((a, b) => {
-    if (a.start !== b.start) return a.start.localeCompare(b.start);
-    if (a.end !== b.end) return a.end.localeCompare(b.end);
-    return a.role.localeCompare(b.role);
-  });
-}
-
 const subTitleStyle = {
   fontSize: 16,
   margin: "0 0 12px",
@@ -713,6 +1004,15 @@ const inputStyle = {
   maxWidth: 280,
   padding: "10px 12px",
   borderRadius: 12,
+  border: "1px solid #dbeafe",
+  background: "#ffffff",
+  fontSize: 14,
+};
+
+const miniInputStyle = {
+  minWidth: 110,
+  padding: "8px 10px",
+  borderRadius: 10,
   border: "1px solid #dbeafe",
   background: "#ffffff",
   fontSize: 14,
