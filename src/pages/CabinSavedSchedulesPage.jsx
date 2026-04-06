@@ -1,4 +1,3 @@
-// src/pages/CabinSavedSchedulesPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
@@ -52,7 +51,7 @@ function statusBadge(status) {
     };
   }
 
-  if (s === "rejected") {
+  if (s === "rejected" || s === "returned") {
     return {
       ...base,
       background: "#fff1f2",
@@ -69,8 +68,173 @@ function statusBadge(status) {
   };
 }
 
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeLookup(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function prettifyCodeName(value) {
+  const clean = normalizeText(value);
+  if (!clean) return "-";
+
+  if (clean.includes("@")) {
+    return clean;
+  }
+
+  if (/^[a-z]+\.[a-z]+$/i.test(clean)) {
+    return clean
+      .split(".")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (/^[a-z]+_[a-z]+$/i.test(clean)) {
+    return clean
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (/^[a-z]+[0-9]*$/i.test(clean) && clean === clean.toLowerCase()) {
+    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  }
+
+  return clean;
+}
+
+function getEmployeeVisibleName(employee) {
+  return (
+    employee?.name ||
+    employee?.employeeName ||
+    employee?.fullName ||
+    employee?.displayName ||
+    employee?.username ||
+    employee?.loginUsername ||
+    ""
+  );
+}
+
+function resolveCreatedByName(schedule, employeeMap) {
+  const possibleValues = [
+    schedule?.createdByName,
+    schedule?.createdByDisplayName,
+    schedule?.createdByFullName,
+    schedule?.createdBy,
+    schedule?.createdByUsername,
+    schedule?.createdByUserName,
+    schedule?.createdByEmail,
+    schedule?.submittedBy,
+    schedule?.savedBy,
+  ].filter(Boolean);
+
+  for (const value of possibleValues) {
+    const direct = normalizeText(value);
+    const lookup = normalizeLookup(value);
+
+    if (!direct) continue;
+
+    if (
+      direct.includes(" ") &&
+      !direct.includes("_") &&
+      !direct.includes(".") &&
+      !/@/.test(direct)
+    ) {
+      return direct;
+    }
+
+    if (employeeMap[lookup]) {
+      return employeeMap[lookup];
+    }
+  }
+
+  return prettifyCodeName(possibleValues[0] || "-");
+}
+
+function formatDateTime(value) {
+  try {
+    if (!value) return "-";
+    if (typeof value?.toDate === "function") {
+      return value.toDate().toLocaleString();
+    }
+    return new Date(value).toLocaleString();
+  } catch {
+    return "-";
+  }
+}
+
+function countFlights(schedule) {
+  if (typeof schedule?.totalFlights === "number") return schedule.totalFlights;
+
+  if (Array.isArray(schedule?.flights)) return schedule.flights.length;
+  if (Array.isArray(schedule?.flightList)) return schedule.flightList.length;
+  if (Array.isArray(schedule?.uploadedFlights)) return schedule.uploadedFlights.length;
+
+  return 0;
+}
+
+function countShiftRows(schedule) {
+  if (typeof schedule?.totalShiftRows === "number") return schedule.totalShiftRows;
+  if (typeof schedule?.shiftRowsCount === "number") return schedule.shiftRowsCount;
+
+  if (Array.isArray(schedule?.shiftRows)) return schedule.shiftRows.length;
+  if (Array.isArray(schedule?.rosterRows)) return schedule.rosterRows.length;
+  if (Array.isArray(schedule?.assignments)) return schedule.assignments.length;
+  if (Array.isArray(schedule?.slots)) return schedule.slots.length;
+
+  if (Array.isArray(schedule?.generatedSchedule)) {
+    return schedule.generatedSchedule.reduce((sum, dayItem) => {
+      if (Array.isArray(dayItem?.rows)) return sum + dayItem.rows.length;
+      if (Array.isArray(dayItem?.assignments)) return sum + dayItem.assignments.length;
+      if (Array.isArray(dayItem?.slots)) return sum + dayItem.slots.length;
+      return sum;
+    }, 0);
+  }
+
+  if (schedule?.dailySchedules && typeof schedule.dailySchedules === "object") {
+    return Object.values(schedule.dailySchedules).reduce((sum, dayItem) => {
+      if (Array.isArray(dayItem?.rows)) return sum + dayItem.rows.length;
+      if (Array.isArray(dayItem?.assignments)) return sum + dayItem.assignments.length;
+      if (Array.isArray(dayItem?.slots)) return sum + dayItem.slots.length;
+      if (Array.isArray(dayItem)) return sum + dayItem.length;
+      return sum;
+    }, 0);
+  }
+
+  return typeof schedule?.totalSlots === "number" ? schedule.totalSlots : 0;
+}
+
+function countUploadedDays(schedule) {
+  if (Array.isArray(schedule?.uploadedDays)) return schedule.uploadedDays.length;
+  if (Array.isArray(schedule?.daysUploaded)) return schedule.daysUploaded.length;
+  if (Array.isArray(schedule?.selectedDays)) return schedule.selectedDays.length;
+
+  if (schedule?.dailySchedules && typeof schedule.dailySchedules === "object") {
+    return Object.keys(schedule.dailySchedules).length;
+  }
+
+  if (Array.isArray(schedule?.generatedSchedule)) {
+    return schedule.generatedSchedule.length;
+  }
+
+  return 0;
+}
+
+function getWeekStartLabel(schedule) {
+  return (
+    schedule?.weekStartDate ||
+    schedule?.weekStart ||
+    schedule?.startDate ||
+    schedule?.weekOf ||
+    "-"
+  );
+}
+
 export default function CabinSavedSchedulesPage() {
   const [schedules, setSchedules] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -80,14 +244,19 @@ export default function CabinSavedSchedulesPage() {
         setLoading(true);
         setError("");
 
-        const q = query(
-          collection(db, "cabinSchedules"),
-          orderBy("createdAt", "desc")
-        );
+        const [scheduleSnap, employeeSnap] = await Promise.all([
+          getDocs(
+            query(collection(db, "cabinSchedules"), orderBy("createdAt", "desc"))
+          ),
+          getDocs(collection(db, "employees")),
+        ]);
 
-        const snap = await getDocs(q);
+        const employeeRows = employeeSnap.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
 
-        const items = snap.docs.map((docSnap) => {
+        const items = scheduleSnap.docs.map((docSnap) => {
           const data = docSnap.data();
           return {
             id: docSnap.id,
@@ -95,6 +264,7 @@ export default function CabinSavedSchedulesPage() {
           };
         });
 
+        setEmployees(employeeRows);
         setSchedules(items);
       } catch (err) {
         console.error("Error loading cabin schedules:", err);
@@ -107,7 +277,53 @@ export default function CabinSavedSchedulesPage() {
     loadSchedules();
   }, []);
 
-  const totalSchedules = useMemo(() => schedules.length, [schedules]);
+  const employeeMap = useMemo(() => {
+    const map = {};
+
+    employees.forEach((employee) => {
+      const visibleName = getEmployeeVisibleName(employee);
+      if (!visibleName) return;
+
+      const possibleKeys = [
+        employee?.username,
+        employee?.loginUsername,
+        employee?.email,
+        employee?.displayName,
+        employee?.fullName,
+        employee?.name,
+        employee?.employeeName,
+      ]
+        .map((item) => normalizeLookup(item))
+        .filter(Boolean);
+
+      possibleKeys.forEach((key) => {
+        map[key] = visibleName;
+      });
+    });
+
+    return map;
+  }, [employees]);
+
+  const preparedSchedules = useMemo(() => {
+    return schedules.map((item) => ({
+      ...item,
+      resolvedCreatedBy: resolveCreatedByName(item, employeeMap),
+      resolvedWeekStart: getWeekStartLabel(item),
+      resolvedUploadedDays: countUploadedDays(item),
+      resolvedFlights: countFlights(item),
+      resolvedShiftRows: countShiftRows(item),
+      resolvedCreatedAt: formatDateTime(item?.createdAt),
+    }));
+  }, [schedules, employeeMap]);
+
+  const totalSchedules = useMemo(() => preparedSchedules.length, [preparedSchedules]);
+
+  const totalShiftRows = useMemo(() => {
+    return preparedSchedules.reduce(
+      (sum, item) => sum + Number(item.resolvedShiftRows || 0),
+      0
+    );
+  }, [preparedSchedules]);
 
   return (
     <div
@@ -232,6 +448,39 @@ export default function CabinSavedSchedulesPage() {
               {totalSchedules}
             </p>
           </div>
+
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 16,
+              padding: "14px 16px",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 800,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Total Shift Rows
+            </p>
+            <p
+              style={{
+                margin: "8px 0 0",
+                fontSize: 28,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.03em",
+              }}
+            >
+              {totalShiftRows}
+            </p>
+          </div>
         </div>
       </PageCard>
 
@@ -291,7 +540,7 @@ export default function CabinSavedSchedulesPage() {
           </div>
         )}
 
-        {!loading && !error && schedules.length === 0 && (
+        {!loading && !error && preparedSchedules.length === 0 && (
           <div
             style={{
               padding: 14,
@@ -307,7 +556,7 @@ export default function CabinSavedSchedulesPage() {
           </div>
         )}
 
-        {!loading && !error && schedules.length > 0 && (
+        {!loading && !error && preparedSchedules.length > 0 && (
           <div
             style={{
               overflowX: "auto",
@@ -320,7 +569,7 @@ export default function CabinSavedSchedulesPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 880,
+                minWidth: 1080,
                 background: "#fff",
               }}
             >
@@ -328,30 +577,28 @@ export default function CabinSavedSchedulesPage() {
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Week Start</th>
                   <th style={thStyle}>Created By</th>
+                  <th style={thStyle}>Created At</th>
                   <th style={thStyle}>Uploaded Days</th>
                   <th style={thStyle}>Flights</th>
-                  <th style={thStyle}>Slots</th>
+                  <th style={thStyle}>Shift Rows</th>
                   <th style={thStyle}>Status</th>
                   <th style={{ ...thStyle, textAlign: "center" }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {schedules.map((item, index) => (
+                {preparedSchedules.map((item, index) => (
                   <tr
                     key={item.id}
                     style={{
                       background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
                     }}
                   >
-                    <td style={tdStyle}>{item.weekStartDate || "-"}</td>
-                    <td style={tdStyle}>{item.createdBy || "-"}</td>
-                    <td style={tdStyle}>
-                      {Array.isArray(item.uploadedDays)
-                        ? item.uploadedDays.length
-                        : 0}
-                    </td>
-                    <td style={tdStyle}>{item.totalFlights ?? 0}</td>
-                    <td style={tdStyle}>{item.totalSlots ?? 0}</td>
+                    <td style={tdStyle}>{item.resolvedWeekStart}</td>
+                    <td style={tdStyle}>{item.resolvedCreatedBy}</td>
+                    <td style={tdStyle}>{item.resolvedCreatedAt}</td>
+                    <td style={tdStyle}>{item.resolvedUploadedDays}</td>
+                    <td style={tdStyle}>{item.resolvedFlights}</td>
+                    <td style={tdStyle}>{item.resolvedShiftRows}</td>
                     <td style={tdStyle}>
                       <span style={statusBadge(item.status)}>
                         {item.status || "draft"}
