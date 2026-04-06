@@ -283,6 +283,322 @@ function useViewport() {
   };
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildPrintableMonthlyHtml({
+  monthLabel,
+  fromDate,
+  toDate,
+  stationTotals,
+  airlineRows,
+}) {
+  const airlineRowsHtml = airlineRows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.airline)}</td>
+          <td>${formatHours(row.rawBudget)} hrs</td>
+          <td>${formatHours(row.finalBudget)} hrs</td>
+          <td>${formatHours(row.actual)} hrs</td>
+          <td>${formatHours(row.variance)} hrs</td>
+          <td>${formatHours(row.revenue)} hrs</td>
+          <td>${formatHours(row.overtime)} hrs</td>
+          <td>${escapeHtml(row.approvedByText || "—")}</td>
+          <td>${escapeHtml(row.overtimeReasonText || "—")}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Monthly Budgets vs Actual</title>
+        <style>
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 24px;
+            color: #111827;
+          }
+          .header {
+            margin-bottom: 18px;
+          }
+          .title {
+            font-size: 28px;
+            font-weight: 800;
+            margin: 0;
+          }
+          .subtitle {
+            margin-top: 6px;
+            font-size: 14px;
+            color: #475569;
+            font-weight: 700;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin: 18px 0;
+          }
+          .card {
+            background: #f8fbff;
+            border: 1px solid #dbeafe;
+            border-radius: 14px;
+            padding: 12px 14px;
+          }
+          .label {
+            font-size: 11px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }
+          .value {
+            margin-top: 6px;
+            font-size: 18px;
+            font-weight: 800;
+            color: #0f172a;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+          }
+          th, td {
+            border: 1px solid #dbeafe;
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 13px;
+            vertical-align: top;
+          }
+          th {
+            background: #f8fbff;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #475569;
+          }
+          .section-title {
+            margin: 24px 0 10px;
+            font-size: 18px;
+            font-weight: 800;
+          }
+          @media print {
+            body {
+              margin: 14px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1 class="title">Monthly Budgets vs Actual</h1>
+          <div class="subtitle">
+            ${escapeHtml(monthLabel)} · ${escapeHtml(formatDateLabel(fromDate))} to ${escapeHtml(
+    formatDateLabel(toDate)
+  )}
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="label">Station Budget</div>
+            <div class="value">${formatHours(stationTotals.budget)} hrs</div>
+          </div>
+          <div class="card">
+            <div class="label">Total Used</div>
+            <div class="value">${formatHours(stationTotals.actual)} hrs</div>
+          </div>
+          <div class="card">
+            <div class="label">Variance</div>
+            <div class="value">${formatHours(stationTotals.variance)} hrs</div>
+          </div>
+          <div class="card">
+            <div class="label">Revenue</div>
+            <div class="value">${formatHours(stationTotals.revenue)} hrs</div>
+          </div>
+          <div class="card">
+            <div class="label">Overtime</div>
+            <div class="value">${formatHours(stationTotals.overtime)} hrs</div>
+          </div>
+        </div>
+
+        <div class="section-title">Airline Summary</div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Airline</th>
+              <th>Raw Budget</th>
+              <th>Final Budget</th>
+              <th>Actual Used</th>
+              <th>Variance</th>
+              <th>Revenue</th>
+              <th>Overtime</th>
+              <th>Approved By</th>
+              <th>Overtime Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${airlineRowsHtml || `<tr><td colspan="9">No rows found.</td></tr>`}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
+function buildPrintableDailyHtml({
+  monthLabel,
+  fromDate,
+  toDate,
+  detailRows,
+}) {
+  const detailRowsHtml = detailRows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.airline)}</td>
+          <td>${escapeHtml(prettifyDepartment(row.department))}</td>
+          <td>${escapeHtml(formatDateLabel(row.reportDate))}</td>
+          <td>${formatHours(row.budget)} hrs</td>
+          <td>${formatHours(row.actual)} hrs</td>
+          <td>${formatHours(row.variance)} hrs</td>
+          <td>${formatHours(row.revenue)} hrs</td>
+          <td>${formatHours(row.overtime)} hrs</td>
+          <td>${escapeHtml(row.approvedByText || "—")}</td>
+          <td>${escapeHtml(row.overtimeReasonText || "—")}</td>
+          <td>${formatHours(row.weekBudgetRunning)} hrs</td>
+          <td>${formatHours(row.weekActualRunning)} hrs</td>
+          <td>${formatHours(row.weekVarianceRunning)} hrs</td>
+          <td>${formatHours(row.monthBudgetRunning)} hrs</td>
+          <td>${formatHours(row.monthActualRunning)} hrs</td>
+          <td>${formatHours(row.monthVarianceRunning)} hrs</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Daily Department Detail</title>
+        <style>
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 24px;
+            color: #111827;
+          }
+          .header {
+            margin-bottom: 18px;
+          }
+          .title {
+            font-size: 28px;
+            font-weight: 800;
+            margin: 0;
+          }
+          .subtitle {
+            margin-top: 6px;
+            font-size: 14px;
+            color: #475569;
+            font-weight: 700;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+          }
+          th, td {
+            border: 1px solid #dbeafe;
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 12px;
+            vertical-align: top;
+          }
+          th {
+            background: #f8fbff;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #475569;
+          }
+          @media print {
+            body {
+              margin: 12px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1 class="title">Daily Department Detail</h1>
+          <div class="subtitle">
+            ${escapeHtml(monthLabel)} · ${escapeHtml(formatDateLabel(fromDate))} to ${escapeHtml(
+    formatDateLabel(toDate)
+  )}
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Airline</th>
+              <th>Department</th>
+              <th>Date</th>
+              <th>Budget</th>
+              <th>Actual</th>
+              <th>Variance</th>
+              <th>Revenue</th>
+              <th>Overtime</th>
+              <th>Approved By</th>
+              <th>Overtime Reason</th>
+              <th>Weekly Budget Running</th>
+              <th>Weekly Actual Running</th>
+              <th>Weekly Variance Running</th>
+              <th>Monthly Budget Running</th>
+              <th>Monthly Actual Running</th>
+              <th>Monthly Variance Running</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${detailRowsHtml || `<tr><td colspan="16">No rows found.</td></tr>`}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
+function openPrintWindow(html, onBlocked) {
+  const printWindow = window.open("", "_blank", "width=1400,height=900");
+
+  if (!printWindow) {
+    onBlocked?.();
+    return;
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+
+  const triggerPrint = () => {
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  setTimeout(triggerPrint, 400);
+}
+
 /* -------------------- UI helpers -------------------- */
 
 function PageCard({ children, style = {} }) {
@@ -970,6 +1286,36 @@ export default function MonthlyBudgetsVsActualPage() {
     };
   }, [filteredAirlineSummary]);
 
+  const selectedMonthLabel =
+    monthOptions.find((m) => m.value === selectedMonth)?.label || "—";
+
+  function handlePrintMonthlyReport() {
+    const html = buildPrintableMonthlyHtml({
+      monthLabel: selectedMonthLabel,
+      fromDate: dateRange.from,
+      toDate: dateRange.to,
+      stationTotals,
+      airlineRows: filteredAirlineSummary,
+    });
+
+    openPrintWindow(html, () => {
+      setStatusMessage("Pop-up blocked. Please allow pop-ups to print/export PDF.");
+    });
+  }
+
+  function handlePrintDailyReport() {
+    const html = buildPrintableDailyHtml({
+      monthLabel: selectedMonthLabel,
+      fromDate: dateRange.from,
+      toDate: dateRange.to,
+      detailRows: filteredDetailRows,
+    });
+
+    openPrintWindow(html, () => {
+      setStatusMessage("Pop-up blocked. Please allow pop-ups to print/export PDF.");
+    });
+  }
+
   async function saveMonthlyOverride(airline) {
     const key = `${selectedMonth}__${airline}`;
     const rawValue = editingOverride[key];
@@ -1270,12 +1616,18 @@ export default function MonthlyBudgetsVsActualPage() {
             </p>
           </div>
 
-          <ActionButton
-            variant="secondary"
-            onClick={() => setShowMonthlyDetails((prev) => !prev)}
-          >
-            {showMonthlyDetails ? "Hide Details" : "Show Details"}
-          </ActionButton>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <ActionButton
+              variant="secondary"
+              onClick={() => setShowMonthlyDetails((prev) => !prev)}
+            >
+              {showMonthlyDetails ? "Hide Details" : "Show Details"}
+            </ActionButton>
+
+            <ActionButton variant="primary" onClick={handlePrintMonthlyReport}>
+              Print / Export PDF
+            </ActionButton>
+          </div>
         </div>
 
         <div
@@ -1395,12 +1747,23 @@ export default function MonthlyBudgetsVsActualPage() {
               />
             </div>
 
-            <div style={{ display: "flex", alignItems: "end" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "end",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
               <ActionButton
                 variant="secondary"
                 onClick={() => setShowDailyDetail((prev) => !prev)}
               >
                 {showDailyDetail ? "Hide Daily Detail" : "Open Daily Detail"}
+              </ActionButton>
+
+              <ActionButton variant="primary" onClick={handlePrintDailyReport}>
+                Print / Export PDF
               </ActionButton>
             </div>
           </div>
