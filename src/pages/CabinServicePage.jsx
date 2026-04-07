@@ -162,6 +162,9 @@ export default function CabinServicePage() {
     return DAY_KEYS.filter((day) => !!dayFiles[day]).length;
   }, [dayFiles]);
 
+  const hasFlightUploads = uploadedDaysCount > 0;
+  const hasRosterUpload = !!weeklyRosterFile;
+
   const draftRosterDaysCount = useMemo(() => {
     return DAY_KEYS.filter(
       (day) =>
@@ -173,7 +176,12 @@ export default function CabinServicePage() {
   const assignedCount = useMemo(() => {
     return Object.values(weeklySlots)
       .flat()
-      .filter((slot) => slot.employeeId && !slot.draftDeleteCandidate).length;
+      .filter(
+        (slot) =>
+          slot.employeeId &&
+          !slot.draftDeleteCandidate &&
+          !slot.rosterOnlyDraft
+      ).length;
   }, [weeklySlots]);
 
   const totalSlots = useMemo(() => {
@@ -201,8 +209,8 @@ export default function CabinServicePage() {
       return;
     }
 
-    if (uploadedDaysCount === 0) {
-      alert("Please upload at least one daily CSV file.");
+    if (!hasFlightUploads && !hasRosterUpload) {
+      alert("Please upload at least one daily CSV file or one weekly roster file.");
       return;
     }
 
@@ -225,57 +233,58 @@ export default function CabinServicePage() {
         const file = dayFiles[dayKey];
         const draftRows = parsedWeeklyDraftRoster[dayKey] || [];
 
-        if (!file) {
-          if (draftRows.length > 0) {
-            const draftOnlyRows = draftRows.map((row, index) => {
-              const foundEmployee = findEmployeeMatchByName(
-                row.employeeName,
-                employeeLookup
-              );
+        if (file) {
+          const flights = await parseCabinFlights(file);
+          const demandBlocks = buildDemandBlocks(flights);
+          const generatedSlots = generateCabinShifts(demandBlocks, dayKey) || [];
 
-              return {
-                id: `draft-only-${dayKey}-${index}`,
-                dayKey,
-                start: row.start || "",
-                end: row.end || "",
-                role: row.role || "Agent",
-                paidHours: calcPaidHours(row.start, row.end),
-                calendarHours: calcCalendarHours(row.start, row.end),
-                employeeName: foundEmployee?.name || row.employeeName || "",
-                employeeId: foundEmployee?.id || "",
-                draftDeleteCandidate: true,
-                draftSource: true,
-                draftMatched: false,
-                sourceLabel: "DELETE FROM CURRENT ROSTER",
-              };
-            });
+          const merged = mergeGeneratedSlotsWithDraftRoster({
+            dayKey,
+            generatedSlots,
+            draftRows,
+            employeeLookup,
+          });
 
-            slotsByDay[dayKey] = sortSlotsWithDrafts(draftOnlyRows);
-            draftSummaryByDay[dayKey] = {
-              draftRows: draftRows.length,
-              matchedRows: 0,
-              deleteCandidates: draftRows.length,
-              newGenerated: 0,
-            };
-          }
+          parsedByDay[dayKey] = flights;
+          demandByDay[dayKey] = demandBlocks;
+          slotsByDay[dayKey] = sortSlotsWithDrafts(merged.slots);
+          draftSummaryByDay[dayKey] = merged.summary;
           continue;
         }
 
-        const flights = await parseCabinFlights(file);
-        const demandBlocks = buildDemandBlocks(flights);
-        const generatedSlots = generateCabinShifts(demandBlocks, dayKey) || [];
+        if (draftRows.length > 0) {
+          const rosterOnlyRows = draftRows.map((row, index) => {
+            const foundEmployee = findEmployeeMatchByName(
+              row.employeeName,
+              employeeLookup
+            );
 
-        const merged = mergeGeneratedSlotsWithDraftRoster({
-          dayKey,
-          generatedSlots,
-          draftRows,
-          employeeLookup,
-        });
+            return {
+              id: `roster-only-${dayKey}-${index}`,
+              dayKey,
+              start: row.start || "",
+              end: row.end || "",
+              role: row.role || "Agent",
+              paidHours: calcPaidHours(row.start, row.end),
+              calendarHours: calcCalendarHours(row.start, row.end),
+              employeeName: foundEmployee?.name || row.employeeName || "",
+              employeeId: foundEmployee?.id || "",
+              draftDeleteCandidate: false,
+              rosterOnlyDraft: true,
+              draftSource: true,
+              draftMatched: false,
+              sourceLabel: "ROSTER DRAFT",
+            };
+          });
 
-        parsedByDay[dayKey] = flights;
-        demandByDay[dayKey] = demandBlocks;
-        slotsByDay[dayKey] = sortSlotsWithDrafts(merged.slots);
-        draftSummaryByDay[dayKey] = merged.summary;
+          slotsByDay[dayKey] = sortSlotsWithDrafts(rosterOnlyRows);
+          draftSummaryByDay[dayKey] = {
+            draftRows: draftRows.length,
+            matchedRows: 0,
+            deleteCandidates: 0,
+            newGenerated: rosterOnlyRows.length,
+          };
+        }
       }
 
       setWeeklyFlights(parsedByDay);
@@ -337,6 +346,7 @@ export default function CabinServicePage() {
           .map((slot) => ({
             ...slot,
             draftDeleteCandidate: false,
+            rosterOnlyDraft: !!slot.rosterOnlyDraft,
             draftSource: !!slot.draftSource,
             draftMatched: !!slot.draftMatched,
             sourceLabel: slot.sourceLabel || "",
@@ -348,6 +358,8 @@ export default function CabinServicePage() {
         weeklyFlights,
         weeklyDemandBlocks,
         weeklySlots: cleanWeeklySlots,
+        weeklyDraftRosterRows,
+        weeklyDraftSummary,
         createdBy: user?.username || user?.id || "",
       });
 
@@ -426,8 +438,9 @@ export default function CabinServicePage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Upload daily flight files and one weekly current roster draft, compare
-            what stays vs what should be deleted, and save the final weekly staffing plan.
+            Upload daily flight files, a weekly roster draft, or both. The system
+            will detect days, match roster names, auto-assign employees when possible,
+            and still let you edit everything before saving.
           </p>
         </div>
       </div>
@@ -457,7 +470,7 @@ export default function CabinServicePage() {
           </div>
 
           <div style={{ marginTop: 22 }}>
-            <h3 style={subTitleStyle}>Upload Daily Flight Files</h3>
+            <h3 style={subTitleStyle}>Option 1 · Upload Daily Flight Files</h3>
 
             <div style={uploadGridStyle}>
               {DAY_KEYS.map((dayKey) => (
@@ -497,7 +510,7 @@ export default function CabinServicePage() {
           </div>
 
           <div style={{ marginTop: 22 }}>
-            <h3 style={subTitleStyle}>Upload Current Weekly Roster Draft</h3>
+            <h3 style={subTitleStyle}>Option 2 · Upload Weekly Roster Draft</h3>
 
             <div style={uploadBoxStyle}>
               <div style={miniLabelStyle}>Weekly Roster Draft</div>
@@ -515,7 +528,7 @@ export default function CabinServicePage() {
                     <b>Draft uploaded:</b> {weeklyRosterFile.name}
                   </>
                 ) : (
-                  "Optional weekly roster draft. Supports weekly matrix roster and vertical roster formats."
+                  "Supports weekly matrix roster and vertical roster formats. Names can be First Last or Last First."
                 )}
               </div>
             </div>
@@ -527,7 +540,7 @@ export default function CabinServicePage() {
             </div>
 
             <div style={pillSlateStyle}>
-              Weekly draft file: <b>{weeklyRosterFile ? "Yes" : "No"}</b>
+              Weekly roster file: <b>{weeklyRosterFile ? "Yes" : "No"}</b>
             </div>
 
             <div style={pillSlateStyle}>
@@ -668,7 +681,7 @@ export default function CabinServicePage() {
                       Matched from draft: <b>{summary.matchedRows}</b>
                     </div>
                     <div style={pillBlueStyle}>
-                      New generated: <b>{summary.newGenerated}</b>
+                      New generated / roster rows: <b>{summary.newGenerated}</b>
                     </div>
                     <div style={pillRedStyle}>
                       Delete from current roster: <b>{summary.deleteCandidates}</b>
@@ -690,9 +703,9 @@ export default function CabinServicePage() {
                       lineHeight: 1.6,
                     }}
                   >
-                    Red rows were found in the weekly current roster draft but do not match
-                    the new generated schedule for this day. Those rows are marked as delete
-                    candidates and will not be saved in the final weekly schedule.
+                    Red rows were found in the current roster draft but do not match
+                    the new generated schedule for this day. Those rows are marked as
+                    delete candidates and will not be saved in the final weekly schedule.
                   </div>
                 )}
 
@@ -705,7 +718,7 @@ export default function CabinServicePage() {
                           key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
                           style={chipStyle}
                         >
-                          {item.start}–{item.end} | {item.role} x{item.count}
+                          {item.start || "-"}–{item.end || "-"} | {item.role || "Agent"} x{item.count}
                         </div>
                       ))}
                     </div>
@@ -739,6 +752,13 @@ export default function CabinServicePage() {
                             <td style={thTdStyle}>{flight.gate || "-"}</td>
                           </tr>
                         ))}
+                        {flights.length === 0 && (
+                          <tr>
+                            <td colSpan={5} style={thTdStyle}>
+                              No flights loaded for this day.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -764,6 +784,8 @@ export default function CabinServicePage() {
                             ? { background: "#fff1f2" }
                             : slot.draftMatched
                             ? { background: "#ecfdf5" }
+                            : slot.rosterOnlyDraft
+                            ? { background: "#f8fbff" }
                             : {};
 
                           return (
@@ -773,6 +795,8 @@ export default function CabinServicePage() {
                                   <span style={dangerTagStyle}>DELETE</span>
                                 ) : slot.draftMatched ? (
                                   <span style={successTagStyle}>MATCHED DRAFT</span>
+                                ) : slot.rosterOnlyDraft ? (
+                                  <span style={infoTagStyle}>ROSTER DRAFT</span>
                                 ) : (
                                   <span style={infoTagStyle}>NEW</span>
                                 )}
@@ -900,8 +924,12 @@ function summarizeShifts(slots) {
   }
 
   return Array.from(map.values()).sort((a, b) => {
-    if (a.start !== b.start) return String(a.start || "").localeCompare(String(b.start || ""));
-    if (a.end !== b.end) return String(a.end || "").localeCompare(String(b.end || ""));
+    if (a.start !== b.start) {
+      return String(a.start || "").localeCompare(String(b.start || ""));
+    }
+    if (a.end !== b.end) {
+      return String(a.end || "").localeCompare(String(b.end || ""));
+    }
     return String(a.role || "").localeCompare(String(b.role || ""));
   });
 }
@@ -910,12 +938,18 @@ function buildEmployeeLookup(employees) {
   const map = {};
 
   (employees || []).forEach((emp) => {
-    const name = String(emp?.name || "").trim();
-    if (!name) return;
+    const rawNames = [
+      emp?.name,
+      emp?.fullName,
+      emp?.employeeName,
+      emp?.displayName,
+      emp?.username,
+    ].filter(Boolean);
 
-    const variants = buildNameVariants(name);
-    variants.forEach((variant) => {
-      map[variant] = emp;
+    rawNames.forEach((rawName) => {
+      buildNameVariants(rawName).forEach((variant) => {
+        map[variant] = emp;
+      });
     });
   });
 
@@ -930,10 +964,17 @@ function buildNameVariants(name) {
   const variants = new Set();
 
   variants.add(clean);
-  variants.add(parts.join(" "));
 
   if (parts.length >= 2) {
+    variants.add(parts.join(" "));
     variants.add([...parts].reverse().join(" "));
+  }
+
+  if (parts.length >= 3) {
+    variants.add(`${parts[0]} ${parts[1]}`);
+    variants.add(`${parts[1]} ${parts[0]}`);
+    variants.add(`${parts[0]} ${parts[parts.length - 1]}`);
+    variants.add(`${parts[parts.length - 1]} ${parts[0]}`);
   }
 
   return Array.from(variants);
@@ -973,8 +1014,6 @@ async function parseWeeklyRosterDraftFile(file) {
   const text = await file.text();
   const rows = parseCsvText(text);
 
-  const grouped = createEmptyWeeklyRosterMap();
-
   const verticalResult = parseVerticalRosterRows(rows);
   const verticalCount = DAY_KEYS.reduce(
     (sum, day) => sum + (verticalResult[day]?.length || 0),
@@ -985,8 +1024,7 @@ async function parseWeeklyRosterDraftFile(file) {
     return verticalResult;
   }
 
-  const weeklyResult = parseWeeklyMatrixRosterRows(rows);
-  return weeklyResult || grouped;
+  return parseWeeklyMatrixRosterRows(rows);
 }
 
 function parseVerticalRosterRows(rows) {
@@ -1180,8 +1218,9 @@ function normalizeDayKey(value) {
   if (raw === "monday" || raw === "mon") return "monday";
   if (raw === "tuesday" || raw === "tue" || raw === "tues") return "tuesday";
   if (raw === "wednesday" || raw === "wed") return "wednesday";
-  if (raw === "thursday" || raw === "thu" || raw === "thur" || raw === "thurs")
+  if (raw === "thursday" || raw === "thu" || raw === "thur" || raw === "thurs") {
     return "thursday";
+  }
   if (raw === "friday" || raw === "fri") return "friday";
   if (raw === "saturday" || raw === "sat") return "saturday";
   if (raw === "sunday" || raw === "sun") return "sunday";
@@ -1225,6 +1264,7 @@ function mergeGeneratedSlotsWithDraftRoster({
         draftSource: true,
         draftMatched: true,
         draftDeleteCandidate: false,
+        rosterOnlyDraft: false,
         sourceLabel: "MATCHED DRAFT",
       });
     } else {
@@ -1234,6 +1274,7 @@ function mergeGeneratedSlotsWithDraftRoster({
         draftSource: false,
         draftMatched: false,
         draftDeleteCandidate: false,
+        rosterOnlyDraft: false,
         sourceLabel: "NEW",
       });
     }
@@ -1261,6 +1302,7 @@ function mergeGeneratedSlotsWithDraftRoster({
         draftSource: true,
         draftMatched: false,
         draftDeleteCandidate: true,
+        rosterOnlyDraft: false,
         sourceLabel: "DELETE FROM CURRENT ROSTER",
       };
     });
