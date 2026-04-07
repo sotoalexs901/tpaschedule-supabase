@@ -176,6 +176,7 @@ function getRequestTypeLabel(value) {
   if (v === "sy_ot") return "SY OT Request";
   if (v === "wl_ot") return "WL OT Request";
   if (v === "av_ot") return "AV OT Request";
+  if (v === "dl_cabin_ot") return "Delta Cabin Service OT Request";
 
   return value || "—";
 }
@@ -328,6 +329,168 @@ function getTimelineItems(report) {
   ].filter((item) => item.time);
 }
 
+function isSuppliesRequest(report) {
+  return String(report?.requestType || "").toLowerCase() === "supplies";
+}
+
+function isUniformRequest(report) {
+  return String(report?.requestType || "").toLowerCase() === "uniform";
+}
+
+function isOtRequest(report) {
+  const v = String(report?.requestType || "").toLowerCase();
+  return (
+    v === "aa_ot" ||
+    v === "sy_ot" ||
+    v === "wl_ot" ||
+    v === "av_ot" ||
+    v === "dl_cabin_ot"
+  );
+}
+
+function getVisibleFieldEntries(report) {
+  if (!report) return [];
+
+  const commonFields = [
+    ["requestTypeLabel", getRequestTypeLabel(report.requestType)],
+    ["date", report.date],
+    ["submittedBy", report.submittedBy || report.submittedByName],
+    ["email", report.email],
+    ["managerStatus", getManagerStatusLabel(report.managerStatus || report.status)],
+    ["followUpByName", report.followUpByName],
+    ["managerComments", report.managerComments],
+  ];
+
+  if (isSuppliesRequest(report)) {
+    return [
+      ...commonFields,
+      ["department", report.department],
+      ["items", report.items],
+      ["pictureNotes", report.pictureNotes],
+    ];
+  }
+
+  if (isUniformRequest(report)) {
+    return [
+      ...commonFields,
+      ["employeeName", report.employeeName],
+      ["employeeNumber", report.employeeNumber],
+      ["phoneNumber", report.phoneNumber],
+      ["totalAmount", report.totalAmount],
+      ["receiptNotes", report.receiptNotes],
+      ["employeeSignature", report.employeeSignature],
+    ];
+  }
+
+  if (isOtRequest(report)) {
+    return [
+      ...commonFields,
+      ["airline", report.airline],
+      ["department", report.department],
+      ["flightNumber", report.flightNumber],
+      ["tailNumber", report.tailNumber],
+      ["delayedTime", report.delayedTime],
+      ["delayedCode", report.delayedCode],
+      ["requestedHours", report.requestedHours],
+      ["requestedBy", report.requestedBy],
+      ["reason", report.reason],
+    ];
+  }
+
+  return commonFields;
+}
+
+function renderRequestSpecificView(report) {
+  if (!report) return null;
+
+  if (isSuppliesRequest(report)) {
+    return (
+      <div style={{ display: "grid", gap: 10 }}>
+        <DetailBox label="Department" value={report.department} />
+        <DetailBox label="Items Needed" value={report.items} />
+        <DetailBox label="Picture / Attachment Notes" value={report.pictureNotes} />
+      </div>
+    );
+  }
+
+  if (isUniformRequest(report)) {
+    return (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 10,
+        }}
+      >
+        <DetailBox label="Employee Name" value={report.employeeName} />
+        <DetailBox label="Employee Number" value={report.employeeNumber} />
+        <DetailBox label="Phone Number" value={report.phoneNumber} />
+        <DetailBox label="Total Amount" value={report.totalAmount} />
+        <DetailBox label="Receipt Notes" value={report.receiptNotes} />
+        <DetailBox label="Employee Signature" value={report.employeeSignature} />
+      </div>
+    );
+  }
+
+  if (isOtRequest(report)) {
+    return (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 10,
+        }}
+      >
+        <DetailBox label="Airline" value={report.airline} />
+        <DetailBox label="Department" value={report.department} />
+        <DetailBox label="Flight Number" value={report.flightNumber} />
+        <DetailBox label="Tail Number" value={report.tailNumber} />
+        <DetailBox label="Delayed Time" value={report.delayedTime} />
+        <DetailBox label="Delayed Code" value={report.delayedCode} />
+        <DetailBox label="Requested Hours" value={report.requestedHours} />
+        <DetailBox label="Requested By" value={report.requestedBy} />
+        <DetailBox label="Reason" value={report.reason} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function DetailBox({ label, value }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #dbeafe",
+        borderRadius: 14,
+        padding: "10px 12px",
+        background: "#f8fbff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          fontWeight: 700,
+          color: "#0f172a",
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {safeValue(value)}
+      </div>
+    </div>
+  );
+}
+
 export default function OperationsRequestsReportsAdminPage() {
   const { user } = useUser();
 
@@ -421,11 +584,9 @@ export default function OperationsRequestsReportsAdminPage() {
               ? String(item.submittedByUserId) === String(user.id)
               : false;
           const sameUsername =
-            normalizedUsername &&
-            possibleNames.includes(normalizedUsername);
+            normalizedUsername && possibleNames.includes(normalizedUsername);
           const sameDisplayName =
-            normalizedDisplayName &&
-            possibleNames.includes(normalizedDisplayName);
+            normalizedDisplayName && possibleNames.includes(normalizedDisplayName);
 
           if (!sameUserId && !sameUsername && !sameDisplayName) {
             return false;
@@ -712,6 +873,8 @@ export default function OperationsRequestsReportsAdminPage() {
       return;
     }
 
+    const visibleEntries = getVisibleFieldEntries(selectedReport);
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -742,6 +905,7 @@ export default function OperationsRequestsReportsAdminPage() {
               border-radius: 14px;
               padding: 12px 14px;
               background: #f8fbff;
+              break-inside: avoid;
             }
             .label {
               font-size: 11px;
@@ -757,6 +921,14 @@ export default function OperationsRequestsReportsAdminPage() {
               white-space: pre-wrap;
               word-break: break-word;
             }
+            .section {
+              margin-top: 20px;
+            }
+            .section-title {
+              font-size: 18px;
+              font-weight: 800;
+              margin: 0 0 12px;
+            }
           </style>
         </head>
         <body>
@@ -770,32 +942,36 @@ export default function OperationsRequestsReportsAdminPage() {
     }
           </div>
 
-          <div class="grid">
-            ${Object.entries(selectedReport)
-              .filter(
-                ([key]) =>
-                  ![
-                    "id",
-                    "archived",
-                    "archivedAt",
-                    "createdAt",
-                    "updatedAt",
-                    "submittedByUserId",
-                    "submittedByUsername",
-                    "submittedByRole",
-                    "updatedByName",
-                    "archivedByName",
-                  ].includes(key)
-              )
-              .map(
-                ([key, value]) => `
-                  <div class="card">
-                    <div class="label">${key}</div>
-                    <div class="value">${safeValue(value)}</div>
-                  </div>
-                `
-              )
-              .join("")}
+          <div class="section">
+            <div class="section-title">Request Details</div>
+            <div class="grid">
+              ${visibleEntries
+                .map(
+                  ([key, value]) => `
+                    <div class="card">
+                      <div class="label">${key}</div>
+                      <div class="value">${safeValue(value)}</div>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Timeline</div>
+            <div class="grid">
+              ${getTimelineItems(selectedReport)
+                .map(
+                  (item) => `
+                    <div class="card">
+                      <div class="label">${item.label}</div>
+                      <div class="value">${formatDateTime(item.time)}\nBy: ${safeValue(item.by)}</div>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>
           </div>
 
           <script>
@@ -920,6 +1096,7 @@ export default function OperationsRequestsReportsAdminPage() {
               <option value="sy_ot">SY OT Request</option>
               <option value="wl_ot">WL OT Request</option>
               <option value="av_ot">AV OT Request</option>
+              <option value="dl_cabin_ot">Delta Cabin Service OT Request</option>
             </SelectInput>
           </div>
 
@@ -1291,64 +1468,28 @@ export default function OperationsRequestsReportsAdminPage() {
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gap: 10 }}>
-                  {Object.entries(selectedReport).map(([key, value]) => {
-                    if (
-                      [
-                        "id",
-                        "archived",
-                        "createdAt",
-                        "archivedAt",
-                        "updatedAt",
-                        "managerComments",
-                        "followUpByName",
-                        "managerStatus",
-                        "receivedAt",
-                        "receivedByName",
-                        "reviewedAt",
-                        "reviewedByName",
-                        "acceptedAt",
-                        "acceptedByName",
-                        "closedAt",
-                        "closedByName",
-                      ].includes(key)
-                    ) {
-                      return null;
-                    }
+                <div
+                  style={{
+                    border: "1px solid #dbeafe",
+                    borderRadius: 16,
+                    padding: "14px 16px",
+                    background: "#ffffff",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#64748b",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      marginBottom: 10,
+                    }}
+                  >
+                    Request Details
+                  </div>
 
-                    return (
-                      <div
-                        key={key}
-                        style={{
-                          border: "1px solid #dbeafe",
-                          borderRadius: 14,
-                          padding: "10px 12px",
-                          background: "#f8fbff",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 800,
-                            color: "#64748b",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {key}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 4,
-                            fontWeight: 700,
-                            color: "#0f172a",
-                            whiteSpace: "pre-wrap",
-                          }}
-                        >
-                          {safeValue(value)}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {renderRequestSpecificView(selectedReport)}
                 </div>
 
                 {isManager && (
