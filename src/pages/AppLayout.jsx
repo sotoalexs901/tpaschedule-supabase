@@ -262,6 +262,14 @@ export default function AppLayout() {
       user?.role === "duty_manager" ||
       user?.role === "station_manager");
 
+  const canSubmitEmployeePerformance =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageEmployeePerformance =
+    user?.role === "duty_manager" || user?.role === "station_manager";
+
   const navSections = useMemo(() => {
     const sections = [];
 
@@ -422,6 +430,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canSubmitEmployeePerformance) {
+      submissionReports.push({
+        to: "/employee-performance/monthly",
+        label: "Monthly Employee Performance",
+        icon: "⭐",
+      });
+    }
+
     if (canAccessTimesheets) {
       managementReports.push({
         to: "/timesheets/reports",
@@ -473,6 +489,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canManageEmployeePerformance) {
+      managementReports.push({
+        to: "/employee-performance/monthly",
+        label: "Employee Performance Reports",
+        icon: "📂",
+      });
+    }
+
     if (canAccessWchrTools) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
@@ -516,6 +540,8 @@ export default function AppLayout() {
     canManageWchrPoi,
     canSubmitRegulatedGarbage,
     canManageRegulatedGarbage,
+    canSubmitEmployeePerformance,
+    canManageEmployeePerformance,
     unreadMessages,
     pendingTimeOff,
     user,
