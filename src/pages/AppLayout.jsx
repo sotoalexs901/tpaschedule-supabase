@@ -262,10 +262,8 @@ export default function AppLayout() {
       user?.role === "duty_manager" ||
       user?.role === "station_manager");
 
-  const canSubmitEmployeePerformance =
-    user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
+  // EPR
+  const canSubmitEmployeePerformance = user?.role === "supervisor";
 
   const canManageEmployeePerformance =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -432,7 +430,7 @@ export default function AppLayout() {
 
     if (canSubmitEmployeePerformance) {
       submissionReports.push({
-        to: "/employee-performance/monthly",
+        to: "/employee-performance-report",
         label: "Monthly Employee Performance",
         icon: "⭐",
       });
@@ -491,7 +489,7 @@ export default function AppLayout() {
 
     if (canManageEmployeePerformance) {
       managementReports.push({
-        to: "/employee-performance/monthly",
+        to: "/employee-performance-management",
         label: "Employee Performance Reports",
         icon: "📂",
       });
