@@ -1955,34 +1955,37 @@ const rosterTableStyle = {
 
 const rosterHeaderCellStyle = {
   border: "1px solid #dbeafe",
-  padding: "10px 8px",
+  padding: "8px 4px",
   textAlign: "center",
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 800,
   background: "#f8fbff",
   color: "#1769aa",
 };
 
 const rosterEmployeeHeaderStyle = {
-  width: 220,
+  width: 260,
 };
 
 const rosterCellStyle = {
   border: "1px solid #e2e8f0",
-  padding: "9px 8px",
+  padding: "7px 4px",
   textAlign: "center",
-  fontSize: 13,
-  fontWeight: 600,
+  fontSize: 11,
+  fontWeight: 700,
   background: "#ffffff",
   color: "#111827",
+  width: 78,
 };
 
 const rosterNameCellStyle = {
   ...rosterCellStyle,
   textAlign: "left",
-  fontWeight: 700,
-  paddingLeft: 10,
-  width: 220,
+  fontWeight: 800,
+  fontSize: 16,
+  paddingLeft: 12,
+  width: 260,
+  whiteSpace: "nowrap",
 };
 
 const rosterOffCellStyle = {
