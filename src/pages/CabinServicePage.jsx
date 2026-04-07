@@ -162,8 +162,6 @@ export default function CabinServicePage() {
     return DAY_KEYS.filter((day) => !!dayFiles[day]).length;
   }, [dayFiles]);
 
-  const hasRosterUpload = useMemo(() => !!weeklyRosterFile, [weeklyRosterFile]);
-
   const draftRosterDaysCount = useMemo(() => {
     return DAY_KEYS.filter(
       (day) =>
@@ -203,8 +201,8 @@ export default function CabinServicePage() {
       return;
     }
 
-    if (uploadedDaysCount === 0 && !weeklyRosterFile) {
-      alert("Please upload daily flight files, a weekly roster file, or both.");
+    if (uploadedDaysCount === 0) {
+      alert("Please upload at least one daily CSV file.");
       return;
     }
 
@@ -218,6 +216,7 @@ export default function CabinServicePage() {
       const draftSummaryByDay = {};
 
       const employeeLookup = buildEmployeeLookup(employees);
+
       const parsedWeeklyDraftRoster = weeklyRosterFile
         ? await parseWeeklyRosterDraftFile(weeklyRosterFile)
         : createEmptyWeeklyRosterMap();
@@ -226,58 +225,57 @@ export default function CabinServicePage() {
         const file = dayFiles[dayKey];
         const draftRows = parsedWeeklyDraftRoster[dayKey] || [];
 
-        if (file) {
-          const flights = await parseCabinFlights(file);
-          const demandBlocks = buildDemandBlocks(flights);
-          const generatedSlots = generateCabinShifts(demandBlocks, dayKey) || [];
+        if (!file) {
+          if (draftRows.length > 0) {
+            const draftOnlyRows = draftRows.map((row, index) => {
+              const foundEmployee = findEmployeeMatchByName(
+                row.employeeName,
+                employeeLookup
+              );
 
-          const merged = mergeGeneratedSlotsWithDraftRoster({
-            dayKey,
-            generatedSlots,
-            draftRows,
-            employeeLookup,
-          });
+              return {
+                id: `draft-only-${dayKey}-${index}`,
+                dayKey,
+                start: row.start || "",
+                end: row.end || "",
+                role: row.role || "Agent",
+                paidHours: calcPaidHours(row.start, row.end),
+                calendarHours: calcCalendarHours(row.start, row.end),
+                employeeName: foundEmployee?.name || row.employeeName || "",
+                employeeId: foundEmployee?.id || "",
+                draftDeleteCandidate: true,
+                draftSource: true,
+                draftMatched: false,
+                sourceLabel: "DELETE FROM CURRENT ROSTER",
+              };
+            });
 
-          parsedByDay[dayKey] = flights;
-          demandByDay[dayKey] = demandBlocks;
-          slotsByDay[dayKey] = sortSlotsWithDrafts(merged.slots);
-          draftSummaryByDay[dayKey] = merged.summary;
+            slotsByDay[dayKey] = sortSlotsWithDrafts(draftOnlyRows);
+            draftSummaryByDay[dayKey] = {
+              draftRows: draftRows.length,
+              matchedRows: 0,
+              deleteCandidates: draftRows.length,
+              newGenerated: 0,
+            };
+          }
           continue;
         }
 
-        if (draftRows.length > 0) {
-          const rosterOnlySlots = draftRows.map((row, index) => {
-            const employeeMatch =
-              employeeLookup[String(row.employeeName || "").trim().toLowerCase()];
+        const flights = await parseCabinFlights(file);
+        const demandBlocks = buildDemandBlocks(flights);
+        const generatedSlots = generateCabinShifts(demandBlocks, dayKey) || [];
 
-            return {
-              id: `roster-only-${dayKey}-${index}`,
-              dayKey,
-              start: row.start || "",
-              end: row.end || "",
-              role: row.role || "Agent",
-              paidHours: calcPaidHours(row.start, row.end),
-              calendarHours: calcCalendarHours(row.start, row.end),
-              employeeName: row.employeeName || "",
-              employeeId: employeeMatch?.id || "",
-              draftDeleteCandidate: false,
-              draftSource: true,
-              draftMatched: true,
-              sourceLabel: "ROSTER ONLY",
-            };
-          });
+        const merged = mergeGeneratedSlotsWithDraftRoster({
+          dayKey,
+          generatedSlots,
+          draftRows,
+          employeeLookup,
+        });
 
-          parsedByDay[dayKey] = [];
-          demandByDay[dayKey] = [];
-          slotsByDay[dayKey] = sortSlotsWithDrafts(rosterOnlySlots);
-          draftSummaryByDay[dayKey] = {
-            draftRows: draftRows.length,
-            matchedRows: draftRows.length,
-            deleteCandidates: 0,
-            newGenerated: 0,
-            rosterOnly: true,
-          };
-        }
+        parsedByDay[dayKey] = flights;
+        demandByDay[dayKey] = demandBlocks;
+        slotsByDay[dayKey] = sortSlotsWithDrafts(merged.slots);
+        draftSummaryByDay[dayKey] = merged.summary;
       }
 
       setWeeklyFlights(parsedByDay);
@@ -290,7 +288,7 @@ export default function CabinServicePage() {
       console.error(err);
       setError(
         err.message ||
-          "Error generating weekly schedule. Please verify the flight files and the weekly roster file."
+          "Error generating weekly schedule. Please verify the flight files and the weekly roster draft file."
       );
     } finally {
       setLoading(false);
@@ -345,30 +343,12 @@ export default function CabinServicePage() {
           }));
       });
 
-      const totalDraftMatchedRows = Object.values(weeklyDraftSummary).reduce(
-        (sum, item) => sum + Number(item?.matchedRows || 0),
-        0
-      );
-
-      const totalDeleteCandidates = Object.values(weeklyDraftSummary).reduce(
-        (sum, item) => sum + Number(item?.deleteCandidates || 0),
-        0
-      );
-
       const scheduleId = await saveCabinWeeklySchedule({
         weekStartDate,
         weeklyFlights,
         weeklyDemandBlocks,
         weeklySlots: cleanWeeklySlots,
         createdBy: user?.username || user?.id || "",
-        uploadedDays: DAY_KEYS.filter((day) => !!dayFiles[day]),
-        usedWeeklyRosterDraft: !!weeklyRosterFile,
-        draftMatchedRowsCount: totalDraftMatchedRows,
-        draftDeleteCandidatesCount: totalDeleteCandidates,
-        totalShiftRows: Object.values(cleanWeeklySlots).reduce(
-          (sum, slots) => sum + (slots?.length || 0),
-          0
-        ),
       });
 
       alert(`Weekly schedule saved successfully. ID: ${scheduleId}`);
@@ -441,14 +421,13 @@ export default function CabinServicePage() {
           <p
             style={{
               margin: 0,
-              maxWidth: 880,
+              maxWidth: 860,
               fontSize: 14,
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Upload daily flight files, a weekly roster, or both. When both are
-            uploaded, the system matches days automatically and pre-assigns employees
-            from the current roster while still allowing edits before saving.
+            Upload daily flight files and one weekly current roster draft, compare
+            what stays vs what should be deleted, and save the final weekly staffing plan.
           </p>
         </div>
       </div>
@@ -477,31 +456,8 @@ export default function CabinServicePage() {
             />
           </div>
 
-          <div
-            style={{
-              marginTop: 18,
-              padding: "12px 14px",
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#334155",
-              fontSize: 13,
-              lineHeight: 1.6,
-              fontWeight: 600,
-            }}
-          >
-            You can use any of these options:
-            <br />
-            1. Upload only daily flight files
-            <br />
-            2. Upload only one weekly roster file
-            <br />
-            3. Upload both daily flight files and a weekly roster so the system
-            auto-matches employees by day and shift
-          </div>
-
           <div style={{ marginTop: 22 }}>
-            <h3 style={subTitleStyle}>Option A · Upload Daily Flight Files</h3>
+            <h3 style={subTitleStyle}>Upload Daily Flight Files</h3>
 
             <div style={uploadGridStyle}>
               {DAY_KEYS.map((dayKey) => (
@@ -541,10 +497,10 @@ export default function CabinServicePage() {
           </div>
 
           <div style={{ marginTop: 22 }}>
-            <h3 style={subTitleStyle}>Option B · Upload Weekly Roster</h3>
+            <h3 style={subTitleStyle}>Upload Current Weekly Roster Draft</h3>
 
             <div style={uploadBoxStyle}>
-              <div style={miniLabelStyle}>Weekly Current Roster</div>
+              <div style={miniLabelStyle}>Weekly Roster Draft</div>
 
               <input
                 type="file"
@@ -556,29 +512,22 @@ export default function CabinServicePage() {
               <div style={miniHelpTextStyle}>
                 {weeklyRosterFile ? (
                   <>
-                    <b>Roster uploaded:</b> {weeklyRosterFile.name}
+                    <b>Draft uploaded:</b> {weeklyRosterFile.name}
                   </>
                 ) : (
-                  "Optional weekly roster file. Include columns like day, employee, role, start, end."
+                  "Optional weekly roster draft. Supports weekly matrix roster and vertical roster formats."
                 )}
               </div>
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 18,
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <div style={pillBlueStyle}>
-              Flight days uploaded: <b>{uploadedDaysCount}/7</b>
+              Uploaded flight days: <b>{uploadedDaysCount}/7</b>
             </div>
 
             <div style={pillSlateStyle}>
-              Weekly roster: <b>{hasRosterUpload ? "Yes" : "No"}</b>
+              Weekly draft file: <b>{weeklyRosterFile ? "Yes" : "No"}</b>
             </div>
 
             <div style={pillSlateStyle}>
@@ -632,8 +581,8 @@ export default function CabinServicePage() {
 
             <div style={summaryGridStyle}>
               <SummaryBox label="Week Start" value={weekStartDate || "-"} />
-              <SummaryBox label="Flight Days" value={`${uploadedDaysCount}/7`} />
-              <SummaryBox label="Roster Days Found" value={`${draftRosterDaysCount}/7`} />
+              <SummaryBox label="Uploaded Days" value={`${uploadedDaysCount}/7`} />
+              <SummaryBox label="Draft Days Found" value={`${draftRosterDaysCount}/7`} />
               <SummaryBox
                 label="Flights Loaded"
                 value={String(
@@ -664,7 +613,6 @@ export default function CabinServicePage() {
               matchedRows: 0,
               deleteCandidates: 0,
               newGenerated: 0,
-              rosterOnly: false,
             };
 
             if (!flights.length && !slots.length) return null;
@@ -697,12 +645,7 @@ export default function CabinServicePage() {
                     Flights: <b>{flights.length}</b>
                   </span>
                   <span>
-                    Slots:{" "}
-                    <b>
-                      {
-                        slots.filter((slot) => !slot.draftDeleteCandidate).length
-                      }
-                    </b>
+                    Slots: <b>{slots.filter((slot) => !slot.draftDeleteCandidate).length}</b>
                   </span>
                   <span>
                     Peak Agents: <b>{peakAgents}</b>
@@ -722,7 +665,7 @@ export default function CabinServicePage() {
                       Draft rows: <b>{summary.draftRows}</b>
                     </div>
                     <div style={pillGreenStyle}>
-                      Auto-assigned from roster: <b>{summary.matchedRows}</b>
+                      Matched from draft: <b>{summary.matchedRows}</b>
                     </div>
                     <div style={pillBlueStyle}>
                       New generated: <b>{summary.newGenerated}</b>
@@ -730,25 +673,6 @@ export default function CabinServicePage() {
                     <div style={pillRedStyle}>
                       Delete from current roster: <b>{summary.deleteCandidates}</b>
                     </div>
-                  </div>
-                )}
-
-                {summary.rosterOnly && (
-                  <div
-                    style={{
-                      marginTop: 14,
-                      padding: "12px 14px",
-                      borderRadius: 16,
-                      background: "#ecfdf5",
-                      border: "1px solid #a7f3d0",
-                      color: "#166534",
-                      fontSize: 14,
-                      fontWeight: 700,
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    This day was built directly from the weekly roster because no
-                    flight file was uploaded for this day.
                   </div>
                 )}
 
@@ -766,8 +690,8 @@ export default function CabinServicePage() {
                       lineHeight: 1.6,
                     }}
                   >
-                    Red rows were found in the current weekly roster but do not match
-                    the new generated schedule for this day. They are marked as delete
+                    Red rows were found in the weekly current roster draft but do not match
+                    the new generated schedule for this day. Those rows are marked as delete
                     candidates and will not be saved in the final weekly schedule.
                   </div>
                 )}
@@ -804,32 +728,24 @@ export default function CabinServicePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {flights.length > 0 ? (
-                          flights.map((flight, index) => (
-                            <tr
-                              key={`${dayKey}-${flight.flightNumber}-${flight.scheduledTime}-${index}`}
-                            >
-                              <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
-                              <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
-                              <td style={thTdStyle}>{flight.route || "-"}</td>
-                              <td style={thTdStyle}>{flight.aircraft || "-"}</td>
-                              <td style={thTdStyle}>{flight.gate || "-"}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={5} style={thTdStyle}>
-                              No flights uploaded for this day.
-                            </td>
+                        {flights.map((flight, index) => (
+                          <tr
+                            key={`${dayKey}-${flight.flightNumber}-${flight.scheduledTime}-${index}`}
+                          >
+                            <td style={thTdStyle}>{flight.flightNumber || "-"}</td>
+                            <td style={thTdStyle}>{flight.scheduledTime || "-"}</td>
+                            <td style={thTdStyle}>{flight.route || "-"}</td>
+                            <td style={thTdStyle}>{flight.aircraft || "-"}</td>
+                            <td style={thTdStyle}>{flight.gate || "-"}</td>
                           </tr>
-                        )}
+                        ))}
                       </tbody>
                     </table>
                   </div>
                 </div>
 
                 <div style={{ marginTop: 22 }}>
-                  <h3 style={subTitleStyle}>Roster + Assign Employees</h3>
+                  <h3 style={subTitleStyle}>Roster Draft + Assign Employees</h3>
                   <div style={tableWrapStyle}>
                     <table style={tableStyle}>
                       <thead>
@@ -855,10 +771,8 @@ export default function CabinServicePage() {
                               <td style={thTdStyle}>
                                 {slot.draftDeleteCandidate ? (
                                   <span style={dangerTagStyle}>DELETE</span>
-                                ) : slot.sourceLabel === "ROSTER ONLY" ? (
-                                  <span style={successTagStyle}>ROSTER ONLY</span>
                                 ) : slot.draftMatched ? (
-                                  <span style={successTagStyle}>MATCHED</span>
+                                  <span style={successTagStyle}>MATCHED DRAFT</span>
                                 ) : (
                                   <span style={infoTagStyle}>NEW</span>
                                 )}
@@ -986,12 +900,8 @@ function summarizeShifts(slots) {
   }
 
   return Array.from(map.values()).sort((a, b) => {
-    if (a.start !== b.start) {
-      return String(a.start || "").localeCompare(String(b.start || ""));
-    }
-    if (a.end !== b.end) {
-      return String(a.end || "").localeCompare(String(b.end || ""));
-    }
+    if (a.start !== b.start) return String(a.start || "").localeCompare(String(b.start || ""));
+    if (a.end !== b.end) return String(a.end || "").localeCompare(String(b.end || ""));
     return String(a.role || "").localeCompare(String(b.role || ""));
   });
 }
@@ -1002,10 +912,49 @@ function buildEmployeeLookup(employees) {
   (employees || []).forEach((emp) => {
     const name = String(emp?.name || "").trim();
     if (!name) return;
-    map[name.toLowerCase()] = emp;
+
+    const variants = buildNameVariants(name);
+    variants.forEach((variant) => {
+      map[variant] = emp;
+    });
   });
 
   return map;
+}
+
+function buildNameVariants(name) {
+  const clean = normalizePersonName(name);
+  if (!clean) return [];
+
+  const parts = clean.split(" ").filter(Boolean);
+  const variants = new Set();
+
+  variants.add(clean);
+  variants.add(parts.join(" "));
+
+  if (parts.length >= 2) {
+    variants.add([...parts].reverse().join(" "));
+  }
+
+  return Array.from(variants);
+}
+
+function normalizePersonName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function findEmployeeMatchByName(name, employeeLookup) {
+  const variants = buildNameVariants(name);
+  for (const variant of variants) {
+    if (employeeLookup[variant]) {
+      return employeeLookup[variant];
+    }
+  }
+  return null;
 }
 
 function createEmptyWeeklyRosterMap() {
@@ -1023,11 +972,29 @@ function createEmptyWeeklyRosterMap() {
 async function parseWeeklyRosterDraftFile(file) {
   const text = await file.text();
   const rows = parseCsvText(text);
+
+  const grouped = createEmptyWeeklyRosterMap();
+
+  const verticalResult = parseVerticalRosterRows(rows);
+  const verticalCount = DAY_KEYS.reduce(
+    (sum, day) => sum + (verticalResult[day]?.length || 0),
+    0
+  );
+
+  if (verticalCount > 0) {
+    return verticalResult;
+  }
+
+  const weeklyResult = parseWeeklyMatrixRosterRows(rows);
+  return weeklyResult || grouped;
+}
+
+function parseVerticalRosterRows(rows) {
   const grouped = createEmptyWeeklyRosterMap();
 
   rows.forEach((row, index) => {
     const dayKey = normalizeDayKey(
-      getRowValue(row, ["day", "daykey", "weekday", "dow"])
+      getRowValue(row, ["day", "daykey", "weekday", "dow", "dia", "diasemana"])
     );
 
     if (!dayKey) return;
@@ -1038,23 +1005,52 @@ async function parseWeeklyRosterDraftFile(file) {
       "employee_name",
       "name",
       "full_name",
+      "fullname",
+      "staffname",
+      "agent",
+      "agentname",
+      "workername",
+      "lastnamefirstname",
+      "firstnamelastname",
     ]);
 
     const role =
-      getRowValue(row, ["role", "position", "job", "shiftrole"]) || "Agent";
+      getRowValue(row, [
+        "role",
+        "position",
+        "job",
+        "shiftrole",
+        "puesto",
+        "cargo",
+        "team",
+      ]) || "Agent";
 
     const start = normalizeTimeInput(
-      getRowValue(row, ["start", "starttime", "in", "shiftstart", "timein"])
+      getRowValue(row, [
+        "start",
+        "starttime",
+        "in",
+        "shiftstart",
+        "timein",
+        "horaentrada",
+      ])
     );
 
     const end = normalizeTimeInput(
-      getRowValue(row, ["end", "endtime", "out", "shiftend", "timeout"])
+      getRowValue(row, [
+        "end",
+        "endtime",
+        "out",
+        "shiftend",
+        "timeout",
+        "horasalida",
+      ])
     );
 
-    if (!start && !end && !employeeName) return;
+    if (!employeeName && !start && !end) return;
 
     grouped[dayKey].push({
-      id: `draft-${dayKey}-${index}`,
+      id: `draft-vertical-${dayKey}-${index}`,
       dayKey,
       employeeName: employeeName || "",
       role,
@@ -1064,6 +1060,117 @@ async function parseWeeklyRosterDraftFile(file) {
   });
 
   return grouped;
+}
+
+function parseWeeklyMatrixRosterRows(rows) {
+  const grouped = createEmptyWeeklyRosterMap();
+
+  let currentRole = "Agent";
+  let dayColumns = null;
+
+  rows.forEach((row, index) => {
+    const values = Object.values(row || {}).map((v) => String(v || "").trim());
+    const upperValues = values.map((v) => v.toUpperCase());
+
+    const monIndex = upperValues.findIndex((v) => v === "MON");
+    const tueIndex = upperValues.findIndex((v) => v === "TUE");
+    const wedIndex = upperValues.findIndex((v) => v === "WED");
+    const thuIndex = upperValues.findIndex((v) => v === "THU");
+    const friIndex = upperValues.findIndex((v) => v === "FRI");
+    const satIndex = upperValues.findIndex((v) => v === "SAT");
+    const sunIndex = upperValues.findIndex((v) => v === "SUN");
+
+    const hasWeekHeader =
+      monIndex >= 0 &&
+      tueIndex >= 0 &&
+      wedIndex >= 0 &&
+      thuIndex >= 0 &&
+      friIndex >= 0 &&
+      satIndex >= 0 &&
+      sunIndex >= 0;
+
+    if (hasWeekHeader) {
+      const roleCell = values.slice(0, monIndex).reverse().find((v) => v);
+      if (roleCell) {
+        currentRole = normalizeRosterRole(roleCell);
+      }
+
+      dayColumns = {
+        monday: monIndex,
+        tuesday: tueIndex,
+        wednesday: wedIndex,
+        thursday: thuIndex,
+        friday: friIndex,
+        saturday: satIndex,
+        sunday: sunIndex,
+      };
+      return;
+    }
+
+    if (!dayColumns) return;
+
+    const isCountRow = DAY_KEYS.every((dayKey) => {
+      const cell = values[dayColumns[dayKey]] || "";
+      return cell === "" || /^[0-9]+$/.test(cell);
+    });
+
+    if (isCountRow) return;
+
+    const candidateBeforeMon = values
+      .slice(0, dayColumns.monday)
+      .reverse()
+      .find((v) => v && !/^\d+(\.\d+)?$/.test(v) && v.toUpperCase() !== "DELTA");
+
+    const employeeName = candidateBeforeMon || "";
+    if (!employeeName) return;
+
+    DAY_KEYS.forEach((dayKey) => {
+      const rawShift = String(values[dayColumns[dayKey]] || "").trim();
+      if (!rawShift || rawShift.toUpperCase() === "OFF") return;
+
+      const { start, end } = splitShiftRange(rawShift);
+
+      grouped[dayKey].push({
+        id: `draft-weekly-${dayKey}-${index}-${employeeName}`,
+        dayKey,
+        employeeName,
+        role: currentRole || "Agent",
+        start,
+        end,
+      });
+    });
+  });
+
+  return grouped;
+}
+
+function normalizeRosterRole(value) {
+  const clean = String(value || "").trim().toUpperCase();
+
+  if (clean.includes("SUPERVISOR")) return "Supervisor";
+  if (clean.includes("LAV")) return "LAV";
+  return "Agent";
+}
+
+function splitShiftRange(value) {
+  const clean = String(value || "").trim().toUpperCase();
+
+  if (!clean || clean === "OFF") {
+    return { start: "", end: "" };
+  }
+
+  const match = clean.match(
+    /^(\d{3,4}|\d{1,2}:\d{2})\s*-\s*(\d{3,4}|\d{1,2}:\d{2})$/
+  );
+
+  if (!match) {
+    return { start: "", end: "" };
+  }
+
+  return {
+    start: normalizeTimeInput(match[1]),
+    end: normalizeTimeInput(match[2]),
+  };
 }
 
 function normalizeDayKey(value) {
@@ -1105,13 +1212,15 @@ function mergeGeneratedSlotsWithDraftRoster({
     if (matchingDraftIndex >= 0) {
       usedDraftIndexes.add(matchingDraftIndex);
       const matchedDraft = draftRows[matchingDraftIndex];
-      const foundEmployee =
-        employeeLookup[String(matchedDraft.employeeName || "").trim().toLowerCase()];
+      const foundEmployee = findEmployeeMatchByName(
+        matchedDraft.employeeName,
+        employeeLookup
+      );
 
       nextSlots.push({
         ...slot,
         id: slot.id || `${dayKey}-generated-${slotIndex}`,
-        employeeName: matchedDraft.employeeName || "",
+        employeeName: foundEmployee?.name || matchedDraft.employeeName || "",
         employeeId: foundEmployee?.id || "",
         draftSource: true,
         draftMatched: true,
@@ -1134,8 +1243,10 @@ function mergeGeneratedSlotsWithDraftRoster({
     .map((draftRow, idx) => ({ draftRow, idx }))
     .filter(({ idx }) => !usedDraftIndexes.has(idx))
     .map(({ draftRow, idx }) => {
-      const foundEmployee =
-        employeeLookup[String(draftRow.employeeName || "").trim().toLowerCase()];
+      const foundEmployee = findEmployeeMatchByName(
+        draftRow.employeeName,
+        employeeLookup
+      );
 
       return {
         id: `delete-${dayKey}-${idx}`,
@@ -1145,7 +1256,7 @@ function mergeGeneratedSlotsWithDraftRoster({
         role: draftRow.role || "Agent",
         paidHours: calcPaidHours(draftRow.start, draftRow.end),
         calendarHours: calcCalendarHours(draftRow.start, draftRow.end),
-        employeeName: draftRow.employeeName || "",
+        employeeName: foundEmployee?.name || draftRow.employeeName || "",
         employeeId: foundEmployee?.id || "",
         draftSource: true,
         draftMatched: false,
@@ -1161,7 +1272,6 @@ function mergeGeneratedSlotsWithDraftRoster({
       matchedRows: usedDraftIndexes.size,
       deleteCandidates: deleteCandidates.length,
       newGenerated: nextSlots.filter((slot) => !slot.draftMatched).length,
-      rosterOnly: false,
     },
   };
 }
