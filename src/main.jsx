@@ -489,7 +489,9 @@ function AppRouter() {
           <Route
             path="employee-performance-report"
             element={
-              <ProtectedRoute roles={["supervisor"]}>
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
                 <MonthlyEmployeePerformanceReportPage />
               </ProtectedRoute>
             }
