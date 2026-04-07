@@ -18,6 +18,7 @@ import ApprovedSchedulesPage from "./pages/ApprovedSchedulesPage.jsx";
 import ApprovedScheduleView from "./pages/ApprovedScheduleView.jsx";
 import BudgetsPage from "./pages/BudgetsPage.jsx";
 import MonthlyBudgetsVsActualPage from "./pages/MonthlyBudgetsVsActualPage.jsx";
+import MonthlyEmployeePerformanceReportPage from "./pages/MonthlyEmployeePerformanceReportPage.jsx";
 import CreateUserPage from "./pages/CreateUserPage.jsx";
 import EditUsersPage from "./pages/EditUsersPage.jsx";
 import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
@@ -742,6 +743,17 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["station_manager"]}>
                 <MonthlyBudgetsVsActualPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="employee-performance/monthly"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <MonthlyEmployeePerformanceReportPage />
               </ProtectedRoute>
             }
           />
