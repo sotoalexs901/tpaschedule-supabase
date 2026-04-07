@@ -262,11 +262,10 @@ export default function AppLayout() {
       user?.role === "duty_manager" ||
       user?.role === "station_manager");
 
-  // EPR
   const canSubmitEmployeePerformance =
-  user?.role === "supervisor" ||
-  user?.role === "duty_manager" ||
-  user?.role === "station_manager";
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const canManageEmployeePerformance =
     user?.role === "duty_manager" || user?.role === "station_manager";
