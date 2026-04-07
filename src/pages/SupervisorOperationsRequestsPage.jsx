@@ -161,6 +161,7 @@ function getRequestTypeLabel(value) {
   if (v === "sy_ot") return "SY OT Request";
   if (v === "wl_ot") return "WL OT Request";
   if (v === "av_ot") return "AV OT Request";
+  if (v === "dl_cabin_ot") return "Delta Cabin Service OT Request";
 
   return value || "—";
 }
@@ -172,8 +173,20 @@ function getAirlineFromRequestType(type) {
   if (v === "sy_ot") return "Sun Country";
   if (v === "wl_ot") return "World Atlantic";
   if (v === "av_ot") return "Avianca";
+  if (v === "dl_cabin_ot") return "Delta Cabin Service";
 
   return "";
+}
+
+function isOtRequestType(type) {
+  const v = String(type || "").trim().toLowerCase();
+  return (
+    v === "aa_ot" ||
+    v === "sy_ot" ||
+    v === "wl_ot" ||
+    v === "av_ot" ||
+    v === "dl_cabin_ot"
+  );
 }
 
 export default function SupervisorOperationsRequestsPage() {
@@ -203,10 +216,11 @@ export default function SupervisorOperationsRequestsPage() {
       { value: "sy_ot", label: "SY OT Request" },
       { value: "wl_ot", label: "WL OT Request" },
       { value: "av_ot", label: "AV OT Request" },
+      { value: "dl_cabin_ot", label: "Delta Cabin Service OT Request" },
     ];
   }, [canUseOt]);
 
-  const [form, setForm] = useState({
+  const getInitialForm = () => ({
     requestType: isAgent ? "supplies" : "",
     date: "",
     airline: "",
@@ -231,13 +245,11 @@ export default function SupervisorOperationsRequestsPage() {
     status: "submitted",
   });
 
+  const [form, setForm] = useState(getInitialForm);
+
   const isSupplies = form.requestType === "supplies";
   const isUniform = form.requestType === "uniform";
-  const isOt =
-    form.requestType === "aa_ot" ||
-    form.requestType === "sy_ot" ||
-    form.requestType === "wl_ot" ||
-    form.requestType === "av_ot";
+  const isOt = isOtRequestType(form.requestType);
 
   const handleChange = (field, value) => {
     setForm((prev) => {
@@ -262,10 +274,10 @@ export default function SupervisorOperationsRequestsPage() {
         next.requestedHours = "";
         next.requestedBy = "";
 
-        if (forcedAirline) {
-          next.airline = forcedAirline;
-        } else {
-          next.airline = "";
+        next.airline = forcedAirline || "";
+
+        if (String(value || "").toLowerCase() === "dl_cabin_ot") {
+          next.department = "Delta Cabin Service";
         }
       }
 
@@ -274,30 +286,7 @@ export default function SupervisorOperationsRequestsPage() {
   };
 
   const resetForm = () => {
-    setForm({
-      requestType: isAgent ? "supplies" : "",
-      date: "",
-      airline: "",
-      department: user?.department || "",
-      submittedBy: getVisibleName(user),
-      email: "",
-      items: "",
-      pictureNotes: "",
-      employeeName: "",
-      employeeNumber: "",
-      phoneNumber: "",
-      totalAmount: "",
-      receiptNotes: "",
-      employeeSignature: "",
-      flightNumber: "",
-      tailNumber: "",
-      delayedTime: "",
-      delayedCode: "",
-      reason: "",
-      requestedHours: "",
-      requestedBy: "",
-      status: "submitted",
-    });
+    setForm(getInitialForm());
   };
 
   const handleSubmit = async () => {
@@ -360,6 +349,7 @@ export default function SupervisorOperationsRequestsPage() {
       await addDoc(collection(db, "supplies_uniform_ot_requests"), {
         requestType: form.requestType,
         requestTypeLabel: getRequestTypeLabel(form.requestType),
+        category: isSupplies ? "supplies" : isUniform ? "uniform" : "ot",
         date: form.date,
         airline: form.airline || "",
         department: form.department || "",
