@@ -298,6 +298,48 @@ function resolveSlotEmployeeName(slot, employeeMap) {
   return "";
 }
 
+function getSlotSourceType(slot) {
+  if (slot?.draftDeleteCandidate) return "delete";
+  if (slot?.draftMatched || slot?.draftSource) return "draft";
+  return "generated";
+}
+
+function getSlotSourceLabel(slot) {
+  if (slot?.draftDeleteCandidate) {
+    return slot?.sourceLabel || "Delete from current roster";
+  }
+  if (slot?.draftMatched || slot?.draftSource) {
+    return slot?.sourceLabel || "Came from weekly draft";
+  }
+  return slot?.sourceLabel || "New generated";
+}
+
+function getSlotSourceStyle(slot) {
+  const type = getSlotSourceType(slot);
+
+  if (type === "delete") {
+    return {
+      background: "#fff1f2",
+      color: "#9f1239",
+      border: "1px solid #fecdd3",
+    };
+  }
+
+  if (type === "draft") {
+    return {
+      background: "#ecfdf5",
+      color: "#166534",
+      border: "1px solid #a7f3d0",
+    };
+  }
+
+  return {
+    background: "#edf7ff",
+    color: "#1769aa",
+    border: "1px solid #cfe7fb",
+  };
+}
+
 export default function CabinScheduleViewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -425,7 +467,12 @@ export default function CabinScheduleViewPage() {
             firestoreId: d.id,
             id: raw.id || d.id,
             employeeName: resolvedName,
-            status: resolvedName || raw.employeeId ? "assigned" : "open",
+            status:
+              raw?.draftDeleteCandidate
+                ? "delete_candidate"
+                : resolvedName || raw.employeeId
+                ? "assigned"
+                : "open",
           };
         });
 
@@ -476,7 +523,7 @@ export default function CabinScheduleViewPage() {
     () =>
       Object.values(slotsByDay)
         .flat()
-        .filter((slot) => slot.employeeId || slot.employeeName).length,
+        .filter((slot) => !slot.draftDeleteCandidate && (slot.employeeId || slot.employeeName)).length,
     [slotsByDay]
   );
 
@@ -505,6 +552,7 @@ export default function CabinScheduleViewPage() {
         ...prev,
         [dayKey]: daySlots.map((slot) => {
           if (slot.id !== slotId) return slot;
+          if (slot.draftDeleteCandidate) return slot;
 
           const updated = { ...slot };
 
@@ -548,7 +596,7 @@ export default function CabinScheduleViewPage() {
       const allSlots = Object.values(slotsByDay).flat();
 
       const updates = allSlots
-        .filter((slot) => slot.firestoreId)
+        .filter((slot) => slot.firestoreId && !slot.draftDeleteCandidate)
         .map((slot) => ({
           id: slot.firestoreId,
           updates: {
@@ -562,6 +610,10 @@ export default function CabinScheduleViewPage() {
             status: slot.employeeId || slot.employeeName ? "assigned" : "open",
             calendarHours: calcCalendarHours(slot.start, slot.end),
             paidHours: calcPaidHours(slot.start, slot.end),
+            draftSource: !!slot.draftSource,
+            draftMatched: !!slot.draftMatched,
+            draftDeleteCandidate: false,
+            sourceLabel: slot.sourceLabel || "",
           },
         }));
 
@@ -592,6 +644,10 @@ export default function CabinScheduleViewPage() {
         status: "open",
         calendarHours: 0,
         paidHours: 0,
+        draftSource: false,
+        draftMatched: false,
+        draftDeleteCandidate: false,
+        sourceLabel: "New generated",
         createdAt: serverTimestamp(),
       };
 
@@ -673,6 +729,8 @@ export default function CabinScheduleViewPage() {
       Object.values(slotsByDay)
         .flat()
         .forEach((slot) => {
+          if (slot.draftDeleteCandidate) return;
+
           const slotGroup = getShiftGroup(slot);
           const slotEmployee = prettifyCodeName(
             slot.employeeName || slot.employeeId || "Open"
@@ -928,7 +986,11 @@ export default function CabinScheduleViewPage() {
           <SummaryBox label="Created By" value={resolvedCreatedBy} />
           <SummaryBox
             label="Status"
-            value={<span style={statusBadge(schedule?.status)}>{schedule?.status || "draft"}</span>}
+            value={
+              <span style={statusBadge(schedule?.status)}>
+                {schedule?.status || "draft"}
+              </span>
+            }
           />
           <SummaryBox label="Flights" value={String(totalFlights)} />
           <SummaryBox label="Slots" value={String(totalSlots)} />
@@ -964,10 +1026,7 @@ export default function CabinScheduleViewPage() {
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {!editMode ? (
-              <ActionButton
-                onClick={() => setEditMode(true)}
-                variant="dark"
-              >
+              <ActionButton onClick={() => setEditMode(true)} variant="dark">
                 Edit Mode
               </ActionButton>
             ) : (
@@ -1077,7 +1136,9 @@ export default function CabinScheduleViewPage() {
                 ? Math.max(...demandBlocks.map((b) => b.recommendedAgents || 0))
                 : 0;
 
-            const shiftSummary = summarizeShifts(slots);
+            const shiftSummary = summarizeShifts(
+              slots.filter((slot) => !slot.draftDeleteCandidate)
+            );
 
             return (
               <PageCard key={dayKey} style={{ padding: 20 }}>
@@ -1146,6 +1207,7 @@ export default function CabinScheduleViewPage() {
                     <table style={tableStyle}>
                       <thead>
                         <tr style={theadRowStyle}>
+                          <th style={thTdStyle}>Source</th>
                           <th style={thTdStyle}>Start</th>
                           <th style={thTdStyle}>End</th>
                           <th style={thTdStyle}>Role</th>
@@ -1157,9 +1219,34 @@ export default function CabinScheduleViewPage() {
                       </thead>
                       <tbody>
                         {slots.map((slot) => (
-                          <tr key={slot.id || slot.firestoreId}>
+                          <tr
+                            key={slot.id || slot.firestoreId}
+                            style={
+                              slot.draftDeleteCandidate
+                                ? { background: "#fff1f2" }
+                                : slot.draftMatched || slot.draftSource
+                                ? { background: "#ecfdf5" }
+                                : undefined
+                            }
+                          >
                             <td style={thTdStyle}>
-                              {editMode ? (
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  padding: "5px 10px",
+                                  borderRadius: 999,
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  ...getSlotSourceStyle(slot),
+                                }}
+                              >
+                                {getSlotSourceLabel(slot)}
+                              </span>
+                            </td>
+
+                            <td style={thTdStyle}>
+                              {editMode && !slot.draftDeleteCandidate ? (
                                 <input
                                   type="time"
                                   value={slot.start || ""}
@@ -1179,7 +1266,7 @@ export default function CabinScheduleViewPage() {
                             </td>
 
                             <td style={thTdStyle}>
-                              {editMode ? (
+                              {editMode && !slot.draftDeleteCandidate ? (
                                 <input
                                   type="time"
                                   value={slot.end || ""}
@@ -1199,7 +1286,7 @@ export default function CabinScheduleViewPage() {
                             </td>
 
                             <td style={thTdStyle}>
-                              {editMode ? (
+                              {editMode && !slot.draftDeleteCandidate ? (
                                 <select
                                   value={slot.role || ""}
                                   onChange={(e) =>
@@ -1226,7 +1313,7 @@ export default function CabinScheduleViewPage() {
                             <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
 
                             <td style={thTdStyle}>
-                              {editMode ? (
+                              {editMode && !slot.draftDeleteCandidate ? (
                                 <select
                                   value={slot.employeeId || ""}
                                   onChange={(e) =>
@@ -1252,31 +1339,41 @@ export default function CabinScheduleViewPage() {
                             </td>
 
                             <td style={thTdStyle}>
-                              <span
-                                style={
-                                  slot.employeeId || slot.employeeName
-                                    ? assignedChipStyle
-                                    : openChipStyle
-                                }
-                              >
-                                {slot.employeeId || slot.employeeName
-                                  ? "Assigned"
-                                  : "Open"}
-                              </span>
+                              {slot.draftDeleteCandidate ? (
+                                <span style={deleteCandidateChipStyle}>Delete Candidate</span>
+                              ) : (
+                                <span
+                                  style={
+                                    slot.employeeId || slot.employeeName
+                                      ? assignedChipStyle
+                                      : openChipStyle
+                                  }
+                                >
+                                  {slot.employeeId || slot.employeeName
+                                    ? "Assigned"
+                                    : "Open"}
+                                </span>
+                              )}
                             </td>
 
                             {editMode && (
                               <td style={thTdStyle}>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleDeleteSlot(dayKey, slot.firestoreId)
-                                  }
-                                  style={deleteSlotButtonStyle}
-                                  disabled={deleting}
-                                >
-                                  Delete
-                                </button>
+                                {slot.draftDeleteCandidate ? (
+                                  <span style={{ color: "#9f1239", fontWeight: 700 }}>
+                                    Draft only
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleDeleteSlot(dayKey, slot.firestoreId)
+                                    }
+                                    style={deleteSlotButtonStyle}
+                                    disabled={deleting}
+                                  >
+                                    Delete
+                                  </button>
+                                )}
                               </td>
                             )}
                           </tr>
@@ -1285,7 +1382,7 @@ export default function CabinScheduleViewPage() {
                         {slots.length === 0 && (
                           <tr>
                             <td
-                              colSpan={editMode ? 7 : 6}
+                              colSpan={editMode ? 8 : 7}
                               style={{
                                 ...thTdStyle,
                                 color: "#64748b",
@@ -1456,33 +1553,35 @@ function buildRosterGroups(slotsByDay) {
   const grouped = {};
 
   Object.entries(slotsByDay || {}).forEach(([dayKey, slots]) => {
-    (slots || []).forEach((slot) => {
-      const employeeName = prettifyCodeName(
-        slot.employeeName || slot.employeeId || "Open"
-      );
-      const groupName = getShiftGroup(slot);
-      const shiftLabel = buildShiftLabel(slot);
+    (slots || [])
+      .filter((slot) => !slot.draftDeleteCandidate)
+      .forEach((slot) => {
+        const employeeName = prettifyCodeName(
+          slot.employeeName || slot.employeeId || "Open"
+        );
+        const groupName = getShiftGroup(slot);
+        const shiftLabel = buildShiftLabel(slot);
 
-      if (!grouped[groupName]) {
-        grouped[groupName] = [];
-      }
+        if (!grouped[groupName]) {
+          grouped[groupName] = [];
+        }
 
-      let employeeRow = grouped[groupName].find((item) => item.name === employeeName);
+        let employeeRow = grouped[groupName].find((item) => item.name === employeeName);
 
-      if (!employeeRow) {
-        employeeRow = {
-          name: employeeName,
-          days: {},
-        };
-        grouped[groupName].push(employeeRow);
-      }
+        if (!employeeRow) {
+          employeeRow = {
+            name: employeeName,
+            days: {},
+          };
+          grouped[groupName].push(employeeRow);
+        }
 
-      if (!employeeRow.days[dayKey]) {
-        employeeRow.days[dayKey] = shiftLabel;
-      } else if (!employeeRow.days[dayKey].split(" / ").includes(shiftLabel)) {
-        employeeRow.days[dayKey] = `${employeeRow.days[dayKey]} / ${shiftLabel}`;
-      }
-    });
+        if (!employeeRow.days[dayKey]) {
+          employeeRow.days[dayKey] = shiftLabel;
+        } else if (!employeeRow.days[dayKey].split(" / ").includes(shiftLabel)) {
+          employeeRow.days[dayKey] = `${employeeRow.days[dayKey]} / ${shiftLabel}`;
+        }
+      });
   });
 
   Object.keys(grouped).forEach((groupName) => {
@@ -1575,6 +1674,10 @@ function summarizeShifts(slots) {
 }
 
 function sortSlots(a, b) {
+  if (!!a?.draftDeleteCandidate !== !!b?.draftDeleteCandidate) {
+    return a?.draftDeleteCandidate ? 1 : -1;
+  }
+
   if ((a.start || "") !== (b.start || "")) {
     return (a.start || "").localeCompare(b.start || "");
   }
@@ -1604,6 +1707,10 @@ function minifySlotForCompare(slot) {
     role: slot.role || "",
     employeeId: slot.employeeId || "",
     employeeName: prettifyCodeName(slot.employeeName || ""),
+    draftSource: !!slot.draftSource,
+    draftMatched: !!slot.draftMatched,
+    draftDeleteCandidate: !!slot.draftDeleteCandidate,
+    sourceLabel: slot.sourceLabel || "",
   };
 }
 
@@ -1727,7 +1834,7 @@ const tableStyle = {
   width: "100%",
   borderCollapse: "separate",
   borderSpacing: 0,
-  minWidth: 760,
+  minWidth: 960,
   background: "#fff",
 };
 
@@ -1760,6 +1867,17 @@ const openChipStyle = {
   background: "#fff1f2",
   color: "#b91c1c",
   border: "1px solid #fecaca",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const deleteCandidateChipStyle = {
+  display: "inline-block",
+  padding: "5px 10px",
+  borderRadius: 999,
+  background: "#fff1f2",
+  color: "#9f1239",
+  border: "1px solid #fecdd3",
   fontSize: 12,
   fontWeight: 700,
 };
