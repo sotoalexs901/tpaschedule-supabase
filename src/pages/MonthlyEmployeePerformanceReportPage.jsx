@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -147,6 +147,12 @@ function ActionButton({
       border: "none",
       boxShadow: "0 12px 24px rgba(220,38,38,0.18)",
     },
+    dark: {
+      background: "#0f172a",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(15,23,42,0.16)",
+    },
   };
 
   return (
@@ -254,6 +260,10 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function normalizeLookup(value) {
+  return normalizeText(value).toLowerCase();
+}
+
 function formatMonthValue(value) {
   const [year, month] = String(value || "").split("-").map(Number);
   if (!year || !month) return value || "-";
@@ -271,7 +281,6 @@ function getCurrentMonthValue() {
 function getMonthOptions() {
   const now = new Date();
   const result = [];
-
   for (let i = 0; i < 12; i += 1) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -280,7 +289,6 @@ function getMonthOptions() {
       label: d.toLocaleString("en-US", { month: "long", year: "numeric" }),
     });
   }
-
   return result;
 }
 
@@ -334,21 +342,123 @@ function getFollowUpItems(answers, questions) {
     .filter((item) => item.rating === "below");
 }
 
+function printReportHtml(report, language = "en") {
+  const title =
+    language === "es"
+      ? "Reporte Mensual de Desempeño"
+      : "Monthly Employee Performance Report";
+
+  const followUpItems = Array.isArray(report.followUpItems)
+    ? report.followUpItems
+    : [];
+
+  const answers = report.answers || {};
+
+  const html = `
+    <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            padding: 24px;
+            color: #0f172a;
+          }
+          h1,h2,h3 { margin: 0 0 12px; }
+          .card {
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0,1fr));
+            gap: 12px;
+          }
+          .muted { color: #64748b; font-size: 13px; }
+          .q { margin-bottom: 12px; }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        <div class="card">
+          <div><strong>Employee:</strong> ${report.employeeName || "-"}</div>
+          <div><strong>Month:</strong> ${formatMonthValue(report.month)}</div>
+          <div><strong>Template:</strong> ${report.templateLabel || "-"}</div>
+          <div><strong>Supervisor:</strong> ${report.supervisorName || "-"}</div>
+          <div><strong>Score:</strong> ${formatScore(report.score)} / 100</div>
+          <div><strong>Status:</strong> ${report.managerStatus || report.performanceStatus || "-"}</div>
+          <div><strong>Assigned Duty Manager:</strong> ${report.assignedDutyManagerName || "-"}</div>
+        </div>
+
+        <div class="card">
+          <h3>Comments</h3>
+          <div><strong>Company:</strong> ${report.commentsCompany || "-"}</div>
+          <div style="margin-top:8px;"><strong>Employee:</strong> ${report.commentsEmployee || "-"}</div>
+          <div style="margin-top:8px;"><strong>Manager Note:</strong> ${report.managerNote || "-"}</div>
+        </div>
+
+        <div class="card">
+          <h3>Follow Up Items</h3>
+          ${
+            followUpItems.length
+              ? followUpItems
+                  .map(
+                    (item) =>
+                      `<div class="q">• ${item[language] || item.en || item.es || "-"}${
+                        item.note ? ` — ${item.note}` : ""
+                      }</div>`
+                  )
+                  .join("")
+              : "<div>No follow up items.</div>"
+          }
+        </div>
+
+        <div class="card">
+          <h3>Answers</h3>
+          ${Object.keys(answers)
+            .map((key) => {
+              const a = answers[key] || {};
+              return `
+                <div class="q">
+                  <strong>Q${key}</strong> — ${a.rating || "-"}${
+                    a.note ? ` | ${a.note}` : ""
+                  }
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open("", "_blank", "width=1000,height=800");
+  if (!printWindow) return;
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 500);
+}
+
 /* -------------------- Language -------------------- */
 
 const LABELS = {
   en: {
     title: "Monthly Employee Performance Report",
     subtitle:
-      "Supervisors complete the EPR by month and managers receive reports by employee folder with follow-up alerts.",
-    supervisorTab: "Supervisor EPR",
-    managerTab: "Manager Inbox",
-    followUpTab: "Follow Up Alerts",
+      "Supervisors and managers can complete EPRs by month. Duty and station managers manage follow-up, congratulations, closures and employee notifications.",
+    createTab: "Create EPR",
+    managementTab: "Management",
     language: "Language",
     month: "Month",
     employee: "Employee",
     template: "Template",
-    evaluator: "Supervisor",
+    evaluator: "Evaluator",
     department: "Department",
     hireDate: "Hire Date",
     commentsCompany: "Company Comments / Recommendations",
@@ -359,41 +469,53 @@ const LABELS = {
     followUpNeeded: "Follow Up Needed",
     questionsToFollow: "Questions Requiring Follow Up",
     receivedReports: "Received Reports",
-    employeeFolder: "Employee Folder",
     managerAction: "Manager Action",
     approve: "Approve",
     markFollowUp: "Mark Follow Up",
     closeFollowUp: "Close Follow Up",
     openReport: "Open Report",
     noReports: "No reports found.",
-    noAlerts: "No active alerts.",
-    reportSaved: "Performance report saved successfully.",
-    reportApproved: "Report approved successfully.",
-    reportFollowUp: "Report marked for follow up.",
-    followUpClosed: "Follow up closed successfully.",
     lowScoreAlert: "Low score alert",
     rating: "Rating",
     note: "Follow Up Note",
     exceeds: "Exceeds",
     meets: "Meets",
     below: "Does Not Meet",
-    folderInfo: "Grouped by employee so managers can review processed reports.",
+    managementFilters: "Management Filters",
+    supervisor: "Supervisor",
+    followUpStatus: "Follow Up Status",
+    scoreBand: "Score Band",
+    all: "All",
+    assignedDutyManager: "Assigned Duty Manager",
+    assignDutyManager: "Assign Duty Manager",
+    congratulations: "Congratulations",
+    closeMonth: "Close Month",
+    managerNote: "Manager Note",
+    print: "Print",
+    messageSent: "Message sent to employee.",
+    monthClosed: "Month closed successfully.",
+    congratulationsSent: "Congratulations sent successfully.",
+    dutyAssigned: "Duty manager assigned successfully.",
+    managerUpdated: "Management status updated successfully.",
+    closed: "Closed",
+    followUp: "Follow Up",
+    approved: "Approved",
+    submitted: "Submitted",
   },
   es: {
     title: "Reporte Mensual de Desempeño del Empleado",
     subtitle:
-      "Los supervisores completan el EPR por mes y managers reciben los reportes por carpeta de empleado con alertas de seguimiento.",
-    supervisorTab: "EPR Supervisor",
-    managerTab: "Bandeja Manager",
-    followUpTab: "Alertas de Seguimiento",
+      "Supervisores y managers pueden completar EPR por mes. Duty managers y station managers administran seguimiento, felicitaciones, cierre de mes y notificación al empleado.",
+    createTab: "Crear EPR",
+    managementTab: "Management",
     language: "Idioma",
     month: "Mes",
     employee: "Empleado",
     template: "Formato",
-    evaluator: "Supervisor",
+    evaluator: "Evaluador",
     department: "Departamento",
-    hireDate: "Fecha de Vinculación",
-    commentsCompany: "Comentarios y Recomendaciones de la Empresa",
+    hireDate: "Fecha de Ingreso",
+    commentsCompany: "Comentarios / Recomendaciones de la Empresa",
     commentsEmployee: "Comentarios del Empleado",
     saveReport: "Guardar Performance Report",
     score: "Puntuación Final",
@@ -401,25 +523,38 @@ const LABELS = {
     followUpNeeded: "Requiere Seguimiento",
     questionsToFollow: "Preguntas que Requieren Seguimiento",
     receivedReports: "Reportes Recibidos",
-    employeeFolder: "Carpeta del Empleado",
     managerAction: "Acción Manager",
     approve: "Aprobar",
     markFollowUp: "Marcar Seguimiento",
     closeFollowUp: "Cerrar Seguimiento",
     openReport: "Abrir Reporte",
     noReports: "No se encontraron reportes.",
-    noAlerts: "No hay alertas activas.",
-    reportSaved: "Performance report guardado correctamente.",
-    reportApproved: "Reporte aprobado correctamente.",
-    reportFollowUp: "Reporte marcado para seguimiento.",
-    followUpClosed: "Seguimiento cerrado correctamente.",
     lowScoreAlert: "Alerta de puntuación baja",
     rating: "Calificación",
     note: "Nota de Seguimiento",
     exceeds: "Supera",
     meets: "Cumple",
     below: "No Cumple",
-    folderInfo: "Agrupado por empleado para que managers revisen los reportes procesados.",
+    managementFilters: "Filtros de Management",
+    supervisor: "Supervisor",
+    followUpStatus: "Estado de Seguimiento",
+    scoreBand: "Rango de Puntuación",
+    all: "Todos",
+    assignedDutyManager: "Duty Manager Asignado",
+    assignDutyManager: "Asignar Duty Manager",
+    congratulations: "Felicitaciones",
+    closeMonth: "Cerrar Mes",
+    managerNote: "Nota de Manager",
+    print: "Imprimir",
+    messageSent: "Mensaje enviado al empleado.",
+    monthClosed: "Mes cerrado correctamente.",
+    congratulationsSent: "Felicitación enviada correctamente.",
+    dutyAssigned: "Duty manager asignado correctamente.",
+    managerUpdated: "Estado actualizado correctamente.",
+    closed: "Cerrado",
+    followUp: "Seguimiento",
+    approved: "Aprobado",
+    submitted: "Enviado",
   },
 };
 
@@ -486,78 +621,6 @@ const COMMON_QUESTIONS = [
     en: "Is thorough, accurate, and clean in the work performed.",
     weight: 3,
   },
-  {
-    id: "11",
-    es: "Demuestra disposición para desarrollar habilidades y asumir desafíos.",
-    en: "Shows willingness to develop skills and take on challenges.",
-    weight: 3,
-  },
-  {
-    id: "12",
-    es: "Tiene habilidades de comunicación efectivas y eficientes.",
-    en: "Has effective and efficient communication skills.",
-    weight: 3,
-  },
-  {
-    id: "13",
-    es: "Tiene habilidades organizativas y usa el tiempo de manera efectiva.",
-    en: "Has organizational skills and uses time effectively.",
-    weight: 3,
-  },
-  {
-    id: "14",
-    es: "Mantiene confidencialidad y no discute eventos internos.",
-    en: "Maintains confidentiality and does not discuss internal matters.",
-    weight: 3,
-  },
-  {
-    id: "15",
-    es: "Proyecta apariencia profesional y correcto uso del uniforme.",
-    en: "Maintains a professional appearance and proper uniform use.",
-    weight: 3,
-  },
-  {
-    id: "16",
-    es: "Mantiene el área de trabajo ordenada y limpia.",
-    en: "Keeps the work area organized and clean.",
-    weight: 3,
-  },
-  {
-    id: "17",
-    es: "Busca métodos constructivos para resolver problemas o conflictos.",
-    en: "Uses constructive methods to resolve problems or conflicts.",
-    weight: 3,
-  },
-  {
-    id: "18",
-    es: "Contribuye a un entorno seguro siguiendo procedimientos de seguridad.",
-    en: "Contributes to a safe environment by following safety procedures.",
-    weight: 3,
-  },
-  {
-    id: "19",
-    es: "Muestra conocimiento del trabajo sobre procesos y procedimientos.",
-    en: "Demonstrates job knowledge of processes and procedures.",
-    weight: 3,
-  },
-  {
-    id: "20",
-    es: "Comprende normativas y realiza tareas de forma adecuada.",
-    en: "Understands rules and completes tasks correctly.",
-    weight: 3,
-  },
-  {
-    id: "21",
-    es: "Usa suministros buscando eficiencia de costos y buen manejo de inventario.",
-    en: "Uses supplies efficiently and supports proper inventory control.",
-    weight: 3,
-  },
-  {
-    id: "22",
-    es: "Está disponible para trabajar cualquier turno según la operación.",
-    en: "Is available to work any shift required by the operation.",
-    weight: 3,
-  },
 ];
 
 const TEMPLATE_MAP = {
@@ -566,251 +629,44 @@ const TEMPLATE_MAP = {
     label: "WCHR Service",
     role: "WCHR Agent",
     department: "WCHR Service",
-    questions: [
-      ...COMMON_QUESTIONS,
-      {
-        id: "23",
-        es: "Hace uso individualizado de credenciales y navega eficazmente por sistemas informáticos necesarios.",
-        en: "Uses credentials individually and navigates required systems effectively.",
-        weight: 5,
-      },
-      {
-        id: "24",
-        es: "Es profesional y usa técnicas de comunicación en anuncios, orientación y atención telefónica.",
-        en: "Uses professional communication techniques in announcements, guidance, and phone support.",
-        weight: 5,
-      },
-      {
-        id: "25",
-        es: "Realiza asistencia a pasajeros WCHR con trato humano, empatía y respeto.",
-        en: "Provides WCHR passenger assistance with empathy, dignity, and respect.",
-        weight: 4,
-      },
-      {
-        id: "26",
-        es: "Aplica correctamente procedimientos de seguridad, movilización y acompañamiento del pasajero.",
-        en: "Correctly applies safety, mobility, and passenger escort procedures.",
-        weight: 4,
-      },
-      {
-        id: "27",
-        es: "Coordina con rampa, seguridad, gate, cabina y conexiones para asegurar asistencia continua.",
-        en: "Coordinates with ramp, security, gate, cabin, and connections for continuous support.",
-        weight: 4,
-      },
-      {
-        id: "28",
-        es: "Verifica documentación, tiempos de conexión y necesidades especiales antes del servicio.",
-        en: "Checks documentation, connection times, and special needs before service.",
-        weight: 4,
-      },
-      {
-        id: "29",
-        es: "Utiliza sillas de ruedas y equipos de apoyo de forma segura y reporta novedades.",
-        en: "Uses wheelchairs and support equipment safely and reports issues.",
-        weight: 4,
-      },
-      {
-        id: "30",
-        es: "Mantiene control de tiempos, relevos y entrega del pasajero al área correspondiente.",
-        en: "Maintains timing, handoff, and passenger delivery to the correct area.",
-        weight: 4,
-      },
-    ],
+    questions: COMMON_QUESTIONS,
   },
   baggage: {
     key: "baggage",
     label: "Baggage Handling",
     role: "Baggage Handler",
     department: "Baggage Handling",
-    questions: [
-      ...COMMON_QUESTIONS,
-      {
-        id: "23",
-        es: "Prepara equipos, impresoras, dispositivos KIKO y teléfonos para la operación.",
-        en: "Prepares equipment, printers, KIKO devices, and phones for the operation.",
-        weight: 4,
-      },
-      {
-        id: "24",
-        es: "Hace uso individualizado de credenciales y sistemas necesarios.",
-        en: "Uses credentials individually and works correctly in required systems.",
-        weight: 4,
-      },
-      {
-        id: "25",
-        es: "Es profesional y utiliza técnicas de comunicación de manera exitosa.",
-        en: "Uses professional communication techniques successfully.",
-        weight: 4,
-      },
-      {
-        id: "26",
-        es: "Realiza carga, descarga y clasificación de equipaje siguiendo prioridades operacionales.",
-        en: "Loads, unloads, and sorts baggage following operational priorities.",
-        weight: 4,
-      },
-      {
-        id: "27",
-        es: "Manipula equipaje de manera segura para evitar daños, pérdidas y reclamaciones.",
-        en: "Handles baggage safely to prevent damage, loss, and claims.",
-        weight: 4,
-      },
-      {
-        id: "28",
-        es: "Identifica y procesa correctamente equipaje rush, transfer, priority y odd-size.",
-        en: "Correctly identifies and processes rush, transfer, priority, and odd-size baggage.",
-        weight: 4,
-      },
-      {
-        id: "29",
-        es: "Cumple procedimientos de seguridad en rampa y belt area.",
-        en: "Follows ramp and belt-area safety procedures.",
-        weight: 4,
-      },
-      {
-        id: "30",
-        es: "Garantiza envío oportuno de equipaje al claim, conexiones o warehouse.",
-        en: "Ensures timely baggage movement to claim, connections, or warehouse.",
-        weight: 3,
-      },
-      {
-        id: "31",
-        es: "Mantiene control y cuidado de equipos y herramientas de trabajo.",
-        en: "Maintains control and care of equipment and tools.",
-        weight: 3,
-      },
-    ],
+    questions: COMMON_QUESTIONS,
   },
   passenger: {
     key: "passenger",
     label: "Passenger Service",
     role: "Passenger Service Agent",
     department: "Passenger Service",
-    questions: [
-      ...COMMON_QUESTIONS,
-      {
-        id: "23",
-        es: "Hace uso individualizado de credenciales y navega eficazmente por sistemas.",
-        en: "Uses credentials individually and navigates systems effectively.",
-        weight: 5,
-      },
-      {
-        id: "24",
-        es: "Es profesional y utiliza con éxito técnicas de comunicación con clientes.",
-        en: "Uses professional communication techniques successfully with customers.",
-        weight: 5,
-      },
-      {
-        id: "25",
-        es: "Realiza check-in, documentación y validaciones con precisión.",
-        en: "Performs check-in, documentation, and validations accurately.",
-        weight: 4,
-      },
-      {
-        id: "26",
-        es: "Atiende casos especiales y resuelve situaciones del pasajero correctamente.",
-        en: "Handles special cases and resolves passenger situations correctly.",
-        weight: 4,
-      },
-      {
-        id: "27",
-        es: "Orienta a pasajeros sobre políticas, documentación, exceso de equipaje y proceso.",
-        en: "Guides passengers on policies, documents, excess baggage, and process.",
-        weight: 4,
-      },
-      {
-        id: "28",
-        es: "Realiza preguntas de seguridad, etiquetado y cobros aplicables con precisión.",
-        en: "Handles security questions, tagging, and applicable charges accurately.",
-        weight: 4,
-      },
-      {
-        id: "29",
-        es: "Mantiene counter, lobby y áreas de atención organizadas y listas para la operación.",
-        en: "Keeps counter, lobby, and service areas organized and operation-ready.",
-        weight: 4,
-      },
-      {
-        id: "30",
-        es: "Domina sistemas y procedimientos de servicio al pasajero para casos especiales.",
-        en: "Demonstrates strong knowledge of passenger service systems and procedures.",
-        weight: 4,
-      },
-    ],
+    questions: COMMON_QUESTIONS,
   },
   gate: {
     key: "gate",
     label: "Gate Agent",
     role: "Gate Agent",
     department: "Passenger Service - Gate",
-    questions: [
-      ...COMMON_QUESTIONS,
-      {
-        id: "23",
-        es: "Hace uso individualizado de credenciales y sistemas necesarios en gate.",
-        en: "Uses credentials individually and works properly in gate systems.",
-        weight: 5,
-      },
-      {
-        id: "24",
-        es: "Realiza anuncios y manejo de puerta con comunicación profesional.",
-        en: "Handles gate announcements and communication professionally.",
-        weight: 5,
-      },
-      {
-        id: "25",
-        es: "Ejecuta procesos de abordaje correctamente respetando prioridades y seguridad.",
-        en: "Executes boarding correctly while respecting priorities and safety.",
-        weight: 4,
-      },
-      {
-        id: "26",
-        es: "Controla documentos, conteos y validaciones antes del cierre de vuelo.",
-        en: "Controls documents, counts, and validations before flight closure.",
-        weight: 4,
-      },
-      {
-        id: "27",
-        es: "Maneja cambios, demoras y irregularidades manteniendo control y servicio.",
-        en: "Handles changes, delays, and irregular operations with control and service focus.",
-        weight: 4,
-      },
-      {
-        id: "28",
-        es: "Coordina eficientemente con crew, operations, ramp y customer service.",
-        en: "Coordinates efficiently with crew, operations, ramp, and customer service.",
-        weight: 4,
-      },
-      {
-        id: "29",
-        es: "Maneja stand-by, UMNR, WCHR, conexiones y casos especiales correctamente.",
-        en: "Handles stand-by, UMNR, WCHR, connections, and special cases correctly.",
-        weight: 4,
-      },
-      {
-        id: "30",
-        es: "Completa documentación de puerta y reportes post-embarque con exactitud.",
-        en: "Completes gate documentation and post-boarding reports accurately.",
-        weight: 4,
-      },
-    ],
+    questions: COMMON_QUESTIONS,
   },
 };
 
-/* -------------------- Main page -------------------- */
-
 export default function MonthlyEmployeePerformanceReportPage() {
   const { user } = useUser();
+  const printAreaRef = useRef(null);
 
-  const canSupervisor =
+  const canCreate =
     user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
-  const canManager =
+  const canManage =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
-  const [tab, setTab] = useState("supervisor");
+  const [tab, setTab] = useState(canManage ? "management" : "create");
   const [language, setLanguage] = useState("en");
   const t = LABELS[language];
 
@@ -821,7 +677,17 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const [saving, setSaving] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState("");
 
+  const [managementEdit, setManagementEdit] = useState({});
+
   const monthOptions = useMemo(() => getMonthOptions(), []);
+
+  const [filters, setFilters] = useState({
+    month: "all",
+    employeeId: "all",
+    supervisorName: "all",
+    followUpStatus: "all",
+    scoreBand: "all",
+  });
 
   const [form, setForm] = useState({
     employeeId: "",
@@ -843,7 +709,12 @@ export default function MonthlyEmployeePerformanceReportPage() {
       try {
         const [employeesSnap, reportsSnap] = await Promise.all([
           getDocs(collection(db, "employees")),
-          getDocs(query(collection(db, "employeePerformanceReports"), orderBy("createdAt", "desc"))),
+          getDocs(
+            query(
+              collection(db, "employeePerformanceReports"),
+              orderBy("createdAt", "desc")
+            )
+          ),
         ]);
 
         const employeeRows = employeesSnap.docs
@@ -863,6 +734,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
               "Unnamed Employee",
             department: emp.department || "",
             hireDate: emp.hireDate || emp.startDate || "",
+            role: emp.role || "",
+            username: emp.username || "",
+            email: emp.email || "",
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -874,19 +748,19 @@ export default function MonthlyEmployeePerformanceReportPage() {
         setEmployees(employeeRows);
         setReports(reportRows);
       } catch (err) {
-        console.error("Error loading performance report data:", err);
+        console.error("Error loading EPR data:", err);
         setStatusMessage("Could not load performance report data.");
       } finally {
         setLoading(false);
       }
     }
 
-    if (canSupervisor || canManager) {
+    if (canCreate || canManage) {
       loadData();
     } else {
       setLoading(false);
     }
-  }, [canSupervisor, canManager]);
+  }, [canCreate, canManage]);
 
   useEffect(() => {
     const template = TEMPLATE_MAP[form.templateKey];
@@ -896,11 +770,13 @@ export default function MonthlyEmployeePerformanceReportPage() {
       roleTitle: template.role,
     }));
 
-    const nextAnswers = {};
-    template.questions.forEach((q) => {
-      nextAnswers[q.id] = answers[q.id] || { rating: "", note: "" };
+    setAnswers((prev) => {
+      const next = {};
+      template.questions.forEach((q) => {
+        next[q.id] = prev[q.id] || { rating: "", note: "" };
+      });
+      return next;
     });
-    setAnswers(nextAnswers);
   }, [form.templateKey]);
 
   const selectedEmployee = useMemo(() => {
@@ -909,7 +785,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
   useEffect(() => {
     if (!selectedEmployee) return;
-
     setForm((prev) => ({
       ...prev,
       employeeName: selectedEmployee.name,
@@ -931,14 +806,57 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
   const needsFollowUp = calculatedScore < 70 || followUpItems.length > 0;
 
+  const dutyManagers = useMemo(() => {
+    return employees.filter(
+      (emp) =>
+        normalizeLookup(emp.role) === "duty_manager" ||
+        normalizeLookup(emp.role) === "duty manager"
+    );
+  }, [employees]);
+
+  const supervisorNames = useMemo(() => {
+    return Array.from(
+      new Set(
+        reports
+          .map((r) => normalizeText(r.supervisorName))
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [reports]);
+
+  const filteredReports = useMemo(() => {
+    return reports.filter((report) => {
+      if (filters.month !== "all" && report.month !== filters.month) return false;
+      if (filters.employeeId !== "all" && report.employeeId !== filters.employeeId)
+        return false;
+      if (
+        filters.supervisorName !== "all" &&
+        normalizeText(report.supervisorName) !== filters.supervisorName
+      )
+        return false;
+
+      if (filters.followUpStatus !== "all") {
+        const status = normalizeLookup(report.managerStatus || "");
+        if (status !== normalizeLookup(filters.followUpStatus)) return false;
+      }
+
+      if (filters.scoreBand !== "all") {
+        const score = Number(report.score || 0);
+        if (filters.scoreBand === "high" && score < 85) return false;
+        if (filters.scoreBand === "medium" && (score < 70 || score >= 85))
+          return false;
+        if (filters.scoreBand === "low" && score >= 70) return false;
+      }
+
+      return true;
+    });
+  }, [reports, filters]);
+
   const groupedReportsByEmployee = useMemo(() => {
     const map = {};
-
-    reports.forEach((report) => {
+    filteredReports.forEach((report) => {
       const employeeName = report.employeeName || "Unknown Employee";
-      if (!map[employeeName]) {
-        map[employeeName] = [];
-      }
+      if (!map[employeeName]) map[employeeName] = [];
       map[employeeName].push(report);
     });
 
@@ -951,15 +869,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
     });
 
     return map;
-  }, [reports]);
-
-  const alertReports = useMemo(() => {
-    return reports.filter(
-      (report) =>
-        report.needsFollowUp === true &&
-        String(report.managerStatus || "").toLowerCase() !== "closed"
-    );
-  }, [reports]);
+  }, [filteredReports]);
 
   const selectedReport = useMemo(() => {
     return reports.find((r) => r.id === selectedReportId) || null;
@@ -973,6 +883,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
         [field]: value,
       },
     }));
+  }
+
+  function getManagementField(report, field) {
+    return managementEdit[report.id]?.[field] ?? report[field] ?? "";
   }
 
   async function handleSaveReport() {
@@ -1004,6 +918,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
         needsFollowUp,
         followUpItems,
         managerStatus: needsFollowUp ? "follow_up" : "submitted",
+        assignedDutyManagerId: "",
+        assignedDutyManagerName: "",
+        managerNote: "",
+        monthClosed: false,
+        congratulationsSent: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
@@ -1020,7 +939,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
         ...prev,
       ]);
 
-      setStatusMessage(t.reportSaved);
+      setSelectedReportId(ref.id);
+      setStatusMessage("Performance report saved successfully.");
 
       setForm((prev) => ({
         ...prev,
@@ -1033,7 +953,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
         resetAnswers[q.id] = { rating: "", note: "" };
       });
       setAnswers(resetAnswers);
-      setSelectedReportId(ref.id);
     } catch (err) {
       console.error("Error saving performance report:", err);
       setStatusMessage("Could not save performance report.");
@@ -1042,20 +961,24 @@ export default function MonthlyEmployeePerformanceReportPage() {
     }
   }
 
-  async function updateManagerStatus(reportId, nextStatus) {
+  async function updateManagerStatus(reportId, nextStatus, extra = {}) {
     try {
-      await updateDoc(doc(db, "employeePerformanceReports", reportId), {
+      const payload = {
         managerStatus: nextStatus,
         managerReviewedBy: getVisibleUserName(user),
         managerReviewedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+        ...extra,
+      };
+
+      await updateDoc(doc(db, "employeePerformanceReports", reportId), payload);
 
       setReports((prev) =>
         prev.map((item) =>
           item.id === reportId
             ? {
                 ...item,
+                ...extra,
                 managerStatus: nextStatus,
                 managerReviewedBy: getVisibleUserName(user),
                 managerReviewedAt: new Date(),
@@ -1064,16 +987,148 @@ export default function MonthlyEmployeePerformanceReportPage() {
         )
       );
 
-      if (nextStatus === "approved") setStatusMessage(t.reportApproved);
-      if (nextStatus === "follow_up") setStatusMessage(t.reportFollowUp);
-      if (nextStatus === "closed") setStatusMessage(t.followUpClosed);
+      setStatusMessage(t.managerUpdated);
     } catch (err) {
       console.error("Error updating manager status:", err);
       setStatusMessage("Could not update manager status.");
     }
   }
 
-  if (!canSupervisor && !canManager) {
+  async function assignDutyManager(report) {
+    try {
+      const assignedDutyManagerId = getManagementField(report, "assignedDutyManagerId");
+      const duty = dutyManagers.find((item) => item.id === assignedDutyManagerId);
+
+      const payload = {
+        assignedDutyManagerId: assignedDutyManagerId || "",
+        assignedDutyManagerName: duty?.name || "",
+      };
+
+      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
+        ...payload,
+        updatedAt: serverTimestamp(),
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                ...payload,
+              }
+            : item
+        )
+      );
+
+      setStatusMessage(t.dutyAssigned);
+    } catch (err) {
+      console.error("Error assigning duty manager:", err);
+      setStatusMessage("Could not assign duty manager.");
+    }
+  }
+
+  async function sendCongratulations(report) {
+    try {
+      const managerNote = normalizeText(getManagementField(report, "managerNote"));
+      const body =
+        managerNote ||
+        `Congratulations ${report.employeeName}. Your ${formatMonthValue(
+          report.month
+        )} performance report was reviewed positively. Keep up the great work.`;
+
+      await addDoc(collection(db, "messages"), {
+        toUserId: report.employeeId || "",
+        toUserName: report.employeeName || "",
+        fromUserId: user?.id || "",
+        fromUserName: getVisibleUserName(user),
+        subject: `Congratulations - ${formatMonthValue(report.month)} EPR`,
+        body,
+        read: false,
+        category: "employee_performance",
+        createdAt: serverTimestamp(),
+      });
+
+      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
+        congratulationsSent: true,
+        congratulationsSentBy: getVisibleUserName(user),
+        congratulationsSentAt: serverTimestamp(),
+        managerStatus: "approved",
+        updatedAt: serverTimestamp(),
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                congratulationsSent: true,
+                congratulationsSentBy: getVisibleUserName(user),
+                congratulationsSentAt: new Date(),
+                managerStatus: "approved",
+              }
+            : item
+        )
+      );
+
+      setStatusMessage(t.congratulationsSent);
+    } catch (err) {
+      console.error("Error sending congratulations:", err);
+      setStatusMessage("Could not send congratulations.");
+    }
+  }
+
+  async function closeMonth(report) {
+    try {
+      const managerNote = normalizeText(getManagementField(report, "managerNote"));
+
+      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
+        monthClosed: true,
+        closedMonthBy: getVisibleUserName(user),
+        closedMonthAt: serverTimestamp(),
+        managerNote,
+        managerStatus: report.needsFollowUp ? "follow_up" : "closed",
+        updatedAt: serverTimestamp(),
+      });
+
+      if (report.employeeId) {
+        await addDoc(collection(db, "messages"), {
+          toUserId: report.employeeId,
+          toUserName: report.employeeName || "",
+          fromUserId: user?.id || "",
+          fromUserName: getVisibleUserName(user),
+          subject: `Monthly EPR Closed - ${formatMonthValue(report.month)}`,
+          body:
+            managerNote ||
+            `Your ${formatMonthValue(report.month)} employee performance report has been processed and closed.`,
+          read: false,
+          category: "employee_performance",
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                monthClosed: true,
+                closedMonthBy: getVisibleUserName(user),
+                closedMonthAt: new Date(),
+                managerNote,
+                managerStatus: item.needsFollowUp ? "follow_up" : "closed",
+              }
+            : item
+        )
+      );
+
+      setStatusMessage(t.monthClosed);
+    } catch (err) {
+      console.error("Error closing month:", err);
+      setStatusMessage("Could not close month.");
+    }
+  }
+
+  if (!canCreate && !canManage) {
     return (
       <PageCard style={{ padding: 22 }}>
         Only Supervisors, Duty Managers, and Station Managers can access this page.
@@ -1127,7 +1182,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
         <p
           style={{
             margin: 0,
-            maxWidth: 900,
+            maxWidth: 920,
             fontSize: 14,
             color: "rgba(255,255,255,0.88)",
           }}
@@ -1165,31 +1220,22 @@ export default function MonthlyEmployeePerformanceReportPage() {
           }}
         >
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {canSupervisor && (
+            {canCreate && (
               <TabButton
-                active={tab === "supervisor"}
-                onClick={() => setTab("supervisor")}
+                active={tab === "create"}
+                onClick={() => setTab("create")}
               >
-                {t.supervisorTab}
+                {t.createTab}
               </TabButton>
             )}
 
-            {canManager && (
-              <>
-                <TabButton
-                  active={tab === "manager"}
-                  onClick={() => setTab("manager")}
-                >
-                  {t.managerTab}
-                </TabButton>
-
-                <TabButton
-                  active={tab === "alerts"}
-                  onClick={() => setTab("alerts")}
-                >
-                  {t.followUpTab}
-                </TabButton>
-              </>
+            {canManage && (
+              <TabButton
+                active={tab === "management"}
+                onClick={() => setTab("management")}
+              >
+                {t.managementTab}
+              </TabButton>
             )}
           </div>
 
@@ -1206,7 +1252,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
         </div>
       </PageCard>
 
-      {tab === "supervisor" && canSupervisor && (
+      {tab === "create" && canCreate && (
         <>
           <PageCard style={{ padding: 22 }}>
             <div
@@ -1487,46 +1533,127 @@ export default function MonthlyEmployeePerformanceReportPage() {
         </>
       )}
 
-      {tab === "manager" && canManager && (
-        <PageCard style={{ padding: 22 }}>
-          <div style={{ marginBottom: 14 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-              }}
-            >
-              {t.receivedReports}
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              {t.folderInfo}
-            </p>
-          </div>
+      {tab === "management" && canManage && (
+        <>
+          <PageCard style={{ padding: 22 }}>
+            <div style={{ marginBottom: 14 }}>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
+                {t.managementFilters}
+              </h2>
+            </div>
 
-          {loading ? (
-            <div>Loading...</div>
-          ) : Object.keys(groupedReportsByEmployee).length === 0 ? (
-            <div>{t.noReports}</div>
-          ) : (
-            <div style={{ display: "grid", gap: 14 }}>
-              {Object.entries(groupedReportsByEmployee).map(([employeeName, items]) => (
-                <div
-                  key={employeeName}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 20,
-                    padding: 16,
-                    background: "#ffffff",
-                  }}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 14,
+              }}
+            >
+              <div>
+                <FieldLabel>{t.month}</FieldLabel>
+                <SelectInput
+                  value={filters.month}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, month: e.target.value }))
+                  }
                 >
+                  <option value="all">{t.all}</option>
+                  {monthOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel>{t.employee}</FieldLabel>
+                <SelectInput
+                  value={filters.employeeId}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, employeeId: e.target.value }))
+                  }
+                >
+                  <option value="all">{t.all}</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel>{t.supervisor}</FieldLabel>
+                <SelectInput
+                  value={filters.supervisorName}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      supervisorName: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="all">{t.all}</option>
+                  {supervisorNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel>{t.followUpStatus}</FieldLabel>
+                <SelectInput
+                  value={filters.followUpStatus}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      followUpStatus: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="all">{t.all}</option>
+                  <option value="submitted">{t.submitted}</option>
+                  <option value="approved">{t.approved}</option>
+                  <option value="follow_up">{t.followUp}</option>
+                  <option value="closed">{t.closed}</option>
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel>{t.scoreBand}</FieldLabel>
+                <SelectInput
+                  value={filters.scoreBand}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, scoreBand: e.target.value }))
+                  }
+                >
+                  <option value="all">{t.all}</option>
+                  <option value="high">85 - 100</option>
+                  <option value="medium">70 - 84.99</option>
+                  <option value="low">0 - 69.99</option>
+                </SelectInput>
+              </div>
+            </div>
+          </PageCard>
+
+          <div ref={printAreaRef} style={{ display: "grid", gap: 14 }}>
+            {loading ? (
+              <PageCard style={{ padding: 22 }}>Loading...</PageCard>
+            ) : Object.keys(groupedReportsByEmployee).length === 0 ? (
+              <PageCard style={{ padding: 22 }}>{t.noReports}</PageCard>
+            ) : (
+              Object.entries(groupedReportsByEmployee).map(([employeeName, items]) => (
+                <PageCard key={employeeName} style={{ padding: 18 }}>
                   <div
                     style={{
                       display: "flex",
@@ -1534,13 +1661,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
                       gap: 12,
                       flexWrap: "wrap",
                       alignItems: "center",
+                      marginBottom: 12,
                     }}
                   >
                     <div>
                       <div
                         style={{
-                          fontSize: 18,
-                          fontWeight: 800,
+                          fontSize: 20,
+                          fontWeight: 900,
                           color: "#0f172a",
                         }}
                       >
@@ -1553,28 +1681,28 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#64748b",
                         }}
                       >
-                        {t.employeeFolder} · {items.length} report(s)
+                        {items.length} report(s)
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+                  <div style={{ display: "grid", gap: 12 }}>
                     {items.map((report) => (
                       <div
                         key={report.id}
                         style={{
                           border: "1px solid #dbeafe",
-                          borderRadius: 16,
-                          padding: 14,
+                          borderRadius: 18,
+                          padding: 16,
                           background:
-                            selectedReportId === report.id ? "#edf7ff" : "#f8fbff",
+                            selectedReportId === report.id ? "#edf7ff" : "#ffffff",
                         }}
                       >
                         <div
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
-                            gap: 10,
+                            gap: 12,
                             flexWrap: "wrap",
                             alignItems: "center",
                           }}
@@ -1582,7 +1710,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           <div>
                             <div
                               style={{
-                                fontSize: 15,
+                                fontSize: 16,
                                 fontWeight: 800,
                                 color: "#0f172a",
                               }}
@@ -1596,44 +1724,30 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                 color: "#64748b",
                               }}
                             >
-                              Supervisor: {report.supervisorName || "-"} ·{" "}
+                              {t.supervisor}: {report.supervisorName || "-"} ·{" "}
                               {formatDateTime(report.createdAt)}
                             </div>
                           </div>
 
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                            }}
-                          >
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                             <ActionButton
                               variant="secondary"
                               onClick={() => setSelectedReportId(report.id)}
                             >
                               {t.openReport}
                             </ActionButton>
-
                             <ActionButton
-                              variant="success"
-                              onClick={() => updateManagerStatus(report.id, "approved")}
+                              variant="dark"
+                              onClick={() => printReportHtml(report, language)}
                             >
-                              {t.approve}
-                            </ActionButton>
-
-                            <ActionButton
-                              variant="warning"
-                              onClick={() => updateManagerStatus(report.id, "follow_up")}
-                            >
-                              {t.markFollowUp}
+                              {t.print}
                             </ActionButton>
                           </div>
                         </div>
 
                         <div
                           style={{
-                            marginTop: 10,
+                            marginTop: 12,
                             display: "grid",
                             gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
                             gap: 10,
@@ -1648,17 +1762,144 @@ export default function MonthlyEmployeePerformanceReportPage() {
                             label={t.status}
                             value={report.managerStatus || report.performanceStatus || "-"}
                             tone={
-                              String(report.managerStatus || "").toLowerCase() === "approved"
+                              normalizeLookup(report.managerStatus) === "approved"
                                 ? "green"
-                                : String(report.managerStatus || "").toLowerCase() === "follow_up"
+                                : normalizeLookup(report.managerStatus) === "follow_up"
                                 ? "amber"
-                                : "blue"
+                                : normalizeLookup(report.managerStatus) === "closed"
+                                ? "blue"
+                                : "default"
                             }
+                          />
+                          <InfoCard
+                            label={t.assignedDutyManager}
+                            value={report.assignedDutyManagerName || "-"}
+                            tone="default"
                           />
                         </div>
 
+                        <div
+                          style={{
+                            marginTop: 14,
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                            gap: 12,
+                          }}
+                        >
+                          <div>
+                            <FieldLabel>{t.assignDutyManager}</FieldLabel>
+                            <SelectInput
+                              value={getManagementField(report, "assignedDutyManagerId")}
+                              onChange={(e) =>
+                                setManagementEdit((prev) => ({
+                                  ...prev,
+                                  [report.id]: {
+                                    ...(prev[report.id] || {}),
+                                    assignedDutyManagerId: e.target.value,
+                                  },
+                                }))
+                              }
+                            >
+                              <option value="">{t.all}</option>
+                              {dutyManagers.map((dm) => (
+                                <option key={dm.id} value={dm.id}>
+                                  {dm.name}
+                                </option>
+                              ))}
+                            </SelectInput>
+                          </div>
+
+                          <div>
+                            <FieldLabel>{t.managerNote}</FieldLabel>
+                            <TextArea
+                              value={getManagementField(report, "managerNote")}
+                              onChange={(e) =>
+                                setManagementEdit((prev) => ({
+                                  ...prev,
+                                  [report.id]: {
+                                    ...(prev[report.id] || {}),
+                                    managerNote: e.target.value,
+                                  },
+                                }))
+                              }
+                              style={{ minHeight: 70 }}
+                            />
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 14,
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <ActionButton
+                            variant="secondary"
+                            onClick={() => assignDutyManager(report)}
+                          >
+                            {t.assignDutyManager}
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="success"
+                            onClick={() =>
+                              updateManagerStatus(report.id, "approved", {
+                                managerNote: normalizeText(
+                                  getManagementField(report, "managerNote")
+                                ),
+                              })
+                            }
+                          >
+                            {t.approve}
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="warning"
+                            onClick={() =>
+                              updateManagerStatus(report.id, "follow_up", {
+                                managerNote: normalizeText(
+                                  getManagementField(report, "managerNote")
+                                ),
+                              })
+                            }
+                          >
+                            {t.markFollowUp}
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="primary"
+                            onClick={() => sendCongratulations(report)}
+                          >
+                            {t.congratulations}
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="dark"
+                            onClick={() => closeMonth(report)}
+                          >
+                            {t.closeMonth}
+                          </ActionButton>
+
+                          {normalizeLookup(report.managerStatus) === "follow_up" && (
+                            <ActionButton
+                              variant="danger"
+                              onClick={() =>
+                                updateManagerStatus(report.id, "closed", {
+                                  managerNote: normalizeText(
+                                    getManagementField(report, "managerNote")
+                                  ),
+                                })
+                              }
+                            >
+                              {t.closeFollowUp}
+                            </ActionButton>
+                          )}
+                        </div>
+
                         {selectedReportId === report.id && (
-                          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+                          <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
                             <div
                               style={{
                                 border: "1px solid #e2e8f0",
@@ -1683,12 +1924,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                 <div style={{ display: "grid", gap: 8 }}>
                                   {report.followUpItems.map((item) => (
                                     <div key={item.id} style={{ color: "#7c2d12", fontSize: 14 }}>
-                                      • {item.es || item.en}
+                                      • {(language === "es" ? item.es : item.en) || item.en || item.es}
+                                      {item.note ? ` — ${item.note}` : ""}
                                     </div>
                                   ))}
                                 </div>
                               ) : (
-                                <div style={{ color: "#64748b", fontSize: 14 }}>No follow up items.</div>
+                                <div style={{ color: "#64748b", fontSize: 14 }}>
+                                  No follow up items.
+                                </div>
                               )}
                             </div>
 
@@ -1717,6 +1961,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                 <div style={{ marginTop: 8 }}>
                                   <strong>Employee:</strong> {report.commentsEmployee || "-"}
                                 </div>
+                                <div style={{ marginTop: 8 }}>
+                                  <strong>Manager:</strong>{" "}
+                                  {getManagementField(report, "managerNote") || report.managerNote || "-"}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1724,102 +1972,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </PageCard>
-      )}
-
-      {tab === "alerts" && canManager && (
-        <PageCard style={{ padding: 22 }}>
-          <div style={{ marginBottom: 14 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-              }}
-            >
-              {t.followUpTab}
-            </h2>
+                </PageCard>
+              ))
+            )}
           </div>
-
-          {alertReports.length === 0 ? (
-            <div>{t.noAlerts}</div>
-          ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              {alertReports.map((report) => (
-                <div
-                  key={report.id}
-                  style={{
-                    border: "1px solid #fdba74",
-                    borderRadius: 18,
-                    padding: 16,
-                    background: "#fff7ed",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: "#7c2d12",
-                        }}
-                      >
-                        {report.employeeName} · {report.templateLabel}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 4,
-                          fontSize: 13,
-                          color: "#9a3412",
-                        }}
-                      >
-                        {formatMonthValue(report.month)} · Score {formatScore(report.score)} / 100
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <ActionButton
-                        variant="secondary"
-                        onClick={() => setSelectedReportId(report.id)}
-                      >
-                        {t.openReport}
-                      </ActionButton>
-                      <ActionButton
-                        variant="success"
-                        onClick={() => updateManagerStatus(report.id, "closed")}
-                      >
-                        {t.closeFollowUp}
-                      </ActionButton>
-                    </div>
-                  </div>
-
-                  {Array.isArray(report.followUpItems) && report.followUpItems.length > 0 && (
-                    <div style={{ marginTop: 12, display: "grid", gap: 6 }}>
-                      {report.followUpItems.map((item) => (
-                        <div key={item.id} style={{ fontSize: 14, color: "#7c2d12" }}>
-                          • {item.es || item.en}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </PageCard>
+        </>
       )}
     </div>
   );
