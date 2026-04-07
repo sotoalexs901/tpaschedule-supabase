@@ -556,7 +556,9 @@ export default function CabinScheduleViewPage() {
             end: slot.end || "",
             role: slot.role || "",
             employeeId: slot.employeeId || "",
-            employeeName: prettifyCodeName(slot.employeeName || ""),
+            employeeName: slot.employeeId
+              ? prettifyCodeName(slot.employeeName || "")
+              : "",
             status: slot.employeeId || slot.employeeName ? "assigned" : "open",
             calendarHours: calcCalendarHours(slot.start, slot.end),
             paidHours: calcPaidHours(slot.start, slot.end),
@@ -1129,7 +1131,7 @@ export default function CabinScheduleViewPage() {
                           key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
                           style={chipStyle}
                         >
-                          {item.start}–{item.end} | {item.role} x{item.count}
+                          {item.start || "--:--"}–{item.end || "--:--"} | {item.role || "Agent"} x{item.count}
                         </div>
                       ))}
                     </div>
@@ -1454,7 +1456,7 @@ function buildRosterGroups(slotsByDay) {
   const grouped = {};
 
   Object.entries(slotsByDay || {}).forEach(([dayKey, slots]) => {
-    slots.forEach((slot) => {
+    (slots || []).forEach((slot) => {
       const employeeName = prettifyCodeName(
         slot.employeeName || slot.employeeId || "Open"
       );
@@ -1475,7 +1477,11 @@ function buildRosterGroups(slotsByDay) {
         grouped[groupName].push(employeeRow);
       }
 
-      employeeRow.days[dayKey] = shiftLabel;
+      if (!employeeRow.days[dayKey]) {
+        employeeRow.days[dayKey] = shiftLabel;
+      } else if (!employeeRow.days[dayKey].split(" / ").includes(shiftLabel)) {
+        employeeRow.days[dayKey] = `${employeeRow.days[dayKey]} / ${shiftLabel}`;
+      }
     });
   });
 
@@ -1545,12 +1551,12 @@ function summarizeShifts(slots) {
   const map = new Map();
 
   for (const slot of slots) {
-    const key = `${slot.start}|${slot.end}|${slot.role}`;
+    const key = `${slot.start || ""}|${slot.end || ""}|${slot.role || ""}`;
     if (!map.has(key)) {
       map.set(key, {
-        start: slot.start,
-        end: slot.end,
-        role: slot.role,
+        start: slot.start || "",
+        end: slot.end || "",
+        role: slot.role || "Agent",
         count: 0,
       });
     }
