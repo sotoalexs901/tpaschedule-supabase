@@ -982,6 +982,8 @@ function buildNameVariants(name) {
 
 function normalizePersonName(value) {
   return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase()
     .replace(/,/g, " ")
@@ -1012,9 +1014,9 @@ function createEmptyWeeklyRosterMap() {
 
 async function parseWeeklyRosterDraftFile(file) {
   const text = await file.text();
-  const rows = parseCsvText(text);
 
-  const verticalResult = parseVerticalRosterRows(rows);
+  const verticalRows = parseCsvText(text);
+  const verticalResult = parseVerticalRosterRows(verticalRows);
   const verticalCount = DAY_KEYS.reduce(
     (sum, day) => sum + (verticalResult[day]?.length || 0),
     0
@@ -1024,7 +1026,7 @@ async function parseWeeklyRosterDraftFile(file) {
     return verticalResult;
   }
 
-  return parseWeeklyMatrixRosterRows(rows);
+  return parseWeeklyMatrixRosterText(text);
 }
 
 function parseVerticalRosterRows(rows) {
@@ -1100,14 +1102,20 @@ function parseVerticalRosterRows(rows) {
   return grouped;
 }
 
-function parseWeeklyMatrixRosterRows(rows) {
+function parseWeeklyMatrixRosterText(text) {
   const grouped = createEmptyWeeklyRosterMap();
+
+  const lines = String(text || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => splitCsvLine(line))
+    .filter((cells) => cells.some((cell) => String(cell || "").trim() !== ""));
 
   let currentRole = "Agent";
   let dayColumns = null;
 
-  rows.forEach((row, index) => {
-    const values = Object.values(row || {}).map((v) => String(v || "").trim());
+  lines.forEach((cells, index) => {
+    const values = cells.map((v) => String(v || "").trim());
     const upperValues = values.map((v) => v.toUpperCase());
 
     const monIndex = upperValues.findIndex((v) => v === "MON");
@@ -1148,7 +1156,8 @@ function parseWeeklyMatrixRosterRows(rows) {
     if (!dayColumns) return;
 
     const isCountRow = DAY_KEYS.every((dayKey) => {
-      const cell = values[dayColumns[dayKey]] || "";
+      const idx = dayColumns[dayKey];
+      const cell = values[idx] || "";
       return cell === "" || /^[0-9]+$/.test(cell);
     });
 
