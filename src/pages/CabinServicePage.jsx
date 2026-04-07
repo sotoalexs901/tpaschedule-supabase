@@ -112,15 +112,7 @@ export default function CabinServicePage() {
     sunday: null,
   });
 
-  const [dayRosterFiles, setDayRosterFiles] = useState({
-    monday: null,
-    tuesday: null,
-    wednesday: null,
-    thursday: null,
-    friday: null,
-    saturday: null,
-    sunday: null,
-  });
+  const [weeklyRosterFile, setWeeklyRosterFile] = useState(null);
 
   const [weeklyFlights, setWeeklyFlights] = useState({});
   const [weeklyDemandBlocks, setWeeklyDemandBlocks] = useState({});
@@ -170,9 +162,11 @@ export default function CabinServicePage() {
     return DAY_KEYS.filter((day) => !!dayFiles[day]).length;
   }, [dayFiles]);
 
-  const uploadedRosterDaysCount = useMemo(() => {
-    return DAY_KEYS.filter((day) => !!dayRosterFiles[day]).length;
-  }, [dayRosterFiles]);
+  const draftRosterDaysCount = useMemo(() => {
+    return DAY_KEYS.filter(
+      (day) => Array.isArray(weeklyDraftRosterRows[day]) && weeklyDraftRosterRows[day].length > 0
+    ).length;
+  }, [weeklyDraftRosterRows]);
 
   const assignedCount = useMemo(() => {
     return Object.values(weeklySlots)
@@ -199,13 +193,6 @@ export default function CabinServicePage() {
     }));
   }
 
-  function handleRosterFileChange(dayKey, file) {
-    setDayRosterFiles((prev) => ({
-      ...prev,
-      [dayKey]: file || null,
-    }));
-  }
-
   async function handleGenerateWeeklySchedule() {
     if (!weekStartDate) {
       alert("Please select the week start date.");
@@ -224,21 +211,16 @@ export default function CabinServicePage() {
       const parsedByDay = {};
       const demandByDay = {};
       const slotsByDay = {};
-      const draftRosterByDay = {};
       const draftSummaryByDay = {};
 
       const employeeLookup = buildEmployeeLookup(employees);
+      const parsedWeeklyDraftRoster = weeklyRosterFile
+        ? await parseWeeklyRosterDraftFile(weeklyRosterFile)
+        : createEmptyWeeklyRosterMap();
 
       for (const dayKey of DAY_KEYS) {
         const file = dayFiles[dayKey];
-        const rosterFile = dayRosterFiles[dayKey];
-
-        let draftRows = [];
-        if (rosterFile) {
-          draftRows = await parseRosterDraftFile(rosterFile, dayKey);
-        }
-
-        draftRosterByDay[dayKey] = draftRows;
+        const draftRows = parsedWeeklyDraftRoster[dayKey] || [];
 
         if (!file) {
           if (draftRows.length > 0) {
@@ -289,14 +271,14 @@ export default function CabinServicePage() {
       setWeeklyFlights(parsedByDay);
       setWeeklyDemandBlocks(demandByDay);
       setWeeklySlots(slotsByDay);
-      setWeeklyDraftRosterRows(draftRosterByDay);
+      setWeeklyDraftRosterRows(parsedWeeklyDraftRoster);
       setWeeklyDraftSummary(draftSummaryByDay);
       setStep("assignment");
     } catch (err) {
       console.error(err);
       setError(
         err.message ||
-          "Error generating weekly schedule. Please verify the flight files and roster draft files."
+          "Error generating weekly schedule. Please verify the flight files and the weekly roster draft file."
       );
     } finally {
       setLoading(false);
@@ -434,9 +416,8 @@ export default function CabinServicePage() {
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Upload daily flight files, optionally upload the current roster draft
-            for each day, compare what stays vs what should be deleted, and then
-            save the final weekly staffing plan.
+            Upload daily flight files and one weekly current roster draft, compare
+            what stays vs what should be deleted, and save the final weekly staffing plan.
           </p>
         </div>
       </div>
@@ -466,7 +447,7 @@ export default function CabinServicePage() {
           </div>
 
           <div style={{ marginTop: 22 }}>
-            <h3 style={subTitleStyle}>Upload Daily Flight Files + Current Roster Draft</h3>
+            <h3 style={subTitleStyle}>Upload Daily Flight Files</h3>
 
             <div style={uploadGridStyle}>
               {DAY_KEYS.map((dayKey) => (
@@ -482,58 +463,51 @@ export default function CabinServicePage() {
                     {DAY_LABELS[dayKey]}
                   </div>
 
-                  <div style={{ display: "grid", gap: 12 }}>
-                    <div>
-                      <div style={miniLabelStyle}>Flight File</div>
-                      <input
-                        type="file"
-                        accept=".csv"
-                        onChange={(e) =>
-                          handleFileChange(dayKey, e.target.files?.[0] || null)
-                        }
-                        style={{ fontSize: 13 }}
-                      />
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) =>
+                      handleFileChange(dayKey, e.target.files?.[0] || null)
+                    }
+                    style={{ fontSize: 13 }}
+                  />
 
-                      <div style={miniHelpTextStyle}>
-                        {dayFiles[dayKey] ? (
-                          <>
-                            <b>Uploaded:</b> {dayFiles[dayKey].name}
-                          </>
-                        ) : (
-                          "No flight file uploaded"
-                        )}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        borderTop: "1px solid #dbeafe",
-                        paddingTop: 12,
-                      }}
-                    >
-                      <div style={miniLabelStyle}>Current Roster Draft</div>
-                      <input
-                        type="file"
-                        accept=".csv"
-                        onChange={(e) =>
-                          handleRosterFileChange(dayKey, e.target.files?.[0] || null)
-                        }
-                        style={{ fontSize: 13 }}
-                      />
-
-                      <div style={miniHelpTextStyle}>
-                        {dayRosterFiles[dayKey] ? (
-                          <>
-                            <b>Draft uploaded:</b> {dayRosterFiles[dayKey].name}
-                          </>
-                        ) : (
-                          "Optional current roster draft"
-                        )}
-                      </div>
-                    </div>
+                  <div style={miniHelpTextStyle}>
+                    {dayFiles[dayKey] ? (
+                      <>
+                        <b>Uploaded:</b> {dayFiles[dayKey].name}
+                      </>
+                    ) : (
+                      "No flight file uploaded"
+                    )}
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 22 }}>
+            <h3 style={subTitleStyle}>Upload Current Weekly Roster Draft</h3>
+
+            <div style={uploadBoxStyle}>
+              <div style={miniLabelStyle}>Weekly Roster Draft</div>
+
+              <input
+                type="file"
+                accept=".csv"
+                onChange={(e) => setWeeklyRosterFile(e.target.files?.[0] || null)}
+                style={{ fontSize: 13 }}
+              />
+
+              <div style={miniHelpTextStyle}>
+                {weeklyRosterFile ? (
+                  <>
+                    <b>Draft uploaded:</b> {weeklyRosterFile.name}
+                  </>
+                ) : (
+                  "Optional weekly roster draft. Include a day column like day, weekday, or dayKey."
+                )}
+              </div>
             </div>
           </div>
 
@@ -543,7 +517,7 @@ export default function CabinServicePage() {
             </div>
 
             <div style={pillSlateStyle}>
-              Draft roster days: <b>{uploadedRosterDaysCount}/7</b>
+              Weekly draft file: <b>{weeklyRosterFile ? "Yes" : "No"}</b>
             </div>
 
             <div style={pillSlateStyle}>
@@ -598,7 +572,7 @@ export default function CabinServicePage() {
             <div style={summaryGridStyle}>
               <SummaryBox label="Week Start" value={weekStartDate || "-"} />
               <SummaryBox label="Uploaded Days" value={`${uploadedDaysCount}/7`} />
-              <SummaryBox label="Draft Days" value={`${uploadedRosterDaysCount}/7`} />
+              <SummaryBox label="Draft Days Found" value={`${draftRosterDaysCount}/7`} />
               <SummaryBox
                 label="Flights Loaded"
                 value={String(
@@ -706,9 +680,9 @@ export default function CabinServicePage() {
                       lineHeight: 1.6,
                     }}
                   >
-                    Red rows were found in the current roster draft but do not match
-                    the new generated schedule. Those rows are marked as delete candidates
-                    and will not be saved in the final weekly schedule.
+                    Red rows were found in the weekly current roster draft but do not match
+                    the new generated schedule for this day. Those rows are marked as delete
+                    candidates and will not be saved in the final weekly schedule.
                   </div>
                 )}
 
@@ -777,13 +751,9 @@ export default function CabinServicePage() {
                       <tbody>
                         {slots.map((slot) => {
                           const rowStyle = slot.draftDeleteCandidate
-                            ? {
-                                background: "#fff1f2",
-                              }
+                            ? { background: "#fff1f2" }
                             : slot.draftMatched
-                            ? {
-                                background: "#ecfdf5",
-                              }
+                            ? { background: "#ecfdf5" }
                             : {};
 
                           return (
@@ -938,43 +908,78 @@ function buildEmployeeLookup(employees) {
   return map;
 }
 
-async function parseRosterDraftFile(file, dayKey) {
+function createEmptyWeeklyRosterMap() {
+  return {
+    monday: [],
+    tuesday: [],
+    wednesday: [],
+    thursday: [],
+    friday: [],
+    saturday: [],
+    sunday: [],
+  };
+}
+
+async function parseWeeklyRosterDraftFile(file) {
   const text = await file.text();
   const rows = parseCsvText(text);
+  const grouped = createEmptyWeeklyRosterMap();
 
-  return rows
-    .map((row, index) => {
-      const employeeName = getRowValue(row, [
-        "employee",
-        "employeename",
-        "employee_name",
-        "name",
-        "full_name",
-      ]);
+  rows.forEach((row, index) => {
+    const dayKey = normalizeDayKey(
+      getRowValue(row, ["day", "daykey", "weekday", "dow"])
+    );
 
-      const role =
-        getRowValue(row, ["role", "position", "job", "shiftrole"]) || "Agent";
+    if (!dayKey) return;
 
-      const start = normalizeTimeInput(
-        getRowValue(row, ["start", "starttime", "in", "shiftstart", "timein"])
-      );
+    const employeeName = getRowValue(row, [
+      "employee",
+      "employeename",
+      "employee_name",
+      "name",
+      "full_name",
+    ]);
 
-      const end = normalizeTimeInput(
-        getRowValue(row, ["end", "endtime", "out", "shiftend", "timeout"])
-      );
+    const role =
+      getRowValue(row, ["role", "position", "job", "shiftrole"]) || "Agent";
 
-      if (!start && !end && !employeeName) return null;
+    const start = normalizeTimeInput(
+      getRowValue(row, ["start", "starttime", "in", "shiftstart", "timein"])
+    );
 
-      return {
-        id: `draft-${dayKey}-${index}`,
-        dayKey,
-        employeeName: employeeName || "",
-        role,
-        start,
-        end,
-      };
-    })
-    .filter(Boolean);
+    const end = normalizeTimeInput(
+      getRowValue(row, ["end", "endtime", "out", "shiftend", "timeout"])
+    );
+
+    if (!start && !end && !employeeName) return;
+
+    grouped[dayKey].push({
+      id: `draft-${dayKey}-${index}`,
+      dayKey,
+      employeeName: employeeName || "",
+      role,
+      start,
+      end,
+    });
+  });
+
+  return grouped;
+}
+
+function normalizeDayKey(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+
+  if (raw === "monday" || raw === "mon") return "monday";
+  if (raw === "tuesday" || raw === "tue" || raw === "tues") return "tuesday";
+  if (raw === "wednesday" || raw === "wed") return "wednesday";
+  if (raw === "thursday" || raw === "thu" || raw === "thur" || raw === "thurs")
+    return "thursday";
+  if (raw === "friday" || raw === "fri") return "friday";
+  if (raw === "saturday" || raw === "sat") return "saturday";
+  if (raw === "sunday" || raw === "sun") return "sunday";
+
+  return "";
 }
 
 function mergeGeneratedSlotsWithDraftRoster({
