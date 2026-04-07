@@ -1125,12 +1125,8 @@ export default function CabinScheduleViewPage() {
               return null;
             }
 
-            const arrivals = flights.filter(
-              (f) => f.movementType === "arrival"
-            ).length;
-            const departures = flights.filter(
-              (f) => f.movementType !== "arrival"
-            ).length;
+            const arrivals = flights.filter((f) => f.movementType === "arrival").length;
+            const departures = flights.filter((f) => f.movementType !== "arrival").length;
             const peakAgents =
               demandBlocks.length > 0
                 ? Math.max(...demandBlocks.map((b) => b.recommendedAgents || 0))
@@ -1251,12 +1247,7 @@ export default function CabinScheduleViewPage() {
                                   type="time"
                                   value={slot.start || ""}
                                   onChange={(e) =>
-                                    handleSlotFieldChange(
-                                      dayKey,
-                                      slot.id,
-                                      "start",
-                                      e.target.value
-                                    )
+                                    handleSlotFieldChange(dayKey, slot.id, "start", e.target.value)
                                   }
                                   style={timeInputStyle}
                                 />
@@ -1271,12 +1262,7 @@ export default function CabinScheduleViewPage() {
                                   type="time"
                                   value={slot.end || ""}
                                   onChange={(e) =>
-                                    handleSlotFieldChange(
-                                      dayKey,
-                                      slot.id,
-                                      "end",
-                                      e.target.value
-                                    )
+                                    handleSlotFieldChange(dayKey, slot.id, "end", e.target.value)
                                   }
                                   style={timeInputStyle}
                                 />
@@ -1290,12 +1276,7 @@ export default function CabinScheduleViewPage() {
                                 <select
                                   value={slot.role || ""}
                                   onChange={(e) =>
-                                    handleSlotFieldChange(
-                                      dayKey,
-                                      slot.id,
-                                      "role",
-                                      e.target.value
-                                    )
+                                    handleSlotFieldChange(dayKey, slot.id, "role", e.target.value)
                                   }
                                   style={selectStyle}
                                 >
@@ -1317,12 +1298,7 @@ export default function CabinScheduleViewPage() {
                                 <select
                                   value={slot.employeeId || ""}
                                   onChange={(e) =>
-                                    handleSlotFieldChange(
-                                      dayKey,
-                                      slot.id,
-                                      "employeeId",
-                                      e.target.value
-                                    )
+                                    handleSlotFieldChange(dayKey, slot.id, "employeeId", e.target.value)
                                   }
                                   style={selectStyle}
                                 >
@@ -1349,9 +1325,7 @@ export default function CabinScheduleViewPage() {
                                       : openChipStyle
                                   }
                                 >
-                                  {slot.employeeId || slot.employeeName
-                                    ? "Assigned"
-                                    : "Open"}
+                                  {slot.employeeId || slot.employeeName ? "Assigned" : "Open"}
                                 </span>
                               )}
                             </td>
@@ -1365,9 +1339,7 @@ export default function CabinScheduleViewPage() {
                                 ) : (
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      handleDeleteSlot(dayKey, slot.firestoreId)
-                                    }
+                                    onClick={() => handleDeleteSlot(dayKey, slot.firestoreId)}
                                     style={deleteSlotButtonStyle}
                                     disabled={deleting}
                                   >
@@ -1482,7 +1454,7 @@ function CabinRosterWeeklyView({
           <div key={groupName} style={rosterSectionWrapStyle}>
             <div style={rosterSectionHeaderStyle}>{groupName}</div>
 
-            <div style={tableWrapStyle}>
+            <div style={rosterTableWrapStyle}>
               <table style={rosterTableStyle}>
                 <thead>
                   <tr>
@@ -1526,7 +1498,7 @@ function CabinRosterWeeklyView({
                       })}
 
                       {editMode && (
-                        <td style={rosterCellStyle}>
+                        <td style={rosterActionCellStyle}>
                           <button
                             type="button"
                             onClick={() => onDeleteRow(groupName, employee.name)}
@@ -1895,12 +1867,12 @@ const deleteSlotButtonStyle = {
 const deleteRowButtonStyle = {
   background: "#fff1f2",
   color: "#b91c1c",
-  padding: "6px 10px",
+  padding: "6px 8px",
   border: "1px solid #fecaca",
   borderRadius: 8,
   cursor: "pointer",
   fontWeight: 700,
-  fontSize: 11,
+  fontSize: 10,
 };
 
 const rosterTopHeaderStyle = {
@@ -1946,8 +1918,18 @@ const rosterSectionHeaderStyle = {
   letterSpacing: "0.02em",
 };
 
+const rosterTableWrapStyle = {
+  overflowX: "auto",
+  borderLeft: "1px solid #dbeafe",
+  borderRight: "1px solid #dbeafe",
+  borderBottom: "1px solid #dbeafe",
+  borderBottomLeftRadius: 14,
+  borderBottomRightRadius: 14,
+};
+
 const rosterTableStyle = {
   width: "100%",
+  minWidth: 760,
   borderCollapse: "collapse",
   tableLayout: "fixed",
   background: "#ffffff",
@@ -1955,12 +1937,13 @@ const rosterTableStyle = {
 
 const rosterHeaderCellStyle = {
   border: "1px solid #dbeafe",
-  padding: "8px 4px",
+  padding: "7px 4px",
   textAlign: "center",
-  fontSize: 11,
+  fontSize: 10,
   fontWeight: 800,
   background: "#f8fbff",
   color: "#1769aa",
+  letterSpacing: "0.04em",
 };
 
 const rosterEmployeeHeaderStyle = {
@@ -1969,23 +1952,31 @@ const rosterEmployeeHeaderStyle = {
 
 const rosterCellStyle = {
   border: "1px solid #e2e8f0",
-  padding: "7px 4px",
+  padding: "6px 3px",
   textAlign: "center",
-  fontSize: 11,
+  fontSize: 10,
   fontWeight: 700,
   background: "#ffffff",
   color: "#111827",
-  width: 78,
+  width: 68,
+  lineHeight: 1.2,
 };
 
 const rosterNameCellStyle = {
   ...rosterCellStyle,
   textAlign: "left",
-  fontWeight: 800,
-  fontSize: 16,
+  fontWeight: 900,
+  fontSize: 17,
   paddingLeft: 12,
   width: 260,
   whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const rosterActionCellStyle = {
+  ...rosterCellStyle,
+  width: 86,
 };
 
 const rosterOffCellStyle = {
