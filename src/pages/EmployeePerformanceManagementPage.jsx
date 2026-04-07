@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
   doc,
   getDocs,
@@ -294,47 +293,368 @@ function safeText(value) {
   return String(value || "").trim();
 }
 
-function openPrintWindow(title, bodyHtml) {
-  const printWindow = window.open("", "_blank", "width=1000,height=800");
-  if (!printWindow) return false;
+function getRatingLabel(value) {
+  const v = String(value || "").toLowerCase();
+  if (v === "exceeds") return "Exceeds";
+  if (v === "meets") return "Meets";
+  if (v === "below") return "Does Not Meet";
+  return "-";
+}
 
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>${title}</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            padding: 24px;
-            color: #0f172a;
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/* -------------------- Question Banks for print fallback -------------------- */
+
+const COMMON_QUESTIONS = [
+  {
+    id: "1",
+    en: "Accepts responsibility for actions and responds to consequences.",
+    weight: 3,
+  },
+  {
+    id: "2",
+    en: "Is rarely absent, arrives on time, and works required hours.",
+    weight: 3,
+  },
+  {
+    id: "3",
+    en: "Works cooperatively with coworkers and management.",
+    weight: 3,
+  },
+  {
+    id: "4",
+    en: "Shows initiative, optimism, and courtesy in an active and respectful way.",
+    weight: 3,
+  },
+  {
+    id: "5",
+    en: "Learns from feedback, follows instructions, and adjusts behavior.",
+    weight: 3,
+  },
+  {
+    id: "6",
+    en: "Responds well to changing situations and expectations.",
+    weight: 3,
+  },
+  {
+    id: "7",
+    en: "Follows organizational policies and procedures.",
+    weight: 3,
+  },
+  {
+    id: "8",
+    en: "Completes duties and job tasks on time.",
+    weight: 3,
+  },
+  {
+    id: "9",
+    en: "Provides high-quality service with respect and kindness.",
+    weight: 3,
+  },
+  {
+    id: "10",
+    en: "Is thorough, accurate, and clean in the work performed.",
+    weight: 3,
+  },
+  {
+    id: "11",
+    en: "Shows willingness to develop skills and take on challenges.",
+    weight: 3,
+  },
+  {
+    id: "12",
+    en: "Has effective and efficient communication skills.",
+    weight: 3,
+  },
+  {
+    id: "13",
+    en: "Has organizational skills and uses time effectively.",
+    weight: 3,
+  },
+  {
+    id: "14",
+    en: "Maintains confidentiality and does not discuss internal matters.",
+    weight: 3,
+  },
+  {
+    id: "15",
+    en: "Maintains a professional appearance and proper uniform use.",
+    weight: 3,
+  },
+  {
+    id: "16",
+    en: "Keeps the work area organized and clean.",
+    weight: 3,
+  },
+  {
+    id: "17",
+    en: "Uses constructive methods to resolve problems or conflicts.",
+    weight: 3,
+  },
+  {
+    id: "18",
+    en: "Contributes to a safe environment by following safety procedures.",
+    weight: 3,
+  },
+  {
+    id: "19",
+    en: "Demonstrates job knowledge of processes and procedures.",
+    weight: 3,
+  },
+  {
+    id: "20",
+    en: "Understands rules and completes tasks correctly.",
+    weight: 3,
+  },
+  {
+    id: "21",
+    en: "Uses supplies efficiently and supports proper inventory control.",
+    weight: 3,
+  },
+  {
+    id: "22",
+    en: "Is available to work any shift required by the operation.",
+    weight: 3,
+  },
+];
+
+const TEMPLATE_MAP = {
+  wchr: {
+    questions: [
+      ...COMMON_QUESTIONS,
+      {
+        id: "23",
+        en: "Uses credentials individually and navigates required systems effectively.",
+        weight: 5,
+      },
+      {
+        id: "24",
+        en: "Uses professional communication techniques in announcements, guidance, and phone support.",
+        weight: 5,
+      },
+      {
+        id: "25",
+        en: "Provides WCHR passenger assistance with empathy, dignity, and respect.",
+        weight: 4,
+      },
+      {
+        id: "26",
+        en: "Correctly applies safety, mobility, and passenger escort procedures.",
+        weight: 4,
+      },
+      {
+        id: "27",
+        en: "Coordinates with ramp, security, gate, cabin, and connections for continuous support.",
+        weight: 4,
+      },
+      {
+        id: "28",
+        en: "Checks documentation, connection times, and special needs before service.",
+        weight: 4,
+      },
+      {
+        id: "29",
+        en: "Uses wheelchairs and support equipment safely and reports issues.",
+        weight: 4,
+      },
+      {
+        id: "30",
+        en: "Maintains timing, handoff, and passenger delivery to the correct area.",
+        weight: 4,
+      },
+    ],
+  },
+  baggage: {
+    questions: [
+      ...COMMON_QUESTIONS,
+      {
+        id: "23",
+        en: "Prepares equipment, printers, KIKO devices, and phones for the operation.",
+        weight: 4,
+      },
+      {
+        id: "24",
+        en: "Uses credentials individually and works correctly in required systems.",
+        weight: 4,
+      },
+      {
+        id: "25",
+        en: "Uses professional communication techniques successfully.",
+        weight: 4,
+      },
+      {
+        id: "26",
+        en: "Loads, unloads, and sorts baggage following operational priorities.",
+        weight: 4,
+      },
+      {
+        id: "27",
+        en: "Handles baggage safely to prevent damage, loss, and claims.",
+        weight: 4,
+      },
+      {
+        id: "28",
+        en: "Correctly identifies and processes rush, transfer, priority, and odd-size baggage.",
+        weight: 4,
+      },
+      {
+        id: "29",
+        en: "Follows ramp and belt-area safety procedures.",
+        weight: 4,
+      },
+      {
+        id: "30",
+        en: "Ensures timely baggage movement to claim, connections, or warehouse.",
+        weight: 3,
+      },
+      {
+        id: "31",
+        en: "Maintains control and care of equipment and tools.",
+        weight: 3,
+      },
+    ],
+  },
+  passenger: {
+    questions: [
+      ...COMMON_QUESTIONS,
+      {
+        id: "23",
+        en: "Uses credentials individually and navigates systems effectively.",
+        weight: 5,
+      },
+      {
+        id: "24",
+        en: "Uses professional communication techniques successfully with customers.",
+        weight: 5,
+      },
+      {
+        id: "25",
+        en: "Performs check-in, documentation, and validations accurately.",
+        weight: 4,
+      },
+      {
+        id: "26",
+        en: "Handles special cases and resolves passenger situations correctly.",
+        weight: 4,
+      },
+      {
+        id: "27",
+        en: "Guides passengers on policies, documents, excess baggage, and process.",
+        weight: 4,
+      },
+      {
+        id: "28",
+        en: "Handles security questions, tagging, and applicable charges accurately.",
+        weight: 4,
+      },
+      {
+        id: "29",
+        en: "Keeps counter, lobby, and service areas organized and operation-ready.",
+        weight: 4,
+      },
+      {
+        id: "30",
+        en: "Demonstrates strong knowledge of passenger service systems and procedures.",
+        weight: 4,
+      },
+    ],
+  },
+  gate: {
+    questions: [
+      ...COMMON_QUESTIONS,
+      {
+        id: "23",
+        en: "Uses credentials individually and works properly in gate systems.",
+        weight: 5,
+      },
+      {
+        id: "24",
+        en: "Handles gate announcements and communication professionally.",
+        weight: 5,
+      },
+      {
+        id: "25",
+        en: "Executes boarding correctly while respecting priorities and safety.",
+        weight: 4,
+      },
+      {
+        id: "26",
+        en: "Controls documents, counts, and validations before flight closure.",
+        weight: 4,
+      },
+      {
+        id: "27",
+        en: "Handles changes, delays, and irregular operations with control and service focus.",
+        weight: 4,
+      },
+      {
+        id: "28",
+        en: "Coordinates efficiently with crew, operations, ramp, and customer service.",
+        weight: 4,
+      },
+      {
+        id: "29",
+        en: "Handles stand-by, UMNR, WCHR, connections, and special cases correctly.",
+        weight: 4,
+      },
+      {
+        id: "30",
+        en: "Completes gate documentation and post-boarding reports accurately.",
+        weight: 4,
+      },
+    ],
+  },
+};
+
+function getQuestionsForReport(report) {
+  if (Array.isArray(report?.questionsSnapshot) && report.questionsSnapshot.length > 0) {
+    return report.questionsSnapshot;
+  }
+
+  const templateKey = String(report?.templateKey || "").toLowerCase();
+  return TEMPLATE_MAP[templateKey]?.questions || [];
+}
+
+function buildPrintableAnswersHtml(report) {
+  const answers = report?.answers || {};
+  const questions = getQuestionsForReport(report);
+
+  if (!questions.length) {
+    return `
+      <div class="row">
+        No question details found for this report.
+      </div>
+    `;
+  }
+
+  return questions
+    .map((question, index) => {
+      const answer = answers[question.id] || {};
+      const rating = getRatingLabel(answer.rating);
+      const note = safeText(answer.note);
+
+      return `
+        <div class="question-card">
+          <div class="question-title">
+            ${index + 1}. ${escapeHtml(question.en || question.es || question.id)}
+          </div>
+          <div class="row"><strong>Answer:</strong> ${escapeHtml(rating)}</div>
+          <div class="row"><strong>Weight:</strong> ${escapeHtml(question.weight ?? "-")}</div>
+          ${
+            note
+              ? `<div class="row"><strong>Note:</strong> ${escapeHtml(note)}</div>`
+              : ""
           }
-          h1, h2, h3 {
-            margin-bottom: 8px;
-          }
-          .section {
-            border: 1px solid #dbeafe;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
-          }
-          .row {
-            margin-bottom: 8px;
-            line-height: 1.6;
-          }
-          ul {
-            margin-top: 8px;
-          }
-        </style>
-      </head>
-      <body>
-        ${bodyHtml}
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
-  return true;
+        </div>
+      `;
+    })
+    .join("");
 }
 
 export default function EmployeePerformanceManagementPage() {
@@ -343,18 +663,12 @@ export default function EmployeePerformanceManagementPage() {
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
-  const isStationManager = user?.role === "station_manager";
-
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
-  const [closingMonth, setClosingMonth] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [reports, setReports] = useState([]);
   const [selectedReportId, setSelectedReportId] = useState("");
   const [managerNote, setManagerNote] = useState("");
-  const [assignedFollowUpManagerId, setAssignedFollowUpManagerId] = useState("");
-  const [assignedFollowUpManagerName, setAssignedFollowUpManagerName] = useState("");
-  const [dutyManagers, setDutyManagers] = useState([]);
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
@@ -365,50 +679,24 @@ export default function EmployeePerformanceManagementPage() {
     managerStatus: "all",
     followUp: "all",
     scoreBand: "all",
-    assignedDutyManager: "all",
   });
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [reportsSnap, usersSnap] = await Promise.all([
-          getDocs(
-            query(
-              collection(db, "employeePerformanceReports"),
-              orderBy("createdAt", "desc")
-            )
-          ),
-          getDocs(collection(db, "users")),
-        ]);
+        const snap = await getDocs(
+          query(
+            collection(db, "employeePerformanceReports"),
+            orderBy("createdAt", "desc")
+          )
+        );
 
-        const rows = reportsSnap.docs.map((d) => ({
+        const rows = snap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
         }));
 
-        const managerRows = usersSnap.docs
-          .map((d) => ({
-            id: d.id,
-            ...d.data(),
-          }))
-          .filter(
-            (u) =>
-              u.role === "duty_manager" || u.role === "station_manager"
-          )
-          .map((u) => ({
-            id: u.id,
-            name:
-              u.displayName ||
-              u.fullName ||
-              u.name ||
-              u.username ||
-              "Manager",
-            role: u.role || "",
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
-
         setReports(rows);
-        setDutyManagers(managerRows);
       } catch (err) {
         console.error("Error loading EPR management:", err);
         setStatusMessage("Could not load performance reports.");
@@ -436,19 +724,6 @@ export default function EmployeePerformanceManagementPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [reports]);
 
-  const dutyManagerOptions = useMemo(() => {
-    const fromAssigned = new Set();
-    reports.forEach((r) => {
-      if (r.assignedFollowUpManagerName) {
-        fromAssigned.add(r.assignedFollowUpManagerName);
-      }
-    });
-
-    dutyManagers.forEach((m) => fromAssigned.add(m.name));
-
-    return Array.from(fromAssigned).sort((a, b) => a.localeCompare(b));
-  }, [reports, dutyManagers]);
-
   const filteredReports = useMemo(() => {
     return reports.filter((report) => {
       if (filters.month !== "all" && report.month !== filters.month) return false;
@@ -469,13 +744,6 @@ export default function EmployeePerformanceManagementPage() {
       if (filters.followUp === "yes" && report.needsFollowUp !== true) return false;
       if (filters.followUp === "no" && report.needsFollowUp === true) return false;
 
-      if (
-        filters.assignedDutyManager !== "all" &&
-        safeText(report.assignedFollowUpManagerName) !== filters.assignedDutyManager
-      ) {
-        return false;
-      }
-
       const score = Number(report.score || 0);
       if (filters.scoreBand === "low" && score >= 70) return false;
       if (filters.scoreBand === "mid" && (score < 70 || score >= 85)) return false;
@@ -492,12 +760,8 @@ export default function EmployeePerformanceManagementPage() {
   useEffect(() => {
     if (selectedReport) {
       setManagerNote(selectedReport.managerNote || "");
-      setAssignedFollowUpManagerId(selectedReport.assignedFollowUpManagerId || "");
-      setAssignedFollowUpManagerName(selectedReport.assignedFollowUpManagerName || "");
     } else {
       setManagerNote("");
-      setAssignedFollowUpManagerId("");
-      setAssignedFollowUpManagerName("");
     }
   }, [selectedReport]);
 
@@ -520,57 +784,17 @@ export default function EmployeePerformanceManagementPage() {
     };
   }, [filteredReports]);
 
-  async function sendRecognitionMessage(report, customMessage = "") {
-    if (!report?.employeeId) return;
-
-    const text =
-      safeText(customMessage) ||
-      `Congratulations ${report.employeeName || ""}! Your ${formatMonthValue(
-        report.month
-      )} performance report was recognized by management. Keep up the great work.`;
-
-    await addDoc(collection(db, "messages"), {
-      toUserId: report.employeeId,
-      fromUserId: user?.id || "",
-      fromUserName: getVisibleUserName(user),
-      subject: "Employee Performance Recognition",
-      text,
-      read: false,
-      createdAt: serverTimestamp(),
-      type: "employee_performance_recognition",
-    });
-  }
-
   async function updateManagerStatus(reportId, nextStatus) {
     try {
       setSavingId(reportId);
 
-      const selectedDutyManager = dutyManagers.find(
-        (m) => m.id === assignedFollowUpManagerId
-      );
-
-      const nextAssignedManagerName =
-        selectedDutyManager?.name || assignedFollowUpManagerName || "";
-
-      const payload = {
+      await updateDoc(doc(db, "employeePerformanceReports", reportId), {
         managerStatus: nextStatus,
         managerReviewedBy: getVisibleUserName(user),
         managerReviewedAt: serverTimestamp(),
         managerNote: managerNote || "",
-        assignedFollowUpManagerId:
-          nextStatus === "follow_up" ? assignedFollowUpManagerId || "" : "",
-        assignedFollowUpManagerName:
-          nextStatus === "follow_up" ? nextAssignedManagerName : "",
         updatedAt: serverTimestamp(),
-      };
-
-      await updateDoc(doc(db, "employeePerformanceReports", reportId), payload);
-
-      const updatedReport = reports.find((r) => r.id === reportId);
-
-      if (nextStatus === "recognized" && isStationManager && updatedReport) {
-        await sendRecognitionMessage(updatedReport, managerNote);
-      }
+      });
 
       setReports((prev) =>
         prev.map((item) =>
@@ -581,76 +805,17 @@ export default function EmployeePerformanceManagementPage() {
                 managerReviewedBy: getVisibleUserName(user),
                 managerReviewedAt: new Date(),
                 managerNote: managerNote || "",
-                assignedFollowUpManagerId:
-                  nextStatus === "follow_up" ? assignedFollowUpManagerId || "" : "",
-                assignedFollowUpManagerName:
-                  nextStatus === "follow_up" ? nextAssignedManagerName : "",
               }
             : item
         )
       );
 
-      if (nextStatus === "recognized" && isStationManager) {
-        setStatusMessage("Recognition saved and message sent to employee.");
-      } else {
-        setStatusMessage(`Report updated to ${nextStatus}.`);
-      }
+      setStatusMessage(`Report updated to ${nextStatus}.`);
     } catch (err) {
       console.error("Error updating EPR manager status:", err);
       setStatusMessage("Could not update report.");
     } finally {
       setSavingId("");
-    }
-  }
-
-  async function handleCloseMonth() {
-    if (!filters.month || filters.month === "all") {
-      setStatusMessage("Select a specific month before closing it.");
-      return;
-    }
-
-    const monthReports = reports.filter((r) => r.month === filters.month);
-
-    if (!monthReports.length) {
-      setStatusMessage("No reports found for the selected month.");
-      return;
-    }
-
-    try {
-      setClosingMonth(true);
-
-      await Promise.all(
-        monthReports.map((report) =>
-          updateDoc(doc(db, "employeePerformanceReports", report.id), {
-            monthClosed: true,
-            monthClosedAt: serverTimestamp(),
-            monthClosedBy: getVisibleUserName(user),
-            updatedAt: serverTimestamp(),
-          })
-        )
-      );
-
-      setReports((prev) =>
-        prev.map((item) =>
-          item.month === filters.month
-            ? {
-                ...item,
-                monthClosed: true,
-                monthClosedAt: new Date(),
-                monthClosedBy: getVisibleUserName(user),
-              }
-            : item
-        )
-      );
-
-      setStatusMessage(
-        `Month ${formatMonthValue(filters.month)} closed successfully.`
-      );
-    } catch (err) {
-      console.error("Error closing month:", err);
-      setStatusMessage("Could not close selected month.");
-    } finally {
-      setClosingMonth(false);
     }
   }
 
@@ -663,56 +828,120 @@ export default function EmployeePerformanceManagementPage() {
         ? `<ul>${selectedReport.followUpItems
             .map(
               (item) =>
-                `<li>${item.en || item.es || "-"}${
-                  item.note ? ` — ${item.note}` : ""
+                `<li>${escapeHtml(item.en || item.es || "-")}${
+                  item.note ? ` — ${escapeHtml(item.note)}` : ""
                 }</li>`
             )
             .join("")}</ul>`
-        : `<div>No follow-up questions on this report.</div>`;
+        : `<div>No follow-up items.</div>`;
+
+    const answersHtml = buildPrintableAnswersHtml(selectedReport);
 
     const bodyHtml = `
-      <h1>Employee Performance Report</h1>
+      <h1>Monthly Employee Performance Report</h1>
+
       <div class="section">
-        <div class="row"><strong>Employee:</strong> ${selectedReport.employeeName || "-"}</div>
-        <div class="row"><strong>Month:</strong> ${formatMonthValue(selectedReport.month)}</div>
-        <div class="row"><strong>Template:</strong> ${selectedReport.templateLabel || "-"}</div>
-        <div class="row"><strong>Supervisor:</strong> ${selectedReport.supervisorName || "-"}</div>
-        <div class="row"><strong>Score:</strong> ${formatScore(selectedReport.score)} / 100</div>
-        <div class="row"><strong>Status:</strong> ${selectedReport.managerStatus || "submitted"}</div>
-        <div class="row"><strong>Needs Follow Up:</strong> ${
-          selectedReport.needsFollowUp ? "Yes" : "No"
-        }</div>
-        <div class="row"><strong>Assigned Duty Manager:</strong> ${
-          selectedReport.assignedFollowUpManagerName || "-"
-        }</div>
-        <div class="row"><strong>Sent:</strong> ${formatDateTime(
-          selectedReport.createdAt
-        )}</div>
+        <div class="row"><strong>Employee:</strong> ${escapeHtml(selectedReport.employeeName || "-")}</div>
+        <div class="row"><strong>Month:</strong> ${escapeHtml(formatMonthValue(selectedReport.month))}</div>
+        <div class="row"><strong>Template:</strong> ${escapeHtml(selectedReport.templateLabel || "-")}</div>
+        <div class="row"><strong>Supervisor:</strong> ${escapeHtml(selectedReport.supervisorName || "-")}</div>
+        <div class="row"><strong>Score:</strong> ${escapeHtml(formatScore(selectedReport.score))} / 100</div>
+        <div class="row"><strong>Status:</strong> ${escapeHtml(selectedReport.managerStatus || "submitted")}</div>
+        <div class="row"><strong>Assigned Duty Manager:</strong> ${escapeHtml(selectedReport.assignedFollowUpManagerName || "-")}</div>
+        <div class="row"><strong>Department:</strong> ${escapeHtml(selectedReport.department || "-")}</div>
+        <div class="row"><strong>Role:</strong> ${escapeHtml(selectedReport.roleTitle || "-")}</div>
+        <div class="row"><strong>Hire Date:</strong> ${escapeHtml(selectedReport.hireDate || "-")}</div>
+        <div class="row"><strong>Sent:</strong> ${escapeHtml(formatDateTime(selectedReport.createdAt))}</div>
       </div>
 
       <div class="section">
-        <h3>Follow Up Questions</h3>
+        <h2>Comments</h2>
+        <div class="row"><strong>Company:</strong> ${escapeHtml(selectedReport.commentsCompany || "-")}</div>
+        <div class="row"><strong>Employee:</strong> ${escapeHtml(selectedReport.commentsEmployee || "-")}</div>
+        <div class="row"><strong>Manager Note:</strong> ${escapeHtml(managerNote || selectedReport.managerNote || "-")}</div>
+      </div>
+
+      <div class="section">
+        <h2>Follow Up Items</h2>
         ${followUpHtml}
       </div>
 
       <div class="section">
-        <h3>Comments</h3>
-        <div class="row"><strong>Company:</strong> ${
-          selectedReport.commentsCompany || "-"
-        }</div>
-        <div class="row"><strong>Employee:</strong> ${
-          selectedReport.commentsEmployee || "-"
-        }</div>
-        <div class="row"><strong>Manager Note:</strong> ${
-          managerNote || selectedReport.managerNote || "-"
-        }</div>
+        <h2>Questions and Answers</h2>
+        ${answersHtml}
       </div>
     `;
 
-    openPrintWindow(
-      `${selectedReport.employeeName || "employee"}-${selectedReport.month || "report"}`,
-      bodyHtml
-    );
+    const printWindow = window.open("", "_blank", "width=1100,height=900");
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${escapeHtml(
+            `${selectedReport.employeeName || "employee"}-${selectedReport.month || "report"}`
+          )}</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              padding: 24px;
+              color: #0f172a;
+              line-height: 1.5;
+            }
+            h1 {
+              margin: 0 0 18px;
+              font-size: 30px;
+            }
+            h2 {
+              margin: 0 0 12px;
+              font-size: 22px;
+            }
+            .section {
+              border: 1px solid #dbeafe;
+              border-radius: 14px;
+              padding: 16px;
+              margin-bottom: 18px;
+              break-inside: avoid;
+            }
+            .row {
+              margin-bottom: 8px;
+              font-size: 15px;
+            }
+            .question-card {
+              border: 1px solid #e2e8f0;
+              border-radius: 12px;
+              padding: 12px;
+              margin-bottom: 12px;
+              break-inside: avoid;
+            }
+            .question-title {
+              font-weight: 700;
+              margin-bottom: 8px;
+              font-size: 15px;
+            }
+            ul {
+              margin: 8px 0 0 18px;
+              padding: 0;
+            }
+            li {
+              margin-bottom: 6px;
+            }
+            @media print {
+              body {
+                padding: 12px;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${bodyHtml}
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   }
 
   if (!canAccess) {
@@ -775,8 +1004,7 @@ export default function EmployeePerformanceManagementPage() {
           }}
         >
           Review EPR reports sent by supervisors, filter by month/employee/follow
-          up/score, assign duty manager follow-up, recognize employees, print reports,
-          and close monthly cycles.
+          up/score, and manage approvals, recognition, or follow-up actions.
         </p>
       </div>
 
@@ -902,36 +1130,6 @@ export default function EmployeePerformanceManagementPage() {
               <option value="high">High (85+)</option>
             </SelectInput>
           </div>
-
-          <div>
-            <FieldLabel>Assigned Duty Manager</FieldLabel>
-            <SelectInput
-              value={filters.assignedDutyManager}
-              onChange={(e) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  assignedDutyManager: e.target.value,
-                }))
-              }
-            >
-              <option value="all">All</option>
-              {dutyManagerOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </SelectInput>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "end" }}>
-            <ActionButton
-              variant="dark"
-              onClick={handleCloseMonth}
-              disabled={closingMonth || !filters.month || filters.month === "all"}
-            >
-              {closingMonth ? "Closing..." : "Close Selected Month"}
-            </ActionButton>
-          </div>
         </div>
       </PageCard>
 
@@ -956,7 +1154,7 @@ export default function EmployeePerformanceManagementPage() {
         style={{
           display: "grid",
           gridTemplateColumns:
-            selectedReport ? "minmax(360px, 0.95fr) minmax(460px, 1.05fr)" : "1fr",
+            selectedReport ? "minmax(360px, 0.95fr) minmax(420px, 1.05fr)" : "1fr",
           gap: 18,
         }}
       >
@@ -1034,16 +1232,6 @@ export default function EmployeePerformanceManagementPage() {
                         {report.templateLabel || "-"} ·{" "}
                         {formatMonthValue(report.month)} · Supervisor:{" "}
                         {report.supervisorName || "-"}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 4,
-                          fontSize: 12,
-                          color: "#64748b",
-                        }}
-                      >
-                        Duty Manager: {report.assignedFollowUpManagerName || "-"} · Month Closed:{" "}
-                        {report.monthClosed ? "Yes" : "No"}
                       </div>
                     </div>
 
@@ -1218,28 +1406,6 @@ export default function EmployeePerformanceManagementPage() {
               </div>
 
               <div>
-                <FieldLabel>Assign Duty Manager for Follow Up</FieldLabel>
-                <SelectInput
-                  value={assignedFollowUpManagerId}
-                  onChange={(e) => {
-                    const selectedId = e.target.value;
-                    const selectedManager = dutyManagers.find(
-                      (item) => item.id === selectedId
-                    );
-                    setAssignedFollowUpManagerId(selectedId);
-                    setAssignedFollowUpManagerName(selectedManager?.name || "");
-                  }}
-                >
-                  <option value="">Select duty manager</option>
-                  {dutyManagers.map((manager) => (
-                    <option key={manager.id} value={manager.id}>
-                      {manager.name} ({manager.role})
-                    </option>
-                  ))}
-                </SelectInput>
-              </div>
-
-              <div>
                 <FieldLabel>Manager Note</FieldLabel>
                 <TextArea
                   value={managerNote}
@@ -1276,9 +1442,7 @@ export default function EmployeePerformanceManagementPage() {
                   onClick={() => updateManagerStatus(selectedReport.id, "recognized")}
                   disabled={savingId === selectedReport.id}
                 >
-                  {savingId === selectedReport.id
-                    ? "Saving..."
-                    : "Recognize / Congratulate"}
+                  {savingId === selectedReport.id ? "Saving..." : "Recognize / Congratulate"}
                 </ActionButton>
 
                 <ActionButton
