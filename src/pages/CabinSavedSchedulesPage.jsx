@@ -68,6 +68,46 @@ function statusBadge(status) {
   };
 }
 
+function sourceBadge(source) {
+  const s = String(source || "").toLowerCase();
+
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "7px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    border: "1px solid transparent",
+    whiteSpace: "nowrap",
+  };
+
+  if (s === "flights + roster") {
+    return {
+      ...base,
+      background: "#ecfdf5",
+      color: "#166534",
+      borderColor: "#a7f3d0",
+    };
+  }
+
+  if (s === "roster only") {
+    return {
+      ...base,
+      background: "#fff7ed",
+      color: "#9a3412",
+      borderColor: "#fdba74",
+    };
+  }
+
+  return {
+    ...base,
+    background: "#edf7ff",
+    color: "#1769aa",
+    borderColor: "#cfe7fb",
+  };
+}
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -172,6 +212,12 @@ function countFlights(schedule) {
   if (Array.isArray(schedule?.flightList)) return schedule.flightList.length;
   if (Array.isArray(schedule?.uploadedFlights)) return schedule.uploadedFlights.length;
 
+  if (schedule?.weeklyFlights && typeof schedule.weeklyFlights === "object") {
+    return Object.values(schedule.weeklyFlights).reduce((sum, items) => {
+      return sum + (Array.isArray(items) ? items.length : 0);
+    }, 0);
+  }
+
   return 0;
 }
 
@@ -203,6 +249,12 @@ function countShiftRows(schedule) {
     }, 0);
   }
 
+  if (schedule?.weeklySlots && typeof schedule.weeklySlots === "object") {
+    return Object.values(schedule.weeklySlots).reduce((sum, daySlots) => {
+      return sum + (Array.isArray(daySlots) ? daySlots.length : 0);
+    }, 0);
+  }
+
   return typeof schedule?.totalSlots === "number" ? schedule.totalSlots : 0;
 }
 
@@ -219,6 +271,31 @@ function countUploadedDays(schedule) {
     return schedule.generatedSchedule.length;
   }
 
+  if (schedule?.weeklyFlights && typeof schedule.weeklyFlights === "object") {
+    return Object.keys(schedule.weeklyFlights).filter((dayKey) => {
+      return Array.isArray(schedule.weeklyFlights[dayKey]) && schedule.weeklyFlights[dayKey].length > 0;
+    }).length;
+  }
+
+  return 0;
+}
+
+function countRosterDays(schedule) {
+  if (schedule?.weeklyDraftRosterRows && typeof schedule.weeklyDraftRosterRows === "object") {
+    return Object.keys(schedule.weeklyDraftRosterRows).filter((dayKey) => {
+      return (
+        Array.isArray(schedule.weeklyDraftRosterRows[dayKey]) &&
+        schedule.weeklyDraftRosterRows[dayKey].length > 0
+      );
+    }).length;
+  }
+
+  if (schedule?.weeklySlots && typeof schedule.weeklySlots === "object") {
+    return Object.keys(schedule.weeklySlots).filter((dayKey) => {
+      return Array.isArray(schedule.weeklySlots[dayKey]) && schedule.weeklySlots[dayKey].length > 0;
+    }).length;
+  }
+
   return 0;
 }
 
@@ -230,6 +307,16 @@ function getWeekStartLabel(schedule) {
     schedule?.weekOf ||
     "-"
   );
+}
+
+function getScheduleSource(schedule) {
+  const flightsCount = countFlights(schedule);
+  const rosterDays = countRosterDays(schedule);
+
+  if (flightsCount > 0 && rosterDays > 0) return "Flights + Roster";
+  if (flightsCount > 0) return "Flights Only";
+  if (rosterDays > 0) return "Roster Only";
+  return "Manual / Unknown";
 }
 
 export default function CabinSavedSchedulesPage() {
@@ -310,9 +397,11 @@ export default function CabinSavedSchedulesPage() {
       resolvedCreatedBy: resolveCreatedByName(item, employeeMap),
       resolvedWeekStart: getWeekStartLabel(item),
       resolvedUploadedDays: countUploadedDays(item),
+      resolvedRosterDays: countRosterDays(item),
       resolvedFlights: countFlights(item),
       resolvedShiftRows: countShiftRows(item),
       resolvedCreatedAt: formatDateTime(item?.createdAt),
+      resolvedSource: getScheduleSource(item),
     }));
   }, [schedules, employeeMap]);
 
@@ -569,7 +658,7 @@ export default function CabinSavedSchedulesPage() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 1080,
+                minWidth: 1240,
                 background: "#fff",
               }}
             >
@@ -578,7 +667,9 @@ export default function CabinSavedSchedulesPage() {
                   <th style={thStyle}>Week Start</th>
                   <th style={thStyle}>Created By</th>
                   <th style={thStyle}>Created At</th>
-                  <th style={thStyle}>Uploaded Days</th>
+                  <th style={thStyle}>Source</th>
+                  <th style={thStyle}>Flight Days</th>
+                  <th style={thStyle}>Roster Days</th>
                   <th style={thStyle}>Flights</th>
                   <th style={thStyle}>Shift Rows</th>
                   <th style={thStyle}>Status</th>
@@ -596,7 +687,13 @@ export default function CabinSavedSchedulesPage() {
                     <td style={tdStyle}>{item.resolvedWeekStart}</td>
                     <td style={tdStyle}>{item.resolvedCreatedBy}</td>
                     <td style={tdStyle}>{item.resolvedCreatedAt}</td>
+                    <td style={tdStyle}>
+                      <span style={sourceBadge(item.resolvedSource)}>
+                        {item.resolvedSource}
+                      </span>
+                    </td>
                     <td style={tdStyle}>{item.resolvedUploadedDays}</td>
+                    <td style={tdStyle}>{item.resolvedRosterDays}</td>
                     <td style={tdStyle}>{item.resolvedFlights}</td>
                     <td style={tdStyle}>{item.resolvedShiftRows}</td>
                     <td style={tdStyle}>
