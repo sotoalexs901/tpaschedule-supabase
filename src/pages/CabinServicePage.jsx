@@ -27,8 +27,6 @@ const DAY_LABELS = {
   sunday: "Sunday",
 };
 
-const ROLE_OPTIONS = ["Supervisor", "LAV", "Agent"];
-
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -72,18 +70,6 @@ function ActionButton({
       border: "none",
       boxShadow: "0 12px 24px rgba(15,23,42,0.14)",
     },
-    success: {
-      background: "#ecfdf5",
-      color: "#065f46",
-      border: "1px solid #a7f3d0",
-      boxShadow: "none",
-    },
-    danger: {
-      background: "#fff1f2",
-      color: "#b91c1c",
-      border: "1px solid #fecdd3",
-      boxShadow: "none",
-    },
   };
 
   return (
@@ -107,118 +93,6 @@ function ActionButton({
   );
 }
 
-function normalizeText(value) {
-  return String(value || "").trim();
-}
-
-function prettifyCodeName(value) {
-  const clean = normalizeText(value);
-  if (!clean) return "";
-
-  if (
-    clean.includes(" ") &&
-    !clean.includes("_") &&
-    !clean.includes(".") &&
-    !/@/.test(clean)
-  ) {
-    return clean;
-  }
-
-  if (/^[a-z]+\.[a-z]+$/i.test(clean)) {
-    return clean
-      .split(".")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join(" ");
-  }
-
-  if (/^[a-z]+_[a-z]+$/i.test(clean)) {
-    return clean
-      .split("_")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join(" ");
-  }
-
-  if (/@/.test(clean)) {
-    const left = clean.split("@")[0] || clean;
-    return prettifyCodeName(left);
-  }
-
-  if (/^[a-z]+[0-9]*$/i.test(clean) && clean === clean.toLowerCase()) {
-    return clean.charAt(0).toUpperCase() + clean.slice(1);
-  }
-
-  return clean;
-}
-
-function getEmployeeVisibleName(emp) {
-  return (
-    emp?.name ||
-    emp?.fullName ||
-    emp?.employeeName ||
-    emp?.displayName ||
-    emp?.username ||
-    emp?.loginUsername ||
-    "Unnamed Employee"
-  );
-}
-
-function toMinutes(hhmm) {
-  if (!hhmm || !String(hhmm).includes(":")) return 0;
-  const [h, m] = String(hhmm).split(":").map(Number);
-  return h * 60 + m;
-}
-
-function calcCalendarHours(start, end) {
-  if (!start || !end) return 0;
-
-  let s = toMinutes(start);
-  let e = toMinutes(end);
-
-  if (e <= s) e += 24 * 60;
-
-  return Number(((e - s) / 60).toFixed(2));
-}
-
-function calcPaidHours(start, end) {
-  if (!start || !end) return 0;
-
-  let s = toMinutes(start);
-  let e = toMinutes(end);
-
-  if (e <= s) e += 24 * 60;
-
-  let minutes = e - s;
-
-  if (minutes >= 361) {
-    minutes -= 30;
-  }
-
-  return Number((minutes / 60).toFixed(2));
-}
-
-function summarizeShifts(slots) {
-  const map = new Map();
-
-  for (const slot of slots) {
-    const key = `${slot.start}|${slot.end}|${slot.role}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        start: slot.start,
-        end: slot.end,
-        role: slot.role,
-        count: 0,
-      });
-    }
-    map.get(key).count += 1;
-  }
-
-  return Array.from(map.values()).sort((a, b) => {
-    if ((a.start || "") !== (b.start || "")) return (a.start || "").localeCompare(b.start || "");
-    if ((a.end || "") !== (b.end || "")) return (a.end || "").localeCompare(b.end || "");
-    return (a.role || "").localeCompare(b.role || "");
-  });
-}
-
 export default function CabinServicePage() {
   const { user } = useUser();
 
@@ -238,9 +112,21 @@ export default function CabinServicePage() {
     sunday: null,
   });
 
+  const [dayRosterFiles, setDayRosterFiles] = useState({
+    monday: null,
+    tuesday: null,
+    wednesday: null,
+    thursday: null,
+    friday: null,
+    saturday: null,
+    sunday: null,
+  });
+
   const [weeklyFlights, setWeeklyFlights] = useState({});
   const [weeklyDemandBlocks, setWeeklyDemandBlocks] = useState({});
   const [weeklySlots, setWeeklySlots] = useState({});
+  const [weeklyDraftRosterRows, setWeeklyDraftRosterRows] = useState({});
+  const [weeklyDraftSummary, setWeeklyDraftSummary] = useState({});
   const [step, setStep] = useState("upload");
   const [employees, setEmployees] = useState([]);
 
@@ -258,8 +144,13 @@ export default function CabinServicePage() {
           .filter((emp) => emp.active !== false)
           .map((emp) => ({
             id: emp.id,
-            ...emp,
-            name: getEmployeeVisibleName(emp),
+            name:
+              emp.name ||
+              emp.fullName ||
+              emp.employeeName ||
+              emp.displayName ||
+              emp.username ||
+              "Unnamed Employee",
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -279,18 +170,37 @@ export default function CabinServicePage() {
     return DAY_KEYS.filter((day) => !!dayFiles[day]).length;
   }, [dayFiles]);
 
+  const uploadedRosterDaysCount = useMemo(() => {
+    return DAY_KEYS.filter((day) => !!dayRosterFiles[day]).length;
+  }, [dayRosterFiles]);
+
   const assignedCount = useMemo(() => {
     return Object.values(weeklySlots)
       .flat()
-      .filter((slot) => slot.employeeId || slot.employeeName).length;
+      .filter((slot) => slot.employeeId && !slot.draftDeleteCandidate).length;
   }, [weeklySlots]);
 
   const totalSlots = useMemo(() => {
-    return Object.values(weeklySlots).flat().length;
+    return Object.values(weeklySlots)
+      .flat()
+      .filter((slot) => !slot.draftDeleteCandidate).length;
+  }, [weeklySlots]);
+
+  const deleteCandidateCount = useMemo(() => {
+    return Object.values(weeklySlots)
+      .flat()
+      .filter((slot) => slot.draftDeleteCandidate).length;
   }, [weeklySlots]);
 
   function handleFileChange(dayKey, file) {
     setDayFiles((prev) => ({
+      ...prev,
+      [dayKey]: file || null,
+    }));
+  }
+
+  function handleRosterFileChange(dayKey, file) {
+    setDayRosterFiles((prev) => ({
       ...prev,
       [dayKey]: file || null,
     }));
@@ -314,35 +224,80 @@ export default function CabinServicePage() {
       const parsedByDay = {};
       const demandByDay = {};
       const slotsByDay = {};
+      const draftRosterByDay = {};
+      const draftSummaryByDay = {};
+
+      const employeeLookup = buildEmployeeLookup(employees);
 
       for (const dayKey of DAY_KEYS) {
         const file = dayFiles[dayKey];
-        if (!file) continue;
+        const rosterFile = dayRosterFiles[dayKey];
+
+        let draftRows = [];
+        if (rosterFile) {
+          draftRows = await parseRosterDraftFile(rosterFile, dayKey);
+        }
+
+        draftRosterByDay[dayKey] = draftRows;
+
+        if (!file) {
+          if (draftRows.length > 0) {
+            const draftOnlyRows = draftRows.map((row, index) => ({
+              id: `draft-only-${dayKey}-${index}`,
+              dayKey,
+              start: row.start || "",
+              end: row.end || "",
+              role: row.role || "Agent",
+              paidHours: calcPaidHours(row.start, row.end),
+              calendarHours: calcCalendarHours(row.start, row.end),
+              employeeName: row.employeeName || "",
+              employeeId: employeeLookup[row.employeeName?.toLowerCase()]?.id || "",
+              draftDeleteCandidate: true,
+              draftSource: true,
+              draftMatched: false,
+              sourceLabel: "DELETE FROM CURRENT ROSTER",
+            }));
+
+            slotsByDay[dayKey] = sortSlotsWithDrafts(draftOnlyRows);
+            draftSummaryByDay[dayKey] = {
+              draftRows: draftRows.length,
+              matchedRows: 0,
+              deleteCandidates: draftRows.length,
+              newGenerated: 0,
+            };
+          }
+          continue;
+        }
 
         const flights = await parseCabinFlights(file);
         const demandBlocks = buildDemandBlocks(flights);
-        const slots = generateCabinShifts(demandBlocks, dayKey).map((slot) => ({
-          ...slot,
-          employeeId: slot.employeeId || "",
-          employeeName: prettifyCodeName(slot.employeeName || ""),
-          role: slot.role || "Agent",
-          calendarHours: calcCalendarHours(slot.start, slot.end),
-          paidHours: calcPaidHours(slot.start, slot.end),
-          status: slot.employeeId || slot.employeeName ? "assigned" : "open",
-        }));
+        const generatedSlots = generateCabinShifts(demandBlocks, dayKey) || [];
+
+        const merged = mergeGeneratedSlotsWithDraftRoster({
+          dayKey,
+          generatedSlots,
+          draftRows,
+          employeeLookup,
+        });
 
         parsedByDay[dayKey] = flights;
         demandByDay[dayKey] = demandBlocks;
-        slotsByDay[dayKey] = slots;
+        slotsByDay[dayKey] = sortSlotsWithDrafts(merged.slots);
+        draftSummaryByDay[dayKey] = merged.summary;
       }
 
       setWeeklyFlights(parsedByDay);
       setWeeklyDemandBlocks(demandByDay);
       setWeeklySlots(slotsByDay);
+      setWeeklyDraftRosterRows(draftRosterByDay);
+      setWeeklyDraftSummary(draftSummaryByDay);
       setStep("assignment");
     } catch (err) {
       console.error(err);
-      setError(err.message || "Error generating weekly schedule.");
+      setError(
+        err.message ||
+          "Error generating weekly schedule. Please verify the flight files and roster draft files."
+      );
     } finally {
       setLoading(false);
     }
@@ -355,6 +310,7 @@ export default function CabinServicePage() {
         ...prev,
         [dayKey]: daySlots.map((slot) => {
           if (slot.id !== slotId) return slot;
+          if (slot.draftDeleteCandidate) return slot;
 
           const selectedEmployee = employees.find((emp) => emp.id === employeeId);
 
@@ -362,88 +318,10 @@ export default function CabinServicePage() {
             ...slot,
             employeeId,
             employeeName: selectedEmployee?.name || "",
-            status: employeeId ? "assigned" : "open",
           };
         }),
       };
     });
-  }
-
-  function handleSlotFieldChange(dayKey, slotId, field, value) {
-    setWeeklySlots((prev) => {
-      const daySlots = prev[dayKey] || [];
-
-      return {
-        ...prev,
-        [dayKey]: daySlots.map((slot) => {
-          if (slot.id !== slotId) return slot;
-
-          const updated = { ...slot };
-
-          if (field === "employeeId") {
-            const selectedEmployee = employees.find((emp) => emp.id === value);
-            updated.employeeId = value;
-            updated.employeeName = selectedEmployee?.name || "";
-            updated.status = value ? "assigned" : "open";
-          } else if (field === "employeeName") {
-            updated.employeeName = prettifyCodeName(value);
-            updated.status = value ? "assigned" : "open";
-          } else {
-            updated[field] = value;
-          }
-
-          if (field === "start" || field === "end") {
-            updated.calendarHours = calcCalendarHours(
-              field === "start" ? value : updated.start,
-              field === "end" ? value : updated.end
-            );
-            updated.paidHours = calcPaidHours(
-              field === "start" ? value : updated.start,
-              field === "end" ? value : updated.end
-            );
-          }
-
-          return updated;
-        }),
-      };
-    });
-  }
-
-  function handleAddShiftRow(dayKey) {
-    const newRowId = `manual-${dayKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    setWeeklySlots((prev) => {
-      const currentDaySlots = prev[dayKey] || [];
-      return {
-        ...prev,
-        [dayKey]: [
-          ...currentDaySlots,
-          {
-            id: newRowId,
-            dayKey,
-            start: "",
-            end: "",
-            role: "Agent",
-            employeeId: "",
-            employeeName: "",
-            calendarHours: 0,
-            paidHours: 0,
-            status: "open",
-            source: "manual",
-          },
-        ],
-      };
-    });
-  }
-
-  function handleDeleteShiftRow(dayKey, slotId) {
-    const confirmed = window.confirm("Delete this shift row?");
-    if (!confirmed) return;
-
-    setWeeklySlots((prev) => ({
-      ...prev,
-      [dayKey]: (prev[dayKey] || []).filter((slot) => slot.id !== slotId),
-    }));
   }
 
   function handleBackToUpload() {
@@ -451,6 +329,8 @@ export default function CabinServicePage() {
     setWeeklyFlights({});
     setWeeklyDemandBlocks({});
     setWeeklySlots({});
+    setWeeklyDraftRosterRows({});
+    setWeeklyDraftSummary({});
     setError("");
   }
 
@@ -458,34 +338,25 @@ export default function CabinServicePage() {
     try {
       setSaving(true);
 
-      const cleanedWeeklySlots = Object.fromEntries(
-        Object.entries(weeklySlots).map(([dayKey, slots]) => [
-          dayKey,
-          (slots || []).map((slot) => ({
+      const cleanWeeklySlots = {};
+      Object.entries(weeklySlots).forEach(([dayKey, slots]) => {
+        cleanWeeklySlots[dayKey] = (slots || [])
+          .filter((slot) => !slot.draftDeleteCandidate)
+          .map((slot) => ({
             ...slot,
-            employeeName: prettifyCodeName(slot.employeeName || ""),
-            calendarHours: calcCalendarHours(slot.start, slot.end),
-            paidHours: calcPaidHours(slot.start, slot.end),
-            status: slot.employeeId || slot.employeeName ? "assigned" : "open",
-          })),
-        ])
-      );
-
-      const createdByName =
-        user?.displayName ||
-        user?.fullName ||
-        user?.name ||
-        prettifyCodeName(user?.username) ||
-        user?.username ||
-        user?.id ||
-        "";
+            draftDeleteCandidate: false,
+            draftSource: !!slot.draftSource,
+            draftMatched: !!slot.draftMatched,
+            sourceLabel: slot.sourceLabel || "",
+          }));
+      });
 
       const scheduleId = await saveCabinWeeklySchedule({
         weekStartDate,
         weeklyFlights,
         weeklyDemandBlocks,
-        weeklySlots: cleanedWeeklySlots,
-        createdBy: createdByName,
+        weeklySlots: cleanWeeklySlots,
+        createdBy: user?.username || user?.id || "",
       });
 
       alert(`Weekly schedule saved successfully. ID: ${scheduleId}`);
@@ -558,13 +429,14 @@ export default function CabinServicePage() {
           <p
             style={{
               margin: 0,
-              maxWidth: 760,
+              maxWidth: 860,
               fontSize: 14,
               color: "rgba(255,255,255,0.88)",
             }}
           >
-            Upload daily flight files, generate the weekly staffing plan,
-            add extra shift rows if needed, assign employees, and save the final schedule.
+            Upload daily flight files, optionally upload the current roster draft
+            for each day, compare what stays vs what should be deleted, and then
+            save the final weekly staffing plan.
           </p>
         </div>
       </div>
@@ -594,7 +466,7 @@ export default function CabinServicePage() {
           </div>
 
           <div style={{ marginTop: 22 }}>
-            <h3 style={subTitleStyle}>Upload Daily Flight Files</h3>
+            <h3 style={subTitleStyle}>Upload Daily Flight Files + Current Roster Draft</h3>
 
             <div style={uploadGridStyle}>
               {DAY_KEYS.map((dayKey) => (
@@ -610,30 +482,55 @@ export default function CabinServicePage() {
                     {DAY_LABELS[dayKey]}
                   </div>
 
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={(e) =>
-                      handleFileChange(dayKey, e.target.files?.[0] || null)
-                    }
-                    style={{ fontSize: 13 }}
-                  />
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div>
+                      <div style={miniLabelStyle}>Flight File</div>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={(e) =>
+                          handleFileChange(dayKey, e.target.files?.[0] || null)
+                        }
+                        style={{ fontSize: 13 }}
+                      />
 
-                  <div
-                    style={{
-                      marginTop: 10,
-                      fontSize: 13,
-                      color: "#475569",
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {dayFiles[dayKey] ? (
-                      <>
-                        <b>Uploaded:</b> {dayFiles[dayKey].name}
-                      </>
-                    ) : (
-                      "No file uploaded"
-                    )}
+                      <div style={miniHelpTextStyle}>
+                        {dayFiles[dayKey] ? (
+                          <>
+                            <b>Uploaded:</b> {dayFiles[dayKey].name}
+                          </>
+                        ) : (
+                          "No flight file uploaded"
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        borderTop: "1px solid #dbeafe",
+                        paddingTop: 12,
+                      }}
+                    >
+                      <div style={miniLabelStyle}>Current Roster Draft</div>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={(e) =>
+                          handleRosterFileChange(dayKey, e.target.files?.[0] || null)
+                        }
+                        style={{ fontSize: 13 }}
+                      />
+
+                      <div style={miniHelpTextStyle}>
+                        {dayRosterFiles[dayKey] ? (
+                          <>
+                            <b>Draft uploaded:</b> {dayRosterFiles[dayKey].name}
+                          </>
+                        ) : (
+                          "Optional current roster draft"
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -641,37 +538,15 @@ export default function CabinServicePage() {
           </div>
 
           <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                background: "#edf7ff",
-                border: "1px solid #cfe7fb",
-                borderRadius: 999,
-                padding: "8px 12px",
-                fontSize: 13,
-                color: "#1769aa",
-                fontWeight: 700,
-              }}
-            >
-              Uploaded days: <b>{uploadedDaysCount}/7</b>
+            <div style={pillBlueStyle}>
+              Uploaded flight days: <b>{uploadedDaysCount}/7</b>
             </div>
 
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                background: "#f8fbff",
-                border: "1px solid #dbeafe",
-                borderRadius: 999,
-                padding: "8px 12px",
-                fontSize: 13,
-                color: "#475569",
-                fontWeight: 700,
-              }}
-            >
+            <div style={pillSlateStyle}>
+              Draft roster days: <b>{uploadedRosterDaysCount}/7</b>
+            </div>
+
+            <div style={pillSlateStyle}>
               Employees loaded: <b>{loadingEmployees ? "..." : employees.length}</b>
             </div>
           </div>
@@ -723,6 +598,7 @@ export default function CabinServicePage() {
             <div style={summaryGridStyle}>
               <SummaryBox label="Week Start" value={weekStartDate || "-"} />
               <SummaryBox label="Uploaded Days" value={`${uploadedDaysCount}/7`} />
+              <SummaryBox label="Draft Days" value={`${uploadedRosterDaysCount}/7`} />
               <SummaryBox
                 label="Flights Loaded"
                 value={String(
@@ -736,6 +612,11 @@ export default function CabinServicePage() {
                 label="Assigned Slots"
                 value={`${assignedCount}/${totalSlots}`}
               />
+              <SummaryBox
+                label="Delete Candidates"
+                value={String(deleteCandidateCount)}
+                tone="red"
+              />
             </div>
           </PageCard>
 
@@ -743,10 +624,19 @@ export default function CabinServicePage() {
             const flights = weeklyFlights[dayKey] || [];
             const demandBlocks = weeklyDemandBlocks[dayKey] || [];
             const slots = weeklySlots[dayKey] || [];
+            const summary = weeklyDraftSummary[dayKey] || {
+              draftRows: 0,
+              matchedRows: 0,
+              deleteCandidates: 0,
+              newGenerated: 0,
+            };
 
             if (!flights.length && !slots.length) return null;
 
-            const shiftSummary = summarizeShifts(slots);
+            const shiftSummary = summarizeShifts(
+              slots.filter((slot) => !slot.draftDeleteCandidate)
+            );
+
             const peakAgents =
               demandBlocks.length > 0
                 ? Math.max(...demandBlocks.map((b) => b.recommendedAgents || 0))
@@ -754,48 +644,73 @@ export default function CabinServicePage() {
 
             return (
               <PageCard key={dayKey} style={{ padding: 20 }}>
-                <div
+                <h2
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
-                    flexWrap: "wrap",
+                    margin: 0,
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    letterSpacing: "-0.02em",
                   }}
                 >
-                  <div>
-                    <h2
-                      style={{
-                        margin: 0,
-                        fontSize: 20,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                        letterSpacing: "-0.02em",
-                      }}
-                    >
-                      {DAY_LABELS[dayKey]}
-                    </h2>
+                  {DAY_LABELS[dayKey]}
+                </h2>
 
-                    <div style={dayStatsStyle}>
-                      <span>
-                        Flights: <b>{flights.length}</b>
-                      </span>
-                      <span>
-                        Slots: <b>{slots.length}</b>
-                      </span>
-                      <span>
-                        Peak Agents: <b>{peakAgents}</b>
-                      </span>
+                <div style={dayStatsStyle}>
+                  <span>
+                    Flights: <b>{flights.length}</b>
+                  </span>
+                  <span>
+                    Slots: <b>{slots.filter((slot) => !slot.draftDeleteCandidate).length}</b>
+                  </span>
+                  <span>
+                    Peak Agents: <b>{peakAgents}</b>
+                  </span>
+                </div>
+
+                {(summary.draftRows > 0 || summary.deleteCandidates > 0) && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={pillSlateStyle}>
+                      Draft rows: <b>{summary.draftRows}</b>
+                    </div>
+                    <div style={pillGreenStyle}>
+                      Matched from draft: <b>{summary.matchedRows}</b>
+                    </div>
+                    <div style={pillBlueStyle}>
+                      New generated: <b>{summary.newGenerated}</b>
+                    </div>
+                    <div style={pillRedStyle}>
+                      Delete from current roster: <b>{summary.deleteCandidates}</b>
                     </div>
                   </div>
+                )}
 
-                  <ActionButton
-                    onClick={() => handleAddShiftRow(dayKey)}
-                    variant="primary"
+                {summary.deleteCandidates > 0 && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: "12px 14px",
+                      borderRadius: 16,
+                      background: "#fff1f2",
+                      border: "1px solid #fecdd3",
+                      color: "#9f1239",
+                      fontSize: 14,
+                      fontWeight: 700,
+                      lineHeight: 1.6,
+                    }}
                   >
-                    + Add Shift Row
-                  </ActionButton>
-                </div>
+                    Red rows were found in the current roster draft but do not match
+                    the new generated schedule. Those rows are marked as delete candidates
+                    and will not be saved in the final weekly schedule.
+                  </div>
+                )}
 
                 <div style={{ marginTop: 18 }}>
                   <h3 style={subTitleStyle}>Generated Shifts</h3>
@@ -806,7 +721,7 @@ export default function CabinServicePage() {
                           key={`${dayKey}-${item.start}-${item.end}-${item.role}`}
                           style={chipStyle}
                         >
-                          {item.start || "--:--"}–{item.end || "--:--"} | {item.role || "Agent"} x{item.count}
+                          {item.start}–{item.end} | {item.role} x{item.count}
                         </div>
                       ))}
                     </div>
@@ -846,103 +761,78 @@ export default function CabinServicePage() {
                 </div>
 
                 <div style={{ marginTop: 22 }}>
-                  <h3 style={subTitleStyle}>Assign Employees</h3>
+                  <h3 style={subTitleStyle}>Roster Draft + Assign Employees</h3>
                   <div style={tableWrapStyle}>
                     <table style={tableStyle}>
                       <thead>
                         <tr style={theadRowStyle}>
+                          <th style={thTdStyle}>Source</th>
                           <th style={thTdStyle}>Start</th>
                           <th style={thTdStyle}>End</th>
                           <th style={thTdStyle}>Role</th>
                           <th style={thTdStyle}>Paid Hours</th>
                           <th style={thTdStyle}>Employee</th>
-                          <th style={thTdStyle}>Delete</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {slots.map((slot) => (
-                          <tr key={`${dayKey}-${slot.id}`}>
-                            <td style={thTdStyle}>
-                              <input
-                                type="time"
-                                value={slot.start || ""}
-                                onChange={(e) =>
-                                  handleSlotFieldChange(dayKey, slot.id, "start", e.target.value)
-                                }
-                                style={miniInputStyle}
-                              />
-                            </td>
+                        {slots.map((slot) => {
+                          const rowStyle = slot.draftDeleteCandidate
+                            ? {
+                                background: "#fff1f2",
+                              }
+                            : slot.draftMatched
+                            ? {
+                                background: "#ecfdf5",
+                              }
+                            : {};
 
-                            <td style={thTdStyle}>
-                              <input
-                                type="time"
-                                value={slot.end || ""}
-                                onChange={(e) =>
-                                  handleSlotFieldChange(dayKey, slot.id, "end", e.target.value)
-                                }
-                                style={miniInputStyle}
-                              />
-                            </td>
+                          return (
+                            <tr key={`${dayKey}-${slot.id}`} style={rowStyle}>
+                              <td style={thTdStyle}>
+                                {slot.draftDeleteCandidate ? (
+                                  <span style={dangerTagStyle}>DELETE</span>
+                                ) : slot.draftMatched ? (
+                                  <span style={successTagStyle}>MATCHED DRAFT</span>
+                                ) : (
+                                  <span style={infoTagStyle}>NEW</span>
+                                )}
+                              </td>
 
-                            <td style={thTdStyle}>
-                              <select
-                                value={slot.role || "Agent"}
-                                onChange={(e) =>
-                                  handleSlotFieldChange(dayKey, slot.id, "role", e.target.value)
-                                }
-                                style={selectStyle}
-                              >
-                                {ROLE_OPTIONS.map((role) => (
-                                  <option key={role} value={role}>
-                                    {role}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
+                              <td style={thTdStyle}>{slot.start || "-"}</td>
+                              <td style={thTdStyle}>{slot.end || "-"}</td>
+                              <td style={thTdStyle}>{slot.role || "-"}</td>
+                              <td style={thTdStyle}>{slot.paidHours ?? "-"}</td>
 
-                            <td style={thTdStyle}>
-                              {calcPaidHours(slot.start, slot.end).toFixed(2)}
-                            </td>
-
-                            <td style={thTdStyle}>
-                              <select
-                                value={slot.employeeId || ""}
-                                onChange={(e) =>
-                                  handleAssign(dayKey, slot.id, e.target.value)
-                                }
-                                style={selectStyle}
-                              >
-                                <option value="">Select employee</option>
-                                {employees.map((emp) => (
-                                  <option key={emp.id} value={emp.id}>
-                                    {emp.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-
-                            <td style={thTdStyle}>
-                              <ActionButton
-                                onClick={() => handleDeleteShiftRow(dayKey, slot.id)}
-                                variant="danger"
-                              >
-                                Delete
-                              </ActionButton>
-                            </td>
-                          </tr>
-                        ))}
+                              <td style={thTdStyle}>
+                                {slot.draftDeleteCandidate ? (
+                                  <div style={{ color: "#9f1239", fontWeight: 700 }}>
+                                    {slot.employeeName || "Unassigned draft row"}
+                                  </div>
+                                ) : (
+                                  <select
+                                    value={slot.employeeId || ""}
+                                    onChange={(e) =>
+                                      handleAssign(dayKey, slot.id, e.target.value)
+                                    }
+                                    style={selectStyle}
+                                  >
+                                    <option value="">Select employee</option>
+                                    {employees.map((emp) => (
+                                      <option key={emp.id} value={emp.id}>
+                                        {emp.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
 
                         {slots.length === 0 && (
                           <tr>
-                            <td
-                              colSpan={6}
-                              style={{
-                                ...thTdStyle,
-                                color: "#64748b",
-                                fontWeight: 600,
-                              }}
-                            >
-                              No slots for this day.
+                            <td colSpan={6} style={thTdStyle}>
+                              No shifts found for this day.
                             </td>
                           </tr>
                         )}
@@ -975,13 +865,356 @@ export default function CabinServicePage() {
   );
 }
 
-function SummaryBox({ label, value }) {
+function SummaryBox({ label, value, tone = "default" }) {
+  const tones = {
+    default: {
+      background: "#f8fbff",
+      border: "#dbeafe",
+      color: "#0f172a",
+    },
+    red: {
+      background: "#fff1f2",
+      border: "#fecdd3",
+      color: "#9f1239",
+    },
+  };
+
+  const current = tones[tone] || tones.default;
+
   return (
-    <div style={summaryBoxStyle}>
+    <div
+      style={{
+        background: current.background,
+        border: `1px solid ${current.border}`,
+        borderRadius: 16,
+        padding: "14px 16px",
+      }}
+    >
       <div style={summaryLabelStyle}>{label}</div>
-      <div style={summaryValueStyle}>{value}</div>
+      <div
+        style={{
+          ...summaryValueStyle,
+          color: current.color,
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
+}
+
+function summarizeShifts(slots) {
+  const map = new Map();
+
+  for (const slot of slots) {
+    const key = `${slot.start}|${slot.end}|${slot.role}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        start: slot.start,
+        end: slot.end,
+        role: slot.role,
+        count: 0,
+      });
+    }
+    map.get(key).count += 1;
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.start !== b.start) return String(a.start || "").localeCompare(String(b.start || ""));
+    if (a.end !== b.end) return String(a.end || "").localeCompare(String(b.end || ""));
+    return String(a.role || "").localeCompare(String(b.role || ""));
+  });
+}
+
+function buildEmployeeLookup(employees) {
+  const map = {};
+
+  (employees || []).forEach((emp) => {
+    const name = String(emp?.name || "").trim();
+    if (!name) return;
+    map[name.toLowerCase()] = emp;
+  });
+
+  return map;
+}
+
+async function parseRosterDraftFile(file, dayKey) {
+  const text = await file.text();
+  const rows = parseCsvText(text);
+
+  return rows
+    .map((row, index) => {
+      const employeeName = getRowValue(row, [
+        "employee",
+        "employeename",
+        "employee_name",
+        "name",
+        "full_name",
+      ]);
+
+      const role =
+        getRowValue(row, ["role", "position", "job", "shiftrole"]) || "Agent";
+
+      const start = normalizeTimeInput(
+        getRowValue(row, ["start", "starttime", "in", "shiftstart", "timein"])
+      );
+
+      const end = normalizeTimeInput(
+        getRowValue(row, ["end", "endtime", "out", "shiftend", "timeout"])
+      );
+
+      if (!start && !end && !employeeName) return null;
+
+      return {
+        id: `draft-${dayKey}-${index}`,
+        dayKey,
+        employeeName: employeeName || "",
+        role,
+        start,
+        end,
+      };
+    })
+    .filter(Boolean);
+}
+
+function mergeGeneratedSlotsWithDraftRoster({
+  dayKey,
+  generatedSlots,
+  draftRows,
+  employeeLookup,
+}) {
+  const nextSlots = [];
+  const usedDraftIndexes = new Set();
+
+  (generatedSlots || []).forEach((slot, slotIndex) => {
+    const matchingDraftIndex = draftRows.findIndex((draftRow, idx) => {
+      if (usedDraftIndexes.has(idx)) return false;
+
+      return (
+        normalizeTimeInput(draftRow.start) === normalizeTimeInput(slot.start) &&
+        normalizeTimeInput(draftRow.end) === normalizeTimeInput(slot.end) &&
+        normalizeRole(draftRow.role) === normalizeRole(slot.role)
+      );
+    });
+
+    if (matchingDraftIndex >= 0) {
+      usedDraftIndexes.add(matchingDraftIndex);
+      const matchedDraft = draftRows[matchingDraftIndex];
+      const foundEmployee = employeeLookup[
+        String(matchedDraft.employeeName || "").trim().toLowerCase()
+      ];
+
+      nextSlots.push({
+        ...slot,
+        id: slot.id || `${dayKey}-generated-${slotIndex}`,
+        employeeName: matchedDraft.employeeName || "",
+        employeeId: foundEmployee?.id || "",
+        draftSource: true,
+        draftMatched: true,
+        draftDeleteCandidate: false,
+        sourceLabel: "MATCHED DRAFT",
+      });
+    } else {
+      nextSlots.push({
+        ...slot,
+        id: slot.id || `${dayKey}-generated-${slotIndex}`,
+        draftSource: false,
+        draftMatched: false,
+        draftDeleteCandidate: false,
+        sourceLabel: "NEW",
+      });
+    }
+  });
+
+  const deleteCandidates = draftRows
+    .map((draftRow, idx) => ({ draftRow, idx }))
+    .filter(({ idx }) => !usedDraftIndexes.has(idx))
+    .map(({ draftRow, idx }) => {
+      const foundEmployee = employeeLookup[
+        String(draftRow.employeeName || "").trim().toLowerCase()
+      ];
+
+      return {
+        id: `delete-${dayKey}-${idx}`,
+        dayKey,
+        start: draftRow.start || "",
+        end: draftRow.end || "",
+        role: draftRow.role || "Agent",
+        paidHours: calcPaidHours(draftRow.start, draftRow.end),
+        calendarHours: calcCalendarHours(draftRow.start, draftRow.end),
+        employeeName: draftRow.employeeName || "",
+        employeeId: foundEmployee?.id || "",
+        draftSource: true,
+        draftMatched: false,
+        draftDeleteCandidate: true,
+        sourceLabel: "DELETE FROM CURRENT ROSTER",
+      };
+    });
+
+  return {
+    slots: [...nextSlots, ...deleteCandidates],
+    summary: {
+      draftRows: draftRows.length,
+      matchedRows: usedDraftIndexes.size,
+      deleteCandidates: deleteCandidates.length,
+      newGenerated: nextSlots.filter((slot) => !slot.draftMatched).length,
+    },
+  };
+}
+
+function sortSlotsWithDrafts(slots) {
+  return [...(slots || [])].sort((a, b) => {
+    if (!!a.draftDeleteCandidate !== !!b.draftDeleteCandidate) {
+      return a.draftDeleteCandidate ? 1 : -1;
+    }
+
+    if ((a.start || "") !== (b.start || "")) {
+      return (a.start || "").localeCompare(b.start || "");
+    }
+
+    if ((a.end || "") !== (b.end || "")) {
+      return (a.end || "").localeCompare(b.end || "");
+    }
+
+    return (a.role || "").localeCompare(b.role || "");
+  });
+}
+
+function parseCsvText(text) {
+  const lines = String(text || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((line) => line.trim().length > 0);
+
+  if (!lines.length) return [];
+
+  const headers = splitCsvLine(lines[0]).map((h) => normalizeHeader(h));
+
+  return lines.slice(1).map((line) => {
+    const values = splitCsvLine(line);
+    const row = {};
+    headers.forEach((header, index) => {
+      row[header] = String(values[index] || "").trim();
+    });
+    return row;
+  });
+}
+
+function splitCsvLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  result.push(current);
+  return result;
+}
+
+function normalizeHeader(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
+function getRowValue(row, possibleKeys) {
+  for (const key of possibleKeys) {
+    const normalized = normalizeHeader(key);
+    if (row[normalized] !== undefined && row[normalized] !== null) {
+      return String(row[normalized]).trim();
+    }
+  }
+  return "";
+}
+
+function normalizeRole(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeTimeInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (/^\d{1,2}:\d{2}$/.test(raw)) {
+    const [h, m] = raw.split(":");
+    return `${String(h).padStart(2, "0")}:${m}`;
+  }
+
+  if (/^\d{3,4}$/.test(raw)) {
+    const clean = raw.padStart(4, "0");
+    return `${clean.slice(0, 2)}:${clean.slice(2)}`;
+  }
+
+  const ampm = raw.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)$/i);
+  if (ampm) {
+    let hour = Number(ampm[1]);
+    const minute = String(ampm[2] || "00").padStart(2, "0");
+    const meridian = ampm[3].toLowerCase();
+
+    if (meridian === "pm" && hour < 12) hour += 12;
+    if (meridian === "am" && hour === 12) hour = 0;
+
+    return `${String(hour).padStart(2, "0")}:${minute}`;
+  }
+
+  return raw;
+}
+
+function toMinutes(hhmm) {
+  if (!hhmm || !String(hhmm).includes(":")) return 0;
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function calcCalendarHours(start, end) {
+  if (!start || !end) return 0;
+
+  let s = toMinutes(start);
+  let e = toMinutes(end);
+
+  if (e <= s) e += 24 * 60;
+
+  return Number(((e - s) / 60).toFixed(2));
+}
+
+function calcPaidHours(start, end) {
+  if (!start || !end) return 0;
+
+  let s = toMinutes(start);
+  let e = toMinutes(end);
+
+  if (e <= s) e += 24 * 60;
+
+  let minutes = e - s;
+
+  if (minutes >= 361) {
+    minutes -= 30;
+  }
+
+  return Number((minutes / 60).toFixed(2));
 }
 
 const subTitleStyle = {
@@ -1009,18 +1242,9 @@ const inputStyle = {
   fontSize: 14,
 };
 
-const miniInputStyle = {
-  minWidth: 110,
-  padding: "8px 10px",
-  borderRadius: 10,
-  border: "1px solid #dbeafe",
-  background: "#ffffff",
-  fontSize: 14,
-};
-
 const uploadGridStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   gap: 12,
 };
 
@@ -1041,7 +1265,7 @@ const tableStyle = {
   width: "100%",
   borderCollapse: "separate",
   borderSpacing: 0,
-  minWidth: 760,
+  minWidth: 860,
   background: "#fff",
 };
 
@@ -1057,7 +1281,7 @@ const thTdStyle = {
 };
 
 const selectStyle = {
-  minWidth: 180,
+  minWidth: 200,
   padding: "8px 10px",
   borderRadius: 10,
   border: "1px solid #dbeafe",
@@ -1101,13 +1325,6 @@ const summaryGridStyle = {
   gap: 12,
 };
 
-const summaryBoxStyle = {
-  background: "#f8fbff",
-  border: "1px solid #dbeafe",
-  borderRadius: 16,
-  padding: "14px 16px",
-};
-
 const summaryLabelStyle = {
   margin: 0,
   fontSize: 11,
@@ -1123,4 +1340,108 @@ const summaryValueStyle = {
   fontWeight: 800,
   color: "#0f172a",
   letterSpacing: "-0.03em",
+};
+
+const miniLabelStyle = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#1769aa",
+  marginBottom: 6,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+};
+
+const miniHelpTextStyle = {
+  marginTop: 8,
+  fontSize: 12,
+  color: "#475569",
+  lineHeight: 1.5,
+};
+
+const pillBlueStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  background: "#edf7ff",
+  border: "1px solid #cfe7fb",
+  borderRadius: 999,
+  padding: "8px 12px",
+  fontSize: 13,
+  color: "#1769aa",
+  fontWeight: 700,
+};
+
+const pillSlateStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  background: "#f8fbff",
+  border: "1px solid #dbeafe",
+  borderRadius: 999,
+  padding: "8px 12px",
+  fontSize: 13,
+  color: "#475569",
+  fontWeight: 700,
+};
+
+const pillGreenStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  background: "#ecfdf5",
+  border: "1px solid #a7f3d0",
+  borderRadius: 999,
+  padding: "8px 12px",
+  fontSize: 13,
+  color: "#166534",
+  fontWeight: 700,
+};
+
+const pillRedStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  background: "#fff1f2",
+  border: "1px solid #fecdd3",
+  borderRadius: 999,
+  padding: "8px 12px",
+  fontSize: 13,
+  color: "#9f1239",
+  fontWeight: 700,
+};
+
+const infoTagStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "5px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+  background: "#edf7ff",
+  color: "#1769aa",
+  border: "1px solid #cfe7fb",
+};
+
+const successTagStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "5px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+  background: "#ecfdf5",
+  color: "#166534",
+  border: "1px solid #a7f3d0",
+};
+
+const dangerTagStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "5px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+  background: "#fff1f2",
+  color: "#9f1239",
+  border: "1px solid #fecdd3",
 };
