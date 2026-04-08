@@ -1,46 +1,42 @@
 /* --------------------------------------------------------- */
-/*                TAILWIND DIRECTIVES                        */
+/* TAILWIND DIRECTIVES                                       */
 /* --------------------------------------------------------- */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* --------------------------------------------------------- */
-/* RESET BÁSICO                                              */
+/* RESET GLOBAL                                              */
 /* --------------------------------------------------------- */
-html {
-  box-sizing: border-box;
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
 *,
 *::before,
 *::after {
-  box-sizing: inherit;
-  min-width: 0;
+  box-sizing: border-box;
 }
 
-html,
+html {
+  width: 100%;
+  max-width: 100%;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   padding: 0;
   min-height: 100%;
   width: 100%;
+  max-width: 100%;
   font-family: "Inter", sans-serif;
   background-color: #f1f5f9;
   color: #0f172a;
   overflow-x: hidden;
 }
 
-body {
-  font-size: 16px;
-  line-height: 1.4;
-}
-
 #root {
-  min-height: 100%;
+  min-height: 100vh;
   width: 100%;
+  max-width: 100%;
   overflow-x: hidden;
 }
 
@@ -53,7 +49,7 @@ a {
 }
 
 /* --------------------------------------------------------- */
-/* MEDIA DEFAULTS                                            */
+/* MEDIA ELEMENTS                                            */
 /* --------------------------------------------------------- */
 img,
 svg,
@@ -62,11 +58,47 @@ canvas,
 iframe {
   max-width: 100%;
   height: auto;
-  display: block;
 }
 
 /* --------------------------------------------------------- */
-/* CARD ESTÁNDAR                                             */
+/* TYPOGRAPHY                                                */
+/* --------------------------------------------------------- */
+body {
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+p {
+  color: #111827;
+}
+
+/* --------------------------------------------------------- */
+/* CARDS                                                     */
 /* --------------------------------------------------------- */
 .card {
   background: #ffffff;
@@ -74,11 +106,13 @@ iframe {
   border-radius: 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   margin-bottom: 20px;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
 }
 
 /* --------------------------------------------------------- */
-/* BOTONES UNIVERSALES                                       */
+/* BUTTONS                                                   */
 /* --------------------------------------------------------- */
 .btn {
   padding: 8px 12px;
@@ -87,7 +121,7 @@ iframe {
   cursor: pointer;
   transition: 0.15s;
   border: none;
-  max-width: 100%;
+  min-height: 40px;
 }
 
 .btn-blue {
@@ -100,52 +134,17 @@ iframe {
 }
 
 /* --------------------------------------------------------- */
-/* ESPACIADO GENERAL DEL CONTENIDO                           */
+/* MAIN CONTENT                                              */
 /* --------------------------------------------------------- */
 main {
   padding-top: 10px;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
 }
 
 /* --------------------------------------------------------- */
-/* TIPOGRAFÍA GLOBAL SUAVE                                   */
-/* --------------------------------------------------------- */
-h1 {
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  font-weight: 700;
-  color: #0f172a;
-  margin: 0;
-  line-height: 1.15;
-  overflow-wrap: break-word;
-}
-
-h2 {
-  font-size: clamp(1.1rem, 2.2vw, 1.25rem);
-  font-weight: 600;
-  color: #111827;
-  margin: 0;
-  line-height: 1.2;
-  overflow-wrap: break-word;
-}
-
-h3,
-h4,
-h5,
-h6,
-p,
-span,
-label,
-div {
-  overflow-wrap: break-word;
-}
-
-p {
-  color: #111827;
-}
-
-/* --------------------------------------------------------- */
-/* FORM ELEMENTS                                             */
+/* FORMS                                                     */
 /* --------------------------------------------------------- */
 input,
 textarea,
@@ -158,15 +157,19 @@ button {
 input,
 textarea,
 select {
-  width: 100%;
+  min-width: 0;
+}
+
+textarea {
+  max-width: 100%;
 }
 
 /* --------------------------------------------------------- */
-/* TABLAS BÁSICAS                                            */
+/* TABLES                                                    */
 /* --------------------------------------------------------- */
 table {
   width: 100%;
-  max-width: 100%;
+  border-collapse: collapse;
 }
 
 th,
@@ -174,11 +177,10 @@ td {
   vertical-align: middle;
 }
 
-/* wrappers comunes para tablas */
-.table-wrap,
 .table-responsive,
-[style*="overflowX: auto"],
-[style*="overflow-x: auto"] {
+.tableWrap,
+.table-wrap,
+.table-container {
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
@@ -186,59 +188,95 @@ td {
 }
 
 /* --------------------------------------------------------- */
-/* GRID / FLEX SAFETY                                        */
+/* GLOBAL HELPERS FOR PAGES WITH INLINE STYLES               */
 /* --------------------------------------------------------- */
-[style*="display: grid"],
-[style*="display:grid"],
-[style*="display: flex"],
-[style*="display:flex"] {
+.page-shell,
+.page-content,
+.page-container,
+.responsive-page {
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
+}
+
+.responsive-scroll-x {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.responsive-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  min-width: 0;
+}
+
+.responsive-grid-tight {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  min-width: 0;
 }
 
 /* --------------------------------------------------------- */
-/* MOBILE GLOBAL FIXES                                       */
+/* PREVENT INLINE LAYOUT OVERFLOW                            */
 /* --------------------------------------------------------- */
-@media (max-width: 900px) {
+div,
+section,
+article,
+main,
+aside,
+header,
+footer {
+  min-width: 0;
+}
+
+/* --------------------------------------------------------- */
+/* SCROLLBAR IMPROVEMENT                                     */
+/* --------------------------------------------------------- */
+::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --------------------------------------------------------- */
+/* TABLET                                                    */
+/* --------------------------------------------------------- */
+@media (max-width: 1199px) {
+  h1 {
+    font-size: 1.8rem;
+  }
+
+  h2 {
+    font-size: 1.15rem;
+  }
+
+  .card {
+    padding: 16px;
+  }
+}
+
+/* --------------------------------------------------------- */
+/* MOBILE                                                    */
+/* --------------------------------------------------------- */
+@media (max-width: 899px) {
   body {
     font-size: 15px;
   }
 
-  .card {
-    padding: 14px;
-    border-radius: 8px;
-  }
-}
-
-@media (max-width: 768px) {
-  html,
-  body,
-  #root {
-    width: 100%;
-    max-width: 100%;
-    overflow-x: hidden;
-  }
-
-  body {
-    font-size: 14px;
-  }
-
-  .card {
-    padding: 12px;
-    margin-bottom: 14px;
-  }
-
-  table {
-    min-width: 720px;
-  }
-}
-
-@media (max-width: 640px) {
-  body {
-    font-size: 14px;
-  }
-
   h1 {
-    font-size: 1.45rem;
+    font-size: 1.55rem;
   }
 
   h2 {
@@ -246,11 +284,74 @@ td {
   }
 
   .card {
-    padding: 10px;
-    border-radius: 8px;
+    padding: 14px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font-size: 16px;
   }
 
   table {
-    min-width: 680px;
+    min-width: 720px;
+  }
+}
+
+/* --------------------------------------------------------- */
+/* SMALL MOBILE                                              */
+/* --------------------------------------------------------- */
+@media (max-width: 639px) {
+  body {
+    font-size: 14px;
+  }
+
+  h1 {
+    font-size: 1.35rem;
+  }
+
+  h2 {
+    font-size: 1rem;
+  }
+
+  .card {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .responsive-grid,
+  .responsive-grid-tight {
+    grid-template-columns: 1fr;
+  }
+
+  table {
+    min-width: 640px;
+  }
+}
+
+/* --------------------------------------------------------- */
+/* PRINT                                                     */
+/* --------------------------------------------------------- */
+@media print {
+  html,
+  body,
+  #root {
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .card {
+    box-shadow: none !important;
   }
 }
