@@ -56,7 +56,28 @@ function TextInput(props) {
         padding: "10px 12px",
         fontSize: 14,
         color: "#0f172a",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function TimeInput(props) {
+  return (
+    <input
+      type="time"
+      step="60"
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #cbd5e1",
+        borderRadius: 12,
+        padding: "10px 12px",
+        fontSize: 14,
+        color: "#0f172a",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
         ...props.style,
       }}
@@ -75,8 +96,30 @@ function SelectInput(props) {
         padding: "10px 12px",
         fontSize: 14,
         color: "#0f172a",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #cbd5e1",
+        borderRadius: 12,
+        padding: "10px 12px",
+        fontSize: 14,
+        color: "#0f172a",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        outline: "none",
+        resize: "vertical",
+        minHeight: 90,
+        fontFamily: "inherit",
         ...props.style,
       }}
     />
@@ -185,6 +228,43 @@ function InfoCard({ label, value, tone = "default" }) {
         }}
       >
         {value}
+      </div>
+    </div>
+  );
+}
+
+function DetailsRow({ label, value }) {
+  return (
+    <div
+      style={{
+        background: "#f8fbff",
+        border: "1px solid #dbeafe",
+        borderRadius: 14,
+        padding: "12px 14px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 14,
+          fontWeight: 700,
+          color: "#0f172a",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {value || "-"}
       </div>
     </div>
   );
@@ -496,49 +576,14 @@ function printReportDetails(report) {
   }, 500);
 }
 
-function DetailsRow({ label, value }) {
-  return (
-    <div
-      style={{
-        background: "#f8fbff",
-        border: "1px solid #dbeafe",
-        borderRadius: 14,
-        padding: "12px 14px",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 14,
-          fontWeight: 700,
-          color: "#0f172a",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
-      >
-        {value || "-"}
-      </div>
-    </div>
-  );
-}
-
 export default function GateChecklistManagementPage() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [selectedReportId, setSelectedReportId] = useState("");
+  const [editReportId, setEditReportId] = useState("");
+  const [editForm, setEditForm] = useState(null);
 
   const [filters, setFilters] = useState({
     airline: "all",
@@ -776,6 +821,129 @@ export default function GateChecklistManagementPage() {
       .sort((a, b) => b.month.localeCompare(a.month));
   }, [reports]);
 
+  function startEdit(report) {
+    setSelectedReportId(report.id);
+    setEditReportId(report.id);
+    setEditForm({
+      airline: report.airline || "",
+      flight: report.flight || "",
+      date: report.date || "",
+      aircraft: report.aircraft || "",
+      origin: report.origin || "",
+      destination: report.destination || "",
+      etd: report.etd || "",
+      newEtd: report.newEtd || "",
+      boardingDeadline: report.boardingDeadline || "",
+      pushTime: report.pushTime || "",
+      brakeReleaseTime: report.brakeReleaseTime || "",
+      delay: report.delay || "No",
+      delayTimeMinutes:
+        report.delayTimeMinutes !== undefined && report.delayTimeMinutes !== null
+          ? String(report.delayTimeMinutes)
+          : "",
+      delayCode: report.delayCode || "",
+      controllable: report.controllable || "No",
+      gateAgent: report.gateAgent || "",
+      expeditor: report.expeditor || "",
+      supervisor: report.supervisor || "",
+      finalTotalPax:
+        report.finalTotalPax !== undefined && report.finalTotalPax !== null
+          ? String(report.finalTotalPax)
+          : "",
+      firstPaxOff: report.firstPaxOff || "",
+      lastPaxOff: report.lastPaxOff || "",
+      firstPaxOn: report.firstPaxOn || "",
+      lastPaxOn: report.lastPaxOn || "",
+      checkedBags:
+        report.checkedBags !== undefined && report.checkedBags !== null
+          ? String(report.checkedBags)
+          : "",
+      notLoadedBags:
+        report.notLoadedBags !== undefined && report.notLoadedBags !== null
+          ? String(report.notLoadedBags)
+          : "",
+      gpuConnected: report.gpuConnected || "",
+      gateAgent1Arrival: report.gateAgent1Arrival || "",
+      gateAgent2Arrival: report.gateAgent2Arrival || "",
+      actualDepartureTime: report.actualDepartureTime || "",
+      actualArrivalTime: report.actualArrivalTime || "",
+      remarks: report.remarks || "",
+      status: report.status || "draft",
+    });
+  }
+
+  function cancelEdit() {
+    setEditReportId("");
+    setEditForm(null);
+  }
+
+  async function handleSaveReportEdits(reportId) {
+    if (!editForm) return;
+
+    try {
+      setWorkingId(reportId);
+
+      const payload = {
+        airline: editForm.airline || "",
+        flight: editForm.flight || "",
+        date: editForm.date || "",
+        aircraft: editForm.aircraft || "",
+        origin: editForm.origin || "",
+        destination: editForm.destination || "",
+        etd: editForm.etd || "",
+        newEtd: editForm.newEtd || "",
+        boardingDeadline: editForm.boardingDeadline || "",
+        pushTime: editForm.pushTime || "",
+        brakeReleaseTime: editForm.brakeReleaseTime || "",
+        delay: editForm.delay || "No",
+        delayTimeMinutes: Number(editForm.delayTimeMinutes || 0),
+        delayCode: editForm.delayCode || "",
+        controllable: editForm.controllable || "No",
+        gateAgent: editForm.gateAgent || "",
+        expeditor: editForm.expeditor || "",
+        supervisor: editForm.supervisor || "",
+        finalTotalPax: Number(editForm.finalTotalPax || 0),
+        firstPaxOff: editForm.firstPaxOff || "",
+        lastPaxOff: editForm.lastPaxOff || "",
+        firstPaxOn: editForm.firstPaxOn || "",
+        lastPaxOn: editForm.lastPaxOn || "",
+        checkedBags: Number(editForm.checkedBags || 0),
+        notLoadedBags: Number(editForm.notLoadedBags || 0),
+        gpuConnected: editForm.gpuConnected || "",
+        gateAgent1Arrival: editForm.gateAgent1Arrival || "",
+        gateAgent2Arrival: editForm.gateAgent2Arrival || "",
+        actualDepartureTime: editForm.actualDepartureTime || "",
+        actualArrivalTime: editForm.actualArrivalTime || "",
+        remarks: editForm.remarks || "",
+        status: editForm.status || "draft",
+        updatedAt: serverTimestamp(),
+      };
+
+      await updateDoc(doc(db, "gateChecklistReports", reportId), payload);
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === reportId
+            ? {
+                ...item,
+                ...payload,
+                updatedAt: new Date(),
+              }
+            : item
+        )
+      );
+
+      setStatusMessage("Report updated successfully.");
+      setEditReportId("");
+      setEditForm(null);
+    } catch (error) {
+      console.error("Error updating report:", error);
+      setStatusMessage("Could not update report.");
+    } finally {
+      setWorkingId("");
+    }
+  }
+
   async function handleDeleteReport(reportId) {
     const ok = window.confirm("Delete this report permanently?");
     if (!ok) return;
@@ -786,6 +954,10 @@ export default function GateChecklistManagementPage() {
       setReports((prev) => prev.filter((item) => item.id !== reportId));
       if (selectedReportId === reportId) {
         setSelectedReportId("");
+      }
+      if (editReportId === reportId) {
+        setEditReportId("");
+        setEditForm(null);
       }
       setStatusMessage("Report deleted successfully.");
     } catch (error) {
@@ -1190,119 +1362,9 @@ export default function GateChecklistManagementPage() {
         <InfoCard label="Total OUT Pax" value={String(totals.totalOutPax)} tone="blue" />
       </div>
 
-      {selectedMonthSummary && (
-        <PageCard style={{ padding: 20 }}>
-          <div style={{ marginBottom: 12 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 900,
-                color: "#0f172a",
-              }}
-            >
-              Monthly Closing Summary · {selectedMonthSummary.month}
-            </h2>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 14,
-            }}
-          >
-            <InfoCard label="Station Flights" value={String(selectedMonthSummary.flights)} />
-            <InfoCard
-              label="Station OTP %"
-              value={formatPercent(selectedMonthSummary.otpPercent)}
-              tone="blue"
-            />
-            <InfoCard
-              label="Station Checked Bags"
-              value={String(selectedMonthSummary.checkedBags)}
-            />
-            <InfoCard
-              label="Station Not Loaded"
-              value={String(selectedMonthSummary.notLoadedBags)}
-              tone={selectedMonthSummary.notLoadedBags > 0 ? "red" : "green"}
-            />
-            <InfoCard
-              label="Station MBR %"
-              value={formatPercent(selectedMonthSummary.mbrPercent)}
-              tone={selectedMonthSummary.mbrPercent > 0 ? "amber" : "green"}
-            />
-            <InfoCard
-              label="Month Status"
-              value={selectedMonthSummary.monthClosed ? "Closed" : "Open"}
-              tone={selectedMonthSummary.monthClosed ? "green" : "default"}
-            />
-          </div>
-        </PageCard>
-      )}
-
       <PageCard style={{ padding: 20 }}>
         <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
-            OTP + MBR by Airline
-          </h2>
-        </div>
-
-        <div style={tableWrapStyle}>
-          <table style={tableStyle}>
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                <th style={thStyle}>Airline</th>
-                <th style={thStyle}>Flights</th>
-                <th style={thStyle}>OTP Flights</th>
-                <th style={thStyle}>OTP %</th>
-                <th style={thStyle}>Checked Bags</th>
-                <th style={thStyle}>Not Loaded Bags</th>
-                <th style={thStyle}>MBR %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {otpByAirline.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={tdStyle}>
-                    {loading ? "Loading..." : "No data found."}
-                  </td>
-                </tr>
-              ) : (
-                otpByAirline.map((row) => (
-                  <tr key={row.airline}>
-                    <td style={tdStyle}>{row.airline}</td>
-                    <td style={tdStyle}>{row.flights}</td>
-                    <td style={tdStyle}>{row.otpFlights}</td>
-                    <td style={tdStyle}>{formatPercent(row.otpPercent)}</td>
-                    <td style={tdStyle}>{row.totalCheckedBags}</td>
-                    <td style={tdStyle}>{row.totalNotLoadedBags}</td>
-                    <td style={tdStyle}>{formatPercent(row.mbrPercent)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </PageCard>
-
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Delay Summary
           </h2>
         </div>
@@ -1347,14 +1409,7 @@ export default function GateChecklistManagementPage() {
 
       <PageCard style={{ padding: 20 }}>
         <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Pax Flow Summary
           </h2>
         </div>
@@ -1395,84 +1450,7 @@ export default function GateChecklistManagementPage() {
 
       <PageCard style={{ padding: 20 }}>
         <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
-            Monthly Summaries
-          </h2>
-        </div>
-
-        <div style={tableWrapStyle}>
-          <table style={tableStyle}>
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                <th style={thStyle}>Month</th>
-                <th style={thStyle}>Flights</th>
-                <th style={thStyle}>OTP Flights</th>
-                <th style={thStyle}>OTP %</th>
-                <th style={thStyle}>Checked Bags</th>
-                <th style={thStyle}>Not Loaded</th>
-                <th style={thStyle}>MBR %</th>
-                <th style={thStyle}>Closed</th>
-                <th style={thStyle}>Closed At</th>
-                <th style={thStyle}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthlySummaries.length === 0 ? (
-                <tr>
-                  <td colSpan={10} style={tdStyle}>
-                    {loading ? "Loading..." : "No monthly summaries found."}
-                  </td>
-                </tr>
-              ) : (
-                monthlySummaries.map((item) => (
-                  <tr key={item.month}>
-                    <td style={tdStyle}>{item.month}</td>
-                    <td style={tdStyle}>{item.flights}</td>
-                    <td style={tdStyle}>{item.otpFlights}</td>
-                    <td style={tdStyle}>{formatPercent(item.otpPercent)}</td>
-                    <td style={tdStyle}>{item.checkedBags}</td>
-                    <td style={tdStyle}>{item.notLoadedBags}</td>
-                    <td style={tdStyle}>{formatPercent(item.mbrPercent)}</td>
-                    <td style={tdStyle}>{item.monthClosed ? "YES" : "NO"}</td>
-                    <td style={tdStyle}>{formatDateTime(item.closedAt)}</td>
-                    <td style={tdStyle}>
-                      <ActionButton
-                        variant="warning"
-                        onClick={() => handleCloseMonth(item.month)}
-                        disabled={workingId === item.month || item.monthClosed}
-                      >
-                        {item.monthClosed
-                          ? "Closed"
-                          : workingId === item.month
-                          ? "Closing..."
-                          : "Close Month"}
-                      </ActionButton>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </PageCard>
-
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Submitted Checklists
           </h2>
         </div>
@@ -1557,6 +1535,13 @@ export default function GateChecklistManagementPage() {
                           </ActionButton>
 
                           <ActionButton
+                            variant="warning"
+                            onClick={() => startEdit(item)}
+                          >
+                            Edit
+                          </ActionButton>
+
+                          <ActionButton
                             variant="dark"
                             onClick={() => printReportDetails(item)}
                           >
@@ -1618,6 +1603,12 @@ export default function GateChecklistManagementPage() {
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <ActionButton
+                variant="warning"
+                onClick={() => startEdit(selectedReport)}
+              >
+                Edit
+              </ActionButton>
+              <ActionButton
                 variant="dark"
                 onClick={() => printReportDetails(selectedReport)}
               >
@@ -1631,6 +1622,448 @@ export default function GateChecklistManagementPage() {
               </ActionButton>
             </div>
           </div>
+
+          {editReportId === selectedReport.id && editForm && (
+            <div
+              style={{
+                marginBottom: 18,
+                border: "1px solid #fed7aa",
+                background: "#fff7ed",
+                borderRadius: 18,
+                padding: 16,
+                display: "grid",
+                gap: 14,
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: "#9a3412",
+                }}
+              >
+                Edit Report
+              </h3>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <FieldLabel>Airline</FieldLabel>
+                  <SelectInput
+                    value={editForm.airline}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, airline: e.target.value }))
+                    }
+                  >
+                    <option value="SY">SUN COUNTRY (SY)</option>
+                    <option value="AV">AVIANCA (AV)</option>
+                    <option value="WL">WORLD ATLANTIC (WL)</option>
+                  </SelectInput>
+                </div>
+
+                <div>
+                  <FieldLabel>Flight</FieldLabel>
+                  <TextInput
+                    value={editForm.flight}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, flight: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Date</FieldLabel>
+                  <TextInput
+                    type="date"
+                    value={editForm.date}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, date: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Aircraft</FieldLabel>
+                  <TextInput
+                    value={editForm.aircraft}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, aircraft: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Origin</FieldLabel>
+                  <TextInput
+                    value={editForm.origin}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, origin: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Destination</FieldLabel>
+                  <TextInput
+                    value={editForm.destination}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, destination: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>ETD</FieldLabel>
+                  <TimeInput
+                    value={editForm.etd}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, etd: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>New ETD</FieldLabel>
+                  <TimeInput
+                    value={editForm.newEtd}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, newEtd: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>D-10 / D-15</FieldLabel>
+                  <TimeInput
+                    value={editForm.boardingDeadline}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        boardingDeadline: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Push Time</FieldLabel>
+                  <TimeInput
+                    value={editForm.pushTime}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, pushTime: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Brake Release</FieldLabel>
+                  <TimeInput
+                    value={editForm.brakeReleaseTime}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        brakeReleaseTime: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Delay</FieldLabel>
+                  <SelectInput
+                    value={editForm.delay}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, delay: e.target.value }))
+                    }
+                  >
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </SelectInput>
+                </div>
+
+                <div>
+                  <FieldLabel>Delay Time Minutes</FieldLabel>
+                  <TextInput
+                    type="number"
+                    min="0"
+                    value={editForm.delayTimeMinutes}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        delayTimeMinutes: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Delay Code</FieldLabel>
+                  <TextInput
+                    value={editForm.delayCode}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, delayCode: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Controllable</FieldLabel>
+                  <SelectInput
+                    value={editForm.controllable}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        controllable: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </SelectInput>
+                </div>
+
+                <div>
+                  <FieldLabel>Gate Agent</FieldLabel>
+                  <TextInput
+                    value={editForm.gateAgent}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, gateAgent: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Expeditor</FieldLabel>
+                  <TextInput
+                    value={editForm.expeditor}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, expeditor: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Supervisor</FieldLabel>
+                  <TextInput
+                    value={editForm.supervisor}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, supervisor: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Final Total Pax</FieldLabel>
+                  <TextInput
+                    type="number"
+                    min="0"
+                    value={editForm.finalTotalPax}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        finalTotalPax: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>First Pax Off</FieldLabel>
+                  <TimeInput
+                    value={editForm.firstPaxOff}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        firstPaxOff: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Last Pax Off</FieldLabel>
+                  <TimeInput
+                    value={editForm.lastPaxOff}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        lastPaxOff: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>First Pax On</FieldLabel>
+                  <TimeInput
+                    value={editForm.firstPaxOn}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        firstPaxOn: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Last Pax On</FieldLabel>
+                  <TimeInput
+                    value={editForm.lastPaxOn}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        lastPaxOn: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Checked Bags</FieldLabel>
+                  <TextInput
+                    type="number"
+                    min="0"
+                    value={editForm.checkedBags}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        checkedBags: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Not Loaded Bags</FieldLabel>
+                  <TextInput
+                    type="number"
+                    min="0"
+                    value={editForm.notLoadedBags}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        notLoadedBags: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>GPU Connected</FieldLabel>
+                  <TextInput
+                    value={editForm.gpuConnected}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        gpuConnected: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Gate Agent 1 Arrival</FieldLabel>
+                  <TimeInput
+                    value={editForm.gateAgent1Arrival}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        gateAgent1Arrival: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Gate Agent 2 Arrival</FieldLabel>
+                  <TimeInput
+                    value={editForm.gateAgent2Arrival}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        gateAgent2Arrival: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Actual Departure</FieldLabel>
+                  <TimeInput
+                    value={editForm.actualDepartureTime}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        actualDepartureTime: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Actual Arrival</FieldLabel>
+                  <TimeInput
+                    value={editForm.actualArrivalTime}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        actualArrivalTime: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Status</FieldLabel>
+                  <SelectInput
+                    value={editForm.status}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, status: e.target.value }))
+                    }
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="closed">Closed</option>
+                  </SelectInput>
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>Notes</FieldLabel>
+                <TextArea
+                  value={editForm.remarks}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, remarks: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <ActionButton
+                  variant="success"
+                  onClick={() => handleSaveReportEdits(selectedReport.id)}
+                  disabled={workingId === selectedReport.id}
+                >
+                  {workingId === selectedReport.id ? "Saving..." : "Save Changes"}
+                </ActionButton>
+
+                <ActionButton
+                  variant="secondary"
+                  onClick={cancelEdit}
+                  disabled={workingId === selectedReport.id}
+                >
+                  Cancel
+                </ActionButton>
+              </div>
+            </div>
+          )}
 
           <div
             style={{
@@ -1686,117 +2119,6 @@ export default function GateChecklistManagementPage() {
             <DetailsRow label="Submitted By" value={selectedReport.submittedBy} />
             <DetailsRow label="Created" value={formatDateTime(selectedReport.createdAt)} />
           </div>
-
-          <div style={{ marginTop: 18 }}>
-            <h3 style={sectionTitleStyle}>Specials</h3>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: 10,
-              }}
-            >
-              {Object.entries(selectedReport.specials || {}).length ? (
-                Object.entries(selectedReport.specials || {}).map(([key, value]) => (
-                  <DetailsRow key={key} label={key} value={value} />
-                ))
-              ) : (
-                <div style={emptyTextStyle}>No specials found.</div>
-              )}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 18 }}>
-            <h3 style={sectionTitleStyle}>Gate Check</h3>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 10,
-              }}
-            >
-              <DetailsRow label="Bags" value={selectedReport.gateCheck?.bags} />
-              <DetailsRow
-                label="Strollers / Car Seats"
-                value={selectedReport.gateCheck?.strollersCarSeats}
-              />
-              <DetailsRow label="WCHRS" value={selectedReport.gateCheck?.wchrs} />
-              <DetailsRow label="Other" value={selectedReport.gateCheck?.other} />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 18 }}>
-            <h3 style={sectionTitleStyle}>Delay Announcements</h3>
-            <div style={{ display: "grid", gap: 8 }}>
-              {Array.isArray(selectedReport.delayAnnouncements) &&
-              selectedReport.delayAnnouncements.length > 0 ? (
-                selectedReport.delayAnnouncements.map((item, index) => (
-                  <div key={index} style={announcementRowStyle}>
-                    {item || "-"}
-                  </div>
-                ))
-              ) : (
-                <div style={emptyTextStyle}>No delay announcements found.</div>
-              )}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 18 }}>
-            <h3 style={sectionTitleStyle}>Checklist Tasks</h3>
-            <div style={tableWrapStyle}>
-              <table style={detailsTableStyle}>
-                <thead>
-                  <tr style={{ background: "#f8fbff" }}>
-                    <th style={thStyle}>Time</th>
-                    <th style={thStyle}>Task</th>
-                    <th style={thStyle}>Actual</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.isArray(selectedReport.checklistSections) &&
-                  selectedReport.checklistSections.length > 0 ? (
-                    selectedReport.checklistSections.flatMap((section, sectionIndex) =>
-                      (section.tasks || []).map((task, taskIndex) => (
-                        <tr key={`${sectionIndex}-${taskIndex}`}>
-                          <td style={tdStyle}>{section.time || "-"}</td>
-                          <td style={tdStyle}>{task || "-"}</td>
-                          <td style={tdStyle}>
-                            {(selectedReport.actuals || {})[
-                              `${sectionIndex}-${taskIndex}`
-                            ] || "-"}
-                          </td>
-                        </tr>
-                      ))
-                    )
-                  ) : (
-                    <tr>
-                      <td colSpan={3} style={tdStyle}>
-                        No checklist tasks found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 18 }}>
-            <h3 style={sectionTitleStyle}>Notes</h3>
-            <div
-              style={{
-                background: "#f8fbff",
-                border: "1px solid #dbeafe",
-                borderRadius: 14,
-                padding: "14px 16px",
-                color: "#0f172a",
-                fontSize: 14,
-                fontWeight: 700,
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {selectedReport.remarks || "-"}
-            </div>
-          </div>
         </PageCard>
       )}
     </div>
@@ -1814,14 +2136,6 @@ const tableStyle = {
   borderCollapse: "separate",
   borderSpacing: 0,
   minWidth: 1700,
-  background: "#fff",
-};
-
-const detailsTableStyle = {
-  width: "100%",
-  borderCollapse: "separate",
-  borderSpacing: 0,
-  minWidth: 900,
   background: "#fff",
 };
 
