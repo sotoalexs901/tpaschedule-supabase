@@ -59,7 +59,13 @@ export default function AppLayout() {
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
+  const [windowWidth, setWindowWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1200
+  );
+
+  const isMobile = windowWidth < 900;
+  const isSmallMobile = windowWidth < 640;
+  const isTablet = windowWidth >= 900 && windowWidth < 1200;
 
   const [headerCollapsed, setHeaderCollapsed] = useState(() =>
     getStoredBoolean("tpa_header_collapsed", false)
@@ -93,7 +99,7 @@ export default function AppLayout() {
   };
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 900);
+    const onResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -607,6 +613,9 @@ export default function AppLayout() {
     <div
       style={{
         minHeight: "100vh",
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "hidden",
         background:
           "linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%)",
       }}
@@ -617,9 +626,11 @@ export default function AppLayout() {
           top: 0,
           zIndex: 50,
           padding: headerCollapsed
-            ? "8px 10px 0"
+            ? isMobile
+              ? "6px 8px 0"
+              : "8px 10px 0"
             : isMobile
-            ? "10px 10px 0"
+            ? "8px 8px 0"
             : "14px 16px 0",
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
@@ -627,18 +638,27 @@ export default function AppLayout() {
       >
         <div
           style={{
+            width: "100%",
+            maxWidth: "100%",
             background: "rgba(255,255,255,0.84)",
             border: "1px solid rgba(255,255,255,0.96)",
             boxShadow: "0 16px 40px rgba(15,23,42,0.08)",
-            borderRadius: headerCollapsed ? 20 : 30,
-            padding: headerCollapsed ? (isMobile ? 10 : 12) : 16,
+            borderRadius: headerCollapsed ? 18 : 28,
+            padding: headerCollapsed
+              ? isMobile
+                ? 10
+                : 12
+              : isMobile
+              ? 12
+              : 16,
             transition: "all 0.22s ease",
+            overflow: "hidden",
           }}
         >
           <div
             style={{
               display: "flex",
-              alignItems: "center",
+              alignItems: isMobile ? "flex-start" : "center",
               justifyContent: "space-between",
               gap: 14,
               flexWrap: "wrap",
@@ -650,13 +670,14 @@ export default function AppLayout() {
                 alignItems: "center",
                 gap: headerCollapsed ? 10 : 14,
                 minWidth: 0,
-                flex: "1 1 auto",
+                flex: "1 1 320px",
+                maxWidth: "100%",
               }}
             >
               <div
                 style={{
-                  width: headerCollapsed ? 42 : 50,
-                  height: headerCollapsed ? 42 : 50,
+                  width: headerCollapsed ? 42 : isMobile ? 44 : 50,
+                  height: headerCollapsed ? 42 : isMobile ? 44 : 50,
                   borderRadius: headerCollapsed ? 14 : 18,
                   background:
                     "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
@@ -685,7 +706,7 @@ export default function AppLayout() {
                 )}
               </div>
 
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, maxWidth: "100%" }}>
                 <p
                   style={{
                     margin: 0,
@@ -694,26 +715,30 @@ export default function AppLayout() {
                     letterSpacing: "0.14em",
                     textTransform: "uppercase",
                     color: "#1769aa",
-                    whiteSpace: "nowrap",
+                    whiteSpace: isSmallMobile ? "normal" : "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
+                    lineHeight: 1.2,
                   }}
                 >
                   TPA OPS SYSTEM
                 </p>
+
                 <p
                   style={{
                     margin: headerCollapsed ? "2px 0 0" : "4px 0 0",
-                    fontSize: headerCollapsed ? 13 : 14,
+                    fontSize: headerCollapsed ? 13 : isMobile ? 13 : 14,
                     color: "#0f172a",
                     fontWeight: 800,
-                    whiteSpace: "nowrap",
+                    whiteSpace: isSmallMobile ? "normal" : "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
+                    lineHeight: 1.25,
                   }}
                 >
                   {visibleName}
                 </p>
+
                 {!headerCollapsed && (
                   <p
                     style={{
@@ -721,7 +746,7 @@ export default function AppLayout() {
                       fontSize: 12,
                       color: "#64748b",
                       fontWeight: 600,
-                      whiteSpace: "nowrap",
+                      whiteSpace: isSmallMobile ? "normal" : "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                     }}
@@ -739,6 +764,8 @@ export default function AppLayout() {
                   alignItems: "center",
                   gap: 8,
                   flexShrink: 0,
+                  width: isSmallMobile ? "100%" : "auto",
+                  justifyContent: isSmallMobile ? "flex-end" : "flex-start",
                 }}
               >
                 <button
@@ -765,6 +792,8 @@ export default function AppLayout() {
                   gap: 10,
                   flexWrap: "wrap",
                   justifyContent: "flex-end",
+                  flex: "0 1 auto",
+                  maxWidth: isTablet ? 420 : "unset",
                 }}
               >
                 {!headerCollapsed && (
@@ -817,6 +846,9 @@ export default function AppLayout() {
                 marginTop: 16,
                 display: "grid",
                 gap: 12,
+                maxHeight: "calc(100vh - 140px)",
+                overflowY: "auto",
+                paddingRight: 2,
               }}
             >
               <div
@@ -843,6 +875,7 @@ export default function AppLayout() {
                     border: "1px solid #e2e8f0",
                     borderRadius: 18,
                     overflow: "hidden",
+                    minWidth: 0,
                   }}
                 >
                   <button
@@ -870,9 +903,11 @@ export default function AppLayout() {
                   {openSections[section.title] && (
                     <div
                       style={{
-                        display: "flex",
+                        display: "grid",
+                        gridTemplateColumns: isTablet
+                          ? "repeat(2, minmax(0, 1fr))"
+                          : "repeat(auto-fit, minmax(220px, 1fr))",
                         gap: 10,
-                        flexWrap: "wrap",
                         padding: 12,
                       }}
                     >
@@ -894,12 +929,15 @@ export default function AppLayout() {
                 gap: 12,
                 paddingTop: 12,
                 borderTop: "1px solid #e2e8f0",
+                maxHeight: "70vh",
+                overflowY: "auto",
+                overflowX: "hidden",
               }}
             >
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: isSmallMobile ? "1fr" : "1fr 1fr",
                   gap: 10,
                 }}
               >
@@ -987,13 +1025,16 @@ export default function AppLayout() {
 
       <main
         style={{
+          width: "100%",
+          maxWidth: "100%",
+          overflowX: "hidden",
           padding: isMobile
-            ? "12px 10px 18px"
+            ? "10px 8px 18px"
             : headerCollapsed
             ? "12px 12px 24px"
+            : isTablet
+            ? "14px"
             : "16px",
-          maxWidth: headerCollapsed ? "100%" : 1600,
-          width: "100%",
           margin: "0 auto",
           transition: "all 0.22s ease",
         }}
@@ -1024,7 +1065,15 @@ export default function AppLayout() {
           </div>
         )}
 
-        <Outlet />
+        <div
+          style={{
+            width: "100%",
+            maxWidth: headerCollapsed ? "100%" : 1600,
+            margin: "0 auto",
+          }}
+        >
+          <Outlet />
+        </div>
       </main>
     </div>
   );
@@ -1039,6 +1088,7 @@ function StatusPill({ label, value }) {
         borderRadius: 14,
         padding: "10px 12px",
         minWidth: 130,
+        maxWidth: "100%",
       }}
     >
       <p
@@ -1087,9 +1137,9 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
           : "#ffffff",
         border: isActive ? "1px solid #bfe0fb" : "1px solid #e2e8f0",
         boxShadow: isActive ? "0 10px 22px rgba(23,105,170,0.10)" : "none",
-        minWidth: mobile ? "auto" : "fit-content",
-        whiteSpace: mobile ? "normal" : "nowrap",
-        flexShrink: 0,
+        minWidth: 0,
+        width: "100%",
+        whiteSpace: mobile ? "normal" : "normal",
         minHeight: mobile ? 48 : "auto",
       })}
     >
@@ -1099,10 +1149,18 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
           alignItems: "center",
           gap: 10,
           minWidth: 0,
+          flex: 1,
         }}
       >
-        <span style={{ fontSize: 15 }}>{icon}</span>
-        <span>{label}</span>
+        <span style={{ fontSize: 15, flexShrink: 0 }}>{icon}</span>
+        <span
+          style={{
+            overflowWrap: "break-word",
+            wordBreak: "break-word",
+          }}
+        >
+          {label}
+        </span>
       </span>
 
       {showDot && (
