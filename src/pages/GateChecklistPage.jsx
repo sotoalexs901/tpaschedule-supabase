@@ -1,5 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -41,6 +48,27 @@ function FieldLabel({ children }) {
 function TextInput(props) {
   return (
     <input
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #cbd5e1",
+        borderRadius: 12,
+        padding: "10px 12px",
+        fontSize: 14,
+        color: "#0f172a",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function TimeInput(props) {
+  return (
+    <input
+      type="time"
+      step="60"
       {...props}
       style={{
         width: "100%",
@@ -119,6 +147,16 @@ function ActionButton({
     },
     success: {
       background: "#16a34a",
+      color: "#ffffff",
+      border: "none",
+    },
+    warning: {
+      background: "#f59e0b",
+      color: "#ffffff",
+      border: "none",
+    },
+    danger: {
+      background: "#dc2626",
       color: "#ffffff",
       border: "none",
     },
@@ -362,8 +400,10 @@ function buildChecklistByAirline(airline) {
 
 function getOtpMinutes(scheduledTime, actualTime) {
   if (!scheduledTime || !actualTime) return null;
+
   const [sh, sm] = String(scheduledTime).split(":").map(Number);
   const [ah, am] = String(actualTime).split(":").map(Number);
+
   if (
     Number.isNaN(sh) ||
     Number.isNaN(sm) ||
@@ -383,12 +423,26 @@ function getOtpMinutes(scheduledTime, actualTime) {
   return actual - scheduled;
 }
 
-export default function GateChecklistPage() {
-  const { user } = useUser();
-  const [saving, setSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+function createInitialSpecials() {
+  return BASE_SPECIALS.reduce((acc, item) => {
+    acc[item] = "";
+    return acc;
+  }, {});
+}
 
-  const [form, setForm] = useState({
+function createInitialGateCheck() {
+  return {
+    bags: "",
+    strollersCarSeats: "",
+    wchrs: "",
+    other: "",
+  };
+}
+
+function createInitialForm(user) {
+  const loggedName = getVisibleUserName(user);
+
+  return {
     airline: "SY",
     flight: "",
     date: "",
@@ -409,35 +463,67 @@ export default function GateChecklistPage() {
     checkedBags: "",
     notLoadedBags: "",
     remarks: "",
-  });
+    gateAgent: loggedName,
+    expeditor: "",
+    supervisor: "",
+  };
+}
+
+export default function GateChecklistPage() {
+  const { user } = useUser();
+
+  const isSupervisorOrManager =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const [saving, setSaving] = useState(false);
+  const [loadingChecklist, setLoadingChecklist] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+
+  const [lookupId, setLookupId] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [currentStatus, setCurrentStatus] = useState("new");
+
+  const [form, setForm] = useState(() => createInitialForm(user));
+  const [specials, setSpecials] = useState(createInitialSpecials());
+  const [gateCheck, setGateCheck] = useState(createInitialGateCheck());
+  const [delayAnnouncements, setDelayAnnouncements] = useState(["", "", "", ""]);
+  const [actuals, setActuals] = useState({});
 
   const checklistSections = useMemo(
     () => buildChecklistByAirline(form.airline),
     [form.airline]
   );
 
-  const [specials, setSpecials] = useState(
-    BASE_SPECIALS.reduce((acc, item) => {
-      acc[item] = "";
-      return acc;
-    }, {})
-  );
+  const isExisting = !!editingId;
+  const isClosed = currentStatus === "closed";
+  const isSubmitted = currentStatus === "submitted";
 
-  const [gateCheck, setGateCheck] = useState({
-    bags: "",
-    strollersCarSeats: "",
-    wchrs: "",
-    other: "",
-  });
+  const canEdit = !isClosed && (!isExisting || currentStatus === "draft" || true);
+  const canReopen = isExisting && (isSubmitted || isClosed) && isSupervisorOrManager;
+  const canClose = isExisting;
+  const canSubmit = !!form.airline && !!form.flight && !!form.date && canEdit;
 
-  const [delayAnnouncements, setDelayAnnouncements] = useState(["", "", "", ""]);
-  const [actuals, setActuals] = useState({});
+  function resetAll() {
+    setEditingId("");
+    setLookupId("");
+    setCurrentStatus("new");
+    setForm(createInitialForm(user));
+    setSpecials(createInitialSpecials());
+    setGateCheck(createInitialGateCheck());
+    setDelayAnnouncements(["", "", "", ""]);
+    setActuals({});
+    setStatusMessage("");
+  }
 
   function updateField(field, value) {
+    if (!canEdit) return;
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
   function updateActual(sectionIndex, taskIndex, value) {
+    if (!canEdit) return;
     const key = `${sectionIndex}-${taskIndex}`;
     setActuals((prev) => ({ ...prev, [key]: value }));
   }
@@ -446,7 +532,95 @@ export default function GateChecklistPage() {
     window.print();
   }
 
-  async function handleSendToAdmin() {
+  function buildPayload(nextStatus) {
+    const weekStart = getWeekStart(form.date);
+    const month = String(form.date || "").slice(0, 7);
+    const otpDepartureMinutes = getOtpMinutes(form.etd, form.pushTime);
+    const isOtpDeparture =
+      otpDepartureMinutes !== null ? otpDepartureMinutes <= 15 : null;
+
+    return {
+      airline: form.airline,
+      flight: form.flight,
+      date: form.date,
+      weekStart,
+      month,
+
+      aircraft: form.aircraft || "",
+      origin: form.origin || "",
+      destination: form.destination || "",
+      agents: form.agents || "",
+      delayCode: form.delayCode || "",
+
+      gateAgent: form.gateAgent || "",
+      expeditor: form.expeditor || "",
+      supervisor: form.supervisor || "",
+
+      blockIn: form.blockIn || "",
+      etd: form.etd || "",
+      actualDepartureTime: form.actualDepartureTime || "",
+      actualArrivalTime: form.actualArrivalTime || "",
+      pushTime: form.pushTime || "",
+      brakeReleaseTime: form.brakeReleaseTime || "",
+      gpuConnected: form.gpuConnected || "",
+
+      gateAgent1Arrival: form.gateAgent1Arrival || "",
+      gateAgent2Arrival: form.gateAgent2Arrival || "",
+
+      checkedBags: Number(form.checkedBags || 0),
+      notLoadedBags: Number(form.notLoadedBags || 0),
+
+      specials,
+      gateCheck,
+      delayAnnouncements,
+      actuals,
+      checklistSections,
+
+      otpDepartureMinutes,
+      isOtpDeparture,
+
+      remarks: form.remarks || "",
+
+      status: nextStatus,
+      submittedBy: getVisibleUserName(user),
+      submittedByUserId: user?.id || "",
+      updatedAt: serverTimestamp(),
+      updatedBy: getVisibleUserName(user),
+    };
+  }
+
+  async function handleSaveDraft() {
+    try {
+      setSaving(true);
+      setStatusMessage("");
+
+      const payload = buildPayload("draft");
+
+      if (editingId) {
+        await updateDoc(doc(db, "gateChecklistReports", editingId), payload);
+        setCurrentStatus("draft");
+        setStatusMessage("Draft updated successfully.");
+        return;
+      }
+
+      const ref = await addDoc(collection(db, "gateChecklistReports"), {
+        ...payload,
+        createdAt: serverTimestamp(),
+      });
+
+      setEditingId(ref.id);
+      setLookupId(ref.id);
+      setCurrentStatus("draft");
+      setStatusMessage(`Draft saved successfully. ID: ${ref.id}`);
+    } catch (error) {
+      console.error("Error saving draft:", error);
+      setStatusMessage("Could not save draft.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSubmitChecklist() {
     if (!form.airline || !form.flight || !form.date) {
       setStatusMessage("Please complete airline, flight and date.");
       return;
@@ -456,63 +630,172 @@ export default function GateChecklistPage() {
       setSaving(true);
       setStatusMessage("");
 
-      const weekStart = getWeekStart(form.date);
-      const month = String(form.date || "").slice(0, 7);
+      const payload = buildPayload("submitted");
 
-      const otpDepartureMinutes = getOtpMinutes(form.etd, form.pushTime);
-      const isOtpDeparture =
-        otpDepartureMinutes !== null ? otpDepartureMinutes <= 15 : null;
+      if (editingId) {
+        await updateDoc(doc(db, "gateChecklistReports", editingId), {
+          ...payload,
+          submittedAt: serverTimestamp(),
+          submittedByName: getVisibleUserName(user),
+        });
+        setCurrentStatus("submitted");
+        setStatusMessage("Gate checklist submitted successfully.");
+        return;
+      }
 
-      await addDoc(collection(db, "gateChecklistReports"), {
-        airline: form.airline,
-        flight: form.flight,
-        date: form.date,
-        weekStart,
-        month,
-
-        aircraft: form.aircraft || "",
-        origin: form.origin || "",
-        destination: form.destination || "",
-        agents: form.agents || "",
-        delayCode: form.delayCode || "",
-
-        blockIn: form.blockIn || "",
-        etd: form.etd || "",
-        actualDepartureTime: form.actualDepartureTime || "",
-        actualArrivalTime: form.actualArrivalTime || "",
-        pushTime: form.pushTime || "",
-        brakeReleaseTime: form.brakeReleaseTime || "",
-        gpuConnected: form.gpuConnected || "",
-
-        gateAgent1Arrival: form.gateAgent1Arrival || "",
-        gateAgent2Arrival: form.gateAgent2Arrival || "",
-
-        checkedBags: Number(form.checkedBags || 0),
-        notLoadedBags: Number(form.notLoadedBags || 0),
-
-        specials,
-        gateCheck,
-        delayAnnouncements,
-        actuals,
-        checklistSections,
-
-        otpDepartureMinutes,
-        isOtpDeparture,
-
-        remarks: form.remarks || "",
-
-        submittedBy: getVisibleUserName(user),
-        submittedByUserId: user?.id || "",
+      const ref = await addDoc(collection(db, "gateChecklistReports"), {
+        ...payload,
         createdAt: serverTimestamp(),
-        status: "submitted",
+        submittedAt: serverTimestamp(),
+        submittedByName: getVisibleUserName(user),
       });
 
-      setStatusMessage("Gate checklist sent to admin successfully.");
+      setEditingId(ref.id);
+      setLookupId(ref.id);
+      setCurrentStatus("submitted");
+      setStatusMessage(`Gate checklist submitted successfully. ID: ${ref.id}`);
     } catch (error) {
-      console.error("Error sending gate checklist:", error);
-      setStatusMessage("Could not send gate checklist.");
+      console.error("Error submitting gate checklist:", error);
+      setStatusMessage("Could not submit gate checklist.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCloseFlight() {
+    if (!editingId) {
+      setStatusMessage("Save or submit the checklist first.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setStatusMessage("");
+
+      await updateDoc(doc(db, "gateChecklistReports", editingId), {
+        ...buildPayload("closed"),
+        closedAt: serverTimestamp(),
+        closedBy: getVisibleUserName(user),
+      });
+
+      setCurrentStatus("closed");
+      setStatusMessage("Flight closed successfully.");
+    } catch (error) {
+      console.error("Error closing flight:", error);
+      setStatusMessage("Could not close flight.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleReopenChecklist() {
+    if (!editingId) return;
+
+    if (!isSupervisorOrManager) {
+      setStatusMessage("Only supervisors or managers can reopen a checklist.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setStatusMessage("");
+
+      await updateDoc(doc(db, "gateChecklistReports", editingId), {
+        status: "draft",
+        reopenedAt: serverTimestamp(),
+        reopenedBy: getVisibleUserName(user),
+        updatedAt: serverTimestamp(),
+        updatedBy: getVisibleUserName(user),
+      });
+
+      setCurrentStatus("draft");
+      setStatusMessage("Checklist reopened successfully.");
+    } catch (error) {
+      console.error("Error reopening checklist:", error);
+      setStatusMessage("Could not reopen checklist.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleLoadChecklist() {
+    if (!lookupId.trim()) {
+      setStatusMessage("Enter a checklist ID.");
+      return;
+    }
+
+    try {
+      setLoadingChecklist(true);
+      setStatusMessage("");
+
+      const ref = doc(db, "gateChecklistReports", lookupId.trim());
+      const snap = await getDoc(ref);
+
+      if (!snap.exists()) {
+        setStatusMessage("Checklist not found.");
+        return;
+      }
+
+      const data = snap.data();
+
+      setEditingId(snap.id);
+      setCurrentStatus(data.status || "draft");
+
+      setForm({
+        airline: data.airline || "SY",
+        flight: data.flight || "",
+        date: data.date || "",
+        aircraft: data.aircraft || "",
+        origin: data.origin || "",
+        destination: data.destination || "",
+        agents: data.agents || "",
+        delayCode: data.delayCode || "",
+        blockIn: data.blockIn || "",
+        etd: data.etd || "",
+        actualDepartureTime: data.actualDepartureTime || "",
+        actualArrivalTime: data.actualArrivalTime || "",
+        gpuConnected: data.gpuConnected || "",
+        gateAgent1Arrival: data.gateAgent1Arrival || "",
+        gateAgent2Arrival: data.gateAgent2Arrival || "",
+        brakeReleaseTime: data.brakeReleaseTime || "",
+        pushTime: data.pushTime || "",
+        checkedBags:
+          data.checkedBags !== undefined && data.checkedBags !== null
+            ? String(data.checkedBags)
+            : "",
+        notLoadedBags:
+          data.notLoadedBags !== undefined && data.notLoadedBags !== null
+            ? String(data.notLoadedBags)
+            : "",
+        remarks: data.remarks || "",
+        gateAgent: data.gateAgent || "",
+        expeditor: data.expeditor || "",
+        supervisor: data.supervisor || "",
+      });
+
+      setSpecials({
+        ...createInitialSpecials(),
+        ...(data.specials || {}),
+      });
+
+      setGateCheck({
+        ...createInitialGateCheck(),
+        ...(data.gateCheck || {}),
+      });
+
+      setDelayAnnouncements(
+        Array.isArray(data.delayAnnouncements) && data.delayAnnouncements.length
+          ? [...data.delayAnnouncements, "", "", "", ""].slice(0, 4)
+          : ["", "", "", ""]
+      );
+
+      setActuals(data.actuals || {});
+      setStatusMessage(`Checklist ${snap.id} loaded successfully.`);
+    } catch (error) {
+      console.error("Error loading checklist:", error);
+      setStatusMessage("Could not load checklist.");
+    } finally {
+      setLoadingChecklist(false);
     }
   }
 
@@ -581,8 +864,8 @@ export default function GateChecklistPage() {
             color: "rgba(255,255,255,0.92)",
           }}
         >
-          Printable gate checklist with admin submission, baggage counts, not
-          loaded bags, and OTP tracking by flight and airline.
+          Printable gate checklist with 24-hour time selection, draft, submit,
+          close flight, reopen, baggage counts, and OTP tracking.
         </p>
       </div>
 
@@ -604,6 +887,57 @@ export default function GateChecklistPage() {
         </PageCard>
       )}
 
+      <PageCard className="no-print" style={{ padding: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(220px, 320px) auto auto",
+            gap: 10,
+            alignItems: "end",
+          }}
+        >
+          <div>
+            <FieldLabel>Load Checklist by ID</FieldLabel>
+            <TextInput
+              value={lookupId}
+              onChange={(e) => setLookupId(e.target.value)}
+              placeholder="Paste checklist ID"
+            />
+          </div>
+
+          <ActionButton
+            variant="secondary"
+            onClick={handleLoadChecklist}
+            disabled={loadingChecklist}
+          >
+            {loadingChecklist ? "Loading..." : "Load Checklist"}
+          </ActionButton>
+
+          <ActionButton variant="secondary" onClick={resetAll}>
+            New Checklist
+          </ActionButton>
+        </div>
+
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={statusPillStyle("#edf7ff", "#cfe7fb", "#1769aa")}>
+            Current ID: <b>{editingId || "New"}</b>
+          </div>
+          <div style={statusPillStyle("#f8fafc", "#cbd5e1", "#334155")}>
+            Status: <b>{currentStatus}</b>
+          </div>
+          <div style={statusPillStyle("#f8fafc", "#cbd5e1", "#334155")}>
+            Editable: <b>{canEdit ? "Yes" : "No"}</b>
+          </div>
+        </div>
+      </PageCard>
+
       <PageCard style={{ padding: 18 }}>
         <div
           className="no-print"
@@ -621,12 +955,40 @@ export default function GateChecklistPage() {
             </ActionButton>
 
             <ActionButton
-              variant="success"
-              onClick={handleSendToAdmin}
-              disabled={saving}
+              variant="secondary"
+              onClick={handleSaveDraft}
+              disabled={saving || !canEdit}
             >
-              {saving ? "Sending..." : "Send to Admin"}
+              {saving ? "Saving..." : "Save Draft"}
             </ActionButton>
+
+            <ActionButton
+              variant="success"
+              onClick={handleSubmitChecklist}
+              disabled={saving || !canSubmit}
+            >
+              {saving ? "Submitting..." : "Submit Checklist"}
+            </ActionButton>
+
+            {canClose && (
+              <ActionButton
+                variant="warning"
+                onClick={handleCloseFlight}
+                disabled={saving || isClosed}
+              >
+                {saving ? "Closing..." : "Close Flight"}
+              </ActionButton>
+            )}
+
+            {canReopen && (
+              <ActionButton
+                variant="danger"
+                onClick={handleReopenChecklist}
+                disabled={saving}
+              >
+                {saving ? "Reopening..." : "Reopen Checklist"}
+              </ActionButton>
+            )}
           </div>
         </div>
 
@@ -644,6 +1006,56 @@ export default function GateChecklistPage() {
           </div>
 
           <div
+            className="no-print"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <div>
+              <FieldLabel>Airline</FieldLabel>
+              <SelectInput
+                value={form.airline}
+                disabled={!canEdit}
+                onChange={(e) => updateField("airline", e.target.value)}
+              >
+                {AIRLINE_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Gate Agent</FieldLabel>
+              <TextInput
+                value={form.gateAgent}
+                disabled
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Expeditor</FieldLabel>
+              <TextInput
+                value={form.expeditor}
+                disabled={!canEdit}
+                onChange={(e) => updateField("expeditor", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Supervisor</FieldLabel>
+              <TextInput
+                value={form.supervisor}
+                disabled={!canEdit}
+                onChange={(e) => updateField("supervisor", e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div
             style={{
               display: "grid",
               gridTemplateColumns: "1.1fr 1fr 1fr 1fr 1fr 1.5fr 1fr",
@@ -654,6 +1066,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Flight</FieldLabel>
               <TextInput
                 value={form.flight}
+                disabled={!canEdit}
                 onChange={(e) => updateField("flight", e.target.value)}
               />
             </div>
@@ -663,6 +1076,7 @@ export default function GateChecklistPage() {
               <TextInput
                 type="date"
                 value={form.date}
+                disabled={!canEdit}
                 onChange={(e) => updateField("date", e.target.value)}
               />
             </div>
@@ -671,6 +1085,7 @@ export default function GateChecklistPage() {
               <FieldLabel>A/C</FieldLabel>
               <TextInput
                 value={form.aircraft}
+                disabled={!canEdit}
                 onChange={(e) => updateField("aircraft", e.target.value)}
               />
             </div>
@@ -679,6 +1094,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Orig</FieldLabel>
               <TextInput
                 value={form.origin}
+                disabled={!canEdit}
                 onChange={(e) => updateField("origin", e.target.value)}
               />
             </div>
@@ -687,6 +1103,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Dest</FieldLabel>
               <TextInput
                 value={form.destination}
+                disabled={!canEdit}
                 onChange={(e) => updateField("destination", e.target.value)}
               />
             </div>
@@ -695,6 +1112,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Agent(s)</FieldLabel>
               <TextInput
                 value={form.agents}
+                disabled={!canEdit}
                 onChange={(e) => updateField("agents", e.target.value)}
               />
             </div>
@@ -703,6 +1121,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Delay Code</FieldLabel>
               <TextInput
                 value={form.delayCode}
+                disabled={!canEdit}
                 onChange={(e) => updateField("delayCode", e.target.value)}
               />
             </div>
@@ -717,54 +1136,76 @@ export default function GateChecklistPage() {
             }}
           >
             <div>
-              <FieldLabel>Airline</FieldLabel>
-              <SelectInput
-                value={form.airline}
-                onChange={(e) => updateField("airline", e.target.value)}
-              >
-                {AIRLINE_OPTIONS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </SelectInput>
-            </div>
-
-            <div>
               <FieldLabel>Block In</FieldLabel>
-              <TextInput
+              <TimeInput
                 value={form.blockIn}
+                disabled={!canEdit}
                 onChange={(e) => updateField("blockIn", e.target.value)}
-                placeholder="HH:MM"
               />
             </div>
 
             <div>
               <FieldLabel>ETD</FieldLabel>
-              <TextInput
+              <TimeInput
                 value={form.etd}
+                disabled={!canEdit}
                 onChange={(e) => updateField("etd", e.target.value)}
-                placeholder="HH:MM"
               />
             </div>
 
             <div>
               <FieldLabel>Actual Departure Time</FieldLabel>
-              <TextInput
+              <TimeInput
                 value={form.actualDepartureTime}
+                disabled={!canEdit}
                 onChange={(e) =>
                   updateField("actualDepartureTime", e.target.value)
                 }
-                placeholder="HH:MM"
               />
             </div>
 
             <div>
               <FieldLabel>Actual Arrival Time</FieldLabel>
-              <TextInput
+              <TimeInput
                 value={form.actualArrivalTime}
+                disabled={!canEdit}
                 onChange={(e) => updateField("actualArrivalTime", e.target.value)}
-                placeholder="HH:MM"
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Brake Release Time</FieldLabel>
+              <TimeInput
+                value={form.brakeReleaseTime}
+                disabled={!canEdit}
+                onChange={(e) => updateField("brakeReleaseTime", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Push Time</FieldLabel>
+              <TimeInput
+                value={form.pushTime}
+                disabled={!canEdit}
+                onChange={(e) => updateField("pushTime", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Gate Agent 1 Arrival</FieldLabel>
+              <TimeInput
+                value={form.gateAgent1Arrival}
+                disabled={!canEdit}
+                onChange={(e) => updateField("gateAgent1Arrival", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Gate Agent 2 Arrival</FieldLabel>
+              <TimeInput
+                value={form.gateAgent2Arrival}
+                disabled={!canEdit}
+                onChange={(e) => updateField("gateAgent2Arrival", e.target.value)}
               />
             </div>
 
@@ -773,6 +1214,7 @@ export default function GateChecklistPage() {
               <TextInput
                 type="number"
                 min="0"
+                disabled={!canEdit}
                 value={form.checkedBags}
                 onChange={(e) => updateField("checkedBags", e.target.value)}
               />
@@ -783,8 +1225,18 @@ export default function GateChecklistPage() {
               <TextInput
                 type="number"
                 min="0"
+                disabled={!canEdit}
                 value={form.notLoadedBags}
                 onChange={(e) => updateField("notLoadedBags", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>GPU Connected Y or N</FieldLabel>
+              <TextInput
+                value={form.gpuConnected}
+                disabled={!canEdit}
+                onChange={(e) => updateField("gpuConnected", e.target.value)}
               />
             </div>
           </div>
@@ -843,13 +1295,13 @@ export default function GateChecklistPage() {
                       <td style={tableCellStyle}>
                         <div style={{ display: "grid", gap: 8 }}>
                           {section.tasks.map((task, taskIndex) => (
-                            <TextInput
+                            <TimeInput
                               key={`${sectionIndex}-${taskIndex}`}
+                              disabled={!canEdit}
                               value={actuals[`${sectionIndex}-${taskIndex}`] || ""}
                               onChange={(e) =>
                                 updateActual(sectionIndex, taskIndex, e.target.value)
                               }
-                              placeholder="Actual"
                               style={{ padding: "8px 10px", fontSize: 12 }}
                             />
                           ))}
@@ -857,83 +1309,11 @@ export default function GateChecklistPage() {
                       </td>
                     </tr>
                   ))}
-
-                  <tr>
-                    <td style={{ ...tableCellStyle, fontWeight: 800 }}>0 min</td>
-                    <td style={tableCellStyle}>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 12,
-                        }}
-                      >
-                        <div>
-                          <FieldLabel>Brake Release Time</FieldLabel>
-                          <TextInput
-                            value={form.brakeReleaseTime}
-                            onChange={(e) =>
-                              updateField("brakeReleaseTime", e.target.value)
-                            }
-                          />
-                        </div>
-                        <div>
-                          <FieldLabel>Push Time</FieldLabel>
-                          <TextInput
-                            value={form.pushTime}
-                            onChange={(e) => updateField("pushTime", e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td style={tableCellStyle}></td>
-                  </tr>
                 </tbody>
               </table>
             </div>
 
             <div style={{ display: "grid", gap: 14 }}>
-              <PageCard style={{ padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 900,
-                    marginBottom: 12,
-                    textAlign: "center",
-                  }}
-                >
-                  Ops Info
-                </div>
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div>
-                    <FieldLabel>GPU Connected Y or N</FieldLabel>
-                    <TextInput
-                      value={form.gpuConnected}
-                      onChange={(e) => updateField("gpuConnected", e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <FieldLabel>Gate Agent 1 Arrival Time</FieldLabel>
-                    <TextInput
-                      value={form.gateAgent1Arrival}
-                      onChange={(e) =>
-                        updateField("gateAgent1Arrival", e.target.value)
-                      }
-                    />
-                  </div>
-                  <div>
-                    <FieldLabel>Gate Agent 2 Arrival Time</FieldLabel>
-                    <TextInput
-                      value={form.gateAgent2Arrival}
-                      onChange={(e) =>
-                        updateField("gateAgent2Arrival", e.target.value)
-                      }
-                    />
-                  </div>
-                </div>
-              </PageCard>
-
               <PageCard style={{ padding: 14 }}>
                 <div
                   style={{
@@ -959,6 +1339,7 @@ export default function GateChecklistPage() {
                     >
                       <div style={{ fontSize: 13, fontWeight: 700 }}>{item}</div>
                       <TextInput
+                        disabled={!canEdit}
                         value={specials[item]}
                         onChange={(e) =>
                           setSpecials((prev) => ({
@@ -981,13 +1362,14 @@ export default function GateChecklistPage() {
                     textAlign: "center",
                   }}
                 >
-                  Delay Announcements Made (Time)
+                  Delay Announcements Made (24H)
                 </div>
 
                 <div style={{ display: "grid", gap: 8 }}>
                   {delayAnnouncements.map((item, index) => (
-                    <TextInput
+                    <TimeInput
                       key={index}
+                      disabled={!canEdit}
                       value={item}
                       onChange={(e) =>
                         setDelayAnnouncements((prev) =>
@@ -1015,6 +1397,7 @@ export default function GateChecklistPage() {
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>BAGS</div>
                     <TextInput
+                      disabled={!canEdit}
                       value={gateCheck.bags}
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, bags: e.target.value }))
@@ -1025,6 +1408,7 @@ export default function GateChecklistPage() {
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>STROLLERS/CARSEATS</div>
                     <TextInput
+                      disabled={!canEdit}
                       value={gateCheck.strollersCarSeats}
                       onChange={(e) =>
                         setGateCheck((prev) => ({
@@ -1038,6 +1422,7 @@ export default function GateChecklistPage() {
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>WCHRS</div>
                     <TextInput
+                      disabled={!canEdit}
                       value={gateCheck.wchrs}
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, wchrs: e.target.value }))
@@ -1048,6 +1433,7 @@ export default function GateChecklistPage() {
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>OTHER</div>
                     <TextInput
+                      disabled={!canEdit}
                       value={gateCheck.other}
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, other: e.target.value }))
@@ -1063,6 +1449,7 @@ export default function GateChecklistPage() {
             <FieldLabel>Notes</FieldLabel>
             <TextArea
               value={form.remarks}
+              disabled={!canEdit}
               onChange={(e) => updateField("remarks", e.target.value)}
               placeholder="Add notes here..."
               style={{ minHeight: 120 }}
@@ -1099,3 +1486,18 @@ const gateCheckRowStyle = {
 const gateCheckLabelStyle = {
   fontWeight: 700,
 };
+
+function statusPillStyle(bg, border, color) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    background: bg,
+    border: `1px solid ${border}`,
+    borderRadius: 999,
+    padding: "8px 12px",
+    fontSize: 13,
+    color,
+    fontWeight: 700,
+  };
+}
