@@ -67,6 +67,9 @@ import RegulatedGarbageAdminPage from "./pages/RegulatedGarbageAdminPage.jsx";
 import MonthlyEmployeePerformanceReportPage from "./pages/MonthlyEmployeePerformanceReportPage.jsx";
 import EmployeePerformanceManagementPage from "./pages/EmployeePerformanceManagementPage.jsx";
 
+import GateChecklistPage from "./pages/GateChecklistPage.jsx";
+import GateChecklistManagementPage from "./pages/GateChecklistManagementPage.jsx";
+
 function ProtectedRoute({
   children,
   roles,
@@ -498,6 +501,17 @@ function AppRouter() {
           />
 
           <Route
+            path="gate-checklist"
+            element={
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
+                <GateChecklistPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="operational-report/reports"
             element={
               <ProtectedRoute
@@ -549,6 +563,15 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["duty_manager", "station_manager"]}>
                 <EmployeePerformanceManagementPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="gate-checklist-management"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <GateChecklistManagementPage />
               </ProtectedRoute>
             }
           />
