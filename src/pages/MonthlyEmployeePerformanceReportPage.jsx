@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDocs,
   orderBy,
@@ -371,12 +372,6 @@ function printReportHtml(report, language = "en") {
             padding: 16px;
             margin-bottom: 16px;
           }
-          .grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0,1fr));
-            gap: 12px;
-          }
-          .muted { color: #64748b; font-size: 13px; }
           .q { margin-bottom: 12px; }
         </style>
       </head>
@@ -464,6 +459,7 @@ const LABELS = {
     commentsCompany: "Company Comments / Recommendations",
     commentsEmployee: "Employee Comments",
     saveReport: "Save Performance Report",
+    updateReport: "Update Report",
     score: "Final Score",
     status: "Status",
     followUpNeeded: "Follow Up Needed",
@@ -474,6 +470,9 @@ const LABELS = {
     markFollowUp: "Mark Follow Up",
     closeFollowUp: "Close Follow Up",
     openReport: "Open Report",
+    editReport: "Edit Report",
+    deleteReport: "Delete Report",
+    cancelEdit: "Cancel Edit",
     noReports: "No reports found.",
     lowScoreAlert: "Low score alert",
     rating: "Rating",
@@ -497,6 +496,8 @@ const LABELS = {
     congratulationsSent: "Congratulations sent successfully.",
     dutyAssigned: "Duty manager assigned successfully.",
     managerUpdated: "Management status updated successfully.",
+    reportUpdated: "Report updated successfully.",
+    reportDeleted: "Report deleted successfully.",
     closed: "Closed",
     followUp: "Follow Up",
     approved: "Approved",
@@ -518,6 +519,7 @@ const LABELS = {
     commentsCompany: "Comentarios / Recomendaciones de la Empresa",
     commentsEmployee: "Comentarios del Empleado",
     saveReport: "Guardar Performance Report",
+    updateReport: "Actualizar Reporte",
     score: "Puntuación Final",
     status: "Estado",
     followUpNeeded: "Requiere Seguimiento",
@@ -528,6 +530,9 @@ const LABELS = {
     markFollowUp: "Marcar Seguimiento",
     closeFollowUp: "Cerrar Seguimiento",
     openReport: "Abrir Reporte",
+    editReport: "Editar Reporte",
+    deleteReport: "Borrar Reporte",
+    cancelEdit: "Cancelar Edición",
     noReports: "No se encontraron reportes.",
     lowScoreAlert: "Alerta de puntuación baja",
     rating: "Calificación",
@@ -551,6 +556,8 @@ const LABELS = {
     congratulationsSent: "Felicitación enviada correctamente.",
     dutyAssigned: "Duty manager asignado correctamente.",
     managerUpdated: "Estado actualizado correctamente.",
+    reportUpdated: "Reporte actualizado correctamente.",
+    reportDeleted: "Reporte borrado correctamente.",
     closed: "Cerrado",
     followUp: "Seguimiento",
     approved: "Aprobado",
@@ -676,6 +683,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState("");
+  const [editingReportId, setEditingReportId] = useState("");
 
   const [managementEdit, setManagementEdit] = useState({});
 
@@ -889,6 +897,55 @@ export default function MonthlyEmployeePerformanceReportPage() {
     return managementEdit[report.id]?.[field] ?? report[field] ?? "";
   }
 
+  function loadReportIntoForm(report) {
+    if (!report) return;
+
+    setTab("create");
+    setEditingReportId(report.id);
+
+    setForm({
+      employeeId: report.employeeId || "",
+      employeeName: report.employeeName || "",
+      month: report.month || getCurrentMonthValue(),
+      templateKey: report.templateKey || "wchr",
+      department: report.department || "",
+      roleTitle: report.roleTitle || "",
+      hireDate: report.hireDate || "",
+      commentsCompany: report.commentsCompany || "",
+      commentsEmployee: report.commentsEmployee || "",
+    });
+
+    const template = TEMPLATE_MAP[report.templateKey] || TEMPLATE_MAP.wchr;
+    const nextAnswers = {};
+    template.questions.forEach((q) => {
+      nextAnswers[q.id] = report.answers?.[q.id] || { rating: "", note: "" };
+    });
+    setAnswers(nextAnswers);
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function resetCreateForm() {
+    setEditingReportId("");
+    setForm({
+      employeeId: "",
+      employeeName: "",
+      month: getCurrentMonthValue(),
+      templateKey: "wchr",
+      department: TEMPLATE_MAP.wchr.department,
+      roleTitle: TEMPLATE_MAP.wchr.role,
+      hireDate: "",
+      commentsCompany: "",
+      commentsEmployee: "",
+    });
+
+    const resetAnswers = {};
+    TEMPLATE_MAP.wchr.questions.forEach((q) => {
+      resetAnswers[q.id] = { rating: "", note: "" };
+    });
+    setAnswers(resetAnswers);
+  }
+
   async function handleSaveReport() {
     if (!form.employeeId || !form.month || !form.templateKey) {
       setStatusMessage("Please complete employee, month, and template.");
@@ -898,7 +955,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
     try {
       setSaving(true);
 
-      const payload = {
+      const basePayload = {
         employeeId: form.employeeId,
         employeeName: form.employeeName,
         month: form.month,
@@ -917,6 +974,43 @@ export default function MonthlyEmployeePerformanceReportPage() {
         performanceStatus: getPerformanceStatus(calculatedScore),
         needsFollowUp,
         followUpItems,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editingReportId) {
+        const currentReport = reports.find((r) => r.id === editingReportId);
+
+        const updatePayload = {
+          ...basePayload,
+          managerStatus:
+            currentReport?.managerStatus ||
+            (needsFollowUp ? "follow_up" : "submitted"),
+        };
+
+        await updateDoc(
+          doc(db, "employeePerformanceReports", editingReportId),
+          updatePayload
+        );
+
+        setReports((prev) =>
+          prev.map((item) =>
+            item.id === editingReportId
+              ? {
+                  ...item,
+                  ...updatePayload,
+                  updatedAt: new Date(),
+                }
+              : item
+          )
+        );
+
+        setStatusMessage(t.reportUpdated);
+        resetCreateForm();
+        return;
+      }
+
+      const payload = {
+        ...basePayload,
         managerStatus: needsFollowUp ? "follow_up" : "submitted",
         assignedDutyManagerId: "",
         assignedDutyManagerName: "",
@@ -924,7 +1018,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
         monthClosed: false,
         congratulationsSent: false,
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
       };
 
       const ref = await addDoc(collection(db, "employeePerformanceReports"), payload);
@@ -941,23 +1034,40 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       setSelectedReportId(ref.id);
       setStatusMessage("Performance report saved successfully.");
-
-      setForm((prev) => ({
-        ...prev,
-        commentsCompany: "",
-        commentsEmployee: "",
-      }));
-
-      const resetAnswers = {};
-      activeTemplate.questions.forEach((q) => {
-        resetAnswers[q.id] = { rating: "", note: "" };
-      });
-      setAnswers(resetAnswers);
+      resetCreateForm();
     } catch (err) {
       console.error("Error saving performance report:", err);
       setStatusMessage("Could not save performance report.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteReport(report) {
+    const ok = window.confirm(
+      `Delete report for ${report.employeeName || "employee"} - ${formatMonthValue(
+        report.month
+      )}?`
+    );
+    if (!ok) return;
+
+    try {
+      await deleteDoc(doc(db, "employeePerformanceReports", report.id));
+
+      setReports((prev) => prev.filter((item) => item.id !== report.id));
+
+      if (selectedReportId === report.id) {
+        setSelectedReportId("");
+      }
+
+      if (editingReportId === report.id) {
+        resetCreateForm();
+      }
+
+      setStatusMessage(t.reportDeleted);
+    } catch (err) {
+      console.error("Error deleting report:", err);
+      setStatusMessage("Could not delete report.");
     }
   }
 
@@ -1257,6 +1367,33 @@ export default function MonthlyEmployeePerformanceReportPage() {
           <PageCard style={{ padding: 22 }}>
             <div
               style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
+                {editingReportId ? t.editReport : t.createTab}
+              </div>
+
+              {editingReportId && (
+                <ActionButton variant="secondary" onClick={resetCreateForm}>
+                  {t.cancelEdit}
+                </ActionButton>
+              )}
+            </div>
+
+            <div
+              style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
                 gap: 14,
@@ -1520,14 +1657,24 @@ export default function MonthlyEmployeePerformanceReportPage() {
               </div>
             )}
 
-            <div style={{ marginTop: 18 }}>
+            <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <ActionButton
                 variant="primary"
                 onClick={handleSaveReport}
                 disabled={saving}
               >
-                {saving ? "Saving..." : t.saveReport}
+                {saving
+                  ? "Saving..."
+                  : editingReportId
+                  ? t.updateReport
+                  : t.saveReport}
               </ActionButton>
+
+              {editingReportId && (
+                <ActionButton variant="secondary" onClick={resetCreateForm}>
+                  {t.cancelEdit}
+                </ActionButton>
+              )}
             </div>
           </PageCard>
         </>
@@ -1737,10 +1884,22 @@ export default function MonthlyEmployeePerformanceReportPage() {
                               {t.openReport}
                             </ActionButton>
                             <ActionButton
+                              variant="warning"
+                              onClick={() => loadReportIntoForm(report)}
+                            >
+                              {t.editReport}
+                            </ActionButton>
+                            <ActionButton
                               variant="dark"
                               onClick={() => printReportHtml(report, language)}
                             >
                               {t.print}
+                            </ActionButton>
+                            <ActionButton
+                              variant="danger"
+                              onClick={() => handleDeleteReport(report)}
+                            >
+                              {t.deleteReport}
                             </ActionButton>
                           </div>
                         </div>
