@@ -189,12 +189,6 @@ const AIRLINE_OPTIONS = [
   { value: "WL", label: "WORLD ATLANTIC (WL)" },
 ];
 
-const YES_NO_OPTIONS = [
-  { value: "", label: "Select" },
-  { value: "yes", label: "Yes" },
-  { value: "no", label: "No" },
-];
-
 const BASE_SPECIALS = [
   "BLND",
   "DEAF",
@@ -379,7 +373,7 @@ function buildChecklistByAirline(airline) {
     {
       time: "60 min prior",
       tasks: [
-        "Pax deplane",
+        "First Pax Off",
         "Last Pax Off",
         "Aircraft turn clean is conducted",
         "Aircraft search conducted if applicable",
@@ -388,8 +382,25 @@ function buildChecklistByAirline(airline) {
     },
     common[2],
     common[3],
-    common[4],
-    common[5],
+    {
+      time: "15 min prior",
+      tasks: [
+        "First Pax On",
+        "Last BP scanned",
+        "Verify boarding count",
+        "Check inhibited list if applicable",
+      ],
+    },
+    {
+      time: "10 min prior",
+      tasks: [
+        "Last Pax On",
+        "Uncheck checked-in not boarded passengers if needed",
+        "Verify at 100%",
+        "Complete / provide PLR to crew",
+        "Flight Close",
+      ],
+    },
     {
       time: "3 min",
       tasks: [
@@ -542,11 +553,11 @@ function createInitialForm(user) {
     aircraft: "",
     origin: "",
     destination: "",
-    agents: "",
-    delay: "",
-    delayTimeMinutes: "",
+    finalTotalPax: "",
     delayCode: "",
-    controllable: "",
+    delay: "No",
+    delayTimeMinutes: "",
+    controllable: "No",
     blockIn: "",
     etd: "",
     newEtd: "",
@@ -564,6 +575,10 @@ function createInitialForm(user) {
     gateAgent: loggedName,
     expeditor: "",
     supervisor: "",
+    firstPaxOff: "",
+    lastPaxOff: "",
+    firstPaxOn: "",
+    lastPaxOn: "",
   };
 }
 
@@ -670,16 +685,20 @@ export default function GateChecklistPage() {
       aircraft: form.aircraft || "",
       origin: form.origin || "",
       destination: form.destination || "",
-      agents: form.agents || "",
-
-      delay: form.delay || "",
-      delayTimeMinutes: Number(form.delayTimeMinutes || 0),
+      finalTotalPax: Number(form.finalTotalPax || 0),
       delayCode: form.delayCode || "",
-      controllable: form.controllable || "",
+      delay: form.delay || "No",
+      delayTimeMinutes: Number(form.delayTimeMinutes || 0),
+      controllable: form.controllable || "No",
 
       gateAgent: form.gateAgent || "",
       expeditor: form.expeditor || "",
       supervisor: form.supervisor || "",
+
+      firstPaxOff: form.firstPaxOff || "",
+      lastPaxOff: form.lastPaxOff || "",
+      firstPaxOn: form.firstPaxOn || "",
+      lastPaxOn: form.lastPaxOn || "",
 
       blockIn: form.blockIn || "",
       etd: form.etd || "",
@@ -875,14 +894,17 @@ export default function GateChecklistPage() {
         aircraft: data.aircraft || "",
         origin: data.origin || "",
         destination: data.destination || "",
-        agents: data.agents || "",
-        delay: data.delay || "",
+        finalTotalPax:
+          data.finalTotalPax !== undefined && data.finalTotalPax !== null
+            ? String(data.finalTotalPax)
+            : "",
+        delayCode: data.delayCode || "",
+        delay: data.delay || "No",
         delayTimeMinutes:
           data.delayTimeMinutes !== undefined && data.delayTimeMinutes !== null
             ? String(data.delayTimeMinutes)
             : "",
-        delayCode: data.delayCode || "",
-        controllable: data.controllable || "",
+        controllable: data.controllable || "No",
         blockIn: data.blockIn || "",
         etd: data.etd || "",
         newEtd: data.newEtd || "",
@@ -906,6 +928,10 @@ export default function GateChecklistPage() {
         gateAgent: data.gateAgent || "",
         expeditor: data.expeditor || "",
         supervisor: data.supervisor || "",
+        firstPaxOff: data.firstPaxOff || "",
+        lastPaxOff: data.lastPaxOff || "",
+        firstPaxOn: data.firstPaxOn || "",
+        lastPaxOn: data.lastPaxOn || "",
       });
 
       setSpecials({
@@ -1000,8 +1026,8 @@ export default function GateChecklistPage() {
           }}
         >
           Printable gate checklist with 24-hour time selection, draft, submit,
-          close flight, reopen, baggage counts, New ETD, D-10/D-15, delay tracking,
-          and OTP tracking.
+          close flight, reopen, baggage counts, New ETD, D-10/D-15, delay
+          tracking, and pax flow.
         </p>
       </div>
 
@@ -1242,11 +1268,13 @@ export default function GateChecklistPage() {
             </div>
 
             <div>
-              <FieldLabel>Agent(s)</FieldLabel>
+              <FieldLabel>Final Total Pax</FieldLabel>
               <TextInput
-                value={form.agents}
+                type="number"
+                min="0"
+                value={form.finalTotalPax}
                 disabled={!canEdit}
-                onChange={(e) => updateField("agents", e.target.value)}
+                onChange={(e) => updateField("finalTotalPax", e.target.value)}
               />
             </div>
 
@@ -1268,6 +1296,41 @@ export default function GateChecklistPage() {
               gap: 12,
             }}
           >
+            <div>
+              <FieldLabel>Delay</FieldLabel>
+              <SelectInput
+                value={form.delay}
+                disabled={!canEdit}
+                onChange={(e) => updateField("delay", e.target.value)}
+              >
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Delay Time (Minutes)</FieldLabel>
+              <TextInput
+                type="number"
+                min="0"
+                value={form.delayTimeMinutes}
+                disabled={!canEdit}
+                onChange={(e) => updateField("delayTimeMinutes", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Controllable</FieldLabel>
+              <SelectInput
+                value={form.controllable}
+                disabled={!canEdit}
+                onChange={(e) => updateField("controllable", e.target.value)}
+              >
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </SelectInput>
+            </div>
+
             <div>
               <FieldLabel>Block In</FieldLabel>
               <TimeInput
@@ -1317,24 +1380,6 @@ export default function GateChecklistPage() {
             </div>
 
             <div>
-              <FieldLabel>Brake Release Time</FieldLabel>
-              <TimeInput
-                value={form.brakeReleaseTime}
-                disabled={!canEdit}
-                onChange={(e) => updateField("brakeReleaseTime", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Push Time</FieldLabel>
-              <TimeInput
-                value={form.pushTime}
-                disabled={!canEdit}
-                onChange={(e) => updateField("pushTime", e.target.value)}
-              />
-            </div>
-
-            <div>
               <FieldLabel>Gate Agent 1 Arrival</FieldLabel>
               <TimeInput
                 value={form.gateAgent1Arrival}
@@ -1350,47 +1395,6 @@ export default function GateChecklistPage() {
                 disabled={!canEdit}
                 onChange={(e) => updateField("gateAgent2Arrival", e.target.value)}
               />
-            </div>
-
-            <div>
-              <FieldLabel>Delay</FieldLabel>
-              <SelectInput
-                value={form.delay}
-                disabled={!canEdit}
-                onChange={(e) => updateField("delay", e.target.value)}
-              >
-                {YES_NO_OPTIONS.map((item) => (
-                  <option key={item.value || "blank-delay"} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </SelectInput>
-            </div>
-
-            <div>
-              <FieldLabel>Delay Time (Minutes)</FieldLabel>
-              <TextInput
-                type="number"
-                min="0"
-                value={form.delayTimeMinutes}
-                disabled={!canEdit}
-                onChange={(e) => updateField("delayTimeMinutes", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Controllable</FieldLabel>
-              <SelectInput
-                value={form.controllable}
-                disabled={!canEdit}
-                onChange={(e) => updateField("controllable", e.target.value)}
-              >
-                {YES_NO_OPTIONS.map((item) => (
-                  <option key={item.value || "blank-control"} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </SelectInput>
             </div>
 
             <div>
@@ -1424,6 +1428,53 @@ export default function GateChecklistPage() {
               />
             </div>
           </div>
+
+          {form.airline === "SY" && (
+            <div
+              className="no-print"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+              }}
+            >
+              <div>
+                <FieldLabel>First Pax Off</FieldLabel>
+                <TimeInput
+                  value={form.firstPaxOff}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("firstPaxOff", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Last Pax Off</FieldLabel>
+                <TimeInput
+                  value={form.lastPaxOff}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("lastPaxOff", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>First Pax On</FieldLabel>
+                <TimeInput
+                  value={form.firstPaxOn}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("firstPaxOn", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Last Pax On</FieldLabel>
+                <TimeInput
+                  value={form.lastPaxOn}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("lastPaxOn", e.target.value)}
+                />
+              </div>
+            </div>
+          )}
 
           <div
             style={{
@@ -1498,6 +1549,39 @@ export default function GateChecklistPage() {
             </div>
 
             <div style={{ display: "grid", gap: 14 }}>
+              <PageCard style={{ padding: 14 }}>
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 900,
+                    marginBottom: 12,
+                    textAlign: "center",
+                  }}
+                >
+                  Push / Departure
+                </div>
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div>
+                    <FieldLabel>Brake Release Time</FieldLabel>
+                    <TimeInput
+                      value={form.brakeReleaseTime}
+                      disabled={!canEdit}
+                      onChange={(e) => updateField("brakeReleaseTime", e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Push Time</FieldLabel>
+                    <TimeInput
+                      value={form.pushTime}
+                      disabled={!canEdit}
+                      onChange={(e) => updateField("pushTime", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </PageCard>
+
               <PageCard style={{ padding: 14 }}>
                 <div
                   style={{
