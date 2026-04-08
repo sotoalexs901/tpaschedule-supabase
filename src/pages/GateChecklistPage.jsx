@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   addDoc,
   collection,
@@ -423,6 +423,93 @@ function getOtpMinutes(scheduledTime, actualTime) {
   return actual - scheduled;
 }
 
+function toMinutesFromTime(value) {
+  if (!value || !String(value).includes(":")) return null;
+
+  const [h, m] = String(value).split(":").map(Number);
+
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+
+  return h * 60 + m;
+}
+
+function minutesToTime(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "";
+
+  let total = Number(value);
+  while (total < 0) total += 24 * 60;
+  total = total % (24 * 60);
+
+  const hh = String(Math.floor(total / 60)).padStart(2, "0");
+  const mm = String(total % 60).padStart(2, "0");
+
+  return `${hh}:${mm}`;
+}
+
+function getAirlineTurnRules(airline) {
+  if (airline === "WL") {
+    return {
+      minTurnMinutes: 90,
+      boardingOffsetMinutes: 15,
+    };
+  }
+
+  if (airline === "AV") {
+    return {
+      minTurnMinutes: 85,
+      boardingOffsetMinutes: 15,
+    };
+  }
+
+  return {
+    minTurnMinutes: 45,
+    boardingOffsetMinutes: 10,
+  };
+}
+
+function calculateNewEtdAndDeadline(airline, blockIn, etd) {
+  const blockInMinutes = toMinutesFromTime(blockIn);
+  const etdMinutes = toMinutesFromTime(etd);
+  const rules = getAirlineTurnRules(airline);
+
+  if (etdMinutes === null) {
+    return {
+      newEtd: "",
+      boardingDeadline: "",
+    };
+  }
+
+  let referenceEtdMinutes = etdMinutes;
+
+  if (blockInMinutes !== null) {
+    let adjustedEtdMinutes = etdMinutes;
+
+    if (adjustedEtdMinutes < blockInMinutes) {
+      adjustedEtdMinutes += 24 * 60;
+    }
+
+    const currentTurnMinutes = adjustedEtdMinutes - blockInMinutes;
+
+    if (currentTurnMinutes < rules.minTurnMinutes) {
+      referenceEtdMinutes = blockInMinutes + rules.minTurnMinutes;
+
+      return {
+        newEtd: minutesToTime(referenceEtdMinutes),
+        boardingDeadline: minutesToTime(
+          referenceEtdMinutes - rules.boardingOffsetMinutes
+        ),
+      };
+    }
+  }
+
+  return {
+    newEtd: "",
+    boardingDeadline: minutesToTime(
+      referenceEtdMinutes - rules.boardingOffsetMinutes
+    ),
+  };
+}
+
 function createInitialSpecials() {
   return BASE_SPECIALS.reduce((acc, item) => {
     acc[item] = "";
@@ -453,6 +540,8 @@ function createInitialForm(user) {
     delayCode: "",
     blockIn: "",
     etd: "",
+    newEtd: "",
+    boardingDeadline: "",
     actualDepartureTime: "",
     actualArrivalTime: "",
     gpuConnected: "",
@@ -504,6 +593,29 @@ export default function GateChecklistPage() {
   const canReopen = isExisting && (isSubmitted || isClosed) && isSupervisorOrManager;
   const canClose = isExisting;
   const canSubmit = !!form.airline && !!form.flight && !!form.date && canEdit;
+
+  useEffect(() => {
+    const { newEtd, boardingDeadline } = calculateNewEtdAndDeadline(
+      form.airline,
+      form.blockIn,
+      form.etd
+    );
+
+    setForm((prev) => {
+      if (
+        prev.newEtd === newEtd &&
+        prev.boardingDeadline === boardingDeadline
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        newEtd,
+        boardingDeadline,
+      };
+    });
+  }, [form.airline, form.blockIn, form.etd]);
 
   function resetAll() {
     setEditingId("");
@@ -558,6 +670,8 @@ export default function GateChecklistPage() {
 
       blockIn: form.blockIn || "",
       etd: form.etd || "",
+      newEtd: form.newEtd || "",
+      boardingDeadline: form.boardingDeadline || "",
       actualDepartureTime: form.actualDepartureTime || "",
       actualArrivalTime: form.actualArrivalTime || "",
       pushTime: form.pushTime || "",
@@ -752,6 +866,8 @@ export default function GateChecklistPage() {
         delayCode: data.delayCode || "",
         blockIn: data.blockIn || "",
         etd: data.etd || "",
+        newEtd: data.newEtd || "",
+        boardingDeadline: data.boardingDeadline || "",
         actualDepartureTime: data.actualDepartureTime || "",
         actualArrivalTime: data.actualArrivalTime || "",
         gpuConnected: data.gpuConnected || "",
@@ -865,7 +981,7 @@ export default function GateChecklistPage() {
           }}
         >
           Printable gate checklist with 24-hour time selection, draft, submit,
-          close flight, reopen, baggage counts, and OTP tracking.
+          close flight, reopen, baggage counts, New ETD, D-10/D-15, and OTP tracking.
         </p>
       </div>
 
@@ -1030,10 +1146,7 @@ export default function GateChecklistPage() {
 
             <div>
               <FieldLabel>Gate Agent</FieldLabel>
-              <TextInput
-                value={form.gateAgent}
-                disabled
-              />
+              <TextInput value={form.gateAgent} disabled />
             </div>
 
             <div>
@@ -1151,6 +1264,16 @@ export default function GateChecklistPage() {
                 disabled={!canEdit}
                 onChange={(e) => updateField("etd", e.target.value)}
               />
+            </div>
+
+            <div>
+              <FieldLabel>New ETD</FieldLabel>
+              <TimeInput value={form.newEtd} disabled />
+            </div>
+
+            <div>
+              <FieldLabel>{form.airline === "SY" ? "D-10" : "D-15"}</FieldLabel>
+              <TimeInput value={form.boardingDeadline} disabled />
             </div>
 
             <div>
