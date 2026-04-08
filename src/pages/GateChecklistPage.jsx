@@ -554,6 +554,7 @@ function createInitialForm(user) {
     origin: "",
     destination: "",
     finalTotalPax: "",
+    totalIbPax: "",
     delayCode: "",
     delay: "No",
     delayTimeMinutes: "",
@@ -686,6 +687,7 @@ export default function GateChecklistPage() {
       origin: form.origin || "",
       destination: form.destination || "",
       finalTotalPax: Number(form.finalTotalPax || 0),
+      totalIbPax: Number(form.totalIbPax || 0),
       delayCode: form.delayCode || "",
       delay: form.delay || "No",
       delayTimeMinutes: Number(form.delayTimeMinutes || 0),
@@ -897,6 +899,10 @@ export default function GateChecklistPage() {
         finalTotalPax:
           data.finalTotalPax !== undefined && data.finalTotalPax !== null
             ? String(data.finalTotalPax)
+            : "",
+        totalIbPax:
+          data.totalIbPax !== undefined && data.totalIbPax !== null
+            ? String(data.totalIbPax)
             : "",
         delayCode: data.delayCode || "",
         delay: data.delay || "No",
@@ -1217,7 +1223,7 @@ export default function GateChecklistPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1.1fr 1fr 1fr 1fr 1fr 1.5fr 1fr",
+              gridTemplateColumns: "1.1fr 1fr 1fr 1fr 1fr 1.5fr 1fr 1fr",
               gap: 8,
             }}
           >
@@ -1275,6 +1281,17 @@ export default function GateChecklistPage() {
                 value={form.finalTotalPax}
                 disabled={!canEdit}
                 onChange={(e) => updateField("finalTotalPax", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Total IB Pax</FieldLabel>
+              <TextInput
+                type="number"
+                min="0"
+                value={form.totalIbPax}
+                disabled={!canEdit}
+                onChange={(e) => updateField("totalIbPax", e.target.value)}
               />
             </div>
 
@@ -1429,52 +1446,50 @@ export default function GateChecklistPage() {
             </div>
           </div>
 
-          {form.airline === "SY" && (
-            <div
-              className="no-print"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 12,
-              }}
-            >
-              <div>
-                <FieldLabel>First Pax Off</FieldLabel>
-                <TimeInput
-                  value={form.firstPaxOff}
-                  disabled={!canEdit}
-                  onChange={(e) => updateField("firstPaxOff", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Last Pax Off</FieldLabel>
-                <TimeInput
-                  value={form.lastPaxOff}
-                  disabled={!canEdit}
-                  onChange={(e) => updateField("lastPaxOff", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>First Pax On</FieldLabel>
-                <TimeInput
-                  value={form.firstPaxOn}
-                  disabled={!canEdit}
-                  onChange={(e) => updateField("firstPaxOn", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Last Pax On</FieldLabel>
-                <TimeInput
-                  value={form.lastPaxOn}
-                  disabled={!canEdit}
-                  onChange={(e) => updateField("lastPaxOn", e.target.value)}
-                />
-              </div>
+          <div
+            className="no-print"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <div>
+              <FieldLabel>First Pax Off</FieldLabel>
+              <TimeInput
+                value={form.firstPaxOff}
+                disabled={!canEdit}
+                onChange={(e) => updateField("firstPaxOff", e.target.value)}
+              />
             </div>
-          )}
+
+            <div>
+              <FieldLabel>Last Pax Off</FieldLabel>
+              <TimeInput
+                value={form.lastPaxOff}
+                disabled={!canEdit}
+                onChange={(e) => updateField("lastPaxOff", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>First Pax On</FieldLabel>
+              <TimeInput
+                value={form.firstPaxOn}
+                disabled={!canEdit}
+                onChange={(e) => updateField("firstPaxOn", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Last Pax On</FieldLabel>
+              <TimeInput
+                value={form.lastPaxOn}
+                disabled={!canEdit}
+                onChange={(e) => updateField("lastPaxOn", e.target.value)}
+              />
+            </div>
+          </div>
 
           <div
             style={{
