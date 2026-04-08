@@ -284,11 +284,250 @@ function printManagementView() {
   window.print();
 }
 
+function printReportDetails(report) {
+  const specials = report?.specials || {};
+  const gateCheck = report?.gateCheck || {};
+  const delayAnnouncements = Array.isArray(report?.delayAnnouncements)
+    ? report.delayAnnouncements
+    : [];
+  const checklistSections = Array.isArray(report?.checklistSections)
+    ? report.checklistSections
+    : [];
+  const actuals = report?.actuals || {};
+
+  const html = `
+    <html>
+      <head>
+        <title>Gate Checklist Details</title>
+        <style>
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            padding: 24px;
+            color: #0f172a;
+          }
+          h1, h2, h3 {
+            margin: 0 0 12px;
+          }
+          .card {
+            border: 1px solid #cbd5e1;
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 16px;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+          }
+          .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #64748b;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+          }
+          .value {
+            margin-top: 6px;
+            font-size: 14px;
+            font-weight: 700;
+            white-space: pre-wrap;
+            word-break: break-word;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+          }
+          th, td {
+            border: 1px solid #cbd5e1;
+            padding: 8px 10px;
+            vertical-align: top;
+            text-align: left;
+            font-size: 13px;
+          }
+          th {
+            background: #f8fafc;
+          }
+          ul {
+            margin: 0;
+            padding-left: 18px;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Gate Checklist Details</h1>
+
+        <div class="card">
+          <div class="grid">
+            <div><div class="label">Airline</div><div class="value">${report.airline || "-"}</div></div>
+            <div><div class="label">Flight</div><div class="value">${report.flight || "-"}</div></div>
+            <div><div class="label">Date</div><div class="value">${report.date || "-"}</div></div>
+            <div><div class="label">Aircraft</div><div class="value">${report.aircraft || "-"}</div></div>
+            <div><div class="label">Origin</div><div class="value">${report.origin || "-"}</div></div>
+            <div><div class="label">Destination</div><div class="value">${report.destination || "-"}</div></div>
+            <div><div class="label">ETD</div><div class="value">${report.etd || "-"}</div></div>
+            <div><div class="label">Push Time</div><div class="value">${report.pushTime || "-"}</div></div>
+            <div><div class="label">Brake Release</div><div class="value">${report.brakeReleaseTime || "-"}</div></div>
+            <div><div class="label">Delay Code</div><div class="value">${report.delayCode || "-"}</div></div>
+            <div><div class="label">Agents</div><div class="value">${report.agents || "-"}</div></div>
+            <div><div class="label">Submitted By</div><div class="value">${report.submittedBy || "-"}</div></div>
+            <div><div class="label">Checked Bags</div><div class="value">${safeNumber(report.checkedBags)}</div></div>
+            <div><div class="label">Not Loaded Bags</div><div class="value">${safeNumber(report.notLoadedBags)}</div></div>
+            <div><div class="label">MBR %</div><div class="value">${formatPercent(
+              getMbrPercent(safeNumber(report.notLoadedBags), safeNumber(report.checkedBags))
+            )}</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Ops Info</h3>
+          <div class="grid">
+            <div><div class="label">GPU Connected</div><div class="value">${report.gpuConnected || "-"}</div></div>
+            <div><div class="label">Gate Agent 1 Arrival</div><div class="value">${report.gateAgent1Arrival || "-"}</div></div>
+            <div><div class="label">Gate Agent 2 Arrival</div><div class="value">${report.gateAgent2Arrival || "-"}</div></div>
+            <div><div class="label">Actual Departure</div><div class="value">${report.actualDepartureTime || "-"}</div></div>
+            <div><div class="label">Actual Arrival</div><div class="value">${report.actualArrivalTime || "-"}</div></div>
+            <div><div class="label">Created</div><div class="value">${formatDateTime(report.createdAt)}</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Specials</h3>
+          <table>
+            <thead>
+              <tr><th>Type</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+              ${Object.keys(specials).length
+                ? Object.entries(specials)
+                    .map(
+                      ([key, value]) =>
+                        `<tr><td>${key}</td><td>${String(value || "-")}</td></tr>`
+                    )
+                    .join("")
+                : `<tr><td colspan="2">No specials</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>Gate Check</h3>
+          <table>
+            <thead>
+              <tr><th>Item</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Bags</td><td>${gateCheck.bags || "-"}</td></tr>
+              <tr><td>Strollers / Car Seats</td><td>${gateCheck.strollersCarSeats || "-"}</td></tr>
+              <tr><td>WCHRS</td><td>${gateCheck.wchrs || "-"}</td></tr>
+              <tr><td>Other</td><td>${gateCheck.other || "-"}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>Delay Announcements</h3>
+          ${
+            delayAnnouncements.length
+              ? `<ul>${delayAnnouncements
+                  .map((item) => `<li>${item || "-"}</li>`)
+                  .join("")}</ul>`
+              : `<div>No delay announcements</div>`
+          }
+        </div>
+
+        <div class="card">
+          <h3>Checklist Details</h3>
+          <table>
+            <thead>
+              <tr><th>Time</th><th>Task</th><th>Actual</th></tr>
+            </thead>
+            <tbody>
+              ${
+                checklistSections.length
+                  ? checklistSections
+                      .map((section, sectionIndex) =>
+                        (section.tasks || [])
+                          .map(
+                            (task, taskIndex) => `
+                              <tr>
+                                <td>${section.time || "-"}</td>
+                                <td>${task || "-"}</td>
+                                <td>${actuals[`${sectionIndex}-${taskIndex}`] || "-"}</td>
+                              </tr>
+                            `
+                          )
+                          .join("")
+                      )
+                      .join("")
+                  : `<tr><td colspan="3">No checklist data</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>Notes</h3>
+          <div class="value">${report.remarks || "-"}</div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open("", "_blank", "width=1100,height=900");
+  if (!printWindow) return;
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 500);
+}
+
+function DetailsRow({ label, value }) {
+  return (
+    <div
+      style={{
+        background: "#f8fbff",
+        border: "1px solid #dbeafe",
+        borderRadius: 14,
+        padding: "12px 14px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 14,
+          fontWeight: 700,
+          color: "#0f172a",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {value || "-"}
+      </div>
+    </div>
+  );
+}
+
 export default function GateChecklistManagementPage() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
+  const [selectedReportId, setSelectedReportId] = useState("");
 
   const [filters, setFilters] = useState({
     airline: "all",
@@ -373,6 +612,10 @@ export default function GateChecklistManagementPage() {
       return true;
     });
   }, [reports, filters]);
+
+  const selectedReport = useMemo(() => {
+    return filteredReports.find((item) => item.id === selectedReportId) || null;
+  }, [filteredReports, selectedReportId]);
 
   const otpByAirline = useMemo(() => {
     const map = {};
@@ -490,6 +733,9 @@ export default function GateChecklistManagementPage() {
       setWorkingId(reportId);
       await deleteDoc(doc(db, "gateChecklistReports", reportId));
       setReports((prev) => prev.filter((item) => item.id !== reportId));
+      if (selectedReportId === reportId) {
+        setSelectedReportId("");
+      }
       setStatusMessage("Report deleted successfully.");
     } catch (error) {
       console.error("Error deleting report:", error);
@@ -1085,7 +1331,7 @@ export default function GateChecklistManagementPage() {
                 <th style={thStyle}>Month Closed</th>
                 <th style={thStyle}>Submitted By</th>
                 <th style={thStyle}>Created</th>
-                <th style={thStyle}>Action</th>
+                <th style={thStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1126,13 +1372,33 @@ export default function GateChecklistManagementPage() {
                       <td style={tdStyle}>{item.submittedBy || "-"}</td>
                       <td style={tdStyle}>{formatDateTime(item.createdAt)}</td>
                       <td style={tdStyle}>
-                        <ActionButton
-                          variant="danger"
-                          onClick={() => handleDeleteReport(item.id)}
-                          disabled={workingId === item.id}
-                        >
-                          {workingId === item.id ? "Deleting..." : "Delete"}
-                        </ActionButton>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <ActionButton
+                            variant="secondary"
+                            onClick={() =>
+                              setSelectedReportId((prev) =>
+                                prev === item.id ? "" : item.id
+                              )
+                            }
+                          >
+                            {selectedReportId === item.id ? "Hide Details" : "View Details"}
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="dark"
+                            onClick={() => printReportDetails(item)}
+                          >
+                            Print Details
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="danger"
+                            onClick={() => handleDeleteReport(item.id)}
+                            disabled={workingId === item.id}
+                          >
+                            {workingId === item.id ? "Deleting..." : "Delete"}
+                          </ActionButton>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1142,6 +1408,210 @@ export default function GateChecklistManagementPage() {
           </table>
         </div>
       </PageCard>
+
+      {selectedReport && (
+        <PageCard style={{ padding: 20 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                Gate Checklist Details
+              </h2>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 14,
+                  color: "#64748b",
+                  fontWeight: 700,
+                }}
+              >
+                {selectedReport.airline || "-"} · {selectedReport.flight || "-"} · {selectedReport.date || "-"}
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <ActionButton
+                variant="dark"
+                onClick={() => printReportDetails(selectedReport)}
+              >
+                Print Details
+              </ActionButton>
+              <ActionButton
+                variant="secondary"
+                onClick={() => setSelectedReportId("")}
+              >
+                Close
+              </ActionButton>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <DetailsRow label="Airline" value={selectedReport.airline} />
+            <DetailsRow label="Flight" value={selectedReport.flight} />
+            <DetailsRow label="Date" value={selectedReport.date} />
+            <DetailsRow label="Aircraft" value={selectedReport.aircraft} />
+            <DetailsRow label="Origin" value={selectedReport.origin} />
+            <DetailsRow label="Destination" value={selectedReport.destination} />
+            <DetailsRow label="Agents" value={selectedReport.agents} />
+            <DetailsRow label="Delay Code" value={selectedReport.delayCode} />
+            <DetailsRow label="Block In" value={selectedReport.blockIn} />
+            <DetailsRow label="ETD" value={selectedReport.etd} />
+            <DetailsRow label="Actual Departure" value={selectedReport.actualDepartureTime} />
+            <DetailsRow label="Actual Arrival" value={selectedReport.actualArrivalTime} />
+            <DetailsRow label="Brake Release" value={selectedReport.brakeReleaseTime} />
+            <DetailsRow label="Push Time" value={selectedReport.pushTime} />
+            <DetailsRow label="GPU Connected" value={selectedReport.gpuConnected} />
+            <DetailsRow label="Gate Agent 1 Arrival" value={selectedReport.gateAgent1Arrival} />
+            <DetailsRow label="Gate Agent 2 Arrival" value={selectedReport.gateAgent2Arrival} />
+            <DetailsRow label="Checked Bags" value={String(safeNumber(selectedReport.checkedBags))} />
+            <DetailsRow label="Not Loaded Bags" value={String(safeNumber(selectedReport.notLoadedBags))} />
+            <DetailsRow
+              label="MBR %"
+              value={formatPercent(
+                getMbrPercent(
+                  safeNumber(selectedReport.notLoadedBags),
+                  safeNumber(selectedReport.checkedBags)
+                )
+              )}
+            />
+            <DetailsRow label="Status" value={selectedReport.status} />
+            <DetailsRow label="Submitted By" value={selectedReport.submittedBy} />
+            <DetailsRow label="Created" value={formatDateTime(selectedReport.createdAt)} />
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <h3 style={sectionTitleStyle}>Specials</h3>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 10,
+              }}
+            >
+              {Object.entries(selectedReport.specials || {}).length ? (
+                Object.entries(selectedReport.specials || {}).map(([key, value]) => (
+                  <DetailsRow key={key} label={key} value={value} />
+                ))
+              ) : (
+                <div style={emptyTextStyle}>No specials found.</div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <h3 style={sectionTitleStyle}>Gate Check</h3>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 10,
+              }}
+            >
+              <DetailsRow label="Bags" value={selectedReport.gateCheck?.bags} />
+              <DetailsRow
+                label="Strollers / Car Seats"
+                value={selectedReport.gateCheck?.strollersCarSeats}
+              />
+              <DetailsRow label="WCHRS" value={selectedReport.gateCheck?.wchrs} />
+              <DetailsRow label="Other" value={selectedReport.gateCheck?.other} />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <h3 style={sectionTitleStyle}>Delay Announcements</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              {Array.isArray(selectedReport.delayAnnouncements) &&
+              selectedReport.delayAnnouncements.length > 0 ? (
+                selectedReport.delayAnnouncements.map((item, index) => (
+                  <div key={index} style={announcementRowStyle}>
+                    {item || "-"}
+                  </div>
+                ))
+              ) : (
+                <div style={emptyTextStyle}>No delay announcements found.</div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <h3 style={sectionTitleStyle}>Checklist Tasks</h3>
+            <div style={tableWrapStyle}>
+              <table style={detailsTableStyle}>
+                <thead>
+                  <tr style={{ background: "#f8fbff" }}>
+                    <th style={thStyle}>Time</th>
+                    <th style={thStyle}>Task</th>
+                    <th style={thStyle}>Actual</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.isArray(selectedReport.checklistSections) &&
+                  selectedReport.checklistSections.length > 0 ? (
+                    selectedReport.checklistSections.flatMap((section, sectionIndex) =>
+                      (section.tasks || []).map((task, taskIndex) => (
+                        <tr key={`${sectionIndex}-${taskIndex}`}>
+                          <td style={tdStyle}>{section.time || "-"}</td>
+                          <td style={tdStyle}>{task || "-"}</td>
+                          <td style={tdStyle}>
+                            {(selectedReport.actuals || {})[
+                              `${sectionIndex}-${taskIndex}`
+                            ] || "-"}
+                          </td>
+                        </tr>
+                      ))
+                    )
+                  ) : (
+                    <tr>
+                      <td colSpan={3} style={tdStyle}>
+                        No checklist tasks found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <h3 style={sectionTitleStyle}>Notes</h3>
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 14,
+                padding: "14px 16px",
+                color: "#0f172a",
+                fontSize: 14,
+                fontWeight: 700,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {selectedReport.remarks || "-"}
+            </div>
+          </div>
+        </PageCard>
+      )}
     </div>
   );
 }
@@ -1156,7 +1626,15 @@ const tableStyle = {
   width: "100%",
   borderCollapse: "separate",
   borderSpacing: 0,
-  minWidth: 1450,
+  minWidth: 1500,
+  background: "#fff",
+};
+
+const detailsTableStyle = {
+  width: "100%",
+  borderCollapse: "separate",
+  borderSpacing: 0,
+  minWidth: 900,
   background: "#fff",
 };
 
@@ -1175,5 +1653,29 @@ const tdStyle = {
   padding: "14px",
   borderBottom: "1px solid #eef2f7",
   fontSize: 14,
+  color: "#0f172a",
+  verticalAlign: "top",
+};
+
+const sectionTitleStyle = {
+  margin: "0 0 10px",
+  fontSize: 18,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const emptyTextStyle = {
+  fontSize: 14,
+  color: "#64748b",
+  fontWeight: 700,
+};
+
+const announcementRowStyle = {
+  background: "#f8fbff",
+  border: "1px solid #dbeafe",
+  borderRadius: 12,
+  padding: "12px 14px",
+  fontSize: 14,
+  fontWeight: 700,
   color: "#0f172a",
 };
