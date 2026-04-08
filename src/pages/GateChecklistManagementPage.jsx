@@ -370,15 +370,18 @@ function printReportDetails(report) {
             <div><div class="label">${report.airline === "SY" ? "D-10" : "D-15"}</div><div class="value">${report.boardingDeadline || "-"}</div></div>
             <div><div class="label">Push Time</div><div class="value">${report.pushTime || "-"}</div></div>
             <div><div class="label">Brake Release</div><div class="value">${report.brakeReleaseTime || "-"}</div></div>
-            <div><div class="label">Delay</div><div class="value">${report.delay || "-"}</div></div>
-            <div><div class="label">Delay Time</div><div class="value">${safeNumber(report.delayTimeMinutes)} min</div></div>
             <div><div class="label">Delay Code</div><div class="value">${report.delayCode || "-"}</div></div>
+            <div><div class="label">Delay</div><div class="value">${report.delay || "-"}</div></div>
+            <div><div class="label">Delay Time (Minutes)</div><div class="value">${safeNumber(report.delayTimeMinutes)}</div></div>
             <div><div class="label">Controllable</div><div class="value">${report.controllable || "-"}</div></div>
-            <div><div class="label">Agents</div><div class="value">${report.agents || "-"}</div></div>
             <div><div class="label">Gate Agent</div><div class="value">${report.gateAgent || "-"}</div></div>
             <div><div class="label">Expeditor</div><div class="value">${report.expeditor || "-"}</div></div>
             <div><div class="label">Supervisor</div><div class="value">${report.supervisor || "-"}</div></div>
-            <div><div class="label">Submitted By</div><div class="value">${report.submittedBy || "-"}</div></div>
+            <div><div class="label">Final Total Pax</div><div class="value">${safeNumber(report.finalTotalPax)}</div></div>
+            <div><div class="label">First Pax Off</div><div class="value">${report.firstPaxOff || "-"}</div></div>
+            <div><div class="label">Last Pax Off</div><div class="value">${report.lastPaxOff || "-"}</div></div>
+            <div><div class="label">First Pax On</div><div class="value">${report.firstPaxOn || "-"}</div></div>
+            <div><div class="label">Last Pax On</div><div class="value">${report.lastPaxOn || "-"}</div></div>
             <div><div class="label">Checked Bags</div><div class="value">${safeNumber(report.checkedBags)}</div></div>
             <div><div class="label">Not Loaded Bags</div><div class="value">${safeNumber(report.notLoadedBags)}</div></div>
             <div><div class="label">MBR %</div><div class="value">${formatPercent(
@@ -667,10 +670,7 @@ export default function GateChecklistManagementPage() {
 
   const delaySummary = useMemo(() => {
     return filteredReports
-      .filter((item) => {
-        const delayFlag = String(item.delay || "").toLowerCase();
-        return delayFlag === "yes" || safeNumber(item.delayTimeMinutes) > 0;
-      })
+      .filter((item) => String(item.delay || "").toLowerCase() === "yes")
       .map((item) => ({
         id: item.id,
         airline: item.airline || "-",
@@ -680,8 +680,18 @@ export default function GateChecklistManagementPage() {
         pushTime: item.pushTime || "-",
         delayTimeMinutes: safeNumber(item.delayTimeMinutes),
         delayCode: item.delayCode || "-",
-        controllable: item.controllable || "-",
       }));
+  }, [filteredReports]);
+
+  const paxFlowSummary = useMemo(() => {
+    return filteredReports.map((item) => ({
+      id: item.id,
+      date: item.date || "-",
+      airline: item.airline || "-",
+      flight: item.flight || "-",
+      totalInPax: safeNumber(item.finalTotalPax),
+      totalOutPax: safeNumber(item.finalTotalPax),
+    }));
   }, [filteredReports]);
 
   const totals = useMemo(() => {
@@ -697,10 +707,17 @@ export default function GateChecklistManagementPage() {
       (sum, item) => sum + safeNumber(item.notLoadedBags),
       0
     );
-    const delayedFlights = filteredReports.filter((item) => {
-      const delayFlag = String(item.delay || "").toLowerCase();
-      return delayFlag === "yes" || safeNumber(item.delayTimeMinutes) > 0;
-    }).length;
+    const delayedFlights = filteredReports.filter(
+      (item) => String(item.delay || "").toLowerCase() === "yes"
+    ).length;
+    const totalInPax = filteredReports.reduce(
+      (sum, item) => sum + safeNumber(item.finalTotalPax),
+      0
+    );
+    const totalOutPax = filteredReports.reduce(
+      (sum, item) => sum + safeNumber(item.finalTotalPax),
+      0
+    );
 
     const otpPercent = getOtpPercent(otpFlights, flights);
     const stationMbrPercent = getMbrPercent(notLoadedBags, checkedBags);
@@ -713,6 +730,8 @@ export default function GateChecklistManagementPage() {
       notLoadedBags,
       stationMbrPercent,
       delayedFlights,
+      totalInPax,
+      totalOutPax,
     };
   }, [filteredReports]);
 
@@ -730,7 +749,6 @@ export default function GateChecklistManagementPage() {
           otpFlights: 0,
           checkedBags: 0,
           notLoadedBags: 0,
-          delayedFlights: 0,
           monthClosed: false,
           closedAt: "",
         };
@@ -739,14 +757,8 @@ export default function GateChecklistManagementPage() {
       monthlyMap[month].flights += 1;
       monthlyMap[month].checkedBags += safeNumber(item.checkedBags);
       monthlyMap[month].notLoadedBags += safeNumber(item.notLoadedBags);
-
       if (item.isOtpDeparture === true) {
         monthlyMap[month].otpFlights += 1;
-      }
-
-      const delayFlag = String(item.delay || "").toLowerCase();
-      if (delayFlag === "yes" || safeNumber(item.delayTimeMinutes) > 0) {
-        monthlyMap[month].delayedFlights += 1;
       }
 
       if (item.monthClosed) {
@@ -839,14 +851,13 @@ export default function GateChecklistManagementPage() {
         "Origin",
         "Destination",
         "ETD",
-        "New ETD",
-        "D-10/D-15",
         "Push Time",
+        "OTP",
         "Delay",
         "Delay Time Minutes",
         "Delay Code",
         "Controllable",
-        "OTP",
+        "Final Total Pax",
         "Checked Bags",
         "Not Loaded Bags",
         "MBR %",
@@ -867,18 +878,17 @@ export default function GateChecklistManagementPage() {
           item.origin || "",
           item.destination || "",
           item.etd || "",
-          item.newEtd || "",
-          item.boardingDeadline || "",
           item.pushTime || "",
-          item.delay || "",
-          safeNumber(item.delayTimeMinutes),
-          item.delayCode || "",
-          item.controllable || "",
           item.isOtpDeparture === true
             ? "YES"
             : item.isOtpDeparture === false
             ? "NO"
             : "",
+          item.delay || "",
+          safeNumber(item.delayTimeMinutes),
+          item.delayCode || "",
+          item.controllable || "",
+          safeNumber(item.finalTotalPax),
           checked,
           notLoaded,
           formatPercent(mbr),
@@ -946,7 +956,7 @@ export default function GateChecklistManagementPage() {
             fontWeight: 900,
           }}
         >
-          Gate Checklist Management / OTP / MBR / Delays
+          Gate Checklist Management / OTP / MBR / Pax Flow
         </h1>
 
         <p
@@ -958,8 +968,8 @@ export default function GateChecklistManagementPage() {
           }}
         >
           Filter by flight, airline, date range, week or month. Close months,
-          print, export, delete bad reports, and review OTP, delays, and baggage MBR
-          for station and airline.
+          print, export, delete bad reports, and review OTP, delays, baggage
+          MBR, and pax flow.
         </p>
       </div>
 
@@ -1164,6 +1174,7 @@ export default function GateChecklistManagementPage() {
         <InfoCard label="Flights" value={String(totals.flights)} />
         <InfoCard label="OTP Flights" value={String(totals.otpFlights)} tone="green" />
         <InfoCard label="OTP %" value={formatPercent(totals.otpPercent)} tone="blue" />
+        <InfoCard label="Delayed Flights" value={String(totals.delayedFlights)} tone="amber" />
         <InfoCard label="Checked Bags" value={String(totals.checkedBags)} />
         <InfoCard
           label="Not Loaded Bags"
@@ -1175,11 +1186,8 @@ export default function GateChecklistManagementPage() {
           value={formatPercent(totals.stationMbrPercent)}
           tone={totals.stationMbrPercent > 0 ? "amber" : "green"}
         />
-        <InfoCard
-          label="Delayed Flights"
-          value={String(totals.delayedFlights)}
-          tone={totals.delayedFlights > 0 ? "amber" : "default"}
-        />
+        <InfoCard label="Total IN Pax" value={String(totals.totalInPax)} tone="blue" />
+        <InfoCard label="Total OUT Pax" value={String(totals.totalOutPax)} tone="blue" />
       </div>
 
       {selectedMonthSummary && (
@@ -1209,11 +1217,6 @@ export default function GateChecklistManagementPage() {
               label="Station OTP %"
               value={formatPercent(selectedMonthSummary.otpPercent)}
               tone="blue"
-            />
-            <InfoCard
-              label="Delayed Flights"
-              value={String(selectedMonthSummary.delayedFlights)}
-              tone={selectedMonthSummary.delayedFlights > 0 ? "amber" : "default"}
             />
             <InfoCard
               label="Station Checked Bags"
@@ -1309,19 +1312,18 @@ export default function GateChecklistManagementPage() {
             <thead>
               <tr style={{ background: "#f8fbff" }}>
                 <th style={thStyle}>Airline</th>
-                <th style={thStyle}>Flight Number</th>
+                <th style={thStyle}>Flight</th>
                 <th style={thStyle}>Route</th>
                 <th style={thStyle}>ETD</th>
                 <th style={thStyle}>Push Back</th>
                 <th style={thStyle}>Delay Time</th>
                 <th style={thStyle}>Delay Code</th>
-                <th style={thStyle}>Controllable</th>
               </tr>
             </thead>
             <tbody>
               {delaySummary.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={tdStyle}>
+                  <td colSpan={7} style={tdStyle}>
                     {loading ? "Loading..." : "No delays found."}
                   </td>
                 </tr>
@@ -1333,9 +1335,56 @@ export default function GateChecklistManagementPage() {
                     <td style={tdStyle}>{item.route}</td>
                     <td style={tdStyle}>{item.etd}</td>
                     <td style={tdStyle}>{item.pushTime}</td>
-                    <td style={tdStyle}>{item.delayTimeMinutes} min</td>
+                    <td style={tdStyle}>{item.delayTimeMinutes}</td>
                     <td style={tdStyle}>{item.delayCode}</td>
-                    <td style={tdStyle}>{item.controllable}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 20 }}>
+        <div style={{ marginBottom: 12 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 900,
+              color: "#0f172a",
+            }}
+          >
+            Pax Flow Summary
+          </h2>
+        </div>
+
+        <div style={tableWrapStyle}>
+          <table style={tableStyle}>
+            <thead>
+              <tr style={{ background: "#f8fbff" }}>
+                <th style={thStyle}>Date</th>
+                <th style={thStyle}>Airline</th>
+                <th style={thStyle}>Flight</th>
+                <th style={thStyle}>Total IN Pax</th>
+                <th style={thStyle}>Total OUT Pax</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paxFlowSummary.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={tdStyle}>
+                    {loading ? "Loading..." : "No pax flow data found."}
+                  </td>
+                </tr>
+              ) : (
+                paxFlowSummary.map((item) => (
+                  <tr key={item.id}>
+                    <td style={tdStyle}>{item.date}</td>
+                    <td style={tdStyle}>{item.airline}</td>
+                    <td style={tdStyle}>{item.flight}</td>
+                    <td style={tdStyle}>{item.totalInPax}</td>
+                    <td style={tdStyle}>{item.totalOutPax}</td>
                   </tr>
                 ))
               )}
@@ -1366,7 +1415,6 @@ export default function GateChecklistManagementPage() {
                 <th style={thStyle}>Flights</th>
                 <th style={thStyle}>OTP Flights</th>
                 <th style={thStyle}>OTP %</th>
-                <th style={thStyle}>Delayed Flights</th>
                 <th style={thStyle}>Checked Bags</th>
                 <th style={thStyle}>Not Loaded</th>
                 <th style={thStyle}>MBR %</th>
@@ -1378,7 +1426,7 @@ export default function GateChecklistManagementPage() {
             <tbody>
               {monthlySummaries.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={tdStyle}>
+                  <td colSpan={10} style={tdStyle}>
                     {loading ? "Loading..." : "No monthly summaries found."}
                   </td>
                 </tr>
@@ -1389,7 +1437,6 @@ export default function GateChecklistManagementPage() {
                     <td style={tdStyle}>{item.flights}</td>
                     <td style={tdStyle}>{item.otpFlights}</td>
                     <td style={tdStyle}>{formatPercent(item.otpPercent)}</td>
-                    <td style={tdStyle}>{item.delayedFlights}</td>
                     <td style={tdStyle}>{item.checkedBags}</td>
                     <td style={tdStyle}>{item.notLoadedBags}</td>
                     <td style={tdStyle}>{formatPercent(item.mbrPercent)}</td>
@@ -1437,13 +1484,14 @@ export default function GateChecklistManagementPage() {
                 <th style={thStyle}>Date</th>
                 <th style={thStyle}>Airline</th>
                 <th style={thStyle}>Flight</th>
+                <th style={thStyle}>Final Total Pax</th>
                 <th style={thStyle}>Route</th>
                 <th style={thStyle}>ETD</th>
                 <th style={thStyle}>Push</th>
+                <th style={thStyle}>OTP</th>
                 <th style={thStyle}>Delay</th>
                 <th style={thStyle}>Delay Time</th>
                 <th style={thStyle}>Delay Code</th>
-                <th style={thStyle}>OTP</th>
                 <th style={thStyle}>Checked Bags</th>
                 <th style={thStyle}>Not Loaded</th>
                 <th style={thStyle}>MBR %</th>
@@ -1457,7 +1505,7 @@ export default function GateChecklistManagementPage() {
             <tbody>
               {filteredReports.length === 0 ? (
                 <tr>
-                  <td colSpan={18} style={tdStyle}>
+                  <td colSpan={19} style={tdStyle}>
                     {loading ? "Loading..." : "No reports found."}
                   </td>
                 </tr>
@@ -1472,14 +1520,12 @@ export default function GateChecklistManagementPage() {
                       <td style={tdStyle}>{item.date || "-"}</td>
                       <td style={tdStyle}>{item.airline || "-"}</td>
                       <td style={tdStyle}>{item.flight || "-"}</td>
+                      <td style={tdStyle}>{safeNumber(item.finalTotalPax)}</td>
                       <td style={tdStyle}>
                         {item.origin || "-"} - {item.destination || "-"}
                       </td>
                       <td style={tdStyle}>{item.etd || "-"}</td>
                       <td style={tdStyle}>{item.pushTime || "-"}</td>
-                      <td style={tdStyle}>{item.delay || "-"}</td>
-                      <td style={tdStyle}>{safeNumber(item.delayTimeMinutes)} min</td>
-                      <td style={tdStyle}>{item.delayCode || "-"}</td>
                       <td style={tdStyle}>
                         {item.isOtpDeparture === true
                           ? "YES"
@@ -1487,6 +1533,9 @@ export default function GateChecklistManagementPage() {
                           ? "NO"
                           : "-"}
                       </td>
+                      <td style={tdStyle}>{item.delay || "-"}</td>
+                      <td style={tdStyle}>{safeNumber(item.delayTimeMinutes)}</td>
+                      <td style={tdStyle}>{item.delayCode || "-"}</td>
                       <td style={tdStyle}>{checked}</td>
                       <td style={tdStyle}>{notLoaded}</td>
                       <td style={tdStyle}>{formatPercent(mbrPercent)}</td>
@@ -1596,29 +1645,30 @@ export default function GateChecklistManagementPage() {
             <DetailsRow label="Aircraft" value={selectedReport.aircraft} />
             <DetailsRow label="Origin" value={selectedReport.origin} />
             <DetailsRow label="Destination" value={selectedReport.destination} />
-            <DetailsRow label="Agents" value={selectedReport.agents} />
-            <DetailsRow label="Gate Agent" value={selectedReport.gateAgent} />
-            <DetailsRow label="Expeditor" value={selectedReport.expeditor} />
-            <DetailsRow label="Supervisor" value={selectedReport.supervisor} />
-            <DetailsRow label="Block In" value={selectedReport.blockIn} />
             <DetailsRow label="ETD" value={selectedReport.etd} />
             <DetailsRow label="New ETD" value={selectedReport.newEtd} />
             <DetailsRow
               label={selectedReport.airline === "SY" ? "D-10" : "D-15"}
               value={selectedReport.boardingDeadline}
             />
+            <DetailsRow label="Final Total Pax" value={String(safeNumber(selectedReport.finalTotalPax))} />
+            <DetailsRow label="First Pax Off" value={selectedReport.firstPaxOff} />
+            <DetailsRow label="Last Pax Off" value={selectedReport.lastPaxOff} />
+            <DetailsRow label="First Pax On" value={selectedReport.firstPaxOn} />
+            <DetailsRow label="Last Pax On" value={selectedReport.lastPaxOn} />
             <DetailsRow label="Delay" value={selectedReport.delay} />
-            <DetailsRow
-              label="Delay Time"
-              value={`${safeNumber(selectedReport.delayTimeMinutes)} min`}
-            />
+            <DetailsRow label="Delay Time (Minutes)" value={String(safeNumber(selectedReport.delayTimeMinutes))} />
             <DetailsRow label="Delay Code" value={selectedReport.delayCode} />
             <DetailsRow label="Controllable" value={selectedReport.controllable} />
+            <DetailsRow label="Block In" value={selectedReport.blockIn} />
             <DetailsRow label="Actual Departure" value={selectedReport.actualDepartureTime} />
             <DetailsRow label="Actual Arrival" value={selectedReport.actualArrivalTime} />
             <DetailsRow label="Brake Release" value={selectedReport.brakeReleaseTime} />
             <DetailsRow label="Push Time" value={selectedReport.pushTime} />
             <DetailsRow label="GPU Connected" value={selectedReport.gpuConnected} />
+            <DetailsRow label="Gate Agent" value={selectedReport.gateAgent} />
+            <DetailsRow label="Expeditor" value={selectedReport.expeditor} />
+            <DetailsRow label="Supervisor" value={selectedReport.supervisor} />
             <DetailsRow label="Gate Agent 1 Arrival" value={selectedReport.gateAgent1Arrival} />
             <DetailsRow label="Gate Agent 2 Arrival" value={selectedReport.gateAgent2Arrival} />
             <DetailsRow label="Checked Bags" value={String(safeNumber(selectedReport.checkedBags))} />
