@@ -449,6 +449,12 @@ const LABELS = {
       "Supervisors and managers can complete EPRs by month. Duty and station managers manage follow-up, congratulations, closures and employee notifications.",
     createTab: "Create EPR",
     managementTab: "Management",
+    draftsTab: "Drafts",
+    draftsSaved: "Saved Drafts",
+    saveDraft: "Save Draft",
+    continueEditing: "Continue Editing",
+    noDrafts: "No drafts found.",
+    lastUpdated: "Last Updated",
     language: "Language",
     month: "Month",
     employee: "Employee",
@@ -498,10 +504,13 @@ const LABELS = {
     managerUpdated: "Management status updated successfully.",
     reportUpdated: "Report updated successfully.",
     reportDeleted: "Report deleted successfully.",
+    draftSaved: "Draft saved successfully.",
+    draftUpdated: "Draft updated successfully.",
     closed: "Closed",
     followUp: "Follow Up",
     approved: "Approved",
     submitted: "Submitted",
+    draft: "Draft",
   },
   es: {
     title: "Reporte Mensual de Desempeño del Empleado",
@@ -509,6 +518,12 @@ const LABELS = {
       "Supervisores y managers pueden completar EPR por mes. Duty managers y station managers administran seguimiento, felicitaciones, cierre de mes y notificación al empleado.",
     createTab: "Crear EPR",
     managementTab: "Management",
+    draftsTab: "Borradores",
+    draftsSaved: "Borradores Guardados",
+    saveDraft: "Guardar Borrador",
+    continueEditing: "Continuar Editando",
+    noDrafts: "No se encontraron borradores.",
+    lastUpdated: "Última Actualización",
     language: "Idioma",
     month: "Mes",
     employee: "Empleado",
@@ -558,10 +573,13 @@ const LABELS = {
     managerUpdated: "Estado actualizado correctamente.",
     reportUpdated: "Reporte actualizado correctamente.",
     reportDeleted: "Reporte borrado correctamente.",
+    draftSaved: "Borrador guardado correctamente.",
+    draftUpdated: "Borrador actualizado correctamente.",
     closed: "Cerrado",
     followUp: "Seguimiento",
     approved: "Aprobado",
     submitted: "Enviado",
+    draft: "Borrador",
   },
 };
 
@@ -673,7 +691,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const canManage =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
-  const [tab, setTab] = useState(canManage ? "management" : "create");
+  const [tab, setTab] = useState("create");
   const [language, setLanguage] = useState("en");
   const t = LABELS[language];
 
@@ -684,6 +702,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const [saving, setSaving] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState("");
   const [editingReportId, setEditingReportId] = useState("");
+  const [editingDraftId, setEditingDraftId] = useState("");
 
   const [managementEdit, setManagementEdit] = useState({});
 
@@ -883,6 +902,28 @@ export default function MonthlyEmployeePerformanceReportPage() {
     return reports.find((r) => r.id === selectedReportId) || null;
   }, [reports, selectedReportId]);
 
+  const savedDrafts = useMemo(() => {
+    return reports
+      .filter(
+        (r) =>
+          normalizeLookup(r.managerStatus || "") === "draft" &&
+          String(r.supervisorId || "") === String(user?.id || "")
+      )
+      .sort((a, b) => {
+        const left =
+          typeof a?.updatedAt?.toDate === "function"
+            ? a.updatedAt.toDate().getTime()
+            : new Date(a?.updatedAt || 0).getTime();
+
+        const right =
+          typeof b?.updatedAt?.toDate === "function"
+            ? b.updatedAt.toDate().getTime()
+            : new Date(b?.updatedAt || 0).getTime();
+
+        return right - left;
+      });
+  }, [reports, user?.id]);
+
   function handleAnswerChange(questionId, field, value) {
     setAnswers((prev) => ({
       ...prev,
@@ -902,6 +943,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
     setTab("create");
     setEditingReportId(report.id);
+    setEditingDraftId("");
 
     setForm({
       employeeId: report.employeeId || "",
@@ -925,8 +967,45 @@ export default function MonthlyEmployeePerformanceReportPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function handleLoadDraft(draft) {
+    if (!draft) return;
+
+    setEditingDraftId(draft.id || "");
+    setEditingReportId("");
+    setSelectedReportId(draft.id || "");
+    setTab("create");
+
+    setForm({
+      employeeId: draft.employeeId || "",
+      employeeName: draft.employeeName || "",
+      month: draft.month || getCurrentMonthValue(),
+      templateKey: draft.templateKey || "wchr",
+      department: draft.department || "",
+      roleTitle: draft.roleTitle || "",
+      hireDate: draft.hireDate || "",
+      commentsCompany: draft.commentsCompany || "",
+      commentsEmployee: draft.commentsEmployee || "",
+    });
+
+    const template = TEMPLATE_MAP[draft.templateKey] || TEMPLATE_MAP.wchr;
+    const nextAnswers = {};
+    template.questions.forEach((q) => {
+      nextAnswers[q.id] = draft.answers?.[q.id] || { rating: "", note: "" };
+    });
+    setAnswers(nextAnswers);
+
+    setStatusMessage(
+      `${t.draft} loaded: ${draft.employeeName || "-"} · ${formatMonthValue(
+        draft.month
+      )}`
+    );
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function resetCreateForm() {
     setEditingReportId("");
+    setEditingDraftId("");
     setForm({
       employeeId: "",
       employeeName: "",
@@ -944,6 +1023,88 @@ export default function MonthlyEmployeePerformanceReportPage() {
       resetAnswers[q.id] = { rating: "", note: "" };
     });
     setAnswers(resetAnswers);
+  }
+
+  async function handleSaveDraft() {
+    if (!form.employeeId || !form.month || !form.templateKey) {
+      setStatusMessage("Please complete employee, month, and template.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        employeeId: form.employeeId,
+        employeeName: form.employeeName,
+        month: form.month,
+        templateKey: form.templateKey,
+        templateLabel: activeTemplate.label,
+        roleTitle: form.roleTitle,
+        department: form.department,
+        hireDate: form.hireDate || "",
+        language,
+        supervisorId: user?.id || "",
+        supervisorName: getVisibleUserName(user),
+        commentsCompany: normalizeText(form.commentsCompany),
+        commentsEmployee: normalizeText(form.commentsEmployee),
+        answers,
+        score: Number(formatScore(calculatedScore)),
+        performanceStatus: getPerformanceStatus(calculatedScore),
+        needsFollowUp,
+        followUpItems,
+        managerStatus: "draft",
+        assignedDutyManagerId: "",
+        assignedDutyManagerName: "",
+        managerNote: "",
+        monthClosed: false,
+        congratulationsSent: false,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editingDraftId) {
+        await updateDoc(doc(db, "employeePerformanceReports", editingDraftId), payload);
+
+        setReports((prev) =>
+          prev.map((item) =>
+            item.id === editingDraftId
+              ? {
+                  ...item,
+                  ...payload,
+                  updatedAt: new Date(),
+                }
+              : item
+          )
+        );
+
+        setStatusMessage(t.draftUpdated);
+        return;
+      }
+
+      const ref = await addDoc(collection(db, "employeePerformanceReports"), {
+        ...payload,
+        createdAt: serverTimestamp(),
+      });
+
+      setReports((prev) => [
+        {
+          id: ref.id,
+          ...payload,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        ...prev,
+      ]);
+
+      setEditingDraftId(ref.id);
+      setSelectedReportId(ref.id);
+      setStatusMessage(t.draftSaved);
+    } catch (err) {
+      console.error("Error saving draft:", err);
+      setStatusMessage("Could not save draft.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleSaveReport() {
@@ -976,6 +1137,36 @@ export default function MonthlyEmployeePerformanceReportPage() {
         followUpItems,
         updatedAt: serverTimestamp(),
       };
+
+      if (editingDraftId) {
+        const updatePayload = {
+          ...basePayload,
+          managerStatus: needsFollowUp ? "follow_up" : "submitted",
+        };
+
+        await updateDoc(
+          doc(db, "employeePerformanceReports", editingDraftId),
+          updatePayload
+        );
+
+        setReports((prev) =>
+          prev.map((item) =>
+            item.id === editingDraftId
+              ? {
+                  ...item,
+                  ...updatePayload,
+                  updatedAt: new Date(),
+                }
+              : item
+          )
+        );
+
+        setSelectedReportId(editingDraftId);
+        setEditingDraftId("");
+        setStatusMessage("Performance report saved successfully.");
+        resetCreateForm();
+        return;
+      }
 
       if (editingReportId) {
         const currentReport = reports.find((r) => r.id === editingReportId);
@@ -1060,7 +1251,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
         setSelectedReportId("");
       }
 
-      if (editingReportId === report.id) {
+      if (editingReportId === report.id || editingDraftId === report.id) {
         resetCreateForm();
       }
 
@@ -1339,6 +1530,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
               </TabButton>
             )}
 
+            {canCreate && (
+              <TabButton
+                active={tab === "drafts"}
+                onClick={() => setTab("drafts")}
+              >
+                {t.draftsTab}
+              </TabButton>
+            )}
+
             {canManage && (
               <TabButton
                 active={tab === "management"}
@@ -1382,10 +1582,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   color: "#0f172a",
                 }}
               >
-                {editingReportId ? t.editReport : t.createTab}
+                {editingDraftId
+                  ? `${t.draft} · ${t.continueEditing}`
+                  : editingReportId
+                  ? t.editReport
+                  : t.createTab}
               </div>
 
-              {editingReportId && (
+              {(editingReportId || editingDraftId) && (
                 <ActionButton variant="secondary" onClick={resetCreateForm}>
                   {t.cancelEdit}
                 </ActionButton>
@@ -1659,18 +1863,26 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
             <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <ActionButton
+                variant="secondary"
+                onClick={handleSaveDraft}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : t.saveDraft}
+              </ActionButton>
+
+              <ActionButton
                 variant="primary"
                 onClick={handleSaveReport}
                 disabled={saving}
               >
                 {saving
                   ? "Saving..."
-                  : editingReportId
+                  : editingReportId || editingDraftId
                   ? t.updateReport
                   : t.saveReport}
               </ActionButton>
 
-              {editingReportId && (
+              {(editingReportId || editingDraftId) && (
                 <ActionButton variant="secondary" onClick={resetCreateForm}>
                   {t.cancelEdit}
                 </ActionButton>
@@ -1678,6 +1890,90 @@ export default function MonthlyEmployeePerformanceReportPage() {
             </div>
           </PageCard>
         </>
+      )}
+
+      {tab === "drafts" && canCreate && (
+        <PageCard style={{ padding: 22 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
+              {t.draftsSaved}
+            </h2>
+          </div>
+
+          {savedDrafts.length === 0 ? (
+            <div style={{ color: "#64748b", fontSize: 14 }}>{t.noDrafts}</div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {savedDrafts.map((draft) => (
+                <div
+                  key={draft.id}
+                  style={{
+                    border: "1px solid #dbeafe",
+                    borderRadius: 18,
+                    padding: 16,
+                    background: "#ffffff",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {draft.employeeName || "-"} · {formatMonthValue(draft.month)}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 13,
+                          color: "#64748b",
+                        }}
+                      >
+                        {t.template}: {draft.templateLabel || "-"} · {t.lastUpdated}:{" "}
+                        {formatDateTime(draft.updatedAt)}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <ActionButton
+                        variant="primary"
+                        onClick={() => handleLoadDraft(draft)}
+                      >
+                        {t.continueEditing}
+                      </ActionButton>
+
+                      <ActionButton
+                        variant="danger"
+                        onClick={() => handleDeleteReport(draft)}
+                      >
+                        {t.deleteReport}
+                      </ActionButton>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </PageCard>
       )}
 
       {tab === "management" && canManage && (
@@ -1769,6 +2065,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   }
                 >
                   <option value="all">{t.all}</option>
+                  <option value="draft">{t.draft}</option>
                   <option value="submitted">{t.submitted}</option>
                   <option value="approved">{t.approved}</option>
                   <option value="follow_up">{t.followUp}</option>
@@ -1927,6 +2224,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                 ? "amber"
                                 : normalizeLookup(report.managerStatus) === "closed"
                                 ? "blue"
+                                : normalizeLookup(report.managerStatus) === "draft"
+                                ? "default"
                                 : "default"
                             }
                           />
