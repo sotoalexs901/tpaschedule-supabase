@@ -270,6 +270,15 @@ export default function AppLayout() {
   const canManageEmployeePerformance =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
+  const canSubmitGateChecklist =
+    user?.role === "agent" ||
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageGateChecklist =
+    user?.role === "duty_manager" || user?.role === "station_manager";
+
   const navSections = useMemo(() => {
     const sections = [];
 
@@ -438,6 +447,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canSubmitGateChecklist) {
+      submissionReports.push({
+        to: "/gate-checklist",
+        label: "Gate Checklist",
+        icon: "🛬",
+      });
+    }
+
     if (canAccessTimesheets) {
       managementReports.push({
         to: "/timesheets/reports",
@@ -497,6 +514,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canManageGateChecklist) {
+      managementReports.push({
+        to: "/gate-checklist-management",
+        label: "Gate Checklist Management",
+        icon: "📊",
+      });
+    }
+
     if (canAccessWchrTools) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
@@ -542,6 +567,8 @@ export default function AppLayout() {
     canManageRegulatedGarbage,
     canSubmitEmployeePerformance,
     canManageEmployeePerformance,
+    canSubmitGateChecklist,
+    canManageGateChecklist,
     unreadMessages,
     pendingTimeOff,
     user,
