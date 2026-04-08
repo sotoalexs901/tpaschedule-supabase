@@ -19,6 +19,9 @@ function PageCard({ children, style = {} }) {
         border: "1px solid #dbeafe",
         borderRadius: 20,
         boxShadow: "0 14px 34px rgba(15,23,42,0.06)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
         ...style,
       }}
     >
@@ -51,6 +54,7 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -58,6 +62,7 @@ function TextInput(props) {
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -72,6 +77,7 @@ function TimeInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -79,6 +85,7 @@ function TimeInput(props) {
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -91,6 +98,7 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -98,6 +106,7 @@ function SelectInput(props) {
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -110,6 +119,7 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -120,6 +130,7 @@ function TextArea(props) {
         resize: "vertical",
         minHeight: 90,
         fontFamily: "inherit",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -206,6 +217,7 @@ function InfoCard({ label, value, tone = "default" }) {
         border: `1px solid ${current.border}`,
         borderRadius: 16,
         padding: "14px 16px",
+        minWidth: 0,
       }}
     >
       <div
@@ -225,6 +237,7 @@ function InfoCard({ label, value, tone = "default" }) {
           fontSize: 20,
           fontWeight: 900,
           color: current.color,
+          wordBreak: "break-word",
         }}
       >
         {value}
@@ -335,6 +348,7 @@ function DetailsRow({ label, value }) {
         border: "1px solid #dbeafe",
         borderRadius: 14,
         padding: "12px 14px",
+        minWidth: 0,
       }}
     >
       <div
@@ -1105,6 +1119,9 @@ export default function GateChecklistManagementPage() {
         display: "grid",
         gap: 18,
         fontFamily: "Arial, Helvetica, sans-serif",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
       }}
     >
       <style>{`
@@ -1116,15 +1133,59 @@ export default function GateChecklistManagementPage() {
             display: none !important;
           }
         }
+
+        @media (max-width: 900px) {
+          .gcm-hero {
+            padding: 18px !important;
+            border-radius: 18px !important;
+          }
+
+          .gcm-hero h1 {
+            font-size: 22px !important;
+            line-height: 1.15 !important;
+          }
+
+          .gcm-hero p {
+            font-size: 13px !important;
+          }
+
+          .gcm-card {
+            padding: 14px !important;
+            border-radius: 16px !important;
+          }
+
+          .gcm-section-title {
+            font-size: 18px !important;
+          }
+
+          .gcm-scroll {
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            -webkit-overflow-scrolling: touch !important;
+          }
+
+          .gcm-scroll table {
+            min-width: 980px !important;
+          }
+
+          .gcm-details-scroll table {
+            min-width: 760px !important;
+          }
+        }
       `}</style>
 
       <div
+        className="gcm-hero"
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
           borderRadius: 24,
           padding: 24,
           color: "#fff",
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
         }}
       >
         <div
@@ -1145,6 +1206,7 @@ export default function GateChecklistManagementPage() {
             fontSize: 30,
             lineHeight: 1.05,
             fontWeight: 900,
+            wordBreak: "break-word",
           }}
         >
           Gate Checklist Management / OTP / MBR / Pax Flow
@@ -1156,6 +1218,7 @@ export default function GateChecklistManagementPage() {
             fontSize: 14,
             maxWidth: 960,
             color: "rgba(255,255,255,0.92)",
+            wordBreak: "break-word",
           }}
         >
           Filter by flight, airline, date range, week or month. Close months,
@@ -1182,7 +1245,7 @@ export default function GateChecklistManagementPage() {
         </PageCard>
       )}
 
-      <PageCard className="no-print" style={{ padding: 20 }}>
+      <PageCard className="gcm-card no-print" style={{ padding: 20 }}>
         <div
           style={{
             display: "flex",
@@ -1381,16 +1444,9 @@ export default function GateChecklistManagementPage() {
       </div>
 
       {selectedMonthSummary && (
-        <PageCard style={{ padding: 20 }}>
+        <PageCard className="gcm-card" style={{ padding: 20 }}>
           <div style={{ marginBottom: 12 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 900,
-                color: "#0f172a",
-              }}
-            >
+            <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
               Monthly Closing Summary · {selectedMonthSummary.month}
             </h2>
           </div>
@@ -1440,21 +1496,14 @@ export default function GateChecklistManagementPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: 20 }}>
         <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
+          <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             OTP + MBR by Airline
           </h2>
         </div>
 
-        <div style={tableWrapStyle}>
+        <div className="gcm-scroll" style={tableWrapStyle}>
           <table style={tableStyle}>
             <thead>
               <tr style={{ background: "#f8fbff" }}>
@@ -1492,21 +1541,14 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: 20 }}>
         <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
+          <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Delay Summary
           </h2>
         </div>
 
-        <div style={tableWrapStyle}>
+        <div className="gcm-scroll" style={tableWrapStyle}>
           <table style={tableStyle}>
             <thead>
               <tr style={{ background: "#f8fbff" }}>
@@ -1544,21 +1586,14 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: 20 }}>
         <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
+          <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Pax Flow Summary
           </h2>
         </div>
 
-        <div style={tableWrapStyle}>
+        <div className="gcm-scroll" style={tableWrapStyle}>
           <table style={tableStyle}>
             <thead>
               <tr style={{ background: "#f8fbff" }}>
@@ -1594,21 +1629,14 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: 20 }}>
         <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
+          <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Monthly Summaries
           </h2>
         </div>
 
-        <div style={tableWrapStyle}>
+        <div className="gcm-scroll" style={tableWrapStyle}>
           <table style={tableStyle}>
             <thead>
               <tr style={{ background: "#f8fbff" }}>
@@ -1668,21 +1696,14 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: 20 }}>
         <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
+          <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Submitted Checklists
           </h2>
         </div>
 
-        <div style={tableWrapStyle}>
+        <div className="gcm-scroll" style={tableWrapStyle}>
           <table style={tableStyle}>
             <thead>
               <tr style={{ background: "#f8fbff" }}>
@@ -1810,7 +1831,7 @@ export default function GateChecklistManagementPage() {
       </PageCard>
 
       {selectedReport && (
-        <PageCard style={{ padding: 20 }}>
+        <PageCard className="gcm-card" style={{ padding: 20 }}>
           <div
             style={{
               display: "flex",
@@ -1822,14 +1843,7 @@ export default function GateChecklistManagementPage() {
             }}
           >
             <div>
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: 22,
-                  fontWeight: 900,
-                  color: "#0f172a",
-                }}
-              >
+              <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
                 Gate Checklist Details
               </h2>
               <p
@@ -1838,6 +1852,7 @@ export default function GateChecklistManagementPage() {
                   fontSize: 14,
                   color: "#64748b",
                   fontWeight: 700,
+                  wordBreak: "break-word",
                 }}
               >
                 {selectedReport.airline || "-"} · {selectedReport.flight || "-"} · {selectedReport.date || "-"}
@@ -2387,7 +2402,7 @@ export default function GateChecklistManagementPage() {
 
               <div style={{ marginTop: 18 }}>
                 <h3 style={sectionTitleStyle}>Checklist Tasks</h3>
-                <div style={tableWrapStyle}>
+                <div className="gcm-details-scroll" style={tableWrapStyle}>
                   <table style={detailsTableStyle}>
                     <thead>
                       <tr style={{ background: "#f8fbff" }}>
@@ -2450,9 +2465,13 @@ export default function GateChecklistManagementPage() {
 }
 
 const tableWrapStyle = {
+  width: "100%",
+  maxWidth: "100%",
   overflowX: "auto",
+  overflowY: "hidden",
   borderRadius: 18,
   border: "1px solid #e2e8f0",
+  WebkitOverflowScrolling: "touch",
 };
 
 const tableStyle = {
@@ -2480,6 +2499,7 @@ const thStyle = {
   letterSpacing: "0.06em",
   textAlign: "left",
   borderBottom: "1px solid #e2e8f0",
+  whiteSpace: "nowrap",
 };
 
 const tdStyle = {
