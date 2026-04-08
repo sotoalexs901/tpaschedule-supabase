@@ -615,7 +615,6 @@ export default function AppLayout() {
         minHeight: "100vh",
         width: "100%",
         maxWidth: "100%",
-        overflowX: "hidden",
         background:
           "linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%)",
       }}
@@ -653,6 +652,7 @@ export default function AppLayout() {
               : 16,
             transition: "all 0.22s ease",
             overflow: "hidden",
+            boxSizing: "border-box",
           }}
         >
           <div
@@ -931,7 +931,6 @@ export default function AppLayout() {
                 borderTop: "1px solid #e2e8f0",
                 maxHeight: "70vh",
                 overflowY: "auto",
-                overflowX: "hidden",
               }}
             >
               <div
@@ -1027,7 +1026,6 @@ export default function AppLayout() {
         style={{
           width: "100%",
           maxWidth: "100%",
-          overflowX: "hidden",
           padding: isMobile
             ? "10px 8px 18px"
             : headerCollapsed
@@ -1037,6 +1035,7 @@ export default function AppLayout() {
             : "16px",
           margin: "0 auto",
           transition: "all 0.22s ease",
+          boxSizing: "border-box",
         }}
       >
         {headerCollapsed && (
@@ -1069,6 +1068,7 @@ export default function AppLayout() {
           style={{
             width: "100%",
             maxWidth: headerCollapsed ? "100%" : 1600,
+            minWidth: 0,
             margin: "0 auto",
           }}
         >
@@ -1089,6 +1089,7 @@ function StatusPill({ label, value }) {
         padding: "10px 12px",
         minWidth: 130,
         maxWidth: "100%",
+        boxSizing: "border-box",
       }}
     >
       <p
@@ -1139,8 +1140,9 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
         boxShadow: isActive ? "0 10px 22px rgba(23,105,170,0.10)" : "none",
         minWidth: 0,
         width: "100%",
-        whiteSpace: mobile ? "normal" : "normal",
+        whiteSpace: "normal",
         minHeight: mobile ? 48 : "auto",
+        boxSizing: "border-box",
       })}
     >
       <span
