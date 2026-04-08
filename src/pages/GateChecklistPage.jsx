@@ -189,6 +189,12 @@ const AIRLINE_OPTIONS = [
   { value: "WL", label: "WORLD ATLANTIC (WL)" },
 ];
 
+const YES_NO_OPTIONS = [
+  { value: "", label: "Select" },
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+];
+
 const BASE_SPECIALS = [
   "BLND",
   "DEAF",
@@ -284,7 +290,7 @@ function buildChecklistByAirline(airline) {
         "Uncheck checked-in not boarded passengers if needed",
         "Verify at 100%",
         "Complete / provide PLR to crew",
-        "Review comments list",
+        "Flight Close",
       ],
     },
     {
@@ -307,7 +313,7 @@ function buildChecklistByAirline(airline) {
     },
     {
       time: "Once airborne",
-      tasks: ["Close flight"],
+      tasks: ["AC Off"],
     },
   ];
 
@@ -351,7 +357,7 @@ function buildChecklistByAirline(airline) {
           "Uncheck checked-in not boarded passengers if needed",
           "Verify at 100%",
           "Complete / provide PLR to crew",
-          "Review comments list",
+          "Flight Close",
         ],
       },
       {
@@ -537,7 +543,10 @@ function createInitialForm(user) {
     origin: "",
     destination: "",
     agents: "",
+    delay: "",
+    delayTimeMinutes: "",
     delayCode: "",
+    controllable: "",
     blockIn: "",
     etd: "",
     newEtd: "",
@@ -662,7 +671,11 @@ export default function GateChecklistPage() {
       origin: form.origin || "",
       destination: form.destination || "",
       agents: form.agents || "",
+
+      delay: form.delay || "",
+      delayTimeMinutes: Number(form.delayTimeMinutes || 0),
       delayCode: form.delayCode || "",
+      controllable: form.controllable || "",
 
       gateAgent: form.gateAgent || "",
       expeditor: form.expeditor || "",
@@ -863,7 +876,13 @@ export default function GateChecklistPage() {
         origin: data.origin || "",
         destination: data.destination || "",
         agents: data.agents || "",
+        delay: data.delay || "",
+        delayTimeMinutes:
+          data.delayTimeMinutes !== undefined && data.delayTimeMinutes !== null
+            ? String(data.delayTimeMinutes)
+            : "",
         delayCode: data.delayCode || "",
+        controllable: data.controllable || "",
         blockIn: data.blockIn || "",
         etd: data.etd || "",
         newEtd: data.newEtd || "",
@@ -981,7 +1000,8 @@ export default function GateChecklistPage() {
           }}
         >
           Printable gate checklist with 24-hour time selection, draft, submit,
-          close flight, reopen, baggage counts, New ETD, D-10/D-15, and OTP tracking.
+          close flight, reopen, baggage counts, New ETD, D-10/D-15, delay tracking,
+          and OTP tracking.
         </p>
       </div>
 
@@ -1330,6 +1350,47 @@ export default function GateChecklistPage() {
                 disabled={!canEdit}
                 onChange={(e) => updateField("gateAgent2Arrival", e.target.value)}
               />
+            </div>
+
+            <div>
+              <FieldLabel>Delay</FieldLabel>
+              <SelectInput
+                value={form.delay}
+                disabled={!canEdit}
+                onChange={(e) => updateField("delay", e.target.value)}
+              >
+                {YES_NO_OPTIONS.map((item) => (
+                  <option key={item.value || "blank-delay"} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Delay Time (Minutes)</FieldLabel>
+              <TextInput
+                type="number"
+                min="0"
+                value={form.delayTimeMinutes}
+                disabled={!canEdit}
+                onChange={(e) => updateField("delayTimeMinutes", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Controllable</FieldLabel>
+              <SelectInput
+                value={form.controllable}
+                disabled={!canEdit}
+                onChange={(e) => updateField("controllable", e.target.value)}
+              >
+                {YES_NO_OPTIONS.map((item) => (
+                  <option key={item.value || "blank-control"} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </SelectInput>
             </div>
 
             <div>
