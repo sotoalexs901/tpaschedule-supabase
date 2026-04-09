@@ -617,6 +617,7 @@ export default function AppLayout() {
         maxWidth: "100%",
         background:
           "linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%)",
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -651,7 +652,7 @@ export default function AppLayout() {
               ? 12
               : 16,
             transition: "all 0.22s ease",
-            overflow: "hidden",
+            overflow: "visible",
             boxSizing: "border-box",
           }}
         >
@@ -848,6 +849,7 @@ export default function AppLayout() {
                 gap: 12,
                 maxHeight: "calc(100vh - 140px)",
                 overflowY: "auto",
+                overflowX: "visible",
                 paddingRight: 2,
               }}
             >
@@ -909,6 +911,7 @@ export default function AppLayout() {
                           : "repeat(auto-fit, minmax(220px, 1fr))",
                         gap: 10,
                         padding: 12,
+                        minWidth: 0,
                       }}
                     >
                       {section.items.map((item) => (
@@ -931,6 +934,7 @@ export default function AppLayout() {
                 borderTop: "1px solid #e2e8f0",
                 maxHeight: "70vh",
                 overflowY: "auto",
+                overflowX: "visible",
               }}
             >
               <div
@@ -1036,6 +1040,8 @@ export default function AppLayout() {
           margin: "0 auto",
           transition: "all 0.22s ease",
           boxSizing: "border-box",
+          minWidth: 0,
+          overflow: "visible",
         }}
       >
         {headerCollapsed && (
@@ -1070,6 +1076,7 @@ export default function AppLayout() {
             maxWidth: headerCollapsed ? "100%" : 1600,
             minWidth: 0,
             margin: "0 auto",
+            overflow: "visible",
           }}
         >
           <Outlet />
