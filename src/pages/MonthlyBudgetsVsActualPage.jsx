@@ -836,6 +836,218 @@ const tdStyle = {
   fontSize: 14,
 };
 
+function MobileAirlineSummaryCard({
+  row,
+  selectedMonth,
+  dateRange,
+  editingOverride,
+  setEditingOverride,
+  saveMonthlyOverride,
+}) {
+  const editKey = `${selectedMonth}__${row.airline}`;
+  const canEdit = isFullMonthRange(selectedMonth, dateRange.from, dateRange.to);
+
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 18,
+        padding: 14,
+        background: "#fff",
+        display: "grid",
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>
+          {row.airline}
+        </div>
+
+        {row.isUsingMonthlyOverride
+          ? smallPill("Monthly override", "green")
+          : smallPill("Range budget", "blue")}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 10,
+        }}
+      >
+        <InfoCard label="Raw Budget" value={`${formatHours(row.rawBudget)} hrs`} />
+        <InfoCard label="Final Budget" value={`${formatHours(row.finalBudget)} hrs`} />
+        <InfoCard label="Actual Used" value={`${formatHours(row.actual)} hrs`} tone="blue" />
+        <InfoCard
+          label="Variance"
+          value={`${formatHours(row.variance)} hrs`}
+          tone={row.variance >= 0 ? "green" : "red"}
+        />
+        <InfoCard label="Revenue" value={`${formatHours(row.revenue)} hrs`} tone="green" />
+        <InfoCard
+          label="Overtime"
+          value={`${formatHours(row.overtime)} hrs`}
+          tone={row.overtime > 0 ? "red" : "default"}
+        />
+      </div>
+
+      <div>
+        <FieldLabel>Approved By</FieldLabel>
+        <div style={{ fontSize: 14, color: "#0f172a", lineHeight: 1.6 }}>
+          {row.approvedByText || "—"}
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel>Overtime Reason</FieldLabel>
+        <div style={{ fontSize: 14, color: "#0f172a", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+          {row.overtimeReasonText || "—"}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 8 }}>
+        <FieldLabel>Edit Final Budget</FieldLabel>
+        <TextInput
+          type="number"
+          step="0.01"
+          value={
+            editingOverride[editKey] !== undefined
+              ? editingOverride[editKey]
+              : row.finalBudget
+          }
+          onChange={(e) =>
+            setEditingOverride((prev) => ({
+              ...prev,
+              [editKey]: e.target.value,
+            }))
+          }
+        />
+
+        {!canEdit && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "#b45309",
+              fontWeight: 700,
+              lineHeight: 1.5,
+            }}
+          >
+            Monthly final budget can only be edited when the full month is selected.
+          </div>
+        )}
+
+        <ActionButton
+          variant="success"
+          onClick={() => saveMonthlyOverride(row.airline)}
+          disabled={!canEdit}
+        >
+          Save Final Budget
+        </ActionButton>
+      </div>
+    </div>
+  );
+}
+
+function MobileDailyDetailCard({ row }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 18,
+        padding: 14,
+        background: "#fff",
+        display: "grid",
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>
+          {row.airline}
+        </div>
+        {smallPill(formatDateLabel(row.reportDate), "blue")}
+      </div>
+
+      <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>
+        {prettifyDepartment(row.department)}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 10,
+        }}
+      >
+        <InfoCard label="Budget" value={`${formatHours(row.budget)} hrs`} />
+        <InfoCard label="Actual" value={`${formatHours(row.actual)} hrs`} tone="blue" />
+        <InfoCard
+          label="Variance"
+          value={`${formatHours(row.variance)} hrs`}
+          tone={row.variance >= 0 ? "green" : "red"}
+        />
+        <InfoCard
+          label="Overtime"
+          value={`${formatHours(row.overtime)} hrs`}
+          tone={row.overtime > 0 ? "red" : "default"}
+        />
+      </div>
+
+      <div>
+        <FieldLabel>Approved By</FieldLabel>
+        <div style={{ fontSize: 14, color: "#0f172a", lineHeight: 1.6 }}>
+          {row.approvedByText || "—"}
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel>Overtime Reason</FieldLabel>
+        <div style={{ fontSize: 14, color: "#0f172a", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+          {row.overtimeReasonText || "—"}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 10,
+        }}
+      >
+        <InfoCard label="Weekly Budget Running" value={`${formatHours(row.weekBudgetRunning)} hrs`} />
+        <InfoCard label="Weekly Actual Running" value={`${formatHours(row.weekActualRunning)} hrs`} tone="blue" />
+        <InfoCard
+          label="Weekly Variance Running"
+          value={`${formatHours(row.weekVarianceRunning)} hrs`}
+          tone={row.weekVarianceRunning >= 0 ? "green" : "red"}
+        />
+        <InfoCard label="Monthly Budget Running" value={`${formatHours(row.monthBudgetRunning)} hrs`} />
+        <InfoCard label="Monthly Actual Running" value={`${formatHours(row.monthActualRunning)} hrs`} tone="blue" />
+        <InfoCard
+          label="Monthly Variance Running"
+          value={`${formatHours(row.monthVarianceRunning)} hrs`}
+          tone={row.monthVarianceRunning >= 0 ? "green" : "red"}
+        />
+      </div>
+    </div>
+  );
+}
+
 /* -------------------- Page -------------------- */
 
 export default function MonthlyBudgetsVsActualPage() {
@@ -1401,6 +1613,9 @@ export default function MonthlyBudgetsVsActualPage() {
         display: "grid",
         gap: isMobile ? 14 : 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "hidden",
       }}
     >
       <div
@@ -1411,6 +1626,9 @@ export default function MonthlyBudgetsVsActualPage() {
           padding: isMobile ? 16 : isTablet ? 20 : 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          width: "100%",
+          maxWidth: "100%",
+          overflow: "hidden",
         }}
       >
         <p
@@ -1433,6 +1651,7 @@ export default function MonthlyBudgetsVsActualPage() {
             lineHeight: 1.05,
             fontWeight: 800,
             letterSpacing: "-0.04em",
+            wordBreak: "break-word",
           }}
         >
           Monthly Budgets vs Actual
@@ -1521,6 +1740,7 @@ export default function MonthlyBudgetsVsActualPage() {
                   padding: 14,
                   cursor: "pointer",
                   boxShadow: isActive ? "0 10px 22px rgba(23,105,170,0.10)" : "none",
+                  width: "100%",
                 }}
               >
                 <div
@@ -1528,6 +1748,7 @@ export default function MonthlyBudgetsVsActualPage() {
                     fontSize: 15,
                     fontWeight: 900,
                     color: "#0f172a",
+                    wordBreak: "break-word",
                   }}
                 >
                   {month.label}
@@ -1768,139 +1989,172 @@ export default function MonthlyBudgetsVsActualPage() {
             </div>
           </div>
 
-          <div
-            style={{
-              overflowX: "auto",
-              borderRadius: 18,
-              border: "1px solid #e2e8f0",
-            }}
-          >
-            <table
+          {isMobile ? (
+            <div style={{ display: "grid", gap: 12 }}>
+              {filteredAirlineSummary.length === 0 ? (
+                <div
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 18,
+                    padding: 16,
+                    background: "#fff",
+                    textAlign: "center",
+                    color: "#64748b",
+                    fontWeight: 700,
+                  }}
+                >
+                  No airline rows found.
+                </div>
+              ) : (
+                filteredAirlineSummary.map((row) => (
+                  <MobileAirlineSummaryCard
+                    key={row.airline}
+                    row={row}
+                    selectedMonth={selectedMonth}
+                    dateRange={dateRange}
+                    editingOverride={editingOverride}
+                    setEditingOverride={setEditingOverride}
+                    saveMonthlyOverride={saveMonthlyOverride}
+                  />
+                ))
+              )}
+            </div>
+          ) : (
+            <div
               style={{
-                width: "100%",
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                minWidth: 1400,
-                background: "#fff",
+                overflowX: "auto",
+                borderRadius: 18,
+                border: "1px solid #e2e8f0",
+                WebkitOverflowScrolling: "touch",
               }}
             >
-              <thead>
-                <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle()}>Airline</th>
-                  <th style={thStyle()}>Raw Budget</th>
-                  <th style={thStyle()}>Final Budget</th>
-                  <th style={thStyle()}>Actual Used</th>
-                  <th style={thStyle()}>Variance</th>
-                  <th style={thStyle()}>Revenue</th>
-                  <th style={thStyle()}>Overtime</th>
-                  <th style={thStyle()}>Approved By</th>
-                  <th style={thStyle()}>Overtime Reason</th>
-                  <th style={thStyle()}>Edit Final Budget</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAirlineSummary.map((row, index) => {
-                  const editKey = `${selectedMonth}__${row.airline}`;
-                  return (
-                    <tr
-                      key={row.airline}
-                      style={{
-                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                      }}
-                    >
-                      <td style={tdStyle}>
-                        <strong>{row.airline}</strong>
-                      </td>
-                      <td style={tdStyle}>{formatHours(row.rawBudget)} hrs</td>
-                      <td style={tdStyle}>
-                        {formatHours(row.finalBudget)} hrs
-                        {!row.isUsingMonthlyOverride && (
-                          <div style={{ marginTop: 4 }}>
-                            {smallPill("Range budget", "blue")}
-                          </div>
-                        )}
-                        {row.isUsingMonthlyOverride && (
-                          <div style={{ marginTop: 4 }}>
-                            {smallPill("Monthly override", "green")}
-                          </div>
-                        )}
-                      </td>
-                      <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
-                      <td style={tdStyle}>
-                        {row.variance >= 0
-                          ? smallPill(`${formatHours(row.variance)} hrs`, "green")
-                          : smallPill(`${formatHours(row.variance)} hrs`, "red")}
-                      </td>
-                      <td style={tdStyle}>
-                        {row.revenue > 0
-                          ? smallPill(`${formatHours(row.revenue)} hrs`, "green")
-                          : smallPill(`${formatHours(row.revenue)} hrs`, "default")}
-                      </td>
-                      <td style={tdStyle}>
-                        {row.overtime > 0
-                          ? smallPill(`${formatHours(row.overtime)} hrs`, "red")
-                          : smallPill(`${formatHours(row.overtime)} hrs`, "default")}
-                      </td>
-                      <td style={tdStyle}>{row.approvedByText || "—"}</td>
-                      <td style={tdStyle}>
-                        <div style={{ minWidth: 260, whiteSpace: "pre-line", lineHeight: 1.6 }}>
-                          {row.overtimeReasonText || "—"}
-                        </div>
-                      </td>
-                      <td style={tdStyle}>
-                        <div style={{ display: "grid", gap: 8, minWidth: 180 }}>
-                          <TextInput
-                            type="number"
-                            step="0.01"
-                            value={
-                              editingOverride[editKey] !== undefined
-                                ? editingOverride[editKey]
-                                : row.finalBudget
-                            }
-                            onChange={(e) =>
-                              setEditingOverride((prev) => ({
-                                ...prev,
-                                [editKey]: e.target.value,
-                              }))
-                            }
-                          />
-
-                          {!isFullMonthRange(selectedMonth, dateRange.from, dateRange.to) && (
-                            <div
-                              style={{
-                                fontSize: 12,
-                                color: "#b45309",
-                                fontWeight: 700,
-                                lineHeight: 1.5,
-                              }}
-                            >
-                              Monthly final budget can only be edited when the full month is selected.
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "separate",
+                  borderSpacing: 0,
+                  minWidth: 1400,
+                  background: "#fff",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f8fbff" }}>
+                    <th style={thStyle()}>Airline</th>
+                    <th style={thStyle()}>Raw Budget</th>
+                    <th style={thStyle()}>Final Budget</th>
+                    <th style={thStyle()}>Actual Used</th>
+                    <th style={thStyle()}>Variance</th>
+                    <th style={thStyle()}>Revenue</th>
+                    <th style={thStyle()}>Overtime</th>
+                    <th style={thStyle()}>Approved By</th>
+                    <th style={thStyle()}>Overtime Reason</th>
+                    <th style={thStyle()}>Edit Final Budget</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAirlineSummary.map((row, index) => {
+                    const editKey = `${selectedMonth}__${row.airline}`;
+                    return (
+                      <tr
+                        key={row.airline}
+                        style={{
+                          background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                        }}
+                      >
+                        <td style={tdStyle}>
+                          <strong>{row.airline}</strong>
+                        </td>
+                        <td style={tdStyle}>{formatHours(row.rawBudget)} hrs</td>
+                        <td style={tdStyle}>
+                          {formatHours(row.finalBudget)} hrs
+                          {!row.isUsingMonthlyOverride && (
+                            <div style={{ marginTop: 4 }}>
+                              {smallPill("Range budget", "blue")}
                             </div>
                           )}
+                          {row.isUsingMonthlyOverride && (
+                            <div style={{ marginTop: 4 }}>
+                              {smallPill("Monthly override", "green")}
+                            </div>
+                          )}
+                        </td>
+                        <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
+                        <td style={tdStyle}>
+                          {row.variance >= 0
+                            ? smallPill(`${formatHours(row.variance)} hrs`, "green")
+                            : smallPill(`${formatHours(row.variance)} hrs`, "red")}
+                        </td>
+                        <td style={tdStyle}>
+                          {row.revenue > 0
+                            ? smallPill(`${formatHours(row.revenue)} hrs`, "green")
+                            : smallPill(`${formatHours(row.revenue)} hrs`, "default")}
+                        </td>
+                        <td style={tdStyle}>
+                          {row.overtime > 0
+                            ? smallPill(`${formatHours(row.overtime)} hrs`, "red")
+                            : smallPill(`${formatHours(row.overtime)} hrs`, "default")}
+                        </td>
+                        <td style={tdStyle}>{row.approvedByText || "—"}</td>
+                        <td style={tdStyle}>
+                          <div style={{ minWidth: 260, whiteSpace: "pre-line", lineHeight: 1.6 }}>
+                            {row.overtimeReasonText || "—"}
+                          </div>
+                        </td>
+                        <td style={tdStyle}>
+                          <div style={{ display: "grid", gap: 8, minWidth: 180 }}>
+                            <TextInput
+                              type="number"
+                              step="0.01"
+                              value={
+                                editingOverride[editKey] !== undefined
+                                  ? editingOverride[editKey]
+                                  : row.finalBudget
+                              }
+                              onChange={(e) =>
+                                setEditingOverride((prev) => ({
+                                  ...prev,
+                                  [editKey]: e.target.value,
+                                }))
+                              }
+                            />
 
-                          <ActionButton
-                            variant="success"
-                            onClick={() => saveMonthlyOverride(row.airline)}
-                            disabled={!isFullMonthRange(selectedMonth, dateRange.from, dateRange.to)}
-                          >
-                            Save Final Budget
-                          </ActionButton>
-                        </div>
+                            {!isFullMonthRange(selectedMonth, dateRange.from, dateRange.to) && (
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: "#b45309",
+                                  fontWeight: 700,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                Monthly final budget can only be edited when the full month is selected.
+                              </div>
+                            )}
+
+                            <ActionButton
+                              variant="success"
+                              onClick={() => saveMonthlyOverride(row.airline)}
+                              disabled={!isFullMonthRange(selectedMonth, dateRange.from, dateRange.to)}
+                            >
+                              Save Final Budget
+                            </ActionButton>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {filteredAirlineSummary.length === 0 && (
+                    <tr>
+                      <td colSpan={10} style={{ ...tdStyle, textAlign: "center" }}>
+                        No airline rows found.
                       </td>
                     </tr>
-                  );
-                })}
-
-                {filteredAirlineSummary.length === 0 && (
-                  <tr>
-                    <td colSpan={10} style={{ ...tdStyle, textAlign: "center" }}>
-                      No airline rows found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </PageCard>
       )}
 
@@ -1914,6 +2168,7 @@ export default function MonthlyBudgetsVsActualPage() {
               justifyContent: "space-between",
               alignItems: "center",
               gap: 12,
+              flexWrap: "wrap",
             }}
           >
             <div>
@@ -1942,103 +2197,131 @@ export default function MonthlyBudgetsVsActualPage() {
           </summary>
 
           <div style={{ marginTop: 16 }}>
-            <div
-              style={{
-                overflowX: "auto",
-                borderRadius: 18,
-                border: "1px solid #e2e8f0",
-              }}
-            >
-              <table
+            {isMobile ? (
+              <div style={{ display: "grid", gap: 12 }}>
+                {filteredDetailRows.length === 0 ? (
+                  <div
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: 16,
+                      background: "#fff",
+                      textAlign: "center",
+                      color: "#64748b",
+                      fontWeight: 700,
+                    }}
+                  >
+                    No daily detail rows found.
+                  </div>
+                ) : (
+                  filteredDetailRows.map((row) => (
+                    <MobileDailyDetailCard
+                      key={`${row.airline}-${row.department}-${row.reportDate}`}
+                      row={row}
+                    />
+                  ))
+                )}
+              </div>
+            ) : (
+              <div
                 style={{
-                  width: "100%",
-                  borderCollapse: "separate",
-                  borderSpacing: 0,
-                  minWidth: 2200,
-                  background: "#fff",
+                  overflowX: "auto",
+                  borderRadius: 18,
+                  border: "1px solid #e2e8f0",
+                  WebkitOverflowScrolling: "touch",
                 }}
               >
-                <thead>
-                  <tr style={{ background: "#f8fbff" }}>
-                    <th style={thStyle()}>Airline</th>
-                    <th style={thStyle()}>Department</th>
-                    <th style={thStyle()}>Date</th>
-                    <th style={thStyle()}>Budget</th>
-                    <th style={thStyle()}>Actual</th>
-                    <th style={thStyle()}>Variance</th>
-                    <th style={thStyle()}>Revenue</th>
-                    <th style={thStyle()}>Overtime</th>
-                    <th style={thStyle()}>Approved By</th>
-                    <th style={thStyle()}>Overtime Reason</th>
-                    <th style={thStyle()}>Weekly Budget Running</th>
-                    <th style={thStyle()}>Weekly Actual Running</th>
-                    <th style={thStyle()}>Weekly Variance Running</th>
-                    <th style={thStyle()}>Monthly Budget Running</th>
-                    <th style={thStyle()}>Monthly Actual Running</th>
-                    <th style={thStyle()}>Monthly Variance Running</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredDetailRows.map((row, index) => (
-                    <tr
-                      key={`${row.airline}-${row.department}-${row.reportDate}`}
-                      style={{
-                        background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                      }}
-                    >
-                      <td style={tdStyle}>{row.airline}</td>
-                      <td style={tdStyle}>{prettifyDepartment(row.department)}</td>
-                      <td style={tdStyle}>{formatDateLabel(row.reportDate)}</td>
-                      <td style={tdStyle}>{formatHours(row.budget)} hrs</td>
-                      <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
-                      <td style={tdStyle}>
-                        {row.variance >= 0
-                          ? smallPill(`${formatHours(row.variance)} hrs`, "green")
-                          : smallPill(`${formatHours(row.variance)} hrs`, "red")}
-                      </td>
-                      <td style={tdStyle}>
-                        {row.revenue > 0
-                          ? smallPill(`${formatHours(row.revenue)} hrs`, "green")
-                          : smallPill(`${formatHours(row.revenue)} hrs`, "default")}
-                      </td>
-                      <td style={tdStyle}>
-                        {row.overtime > 0
-                          ? smallPill(`${formatHours(row.overtime)} hrs`, "red")
-                          : smallPill(`${formatHours(row.overtime)} hrs`, "default")}
-                      </td>
-                      <td style={tdStyle}>{row.approvedByText || "—"}</td>
-                      <td style={tdStyle}>
-                        <div style={{ minWidth: 240, whiteSpace: "pre-line", lineHeight: 1.6 }}>
-                          {row.overtimeReasonText || "—"}
-                        </div>
-                      </td>
-                      <td style={tdStyle}>{formatHours(row.weekBudgetRunning)} hrs</td>
-                      <td style={tdStyle}>{formatHours(row.weekActualRunning)} hrs</td>
-                      <td style={tdStyle}>
-                        {row.weekVarianceRunning >= 0
-                          ? smallPill(`${formatHours(row.weekVarianceRunning)} hrs`, "green")
-                          : smallPill(`${formatHours(row.weekVarianceRunning)} hrs`, "red")}
-                      </td>
-                      <td style={tdStyle}>{formatHours(row.monthBudgetRunning)} hrs</td>
-                      <td style={tdStyle}>{formatHours(row.monthActualRunning)} hrs</td>
-                      <td style={tdStyle}>
-                        {row.monthVarianceRunning >= 0
-                          ? smallPill(`${formatHours(row.monthVarianceRunning)} hrs`, "green")
-                          : smallPill(`${formatHours(row.monthVarianceRunning)} hrs`, "red")}
-                      </td>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "separate",
+                    borderSpacing: 0,
+                    minWidth: 2200,
+                    background: "#fff",
+                  }}
+                >
+                  <thead>
+                    <tr style={{ background: "#f8fbff" }}>
+                      <th style={thStyle()}>Airline</th>
+                      <th style={thStyle()}>Department</th>
+                      <th style={thStyle()}>Date</th>
+                      <th style={thStyle()}>Budget</th>
+                      <th style={thStyle()}>Actual</th>
+                      <th style={thStyle()}>Variance</th>
+                      <th style={thStyle()}>Revenue</th>
+                      <th style={thStyle()}>Overtime</th>
+                      <th style={thStyle()}>Approved By</th>
+                      <th style={thStyle()}>Overtime Reason</th>
+                      <th style={thStyle()}>Weekly Budget Running</th>
+                      <th style={thStyle()}>Weekly Actual Running</th>
+                      <th style={thStyle()}>Weekly Variance Running</th>
+                      <th style={thStyle()}>Monthly Budget Running</th>
+                      <th style={thStyle()}>Monthly Actual Running</th>
+                      <th style={thStyle()}>Monthly Variance Running</th>
                     </tr>
-                  ))}
+                  </thead>
+                  <tbody>
+                    {filteredDetailRows.map((row, index) => (
+                      <tr
+                        key={`${row.airline}-${row.department}-${row.reportDate}`}
+                        style={{
+                          background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                        }}
+                      >
+                        <td style={tdStyle}>{row.airline}</td>
+                        <td style={tdStyle}>{prettifyDepartment(row.department)}</td>
+                        <td style={tdStyle}>{formatDateLabel(row.reportDate)}</td>
+                        <td style={tdStyle}>{formatHours(row.budget)} hrs</td>
+                        <td style={tdStyle}>{formatHours(row.actual)} hrs</td>
+                        <td style={tdStyle}>
+                          {row.variance >= 0
+                            ? smallPill(`${formatHours(row.variance)} hrs`, "green")
+                            : smallPill(`${formatHours(row.variance)} hrs`, "red")}
+                        </td>
+                        <td style={tdStyle}>
+                          {row.revenue > 0
+                            ? smallPill(`${formatHours(row.revenue)} hrs`, "green")
+                            : smallPill(`${formatHours(row.revenue)} hrs`, "default")}
+                        </td>
+                        <td style={tdStyle}>
+                          {row.overtime > 0
+                            ? smallPill(`${formatHours(row.overtime)} hrs`, "red")
+                            : smallPill(`${formatHours(row.overtime)} hrs`, "default")}
+                        </td>
+                        <td style={tdStyle}>{row.approvedByText || "—"}</td>
+                        <td style={tdStyle}>
+                          <div style={{ minWidth: 240, whiteSpace: "pre-line", lineHeight: 1.6 }}>
+                            {row.overtimeReasonText || "—"}
+                          </div>
+                        </td>
+                        <td style={tdStyle}>{formatHours(row.weekBudgetRunning)} hrs</td>
+                        <td style={tdStyle}>{formatHours(row.weekActualRunning)} hrs</td>
+                        <td style={tdStyle}>
+                          {row.weekVarianceRunning >= 0
+                            ? smallPill(`${formatHours(row.weekVarianceRunning)} hrs`, "green")
+                            : smallPill(`${formatHours(row.weekVarianceRunning)} hrs`, "red")}
+                        </td>
+                        <td style={tdStyle}>{formatHours(row.monthBudgetRunning)} hrs</td>
+                        <td style={tdStyle}>{formatHours(row.monthActualRunning)} hrs</td>
+                        <td style={tdStyle}>
+                          {row.monthVarianceRunning >= 0
+                            ? smallPill(`${formatHours(row.monthVarianceRunning)} hrs`, "green")
+                            : smallPill(`${formatHours(row.monthVarianceRunning)} hrs`, "red")}
+                        </td>
+                      </tr>
+                    ))}
 
-                  {filteredDetailRows.length === 0 && (
-                    <tr>
-                      <td colSpan={16} style={{ ...tdStyle, textAlign: "center" }}>
-                        No daily detail rows found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    {filteredDetailRows.length === 0 && (
+                      <tr>
+                        <td colSpan={16} style={{ ...tdStyle, textAlign: "center" }}>
+                          No daily detail rows found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </details>
       </PageCard>
