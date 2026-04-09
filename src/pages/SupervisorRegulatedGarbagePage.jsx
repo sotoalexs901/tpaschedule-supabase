@@ -446,6 +446,20 @@ export default function SupervisorRegulatedGarbagePage() {
     }
   }, [canAccess, user?.id]);
 
+  useEffect(() => {
+    if (requiredModal.itemKey !== "orange_bags_quantity") return;
+
+    const rawValue = String(
+      form.items.orange_bags_quantity?.quantityOnCart || ""
+    ).trim();
+    const qty = safeNumber(rawValue);
+
+    if (rawValue !== "" && qty >= 10) {
+      setRequiredModal({ open: false, itemKey: "" });
+      setStatusMessage("");
+    }
+  }, [form.items.orange_bags_quantity?.quantityOnCart, requiredModal.itemKey]);
+
   const officeAlerts = useMemo(() => {
     const rows = [];
 
@@ -597,7 +611,10 @@ export default function SupervisorRegulatedGarbagePage() {
       }
     }
 
-    const orangeQtyRaw = String(form.items.orange_bags_quantity?.quantityOnCart || "").trim();
+    const orangeQtyRaw = String(
+      form.items.orange_bags_quantity?.quantityOnCart || ""
+    ).trim();
+
     if (!orangeQtyRaw) {
       setStatusMessage("Please enter Orange Bags quantity on cart.");
       return false;
@@ -731,6 +748,12 @@ export default function SupervisorRegulatedGarbagePage() {
       const item = form.items.orange_bags_quantity;
       const qty = safeNumber(item.quantityOnCart);
 
+      if (qty >= 10) {
+        setRequiredModal({ open: false, itemKey: "" });
+        setStatusMessage("");
+        return;
+      }
+
       if (!String(item.replacementDate || "").trim()) {
         setStatusMessage("Please complete the replacement date.");
         return;
@@ -751,12 +774,6 @@ export default function SupervisorRegulatedGarbagePage() {
           setStatusMessage("Please estimate when it will be back in stock.");
           return;
         }
-      }
-
-      if (qty < 10) {
-        setRequiredModal({ open: false, itemKey: "" });
-        setStatusMessage("");
-        return;
       }
     } else {
       const item = form.items[itemKey];
