@@ -498,9 +498,13 @@ export default function CabinScheduleViewPage() {
       }
     }
 
-    if (id) {
-      loadScheduleView();
+    if (!id) {
+      setLoading(false);
+      setError("Missing cabin schedule ID.");
+      return;
     }
+
+    loadScheduleView();
   }, [id]);
 
   const resolvedCreatedBy = useMemo(() => {
@@ -523,15 +527,15 @@ export default function CabinScheduleViewPage() {
     () =>
       Object.values(slotsByDay)
         .flat()
-        .filter((slot) => !slot.draftDeleteCandidate && (slot.employeeId || slot.employeeName)).length,
+        .filter(
+          (slot) =>
+            !slot.draftDeleteCandidate && (slot.employeeId || slot.employeeName)
+        ).length,
     [slotsByDay]
   );
 
   const currentSlotsSignature = useMemo(
-    () =>
-      JSON.stringify(
-        Object.values(slotsByDay).flat().map(minifySlotForCompare)
-      ),
+    () => JSON.stringify(Object.values(slotsByDay).flat().map(minifySlotForCompare)),
     [slotsByDay]
   );
 
@@ -773,7 +777,7 @@ export default function CabinScheduleViewPage() {
     try {
       setExporting(true);
 
-      const safeWeek = schedule?.weekStartDate || "week";
+      const safeWeek = schedule?.weekStartDate || schedule?.weekStart || "week";
       const fileName =
         viewMode === "roster"
           ? `cabin-roster-${safeWeek}.pdf`
@@ -792,6 +796,49 @@ export default function CabinScheduleViewPage() {
     } finally {
       setExporting(false);
     }
+  }
+
+  if (!id) {
+    return (
+      <div style={{ display: "grid", gap: 16 }}>
+        <PageCard style={{ padding: 18 }}>
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              color: "#9f1239",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            Missing cabin schedule ID.
+          </div>
+        </PageCard>
+
+        <div>
+          <Link
+            to="/cabin-saved-schedules"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: "#edf7ff",
+              color: "#1769aa",
+              border: "1px solid #cfe7fb",
+              textDecoration: "none",
+              fontSize: 13,
+              fontWeight: 800,
+            }}
+          >
+            Back to Cabin Saved Schedules
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (loading) {
@@ -982,7 +1029,10 @@ export default function CabinScheduleViewPage() {
 
       <PageCard style={{ padding: 20 }}>
         <div style={summaryGridStyle}>
-          <SummaryBox label="Week Start" value={schedule?.weekStartDate || "-"} />
+          <SummaryBox
+            label="Week Start"
+            value={schedule?.weekStartDate || schedule?.weekStart || "-"}
+          />
           <SummaryBox label="Created By" value={resolvedCreatedBy} />
           <SummaryBox
             label="Status"
@@ -1111,7 +1161,7 @@ export default function CabinScheduleViewPage() {
             editMode={editMode}
             deleting={deleting}
             onDeleteRow={handleDeleteRosterRow}
-            weekStartDate={schedule?.weekStartDate}
+            weekStartDate={schedule?.weekStartDate || schedule?.weekStart}
           />
         </div>
       ) : (
