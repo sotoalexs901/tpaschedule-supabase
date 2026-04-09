@@ -7,6 +7,8 @@ import {
   collection,
   getDocs,
   deleteDoc,
+  updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -128,11 +130,7 @@ function weekStartFromDays(days) {
 
   const today = new Date();
   const thisYear = today.getFullYear();
-  const candidateThisYear = new Date(
-    thisYear,
-    Number(mm) - 1,
-    Number(dd)
-  );
+  const candidateThisYear = new Date(thisYear, Number(mm) - 1, Number(dd));
 
   if (!Number.isNaN(candidateThisYear.getTime())) {
     return `${candidateThisYear.getFullYear()}-${String(
@@ -217,6 +215,12 @@ function ActionButton({
       color: "#1769aa",
       border: "1px solid #cfe7fb",
       boxShadow: "none",
+    },
+    warning: {
+      background: "#f59e0b",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
     },
   };
 
@@ -513,6 +517,7 @@ export default function ApprovedScheduleView() {
   const [schedule, setSchedule] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [deleting, setDeleting] = useState(false);
+  const [returning, setReturning] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -554,24 +559,77 @@ export default function ApprovedScheduleView() {
     schedule.airlineDisplayName || schedule.airline
   );
 
-  const handleUseAsTemplate = () => {
+  const buildTemplatePayload = () => {
     const resolvedWeekStart =
       normalizeDateString(schedule.weekStart) ||
       normalizeDateString(schedule.weekTag) ||
       weekStartFromDays(schedule.days);
 
+    return {
+      airline: schedule.airline || displayAirline,
+      airlineDisplayName: schedule.airlineDisplayName || displayAirline,
+      department: schedule.department || "",
+      weekStart: resolvedWeekStart,
+      days: schedule.days || null,
+      grid: cloneGrid(schedule.grid || []),
+    };
+  };
+
+  const handleUseAsTemplate = () => {
     navigate("/schedule", {
       state: {
-        template: {
-          airline: schedule.airline || displayAirline,
-          airlineDisplayName: schedule.airlineDisplayName || displayAirline,
-          department: schedule.department || "",
-          weekStart: resolvedWeekStart,
-          days: schedule.days || null,
-          grid: cloneGrid(schedule.grid || []),
-        },
+        template: buildTemplatePayload(),
+        sourceApprovedScheduleId: schedule.id,
+        preserveStructure: true,
+        returnMode: false,
       },
     });
+  };
+
+  const handleReturnAndEdit = async () => {
+    if (!user) {
+      setStatusMessage("User session not found.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Return this approved schedule and continue editing with the same structure?"
+    );
+    if (!confirmed) return;
+
+    try {
+      setReturning(true);
+      setStatusMessage("");
+
+      await updateDoc(doc(db, "schedules", schedule.id), {
+        status: "returned",
+        returnedAt: serverTimestamp(),
+        returnedByName:
+          user?.displayName ||
+          user?.fullName ||
+          user?.name ||
+          user?.username ||
+          "User",
+        returnedByRole: user?.role || "",
+        updatedAt: serverTimestamp(),
+      });
+
+      navigate("/schedule", {
+        state: {
+          template: buildTemplatePayload(),
+          sourceApprovedScheduleId: schedule.id,
+          preserveStructure: true,
+          returnMode: true,
+          editExistingApproved: true,
+          keepOriginalStructure: true,
+        },
+      });
+    } catch (err) {
+      console.error("Error returning schedule for editing:", err);
+      setStatusMessage("Could not return schedule for editing.");
+    } finally {
+      setReturning(false);
+    }
   };
 
   const handleDeleteSchedule = async () => {
@@ -742,7 +800,7 @@ export default function ApprovedScheduleView() {
                 }}
               >
                 View the final approved schedule, export it to PDF, use it as a
-                template, or open a full-screen version.
+                template, or return it to continue editing without losing the structure.
               </p>
             </div>
 
@@ -880,6 +938,15 @@ export default function ApprovedScheduleView() {
               onClick={handleUseAsTemplate}
             >
               Use this schedule as template
+            </ActionButton>
+
+            <ActionButton
+              type="button"
+              variant="warning"
+              onClick={handleReturnAndEdit}
+              disabled={returning}
+            >
+              {returning ? "Returning..." : "Return and continue editing"}
             </ActionButton>
 
             <ActionButton
