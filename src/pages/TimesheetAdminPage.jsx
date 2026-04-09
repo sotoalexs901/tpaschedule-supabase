@@ -148,6 +148,24 @@ function prettifyDepartment(value) {
   return clean;
 }
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -156,6 +174,10 @@ function PageCard({ children, style = {} }) {
         border: "1px solid rgba(255,255,255,0.96)",
         borderRadius: 24,
         boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflow: "hidden",
         ...style,
       }}
     >
@@ -188,6 +210,7 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
@@ -195,6 +218,7 @@ function TextInput(props) {
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -207,6 +231,7 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
@@ -214,6 +239,7 @@ function SelectInput(props) {
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -226,6 +252,7 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
@@ -236,6 +263,7 @@ function TextArea(props) {
         resize: "vertical",
         minHeight: 110,
         fontFamily: "inherit",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -383,6 +411,7 @@ function InfoCard({ label, value }) {
         border: "1px solid #dbeafe",
         borderRadius: 16,
         padding: "14px 16px",
+        minWidth: 0,
       }}
     >
       <div
@@ -483,7 +512,7 @@ function buildPrintableHtml(report, airlineSummary) {
     airlineSummary?.overBudget || report.overBudget
       ? `
         <div class="alert-box">
-          Budget alert: ${report.normalizedAirline} is over budget by
+          Budget alert: ${report.normalizedAirline} is over daily budget by
           ${Number(report.overBudgetBy || airlineSummary?.overBy || 0).toFixed(2)} hours
           on ${report.reportDate || "this day"}.
         </div>
@@ -750,6 +779,7 @@ function emptyEditRow() {
 
 export default function TimesheetAdminPage() {
   const { user } = useUser();
+  const { isMobile, isTablet } = useViewport();
 
   const normalizedUsername = String(user?.username || "")
     .trim()
@@ -1543,6 +1573,9 @@ export default function TimesheetAdminPage() {
           display: "grid",
           gap: 18,
           fontFamily: "Poppins, Inter, system-ui, sans-serif",
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
         }}
       >
         <div
@@ -1602,16 +1635,19 @@ export default function TimesheetAdminPage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 14 : 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
       }}
     >
       <div
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 16 : isTablet ? 20 : 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
@@ -1634,7 +1670,7 @@ export default function TimesheetAdminPage() {
           <p
             style={{
               margin: 0,
-              fontSize: 12,
+              fontSize: isMobile ? 10 : 12,
               textTransform: "uppercase",
               letterSpacing: "0.22em",
               color: "rgba(255,255,255,0.78)",
@@ -1647,7 +1683,7 @@ export default function TimesheetAdminPage() {
           <h1
             style={{
               margin: "10px 0 6px",
-              fontSize: 32,
+              fontSize: isMobile ? 26 : 32,
               lineHeight: 1.05,
               fontWeight: 800,
               letterSpacing: "-0.04em",
@@ -1660,8 +1696,9 @@ export default function TimesheetAdminPage() {
             style={{
               margin: 0,
               maxWidth: 760,
-              fontSize: 14,
+              fontSize: isMobile ? 12 : 14,
               color: "rgba(255,255,255,0.88)",
+              lineHeight: 1.6,
             }}
           >
             {restrictToOwnReports
@@ -1760,7 +1797,7 @@ export default function TimesheetAdminPage() {
         </div>
       )}
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
         <div
           style={{
             marginBottom: showMonthlyOverBudgetSummary ? 16 : 0,
@@ -1771,11 +1808,11 @@ export default function TimesheetAdminPage() {
             alignItems: "center",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: isMobile ? 18 : 20,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -1786,7 +1823,7 @@ export default function TimesheetAdminPage() {
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: 13,
+                fontSize: isMobile ? 12 : 13,
                 color: "#64748b",
               }}
             >
@@ -1859,7 +1896,12 @@ export default function TimesheetAdminPage() {
 
                 <div
                   style={{
+                    width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
                     overflowX: "auto",
+                    overflowY: "hidden",
+                    WebkitOverflowScrolling: "touch",
                     borderRadius: 18,
                     border: "1px solid #e2e8f0",
                   }}
@@ -1946,7 +1988,7 @@ export default function TimesheetAdminPage() {
       </PageCard>
 
       {overBudgetAlerts.length > 0 && (
-        <PageCard style={{ padding: 18 }}>
+        <PageCard style={{ padding: isMobile ? 16 : 18 }}>
           <div
             style={{
               background: "#fff1f2",
@@ -1985,12 +2027,12 @@ export default function TimesheetAdminPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
         <div style={{ marginBottom: 16 }}>
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: isMobile ? 18 : 20,
               fontWeight: 800,
               color: "#0f172a",
               letterSpacing: "-0.02em",
@@ -2003,7 +2045,9 @@ export default function TimesheetAdminPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(220px, 1fr))",
             gap: 14,
           }}
         >
@@ -2048,7 +2092,7 @@ export default function TimesheetAdminPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
         <div
           style={{
             marginBottom: 14,
@@ -2059,11 +2103,11 @@ export default function TimesheetAdminPage() {
             alignItems: "center",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: isMobile ? 18 : 20,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -2074,7 +2118,7 @@ export default function TimesheetAdminPage() {
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: 13,
+                fontSize: isMobile ? 12 : 13,
                 color: "#64748b",
               }}
             >
@@ -2112,7 +2156,12 @@ export default function TimesheetAdminPage() {
         ) : (
           <div
             style={{
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
               overflowX: "auto",
+              overflowY: "hidden",
+              WebkitOverflowScrolling: "touch",
               borderRadius: 18,
               border: "1px solid #e2e8f0",
             }}
@@ -2198,17 +2247,23 @@ export default function TimesheetAdminPage() {
         style={{
           display: "grid",
           gridTemplateColumns: selectedReport
-            ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
+            ? isMobile
+              ? "1fr"
+              : "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
             : "1fr",
           gap: 18,
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
+          alignItems: "start",
         }}
       >
-        <PageCard style={{ padding: 18, overflow: "hidden" }}>
+        <PageCard style={{ padding: 18 }}>
           <div style={{ marginBottom: 14 }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: isMobile ? 18 : 20,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -2219,7 +2274,7 @@ export default function TimesheetAdminPage() {
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: 13,
+                fontSize: isMobile ? 12 : 13,
                 color: "#64748b",
               }}
             >
@@ -2256,7 +2311,12 @@ export default function TimesheetAdminPage() {
           ) : (
             <div
               style={{
+                width: "100%",
+                maxWidth: "100%",
+                minWidth: 0,
                 overflowX: "auto",
+                overflowY: "hidden",
+                WebkitOverflowScrolling: "touch",
                 borderRadius: 18,
                 border: "1px solid #e2e8f0",
               }}
@@ -2370,7 +2430,7 @@ export default function TimesheetAdminPage() {
         </PageCard>
 
         {selectedReport && (
-          <PageCard style={{ padding: 20 }}>
+          <PageCard style={{ padding: isMobile ? 16 : 20 }}>
             {!isEditMode ? (
               <div style={{ display: "grid", gap: 16 }}>
                 <div
@@ -2382,11 +2442,11 @@ export default function TimesheetAdminPage() {
                     alignItems: "flex-start",
                   }}
                 >
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <h2
                       style={{
                         margin: 0,
-                        fontSize: 22,
+                        fontSize: isMobile ? 20 : 22,
                         fontWeight: 800,
                         color: "#0f172a",
                         letterSpacing: "-0.02em",
@@ -2397,7 +2457,7 @@ export default function TimesheetAdminPage() {
                     <p
                       style={{
                         margin: "4px 0 0",
-                        fontSize: 13,
+                        fontSize: isMobile ? 12 : 13,
                         color: "#64748b",
                       }}
                     >
@@ -2438,7 +2498,9 @@ export default function TimesheetAdminPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                     gap: 12,
                   }}
                 >
@@ -2673,7 +2735,12 @@ export default function TimesheetAdminPage() {
 
                 <div
                   style={{
+                    width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
                     overflowX: "auto",
+                    overflowY: "hidden",
+                    WebkitOverflowScrolling: "touch",
                     borderRadius: 18,
                     border: "1px solid #e2e8f0",
                   }}
@@ -2724,16 +2791,17 @@ export default function TimesheetAdminPage() {
                 <div
                   style={{
                     display: "flex",
-                    justifyContent: "flex-end",
+                    justifyContent: isMobile ? "stretch" : "flex-end",
                   }}
                 >
                   <div
                     style={{
-                      minWidth: 260,
+                      minWidth: isMobile ? "100%" : 260,
                       background: "#f8fbff",
                       border: "1px solid #dbeafe",
                       borderRadius: 16,
                       padding: "16px 18px",
+                      boxSizing: "border-box",
                     }}
                   >
                     <div
@@ -2771,11 +2839,11 @@ export default function TimesheetAdminPage() {
                     alignItems: "flex-start",
                   }}
                 >
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <h2
                       style={{
                         margin: 0,
-                        fontSize: 22,
+                        fontSize: isMobile ? 20 : 22,
                         fontWeight: 800,
                         color: "#0f172a",
                         letterSpacing: "-0.02em",
@@ -2786,7 +2854,7 @@ export default function TimesheetAdminPage() {
                     <p
                       style={{
                         margin: "4px 0 0",
-                        fontSize: 13,
+                        fontSize: isMobile ? 12 : 13,
                         color: "#64748b",
                       }}
                     >
@@ -2826,7 +2894,9 @@ export default function TimesheetAdminPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                     gap: 12,
                   }}
                 >
@@ -2906,7 +2976,12 @@ export default function TimesheetAdminPage() {
 
                 <div
                   style={{
+                    width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
                     overflowX: "auto",
+                    overflowY: "hidden",
+                    WebkitOverflowScrolling: "touch",
                     borderRadius: 18,
                     border: "1px solid #e2e8f0",
                   }}
@@ -3023,16 +3098,17 @@ export default function TimesheetAdminPage() {
                 <div
                   style={{
                     display: "flex",
-                    justifyContent: "flex-end",
+                    justifyContent: isMobile ? "stretch" : "flex-end",
                   }}
                 >
                   <div
                     style={{
-                      minWidth: 260,
+                      minWidth: isMobile ? "100%" : 260,
                       background: "#f8fbff",
                       border: "1px solid #dbeafe",
                       borderRadius: 16,
                       padding: "16px 18px",
+                      boxSizing: "border-box",
                     }}
                   >
                     <div
