@@ -7,6 +7,8 @@ import {
   serverTimestamp,
   query,
   where,
+  doc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -53,7 +55,8 @@ const loadImage = (src) =>
 
 const toMinutes = (timeStr) => {
   if (!timeStr || timeStr === "OFF") return null;
-  const [h, m] = timeStr.split(":").map(Number);
+  const [h, m] = String(timeStr).split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
 };
 
@@ -74,8 +77,6 @@ const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
   const [s2, e2] = b;
   return s1 < e2 && s2 < e1;
 };
-
-const JS_DAY_TO_KEY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 const normalizeAirlineName = (value) => {
   const airline = String(value || "").trim();
@@ -139,11 +140,7 @@ function weekStartFromDays(days) {
 
   const today = new Date();
   const thisYear = today.getFullYear();
-  const candidateThisYear = new Date(
-    thisYear,
-    Number(mm) - 1,
-    Number(dd)
-  );
+  const candidateThisYear = new Date(thisYear, Number(mm) - 1, Number(dd));
 
   if (!Number.isNaN(candidateThisYear.getTime())) {
     return `${candidateThisYear.getFullYear()}-${String(
@@ -355,10 +352,13 @@ export default function SchedulePage() {
   const [weekStart, setWeekStart] = useState("");
 
   const [employees, setEmployees] = useState([]);
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState([emptyRow()]);
   const [airlineBudgets, setAirlineBudgets] = useState({});
   const [blockedByEmployee, setBlockedByEmployee] = useState({});
   const [statusMessage, setStatusMessage] = useState("");
+
+  const [editingScheduleId, setEditingScheduleId] = useState("");
+  const [loadedExistingSchedule, setLoadedExistingSchedule] = useState(false);
 
   const dayNumbers = useMemo(() => buildDayNumbers(weekStart), [weekStart]);
 
@@ -369,53 +369,64 @@ export default function SchedulePage() {
     statusMessage.toLowerCase().includes("red flag");
 
   useEffect(() => {
-    const template = location.state?.template;
-    if (!template) return;
+    const incoming =
+      location.state?.returnedSchedule ||
+      location.state?.editSchedule ||
+      location.state?.schedule ||
+      location.state?.template ||
+      null;
+
+    if (!incoming) return;
 
     const resolvedAirline = normalizeAirlineName(
-      template.airlineDisplayName || template.airline || ""
+      incoming.airlineDisplayName || incoming.airline || ""
     );
 
     const resolvedWeekStart =
-      normalizeDateString(template.weekStart) ||
-      normalizeDateString(template.weekTag) ||
-      weekStartFromDays(template.days);
+      normalizeDateString(incoming.weekStart) ||
+      normalizeDateString(incoming.weekTag) ||
+      weekStartFromDays(incoming.days);
 
-    if (template.airline) {
-      setAirlineKey(normalizeAirlineName(template.airline));
-    } else if (resolvedAirline) {
-      setAirlineKey(resolvedAirline);
+    if (incoming.id) {
+      setEditingScheduleId(incoming.id);
+      setLoadedExistingSchedule(true);
     }
 
-    if (template.airlineDisplayName) {
-      setAirlineDisplayName(template.airlineDisplayName);
-    } else if (resolvedAirline) {
-      setAirlineDisplayName(resolvedAirline);
+    if (resolvedAirline) {
+      setAirlineKey(normalizeAirlineName(incoming.airline || resolvedAirline));
+      setAirlineDisplayName(incoming.airlineDisplayName || resolvedAirline);
     }
 
-    if (template.department) {
-      setDepartment(template.department);
+    if (incoming.department) {
+      setDepartment(incoming.department);
     }
 
     if (resolvedWeekStart) {
       setWeekStart(resolvedWeekStart);
     }
 
-    if (Array.isArray(template.grid) && template.grid.length) {
-      setRows(cloneGrid(template.grid));
+    if (Array.isArray(incoming.grid) && incoming.grid.length) {
+      setRows(cloneGrid(incoming.grid));
     } else {
       setRows([emptyRow()]);
     }
   }, [location.state]);
 
   useEffect(() => {
-    getDocs(collection(db, "employees")).then((snap) =>
-      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    );
+    async function loadEmployees() {
+      const snap = await getDocs(collection(db, "employees"));
+      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }
+
+    loadEmployees().catch((err) => {
+      console.error(err);
+      setStatusMessage("Error loading employees.");
+    });
   }, []);
 
   useEffect(() => {
-    getDocs(collection(db, "airlineBudgets")).then((snap) => {
+    async function loadBudgets() {
+      const snap = await getDocs(collection(db, "airlineBudgets"));
       const map = {};
 
       snap.docs.forEach((d) => {
@@ -425,11 +436,15 @@ export default function SchedulePage() {
         const start = String(data.weekStart || "").trim();
 
         if (!airline || !dept || !start) return;
-
         map[`${airline}__${dept}__${start}`] = Number(data.budgetHours || 0);
       });
 
       setAirlineBudgets(map);
+    }
+
+    loadBudgets().catch((err) => {
+      console.error(err);
+      setStatusMessage("Error loading budgets.");
     });
   }, []);
 
@@ -581,12 +596,14 @@ export default function SchedulePage() {
     }
 
     const q = query(collection(db, "schedules"), where("weekTag", "==", weekTag));
-
     const snap = await getDocs(q);
-    const existingSchedules = snap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    }));
+
+    const existingSchedules = snap.docs
+      .map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }))
+      .filter((sch) => sch.id !== editingScheduleId);
 
     if (!existingSchedules.length) {
       return { conflicts: [], weekTag };
@@ -641,6 +658,24 @@ export default function SchedulePage() {
     return { conflicts, weekTag };
   };
 
+  const buildSchedulePayload = (status, weekTagToSave) => ({
+    airline: normalizeAirlineName(airlineKey),
+    airlineDisplayName: normalizeAirlineName(airlineDisplayName || airlineKey),
+    department,
+    weekStart,
+    days: dayNumbers,
+    weekTag: weekTagToSave,
+    grid: rows,
+    totals: employeeTotals,
+    airlineWeeklyHours: airlineTotal,
+    airlineDailyHours: dailyTotals,
+    budget: selectedWeeklyBudget,
+    status,
+    createdBy: user?.username || null,
+    role: user?.role || null,
+    updatedAt: serverTimestamp(),
+  });
+
   const handleSaveDraft = async () => {
     if (!airlineKey || !department || !weekStart) {
       setStatusMessage("Please select airline, department and week start.");
@@ -649,28 +684,20 @@ export default function SchedulePage() {
 
     try {
       const weekTagToSave = buildWeekTagFromWeekStart(weekStart);
+      const payload = buildSchedulePayload("draft", weekTagToSave);
 
-      await addDoc(collection(db, "schedules"), {
-        createdAt: serverTimestamp(),
-        airline: normalizeAirlineName(airlineKey),
-        airlineDisplayName: normalizeAirlineName(
-          airlineDisplayName || airlineKey
-        ),
-        department,
-        weekStart,
-        days: dayNumbers,
-        weekTag: weekTagToSave,
-        grid: rows,
-        totals: employeeTotals,
-        airlineWeeklyHours: airlineTotal,
-        airlineDailyHours: dailyTotals,
-        budget: selectedWeeklyBudget,
-        status: "draft",
-        createdBy: user?.username || null,
-        role: user?.role || null,
-      });
-
-      setStatusMessage("Schedule saved as draft.");
+      if (editingScheduleId) {
+        await updateDoc(doc(db, "schedules", editingScheduleId), payload);
+        setStatusMessage("Schedule draft updated successfully.");
+      } else {
+        const ref = await addDoc(collection(db, "schedules"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
+        setEditingScheduleId(ref.id);
+        setLoadedExistingSchedule(true);
+        setStatusMessage("Schedule saved as draft.");
+      }
     } catch (err) {
       console.error(err);
       setStatusMessage("Error saving draft.");
@@ -703,35 +730,25 @@ export default function SchedulePage() {
           "\n\nDo you still want to submit this schedule?"
       );
 
-      if (!proceed) {
-        return;
-      }
+      if (!proceed) return;
     }
 
     try {
       const weekTagToSave = weekTag || buildWeekTagFromWeekStart(weekStart);
+      const payload = buildSchedulePayload("pending", weekTagToSave);
 
-      await addDoc(collection(db, "schedules"), {
-        createdAt: serverTimestamp(),
-        airline: normalizeAirlineName(airlineKey),
-        airlineDisplayName: normalizeAirlineName(
-          airlineDisplayName || airlineKey
-        ),
-        department,
-        weekStart,
-        days: dayNumbers,
-        weekTag: weekTagToSave,
-        grid: rows,
-        totals: employeeTotals,
-        airlineWeeklyHours: airlineTotal,
-        airlineDailyHours: dailyTotals,
-        budget: selectedWeeklyBudget,
-        status: "pending",
-        createdBy: user?.username || null,
-        role: user?.role || null,
-      });
-
-      setStatusMessage("Schedule submitted for approval.");
+      if (editingScheduleId) {
+        await updateDoc(doc(db, "schedules", editingScheduleId), payload);
+        setStatusMessage("Schedule re-submitted for approval.");
+      } else {
+        const ref = await addDoc(collection(db, "schedules"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
+        setEditingScheduleId(ref.id);
+        setLoadedExistingSchedule(true);
+        setStatusMessage("Schedule submitted for approval.");
+      }
     } catch (err) {
       console.error(err);
       setStatusMessage("Error submitting schedule.");
@@ -854,7 +871,7 @@ export default function SchedulePage() {
                 letterSpacing: "-0.04em",
               }}
             >
-              Create Weekly Schedule
+              {loadedExistingSchedule ? "Edit Weekly Schedule" : "Create Weekly Schedule"}
             </h1>
 
             <p
@@ -865,8 +882,9 @@ export default function SchedulePage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Build a new weekly schedule, save it as draft, submit it for
-              approval, or export it to PDF.
+              {loadedExistingSchedule
+                ? "Continue working on an existing schedule, keep the same structure, then save draft or re-submit it for approval."
+                : "Build a new weekly schedule, save it as draft, submit it for approval, or export it to PDF."}
             </p>
           </div>
 
@@ -992,6 +1010,23 @@ export default function SchedulePage() {
             Select airline, department and week start before assigning shifts.
           </p>
         </div>
+
+        {editingScheduleId && (
+          <div
+            style={{
+              marginBottom: 16,
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#1769aa",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            Editing existing schedule: <b>{editingScheduleId}</b>
+          </div>
+        )}
 
         <div
           style={{
@@ -1362,11 +1397,11 @@ export default function SchedulePage() {
           }}
         >
           <ActionButton onClick={handleSaveDraft} variant="secondary">
-            Save Draft
+            {editingScheduleId ? "Update Draft" : "Save Draft"}
           </ActionButton>
 
           <ActionButton onClick={handleSaveSchedule} variant="primary">
-            Submit for Approval
+            {editingScheduleId ? "Re-Submit for Approval" : "Submit for Approval"}
           </ActionButton>
 
           <ActionButton onClick={exportPDF} variant="success">
