@@ -59,6 +59,9 @@ function PageCard({ children, style = {} }) {
         border: "1px solid rgba(255,255,255,0.96)",
         borderRadius: 24,
         boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -340,9 +343,28 @@ function getSlotSourceStyle(slot) {
   };
 }
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 export default function CabinScheduleViewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isMobile, isTablet } = useViewport();
 
   const [schedule, setSchedule] = useState(null);
   const [slotsByDay, setSlotsByDay] = useState({});
@@ -390,6 +412,10 @@ export default function CabinScheduleViewPage() {
       try {
         setLoading(true);
         setError("");
+
+        if (!id) {
+          throw new Error("Missing schedule ID.");
+        }
 
         const scheduleRef = doc(db, "cabinSchedules", id);
         const scheduleSnap = await getDoc(scheduleRef);
@@ -459,7 +485,7 @@ export default function CabinScheduleViewPage() {
         });
 
         const slots = slotsSnap.docs.map((d) => {
-          const raw = d.data();
+          const raw = d.data() || {};
           const resolvedName = resolveSlotEmployeeName(raw, tempEmployeeMap);
 
           return {
@@ -477,12 +503,12 @@ export default function CabinScheduleViewPage() {
         });
 
         const flights = flightsSnap.docs.map((d) => ({
-          ...d.data(),
+          ...(d.data() || {}),
           firestoreId: d.id,
         }));
 
         const demandBlocks = demandSnap.docs.map((d) => ({
-          ...d.data(),
+          ...(d.data() || {}),
           firestoreId: d.id,
         }));
 
@@ -498,9 +524,7 @@ export default function CabinScheduleViewPage() {
       }
     }
 
-    if (id) {
-      loadScheduleView();
-    }
+    loadScheduleView();
   }, [id]);
 
   const resolvedCreatedBy = useMemo(() => {
@@ -510,12 +534,12 @@ export default function CabinScheduleViewPage() {
 
   const totalFlights = useMemo(
     () =>
-      Object.values(flightsByDay).reduce((sum, items) => sum + items.length, 0),
+      Object.values(flightsByDay).reduce((sum, items) => sum + (items?.length || 0), 0),
     [flightsByDay]
   );
 
   const totalSlots = useMemo(
-    () => Object.values(slotsByDay).reduce((sum, items) => sum + items.length, 0),
+    () => Object.values(slotsByDay).reduce((sum, items) => sum + (items?.length || 0), 0),
     [slotsByDay]
   );
 
@@ -755,7 +779,7 @@ export default function CabinScheduleViewPage() {
       setSlotsByDay((prev) => {
         const next = {};
         Object.entries(prev).forEach(([dayKey, slots]) => {
-          next[dayKey] = slots.filter(
+          next[dayKey] = (slots || []).filter(
             (slot) => !slotIdsToDelete.includes(slot.firestoreId)
           );
         });
@@ -860,14 +884,16 @@ export default function CabinScheduleViewPage() {
         display: "grid",
         gap: 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        minWidth: 0,
       }}
     >
       <div
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 16 : isTablet ? 20 : 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
@@ -896,7 +922,7 @@ export default function CabinScheduleViewPage() {
             flexWrap: "wrap",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p
               style={{
                 margin: 0,
@@ -913,7 +939,7 @@ export default function CabinScheduleViewPage() {
             <h1
               style={{
                 margin: "10px 0 6px",
-                fontSize: 32,
+                fontSize: isMobile ? 26 : 32,
                 lineHeight: 1.05,
                 fontWeight: 800,
                 letterSpacing: "-0.04em",
@@ -928,6 +954,7 @@ export default function CabinScheduleViewPage() {
                 maxWidth: 760,
                 fontSize: 14,
                 color: "rgba(255,255,255,0.88)",
+                lineHeight: 1.6,
               }}
             >
               Weekly Cabin Service schedule details, assignments, flights and
@@ -980,7 +1007,7 @@ export default function CabinScheduleViewPage() {
         </div>
       </div>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 20 }}>
         <div style={summaryGridStyle}>
           <SummaryBox label="Week Start" value={schedule?.weekStartDate || "-"} />
           <SummaryBox label="Created By" value={resolvedCreatedBy} />
@@ -998,7 +1025,7 @@ export default function CabinScheduleViewPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 20 }}>
         <div
           style={{
             display: "flex",
@@ -1115,7 +1142,7 @@ export default function CabinScheduleViewPage() {
           />
         </div>
       ) : (
-        <div id="cabin-detail-export" style={{ display: "grid", gap: 16 }}>
+        <div id="cabin-detail-export" style={{ display: "grid", gap: 16, minWidth: 0 }}>
           {DAY_KEYS.map((dayKey) => {
             const slots = slotsByDay[dayKey] || [];
             const flights = flightsByDay[dayKey] || [];
@@ -1141,7 +1168,7 @@ export default function CabinScheduleViewPage() {
             );
 
             return (
-              <PageCard key={dayKey} style={{ padding: 20 }}>
+              <PageCard key={dayKey} style={{ padding: isMobile ? 16 : 20 }}>
                 <div
                   style={{
                     display: "flex",
@@ -1467,6 +1494,10 @@ function CabinRosterWeeklyView({
     "NIGHT SHIFT",
   ];
 
+  const visibleGroups = orderedGroups.filter(
+    (groupName) => (groupedRoster[groupName] || []).length
+  );
+
   return (
     <PageCard style={{ padding: 18 }}>
       <div style={rosterTopHeaderStyle}>
@@ -1474,77 +1505,79 @@ function CabinRosterWeeklyView({
         <div style={rosterTopSubTitleStyle}>Week Start: {weekStartDate || "-"}</div>
       </div>
 
-      {orderedGroups.map((groupName) => {
-        const employees = groupedRoster[groupName] || [];
-        if (!employees.length) return null;
+      {!visibleGroups.length ? (
+        <div style={emptyTextStyle}>No roster rows found.</div>
+      ) : (
+        visibleGroups.map((groupName) => {
+          const employees = groupedRoster[groupName] || [];
+          return (
+            <div key={groupName} style={rosterSectionWrapStyle}>
+              <div style={rosterSectionHeaderStyle}>{groupName}</div>
 
-        return (
-          <div key={groupName} style={rosterSectionWrapStyle}>
-            <div style={rosterSectionHeaderStyle}>{groupName}</div>
-
-            <div style={tableWrapStyle}>
-              <table style={rosterTableStyle}>
-                <thead>
-                  <tr>
-                    <th
-                      style={{
-                        ...rosterHeaderCellStyle,
-                        ...rosterEmployeeHeaderStyle,
-                      }}
-                    >
-                      EMPLOYEE
-                    </th>
-                    {DAY_KEYS.map((dayKey) => (
-                      <th key={dayKey} style={rosterHeaderCellStyle}>
-                        {DAY_SHORT_LABELS[dayKey]}
+              <div style={tableWrapStyle}>
+                <table style={rosterTableStyle}>
+                  <thead>
+                    <tr>
+                      <th
+                        style={{
+                          ...rosterHeaderCellStyle,
+                          ...rosterEmployeeHeaderStyle,
+                        }}
+                      >
+                        EMPLOYEE
                       </th>
-                    ))}
-                    {editMode && <th style={rosterHeaderCellStyle}>DELETE</th>}
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {employees.map((employee, index) => (
-                    <tr key={`${groupName}-${employee.name}-${index}`}>
-                      <td style={rosterNameCellStyle}>{employee.name}</td>
-
-                      {DAY_KEYS.map((dayKey) => {
-                        const value = employee.days[dayKey] || "OFF";
-                        const isOff = value === "OFF";
-
-                        return (
-                          <td
-                            key={dayKey}
-                            style={{
-                              ...rosterCellStyle,
-                              ...(isOff ? rosterOffCellStyle : {}),
-                            }}
-                          >
-                            {value}
-                          </td>
-                        );
-                      })}
-
-                      {editMode && (
-                        <td style={rosterActionCellStyle}>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteRow(groupName, employee.name)}
-                            style={deleteRowButtonStyle}
-                            disabled={deleting}
-                          >
-                            Delete Row
-                          </button>
-                        </td>
-                      )}
+                      {DAY_KEYS.map((dayKey) => (
+                        <th key={dayKey} style={rosterHeaderCellStyle}>
+                          {DAY_SHORT_LABELS[dayKey]}
+                        </th>
+                      ))}
+                      {editMode && <th style={rosterHeaderCellStyle}>DELETE</th>}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+
+                  <tbody>
+                    {employees.map((employee, index) => (
+                      <tr key={`${groupName}-${employee.name}-${index}`}>
+                        <td style={rosterNameCellStyle}>{employee.name}</td>
+
+                        {DAY_KEYS.map((dayKey) => {
+                          const value = employee.days[dayKey] || "OFF";
+                          const isOff = value === "OFF";
+
+                          return (
+                            <td
+                              key={dayKey}
+                              style={{
+                                ...rosterCellStyle,
+                                ...(isOff ? rosterOffCellStyle : {}),
+                              }}
+                            >
+                              {value}
+                            </td>
+                          );
+                        })}
+
+                        {editMode && (
+                          <td style={rosterActionCellStyle}>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteRow(groupName, employee.name)}
+                              style={deleteRowButtonStyle}
+                              disabled={deleting}
+                            >
+                              Delete Row
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
     </PageCard>
   );
 }
@@ -1640,7 +1673,7 @@ function groupByDay(items, sorter) {
   }
 
   Object.keys(grouped).forEach((dayKey) => {
-    grouped[dayKey] = grouped[dayKey].sort(sorter);
+    grouped[dayKey] = (grouped[dayKey] || []).sort(sorter);
   });
 
   return grouped;
@@ -1649,7 +1682,7 @@ function groupByDay(items, sorter) {
 function summarizeShifts(slots) {
   const map = new Map();
 
-  for (const slot of slots) {
+  for (const slot of slots || []) {
     const key = `${slot.start || ""}|${slot.end || ""}|${slot.role || ""}`;
     if (!map.has(key)) {
       map.set(key, {
@@ -1768,6 +1801,7 @@ const summaryBoxStyle = {
   border: "1px solid #dbeafe",
   borderRadius: 16,
   padding: "14px 16px",
+  minWidth: 0,
 };
 
 const summaryLabelStyle = {
@@ -1785,6 +1819,7 @@ const summaryValueStyle = {
   fontWeight: 800,
   color: "#0f172a",
   letterSpacing: "-0.03em",
+  wordBreak: "break-word",
 };
 
 const subTitleStyle = {
@@ -1828,6 +1863,7 @@ const tableWrapStyle = {
   overflowX: "auto",
   borderRadius: 18,
   border: "1px solid #e2e8f0",
+  width: "100%",
 };
 
 const tableStyle = {
@@ -1847,6 +1883,7 @@ const thTdStyle = {
   padding: "10px 12px",
   textAlign: "left",
   fontSize: 14,
+  verticalAlign: "top",
 };
 
 const assignedChipStyle = {
