@@ -10,6 +10,24 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -19,6 +37,10 @@ function PageCard({ children, style = {} }) {
         border: "1px solid #dbeafe",
         borderRadius: 20,
         boxShadow: "0 14px 34px rgba(15,23,42,0.06)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflow: "hidden",
         ...style,
       }}
     >
@@ -51,6 +73,7 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -58,6 +81,7 @@ function TextInput(props) {
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -72,6 +96,7 @@ function TimeInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -79,6 +104,7 @@ function TimeInput(props) {
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -91,6 +117,7 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -101,6 +128,7 @@ function TextArea(props) {
         resize: "vertical",
         minHeight: 90,
         fontFamily: "inherit",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -113,6 +141,7 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -120,6 +149,7 @@ function SelectInput(props) {
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -585,6 +615,7 @@ function createInitialForm(user) {
 
 export default function GateChecklistPage() {
   const { user } = useUser();
+  const { isMobile, isTablet } = useViewport();
 
   const isSupervisorOrManager =
     user?.role === "supervisor" ||
@@ -970,22 +1001,52 @@ export default function GateChecklistPage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 14 : 18,
         fontFamily: "Arial, Helvetica, sans-serif",
         color: "#0f172a",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
       }}
     >
       <style>{`
+        @page {
+          size: landscape;
+          margin: 0.2in;
+        }
+
         @media print {
-          body {
-            background: #fff;
+          html, body {
+            background: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            zoom: 0.84;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
+
+          body {
+            font-size: 10px !important;
+          }
+
           .no-print {
             display: none !important;
           }
+
           .print-card {
             box-shadow: none !important;
             border: 1px solid #cbd5e1 !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          .print-main-card {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          table, tr, td, th {
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
@@ -995,14 +1056,14 @@ export default function GateChecklistPage() {
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 24,
-          padding: 24,
+          borderRadius: isMobile ? 20 : 24,
+          padding: isMobile ? 16 : 24,
           color: "#fff",
         }}
       >
         <div
           style={{
-            fontSize: 12,
+            fontSize: isMobile ? 10 : 12,
             fontWeight: 800,
             textTransform: "uppercase",
             letterSpacing: "0.2em",
@@ -1015,7 +1076,7 @@ export default function GateChecklistPage() {
         <h1
           style={{
             margin: "10px 0 6px",
-            fontSize: 30,
+            fontSize: isMobile ? 26 : 30,
             lineHeight: 1.05,
             fontWeight: 900,
           }}
@@ -1026,8 +1087,9 @@ export default function GateChecklistPage() {
         <p
           style={{
             margin: 0,
-            fontSize: 14,
+            fontSize: isMobile ? 12 : 14,
             maxWidth: 900,
+            lineHeight: 1.6,
             color: "rgba(255,255,255,0.92)",
           }}
         >
@@ -1055,11 +1117,13 @@ export default function GateChecklistPage() {
         </PageCard>
       )}
 
-      <PageCard className="no-print" style={{ padding: 16 }}>
+      <PageCard className="no-print" style={{ padding: isMobile ? 14 : 16 }}>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(220px, 320px) auto auto",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "minmax(220px, 320px) auto auto",
             gap: 10,
             alignItems: "end",
           }}
@@ -1106,7 +1170,7 @@ export default function GateChecklistPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 18 }}>
+      <PageCard className="print-main-card" style={{ padding: isMobile ? 14 : 18 }}>
         <div
           className="no-print"
           style={{
@@ -1164,7 +1228,7 @@ export default function GateChecklistPage() {
           <div style={{ textAlign: "center" }}>
             <div
               style={{
-                fontSize: 34,
+                fontSize: isMobile ? 26 : 34,
                 fontWeight: 900,
                 letterSpacing: "-0.03em",
               }}
@@ -1177,7 +1241,9 @@ export default function GateChecklistPage() {
             className="no-print"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 12,
             }}
           >
@@ -1223,7 +1289,11 @@ export default function GateChecklistPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1.1fr 1fr 1fr 1fr 1fr 1.5fr 1fr 1fr",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : isTablet
+                ? "repeat(2, minmax(0, 1fr))"
+                : "repeat(4, minmax(0, 1fr))",
               gap: 8,
             }}
           >
@@ -1309,7 +1379,11 @@ export default function GateChecklistPage() {
             className="no-print"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : isTablet
+                ? "repeat(2, minmax(0, 1fr))"
+                : "repeat(4, minmax(0, 1fr))",
               gap: 12,
             }}
           >
@@ -1447,62 +1521,28 @@ export default function GateChecklistPage() {
           </div>
 
           <div
-            className="no-print"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
-            <div>
-              <FieldLabel>First Pax Off</FieldLabel>
-              <TimeInput
-                value={form.firstPaxOff}
-                disabled={!canEdit}
-                onChange={(e) => updateField("firstPaxOff", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Last Pax Off</FieldLabel>
-              <TimeInput
-                value={form.lastPaxOff}
-                disabled={!canEdit}
-                onChange={(e) => updateField("lastPaxOff", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>First Pax On</FieldLabel>
-              <TimeInput
-                value={form.firstPaxOn}
-                disabled={!canEdit}
-                onChange={(e) => updateField("firstPaxOn", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Last Pax On</FieldLabel>
-              <TimeInput
-                value={form.lastPaxOn}
-                disabled={!canEdit}
-                onChange={(e) => updateField("lastPaxOn", e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0, 1.7fr) minmax(260px, 0.85fr)",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : "minmax(0, 1.7fr) minmax(260px, 0.85fr)",
               gap: 14,
               alignItems: "start",
             }}
           >
-            <div style={{ overflowX: "auto" }}>
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "100%",
+                minWidth: 0,
+                overflowX: "auto",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
               <table
                 style={{
                   width: "100%",
+                  minWidth: isMobile ? 720 : 0,
                   borderCollapse: "collapse",
                   tableLayout: "fixed",
                   fontSize: 13,
@@ -1592,6 +1632,57 @@ export default function GateChecklistPage() {
                       value={form.pushTime}
                       disabled={!canEdit}
                       onChange={(e) => updateField("pushTime", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </PageCard>
+
+              <PageCard style={{ padding: 14 }}>
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 900,
+                    marginBottom: 12,
+                    textAlign: "center",
+                  }}
+                >
+                  Pax Flow
+                </div>
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div>
+                    <FieldLabel>First Pax Off</FieldLabel>
+                    <TimeInput
+                      value={form.firstPaxOff}
+                      disabled={!canEdit}
+                      onChange={(e) => updateField("firstPaxOff", e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Last Pax Off</FieldLabel>
+                    <TimeInput
+                      value={form.lastPaxOff}
+                      disabled={!canEdit}
+                      onChange={(e) => updateField("lastPaxOff", e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>First Pax On</FieldLabel>
+                    <TimeInput
+                      value={form.firstPaxOn}
+                      disabled={!canEdit}
+                      onChange={(e) => updateField("firstPaxOn", e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Last Pax On</FieldLabel>
+                    <TimeInput
+                      value={form.lastPaxOn}
+                      disabled={!canEdit}
+                      onChange={(e) => updateField("lastPaxOn", e.target.value)}
                     />
                   </div>
                 </div>
