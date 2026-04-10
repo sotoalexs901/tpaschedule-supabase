@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   collection,
   getDocs,
@@ -362,9 +362,25 @@ function useViewport() {
 }
 
 export default function CabinScheduleViewPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { isMobile, isTablet } = useViewport();
+
+  const scheduleId = useMemo(() => {
+    const queryId = new URLSearchParams(location.search).get("id");
+
+    return (
+      params?.id ||
+      params?.scheduleId ||
+      params?.docId ||
+      location.state?.id ||
+      location.state?.scheduleId ||
+      location.state?.docId ||
+      queryId ||
+      ""
+    );
+  }, [params, location.search, location.state]);
 
   const [schedule, setSchedule] = useState(null);
   const [slotsByDay, setSlotsByDay] = useState({});
@@ -413,11 +429,11 @@ export default function CabinScheduleViewPage() {
         setLoading(true);
         setError("");
 
-        if (!id) {
-          throw new Error("Missing schedule ID.");
+        if (!scheduleId) {
+          throw new Error("Missing cabin schedule ID.");
         }
 
-        const scheduleRef = doc(db, "cabinSchedules", id);
+        const scheduleRef = doc(db, "cabinSchedules", scheduleId);
         const scheduleSnap = await getDoc(scheduleRef);
 
         if (!scheduleSnap.exists()) {
@@ -434,19 +450,19 @@ export default function CabinScheduleViewPage() {
           getDocs(
             query(
               collection(db, "cabinScheduleSlots"),
-              where("scheduleId", "==", id)
+              where("scheduleId", "==", scheduleId)
             )
           ),
           getDocs(
             query(
               collection(db, "cabinScheduleFlights"),
-              where("scheduleId", "==", id)
+              where("scheduleId", "==", scheduleId)
             )
           ),
           getDocs(
             query(
               collection(db, "cabinScheduleDemandBlocks"),
-              where("scheduleId", "==", id)
+              where("scheduleId", "==", scheduleId)
             )
           ),
           getDocs(collection(db, "employees")),
@@ -493,12 +509,11 @@ export default function CabinScheduleViewPage() {
             firestoreId: d.id,
             id: raw.id || d.id,
             employeeName: resolvedName,
-            status:
-              raw?.draftDeleteCandidate
-                ? "delete_candidate"
-                : resolvedName || raw.employeeId
-                ? "assigned"
-                : "open",
+            status: raw?.draftDeleteCandidate
+              ? "delete_candidate"
+              : resolvedName || raw.employeeId
+              ? "assigned"
+              : "open",
           };
         });
 
@@ -525,7 +540,7 @@ export default function CabinScheduleViewPage() {
     }
 
     loadScheduleView();
-  }, [id]);
+  }, [scheduleId]);
 
   const resolvedCreatedBy = useMemo(() => {
     if (!schedule) return "-";
@@ -534,12 +549,19 @@ export default function CabinScheduleViewPage() {
 
   const totalFlights = useMemo(
     () =>
-      Object.values(flightsByDay).reduce((sum, items) => sum + (items?.length || 0), 0),
+      Object.values(flightsByDay).reduce(
+        (sum, items) => sum + (items?.length || 0),
+        0
+      ),
     [flightsByDay]
   );
 
   const totalSlots = useMemo(
-    () => Object.values(slotsByDay).reduce((sum, items) => sum + (items?.length || 0), 0),
+    () =>
+      Object.values(slotsByDay).reduce(
+        (sum, items) => sum + (items?.length || 0),
+        0
+      ),
     [slotsByDay]
   );
 
@@ -547,15 +569,15 @@ export default function CabinScheduleViewPage() {
     () =>
       Object.values(slotsByDay)
         .flat()
-        .filter((slot) => !slot.draftDeleteCandidate && (slot.employeeId || slot.employeeName)).length,
+        .filter(
+          (slot) =>
+            !slot.draftDeleteCandidate && (slot.employeeId || slot.employeeName)
+        ).length,
     [slotsByDay]
   );
 
   const currentSlotsSignature = useMemo(
-    () =>
-      JSON.stringify(
-        Object.values(slotsByDay).flat().map(minifySlotForCompare)
-      ),
+    () => JSON.stringify(Object.values(slotsByDay).flat().map(minifySlotForCompare)),
     [slotsByDay]
   );
 
@@ -658,7 +680,7 @@ export default function CabinScheduleViewPage() {
       setAddingDayKey(dayKey);
 
       const payload = {
-        scheduleId: id,
+        scheduleId: scheduleId,
         dayKey,
         start: "",
         end: "",
@@ -728,7 +750,7 @@ export default function CabinScheduleViewPage() {
 
     try {
       setDeleting(true);
-      await deleteCabinSchedule(id);
+      await deleteCabinSchedule(scheduleId);
       alert("Schedule deleted successfully.");
       navigate("/cabin-saved-schedules");
     } catch (err) {
@@ -1142,7 +1164,10 @@ export default function CabinScheduleViewPage() {
           />
         </div>
       ) : (
-        <div id="cabin-detail-export" style={{ display: "grid", gap: 16, minWidth: 0 }}>
+        <div
+          id="cabin-detail-export"
+          style={{ display: "grid", gap: 16, minWidth: 0 }}
+        >
           {DAY_KEYS.map((dayKey) => {
             const slots = slotsByDay[dayKey] || [];
             const flights = flightsByDay[dayKey] || [];
@@ -1152,12 +1177,8 @@ export default function CabinScheduleViewPage() {
               return null;
             }
 
-            const arrivals = flights.filter(
-              (f) => f.movementType === "arrival"
-            ).length;
-            const departures = flights.filter(
-              (f) => f.movementType !== "arrival"
-            ).length;
+            const arrivals = flights.filter((f) => f.movementType === "arrival").length;
+            const departures = flights.filter((f) => f.movementType !== "arrival").length;
             const peakAgents =
               demandBlocks.length > 0
                 ? Math.max(...demandBlocks.map((b) => b.recommendedAgents || 0))
@@ -1361,7 +1382,9 @@ export default function CabinScheduleViewPage() {
                                   ))}
                                 </select>
                               ) : (
-                                slot.employeeName || prettifyCodeName(slot.employeeId) || "Open"
+                                slot.employeeName ||
+                                prettifyCodeName(slot.employeeId) ||
+                                "Open"
                               )}
                             </td>
 
