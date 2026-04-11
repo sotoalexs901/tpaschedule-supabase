@@ -6,6 +6,10 @@ import { parseCabinFlights } from "../utils/parseCabinFlights.js";
 import { buildDemandBlocks } from "../utils/buildDemandBlocks.js";
 import { generateCabinShifts } from "../utils/generateCabinShifts.js";
 import { saveCabinWeeklySchedule } from "../services/cabinSchedulesService.js";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const DAY_KEYS = [
   "monday",
@@ -210,7 +214,7 @@ export default function CabinServicePage() {
     }
 
     if (!hasFlightUploads && !hasRosterUpload) {
-      alert("Please upload at least one daily CSV file or one weekly roster file.");
+      alert("Please upload at least one daily CSV/PDF file or one weekly roster file.");
       return;
     }
 
@@ -488,7 +492,7 @@ export default function CabinServicePage() {
 
                   <input
                     type="file"
-                    accept=".csv"
+                    accept=".csv,.pdf,application/pdf,text/csv"
                     onChange={(e) =>
                       handleFileChange(dayKey, e.target.files?.[0] || null)
                     }
@@ -517,7 +521,7 @@ export default function CabinServicePage() {
 
               <input
                 type="file"
-                accept=".csv"
+                accept=".csv,.pdf,application/pdf,text/csv"
                 onChange={(e) => setWeeklyRosterFile(e.target.files?.[0] || null)}
                 style={{ fontSize: 13 }}
               />
@@ -528,7 +532,7 @@ export default function CabinServicePage() {
                     <b>Draft uploaded:</b> {weeklyRosterFile.name}
                   </>
                 ) : (
-                  "Supports weekly matrix roster and vertical roster formats. Names can be First Last or Last First."
+                  "Supports weekly matrix roster and vertical roster formats from CSV or text-based PDF."
                 )}
               </div>
             </div>
@@ -1012,8 +1016,33 @@ function createEmptyWeeklyRosterMap() {
   };
 }
 
+async function extractTextFromUploadedFile(file) {
+  const fileName = String(file?.name || "").toLowerCase();
+  const fileType = String(file?.type || "").toLowerCase();
+
+  const isPdf = fileType.includes("pdf") || fileName.endsWith(".pdf");
+
+  if (!isPdf) {
+    return await file.text();
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  let text = "";
+
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => item?.str || "").join(" ");
+    text += `\n${pageText}`;
+  }
+
+  return text;
+}
+
 async function parseWeeklyRosterDraftFile(file) {
-  const text = await file.text();
+  const text = await extractTextFromUploadedFile(file);
 
   const verticalRows = parseCsvText(text);
   const verticalResult = parseVerticalRosterRows(verticalRows);
