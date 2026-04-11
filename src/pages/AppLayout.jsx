@@ -287,6 +287,12 @@ export default function AppLayout() {
       user?.role === "duty_manager" ||
       user?.role === "station_manager");
 
+  const canAccessWchrFlightReport =
+    !isDLCabinService &&
+    (user?.role === "supervisor" ||
+      user?.role === "duty_manager" ||
+      user?.role === "station_manager");
+
   const canSubmitEmployeePerformance =
     user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
@@ -357,12 +363,6 @@ export default function AppLayout() {
         },
         { to: "/blocked", label: "Blocked Employees", icon: "🚫" }
       );
-
-      wchr.push({
-        to: "/wchr/admin/flights",
-        label: "WCHR Close Flight",
-        icon: "♿",
-      });
 
       admin.push(
         {
@@ -560,6 +560,14 @@ export default function AppLayout() {
       );
     }
 
+    if (canAccessWchrFlightReport) {
+      wchr.push({
+        to: "/wchr/admin/flights",
+        label: "WCHR Flight Report",
+        icon: "♿",
+      });
+    }
+
     if (canManageOperationalReportForm) {
       admin.push({
         to: "/operational-report/form-builder",
@@ -590,6 +598,7 @@ export default function AppLayout() {
     canAccessOperationalReportAdmin,
     canManageOperationalReportForm,
     canAccessWchrTools,
+    canAccessWchrFlightReport,
     canSubmitOperationsRequests,
     canManageOperationsRequests,
     canSubmitWchrPoi,
