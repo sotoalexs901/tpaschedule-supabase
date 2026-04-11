@@ -151,7 +151,7 @@ export default function AppLayout() {
 
     const qNotifications = query(
       collection(db, "notifications"),
-      where("toUserId", "==", user.id),
+      where("userId", "==", user.id),
       where("read", "==", false)
     );
 
@@ -820,7 +820,7 @@ export default function AppLayout() {
                   flexWrap: "wrap",
                   justifyContent: "flex-end",
                   flex: "0 1 auto",
-                  maxWidth: isTablet ? 420 : "unset",
+                  maxWidth: isTablet ? 520 : "unset",
                 }}
               >
                 {!headerCollapsed && (
