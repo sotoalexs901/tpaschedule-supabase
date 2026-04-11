@@ -33,6 +33,7 @@ import CrewAnnouncementsPage from "./pages/CrewAnnouncementsPage.jsx";
 import EmployeeTimeOffRequestPage from "./pages/EmployeeTimeOffRequestPage.jsx";
 import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
+import NotificationsPage from "./pages/NotificationsPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import AdminActivityDashboard from "./pages/AdminActivityDashboard.jsx";
 import StationTeamPage from "./pages/StationTeamPage.jsx";
@@ -373,6 +374,14 @@ function AppRouter() {
 
           <Route path="profile" element={<ProfilePage />} />
           <Route path="messages" element={<MessagesPage />} />
+          <Route
+            path="notifications"
+            element={
+              <ProtectedRoute>
+                <NotificationsPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="station-team"
