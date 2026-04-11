@@ -98,16 +98,16 @@ function normalizeTime(value) {
     return `${hh}:${mm}`;
   }
 
-  const ampmMatch = raw.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)$/i);
+  const ampmMatch = raw.match(/^(\d{1,2})(?::?(\d{2}))?\s*(AM|PM)$/i);
   if (ampmMatch) {
-    let hour = Number(ampmMatch[1]);
-    const minute = String(ampmMatch[2] || "00").padStart(2, "0");
-    const meridian = ampmMatch[3].toLowerCase();
+    let hh = Number(ampmMatch[1]);
+    const mm = String(ampmMatch[2] || "00").padStart(2, "0");
+    const suffix = ampmMatch[3].toUpperCase();
 
-    if (meridian === "pm" && hour < 12) hour += 12;
-    if (meridian === "am" && hour === 12) hour = 0;
+    if (suffix === "PM" && hh < 12) hh += 12;
+    if (suffix === "AM" && hh === 12) hh = 0;
 
-    return `${String(hour).padStart(2, "0")}:${minute}`;
+    return `${String(hh).padStart(2, "0")}:${mm}`;
   }
 
   const onlyDigits = raw.replace(/\D/g, "");
@@ -127,34 +127,49 @@ function normalizeFlightNumber(value, airline) {
   const raw = String(value || "").trim();
   if (!raw) return "";
 
-  if (
-    airline &&
-    !raw.toLowerCase().startsWith(String(airline).toLowerCase())
-  ) {
+  if (airline && !raw.toLowerCase().startsWith(String(airline).toLowerCase())) {
     return `${airline}${raw}`;
   }
 
   return raw;
 }
 
+function sortFlights(a, b) {
+  if (a.scheduledTime !== b.scheduledTime) {
+    return a.scheduledTime.localeCompare(b.scheduledTime);
+  }
+
+  return (a.flightNumber || "").localeCompare(b.flightNumber || "");
+}
+
 function normalizeFlightRow(rawRow) {
   const row = normalizeRowKeys(rawRow);
 
   const airline =
-    pickFirst(row, ["published carrier code", "airline", "carrier"]) || "";
+    pickFirst(row, [
+      "published carrier code",
+      "airline",
+      "carrier",
+      "carrier code",
+    ]) || "";
 
   const flightNumberRaw =
-    pickFirst(row, ["flight no", "flight number", "flt", "flight"]) || "";
+    pickFirst(row, [
+      "flight no",
+      "flight number",
+      "flt",
+      "flight",
+      "flt no",
+    ]) || "";
 
   const flightNumber = normalizeFlightNumber(flightNumberRaw, airline);
 
   const scheduledTime = normalizeTime(
     pickFirst(row, [
       "local dep time",
-      "departure time",
-      "dep time",
       "dptr",
       "std",
+      "departure time",
       "time",
     ])
   );
@@ -177,8 +192,6 @@ function normalizeFlightRow(rawRow) {
       "equipment",
     ]) || "";
 
-  const gate = pickFirst(row, ["gate"]) || "";
-
   if (!scheduledTime) return null;
 
   return {
@@ -188,73 +201,98 @@ function normalizeFlightRow(rawRow) {
     route,
     scheduledTime,
     aircraft,
-    gate,
-    rawRow,
+    gate: "",
+    rawText: JSON.stringify(rawRow),
   };
 }
 
-function sortFlights(a, b) {
-  if (a.scheduledTime !== b.scheduledTime) {
-    return a.scheduledTime.localeCompare(b.scheduledTime);
-  }
-
-  return (a.flightNumber || "").localeCompare(b.flightNumber || "");
-}
-
-async function extractTextFromPdf(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-  let fullText = "";
-
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
-    const page = await pdf.getPage(pageNum);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items.map((item) => item.str).join(" ");
-    fullText += `\n${pageText}`;
-  }
-
-  return fullText;
-}
-
-function parseFlightsFromPdfText(text) {
-  const lines = String(text || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
+function extractPdfTextItems(textContent) {
+  return (textContent?.items || [])
+    .map((item) => String(item?.str || "").trim())
     .filter(Boolean);
+}
 
-  const flights = [];
+function buildPdfLines(items) {
+  const lines = [];
+  let current = [];
 
-  for (const line of lines) {
-    const timeMatch = line.match(/\b(\d{1,2}:\d{2}|\d{3,4})\b/);
-    const flightMatch = line.match(/\b([A-Z]{1,3}\s?\d{2,4})\b/);
-    const routeMatch = line.match(/\b([A-Z]{3})\b(?:\s*-\s*|\s+)([A-Z]{3})\b/);
-    const aircraftMatch = line.match(
-      /\b(320|321|319|73G|738|739|7M8|E75|E70|CRJ|757|767|777|787|330|350)\b/i
-    );
+  items.forEach((item) => {
+    if (/^\d{1,2}:\d{2}$/.test(item) && current.length > 0) {
+      lines.push(current.join(" "));
+      current = [item];
+      return;
+    }
 
-    if (!timeMatch) continue;
+    current.push(item);
+  });
 
-    const scheduledTime = normalizeTime(timeMatch[1]);
-    if (!scheduledTime) continue;
-
-    const flightNumber = flightMatch ? flightMatch[1].replace(/\s+/g, "") : "";
-    const route = routeMatch ? `${routeMatch[1]}-${routeMatch[2]}` : "";
-    const aircraft = aircraftMatch ? aircraftMatch[1].toUpperCase() : "";
-
-    flights.push({
-      movementType: "departure",
-      airline: "",
-      flightNumber,
-      route,
-      scheduledTime,
-      aircraft,
-      gate: "",
-      rawText: line,
-    });
+  if (current.length > 0) {
+    lines.push(current.join(" "));
   }
 
-  return flights.sort(sortFlights);
+  return lines;
+}
+
+function parsePdfLineToFlight(line) {
+  const clean = String(line || "").replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+
+  const timeMatch = clean.match(/\b(\d{1,2}:\d{2})\b/);
+  if (!timeMatch) return null;
+
+  const scheduledTime = normalizeTime(timeMatch[1]);
+  if (!scheduledTime) return null;
+
+  const flightMatch = clean.match(/\b([A-Z]{2,3})\s?(\d{2,4})\b/);
+  const airline = flightMatch ? flightMatch[1] : "";
+  const flightNumber = flightMatch
+    ? normalizeFlightNumber(flightMatch[2], airline)
+    : "";
+
+  const airportMatch = clean.match(/\b([A-Z]{3})\b(?!.*\b[A-Z]{3}\b.*\b[A-Z]{3}\b)/);
+  const route = airportMatch ? airportMatch[1] : "";
+
+  const aircraftMatch = clean.match(/\b(32B|320|321|319|738|739|73G|73H|E75|E90|CRJ|757|767|330|350)\b/i);
+  const aircraft = aircraftMatch ? aircraftMatch[1].toUpperCase() : "";
+
+  return {
+    movementType: "departure",
+    airline,
+    flightNumber,
+    route,
+    scheduledTime,
+    aircraft,
+    gate: "",
+    rawText: clean,
+  };
+}
+
+async function parsePdfFlights(file) {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+  const allItems = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    allItems.push(...extractPdfTextItems(textContent));
+  }
+
+  const lines = buildPdfLines(allItems);
+
+  const flights = lines
+    .map(parsePdfLineToFlight)
+    .filter(Boolean)
+    .sort(sortFlights);
+
+  if (!flights.length) {
+    throw new Error(
+      "No flights were detected in the PDF. Check that the PDF contains readable text and not only an image."
+    );
+  }
+
+  return flights;
 }
 
 export async function parseCabinFlights(file) {
@@ -271,7 +309,7 @@ export async function parseCabinFlights(file) {
 
     if (!flights.length) {
       throw new Error(
-        "No flights were detected in the CSV file. Check the column names."
+        "No flights were detected in the CSV. Check the column names."
       );
     }
 
@@ -279,16 +317,7 @@ export async function parseCabinFlights(file) {
   }
 
   if (fileName.endsWith(".pdf")) {
-    const text = await extractTextFromPdf(file);
-    const flights = parseFlightsFromPdfText(text);
-
-    if (!flights.length) {
-      throw new Error(
-        "No flights were detected in the PDF file. Verify the PDF has selectable text."
-      );
-    }
-
-    return flights;
+    return await parsePdfFlights(file);
   }
 
   throw new Error("Only CSV and PDF files are supported.");
