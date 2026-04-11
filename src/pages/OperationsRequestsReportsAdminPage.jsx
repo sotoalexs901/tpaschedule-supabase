@@ -167,6 +167,61 @@ function ActionButton({
   );
 }
 
+function DetailBox({ label, value }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #dbeafe",
+        borderRadius: 14,
+        padding: "10px 12px",
+        background: "#f8fbff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          fontWeight: 700,
+          color: "#0f172a",
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {safeValue(value)}
+      </div>
+    </div>
+  );
+}
+
+function UploadCheckBadge({ hasFiles }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "7px 11px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 800,
+        border: `1px solid ${hasFiles ? "#a7f3d0" : "#fdba74"}`,
+        background: hasFiles ? "#ecfdf5" : "#fff7ed",
+        color: hasFiles ? "#047857" : "#9a3412",
+      }}
+    >
+      {hasFiles ? "✓ Files uploaded" : "No files uploaded"}
+    </span>
+  );
+}
+
 function getRequestTypeLabel(value) {
   const v = String(value || "").trim().toLowerCase();
 
@@ -177,6 +232,7 @@ function getRequestTypeLabel(value) {
   if (v === "wl_ot") return "WL OT Request";
   if (v === "av_ot") return "AV OT Request";
   if (v === "dl_cabin_ot") return "Delta Cabin Service OT Request";
+  if (v === "company_reimbursement") return "Company Reimbursement";
 
   return value || "—";
 }
@@ -348,6 +404,158 @@ function isOtRequest(report) {
   );
 }
 
+function isCompanyReimbursementRequest(report) {
+  return String(report?.requestType || "").toLowerCase() === "company_reimbursement";
+}
+
+function normalizeFileList(value) {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") return item.trim();
+        if (item?.url) return String(item.url).trim();
+        if (item?.downloadURL) return String(item.downloadURL).trim();
+        return "";
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return normalizeFileList(parsed);
+    } catch {
+      // ignore
+    }
+
+    return trimmed
+      .split(/\n|,/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function getReimbursementFiles(report) {
+  return [
+    ...normalizeFileList(report?.reimbursementPhotos),
+    ...normalizeFileList(report?.invoicePhotos),
+    ...normalizeFileList(report?.receiptUrls),
+    ...normalizeFileList(report?.receiptPhotos),
+  ].filter(Boolean);
+}
+
+function hasReimbursementFiles(report) {
+  return getReimbursementFiles(report).length > 0;
+}
+
+function AttachmentGallery({ files }) {
+  if (!files?.length) {
+    return (
+      <div
+        style={{
+          fontSize: 14,
+          color: "#64748b",
+          fontWeight: 700,
+        }}
+      >
+        No files uploaded.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: 12,
+      }}
+    >
+      {files.map((file, index) => {
+        const lower = String(file).toLowerCase();
+        const isImage =
+          lower.includes(".jpg") ||
+          lower.includes(".jpeg") ||
+          lower.includes(".png") ||
+          lower.includes(".webp") ||
+          lower.includes(".gif") ||
+          lower.includes("firebasestorage") ||
+          lower.includes("images") ||
+          lower.includes("photo");
+
+        return (
+          <a
+            key={`${file}-${index}`}
+            href={file}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              textDecoration: "none",
+              color: "#1769aa",
+            }}
+          >
+            <div
+              style={{
+                border: "1px solid #dbeafe",
+                borderRadius: 14,
+                background: "#ffffff",
+                overflow: "hidden",
+              }}
+            >
+              {isImage ? (
+                <img
+                  src={file}
+                  alt={`attachment-${index}`}
+                  style={{
+                    width: "100%",
+                    height: 140,
+                    objectFit: "cover",
+                    display: "block",
+                    background: "#f8fafc",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    height: 140,
+                    display: "grid",
+                    placeItems: "center",
+                    background: "#f8fafc",
+                    color: "#475569",
+                    fontWeight: 800,
+                    padding: 12,
+                    textAlign: "center",
+                  }}
+                >
+                  Open file
+                </div>
+              )}
+
+              <div
+                style={{
+                  padding: "10px 12px",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  wordBreak: "break-word",
+                }}
+              >
+                View attachment
+              </div>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
 function getVisibleFieldEntries(report) {
   if (!report) return [];
 
@@ -394,6 +602,21 @@ function getVisibleFieldEntries(report) {
       ["requestedHours", report.requestedHours],
       ["requestedBy", report.requestedBy],
       ["reason", report.reason],
+    ];
+  }
+
+  if (isCompanyReimbursementRequest(report)) {
+    return [
+      ...commonFields,
+      ["companyName", report.companyName],
+      ["department", report.department],
+      ["employeeName", report.employeeName],
+      ["reimbursementCategory", report.reimbursementCategory],
+      ["reimbursementAmount", report.reimbursementAmount],
+      ["invoiceNumber", report.invoiceNumber],
+      ["reimbursementReason", report.reimbursementReason],
+      ["filesUploaded", hasReimbursementFiles(report) ? "Yes" : "No"],
+      ["filesCount", getReimbursementFiles(report).length],
     ];
   }
 
@@ -454,41 +677,71 @@ function renderRequestSpecificView(report) {
     );
   }
 
-  return null;
-}
+  if (isCompanyReimbursementRequest(report)) {
+    const files = getReimbursementFiles(report);
 
-function DetailBox({ label, value }) {
-  return (
-    <div
-      style={{
-        border: "1px solid #dbeafe",
-        borderRadius: 14,
-        padding: "10px 12px",
-        background: "#f8fbff",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
+    return (
+      <div style={{ display: "grid", gap: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 10,
+          }}
+        >
+          <DetailBox label="Company Name" value={report.companyName} />
+          <DetailBox label="Department" value={report.department} />
+          <DetailBox label="Employee Name" value={report.employeeName} />
+          <DetailBox label="Category" value={report.reimbursementCategory} />
+          <DetailBox label="Amount" value={report.reimbursementAmount} />
+          <DetailBox label="Invoice Number" value={report.invoiceNumber} />
+        </div>
+
+        <DetailBox
+          label="Reimbursement Reason"
+          value={report.reimbursementReason}
+        />
+
+        <div
+          style={{
+            border: "1px solid #dbeafe",
+            borderRadius: 16,
+            padding: "14px 16px",
+            background: "#f8fbff",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Uploaded Invoices / Photos
+            </div>
+
+            <UploadCheckBadge hasFiles={files.length > 0} />
+          </div>
+
+          <AttachmentGallery files={files} />
+        </div>
       </div>
-      <div
-        style={{
-          marginTop: 4,
-          fontWeight: 700,
-          color: "#0f172a",
-          whiteSpace: "pre-wrap",
-        }}
-      >
-        {safeValue(value)}
-      </div>
-    </div>
-  );
+    );
+  }
+
+  return null;
 }
 
 export default function OperationsRequestsReportsAdminPage() {
@@ -536,6 +789,12 @@ export default function OperationsRequestsReportsAdminPage() {
     managerStatus: "submitted",
     managerComments: "",
     followUpByName: "",
+    companyName: "",
+    reimbursementCategory: "",
+    reimbursementAmount: "",
+    invoiceNumber: "",
+    reimbursementReason: "",
+    reimbursementPhotosText: "",
   });
 
   const isManager =
@@ -613,6 +872,10 @@ export default function OperationsRequestsReportsAdminPage() {
           item.managerStatus,
           item.followUpByName,
           item.managerComments,
+          item.companyName,
+          item.reimbursementCategory,
+          item.invoiceNumber,
+          item.reimbursementReason,
         ]
           .join(" ")
           .toLowerCase();
@@ -673,10 +936,18 @@ export default function OperationsRequestsReportsAdminPage() {
         managerStatus: "submitted",
         managerComments: "",
         followUpByName: "",
+        companyName: "",
+        reimbursementCategory: "",
+        reimbursementAmount: "",
+        invoiceNumber: "",
+        reimbursementReason: "",
+        reimbursementPhotosText: "",
       });
       setIsEditMode(false);
       return;
     }
+
+    const allReimbursementFiles = getReimbursementFiles(selectedReport);
 
     setEditData({
       requestType: selectedReport.requestType || "",
@@ -703,9 +974,16 @@ export default function OperationsRequestsReportsAdminPage() {
       requestedHours: selectedReport.requestedHours || "",
       requestedBy: selectedReport.requestedBy || "",
       status: selectedReport.status || "submitted",
-      managerStatus: selectedReport.managerStatus || selectedReport.status || "submitted",
+      managerStatus:
+        selectedReport.managerStatus || selectedReport.status || "submitted",
       managerComments: selectedReport.managerComments || "",
       followUpByName: selectedReport.followUpByName || "",
+      companyName: selectedReport.companyName || "",
+      reimbursementCategory: selectedReport.reimbursementCategory || "",
+      reimbursementAmount: selectedReport.reimbursementAmount || "",
+      invoiceNumber: selectedReport.invoiceNumber || "",
+      reimbursementReason: selectedReport.reimbursementReason || "",
+      reimbursementPhotosText: allReimbursementFiles.join("\n"),
     });
   }, [selectedReport]);
 
@@ -772,8 +1050,38 @@ export default function OperationsRequestsReportsAdminPage() {
         editData.managerStatus || editData.status || "submitted"
       ).toLowerCase();
 
+      const reimbursementFiles = normalizeFileList(editData.reimbursementPhotosText);
+
       const updatePayload = {
-        ...editData,
+        requestType: editData.requestType,
+        date: editData.date,
+        airline: editData.airline,
+        department: editData.department,
+        submittedBy: editData.submittedBy,
+        submittedByName: editData.submittedByName,
+        submittedByUsername: editData.submittedByUsername,
+        email: editData.email,
+        items: editData.items,
+        pictureNotes: editData.pictureNotes,
+        employeeName: editData.employeeName,
+        employeeNumber: editData.employeeNumber,
+        phoneNumber: editData.phoneNumber,
+        totalAmount: editData.totalAmount,
+        receiptNotes: editData.receiptNotes,
+        employeeSignature: editData.employeeSignature,
+        flightNumber: editData.flightNumber,
+        tailNumber: editData.tailNumber,
+        delayedTime: editData.delayedTime,
+        delayedCode: editData.delayedCode,
+        reason: editData.reason,
+        requestedHours: editData.requestedHours,
+        requestedBy: editData.requestedBy,
+        companyName: editData.companyName,
+        reimbursementCategory: editData.reimbursementCategory,
+        reimbursementAmount: editData.reimbursementAmount,
+        invoiceNumber: editData.invoiceNumber,
+        reimbursementReason: editData.reimbursementReason,
+        reimbursementPhotos: reimbursementFiles,
         status: nextManagerStatus,
         managerStatus: nextManagerStatus,
         managerComments: editData.managerComments || "",
@@ -812,11 +1120,7 @@ export default function OperationsRequestsReportsAdminPage() {
           item.id === selectedReport.id
             ? {
                 ...item,
-                ...editData,
-                status: nextManagerStatus,
-                managerStatus: nextManagerStatus,
-                managerComments: editData.managerComments || "",
-                followUpByName: editData.followUpByName || getUserDisplayName(user),
+                ...updatePayload,
                 receivedByName:
                   nextManagerStatus === "received"
                     ? getUserDisplayName(user)
@@ -1038,7 +1342,7 @@ export default function OperationsRequestsReportsAdminPage() {
         >
           {isSupervisor
             ? "My Submitted Operational Reports"
-            : "Supplies, Uniform & OT Requests Reports"}
+            : "Supplies, Uniform, Reimbursement & OT Requests Reports"}
         </h1>
 
         <p
@@ -1050,8 +1354,8 @@ export default function OperationsRequestsReportsAdminPage() {
           }}
         >
           {isSupervisor
-            ? "Track your submitted reports, review status, comments and duty manager follow-up."
-            : "Review, edit, archive, delete and export submitted requests."}
+            ? "Track your submitted reports, reimbursement invoices, uploaded photos, status, comments and duty manager follow-up."
+            : "Review, edit, archive, delete and export submitted requests, including reimbursement invoices and uploaded receipt photos."}
         </p>
       </div>
 
@@ -1092,6 +1396,7 @@ export default function OperationsRequestsReportsAdminPage() {
               <option value="all">All</option>
               <option value="supplies">Supplies Request</option>
               <option value="uniform">Uniform Submit</option>
+              <option value="company_reimbursement">Company Reimbursement</option>
               <option value="aa_ot">AA OT Request</option>
               <option value="sy_ot">SY OT Request</option>
               <option value="wl_ot">WL OT Request</option>
@@ -1107,7 +1412,7 @@ export default function OperationsRequestsReportsAdminPage() {
               onChange={(e) =>
                 setFilters((prev) => ({ ...prev, search: e.target.value }))
               }
-              placeholder="Airline, employee, date, flight, status..."
+              placeholder="Airline, employee, company, invoice, date, status..."
             />
           </div>
         </div>
@@ -1141,79 +1446,91 @@ export default function OperationsRequestsReportsAdminPage() {
             <div>No reports found.</div>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
-              {visibleReports.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => {
-                    setSelectedId(item.id);
-                    setIsEditMode(false);
-                  }}
-                  style={{
-                    cursor: "pointer",
-                    border:
-                      item.id === selectedId
-                        ? "1px solid #bfe0fb"
-                        : "1px solid #e2e8f0",
-                    background: item.id === selectedId ? "#edf7ff" : "#fff",
-                    borderRadius: 16,
-                    padding: 14,
-                  }}
-                >
+              {visibleReports.map((item) => {
+                const reimbursementFilesUploaded =
+                  isCompanyReimbursementRequest(item) && hasReimbursementFiles(item);
+
+                return (
                   <div
+                    key={item.id}
+                    onClick={() => {
+                      setSelectedId(item.id);
+                      setIsEditMode(false);
+                    }}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      alignItems: "center",
+                      cursor: "pointer",
+                      border:
+                        item.id === selectedId
+                          ? "1px solid #bfe0fb"
+                          : "1px solid #e2e8f0",
+                      background: item.id === selectedId ? "#edf7ff" : "#fff",
+                      borderRadius: 16,
+                      padding: 14,
                     }}
                   >
-                    <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                      {getRequestTypeLabel(item.requestType)}
-                    </div>
-                    <span style={getManagerStatusStyle(item.managerStatus || item.status)}>
-                      {getManagerStatusLabel(item.managerStatus || item.status)}
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#64748b",
-                      marginTop: 6,
-                    }}
-                  >
-                    {item.date || "—"} · {item.airline || item.department || "—"}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#1769aa",
-                      marginTop: 4,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {item.submittedBy ||
-                      item.submittedByName ||
-                      item.employeeName ||
-                      "—"}
-                  </div>
-
-                  {item.followUpByName && (
                     <div
                       style={{
-                        fontSize: 12,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                        {getRequestTypeLabel(item.requestType)}
+                      </div>
+                      <span style={getManagerStatusStyle(item.managerStatus || item.status)}>
+                        {getManagerStatusLabel(item.managerStatus || item.status)}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 13,
                         color: "#64748b",
                         marginTop: 6,
+                      }}
+                    >
+                      {item.date || "—"} ·{" "}
+                      {item.airline || item.department || item.companyName || "—"}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "#1769aa",
+                        marginTop: 4,
                         fontWeight: 700,
                       }}
                     >
-                      Follow up by: {item.followUpByName}
+                      {item.submittedBy ||
+                        item.submittedByName ||
+                        item.employeeName ||
+                        "—"}
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {isCompanyReimbursementRequest(item) && (
+                      <div style={{ marginTop: 8 }}>
+                        <UploadCheckBadge hasFiles={reimbursementFilesUploaded} />
+                      </div>
+                    )}
+
+                    {item.followUpByName && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                          marginTop: 6,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Follow up by: {item.followUpByName}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </PageCard>
@@ -1343,6 +1660,33 @@ export default function OperationsRequestsReportsAdminPage() {
                       {selectedReport.followUpByName || "—"}
                     </div>
                   </div>
+
+                  {isCompanyReimbursementRequest(selectedReport) && (
+                    <div
+                      style={{
+                        border: "1px solid #dbeafe",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                        background: "#f8fbff",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Reimbursement Files
+                      </div>
+                      <div style={{ marginTop: 8 }}>
+                        <UploadCheckBadge
+                          hasFiles={hasReimbursementFiles(selectedReport)}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {selectedReport.managerComments && (
@@ -1769,6 +2113,46 @@ export default function OperationsRequestsReportsAdminPage() {
                       placeholder="Duty Manager name"
                     />
                   </div>
+
+                  <div>
+                    <FieldLabel>Company Name</FieldLabel>
+                    <TextInput
+                      value={editData.companyName}
+                      onChange={(e) =>
+                        handleEditField("companyName", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Reimbursement Category</FieldLabel>
+                    <TextInput
+                      value={editData.reimbursementCategory}
+                      onChange={(e) =>
+                        handleEditField("reimbursementCategory", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Reimbursement Amount</FieldLabel>
+                    <TextInput
+                      value={editData.reimbursementAmount}
+                      onChange={(e) =>
+                        handleEditField("reimbursementAmount", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Invoice Number</FieldLabel>
+                    <TextInput
+                      value={editData.invoiceNumber}
+                      onChange={(e) =>
+                        handleEditField("invoiceNumber", e.target.value)
+                      }
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -1817,6 +2201,58 @@ export default function OperationsRequestsReportsAdminPage() {
                     onChange={(e) => handleEditField("reason", e.target.value)}
                   />
                 </div>
+
+                <div>
+                  <FieldLabel>Reimbursement Reason</FieldLabel>
+                  <TextArea
+                    value={editData.reimbursementReason}
+                    onChange={(e) =>
+                      handleEditField("reimbursementReason", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>
+                    Reimbursement Photos / Invoice URLs
+                  </FieldLabel>
+                  <TextArea
+                    value={editData.reimbursementPhotosText}
+                    onChange={(e) =>
+                      handleEditField("reimbursementPhotosText", e.target.value)
+                    }
+                    placeholder="Paste one Firebase/image URL per line"
+                  />
+                </div>
+
+                {normalizeFileList(editData.reimbursementPhotosText).length > 0 && (
+                  <div
+                    style={{
+                      border: "1px solid #dbeafe",
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      background: "#f8fbff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        marginBottom: 12,
+                      }}
+                    >
+                      <FieldLabel>Preview</FieldLabel>
+                      <UploadCheckBadge hasFiles />
+                    </div>
+
+                    <AttachmentGallery
+                      files={normalizeFileList(editData.reimbursementPhotosText)}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </PageCard>
