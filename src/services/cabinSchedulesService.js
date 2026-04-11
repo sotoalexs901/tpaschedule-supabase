@@ -106,6 +106,7 @@ function normalizeFlightRow(row, scheduleId, dayKey) {
     gate: safeString(row.gate),
     movementType: safeString(row.movementType),
     rawText: safeString(row.rawText),
+    rawRow: row.rawRow || null,
     createdAt: serverTimestamp(),
   };
 }
@@ -148,6 +149,26 @@ function normalizeSlotRow(row, scheduleId, dayKey) {
         ? Number(row.paidHours)
         : calcPaidHours(start, end),
     status: employeeId || employeeName ? "assigned" : "open",
+
+    draftSource: !!row.draftSource,
+    draftMatched: !!row.draftMatched,
+    draftDeleteCandidate: !!row.draftDeleteCandidate,
+    rosterOnlyDraft: !!row.rosterOnlyDraft,
+    sourceLabel: safeString(row.sourceLabel),
+
+    createdAt: serverTimestamp(),
+  };
+}
+
+function normalizeDraftRosterRow(row, scheduleId, dayKey) {
+  return {
+    scheduleId,
+    dayKey,
+    draftLocalId: safeString(row.id),
+    employeeName: prettifyCodeName(row.employeeName),
+    role: normalizeRole(row.role),
+    start: safeString(row.start),
+    end: safeString(row.end),
     createdAt: serverTimestamp(),
   };
 }
@@ -180,11 +201,26 @@ function getUploadedDays(weeklyFlights = {}, weeklySlots = {}) {
   return Array.from(set);
 }
 
+async function commitInChunks(operations, chunkSize = 450) {
+  for (let i = 0; i < operations.length; i += chunkSize) {
+    const chunk = operations.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+
+    chunk.forEach((op) => {
+      batch.set(op.ref, op.data);
+    });
+
+    await batch.commit();
+  }
+}
+
 export async function saveCabinWeeklySchedule({
   weekStartDate,
   weeklyFlights = {},
   weeklyDemandBlocks = {},
   weeklySlots = {},
+  weeklyDraftRosterRows = {},
+  weeklyDraftSummary = {},
   createdBy = "",
   status = "draft",
 }) {
@@ -198,45 +234,66 @@ export async function saveCabinWeeklySchedule({
   const totalFlights = countFlights(weeklyFlights);
   const totalSlots = countSlots(weeklySlots);
 
-  const cleanCreatedBy = prettifyCodeName(createdBy) || "Unknown User";
+  const cleanCreatedByRaw = safeString(createdBy);
+  const cleanCreatedByName = prettifyCodeName(createdBy) || "Unknown User";
 
   const scheduleRef = await addDoc(collection(db, "cabinSchedules"), {
     weekStartDate: cleanWeekStart,
-    createdBy: cleanCreatedBy,
+    createdBy: cleanCreatedByRaw,
+    createdByName: cleanCreatedByName,
     status: safeString(status) || "draft",
     uploadedDays,
     totalFlights,
     totalSlots,
+    weeklyDraftSummary,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   const scheduleId = scheduleRef.id;
-
-  const batch = writeBatch(db);
+  const operations = [];
 
   Object.entries(weeklyFlights).forEach(([dayKey, rows]) => {
     (rows || []).forEach((row) => {
       const ref = doc(collection(db, "cabinScheduleFlights"));
-      batch.set(ref, normalizeFlightRow(row, scheduleId, dayKey));
+      operations.push({
+        ref,
+        data: normalizeFlightRow(row, scheduleId, dayKey),
+      });
     });
   });
 
   Object.entries(weeklyDemandBlocks).forEach(([dayKey, rows]) => {
     (rows || []).forEach((row) => {
       const ref = doc(collection(db, "cabinScheduleDemandBlocks"));
-      batch.set(ref, normalizeDemandRow(row, scheduleId, dayKey));
+      operations.push({
+        ref,
+        data: normalizeDemandRow(row, scheduleId, dayKey),
+      });
     });
   });
 
   Object.entries(weeklySlots).forEach(([dayKey, rows]) => {
     (rows || []).forEach((row) => {
       const ref = doc(collection(db, "cabinScheduleSlots"));
-      batch.set(ref, normalizeSlotRow(row, scheduleId, dayKey));
+      operations.push({
+        ref,
+        data: normalizeSlotRow(row, scheduleId, dayKey),
+      });
     });
   });
 
-  await batch.commit();
+  Object.entries(weeklyDraftRosterRows).forEach(([dayKey, rows]) => {
+    (rows || []).forEach((row) => {
+      const ref = doc(collection(db, "cabinScheduleDraftRosterRows"));
+      operations.push({
+        ref,
+        data: normalizeDraftRosterRow(row, scheduleId, dayKey),
+      });
+    });
+  });
+
+  await commitInChunks(operations);
 
   return scheduleId;
 }
