@@ -374,14 +374,7 @@ function AppRouter() {
 
           <Route path="profile" element={<ProfilePage />} />
           <Route path="messages" element={<MessagesPage />} />
-          <Route
-            path="notifications"
-            element={
-              <ProtectedRoute>
-                <NotificationsPage />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="notifications" element={<NotificationsPage />} />
 
           <Route
             path="station-team"
