@@ -58,6 +58,7 @@ export default function AppLayout() {
 
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth : 1200
@@ -140,6 +141,24 @@ export default function AppLayout() {
       qMsgs,
       (snap) => setUnreadMessages(snap.size),
       (err) => console.error("Error listening unread messages:", err)
+    );
+
+    return () => unsub();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const qNotifications = query(
+      collection(db, "notifications"),
+      where("toUserId", "==", user.id),
+      where("read", "==", false)
+    );
+
+    const unsub = onSnapshot(
+      qNotifications,
+      (snap) => setUnreadNotifications(snap.size),
+      (err) => console.error("Error listening notifications:", err)
     );
 
     return () => unsub();
@@ -297,6 +316,12 @@ export default function AppLayout() {
         label: "Messages",
         icon: "💬",
         showDot: unreadMessages > 0,
+      },
+      {
+        to: "/notifications",
+        label: "Notifications",
+        icon: "🔔",
+        showDot: unreadNotifications > 0,
       },
     ];
 
@@ -576,6 +601,7 @@ export default function AppLayout() {
     canSubmitGateChecklist,
     canManageGateChecklist,
     unreadMessages,
+    unreadNotifications,
     pendingTimeOff,
     user,
     user?.role,
@@ -800,6 +826,7 @@ export default function AppLayout() {
                 {!headerCollapsed && (
                   <>
                     <StatusPill label="Unread Messages" value={unreadMessages} />
+                    <StatusPill label="Notifications" value={unreadNotifications} />
                     <StatusPill label="Pending Day Off" value={pendingTimeOff} />
                   </>
                 )}
@@ -945,6 +972,7 @@ export default function AppLayout() {
                 }}
               >
                 <StatusPill label="Unread Messages" value={unreadMessages} />
+                <StatusPill label="Notifications" value={unreadNotifications} />
                 <StatusPill label="Pending Day Off" value={pendingTimeOff} />
               </div>
 
