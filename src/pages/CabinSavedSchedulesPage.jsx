@@ -397,7 +397,7 @@ export default function CabinSavedSchedulesPage() {
   }
 
   function openSchedule(item) {
-    navigate(`/cabin-schedule-view/${item.id}`);
+    navigate(`/cabin-saved-schedules/${item.id}`);
   }
 
   return (
