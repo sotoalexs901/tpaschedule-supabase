@@ -25,10 +25,11 @@ export async function createNotification({
   entityId = "",
   entityType = "",
 }) {
-  if (!userId) return;
+  const cleanUserId = safeString(userId);
+  if (!cleanUserId) return;
 
   await addDoc(collection(db, "notifications"), {
-    userId: safeString(userId),
+    userId: cleanUserId,
     type: safeString(type) || "general",
     title: safeString(title) || "Notification",
     message: safeString(message),
@@ -38,24 +39,28 @@ export async function createNotification({
     entityId: safeString(entityId),
     entityType: safeString(entityType),
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 }
 
 export async function markNotificationAsRead(notificationId) {
-  if (!notificationId) return;
+  const cleanNotificationId = safeString(notificationId);
+  if (!cleanNotificationId) return;
 
-  await updateDoc(doc(db, "notifications", notificationId), {
+  await updateDoc(doc(db, "notifications", cleanNotificationId), {
     read: true,
+    updatedAt: serverTimestamp(),
   });
 }
 
 export async function markAllNotificationsAsRead(userId) {
-  if (!userId) return;
+  const cleanUserId = safeString(userId);
+  if (!cleanUserId) return;
 
   const snap = await getDocs(
     query(
       collection(db, "notifications"),
-      where("userId", "==", String(userId)),
+      where("userId", "==", cleanUserId),
       where("read", "==", false)
     )
   );
@@ -67,6 +72,7 @@ export async function markAllNotificationsAsRead(userId) {
   snap.docs.forEach((item) => {
     batch.update(doc(db, "notifications", item.id), {
       read: true,
+      updatedAt: serverTimestamp(),
     });
   });
 
