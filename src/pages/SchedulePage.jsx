@@ -34,6 +34,23 @@ const AIRLINE_LOGOS = {
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_17%20p.m..png?alt=media&token=f338435c-12e0-4b5f-b126-9c6a69f6dcc6",
 };
 
+const AIRLINE_COLORS = {
+  SY: "#F28C28",
+  WestJet: "#22B8B0",
+  "WL Havana Air": "#22B8B0",
+  "WL Invicta": "#0057B8",
+  AV: "#D22630",
+  EA: "#003E7E",
+  WCHR: "#7D39C7",
+  CABIN: "#1FA86A",
+  "AA-BSO": "#A8A8A8",
+  OTHER: "#555555",
+
+  // Nuevos personalizados para Other
+  AM: "#0F766E",
+  AMS: "#7C3AED",
+};
+
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
   mon: "MON",
@@ -104,6 +121,44 @@ const normalizeDepartmentName = (value) => {
   return raw;
 };
 
+function normalizeCustomOtherAirline(value) {
+  const raw = String(value || "").trim();
+  const upper = raw.toUpperCase();
+
+  if (upper === "AM") return "AM";
+  if (upper === "AMS") return "AMS";
+
+  return raw;
+}
+
+function getEffectiveAirlineDisplayName(airlineKey, airlineDisplayName) {
+  const normalizedKey = normalizeAirlineName(airlineKey);
+  const display = normalizeCustomOtherAirline(airlineDisplayName);
+
+  if (normalizedKey === "OTHER") {
+    return display || "OTHER";
+  }
+
+  return normalizeAirlineName(display || normalizedKey);
+}
+
+function getThemeColor(airlineKey, airlineDisplayName) {
+  const effectiveName = getEffectiveAirlineDisplayName(
+    airlineKey,
+    airlineDisplayName
+  );
+
+  return (
+    AIRLINE_COLORS[effectiveName] ||
+    AIRLINE_COLORS[normalizeAirlineName(airlineKey)] ||
+    "#1769aa"
+  );
+}
+
+function buildHeroGradient(themeColor) {
+  return `linear-gradient(135deg, ${themeColor} 0%, #1f7cc1 55%, #6ec6e8 100%)`;
+}
+
 function normalizeDateString(value) {
   if (!value) return "";
 
@@ -164,8 +219,19 @@ function cloneGrid(grid = []) {
   }));
 }
 
-const getAirlineLogo = (value) =>
-  AIRLINE_LOGOS[normalizeAirlineName(value)] || AIRLINE_LOGOS[value] || null;
+const getAirlineLogo = (airlineKey, airlineDisplayName) => {
+  const effectiveName = getEffectiveAirlineDisplayName(
+    airlineKey,
+    airlineDisplayName
+  );
+
+  return (
+    AIRLINE_LOGOS[effectiveName] ||
+    AIRLINE_LOGOS[normalizeAirlineName(airlineKey)] ||
+    AIRLINE_LOGOS.OTHER ||
+    null
+  );
+};
 
 function buildDayNumbers(weekStart) {
   if (!weekStart) {
@@ -361,6 +427,16 @@ export default function SchedulePage() {
   const [loadedExistingSchedule, setLoadedExistingSchedule] = useState(false);
 
   const dayNumbers = useMemo(() => buildDayNumbers(weekStart), [weekStart]);
+
+  const effectiveAirlineDisplayName = useMemo(
+    () => getEffectiveAirlineDisplayName(airlineKey, airlineDisplayName),
+    [airlineKey, airlineDisplayName]
+  );
+
+  const themeColor = useMemo(
+    () => getThemeColor(airlineKey, airlineDisplayName),
+    [airlineKey, airlineDisplayName]
+  );
 
   const isErrorStatus =
     statusMessage.toLowerCase().includes("error") ||
@@ -660,7 +736,7 @@ export default function SchedulePage() {
 
   const buildSchedulePayload = (status, weekTagToSave) => ({
     airline: normalizeAirlineName(airlineKey),
-    airlineDisplayName: normalizeAirlineName(airlineDisplayName || airlineKey),
+    airlineDisplayName: effectiveAirlineDisplayName,
     department,
     weekStart,
     days: dayNumbers,
@@ -762,7 +838,7 @@ export default function SchedulePage() {
       return;
     }
 
-    const logoUrl = getAirlineLogo(airlineKey);
+    const logoUrl = getAirlineLogo(airlineKey, airlineDisplayName);
     let logoImg = null;
 
     if (logoUrl) {
@@ -790,7 +866,7 @@ export default function SchedulePage() {
 
     pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
 
-    const safeAirline = (airlineDisplayName || airlineKey || "AIRLINE")
+    const safeAirline = (effectiveAirlineDisplayName || airlineKey || "AIRLINE")
       .replace(/\s+/g, "_")
       .replace(/[^\w-]/g, "");
     const safeDept = (department || "DEPT").replace(/\s+/g, "_");
@@ -804,7 +880,9 @@ export default function SchedulePage() {
     employeeNameMap[e.id] = e.name;
   });
 
-  const canEditWestJetName = normalizeAirlineName(airlineKey) === "WestJet";
+  const canEditAirlineName =
+    normalizeAirlineName(airlineKey) === "WestJet" ||
+    normalizeAirlineName(airlineKey) === "OTHER";
 
   return (
     <div
@@ -816,8 +894,7 @@ export default function SchedulePage() {
     >
       <div
         style={{
-          background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          background: buildHeroGradient(themeColor),
           borderRadius: 28,
           padding: 24,
           color: "#fff",
@@ -1042,7 +1119,12 @@ export default function SchedulePage() {
               onChange={(e) => {
                 const normalizedKey = normalizeAirlineName(e.target.value);
                 setAirlineKey(normalizedKey);
-                setAirlineDisplayName(normalizedKey);
+
+                if (normalizedKey === "OTHER") {
+                  setAirlineDisplayName("");
+                } else {
+                  setAirlineDisplayName(normalizedKey);
+                }
               }}
             >
               <option value="">Select airline</option>
@@ -1059,16 +1141,33 @@ export default function SchedulePage() {
 
             <div style={{ marginTop: 12 }}>
               <FieldLabel>
-                Airline display name {canEditWestJetName ? "(editable)" : "(locked)"}
+                Airline display name {canEditAirlineName ? "(editable)" : "(locked)"}
               </FieldLabel>
               <TextInput
                 value={airlineDisplayName}
-                disabled={!canEditWestJetName}
-                onChange={(e) => setAirlineDisplayName(e.target.value)}
-                placeholder="Example: WestJet"
+                disabled={!canEditAirlineName}
+                onChange={(e) => {
+                  const rawValue = e.target.value;
+                  setAirlineDisplayName(
+                    normalizeAirlineName(airlineKey) === "OTHER"
+                      ? normalizeCustomOtherAirline(rawValue)
+                      : rawValue
+                  );
+                }}
+                placeholder={
+                  normalizeAirlineName(airlineKey) === "OTHER"
+                    ? "Example: AM or AMS"
+                    : "Example: WestJet"
+                }
                 style={{
-                  background: canEditWestJetName ? "#fff" : "#f8fafc",
-                  color: canEditWestJetName ? "#0f172a" : "#64748b",
+                  background: canEditAirlineName ? "#fff" : "#f8fafc",
+                  color: canEditAirlineName ? "#0f172a" : "#64748b",
+                  border:
+                    normalizeAirlineName(airlineKey) === "OTHER" &&
+                    effectiveAirlineDisplayName !== "OTHER" &&
+                    effectiveAirlineDisplayName !== ""
+                      ? `2px solid ${themeColor}`
+                      : "1px solid #dbeafe",
                 }}
               />
             </div>
@@ -1147,7 +1246,10 @@ export default function SchedulePage() {
           dayNumbers={dayNumbers}
           rows={rows}
           setRows={setRows}
-          airline={normalizeAirlineName(airlineDisplayName || airlineKey)}
+          airline={effectiveAirlineDisplayName}
+          airlineKey={airlineKey}
+          airlineDisplayName={effectiveAirlineDisplayName}
+          airlineThemeColor={themeColor}
           department={department}
           onSave={handleSaveSchedule}
           onSaveDraft={handleSaveDraft}
