@@ -305,11 +305,32 @@ function formatDateTime(value) {
   }
 }
 
-function getScoreValue(rating, weight) {
-  if (rating === "exceeds") return Number(weight || 0);
-  if (rating === "meets") return Number(weight || 0) * (2 / 3);
-  if (rating === "below") return Number(weight || 0) * (1 / 3);
+function getRatingPoints(rating) {
+  const key = String(rating || "").trim().toLowerCase();
+
+  if (key === "exceeds") return 4;
+  if (key === "meets") return 3;
+  if (key === "below") return 2;
+
   return 0;
+}
+
+function calculatePerformanceScore(answers, questions) {
+  let earnedPoints = 0;
+  let maxPoints = 0;
+
+  (questions || []).forEach((question) => {
+    const weight = Number(question.weight || 0);
+    const rating = answers?.[question.id]?.rating || "";
+    const ratingPoints = getRatingPoints(rating);
+
+    earnedPoints += ratingPoints * weight;
+    maxPoints += 4 * weight;
+  });
+
+  if (!maxPoints) return 0;
+
+  return Number(((earnedPoints / maxPoints) * 100).toFixed(2));
 }
 
 function formatScore(value) {
@@ -821,10 +842,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   }, [selectedEmployee]);
 
   const calculatedScore = useMemo(() => {
-    return activeTemplate.questions.reduce((sum, q) => {
-      const answer = answers[q.id];
-      return sum + getScoreValue(answer?.rating, q.weight);
-    }, 0);
+    return calculatePerformanceScore(answers, activeTemplate.questions);
   }, [answers, activeTemplate]);
 
   const followUpItems = useMemo(() => {
