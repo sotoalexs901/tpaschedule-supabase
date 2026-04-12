@@ -615,7 +615,7 @@ function AppRouter() {
             path="wchr/admin/flights"
             element={
               <ProtectedRoute
-                roles={["station_manager", "duty_manager"]}
+                roles={["supervisor", "station_manager", "duty_manager"]}
                 blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
                 <WCHRFlights />
