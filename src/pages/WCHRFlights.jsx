@@ -10,7 +10,6 @@ import {
   where,
   Timestamp,
   doc,
-  setDoc,
   updateDoc,
   getDoc,
   deleteDoc,
@@ -96,6 +95,24 @@ function statsDateKey(dateLike) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 async function decrementDailyWchrStats(report) {
   const dateKey = statsDateKey(report.flight_date);
   if (!dateKey) return;
@@ -127,7 +144,7 @@ async function decrementDailyWchrStats(report) {
     payload[`wheelchair_by_airline.${airline}.${chair}`] = increment(-1);
   }
 
-  await setDoc(statsRef, payload, { merge: true });
+  await updateDoc(statsRef, payload);
 }
 
 function downloadCSV(filename, rows) {
@@ -208,8 +225,6 @@ function buildFlightsFromRows(rows) {
         flight_numbers: new Set(),
         routes: new Set(),
         operators: new Set(),
-        closed: false,
-        closed_at: null,
       });
     }
 
@@ -341,22 +356,6 @@ function statusBadge(kind) {
     border: "1px solid transparent",
   };
 
-  if (k === "CLOSED") {
-    return {
-      ...base,
-      background: "#fff1f2",
-      color: "#9f1239",
-      borderColor: "#fecdd3",
-    };
-  }
-  if (k === "OPEN") {
-    return {
-      ...base,
-      background: "#ecfdf5",
-      color: "#065f46",
-      borderColor: "#a7f3d0",
-    };
-  }
   if (k === "LATE") {
     return {
       ...base,
@@ -365,12 +364,22 @@ function statusBadge(kind) {
       borderColor: "#fed7aa",
     };
   }
+
   if (k === "NEW") {
     return {
       ...base,
       background: "#edf7ff",
       color: "#1769aa",
       borderColor: "#cfe7fb",
+    };
+  }
+
+  if (k === "OPEN") {
+    return {
+      ...base,
+      background: "#ecfdf5",
+      color: "#065f46",
+      borderColor: "#a7f3d0",
     };
   }
 
@@ -382,9 +391,38 @@ function statusBadge(kind) {
   };
 }
 
+function DetailField({ label, value }) {
+  return (
+    <div style={{ display: "grid", gap: 4 }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 14,
+          color: "#0f172a",
+          fontWeight: 600,
+          wordBreak: "break-word",
+        }}
+      >
+        {value || "—"}
+      </div>
+    </div>
+  );
+}
+
 export default function WCHRFlights() {
   const navigate = useNavigate();
   const { user } = useUser();
+  const { isMobile, isTablet } = useViewport();
 
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
@@ -401,15 +439,6 @@ export default function WCHRFlights() {
   const [editingId, setEditingId] = useState("");
   const [editForm, setEditForm] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
-
-  const canClose = useMemo(() => {
-    const role = (user?.role || "").toLowerCase();
-    return (
-      role.includes("station") ||
-      role.includes("duty") ||
-      role.includes("supervisor")
-    );
-  }, [user]);
 
   useEffect(() => {
     let mounted = true;
@@ -732,8 +761,8 @@ export default function WCHRFlights() {
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 16 : 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
@@ -762,7 +791,7 @@ export default function WCHRFlights() {
             flexWrap: "wrap",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p
               style={{
                 margin: 0,
@@ -779,7 +808,7 @@ export default function WCHRFlights() {
             <h1
               style={{
                 margin: "10px 0 6px",
-                fontSize: 32,
+                fontSize: isMobile ? 26 : 32,
                 lineHeight: 1.05,
                 fontWeight: 800,
                 letterSpacing: "-0.04em",
@@ -794,6 +823,7 @@ export default function WCHRFlights() {
                 maxWidth: 760,
                 fontSize: 14,
                 color: "rgba(255,255,255,0.88)",
+                lineHeight: 1.6,
               }}
             >
               View reports grouped by airline and date, open details, print, edit,
@@ -806,17 +836,20 @@ export default function WCHRFlights() {
               display: "flex",
               gap: 10,
               flexWrap: "wrap",
+              width: isMobile ? "100%" : "auto",
             }}
           >
             <ActionButton
               onClick={() => navigate("/wchr/my-reports")}
               variant="secondary"
+              style={{ width: isMobile ? "100%" : "auto" }}
             >
               My Reports
             </ActionButton>
             <ActionButton
               onClick={() => navigate("/dashboard")}
               variant="secondary"
+              style={{ width: isMobile ? "100%" : "auto" }}
             >
               Back
             </ActionButton>
@@ -842,7 +875,7 @@ export default function WCHRFlights() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 20 }}>
         <div
           style={{
             display: "flex",
@@ -858,9 +891,10 @@ export default function WCHRFlights() {
               gap: 12,
               alignItems: "center",
               flexWrap: "wrap",
+              width: isMobile ? "100%" : "auto",
             }}
           >
-            <div>
+            <div style={{ width: isMobile ? "100%" : "auto" }}>
               <label
                 style={{
                   display: "block",
@@ -888,6 +922,8 @@ export default function WCHRFlights() {
                   fontSize: 14,
                   color: "#0f172a",
                   outline: "none",
+                  width: isMobile ? "100%" : "auto",
+                  boxSizing: "border-box",
                 }}
               />
             </div>
@@ -900,18 +936,31 @@ export default function WCHRFlights() {
                 padding: "12px 14px",
                 fontSize: 13,
                 color: "#334155",
+                width: isMobile ? "100%" : "auto",
+                boxSizing: "border-box",
               }}
             >
               Showing reports submitted on: <b>{toMMDDYYYY(selectedDate)}</b>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
             <ActionButton
               onClick={handleExportFullDay}
               variant="secondary"
               disabled={!allDayReports.length}
-              style={{ padding: "8px 12px", fontSize: 12 }}
+              style={{
+                padding: "8px 12px",
+                fontSize: 12,
+                width: isMobile ? "100%" : "auto",
+              }}
             >
               Export Full Day
             </ActionButton>
@@ -919,12 +968,12 @@ export default function WCHRFlights() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 20 }}>
         <div style={{ marginBottom: 14 }}>
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: isMobile ? 18 : 20,
               fontWeight: 800,
               color: "#0f172a",
               letterSpacing: "-0.02em",
@@ -937,6 +986,7 @@ export default function WCHRFlights() {
               margin: "4px 0 0",
               fontSize: 13,
               color: "#64748b",
+              lineHeight: 1.6,
             }}
           >
             The list is grouped by airline and date. Inside details you will see
@@ -948,6 +998,116 @@ export default function WCHRFlights() {
           <div style={infoBoxStyle}>Loading...</div>
         ) : flights.length === 0 ? (
           <div style={infoBoxStyle}>No flights found for this date.</div>
+        ) : isMobile ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            {flights.map((f) => (
+              <div
+                key={f.flight_key}
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 18,
+                  padding: 14,
+                  background:
+                    selectedFlightKey === f.flight_key ? "#edf7ff" : "#ffffff",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: "#0f172a",
+                      }}
+                    >
+                      {f.airline}
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                      <span style={statusBadge("OPEN")}>OPEN</span>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: "#64748b",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {f.flight_date ? toMMDDYYYY(f.flight_date) : "—"}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 14,
+                    display: "grid",
+                    gap: 12,
+                  }}
+                >
+                  <DetailField
+                    label="Flights"
+                    value={`${f.flights_count || 0} flight(s) · ${
+                      (f.flight_numbers || []).join(", ") || "—"
+                    }`}
+                  />
+                  <DetailField
+                    label="Routes"
+                    value={(f.routes || []).join(" | ") || "—"}
+                  />
+                  <DetailField
+                    label="Reports"
+                    value={`Total: ${f.total_reports} · NEW: ${f.new_reports} · LATE: ${f.late_reports}`}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 14,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <ActionButton
+                    onClick={() => setSelectedFlightKey(f.flight_key)}
+                    variant="primary"
+                    style={{ width: "100%" }}
+                  >
+                    View Details
+                  </ActionButton>
+
+                  <ActionButton
+                    onClick={() => {
+                      const filename = `WCHR_${f.airline}_${toYYYYMMDD(
+                        f.flight_date || new Date()
+                      )}.csv`;
+                      const groupRows = allDayReports.filter((r) => {
+                        const airline = safeUpper(r.airline) || "UNKNOWN";
+                        const reportFlightDate = tsToDate(r.flight_date);
+                        const dateKey = reportFlightDate
+                          ? toYYYYMMDD(reportFlightDate)
+                          : "NO_DATE";
+                        return `${airline}-${dateKey}` === f.flight_key;
+                      });
+                      downloadCSV(filename, groupRows);
+                    }}
+                    variant="secondary"
+                    style={{ width: "100%" }}
+                  >
+                    Export
+                  </ActionButton>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div
             style={{
@@ -1108,7 +1268,7 @@ export default function WCHRFlights() {
         )}
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 20 }}>
         <div
           style={{
             display: "flex",
@@ -1119,11 +1279,11 @@ export default function WCHRFlights() {
             marginBottom: 14,
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: isMobile ? 18 : 20,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -1136,6 +1296,7 @@ export default function WCHRFlights() {
                 margin: "4px 0 0",
                 fontSize: 13,
                 color: "#64748b",
+                lineHeight: 1.6,
               }}
             >
               {selectedFlight ? (
@@ -1164,11 +1325,13 @@ export default function WCHRFlights() {
                 gap: 10,
                 alignItems: "center",
                 flexWrap: "wrap",
+                width: isMobile ? "100%" : "auto",
               }}
             >
               <ActionButton
                 onClick={() => window.print()}
                 variant="secondary"
+                style={{ width: isMobile ? "100%" : "auto" }}
               >
                 Print
               </ActionButton>
@@ -1177,6 +1340,7 @@ export default function WCHRFlights() {
                 onClick={handleExportCurrentFlight}
                 variant="secondary"
                 disabled={!reports?.length}
+                style={{ width: isMobile ? "100%" : "auto" }}
               >
                 Export CSV
               </ActionButton>
@@ -1190,6 +1354,243 @@ export default function WCHRFlights() {
           <div style={infoBoxStyle}>No airline selected.</div>
         ) : reports.length === 0 ? (
           <div style={infoBoxStyle}>No reports for this airline/date.</div>
+        ) : isMobile || isTablet ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            {reports.map((r) => {
+              const isEditing = editingId === r.id;
+
+              return (
+                <div
+                  key={r.id}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 18,
+                    padding: 14,
+                    background: "#ffffff",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {r.report_id || r.id}
+                      </div>
+                      <div style={{ marginTop: 6 }}>
+                        {String(r.status || "").toUpperCase() === "LATE" ? (
+                          <span style={statusBadge("LATE")}>LATE</span>
+                        ) : (
+                          <span style={statusBadge("NEW")}>NEW</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#64748b",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {r.last_edited_at
+                        ? formatDateTimeValue(r.last_edited_at)
+                        : "No edits"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 14,
+                      display: "grid",
+                      gap: 12,
+                    }}
+                  >
+                    <DetailField label="Submitted By" value={r.employee_name || "—"} />
+                    <DetailField label="Employee Role" value={r.employee_role || "—"} />
+
+                    {isEditing ? (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <input
+                          value={editForm.passenger_name || ""}
+                          onChange={(e) =>
+                            handleEditChange("passenger_name", e.target.value)
+                          }
+                          placeholder="Passenger"
+                          style={editInputStyle}
+                        />
+                        <input
+                          value={editForm.airline || ""}
+                          onChange={(e) => handleEditChange("airline", e.target.value)}
+                          placeholder="Airline"
+                          style={editInputStyle}
+                        />
+                        <input
+                          value={editForm.flight_number || ""}
+                          onChange={(e) =>
+                            handleEditChange("flight_number", e.target.value)
+                          }
+                          placeholder="Flight Number"
+                          style={editInputStyle}
+                        />
+                        <input
+                          type="date"
+                          value={editForm.flight_date || ""}
+                          onChange={(e) =>
+                            handleEditChange("flight_date", e.target.value)
+                          }
+                          style={editInputStyle}
+                        />
+                        <input
+                          value={editForm.destination || ""}
+                          onChange={(e) =>
+                            handleEditChange("destination", e.target.value)
+                          }
+                          placeholder="Destination"
+                          style={editInputStyle}
+                        />
+                        <input
+                          value={editForm.seat || ""}
+                          onChange={(e) => handleEditChange("seat", e.target.value)}
+                          placeholder="Seat"
+                          style={editInputStyle}
+                        />
+                        <input
+                          value={editForm.gate || ""}
+                          onChange={(e) => handleEditChange("gate", e.target.value)}
+                          placeholder="Gate"
+                          style={editInputStyle}
+                        />
+                        <input
+                          value={editForm.pnr || ""}
+                          onChange={(e) => handleEditChange("pnr", e.target.value)}
+                          placeholder="PNR"
+                          style={editInputStyle}
+                        />
+                        <input
+                          value={editForm.wch_type || ""}
+                          onChange={(e) =>
+                            handleEditChange("wch_type", e.target.value)
+                          }
+                          placeholder="WCHR Type"
+                          style={editInputStyle}
+                        />
+                        <input
+                          value={editForm.wheelchair_number || ""}
+                          onChange={(e) =>
+                            handleEditChange("wheelchair_number", e.target.value)
+                          }
+                          placeholder="Wheelchair Number"
+                          style={editInputStyle}
+                        />
+                        <select
+                          value={editForm.status || "NEW"}
+                          onChange={(e) => handleEditChange("status", e.target.value)}
+                          style={editInputStyle}
+                        >
+                          <option value="NEW">NEW</option>
+                          <option value="LATE">LATE</option>
+                        </select>
+                      </div>
+                    ) : (
+                      <>
+                        <DetailField label="Passenger" value={r.passenger_name || "—"} />
+                        <DetailField
+                          label="Flight"
+                          value={`${r.airline || "—"} ${r.flight_number || "—"}`}
+                        />
+                        <DetailField
+                          label="Flight Date"
+                          value={formatReportFlightDate(r.flight_date)}
+                        />
+                        <DetailField label="Destination" value={r.destination || "—"} />
+                        <DetailField label="Seat" value={r.seat || "—"} />
+                        <DetailField label="Gate" value={r.gate || "—"} />
+                        <DetailField label="PNR" value={r.pnr || "—"} />
+                        <DetailField label="WCHR Type" value={r.wch_type || "—"} />
+                        <DetailField
+                          label="Wheelchair #"
+                          value={r.wheelchair_number || "—"}
+                        />
+                        <DetailField
+                          label="Last Edited By"
+                          value={r.last_edited_by_name || "—"}
+                        />
+                        <DetailField
+                          label="Last Edited At"
+                          value={
+                            r.last_edited_at
+                              ? formatDateTimeValue(r.last_edited_at)
+                              : "—"
+                          }
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 14,
+                      display: "grid",
+                      gap: 8,
+                    }}
+                  >
+                    {isEditing ? (
+                      <>
+                        <ActionButton
+                          variant="success"
+                          onClick={() => handleSaveEdit(r)}
+                          disabled={savingEdit}
+                          style={{ width: "100%" }}
+                        >
+                          {savingEdit ? "Saving..." : "Save"}
+                        </ActionButton>
+
+                        <ActionButton
+                          variant="secondary"
+                          onClick={handleCancelEdit}
+                          disabled={savingEdit}
+                          style={{ width: "100%" }}
+                        >
+                          Cancel
+                        </ActionButton>
+                      </>
+                    ) : (
+                      <>
+                        <ActionButton
+                          variant="secondary"
+                          onClick={() => handleStartEdit(r)}
+                          style={{ width: "100%" }}
+                        >
+                          Edit
+                        </ActionButton>
+
+                        <ActionButton
+                          variant="danger"
+                          onClick={() => handleDeleteReport(r)}
+                          disabled={deletingId === r.id}
+                          style={{ width: "100%" }}
+                        >
+                          {deletingId === r.id ? "Deleting..." : "Delete"}
+                        </ActionButton>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <>
             <div
@@ -1515,6 +1916,7 @@ const editInputStyle = {
   fontSize: 13,
   outline: "none",
   background: "#fff",
+  boxSizing: "border-box",
 };
 
 const infoBoxStyle = {
