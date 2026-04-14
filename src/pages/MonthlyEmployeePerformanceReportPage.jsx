@@ -291,7 +291,10 @@ function getMonthOptions() {
   const result = [];
   for (let i = 0; i < 12; i += 1) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}`;
     result.push({
       value,
       label: d.toLocaleString("en-US", { month: "long", year: "numeric" }),
@@ -323,19 +326,16 @@ function getRatingPoints(rating) {
 }
 
 function calculatePerformanceScore(answers, questions) {
+  const items = Array.isArray(questions) ? questions : [];
+  if (!items.length) return 0;
+
   let earnedPoints = 0;
-  let maxPoints = 0;
+  const maxPoints = items.length * 4;
 
-  (questions || []).forEach((question) => {
-    const weight = Number(question.weight || 0);
+  items.forEach((question) => {
     const rating = answers?.[question.id]?.rating || "";
-    const ratingPoints = getRatingPoints(rating);
-
-    earnedPoints += ratingPoints * weight;
-    maxPoints += 4 * weight;
+    earnedPoints += getRatingPoints(rating);
   });
-
-  if (!maxPoints) return 0;
 
   return Number(((earnedPoints / maxPoints) * 100).toFixed(2));
 }
@@ -411,15 +411,23 @@ function printReportHtml(report, language = "en") {
           <div><strong>Template:</strong> ${report.templateLabel || "-"}</div>
           <div><strong>Supervisor:</strong> ${report.supervisorName || "-"}</div>
           <div><strong>Score:</strong> ${formatScore(report.score)} / 100</div>
-          <div><strong>Status:</strong> ${report.managerStatus || report.performanceStatus || "-"}</div>
-          <div><strong>Assigned Duty Manager:</strong> ${report.assignedDutyManagerName || "-"}</div>
+          <div><strong>Status:</strong> ${
+            report.managerStatus || report.performanceStatus || "-"
+          }</div>
+          <div><strong>Assigned Duty Manager:</strong> ${
+            report.assignedDutyManagerName || "-"
+          }</div>
         </div>
 
         <div class="card">
           <h3>Comments</h3>
           <div><strong>Company:</strong> ${report.commentsCompany || "-"}</div>
-          <div style="margin-top:8px;"><strong>Employee:</strong> ${report.commentsEmployee || "-"}</div>
-          <div style="margin-top:8px;"><strong>Manager Note:</strong> ${report.managerNote || "-"}</div>
+          <div style="margin-top:8px;"><strong>Employee:</strong> ${
+            report.commentsEmployee || "-"
+          }</div>
+          <div style="margin-top:8px;"><strong>Manager Note:</strong> ${
+            report.managerNote || "-"
+          }</div>
         </div>
 
         <div class="card">
@@ -429,9 +437,9 @@ function printReportHtml(report, language = "en") {
               ? followUpItems
                   .map(
                     (item) =>
-                      `<div class="q">• ${item[language] || item.en || item.es || "-"}${
-                        item.note ? ` — ${item.note}` : ""
-                      }</div>`
+                      `<div class="q">• ${
+                        item[language] || item.en || item.es || "-"
+                      }${item.note ? ` — ${item.note}` : ""}</div>`
                   )
                   .join("")
               : "<div>No follow up items.</div>"
@@ -446,8 +454,8 @@ function printReportHtml(report, language = "en") {
               return `
                 <div class="q">
                   <strong>Q${key}</strong> — ${a.rating || "-"}${
-                    a.note ? ` | ${a.note}` : ""
-                  }
+                a.note ? ` | ${a.note}` : ""
+              }
                 </div>
               `;
             })
@@ -613,97 +621,396 @@ const LABELS = {
 
 /* -------------------- Question bank -------------------- */
 
-const COMMON_QUESTIONS = [
+const PASSENGER_SERVICE_QUESTIONS = [
   {
     id: "1",
     es: "Acepta la responsabilidad de las acciones y responde a las consecuencias.",
     en: "Accepts responsibility for actions and responds to consequences.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "2",
     es: "Rara vez está ausente, llega puntualmente y trabaja las horas requeridas.",
     en: "Is rarely absent, arrives on time, and works required hours.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "3",
     es: "Tiene capacidad para llevarse bien con compañeros y administración de manera cooperativa.",
     en: "Works cooperatively with coworkers and management.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "4",
     es: "Muestra iniciativa, optimismo y cortesía de manera activa y respetuosa.",
     en: "Shows initiative, optimism, and courtesy in an active and respectful way.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "5",
     es: "Aprende de sugerencias, acata instrucciones y ajusta su comportamiento.",
     en: "Learns from feedback, follows instructions, and adjusts behavior.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "6",
     es: "Responde adecuadamente a cambios en situaciones y expectativas.",
     en: "Responds well to changing situations and expectations.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "7",
     es: "Sigue políticas y procedimientos de la organización.",
     en: "Follows organizational policies and procedures.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "8",
     es: "Completa tareas y funciones propias del cargo cumpliendo tiempos.",
     en: "Completes duties and job tasks on time.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "9",
     es: "Garantiza atención de alta calidad con respeto y amabilidad.",
     en: "Provides high-quality service with respect and kindness.",
-    weight: 3,
+    weight: 1,
   },
   {
     id: "10",
     es: "Es minucioso, preciso y limpio en el trabajo.",
     en: "Is thorough, accurate, and clean in the work performed.",
-    weight: 3,
+    weight: 1,
+  },
+  {
+    id: "11",
+    es: "Realiza correctamente el proceso de check-in, validando documentos, itinerario y requisitos del pasajero.",
+    en: "Performs the check-in process correctly, validating documents, itinerary, and passenger requirements.",
+    weight: 1,
+  },
+  {
+    id: "12",
+    es: "Verifica correctamente pasaporte, identificación, visa y demás documentos requeridos antes de emitir el pase de abordar.",
+    en: "Correctly verifies passport, ID, visa, and other required documents before issuing the boarding pass.",
+    weight: 1,
+  },
+  {
+    id: "13",
+    es: "Maneja con precisión el etiquetado de equipaje y confirma que el destino final sea correcto.",
+    en: "Handles baggage tagging accurately and confirms the final destination is correct.",
+    weight: 1,
+  },
+  {
+    id: "14",
+    es: "Brinda instrucciones claras al pasajero sobre puertas, horario de abordaje, conexión y documentación.",
+    en: "Provides clear instructions to the passenger about gate, boarding time, connection, and documentation.",
+    weight: 1,
+  },
+  {
+    id: "15",
+    es: "Gestiona filas y tiempos de atención de manera organizada, manteniendo flujo eficiente en counters.",
+    en: "Manages lines and service times in an organized way, maintaining efficient flow at counters.",
+    weight: 1,
+  },
+  {
+    id: "16",
+    es: "Realiza anuncios de puerta de forma clara, profesional y a tiempo.",
+    en: "Makes gate announcements clearly, professionally, and on time.",
+    weight: 1,
+  },
+  {
+    id: "17",
+    es: "Controla correctamente el proceso de abordaje por zonas, prioridades o grupos asignados.",
+    en: "Properly controls the boarding process by zones, priorities, or assigned groups.",
+    weight: 1,
+  },
+  {
+    id: "18",
+    es: "Resuelve adecuadamente situaciones de puerta como cambios de asiento, standby, upgrades o pasajeros tardíos.",
+    en: "Properly resolves gate situations such as seat changes, standby, upgrades, or late passengers.",
+    weight: 1,
+  },
+  {
+    id: "19",
+    es: "Mantiene comunicación efectiva con operaciones, rampa, tripulación y otros equipos durante la salida del vuelo.",
+    en: "Maintains effective communication with operations, ramp, crew, and other teams during flight departure.",
+    weight: 1,
+  },
+  {
+    id: "20",
+    es: "Cierra el vuelo correctamente asegurando conteo final, documentación y cumplimiento del procedimiento de salida.",
+    en: "Closes the flight correctly, ensuring final count, documentation, and compliance with departure procedures.",
+    weight: 1,
+  },
+];
+
+const BAGGAGE_QUESTIONS = [
+  {
+    id: "1",
+    es: "Asistencia y Puntualidad. Mantiene un nivel adecuado de asistencia, puntualidad y cumplimiento del horario laboral establecido, de acuerdo con las políticas de la organización.",
+    en: "Attendance and Punctuality. Maintains adequate attendance, punctuality, and compliance with the established work schedule according to company policies.",
+    weight: 1,
+  },
+  {
+    id: "2",
+    es: "Trabajo en Equipo y Relaciones Laborales. Demuestra capacidad para interactuar de manera profesional, respetuosa y cooperativa con compañeros de trabajo, supervisores y la administración.",
+    en: "Teamwork and Working Relationships. Demonstrates the ability to interact professionally, respectfully, and cooperatively with coworkers, supervisors, and management.",
+    weight: 1,
+  },
+  {
+    id: "3",
+    es: "Actitud y Comportamiento Profesional. Mantiene una actitud positiva, mostrando iniciativa, disposición al trabajo, cortesía y respeto en el entorno laboral.",
+    en: "Attitude and Professional Behavior. Maintains a positive attitude, showing initiative, willingness to work, courtesy, and respect in the workplace.",
+    weight: 1,
+  },
+  {
+    id: "4",
+    es: "Adaptabilidad y Responsabilidad. Demuestra apertura para recibir retroalimentación, seguir instrucciones, adaptarse a cambios operacionales y asumir responsabilidad por sus acciones y resultados.",
+    en: "Adaptability and Accountability. Shows openness to feedback, follows instructions, adapts to operational changes, and takes responsibility for actions and results.",
+    weight: 1,
+  },
+  {
+    id: "5",
+    es: "Cumplimiento de Políticas y Procedimientos. Cumple consistentemente con las políticas, procedimientos y estándares establecidos por la organización.",
+    en: "Compliance with Policies and Procedures. Consistently complies with the policies, procedures, and standards established by the organization.",
+    weight: 1,
+  },
+  {
+    id: "6",
+    es: "Tiene habilidades de comunicación transmitiendo información de manera efectiva y eficiente.",
+    en: "Has communication skills, conveying information effectively and efficiently.",
+    weight: 1,
+  },
+  {
+    id: "7",
+    es: "Tiene habilidades organizativas, capacidad para mantenerse centrado en la tarea y usar el tiempo de manera efectiva.",
+    en: "Has organizational skills, ability to stay focused on tasks and use time effectively.",
+    weight: 1,
+  },
+  {
+    id: "8",
+    es: "Proyecta una apariencia profesional y cuidada, correcto uso del uniforme manteniendo la buena imagen corporativa.",
+    en: "Projects a professional appearance, uses the uniform correctly, and maintains the corporate image.",
+    weight: 1,
+  },
+  {
+    id: "9",
+    es: "Contribuye a un entorno seguro siguiendo los procedimientos establecidos de seguridad, prevención y autocuidado.",
+    en: "Contributes to a safe environment by following established safety, prevention, and self-care procedures.",
+    weight: 1,
+  },
+  {
+    id: "10",
+    es: "Start of Day (Inicio de Turno). ¿El empleado ejecuta correctamente los procesos de inicio de turno, asegurando que los equipos funcionen, los sistemas estén activos y no existan pendientes críticos sin atender?",
+    en: "Start of Day. Does the employee properly execute start-of-shift processes, ensuring equipment works, systems are active, and critical pending tasks are handled?",
+    weight: 1,
+  },
+  {
+    id: "11",
+    es: "Observing an Inbound Flight (Atención en Llegadas - Belt). ¿El empleado demuestra presencia activa en el área de carrusel, brinda orientación al pasajero, comunica retrasos oportunamente y gestiona la recolección de equipaje en tiempos establecidos?",
+    en: "Observing an Inbound Flight (Arrivals - Belt). Does the employee show active presence at the carousel, guide passengers, communicate delays on time, and manage baggage collection within expected times?",
+    weight: 1,
+  },
+  {
+    id: "12",
+    es: "Creating a File – Delay (Creación de Reportes de Equipaje Demorado). ¿El empleado crea reportes de equipaje demorado de manera precisa y completa, asistiendo al cliente adecuadamente y documentando correctamente la información en el sistema?",
+    en: "Creating a File – Delay. Does the employee create delayed baggage reports accurately and completely, assisting the customer properly and documenting the information correctly in the system?",
+    weight: 1,
+  },
+  {
+    id: "13",
+    es: "On-Hand (OHD Management). ¿El empleado gestiona correctamente los casos On-Hand asegurando documentación completa del equipaje dentro del tiempo establecido?",
+    en: "On-Hand (OHD Management). Does the employee properly manage On-Hand cases, ensuring complete baggage documentation within the required timeframe?",
+    weight: 1,
+  },
+  {
+    id: "14",
+    es: "Delayed (AHL) File Management. ¿El empleado administra correctamente los archivos de equipaje demorado, asegurando que la información del pasajero, itinerario y equipaje esté completa y que el cliente reciba orientación adecuada?",
+    en: "Delayed (AHL) File Management. Does the employee properly manage delayed baggage files, ensuring passenger, itinerary, and baggage information is complete and the customer receives proper guidance?",
+    weight: 1,
+  },
+  {
+    id: "15",
+    es: "Damage Handling (Equipaje Dañado). ¿El empleado maneja correctamente los casos de equipaje dañado, guiando al cliente según el proceso y documentando correctamente en el sistema?",
+    en: "Damage Handling. Does the employee properly handle damaged baggage cases, guide the customer according to process, and document correctly in the system?",
+    weight: 1,
+  },
+  {
+    id: "16",
+    es: "Pilferage / Missing Articles. ¿El empleado gestiona correctamente los casos de artículos faltantes, documentando de forma precisa y brindando al cliente expectativas claras?",
+    en: "Pilferage / Missing Articles. Does the employee properly manage missing-article cases, documenting accurately and giving the customer clear expectations?",
+    weight: 1,
+  },
+  {
+    id: "17",
+    es: "Special Items Handling (Car Seats / Strollers). ¿El empleado sigue correctamente el proceso para manejo de artículos especiales, incluyendo entrega, registro y control de inventario?",
+    en: "Special Items Handling (Car Seats / Strollers). Does the employee properly follow the process for special items, including delivery, registration, and inventory control?",
+    weight: 1,
+  },
+  {
+    id: "18",
+    es: "Assistive Devices Handling - Delayed and Damage File. ¿El empleado cumple con los procedimientos establecidos para dispositivos de asistencia, incluyendo correcta categorización y soporte adecuado al cliente?",
+    en: "Assistive Devices Handling - Delayed and Damage File. Does the employee follow established procedures for assistive devices, including correct categorization and proper customer support?",
+    weight: 1,
+  },
+  {
+    id: "19",
+    es: "Shipping to Warehouse (LZ). ¿El empleado sigue correctamente los procedimientos para envío de equipaje al warehouse, asegurando intentos previos de contacto y documentación completa en el sistema?",
+    en: "Shipping to Warehouse (LZ). Does the employee properly follow procedures for shipping baggage to the warehouse, ensuring prior contact attempts and complete documentation in the system?",
+    weight: 1,
+  },
+  {
+    id: "20",
+    es: "Delivery Process (BDO / Entrega al Cliente). ¿El empleado gestiona correctamente el proceso de entrega de equipaje, asegurando verificación de datos, documentación correcta y coordinación eficiente con proveedores?",
+    en: "Delivery Process (BDO / Customer Delivery). Does the employee properly manage baggage delivery, ensuring data verification, proper documentation, and efficient coordination with providers?",
+    weight: 1,
+  },
+];
+
+const WCHR_QUESTIONS = [
+  {
+    id: "1",
+    es: "Se responsabiliza por los pasajeros asignados y completa el servicio de principio a fin.",
+    en: "Takes ownership of assigned passengers and completes service from start to finish.",
+    weight: 1,
+  },
+  {
+    id: "2",
+    es: "Llega a tiempo, mantiene buena asistencia y está listo para comenzar sus funciones puntualmente.",
+    en: "Arrives on time, maintains attendance, and is ready to begin duties promptly.",
+    weight: 1,
+  },
+  {
+    id: "3",
+    es: "Brinda asistencia de silla de ruedas de manera oportuna y sin demoras innecesarias.",
+    en: "Provides timely wheelchair assistance without unnecessary delays.",
+    weight: 1,
+  },
+  {
+    id: "4",
+    es: "Verifica correctamente la información del pasajero antes del servicio.",
+    en: "Accurately verifies passenger information before service.",
+    weight: 1,
+  },
+  {
+    id: "5",
+    es: "Ingresa y actualiza correctamente la información del pasajero en el sistema.",
+    en: "Correctly inputs and updates passenger information in the system.",
+    weight: 1,
+  },
+  {
+    id: "6",
+    es: "Escolta de forma segura a los pasajeros por TSA, terminales y puertas.",
+    en: "Safely escorts passengers through TSA, terminals, and gates.",
+    weight: 1,
+  },
+  {
+    id: "7",
+    es: "Demuestra procedimientos correctos de seguridad al asistir pasajeros.",
+    en: "Demonstrates proper safety procedures when assisting passengers.",
+    weight: 1,
+  },
+  {
+    id: "8",
+    es: "Se comunica efectivamente con pasajeros y personal.",
+    en: "Communicates effectively with passengers and staff.",
+    weight: 1,
+  },
+  {
+    id: "9",
+    es: "Muestra empatía y profesionalismo con los pasajeros.",
+    en: "Shows empathy and professionalism with passengers.",
+    weight: 1,
+  },
+  {
+    id: "10",
+    es: "Mantiene una actitud respetuosa y cortés.",
+    en: "Maintains a respectful and courteous attitude.",
+    weight: 1,
+  },
+  {
+    id: "11",
+    es: "Responde eficazmente a situaciones inesperadas.",
+    en: "Responds effectively to unexpected situations.",
+    weight: 1,
+  },
+  {
+    id: "12",
+    es: "Sigue las políticas de la empresa y las regulaciones del aeropuerto.",
+    en: "Follows company policies and airport regulations.",
+    weight: 1,
+  },
+  {
+    id: "13",
+    es: "Trabaja eficientemente en un entorno de ritmo acelerado.",
+    en: "Works efficiently in a fast-paced environment.",
+    weight: 1,
+  },
+  {
+    id: "14",
+    es: "Completa tareas dentro de los tiempos esperados.",
+    en: "Completes tasks within expected timeframes.",
+    weight: 1,
+  },
+  {
+    id: "15",
+    es: "Mantiene limpias las sillas de ruedas y el equipo.",
+    en: "Maintains cleanliness of wheelchairs and equipment.",
+    weight: 1,
+  },
+  {
+    id: "16",
+    es: "Demuestra trabajo en equipo y apoya a sus compañeros.",
+    en: "Demonstrates teamwork and supports coworkers.",
+    weight: 1,
+  },
+  {
+    id: "17",
+    es: "Aplica retroalimentación y sigue instrucciones del supervisor.",
+    en: "Applies feedback and follows supervisor instructions.",
+    weight: 1,
+  },
+  {
+    id: "18",
+    es: "Muestra iniciativa al asistir pasajeros.",
+    en: "Shows initiative in assisting passengers.",
+    weight: 1,
+  },
+  {
+    id: "19",
+    es: "Asegura la correcta entrega y relevo de pasajeros.",
+    en: "Ensures proper handoff of passengers.",
+    weight: 1,
+  },
+  {
+    id: "20",
+    es: "Mantiene el uniforme y una apariencia profesional adecuada.",
+    en: "Maintains proper uniform and professional appearance.",
+    weight: 1,
   },
 ];
 
 const TEMPLATE_MAP = {
-  wchr: {
-    key: "wchr",
-    label: "WCHR Service",
-    role: "WCHR Agent",
-    department: "WCHR Service",
-    questions: COMMON_QUESTIONS,
+  passenger: {
+    key: "passenger",
+    label: "Passenger Service",
+    role: "Passenger Service Agent",
+    department: "Passenger Service",
+    questions: PASSENGER_SERVICE_QUESTIONS,
   },
   baggage: {
     key: "baggage",
     label: "Baggage Handling",
     role: "Baggage Handler",
     department: "Baggage Handling",
-    questions: COMMON_QUESTIONS,
+    questions: BAGGAGE_QUESTIONS,
   },
-  passenger: {
-    key: "passenger",
-    label: "Passenger Service",
-    role: "Passenger Service Agent",
-    department: "Passenger Service",
-    questions: COMMON_QUESTIONS,
-  },
-  gate: {
-    key: "gate",
-    label: "Gate Agent",
-    role: "Gate Agent",
-    department: "Passenger Service - Gate",
-    questions: COMMON_QUESTIONS,
+  wchr: {
+    key: "wchr",
+    label: "WCHR Service",
+    role: "WCHR Agent",
+    department: "WCHR Service",
+    questions: WCHR_QUESTIONS,
   },
 };
 
@@ -727,6 +1034,13 @@ export default function MonthlyEmployeePerformanceReportPage() {
     return normalizeDepartment(user?.department || "");
   }, [user?.department]);
 
+  const isWchrDepartmentUser = useMemo(() => {
+    return (
+      userDepartmentNormalized.includes("wchr") ||
+      userDepartmentNormalized.includes("wheelchair")
+    );
+  }, [userDepartmentNormalized]);
+
   const [employees, setEmployees] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -741,8 +1055,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
   const availableTemplates = useMemo(() => {
-    return Object.values(TEMPLATE_MAP);
-  }, []);
+    const allTemplates = Object.values(TEMPLATE_MAP);
+
+    return allTemplates.filter((template) => {
+      if (template.key === "wchr") {
+        return isWchrDepartmentUser;
+      }
+      return true;
+    });
+  }, [isWchrDepartmentUser]);
 
   const [filters, setFilters] = useState({
     month: "all",
@@ -775,15 +1096,18 @@ export default function MonthlyEmployeePerformanceReportPage() {
       if (currentTemplateExists) return prev;
 
       const preferredTemplate =
-        availableTemplates.find((item) => item.key === "passenger") ||
-        availableTemplates[0];
+        isWchrDepartmentUser
+          ? availableTemplates.find((item) => item.key === "wchr")
+          : availableTemplates.find((item) => item.key === "passenger");
+
+      const nextTemplate = preferredTemplate || availableTemplates[0];
 
       return {
         ...prev,
-        templateKey: preferredTemplate.key,
+        templateKey: nextTemplate.key,
       };
     });
-  }, [availableTemplates]);
+  }, [availableTemplates, isWchrDepartmentUser]);
 
   const activeTemplate =
     TEMPLATE_MAP[form.templateKey] ||
@@ -902,11 +1226,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
   const supervisorNames = useMemo(() => {
     return Array.from(
-      new Set(
-        reports
-          .map((r) => normalizeText(r.supervisorName))
-          .filter(Boolean)
-      )
+      new Set(reports.map((r) => normalizeText(r.supervisorName)).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b));
   }, [reports]);
 
@@ -1067,6 +1387,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
     setEditingDraftId("");
 
     const fallbackTemplate =
+      (isWchrDepartmentUser &&
+        availableTemplates.find((item) => item.key === "wchr")) ||
       availableTemplates.find((item) => item.key === "passenger") ||
       availableTemplates[0] ||
       TEMPLATE_MAP.passenger;
@@ -1128,7 +1450,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
       };
 
       if (editingDraftId) {
-        await updateDoc(doc(db, "employeePerformanceReports", editingDraftId), payload);
+        await updateDoc(
+          doc(db, "employeePerformanceReports", editingDraftId),
+          payload
+        );
 
         setReports((prev) =>
           prev.map((item) =>
@@ -1362,7 +1687,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
   async function assignDutyManager(report) {
     try {
-      const assignedDutyManagerId = getManagementField(report, "assignedDutyManagerId");
+      const assignedDutyManagerId = getManagementField(
+        report,
+        "assignedDutyManagerId"
+      );
       const duty = dutyManagers.find((item) => item.id === assignedDutyManagerId);
 
       const payload = {
@@ -1465,7 +1793,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
           subject: `Monthly EPR Closed - ${formatMonthValue(report.month)}`,
           body:
             managerNote ||
-            `Your ${formatMonthValue(report.month)} employee performance report has been processed and closed.`,
+            `Your ${formatMonthValue(
+              report.month
+            )} employee performance report has been processed and closed.`,
           read: false,
           category: "employee_performance",
           createdAt: serverTimestamp(),
@@ -1497,7 +1827,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
   if (!canCreate && !canManage) {
     return (
       <PageCard style={{ padding: 22 }}>
-        Only Supervisors, Duty Managers, and Station Managers can access this page.
+        Only Supervisors, Duty Managers, and Station Managers can access this
+        page.
       </PageCard>
     );
   }
@@ -1587,19 +1918,13 @@ export default function MonthlyEmployeePerformanceReportPage() {
         >
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {canCreate && (
-              <TabButton
-                active={tab === "create"}
-                onClick={() => setTab("create")}
-              >
+              <TabButton active={tab === "create"} onClick={() => setTab("create")}>
                 {t.createTab}
               </TabButton>
             )}
 
             {canCreate && (
-              <TabButton
-                active={tab === "drafts"}
-                onClick={() => setTab("drafts")}
-              >
+              <TabButton active={tab === "drafts"} onClick={() => setTab("drafts")}>
                 {t.draftsTab}
               </TabButton>
             )}
@@ -1616,10 +1941,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
           <div style={{ minWidth: 180 }}>
             <FieldLabel>{t.language}</FieldLabel>
-            <SelectInput
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-            >
+            <SelectInput value={language} onChange={(e) => setLanguage(e.target.value)}>
               <option value="en">English</option>
               <option value="es">Español</option>
             </SelectInput>
@@ -1926,7 +2248,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
               </div>
             )}
 
-            <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div
+              style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}
+            >
               <ActionButton
                 variant="secondary"
                 onClick={handleSaveDraft}
@@ -2019,10 +2343,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                     </div>
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <ActionButton
-                        variant="primary"
-                        onClick={() => handleLoadDraft(draft)}
-                      >
+                      <ActionButton variant="primary" onClick={() => handleLoadDraft(draft)}>
                         {t.continueEditing}
                       </ActionButton>
 
@@ -2281,11 +2602,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           />
                           <InfoCard
                             label={t.status}
-                            value={report.managerStatus || report.performanceStatus || "-"}
+                            value={
+                              report.managerStatus || report.performanceStatus || "-"
+                            }
                             tone={
                               normalizeLookup(report.managerStatus) === "approved"
                                 ? "green"
-                                : normalizeLookup(report.managerStatus) === "follow_up"
+                                : normalizeLookup(report.managerStatus) ===
+                                  "follow_up"
                                 ? "amber"
                                 : normalizeLookup(report.managerStatus) === "closed"
                                 ? "blue"
@@ -2312,7 +2636,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           <div>
                             <FieldLabel>{t.assignDutyManager}</FieldLabel>
                             <SelectInput
-                              value={getManagementField(report, "assignedDutyManagerId")}
+                              value={getManagementField(
+                                report,
+                                "assignedDutyManagerId"
+                              )}
                               onChange={(e) =>
                                 setManagementEdit((prev) => ({
                                   ...prev,
@@ -2446,8 +2773,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
                               report.followUpItems.length > 0 ? (
                                 <div style={{ display: "grid", gap: 8 }}>
                                   {report.followUpItems.map((item) => (
-                                    <div key={item.id} style={{ color: "#7c2d12", fontSize: 14 }}>
-                                      • {(language === "es" ? item.es : item.en) || item.en || item.es}
+                                    <div
+                                      key={item.id}
+                                      style={{ color: "#7c2d12", fontSize: 14 }}
+                                    >
+                                      •{" "}
+                                      {(language === "es" ? item.es : item.en) ||
+                                        item.en ||
+                                        item.es}
                                       {item.note ? ` — ${item.note}` : ""}
                                     </div>
                                   ))}
@@ -2477,16 +2810,26 @@ export default function MonthlyEmployeePerformanceReportPage() {
                               >
                                 Comments
                               </div>
-                              <div style={{ fontSize: 14, color: "#334155", lineHeight: 1.7 }}>
+                              <div
+                                style={{
+                                  fontSize: 14,
+                                  color: "#334155",
+                                  lineHeight: 1.7,
+                                }}
+                              >
                                 <div>
-                                  <strong>Company:</strong> {report.commentsCompany || "-"}
+                                  <strong>Company:</strong>{" "}
+                                  {report.commentsCompany || "-"}
                                 </div>
                                 <div style={{ marginTop: 8 }}>
-                                  <strong>Employee:</strong> {report.commentsEmployee || "-"}
+                                  <strong>Employee:</strong>{" "}
+                                  {report.commentsEmployee || "-"}
                                 </div>
                                 <div style={{ marginTop: 8 }}>
                                   <strong>Manager:</strong>{" "}
-                                  {getManagementField(report, "managerNote") || report.managerNote || "-"}
+                                  {getManagementField(report, "managerNote") ||
+                                    report.managerNote ||
+                                    "-"}
                                 </div>
                               </div>
                             </div>
