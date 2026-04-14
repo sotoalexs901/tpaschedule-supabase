@@ -265,6 +265,13 @@ function normalizeLookup(value) {
   return normalizeText(value).toLowerCase();
 }
 
+function normalizeDepartment(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 function formatMonthValue(value) {
   const [year, month] = String(value || "").split("-").map(Number);
   if (!year || !month) return value || "-";
@@ -716,6 +723,17 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const [language, setLanguage] = useState("en");
   const t = LABELS[language];
 
+  const userDepartmentNormalized = useMemo(() => {
+    return normalizeDepartment(user?.department || "");
+  }, [user?.department]);
+
+  const isWchrDepartmentUser = useMemo(() => {
+    return (
+      userDepartmentNormalized.includes("wchr") ||
+      userDepartmentNormalized.includes("wheelchair")
+    );
+  }, [userDepartmentNormalized]);
+
   const [employees, setEmployees] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -729,6 +747,17 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
+  const availableTemplates = useMemo(() => {
+    const allTemplates = Object.values(TEMPLATE_MAP);
+
+    return allTemplates.filter((template) => {
+      if (template.key === "wchr") {
+        return isWchrDepartmentUser;
+      }
+      return true;
+    });
+  }, [isWchrDepartmentUser]);
+
   const [filters, setFilters] = useState({
     month: "all",
     employeeId: "all",
@@ -741,7 +770,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
     employeeId: "",
     employeeName: "",
     month: getCurrentMonthValue(),
-    templateKey: "wchr",
+    templateKey: "passenger",
     department: "",
     roleTitle: "",
     hireDate: "",
@@ -749,7 +778,35 @@ export default function MonthlyEmployeePerformanceReportPage() {
     commentsEmployee: "",
   });
 
-  const activeTemplate = TEMPLATE_MAP[form.templateKey];
+  useEffect(() => {
+    if (!availableTemplates.length) return;
+
+    setForm((prev) => {
+      const currentTemplateExists = availableTemplates.some(
+        (template) => template.key === prev.templateKey
+      );
+
+      if (currentTemplateExists) return prev;
+
+      const preferredTemplate =
+        isWchrDepartmentUser
+          ? availableTemplates.find((item) => item.key === "wchr")
+          : availableTemplates.find((item) => item.key === "passenger");
+
+      const nextTemplate = preferredTemplate || availableTemplates[0];
+
+      return {
+        ...prev,
+        templateKey: nextTemplate.key,
+      };
+    });
+  }, [availableTemplates, isWchrDepartmentUser]);
+
+  const activeTemplate =
+    TEMPLATE_MAP[form.templateKey] ||
+    availableTemplates[0] ||
+    TEMPLATE_MAP.passenger;
+
   const [answers, setAnswers] = useState({});
 
   useEffect(() => {
@@ -811,7 +868,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
   }, [canCreate, canManage]);
 
   useEffect(() => {
-    const template = TEMPLATE_MAP[form.templateKey];
+    const template = TEMPLATE_MAP[form.templateKey] || TEMPLATE_MAP.passenger;
+
     setForm((prev) => ({
       ...prev,
       department: template.department,
@@ -967,7 +1025,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
       employeeId: report.employeeId || "",
       employeeName: report.employeeName || "",
       month: report.month || getCurrentMonthValue(),
-      templateKey: report.templateKey || "wchr",
+      templateKey: report.templateKey || "passenger",
       department: report.department || "",
       roleTitle: report.roleTitle || "",
       hireDate: report.hireDate || "",
@@ -975,7 +1033,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
       commentsEmployee: report.commentsEmployee || "",
     });
 
-    const template = TEMPLATE_MAP[report.templateKey] || TEMPLATE_MAP.wchr;
+    const template = TEMPLATE_MAP[report.templateKey] || TEMPLATE_MAP.passenger;
     const nextAnswers = {};
     template.questions.forEach((q) => {
       nextAnswers[q.id] = report.answers?.[q.id] || { rating: "", note: "" };
@@ -997,7 +1055,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
       employeeId: draft.employeeId || "",
       employeeName: draft.employeeName || "",
       month: draft.month || getCurrentMonthValue(),
-      templateKey: draft.templateKey || "wchr",
+      templateKey: draft.templateKey || "passenger",
       department: draft.department || "",
       roleTitle: draft.roleTitle || "",
       hireDate: draft.hireDate || "",
@@ -1005,7 +1063,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
       commentsEmployee: draft.commentsEmployee || "",
     });
 
-    const template = TEMPLATE_MAP[draft.templateKey] || TEMPLATE_MAP.wchr;
+    const template = TEMPLATE_MAP[draft.templateKey] || TEMPLATE_MAP.passenger;
     const nextAnswers = {};
     template.questions.forEach((q) => {
       nextAnswers[q.id] = draft.answers?.[q.id] || { rating: "", note: "" };
@@ -1024,20 +1082,28 @@ export default function MonthlyEmployeePerformanceReportPage() {
   function resetCreateForm() {
     setEditingReportId("");
     setEditingDraftId("");
+
+    const fallbackTemplate =
+      (isWchrDepartmentUser &&
+        availableTemplates.find((item) => item.key === "wchr")) ||
+      availableTemplates.find((item) => item.key === "passenger") ||
+      availableTemplates[0] ||
+      TEMPLATE_MAP.passenger;
+
     setForm({
       employeeId: "",
       employeeName: "",
       month: getCurrentMonthValue(),
-      templateKey: "wchr",
-      department: TEMPLATE_MAP.wchr.department,
-      roleTitle: TEMPLATE_MAP.wchr.role,
+      templateKey: fallbackTemplate.key,
+      department: fallbackTemplate.department,
+      roleTitle: fallbackTemplate.role,
       hireDate: "",
       commentsCompany: "",
       commentsEmployee: "",
     });
 
     const resetAnswers = {};
-    TEMPLATE_MAP.wchr.questions.forEach((q) => {
+    fallbackTemplate.questions.forEach((q) => {
       resetAnswers[q.id] = { rating: "", note: "" };
     });
     setAnswers(resetAnswers);
@@ -1662,7 +1728,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                     setForm((prev) => ({ ...prev, templateKey: e.target.value }))
                   }
                 >
-                  {Object.values(TEMPLATE_MAP).map((item) => (
+                  {availableTemplates.map((item) => (
                     <option key={item.key} value={item.key}>
                       {item.label}
                     </option>
