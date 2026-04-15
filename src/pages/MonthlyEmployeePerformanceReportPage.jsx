@@ -317,9 +317,11 @@ function formatDateTime(value) {
 
 function getRatingPoints(rating) {
   const key = String(rating || "").trim().toLowerCase();
+
   if (key === "exceeds") return 4;
   if (key === "meets") return 3;
   if (key === "below") return 2;
+
   return 0;
 }
 
@@ -426,6 +428,9 @@ function printReportHtml(report, language = "en") {
           <div style="margin-top:8px;"><strong>Manager Note:</strong> ${
             report.managerNote || "-"
           }</div>
+          <div style="margin-top:8px;"><strong>Return Reason:</strong> ${
+            report.managerReturnReason || "-"
+          }</div>
         </div>
 
         <div class="card">
@@ -484,10 +489,13 @@ const LABELS = {
     createTab: "Create EPR",
     managementTab: "Management",
     draftsTab: "Drafts",
+    returnedTab: "Returned",
     draftsSaved: "Saved Drafts",
+    returnedSaved: "Returned Reports",
     saveDraft: "Save Draft",
     continueEditing: "Continue Editing",
     noDrafts: "No drafts found.",
+    noReturned: "No returned reports found.",
     lastUpdated: "Last Updated",
     language: "Language",
     month: "Month",
@@ -500,6 +508,7 @@ const LABELS = {
     commentsEmployee: "Employee Comments",
     saveReport: "Save Performance Report",
     updateReport: "Update Report",
+    resubmitReport: "Fix and Resubmit",
     score: "Final Score",
     status: "Status",
     followUpNeeded: "Follow Up Needed",
@@ -530,6 +539,7 @@ const LABELS = {
     congratulations: "Congratulations",
     closeMonth: "Close Month",
     managerNote: "Manager Note",
+    returnReason: "Return Reason",
     print: "Print",
     messageSent: "Message sent to employee.",
     monthClosed: "Month closed successfully.",
@@ -546,10 +556,6 @@ const LABELS = {
     submitted: "Submitted",
     returned: "Returned",
     draft: "Draft",
-    returnedTab: "Returned",
-    returnedReports: "Returned Reports",
-    returnReason: "Return Reason",
-    resubmitReport: "Fix and Resubmit",
   },
   es: {
     title: "Reporte Mensual de Desempeño del Empleado",
@@ -558,10 +564,13 @@ const LABELS = {
     createTab: "Crear EPR",
     managementTab: "Management",
     draftsTab: "Borradores",
+    returnedTab: "Devueltos",
     draftsSaved: "Borradores Guardados",
+    returnedSaved: "Reportes Devueltos",
     saveDraft: "Guardar Borrador",
     continueEditing: "Continuar Editando",
     noDrafts: "No se encontraron borradores.",
+    noReturned: "No se encontraron reportes devueltos.",
     lastUpdated: "Última Actualización",
     language: "Idioma",
     month: "Mes",
@@ -574,6 +583,7 @@ const LABELS = {
     commentsEmployee: "Comentarios del Empleado",
     saveReport: "Guardar Performance Report",
     updateReport: "Actualizar Reporte",
+    resubmitReport: "Corregir y Reenviar",
     score: "Puntuación Final",
     status: "Estado",
     followUpNeeded: "Requiere Seguimiento",
@@ -604,6 +614,7 @@ const LABELS = {
     congratulations: "Felicitaciones",
     closeMonth: "Cerrar Mes",
     managerNote: "Nota de Manager",
+    returnReason: "Razón de devolución",
     print: "Imprimir",
     messageSent: "Mensaje enviado al empleado.",
     monthClosed: "Mes cerrado correctamente.",
@@ -620,10 +631,6 @@ const LABELS = {
     submitted: "Enviado",
     returned: "Devuelto",
     draft: "Borrador",
-    returnedTab: "Devueltos",
-    returnedReports: "Reportes Devueltos",
-    returnReason: "Razón de Devolución",
-    resubmitReport: "Corregir y Reenviar",
   },
 };
 
@@ -1042,13 +1049,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
     return normalizeDepartment(user?.department || "");
   }, [user?.department]);
 
-  const _isWchrDepartmentUser = useMemo(() => {
-    return (
-      userDepartmentNormalized.includes("wchr") ||
-      userDepartmentNormalized.includes("wheelchair")
-    );
-  }, [userDepartmentNormalized]);
-
   const [employees, setEmployees] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1057,6 +1057,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const [selectedReportId, setSelectedReportId] = useState("");
   const [editingReportId, setEditingReportId] = useState("");
   const [editingDraftId, setEditingDraftId] = useState("");
+  const [editingReturnedId, setEditingReturnedId] = useState("");
 
   const [managementEdit, setManagementEdit] = useState({});
 
@@ -1326,6 +1327,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
       });
   }, [reports, user?.id]);
 
+  const returnedReportsCount = returnedReports.length;
+
   function handleAnswerChange(questionId, field, value) {
     setAnswers((prev) => ({
       ...prev,
@@ -1346,6 +1349,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
     setTab("create");
     setEditingReportId(report.id);
     setEditingDraftId("");
+    setEditingReturnedId("");
 
     setForm({
       employeeId: report.employeeId || "",
@@ -1374,6 +1378,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
     setEditingDraftId(draft.id || "");
     setEditingReportId("");
+    setEditingReturnedId("");
     setSelectedReportId(draft.id || "");
     setTab("create");
 
@@ -1408,8 +1413,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
   function handleLoadReturnedReport(report) {
     if (!report) return;
 
-    setEditingReportId(report.id || "");
+    setEditingReturnedId(report.id || "");
     setEditingDraftId("");
+    setEditingReportId("");
     setSelectedReportId(report.id || "");
     setTab("create");
 
@@ -1433,7 +1439,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
     setAnswers(nextAnswers);
 
     setStatusMessage(
-      `Returned report loaded: ${report.employeeName || "-"} · ${formatMonthValue(
+      `${t.returned} loaded: ${report.employeeName || "-"} · ${formatMonthValue(
         report.month
       )}`
     );
@@ -1444,6 +1450,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   function resetCreateForm() {
     setEditingReportId("");
     setEditingDraftId("");
+    setEditingReturnedId("");
 
     const fallbackTemplate =
       availableTemplates.find((item) => item.key === "passenger") ||
@@ -1501,6 +1508,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
         assignedDutyManagerId: "",
         assignedDutyManagerName: "",
         managerNote: "",
+        managerReturnReason: "",
         monthClosed: false,
         congratulationsSent: false,
         updatedAt: serverTimestamp(),
@@ -1585,13 +1593,47 @@ export default function MonthlyEmployeePerformanceReportPage() {
         updatedAt: serverTimestamp(),
       };
 
+      if (editingReturnedId) {
+        const updatePayload = {
+          ...basePayload,
+          managerStatus: needsFollowUp ? "follow_up" : "submitted",
+          managerReturnReason: "",
+          returnedAt: null,
+          returnedBy: "",
+          resubmittedAt: serverTimestamp(),
+          resubmittedBy: getVisibleUserName(user),
+        };
+
+        await updateDoc(
+          doc(db, "employeePerformanceReports", editingReturnedId),
+          updatePayload
+        );
+
+        setReports((prev) =>
+          prev.map((item) =>
+            item.id === editingReturnedId
+              ? {
+                  ...item,
+                  ...updatePayload,
+                  updatedAt: new Date(),
+                  resubmittedAt: new Date(),
+                  resubmittedBy: getVisibleUserName(user),
+                }
+              : item
+          )
+        );
+
+        setSelectedReportId(editingReturnedId);
+        setEditingReturnedId("");
+        setStatusMessage("Returned report corrected and resubmitted successfully.");
+        resetCreateForm();
+        return;
+      }
+
       if (editingDraftId) {
         const updatePayload = {
           ...basePayload,
           managerStatus: needsFollowUp ? "follow_up" : "submitted",
-          returnedToSupervisor: false,
-          returnedAt: null,
-          returnedBy: "",
         };
 
         await updateDoc(
@@ -1620,23 +1662,12 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       if (editingReportId) {
         const currentReport = reports.find((r) => r.id === editingReportId);
-        const previousStatus = normalizeLookup(currentReport?.managerStatus || "");
-
-        const nextManagerStatus =
-          previousStatus === "returned"
-            ? needsFollowUp
-              ? "follow_up"
-              : "submitted"
-            : currentReport?.managerStatus ||
-              (needsFollowUp ? "follow_up" : "submitted");
 
         const updatePayload = {
           ...basePayload,
-          managerStatus: nextManagerStatus,
-          returnedToSupervisor: false,
-          returnedAt: null,
-          returnedBy: "",
-          updatedAt: serverTimestamp(),
+          managerStatus:
+            currentReport?.managerStatus ||
+            (needsFollowUp ? "follow_up" : "submitted"),
         };
 
         await updateDoc(
@@ -1656,11 +1687,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
           )
         );
 
-        setStatusMessage(
-          previousStatus === "returned"
-            ? "Report resubmitted successfully."
-            : t.reportUpdated
-        );
+        setStatusMessage(t.reportUpdated);
         resetCreateForm();
         return;
       }
@@ -1671,11 +1698,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
         assignedDutyManagerId: "",
         assignedDutyManagerName: "",
         managerNote: "",
+        managerReturnReason: "",
         monthClosed: false,
         congratulationsSent: false,
-        returnedToSupervisor: false,
-        returnedAt: null,
-        returnedBy: "",
         createdAt: serverTimestamp(),
       };
 
@@ -1719,7 +1744,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
         setSelectedReportId("");
       }
 
-      if (editingReportId === report.id || editingDraftId === report.id) {
+      if (
+        editingReportId === report.id ||
+        editingDraftId === report.id ||
+        editingReturnedId === report.id
+      ) {
         resetCreateForm();
       }
 
@@ -1751,6 +1780,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 managerStatus: nextStatus,
                 managerReviewedBy: getVisibleUserName(user),
                 managerReviewedAt: new Date(),
+                updatedAt: new Date(),
               }
             : item
         )
@@ -2008,9 +2038,54 @@ export default function MonthlyEmployeePerformanceReportPage() {
             )}
 
             {canCreate && (
-              <TabButton active={tab === "returned"} onClick={() => setTab("returned")}>
-                {t.returnedTab}
-              </TabButton>
+              <button
+                type="button"
+                onClick={() => setTab("returned")}
+                style={{
+                  borderRadius: 999,
+                  padding: "10px 14px",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  border:
+                    tab === "returned" ? "1px solid #1769aa" : "1px solid #dbeafe",
+                  background: tab === "returned" ? "#1769aa" : "#ffffff",
+                  color: tab === "returned" ? "#ffffff" : "#1769aa",
+                  boxShadow:
+                    tab === "returned"
+                      ? "0 10px 22px rgba(23,105,170,0.16)"
+                      : "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span>{t.returnedTab}</span>
+
+                {returnedReportsCount > 0 && (
+                  <span
+                    style={{
+                      minWidth: 22,
+                      height: 22,
+                      padding: "0 6px",
+                      borderRadius: 999,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      background: tab === "returned" ? "#ffffff" : "#dc2626",
+                      color: tab === "returned" ? "#dc2626" : "#ffffff",
+                      border:
+                        tab === "returned"
+                          ? "1px solid rgba(220,38,38,0.25)"
+                          : "1px solid #dc2626",
+                    }}
+                  >
+                    {returnedReportsCount}
+                  </span>
+                )}
+              </button>
             )}
 
             {canManage && (
@@ -2035,6 +2110,25 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       {tab === "create" && canCreate && (
         <>
+          {returnedReportsCount > 0 && (
+            <PageCard style={{ padding: 16 }}>
+              <div
+                style={{
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                  color: "#9f1239",
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                You have {returnedReportsCount} returned report(s) pending correction.
+                Open the "{t.returnedTab}" tab to review, fix, and resubmit.
+              </div>
+            </PageCard>
+          )}
+
           <PageCard style={{ padding: 22 }}>
             <div
               style={{
@@ -2053,19 +2147,39 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   color: "#0f172a",
                 }}
               >
-                {editingDraftId
+                {editingReturnedId
+                  ? `${t.returned} · ${t.continueEditing}`
+                  : editingDraftId
                   ? `${t.draft} · ${t.continueEditing}`
                   : editingReportId
                   ? t.editReport
                   : t.createTab}
               </div>
 
-              {(editingReportId || editingDraftId) && (
+              {(editingReportId || editingDraftId || editingReturnedId) && (
                 <ActionButton variant="secondary" onClick={resetCreateForm}>
                   {t.cancelEdit}
                 </ActionButton>
               )}
             </div>
+
+            {editingReturnedId && (
+              <div
+                style={{
+                  marginBottom: 14,
+                  background: "#fff7ed",
+                  border: "1px solid #fdba74",
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                  color: "#9a3412",
+                  fontSize: 14,
+                }}
+              >
+                <strong>{t.returnReason}:</strong>{" "}
+                {reports.find((r) => r.id === editingReturnedId)?.managerReturnReason ||
+                  "-"}
+              </div>
+            )}
 
             <div
               style={{
@@ -2290,40 +2404,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
               </div>
             </div>
 
-            {editingReportId &&
-              normalizeLookup(
-                reports.find((r) => r.id === editingReportId)?.managerStatus || ""
-              ) === "returned" && (
-                <div
-                  style={{
-                    marginTop: 16,
-                    background: "#fff1f2",
-                    border: "1px solid #fecdd3",
-                    borderRadius: 16,
-                    padding: "14px 16px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 800,
-                      color: "#9f1239",
-                    }}
-                  >
-                    {t.returnReason}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 14,
-                      color: "#7f1d1d",
-                    }}
-                  >
-                    {reports.find((r) => r.id === editingReportId)?.managerNote || "-"}
-                  </div>
-                </div>
-              )}
-
             {needsFollowUp && (
               <div
                 style={{
@@ -2369,13 +2449,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
             <div
               style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}
             >
-              <ActionButton
-                variant="secondary"
-                onClick={handleSaveDraft}
-                disabled={saving}
-              >
-                {saving ? "Saving..." : t.saveDraft}
-              </ActionButton>
+              {!editingReturnedId && (
+                <ActionButton
+                  variant="secondary"
+                  onClick={handleSaveDraft}
+                  disabled={saving}
+                >
+                  {saving ? "Saving..." : t.saveDraft}
+                </ActionButton>
+              )}
 
               <ActionButton
                 variant="primary"
@@ -2384,16 +2466,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
               >
                 {saving
                   ? "Saving..."
+                  : editingReturnedId
+                  ? t.resubmitReport
                   : editingReportId || editingDraftId
-                  ? normalizeLookup(
-                      reports.find((r) => r.id === editingReportId)?.managerStatus || ""
-                    ) === "returned"
-                    ? t.resubmitReport
-                    : t.updateReport
+                  ? t.updateReport
                   : t.saveReport}
               </ActionButton>
 
-              {(editingReportId || editingDraftId) && (
+              {(editingReportId || editingDraftId || editingReturnedId) && (
                 <ActionButton variant="secondary" onClick={resetCreateForm}>
                   {t.cancelEdit}
                 </ActionButton>
@@ -2495,14 +2575,12 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 color: "#0f172a",
               }}
             >
-              {t.returnedReports}
+              {t.returnedSaved}
             </h2>
           </div>
 
           {returnedReports.length === 0 ? (
-            <div style={{ color: "#64748b", fontSize: 14 }}>
-              No returned reports found.
-            </div>
+            <div style={{ color: "#64748b", fontSize: 14 }}>{t.noReturned}</div>
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               {returnedReports.map((report) => (
@@ -2512,7 +2590,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                     border: "1px solid #fecdd3",
                     borderRadius: 18,
                     padding: 16,
-                    background: "#fffafc",
+                    background: "#fffafb",
                   }}
                 >
                   <div
@@ -2524,7 +2602,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                       alignItems: "center",
                     }}
                   >
-                    <div>
+                    <div style={{ minWidth: 260 }}>
                       <div
                         style={{
                           fontSize: 16,
@@ -2542,7 +2620,24 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#64748b",
                         }}
                       >
-                        {t.template}: {report.templateLabel || "-"}
+                        {t.template}: {report.templateLabel || "-"} · {t.lastUpdated}:{" "}
+                        {formatDateTime(report.updatedAt)}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 10,
+                          background: "#fff1f2",
+                          border: "1px solid #fecdd3",
+                          borderRadius: 14,
+                          padding: "12px 14px",
+                          color: "#9f1239",
+                          fontSize: 14,
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        <strong>{t.returnReason}:</strong>{" "}
+                        {report.managerReturnReason || report.managerNote || "-"}
                       </div>
                     </div>
 
@@ -2551,33 +2646,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
                         variant="warning"
                         onClick={() => handleLoadReturnedReport(report)}
                       >
-                        {t.resubmitReport}
+                        {t.continueEditing}
                       </ActionButton>
-                    </div>
-                  </div>
 
-                  <div
-                    style={{
-                      marginTop: 12,
-                      border: "1px solid #fecdd3",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "#fff1f2",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: "#9f1239",
-                        textTransform: "uppercase",
-                        marginBottom: 6,
-                      }}
-                    >
-                      {t.returnReason}
-                    </div>
-                    <div style={{ fontSize: 14, color: "#7f1d1d" }}>
-                      {report.managerNote || "-"}
+                      <ActionButton
+                        variant="danger"
+                        onClick={() => handleDeleteReport(report)}
+                      >
+                        {t.deleteReport}
+                      </ActionButton>
                     </div>
                   </div>
                 </div>
@@ -3059,6 +3136,12 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                     report.managerNote ||
                                     "-"}
                                 </div>
+                                {report.managerReturnReason && (
+                                  <div style={{ marginTop: 8 }}>
+                                    <strong>{t.returnReason}:</strong>{" "}
+                                    {report.managerReturnReason}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
