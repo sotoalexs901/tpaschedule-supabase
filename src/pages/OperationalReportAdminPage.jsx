@@ -44,60 +44,18 @@ function normalizeCabinServiceValue(value) {
   return raw;
 }
 
-function normalizeOperationalDepartment(value) {
+function normalizeDepartmentValue(value) {
   const raw = String(value || "")
     .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 
-  if (!raw) return "";
-
-  if (
-    raw.includes("wchr") ||
-    raw.includes("wheelchair")
-  ) {
-    return "wchr";
-  }
-
-  if (
-    raw.includes("baggage") ||
-    raw.includes("bag room") ||
-    raw.includes("bso")
-  ) {
-    return "baggage";
-  }
-
-  if (
-    raw.includes("cabin service") ||
-    raw.includes("dl cabin service") ||
-    raw === "cabin"
-  ) {
-    return "cabin_service";
-  }
-
-  if (
-    raw.includes("passenger") ||
-    raw.includes("pax") ||
-    raw.includes("gate") ||
-    raw.includes("check-in") ||
-    raw.includes("check in") ||
-    raw.includes("ticket counter")
-  ) {
-    return "passenger_service";
-  }
-
-  return raw.replace(/[^a-z0-9]+/g, "_");
-}
-
-function getDepartmentLabel(value) {
-  const key = normalizeOperationalDepartment(value);
-
-  if (key === "wchr") return "WCHR";
-  if (key === "baggage") return "Baggage";
-  if (key === "cabin_service") return "Cabin Service";
-  if (key === "passenger_service") return "Passenger Service";
-
-  return String(value || "—").trim() || "—";
+  if (raw.includes("wchr")) return "wchr";
+  if (raw.includes("wheelchair")) return "wchr";
+  if (raw.includes("baggage")) return "baggage";
+  if (raw.includes("cabin")) return "cabin_service";
+  if (raw.includes("passenger")) return "passenger_service";
+  return raw;
 }
 
 function tsToDate(value) {
@@ -208,17 +166,24 @@ function shouldFlagNeedsAttention(report) {
   if (report?.needsAttention) return true;
 
   const responses = report?.responses || {};
-  return Object.entries(responses).some(([key, value]) => {
-    const k = String(key || "").toLowerCase();
-    if (
-      k.includes("operation completed without issues") ||
-      k.includes("operation completed without issue") ||
-      k.includes("completed without issues")
-    ) {
-      return !parseBooleanLike(value) && String(value).trim().toLowerCase() !== "yes";
-    }
-    return false;
-  });
+  const operationStatus = String(responses?.operation_status || "").toLowerCase();
+  const safetyConcern = String(responses?.safety_concern || "").toLowerCase();
+  const delayedFlight =
+    String(responses?.delayed_flight || "").toLowerCase() === "yes" ||
+    String(responses?.delayed_flight_impact || "").toLowerCase() === "yes" ||
+    String(responses?.service_delays || "").toLowerCase() === "yes";
+
+  if (
+    operationStatus.includes("not completed") ||
+    operationStatus.includes("remarks")
+  ) {
+    return true;
+  }
+
+  if (safetyConcern === "yes") return true;
+  if (delayedFlight) return true;
+
+  return false;
 }
 
 function escapeHtml(value) {
@@ -321,6 +286,18 @@ function getReviewStatusStyle(status) {
   };
 }
 
+function getTemplateLabel(report) {
+  return (
+    report.templateLabel ||
+    report.department ||
+    prettifyKey(report.templateKey || "operational_report")
+  );
+}
+
+function isCabinServiceReport(report) {
+  return normalizeDepartmentValue(report.templateKey || report.department) === "cabin_service";
+}
+
 function buildPrintableHtml(report) {
   const responses = report?.responses || {};
   const dynamicBlocks =
@@ -345,7 +322,7 @@ function buildPrintableHtml(report) {
   const alertNeedsAttention = shouldFlagNeedsAttention(report)
     ? `
       <div class="alert alert-danger">
-        This report needs attention because the operation was not completed without issues.
+        This report needs attention because the operation indicates issues, delay, safety concern, or incomplete completion.
       </div>
     `
     : "";
@@ -487,18 +464,22 @@ function buildPrintableHtml(report) {
         <div class="header">
           <h1 class="title">Operational Report</h1>
           <div class="subtitle">
-            ${escapeHtml(report.normalizedAirline || "—")} · ${escapeHtml(report.reportDate || "—")}
+            ${escapeHtml(getTemplateLabel(report))} · ${escapeHtml(report.normalizedAirline || "—")} · ${escapeHtml(report.reportDate || "—")}
           </div>
         </div>
 
         <div class="grid">
           <div class="info-card">
-            <div class="info-label">Airline</div>
-            <div class="info-value">${escapeHtml(report.normalizedAirline || "—")}</div>
+            <div class="info-label">Department</div>
+            <div class="info-value">${escapeHtml(report.department || "—")}</div>
           </div>
           <div class="info-card">
-            <div class="info-label">Department</div>
-            <div class="info-value">${escapeHtml(report.departmentLabel || "—")}</div>
+            <div class="info-label">Template</div>
+            <div class="info-value">${escapeHtml(getTemplateLabel(report))}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Airline</div>
+            <div class="info-value">${escapeHtml(report.normalizedAirline || "—")}</div>
           </div>
           <div class="info-card">
             <div class="info-label">Report Date</div>
@@ -509,16 +490,12 @@ function buildPrintableHtml(report) {
             <div class="info-value">${escapeHtml(report.shift || "—")}</div>
           </div>
           <div class="info-card">
-            <div class="info-label">Flight Number</div>
-            <div class="info-value">${escapeHtml(report.flightNumber || "—")}</div>
-          </div>
-          <div class="info-card">
-            <div class="info-label">Flights Handled</div>
+            <div class="info-label">${isCabinServiceReport(report) ? "Flights Serviced" : "Flights Handled"}</div>
             <div class="info-value">${escapeHtml(report.flightsHandled || "—")}</div>
           </div>
           <div class="info-card">
-            <div class="info-label">Affected Flight Number</div>
-            <div class="info-value">${escapeHtml(report.affectedFlightNumber || "—")}</div>
+            <div class="info-label">Flight Number</div>
+            <div class="info-value">${escapeHtml(report.flightNumber || "—")}</div>
           </div>
           <div class="info-card">
             <div class="info-label">Supervisor</div>
@@ -535,6 +512,10 @@ function buildPrintableHtml(report) {
           <div class="info-card">
             <div class="info-label">Delayed Code</div>
             <div class="info-value">${escapeHtml(report.delayedCodeReported || "—")}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Review Status</div>
+            <div class="info-value">${escapeHtml(getReviewStatusLabel(report.reviewStatus))}</div>
           </div>
         </div>
 
@@ -572,10 +553,9 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
       return `
         <tr>
           <td>${escapeHtml(report.reportDate || "—")}</td>
+          <td>${escapeHtml(report.department || "—")}</td>
           <td>${escapeHtml(report.normalizedAirline || "—")}</td>
-          <td>${escapeHtml(report.departmentLabel || "—")}</td>
           <td>${escapeHtml(report.flightNumber || "—")}</td>
-          <td>${escapeHtml(report.affectedFlightNumber || "—")}</td>
           <td>${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} min</td>
           <td>${escapeHtml(report.supervisorReporting || "—")}</td>
           <td>${escapeHtml(dutyManager)}</td>
@@ -663,10 +643,9 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
           <thead>
             <tr>
               <th>Date</th>
-              <th>Airline</th>
               <th>Department</th>
+              <th>Airline</th>
               <th>Flight Number</th>
-              <th>Affected Flight</th>
               <th>Delayed Time</th>
               <th>Supervisor on Duty</th>
               <th>Duty Manager in Charge</th>
@@ -972,13 +951,14 @@ export default function OperationalReportAdminPage() {
   });
 
   const [editForm, setEditForm] = useState({
-    airline: "",
+    templateKey: "",
+    templateLabel: "",
     department: "",
+    airline: "",
     reportDate: "",
     shift: "",
     flightNumber: "",
     flightsHandled: "",
-    affectedFlightNumber: "",
     supervisorReporting: "",
     notes: "",
     delayedFlight: false,
@@ -1005,13 +985,13 @@ export default function OperationalReportAdminPage() {
         const snap = await getDocs(q);
         let rows = snap.docs.map((d) => {
           const data = d.data();
-          const rawDepartment = data.department || data.reportType || data.airline || "";
           return {
             id: d.id,
             ...data,
             normalizedAirline: normalizeAirlineName(data.airline),
-            normalizedDepartment: normalizeOperationalDepartment(rawDepartment),
-            departmentLabel: getDepartmentLabel(rawDepartment),
+            normalizedDepartment: normalizeDepartmentValue(
+              data.templateKey || data.department || data.airline
+            ),
             reviewStatus: data.reviewStatus || "submitted",
             managerNotes: data.managerNotes || "",
             followUpRequired: Boolean(data.followUpRequired),
@@ -1050,17 +1030,11 @@ export default function OperationalReportAdminPage() {
   }, [reports]);
 
   const departmentOptions = useMemo(() => {
-    const map = new Map();
-
+    const set = new Set();
     reports.forEach((r) => {
-      if (r.normalizedDepartment) {
-        map.set(r.normalizedDepartment, r.departmentLabel || getDepartmentLabel(r.normalizedDepartment));
-      }
+      if (r.department) set.add(r.department);
     });
-
-    return Array.from(map.entries())
-      .map(([value, label]) => ({ value, label }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [reports]);
 
   const filteredReports = useMemo(() => {
@@ -1122,10 +1096,7 @@ export default function OperationalReportAdminPage() {
         return false;
       }
 
-      if (
-        filters.department !== "all" &&
-        r.normalizedDepartment !== filters.department
-      ) {
+      if (filters.department !== "all" && r.department !== filters.department) {
         return false;
       }
 
@@ -1220,7 +1191,7 @@ export default function OperationalReportAdminPage() {
         rows.push({
           type: "attention",
           airline: r.normalizedAirline || "Unknown",
-          text: `${r.normalizedAirline || "Unknown"}: Report needs attention because operation was not completed without issues.`,
+          text: `${r.normalizedAirline || "Unknown"}: Report needs attention because operation indicates issues or incomplete completion.`,
         });
       }
     });
@@ -1256,13 +1227,14 @@ export default function OperationalReportAdminPage() {
 
     setEditingId(report.id);
     setEditForm({
+      templateKey: report.templateKey || "",
+      templateLabel: report.templateLabel || "",
+      department: report.department || "",
       airline: report.airline || "",
-      department: report.department || report.departmentLabel || "",
       reportDate: report.reportDate || "",
       shift: report.shift || "",
       flightNumber: report.flightNumber || "",
       flightsHandled: report.flightsHandled || "",
-      affectedFlightNumber: report.affectedFlightNumber || "",
       supervisorReporting: report.supervisorReporting || "",
       notes: report.notes || "",
       delayedFlight: Boolean(report.delayedFlight),
@@ -1302,13 +1274,16 @@ export default function OperationalReportAdminPage() {
       setSavingId(report.id);
 
       const payload = {
+        templateKey: editForm.templateKey || report.templateKey || "",
+        templateLabel: editForm.templateLabel || report.templateLabel || "",
+        department: editForm.department || report.department || "",
         airline: normalizeAirlineName(editForm.airline),
-        department: String(editForm.department || "").trim(),
         reportDate: editForm.reportDate,
         shift: editForm.shift,
-        flightNumber: editForm.flightNumber,
+        flightNumber: isCabinServiceReport(editForm)
+          ? ""
+          : editForm.flightNumber,
         flightsHandled: editForm.flightsHandled,
-        affectedFlightNumber: editForm.affectedFlightNumber,
         supervisorReporting: editForm.supervisorReporting,
         notes: editForm.notes,
         delayedFlight: Boolean(editForm.delayedFlight),
@@ -1333,8 +1308,9 @@ export default function OperationalReportAdminPage() {
                 ...item,
                 ...payload,
                 normalizedAirline: normalizeAirlineName(payload.airline),
-                normalizedDepartment: normalizeOperationalDepartment(payload.department),
-                departmentLabel: getDepartmentLabel(payload.department),
+                normalizedDepartment: normalizeDepartmentValue(
+                  payload.templateKey || payload.department
+                ),
               }
             : item
         )
@@ -1602,7 +1578,7 @@ export default function OperationalReportAdminPage() {
         <p style={{ margin: 0, maxWidth: 760, fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
           {isSupervisor
             ? "Review the operational reports submitted by you, including review status, follow up, and manager comments."
-            : "Review delays, alerts, follow-up cases, and manage submitted operational reports."}
+            : "Review delays, alerts, follow-up cases, and manage submitted operational reports by department."}
         </p>
       </div>
 
@@ -1721,8 +1697,8 @@ export default function OperationalReportAdminPage() {
             >
               <option value="all">All</option>
               {departmentOptions.map((department) => (
-                <option key={department.value} value={department.value}>
-                  {department.label}
+                <option key={department} value={department}>
+                  {department}
                 </option>
               ))}
             </SelectInput>
@@ -1971,17 +1947,16 @@ export default function OperationalReportAdminPage() {
                       width: "100%",
                       borderCollapse: "separate",
                       borderSpacing: 0,
-                      minWidth: 1200,
+                      minWidth: 1100,
                       background: "#fff",
                     }}
                   >
                     <thead>
                       <tr style={{ background: "#f8fbff" }}>
                         <th style={thStyle()}>Date</th>
-                        <th style={thStyle()}>Airline</th>
                         <th style={thStyle()}>Department</th>
+                        <th style={thStyle()}>Airline</th>
                         <th style={thStyle()}>Flight Number</th>
-                        <th style={thStyle()}>Affected Flight</th>
                         <th style={thStyle()}>Delayed Time</th>
                         <th style={thStyle()}>Supervisor on Duty</th>
                         <th style={thStyle()}>Duty Manager in Charge</th>
@@ -2005,10 +1980,9 @@ export default function OperationalReportAdminPage() {
                             }}
                           >
                             <td style={tdStyle}>{report.reportDate || "—"}</td>
+                            <td style={tdStyle}>{report.department || "—"}</td>
                             <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
-                            <td style={tdStyle}>{report.departmentLabel || "—"}</td>
                             <td style={tdStyle}>{report.flightNumber || "—"}</td>
-                            <td style={tdStyle}>{report.affectedFlightNumber || "—"}</td>
                             <td style={tdStyle}>
                               {Number(report.delayedTimeMinutes || 0)} min
                             </td>
@@ -2066,17 +2040,18 @@ export default function OperationalReportAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1650,
+                  minWidth: 1700,
                   background: "#fff",
                 }}
               >
                 <thead>
                   <tr style={{ background: "#f8fbff" }}>
-                    <th style={thStyle()}>Airline</th>
                     <th style={thStyle()}>Department</th>
+                    <th style={thStyle()}>Template</th>
+                    <th style={thStyle()}>Airline</th>
                     <th style={thStyle()}>Date</th>
                     <th style={thStyle()}>Flight Number</th>
-                    <th style={thStyle()}>Affected Flight</th>
+                    <th style={thStyle()}>Flights</th>
                     <th style={thStyle()}>Supervisor</th>
                     <th style={thStyle()}>Delayed</th>
                     <th style={thStyle()}>Minutes</th>
@@ -2099,11 +2074,14 @@ export default function OperationalReportAdminPage() {
                             : "#fbfdff",
                       }}
                     >
+                      <td style={tdStyle}>{report.department || "—"}</td>
+                      <td style={tdStyle}>{getTemplateLabel(report)}</td>
                       <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
-                      <td style={tdStyle}>{report.departmentLabel || "—"}</td>
                       <td style={tdStyle}>{report.reportDate || "—"}</td>
-                      <td style={tdStyle}>{report.flightNumber || "—"}</td>
-                      <td style={tdStyle}>{report.affectedFlightNumber || "—"}</td>
+                      <td style={tdStyle}>
+                        {isCabinServiceReport(report) ? "—" : report.flightNumber || "—"}
+                      </td>
+                      <td style={tdStyle}>{report.flightsHandled || "—"}</td>
                       <td style={tdStyle}>{report.supervisorReporting || "—"}</td>
                       <td style={tdStyle}>{report.delayedFlight ? "Yes" : "No"}</td>
                       <td style={tdStyle}>{Number(report.delayedTimeMinutes || 0)}</td>
@@ -2192,18 +2170,26 @@ export default function OperationalReportAdminPage() {
                   }}
                 >
                   <div>
-                    <FieldLabel>Airline</FieldLabel>
-                    <TextInput
-                      value={editForm.airline}
-                      onChange={(e) => setEditForm((prev) => ({ ...prev, airline: e.target.value }))}
-                    />
-                  </div>
-
-                  <div>
                     <FieldLabel>Department</FieldLabel>
                     <TextInput
                       value={editForm.department}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Template</FieldLabel>
+                    <TextInput
+                      value={editForm.templateLabel}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, templateLabel: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Airline</FieldLabel>
+                    <TextInput
+                      value={editForm.airline}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, airline: e.target.value }))}
                     />
                   </div>
 
@@ -2224,27 +2210,21 @@ export default function OperationalReportAdminPage() {
                     />
                   </div>
 
-                  <div>
-                    <FieldLabel>Flight Number</FieldLabel>
-                    <TextInput
-                      value={editForm.flightNumber}
-                      onChange={(e) => setEditForm((prev) => ({ ...prev, flightNumber: e.target.value }))}
-                    />
-                  </div>
+                  {!isCabinServiceReport(editForm) && (
+                    <div>
+                      <FieldLabel>Flight Number</FieldLabel>
+                      <TextInput
+                        value={editForm.flightNumber}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, flightNumber: e.target.value }))}
+                      />
+                    </div>
+                  )}
 
                   <div>
-                    <FieldLabel>Flights Handled</FieldLabel>
+                    <FieldLabel>{isCabinServiceReport(editForm) ? "Flights Serviced" : "Flights Handled"}</FieldLabel>
                     <TextInput
                       value={editForm.flightsHandled}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, flightsHandled: e.target.value }))}
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Affected Flight Number</FieldLabel>
-                    <TextInput
-                      value={editForm.affectedFlightNumber}
-                      onChange={(e) => setEditForm((prev) => ({ ...prev, affectedFlightNumber: e.target.value }))}
                     />
                   </div>
 
@@ -2461,7 +2441,7 @@ export default function OperationalReportAdminPage() {
                       Report Detail
                     </h2>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
-                      {selectedReport.normalizedAirline || "—"} · {selectedReport.reportDate || "—"}
+                      {getTemplateLabel(selectedReport)} · {selectedReport.normalizedAirline || "—"} · {selectedReport.reportDate || "—"}
                     </p>
                   </div>
 
@@ -2485,13 +2465,18 @@ export default function OperationalReportAdminPage() {
                     gap: 12,
                   }}
                 >
+                  <InfoCard label="Department" value={selectedReport.department || "—"} />
+                  <InfoCard label="Template" value={getTemplateLabel(selectedReport)} />
                   <InfoCard label="Airline" value={selectedReport.normalizedAirline || "—"} />
-                  <InfoCard label="Department" value={selectedReport.departmentLabel || "—"} />
                   <InfoCard label="Report Date" value={selectedReport.reportDate || "—"} />
                   <InfoCard label="Shift" value={selectedReport.shift || "—"} />
-                  <InfoCard label="Flight Number" value={selectedReport.flightNumber || "—"} />
-                  <InfoCard label="Flights Handled" value={selectedReport.flightsHandled || "—"} />
-                  <InfoCard label="Affected Flight Number" value={selectedReport.affectedFlightNumber || "—"} />
+                  <InfoCard
+                    label={isCabinServiceReport(selectedReport) ? "Flights Serviced" : "Flights Handled"}
+                    value={selectedReport.flightsHandled || "—"}
+                  />
+                  {!isCabinServiceReport(selectedReport) && (
+                    <InfoCard label="Flight Number" value={selectedReport.flightNumber || "—"} />
+                  )}
                   <InfoCard label="Supervisor" value={selectedReport.supervisorReporting || "—"} />
                   <InfoCard label="Delayed Flight" value={selectedReport.delayedFlight ? "Yes" : "No"} />
                   <InfoCard label="Delayed Time" value={`${Number(selectedReport.delayedTimeMinutes || 0)} min`} />
@@ -2536,7 +2521,7 @@ export default function OperationalReportAdminPage() {
                       fontSize: 14,
                     }}
                   >
-                    This report needs attention because the operation was not completed without issues.
+                    This report needs attention because the operation indicates issues, delay, safety concern, or incomplete completion.
                   </div>
                 )}
 
