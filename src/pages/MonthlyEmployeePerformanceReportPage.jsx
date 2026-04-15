@@ -1034,13 +1034,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
     return normalizeDepartment(user?.department || "");
   }, [user?.department]);
 
-  const isWchrDepartmentUser = useMemo(() => {
-    return (
-      userDepartmentNormalized.includes("wchr") ||
-      userDepartmentNormalized.includes("wheelchair")
-    );
-  }, [userDepartmentNormalized]);
-
   const [employees, setEmployees] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1055,15 +1048,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
   const availableTemplates = useMemo(() => {
-    const allTemplates = Object.values(TEMPLATE_MAP);
-
-    return allTemplates.filter((template) => {
-      if (template.key === "wchr") {
-        return isWchrDepartmentUser;
-      }
-      return true;
-    });
-  }, [isWchrDepartmentUser]);
+    return Object.values(TEMPLATE_MAP);
+  }, []);
 
   const [filters, setFilters] = useState({
     month: "all",
@@ -1096,18 +1082,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
       if (currentTemplateExists) return prev;
 
       const preferredTemplate =
-        isWchrDepartmentUser
-          ? availableTemplates.find((item) => item.key === "wchr")
-          : availableTemplates.find((item) => item.key === "passenger");
-
-      const nextTemplate = preferredTemplate || availableTemplates[0];
+        availableTemplates.find((item) => item.key === "passenger") ||
+        availableTemplates[0];
 
       return {
         ...prev,
-        templateKey: nextTemplate.key,
+        templateKey: preferredTemplate.key,
       };
     });
-  }, [availableTemplates, isWchrDepartmentUser]);
+  }, [availableTemplates]);
 
   const activeTemplate =
     TEMPLATE_MAP[form.templateKey] ||
@@ -1202,7 +1185,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
       ...prev,
       employeeName: selectedEmployee.name,
       hireDate: selectedEmployee.hireDate || "",
-      department: prev.department || selectedEmployee.department || "",
+      department:
+        TEMPLATE_MAP[prev.templateKey]?.department ||
+        selectedEmployee.department ||
+        "",
     }));
   }, [selectedEmployee]);
 
@@ -1387,8 +1373,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
     setEditingDraftId("");
 
     const fallbackTemplate =
-      (isWchrDepartmentUser &&
-        availableTemplates.find((item) => item.key === "wchr")) ||
       availableTemplates.find((item) => item.key === "passenger") ||
       availableTemplates[0] ||
       TEMPLATE_MAP.passenger;
