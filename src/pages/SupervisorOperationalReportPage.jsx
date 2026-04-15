@@ -73,6 +73,10 @@ function buildInitialResponses(fields) {
 
 function shouldRequireAttentionFromResponses(responses) {
   const operationStatus = String(responses?.operation_status || "").toLowerCase();
+  const safetyConcern = String(responses?.safety_concern || "").toLowerCase();
+  const delayedFlight =
+    String(responses?.delayed_flight || "").toLowerCase() === "yes" ||
+    String(responses?.delayed_flight_impact || "").toLowerCase() === "yes";
 
   if (
     operationStatus.includes("not completed") ||
@@ -81,58 +85,10 @@ function shouldRequireAttentionFromResponses(responses) {
     return true;
   }
 
+  if (safetyConcern === "yes") return true;
+  if (delayedFlight) return true;
+
   return false;
-}
-
-function mergeBaseFieldsWithBuilder(baseFields, builderFields) {
-  const normalizedBuilder = (builderFields || []).map((item) => ({
-    id: item.id,
-    key: item.key,
-    label: item.label,
-    type: item.type || "text",
-    required: Boolean(item.required),
-    options: Array.isArray(item.options) ? item.options : [],
-    active: item.active !== false,
-    order: Number(item.order || 0),
-  }));
-
-  const builderMap = {};
-  normalizedBuilder.forEach((field) => {
-    if (!field.key) return;
-    builderMap[field.key] = field;
-  });
-
-  const mergedBase = baseFields
-    .map((base, index) => {
-      const override = builderMap[base.key];
-      const merged = override
-        ? {
-            ...base,
-            ...override,
-            options:
-              override.type === "yesno"
-                ? ["Yes", "No"]
-                : override.options?.length
-                ? override.options
-                : base.options || [],
-          }
-        : {
-            ...base,
-            order: Number(base.order || index + 1),
-            active: true,
-          };
-
-      return merged;
-    })
-    .filter((field) => field.active !== false);
-
-  const baseKeys = new Set(baseFields.map((field) => field.key));
-
-  const extraFields = normalizedBuilder
-    .filter((field) => field.active !== false && field.key && !baseKeys.has(field.key))
-    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-
-  return [...mergedBase, ...extraFields];
 }
 
 function PageCard({ children, style = {} }) {
@@ -273,7 +229,20 @@ function ActionButton({
   );
 }
 
-const BASE_FIELDS = [
+const AIRLINE_OPTIONS = [
+  { value: "SY", label: "SY" },
+  { value: "WestJet", label: "WestJet" },
+  { value: "WL Invicta", label: "WL Invicta" },
+  { value: "AV", label: "AV" },
+  { value: "EA", label: "EA" },
+  { value: "WCHR", label: "WCHR" },
+  { value: "CABIN", label: "Cabin Service" },
+  { value: "AA-BSO", label: "AA-BSO" },
+  { value: "DL", label: "Delta Air Lines" },
+  { value: "OTHER", label: "Other" },
+];
+
+const BAGGAGE_FIELDS = [
   {
     key: "operation_status",
     label: "Operation Status",
@@ -500,17 +469,615 @@ const BASE_FIELDS = [
   },
 ];
 
-const AIRLINE_OPTIONS = [
-  { value: "SY", label: "SY" },
-  { value: "WestJet", label: "WestJet" },
-  { value: "WL Invicta", label: "WL Invicta" },
-  { value: "AV", label: "AV" },
-  { value: "EA", label: "EA" },
-  { value: "WCHR", label: "WCHR" },
-  { value: "CABIN", label: "Cabin Service" },
-  { value: "AA-BSO", label: "AA-BSO" },
-  { value: "OTHER", label: "Other" },
+const WCHR_FIELDS = [
+  {
+    key: "operation_status",
+    label: "Operation Status",
+    type: "select",
+    required: true,
+    options: [
+      "Operation completed with no issues",
+      "Operation completed with remarks",
+      "Operation not completed as planned",
+    ],
+    active: true,
+    order: 1,
+  },
+  {
+    key: "wchr_requests_handled",
+    label: "WCHR Requests Handled",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 2,
+  },
+  {
+    key: "gate_to_gate_coordination",
+    label: "Gate to Gate Coordination Completed?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 3,
+  },
+  {
+    key: "wheelchair_availability",
+    label: "Wheelchair Availability Status",
+    type: "select",
+    required: false,
+    options: ["Adequate", "Limited", "Insufficient"],
+    active: true,
+    order: 4,
+  },
+  {
+    key: "escort_delays",
+    label: "Any Escort Delays?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 5,
+  },
+  {
+    key: "escort_delay_details",
+    label: "Escort Delay Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 6,
+  },
+  {
+    key: "missed_wchr_requests",
+    label: "Any Missed WCHR Requests?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 7,
+  },
+  {
+    key: "missed_wchr_details",
+    label: "Missed WCHR Request Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 8,
+  },
+  {
+    key: "passenger_complaints",
+    label: "Passenger Complaints?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 9,
+  },
+  {
+    key: "passenger_complaint_details",
+    label: "Passenger Complaint Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 10,
+  },
+  {
+    key: "staffing_status",
+    label: "Staffing Status",
+    type: "checkbox-group",
+    required: false,
+    options: ["Full staffing", "Short staffed", "Overtime needed", "Call out", "Other"],
+    active: true,
+    order: 11,
+  },
+  {
+    key: "staffing_remarks",
+    label: "Staffing Remarks",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 12,
+  },
+  {
+    key: "safety_concern",
+    label: "Any Safety Concern?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 13,
+  },
+  {
+    key: "safety_concern_details",
+    label: "Safety Concern Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 14,
+  },
+  {
+    key: "delayed_flight",
+    label: "Any Delayed Flight?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 15,
+  },
+  {
+    key: "delayed_flight_minutes",
+    label: "Delayed Minutes",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 16,
+  },
+  {
+    key: "delayed_flight_reason",
+    label: "Delayed Flight Reason",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 17,
+  },
+  {
+    key: "final_remarks_recommendations",
+    label: "Final Remarks / Recommendations",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 18,
+  },
 ];
+
+const CABIN_SERVICE_FIELDS = [
+  {
+    key: "operation_status",
+    label: "Operation Status",
+    type: "select",
+    required: true,
+    options: [
+      "Operation completed with no issues",
+      "Operation completed with remarks",
+      "Operation not completed as planned",
+    ],
+    active: true,
+    order: 1,
+  },
+  {
+    key: "flights_serviced",
+    label: "Flights Serviced",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 2,
+  },
+  {
+    key: "aircraft_tail_numbers",
+    label: "Aircraft Tail Number(s)",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 3,
+  },
+  {
+    key: "cabin_cleaning_completed",
+    label: "Cabin Cleaning Completed?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 4,
+  },
+  {
+    key: "lavatories_serviced",
+    label: "Lavatories Serviced?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 5,
+  },
+  {
+    key: "galleys_cleaned_stock_checked",
+    label: "Galleys Cleaned / Stock Checked?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 6,
+  },
+  {
+    key: "seat_pockets_trays_checked",
+    label: "Seat Pockets / Tray Tables Checked?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 7,
+  },
+  {
+    key: "carpets_cabin_floor_condition",
+    label: "Carpets / Cabin Floor Condition",
+    type: "select",
+    required: false,
+    options: ["Good", "Acceptable", "Needs Attention"],
+    active: true,
+    order: 8,
+  },
+  {
+    key: "trash_removed_correctly",
+    label: "Trash Removed Correctly?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 9,
+  },
+  {
+    key: "seatbelt_and_visible_items_checked",
+    label: "Seatbelts / Visible Cabin Items Checked?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 10,
+  },
+  {
+    key: "special_cleaning_required",
+    label: "Special Cleaning Required?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 11,
+  },
+  {
+    key: "special_cleaning_details",
+    label: "Special Cleaning Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 12,
+  },
+  {
+    key: "equipment_or_supply_issues",
+    label: "Equipment / Supply Issues?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 13,
+  },
+  {
+    key: "equipment_or_supply_issue_details",
+    label: "Equipment / Supply Issue Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 14,
+  },
+  {
+    key: "delayed_flight_impact",
+    label: "Was Cabin Service Impacted by a Delay?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 15,
+  },
+  {
+    key: "delay_reason",
+    label: "Delay Reason",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 16,
+  },
+  {
+    key: "delay_minutes",
+    label: "Delay Minutes",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 17,
+  },
+  {
+    key: "safety_concern",
+    label: "Any Safety Concern?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 18,
+  },
+  {
+    key: "safety_concern_details",
+    label: "Safety Concern Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 19,
+  },
+  {
+    key: "staffing_status",
+    label: "Staffing Status",
+    type: "checkbox-group",
+    required: false,
+    options: ["Fully staffed", "Short staffed", "Overtime required", "Call out(s)", "Other"],
+    active: true,
+    order: 20,
+  },
+  {
+    key: "staffing_remarks",
+    label: "Staffing Remarks",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 21,
+  },
+  {
+    key: "final_remarks_recommendations",
+    label: "Final Remarks / Recommendations",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 22,
+  },
+];
+
+const PASSENGER_SERVICE_FIELDS = [
+  {
+    key: "operation_status",
+    label: "Operation Status",
+    type: "select",
+    required: true,
+    options: [
+      "Operation completed with no issues",
+      "Operation completed with remarks",
+      "Operation not completed as planned",
+    ],
+    active: true,
+    order: 1,
+  },
+  {
+    key: "flights_handled",
+    label: "Flights Handled",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 2,
+  },
+  {
+    key: "checkin_completed",
+    label: "Check-in Operation Completed?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 3,
+  },
+  {
+    key: "boarding_completed",
+    label: "Boarding Operation Completed?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 4,
+  },
+  {
+    key: "document_checks_completed",
+    label: "Passenger Document Checks Completed?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 5,
+  },
+  {
+    key: "special_assistance_handled",
+    label: "Special Assistance Requests Handled Properly?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 6,
+  },
+  {
+    key: "oversize_or_special_bag_issues",
+    label: "Oversize / Special Bag Issues?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 7,
+  },
+  {
+    key: "oversize_or_special_bag_details",
+    label: "Oversize / Special Bag Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 8,
+  },
+  {
+    key: "boarding_gate_change",
+    label: "Any Gate Change?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 9,
+  },
+  {
+    key: "gate_change_details",
+    label: "Gate Change Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 10,
+  },
+  {
+    key: "standby_upgrade_irregularities",
+    label: "Standby / Upgrade / Seating Irregularities?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 11,
+  },
+  {
+    key: "standby_upgrade_details",
+    label: "Standby / Upgrade Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 12,
+  },
+  {
+    key: "customer_service_issues",
+    label: "Customer Service Issues?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 13,
+  },
+  {
+    key: "customer_service_issue_details",
+    label: "Customer Service Issue Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 14,
+  },
+  {
+    key: "delayed_flight",
+    label: "Any Delayed Flight?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 15,
+  },
+  {
+    key: "delayed_flight_minutes",
+    label: "Delayed Minutes",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 16,
+  },
+  {
+    key: "delayed_flight_reason",
+    label: "Delayed Flight Reason",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 17,
+  },
+  {
+    key: "safety_concern",
+    label: "Any Safety Concern?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 18,
+  },
+  {
+    key: "safety_concern_details",
+    label: "Safety Concern Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 19,
+  },
+  {
+    key: "staffing_status",
+    label: "Staffing Status",
+    type: "checkbox-group",
+    required: false,
+    options: ["Fully staffed", "Short staffed", "Overtime required", "Call out(s)", "Other"],
+    active: true,
+    order: 20,
+  },
+  {
+    key: "staffing_remarks",
+    label: "Staffing Remarks",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 21,
+  },
+  {
+    key: "final_remarks_recommendations",
+    label: "Final Remarks / Recommendations",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 22,
+  },
+];
+
+const OPERATIONAL_REPORT_TEMPLATES = {
+  baggage: {
+    key: "baggage",
+    label: "Baggage Handling",
+    department: "Baggage Handling",
+    airlineDefault: "",
+    fields: BAGGAGE_FIELDS,
+  },
+  wchr: {
+    key: "wchr",
+    label: "WCHR Service",
+    department: "WCHR Service",
+    airlineDefault: "WCHR",
+    fields: WCHR_FIELDS,
+  },
+  cabin_service: {
+    key: "cabin_service",
+    label: "Cabin Service",
+    department: "Cabin Service",
+    airlineDefault: "",
+    fields: CABIN_SERVICE_FIELDS,
+  },
+  passenger_service: {
+    key: "passenger_service",
+    label: "Passenger Service",
+    department: "Passenger Service",
+    airlineDefault: "",
+    fields: PASSENGER_SERVICE_FIELDS,
+  },
+};
 
 export default function SupervisorOperationalReportPage() {
   const { user } = useUser();
@@ -524,15 +1091,20 @@ export default function SupervisorOperationalReportPage() {
   const normalizedDepartment = normalizeCabinServiceValue(user?.department);
   const isCabinServiceUser = normalizedDepartment === "cabin_service";
 
-  const [loadingBuilder, setLoadingBuilder] = useState(true);
-  const [dynamicFields, setDynamicFields] = useState(BASE_FIELDS);
+  const defaultTemplateKey = isCabinServiceUser
+    ? "cabin_service"
+    : "passenger_service";
+
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   const [form, setForm] = useState({
-    airline: isCabinServiceUser ? "CABIN" : "",
+    templateKey: defaultTemplateKey,
+    airline:
+      OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.airlineDefault || "",
     reportDate: "",
-    department: isCabinServiceUser ? "Cabin Service" : "",
+    department:
+      OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.department || "",
     shift: "",
     flightNumber: "",
     flightsHandled: "",
@@ -544,52 +1116,33 @@ export default function SupervisorOperationalReportPage() {
     delayedReason: "",
     delayedCodeReported: "",
     needsAttention: false,
-    responses: buildInitialResponses(BASE_FIELDS),
+    responses: buildInitialResponses(
+      OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.fields || []
+    ),
   });
 
+  const activeTemplate = useMemo(() => {
+    return (
+      OPERATIONAL_REPORT_TEMPLATES[form.templateKey] ||
+      OPERATIONAL_REPORT_TEMPLATES.passenger_service
+    );
+  }, [form.templateKey]);
+
+  const dynamicFields = useMemo(() => {
+    return activeTemplate.fields || [];
+  }, [activeTemplate]);
+
   useEffect(() => {
-    async function loadBuilderConfig() {
-      try {
-        const snap = await getDocs(collection(db, "operational_report_form_fields"));
-
-        const builderRows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        const finalFields = mergeBaseFieldsWithBuilder(BASE_FIELDS, builderRows);
-
-        setDynamicFields(finalFields);
-
-        setForm((prev) => {
-          const currentResponses = prev.responses || {};
-          const nextResponses = buildInitialResponses(finalFields);
-
-          finalFields.forEach((field) => {
-            if (currentResponses[field.key] !== undefined) {
-              nextResponses[field.key] = currentResponses[field.key];
-            }
-          });
-
-          return {
-            ...prev,
-            responses: nextResponses,
-          };
-        });
-      } catch (err) {
-        console.error("Error loading operational report builder:", err);
-        setDynamicFields(BASE_FIELDS);
-        setForm((prev) => ({
-          ...prev,
-          responses: buildInitialResponses(BASE_FIELDS),
-        }));
-      } finally {
-        setLoadingBuilder(false);
-      }
-    }
-
-    if (canAccess) {
-      loadBuilderConfig();
-    } else {
-      setLoadingBuilder(false);
-    }
-  }, [canAccess]);
+    setForm((prev) => ({
+      ...prev,
+      department: activeTemplate.department,
+      airline:
+        prev.templateKey === form.templateKey
+          ? prev.airline
+          : activeTemplate.airlineDefault || "",
+      responses: buildInitialResponses(activeTemplate.fields || []),
+    }));
+  }, [activeTemplate, form.templateKey]);
 
   const computedNeedsAttention = useMemo(() => {
     return shouldRequireAttentionFromResponses(form.responses);
@@ -600,10 +1153,17 @@ export default function SupervisorOperationalReportPage() {
   }, [form.needsAttention, computedNeedsAttention]);
 
   const handleFormChange = (field, value) => {
-    if (isCabinServiceUser && field === "airline") {
+    if (field === "templateKey") {
+      const nextTemplate =
+        OPERATIONAL_REPORT_TEMPLATES[value] ||
+        OPERATIONAL_REPORT_TEMPLATES.passenger_service;
+
       setForm((prev) => ({
         ...prev,
-        airline: "CABIN",
+        templateKey: nextTemplate.key,
+        department: nextTemplate.department,
+        airline: nextTemplate.airlineDefault || "",
+        responses: buildInitialResponses(nextTemplate.fields || []),
       }));
       return;
     }
@@ -708,11 +1268,11 @@ export default function SupervisorOperationalReportPage() {
       setSaving(true);
 
       const payload = {
-        airline: isCabinServiceUser ? "CABIN" : normalizeAirlineName(form.airline),
+        templateKey: activeTemplate.key,
+        templateLabel: activeTemplate.label,
+        airline: normalizeAirlineName(form.airline),
         reportDate: form.reportDate,
-        department: isCabinServiceUser
-          ? "Cabin Service"
-          : String(form.department || "").trim(),
+        department: String(form.department || "").trim(),
         shift: String(form.shift || "").trim(),
         flightNumber: String(form.flightNumber || "").trim(),
         flightsHandled: String(form.flightsHandled || "").trim(),
@@ -749,9 +1309,12 @@ export default function SupervisorOperationalReportPage() {
       setStatusMessage("Operational report submitted successfully.");
 
       setForm({
-        airline: isCabinServiceUser ? "CABIN" : "",
+        templateKey: defaultTemplateKey,
+        airline:
+          OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.airlineDefault || "",
         reportDate: "",
-        department: isCabinServiceUser ? "Cabin Service" : "",
+        department:
+          OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.department || "",
         shift: "",
         flightNumber: "",
         flightsHandled: "",
@@ -763,7 +1326,9 @@ export default function SupervisorOperationalReportPage() {
         delayedReason: "",
         delayedCodeReported: "",
         needsAttention: false,
-        responses: buildInitialResponses(dynamicFields),
+        responses: buildInitialResponses(
+          OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.fields || []
+        ),
       });
     } catch (err) {
       console.error("Error saving operational report:", err);
@@ -894,8 +1459,7 @@ export default function SupervisorOperationalReportPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Submit the operational report from your profile, including delays,
-              issues, OH bags, pending items, staffing, and final remarks.
+              Submit the operational report by department. Questions change automatically based on the selected operational area.
             </p>
           </div>
 
@@ -959,11 +1523,23 @@ export default function SupervisorOperationalReportPage() {
           }}
         >
           <div>
+            <FieldLabel>Department / Report Type</FieldLabel>
+            <SelectInput
+              value={form.templateKey}
+              onChange={(e) => handleFormChange("templateKey", e.target.value)}
+            >
+              <option value="baggage">Baggage Handling</option>
+              <option value="wchr">WCHR Service</option>
+              <option value="cabin_service">Cabin Service</option>
+              <option value="passenger_service">Passenger Service</option>
+            </SelectInput>
+          </div>
+
+          <div>
             <FieldLabel>Reporting Airline</FieldLabel>
             <SelectInput
               value={form.airline}
               onChange={(e) => handleFormChange("airline", e.target.value)}
-              disabled={isCabinServiceUser}
             >
               <option value="">Select airline</option>
               {AIRLINE_OPTIONS.map((airline) => (
@@ -988,8 +1564,7 @@ export default function SupervisorOperationalReportPage() {
             <TextInput
               value={form.department}
               onChange={(e) => handleFormChange("department", e.target.value)}
-              placeholder="Ramp / TC / BSO / WCHR / Cabin"
-              disabled={isCabinServiceUser}
+              disabled
             />
           </div>
 
@@ -1018,16 +1593,6 @@ export default function SupervisorOperationalReportPage() {
               onChange={(e) => handleFormChange("flightsHandled", e.target.value)}
               placeholder="Example: 4"
             />
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 11,
-                color: "#64748b",
-                fontWeight: 600,
-              }}
-            >
-              Only apply for BSO and Cabin Service
-            </div>
           </div>
 
           <div>
@@ -1115,23 +1680,6 @@ export default function SupervisorOperationalReportPage() {
             />
           </div>
         )}
-
-        {form.delayedFlight && Number(form.delayedTimeMinutes || 0) > 4 && (
-          <div
-            style={{
-              marginTop: 14,
-              borderRadius: 16,
-              padding: "14px 16px",
-              background: "#fff7ed",
-              border: "1px solid #fdba74",
-              color: "#9a3412",
-              fontWeight: 800,
-              fontSize: 14,
-            }}
-          >
-            Alert: this delay exceeds 4 minutes and will trigger manager follow-up.
-          </div>
-        )}
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
@@ -1145,7 +1693,7 @@ export default function SupervisorOperationalReportPage() {
               letterSpacing: "-0.02em",
             }}
           >
-            Operational Questions
+            {activeTemplate.label} Questions
           </h2>
           <p
             style={{
@@ -1154,141 +1702,21 @@ export default function SupervisorOperationalReportPage() {
               color: "#64748b",
             }}
           >
-            Base questions are always included. The builder can edit them, deactivate them, or add new ones.
+            These questions are shown according to the selected department.
           </p>
         </div>
 
-        {loadingBuilder ? (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              color: "#64748b",
-              fontWeight: 600,
-            }}
-          >
-            Loading form fields...
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 18 }}>
-            {dynamicFields.map((field) => {
-              const value = form.responses?.[field.key];
+        <div style={{ display: "grid", gap: 18 }}>
+          {dynamicFields.map((field) => {
+            const value = form.responses?.[field.key];
 
-              if (field.type === "textarea") {
-                return (
-                  <div key={field.key}>
-                    <FieldLabel>
-                      {field.label} {field.required ? "*" : ""}
-                    </FieldLabel>
-                    <TextArea
-                      value={String(value || "")}
-                      onChange={(e) =>
-                        handleResponseChange(field.key, e.target.value)
-                      }
-                    />
-                  </div>
-                );
-              }
-
-              if (field.type === "select") {
-                return (
-                  <div key={field.key}>
-                    <FieldLabel>
-                      {field.label} {field.required ? "*" : ""}
-                    </FieldLabel>
-                    <SelectInput
-                      value={String(value || "")}
-                      onChange={(e) =>
-                        handleResponseChange(field.key, e.target.value)
-                      }
-                    >
-                      <option value="">Select option</option>
-                      {(field.options || []).map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </SelectInput>
-                  </div>
-                );
-              }
-
-              if (field.type === "yesno") {
-                return (
-                  <div key={field.key}>
-                    <FieldLabel>
-                      {field.label} {field.required ? "*" : ""}
-                    </FieldLabel>
-                    <SelectInput
-                      value={String(value || "")}
-                      onChange={(e) =>
-                        handleResponseChange(field.key, e.target.value)
-                      }
-                    >
-                      <option value="">Select option</option>
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </SelectInput>
-                  </div>
-                );
-              }
-
-              if (field.type === "checkbox-group") {
-                const selected = Array.isArray(value) ? value : [];
-
-                return (
-                  <div key={field.key}>
-                    <FieldLabel>
-                      {field.label} {field.required ? "*" : ""}
-                    </FieldLabel>
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: 10,
-                        background: "#f8fbff",
-                        border: "1px solid #dbeafe",
-                        borderRadius: 16,
-                        padding: 14,
-                      }}
-                    >
-                      {(field.options || []).map((option) => (
-                        <label
-                          key={option}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            color: "#0f172a",
-                            fontWeight: 600,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selected.includes(option)}
-                            onChange={(e) =>
-                              handleCheckboxGroupChange(
-                                field.key,
-                                option,
-                                e.target.checked
-                              )
-                            }
-                          />
-                          {option}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                );
-              }
-
+            if (field.type === "textarea") {
               return (
                 <div key={field.key}>
                   <FieldLabel>
                     {field.label} {field.required ? "*" : ""}
                   </FieldLabel>
-                  <TextInput
+                  <TextArea
                     value={String(value || "")}
                     onChange={(e) =>
                       handleResponseChange(field.key, e.target.value)
@@ -1296,9 +1724,114 @@ export default function SupervisorOperationalReportPage() {
                   />
                 </div>
               );
-            })}
-          </div>
-        )}
+            }
+
+            if (field.type === "select") {
+              return (
+                <div key={field.key}>
+                  <FieldLabel>
+                    {field.label} {field.required ? "*" : ""}
+                  </FieldLabel>
+                  <SelectInput
+                    value={String(value || "")}
+                    onChange={(e) =>
+                      handleResponseChange(field.key, e.target.value)
+                    }
+                  >
+                    <option value="">Select option</option>
+                    {(field.options || []).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </div>
+              );
+            }
+
+            if (field.type === "yesno") {
+              return (
+                <div key={field.key}>
+                  <FieldLabel>
+                    {field.label} {field.required ? "*" : ""}
+                  </FieldLabel>
+                  <SelectInput
+                    value={String(value || "")}
+                    onChange={(e) =>
+                      handleResponseChange(field.key, e.target.value)
+                    }
+                  >
+                    <option value="">Select option</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </SelectInput>
+                </div>
+              );
+            }
+
+            if (field.type === "checkbox-group") {
+              const selected = Array.isArray(value) ? value : [];
+
+              return (
+                <div key={field.key}>
+                  <FieldLabel>
+                    {field.label} {field.required ? "*" : ""}
+                  </FieldLabel>
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 10,
+                      background: "#f8fbff",
+                      border: "1px solid #dbeafe",
+                      borderRadius: 16,
+                      padding: 14,
+                    }}
+                  >
+                    {(field.options || []).map((option) => (
+                      <label
+                        key={option}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          color: "#0f172a",
+                          fontWeight: 600,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(option)}
+                          onChange={(e) =>
+                            handleCheckboxGroupChange(
+                              field.key,
+                              option,
+                              e.target.checked
+                            )
+                          }
+                        />
+                        {option}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={field.key}>
+                <FieldLabel>
+                  {field.label} {field.required ? "*" : ""}
+                </FieldLabel>
+                <TextInput
+                  value={String(value || "")}
+                  onChange={(e) =>
+                    handleResponseChange(field.key, e.target.value)
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
       </PageCard>
 
       <PageCard style={{ padding: 22 }}>
@@ -1355,7 +1888,7 @@ export default function SupervisorOperationalReportPage() {
                 fontSize: 14,
               }}
             >
-              Attention alert: this report will be flagged because the selected operation status indicates issues or incomplete operation.
+              Attention alert: this report will be flagged because the selected responses indicate an issue, delay, safety concern, or incomplete operation.
             </div>
           )}
         </div>
