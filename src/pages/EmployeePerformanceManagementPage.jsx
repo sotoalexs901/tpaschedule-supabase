@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
   doc,
   getDocs,
@@ -397,8 +396,8 @@ export default function EmployeePerformanceManagementPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [reports, setReports] = useState([]);
   const [selectedReportId, setSelectedReportId] = useState("");
-  const [managerNote, setManagerNote] = useState("");
   const [selectedSupervisorName, setSelectedSupervisorName] = useState("");
+  const [managerFields, setManagerFields] = useState({});
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
@@ -515,6 +514,44 @@ export default function EmployeePerformanceManagementPage() {
     });
   }, [reports, filters]);
 
+  const selectedReport = useMemo(() => {
+    return (
+      reports.find((r) => r.id === selectedReportId) ||
+      filteredReports.find((r) => r.id === selectedReportId) ||
+      null
+    );
+  }, [reports, filteredReports, selectedReportId]);
+
+  useEffect(() => {
+    if (!selectedSupervisorName) {
+      return;
+    }
+
+    const stillExists = filteredReports.some(
+      (r) => safeText(r.supervisorName) === selectedSupervisorName
+    );
+
+    if (!stillExists) {
+      setSelectedSupervisorName("");
+    }
+  }, [filteredReports, selectedSupervisorName]);
+
+  useEffect(() => {
+    if (!selectedReport) return;
+
+    setManagerFields((prev) => ({
+      ...prev,
+      [selectedReport.id]: {
+        managerNote:
+          prev[selectedReport.id]?.managerNote ?? selectedReport.managerNote ?? "",
+        managerReturnReason:
+          prev[selectedReport.id]?.managerReturnReason ??
+          selectedReport.managerReturnReason ??
+          "",
+      },
+    }));
+  }, [selectedReport]);
+
   const totals = useMemo(() => {
     const total = filteredReports.length;
     const followUps = filteredReports.filter((r) => r.needsFollowUp === true).length;
@@ -522,6 +559,9 @@ export default function EmployeePerformanceManagementPage() {
       ["approved", "recognized", "closed"].includes(
         String(r.managerStatus || "").toLowerCase()
       )
+    ).length;
+    const returned = filteredReports.filter(
+      (r) => String(r.managerStatus || "").toLowerCase() === "returned"
     ).length;
     const avgScore =
       total > 0
@@ -532,6 +572,7 @@ export default function EmployeePerformanceManagementPage() {
       total,
       followUps,
       approved,
+      returned,
       avgScore,
     };
   }, [filteredReports]);
@@ -548,6 +589,8 @@ export default function EmployeePerformanceManagementPage() {
           supervisorName: supervisor,
           employees: {},
           totalReports: 0,
+          returnedReports: 0,
+          followUpReports: 0,
         };
       }
 
@@ -557,6 +600,14 @@ export default function EmployeePerformanceManagementPage() {
 
       map[supervisor].employees[employee].push(report);
       map[supervisor].totalReports += 1;
+
+      if (String(report.managerStatus || "").toLowerCase() === "returned") {
+        map[supervisor].returnedReports += 1;
+      }
+
+      if (report.needsFollowUp === true) {
+        map[supervisor].followUpReports += 1;
+      }
     });
 
     return Object.values(map)
@@ -585,39 +636,100 @@ export default function EmployeePerformanceManagementPage() {
       }));
   }, [filteredReports]);
 
-  const selectedSupervisorGroup = useMemo(() => {
-    return (
-      groupedBySupervisor.find(
-        (group) => group.supervisorName === selectedSupervisorName
-      ) || null
+  const visibleSupervisorGroups = useMemo(() => {
+    if (!selectedSupervisorName) return groupedBySupervisor;
+    return groupedBySupervisor.filter(
+      (group) => group.supervisorName === selectedSupervisorName
     );
   }, [groupedBySupervisor, selectedSupervisorName]);
 
-  const selectedReport = useMemo(() => {
-    return (
-      reports.find((r) => r.id === selectedReportId) ||
-      filteredReports.find((r) => r.id === selectedReportId) ||
-      null
-    );
-  }, [reports, filteredReports, selectedReportId]);
+  function getEditableField(reportId, field, fallback = "") {
+    return managerFields[reportId]?.[field] ?? fallback;
+  }
 
-  useEffect(() => {
-    if (selectedReport) {
-      setManagerNote(selectedReport.managerNote || "");
-    } else {
-      setManagerNote("");
+  function setEditableField(reportId, field, value) {
+    setManagerFields((prev) => ({
+      ...prev,
+      [reportId]: {
+        managerNote: prev[reportId]?.managerNote ?? "",
+        managerReturnReason: prev[reportId]?.managerReturnReason ?? "",
+        [field]: value,
+      },
+    }));
+  }
+
+  async function sendReturnToSupervisor(report) {
+    const returnReason = safeText(
+      getEditableField(report.id, "managerReturnReason", report.managerReturnReason || "")
+    );
+    const managerNote = safeText(
+      getEditableField(report.id, "managerNote", report.managerNote || "")
+    );
+
+    if (!returnReason) {
+      setStatusMessage("Please write the return reason before sending back.");
+      return;
     }
-  }, [selectedReport]);
+
+    try {
+      setSavingId(report.id);
+
+      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
+        managerStatus: "returned",
+        managerReviewedBy: getVisibleUserName(user),
+        managerReviewedAt: serverTimestamp(),
+        managerNote,
+        managerReturnReason: returnReason,
+        returnedAt: serverTimestamp(),
+        returnedBy: getVisibleUserName(user),
+        returnedToSupervisorId: report.supervisorId || "",
+        returnedToSupervisorName: report.supervisorName || "",
+        updatedAt: serverTimestamp(),
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                managerStatus: "returned",
+                managerReviewedBy: getVisibleUserName(user),
+                managerReviewedAt: new Date(),
+                managerNote,
+                managerReturnReason: returnReason,
+                returnedAt: new Date(),
+                returnedBy: getVisibleUserName(user),
+                returnedToSupervisorId: report.supervisorId || "",
+                returnedToSupervisorName: report.supervisorName || "",
+                updatedAt: new Date(),
+              }
+            : item
+        )
+      );
+
+      setStatusMessage("Report returned to supervisor successfully.");
+    } catch (err) {
+      console.error("Error returning report to supervisor:", err);
+      setStatusMessage("Could not return report to supervisor.");
+    } finally {
+      setSavingId("");
+    }
+  }
 
   async function updateManagerStatus(reportId, nextStatus) {
     try {
       setSavingId(reportId);
 
+      const currentReport = reports.find((r) => r.id === reportId);
+      const managerNote = safeText(
+        getEditableField(reportId, "managerNote", currentReport?.managerNote || "")
+      );
+
       await updateDoc(doc(db, "employeePerformanceReports", reportId), {
         managerStatus: nextStatus,
         managerReviewedBy: getVisibleUserName(user),
         managerReviewedAt: serverTimestamp(),
-        managerNote: managerNote || "",
+        managerNote,
         updatedAt: serverTimestamp(),
       });
 
@@ -629,7 +741,7 @@ export default function EmployeePerformanceManagementPage() {
                 managerStatus: nextStatus,
                 managerReviewedBy: getVisibleUserName(user),
                 managerReviewedAt: new Date(),
-                managerNote: managerNote || "",
+                managerNote,
                 updatedAt: new Date(),
               }
             : item
@@ -640,62 +752,6 @@ export default function EmployeePerformanceManagementPage() {
     } catch (err) {
       console.error("Error updating EPR manager status:", err);
       setStatusMessage("Could not update report.");
-    } finally {
-      setSavingId("");
-    }
-  }
-
-  async function returnToSupervisor(report) {
-    try {
-      setSavingId(report.id);
-
-      const note = managerNote || "";
-
-      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
-        managerStatus: "returned",
-        returnedToSupervisor: true,
-        returnedAt: serverTimestamp(),
-        returnedBy: getVisibleUserName(user),
-        managerNote: note,
-        updatedAt: serverTimestamp(),
-      });
-
-      if (report.supervisorId) {
-        await addDoc(collection(db, "messages"), {
-          toUserId: report.supervisorId || "",
-          toUserName: report.supervisorName || "",
-          fromUserId: user?.id || "",
-          fromUserName: getVisibleUserName(user),
-          subject: `EPR Returned for Review - ${report.employeeName || ""}`,
-          body:
-            note ||
-            `The EPR for ${report.employeeName || "this employee"} was returned for correction and resubmission.`,
-          read: false,
-          category: "employee_performance",
-          createdAt: serverTimestamp(),
-        });
-      }
-
-      setReports((prev) =>
-        prev.map((item) =>
-          item.id === report.id
-            ? {
-                ...item,
-                managerStatus: "returned",
-                returnedToSupervisor: true,
-                returnedAt: new Date(),
-                returnedBy: getVisibleUserName(user),
-                managerNote: note,
-                updatedAt: new Date(),
-              }
-            : item
-        )
-      );
-
-      setStatusMessage("Report returned to supervisor successfully.");
-    } catch (err) {
-      console.error("Error returning EPR:", err);
-      setStatusMessage("Could not return report to supervisor.");
     } finally {
       setSavingId("");
     }
@@ -760,9 +816,9 @@ export default function EmployeePerformanceManagementPage() {
             color: "rgba(255,255,255,0.88)",
           }}
         >
-          Review reports already received, organize them by month, department,
-          supervisor and employee, open full details, return to supervisor, and
-          update management status from this page.
+          Review reports already received, organize them by supervisor and employee,
+          open full details, write manager notes, return reports to supervisors for
+          correction, and update final status from this page.
         </p>
       </div>
 
@@ -875,9 +931,9 @@ export default function EmployeePerformanceManagementPage() {
               <option value="submitted">Submitted</option>
               <option value="approved">Approved</option>
               <option value="follow_up">Follow Up</option>
+              <option value="returned">Returned</option>
               <option value="recognized">Recognized</option>
               <option value="closed">Closed</option>
-              <option value="returned">Returned</option>
               <option value="draft">Draft</option>
             </SelectInput>
           </div>
@@ -922,6 +978,7 @@ export default function EmployeePerformanceManagementPage() {
       >
         <InfoCard label="Reports" value={String(totals.total)} />
         <InfoCard label="Follow Up" value={String(totals.followUps)} tone="amber" />
+        <InfoCard label="Returned" value={String(totals.returned)} tone="red" />
         <InfoCard label="Approved / Closed" value={String(totals.approved)} tone="green" />
         <InfoCard
           label="Average Score"
@@ -958,7 +1015,7 @@ export default function EmployeePerformanceManagementPage() {
                 color: "#64748b",
               }}
             >
-              Click a supervisor to view employee details and reports.
+              Click a supervisor to open employee details and reports submitted by that supervisor.
             </p>
           </div>
 
@@ -966,230 +1023,252 @@ export default function EmployeePerformanceManagementPage() {
             <div style={{ color: "#64748b" }}>Loading...</div>
           ) : groupedBySupervisor.length === 0 ? (
             <div style={{ color: "#64748b" }}>No reports found.</div>
-          ) : !selectedSupervisorGroup ? (
+          ) : (
             <div style={{ display: "grid", gap: 12 }}>
-              {groupedBySupervisor.map((group) => (
-                <div
-                  key={group.supervisorName}
-                  style={{
-                    border: "1px solid #dbeafe",
-                    borderRadius: 18,
-                    padding: 14,
-                    background: "#ffffff",
-                  }}
-                >
+              {groupedBySupervisor.map((group) => {
+                const active = selectedSupervisorName === group.supervisorName;
+
+                return (
                   <div
+                    key={group.supervisorName}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      alignItems: "center",
+                      border: active ? "1px solid #bfe0fb" : "1px solid #dbeafe",
+                      borderRadius: 18,
+                      padding: 14,
+                      background: active ? "#edf7ff" : "#ffffff",
                     }}
                   >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 900,
-                          color: "#0f172a",
-                        }}
-                      >
-                        {group.supervisorName}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 16,
+                            fontWeight: 900,
+                            color: "#0f172a",
+                          }}
+                        >
+                          {group.supervisorName}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 13,
+                            color: "#64748b",
+                          }}
+                        >
+                          {group.employees.length} employee(s) · {group.totalReports} report(s)
+                        </div>
                       </div>
+
                       <div
                         style={{
-                          marginTop: 4,
-                          fontSize: 13,
-                          color: "#64748b",
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
                         }}
                       >
-                        {group.employees.length} employee(s) · {group.totalReports} report(s)
+                        {group.returnedReports > 0 && (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              background: "#fff1f2",
+                              border: "1px solid #fecdd3",
+                              color: "#9f1239",
+                            }}
+                          >
+                            Returned: {group.returnedReports}
+                          </span>
+                        )}
+
+                        {group.followUpReports > 0 && (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              background: "#fff7ed",
+                              border: "1px solid #fdba74",
+                              color: "#9a3412",
+                            }}
+                          >
+                            Follow Up: {group.followUpReports}
+                          </span>
+                        )}
+
+                        <ActionButton
+                          variant="secondary"
+                          onClick={() =>
+                            setSelectedSupervisorName((prev) =>
+                              prev === group.supervisorName ? "" : group.supervisorName
+                            )
+                          }
+                        >
+                          {active ? "Hide Details" : "View Details"}
+                        </ActionButton>
                       </div>
                     </div>
 
-                    <ActionButton
-                      variant="primary"
-                      onClick={() => {
-                        setSelectedSupervisorName(group.supervisorName);
-                        setSelectedReportId("");
-                      }}
-                    >
-                      View Details
-                    </ActionButton>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: 18,
-                      fontWeight: 900,
-                      color: "#0f172a",
-                    }}
-                  >
-                    {selectedSupervisorGroup.supervisorName}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 13,
-                      color: "#64748b",
-                    }}
-                  >
-                    {selectedSupervisorGroup.employees.length} employee(s) ·{" "}
-                    {selectedSupervisorGroup.totalReports} report(s)
-                  </div>
-                </div>
-
-                <ActionButton
-                  variant="secondary"
-                  onClick={() => {
-                    setSelectedSupervisorName("");
-                    setSelectedReportId("");
-                  }}
-                >
-                  Back to Supervisors
-                </ActionButton>
-              </div>
-
-              {selectedSupervisorGroup.employees.map((emp) => (
-                <div
-                  key={`${selectedSupervisorGroup.supervisorName}-${emp.employeeName}`}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 14,
-                    padding: 12,
-                    background: "#f8fbff",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 800,
-                      color: "#0f172a",
-                      marginBottom: 8,
-                    }}
-                  >
-                    {emp.employeeName}
-                  </div>
-
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {emp.reports.map((report) => (
-                      <div
-                        key={report.id}
-                        onClick={() => setSelectedReportId(report.id)}
-                        style={{
-                          cursor: "pointer",
-                          border:
-                            selectedReportId === report.id
-                              ? "1px solid #bfe0fb"
-                              : "1px solid #e2e8f0",
-                          background:
-                            selectedReportId === report.id
-                              ? "#edf7ff"
-                              : "#ffffff",
-                          borderRadius: 12,
-                          padding: 12,
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                          }}
-                        >
-                          <div>
+                    {active && (
+                      <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                        {group.employees.map((emp) => (
+                          <div
+                            key={`${group.supervisorName}-${emp.employeeName}`}
+                            style={{
+                              border: "1px solid #e2e8f0",
+                              borderRadius: 14,
+                              padding: 12,
+                              background: "#f8fbff",
+                            }}
+                          >
                             <div
                               style={{
                                 fontSize: 14,
                                 fontWeight: 800,
                                 color: "#0f172a",
+                                marginBottom: 8,
                               }}
                             >
-                              {report.templateLabel || "-"} ·{" "}
-                              {formatMonthValue(report.month)}
+                              {emp.employeeName}
                             </div>
-                            <div
-                              style={{
-                                marginTop: 4,
-                                fontSize: 12,
-                                color: "#64748b",
-                              }}
-                            >
-                              {safeText(report.department) || "-"} · Status:{" "}
-                              {report.managerStatus || "submitted"}
+
+                            <div style={{ display: "grid", gap: 8 }}>
+                              {emp.reports.map((report) => (
+                                <div
+                                  key={report.id}
+                                  onClick={() => setSelectedReportId(report.id)}
+                                  style={{
+                                    cursor: "pointer",
+                                    border:
+                                      selectedReportId === report.id
+                                        ? "1px solid #bfe0fb"
+                                        : "1px solid #e2e8f0",
+                                    background:
+                                      selectedReportId === report.id
+                                        ? "#edf7ff"
+                                        : "#ffffff",
+                                    borderRadius: 12,
+                                    padding: 12,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      gap: 10,
+                                      flexWrap: "wrap",
+                                      alignItems: "center",
+                                    }}
+                                  >
+                                    <div>
+                                      <div
+                                        style={{
+                                          fontSize: 14,
+                                          fontWeight: 800,
+                                          color: "#0f172a",
+                                        }}
+                                      >
+                                        {report.templateLabel || "-"} ·{" "}
+                                        {formatMonthValue(report.month)}
+                                      </div>
+                                      <div
+                                        style={{
+                                          marginTop: 4,
+                                          fontSize: 12,
+                                          color: "#64748b",
+                                        }}
+                                      >
+                                        {safeText(report.department) || "-"} · Status:{" "}
+                                        {report.managerStatus || "submitted"}
+                                      </div>
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        gap: 8,
+                                        flexWrap: "wrap",
+                                        alignItems: "center",
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          display: "inline-flex",
+                                          padding: "5px 10px",
+                                          borderRadius: 999,
+                                          fontSize: 12,
+                                          fontWeight: 800,
+                                          background: "#f8fbff",
+                                          border: "1px solid #dbeafe",
+                                          color: "#1769aa",
+                                        }}
+                                      >
+                                        {formatScore(report.score)}
+                                      </span>
+
+                                      <span
+                                        style={{
+                                          display: "inline-flex",
+                                          padding: "5px 10px",
+                                          borderRadius: 999,
+                                          fontSize: 12,
+                                          fontWeight: 800,
+                                          background:
+                                            String(report.managerStatus || "").toLowerCase() ===
+                                            "returned"
+                                              ? "#fff1f2"
+                                              : report.needsFollowUp === true
+                                              ? "#fff7ed"
+                                              : "#ecfdf5",
+                                          border:
+                                            String(report.managerStatus || "").toLowerCase() ===
+                                            "returned"
+                                              ? "1px solid #fecdd3"
+                                              : report.needsFollowUp === true
+                                              ? "1px solid #fdba74"
+                                              : "1px solid #a7f3d0",
+                                          color:
+                                            String(report.managerStatus || "").toLowerCase() ===
+                                            "returned"
+                                              ? "#9f1239"
+                                              : report.needsFollowUp === true
+                                              ? "#9a3412"
+                                              : "#166534",
+                                        }}
+                                      >
+                                        {String(report.managerStatus || "").toLowerCase() ===
+                                        "returned"
+                                          ? "Returned"
+                                          : report.needsFollowUp
+                                          ? "Follow Up"
+                                          : "OK"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
-
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                              alignItems: "center",
-                            }}
-                          >
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                padding: "5px 10px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                                fontWeight: 800,
-                                background: "#f8fbff",
-                                border: "1px solid #dbeafe",
-                                color: "#1769aa",
-                              }}
-                            >
-                              {formatScore(report.score)}
-                            </span>
-
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                padding: "5px 10px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                                fontWeight: 800,
-                                background:
-                                  report.needsFollowUp === true
-                                    ? "#fff7ed"
-                                    : "#ecfdf5",
-                                border:
-                                  report.needsFollowUp === true
-                                    ? "1px solid #fdba74"
-                                    : "1px solid #a7f3d0",
-                                color:
-                                  report.needsFollowUp === true
-                                    ? "#9a3412"
-                                    : "#166534",
-                              }}
-                            >
-                              {report.needsFollowUp ? "Follow Up" : "OK"}
-                            </span>
-                          </div>
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </PageCard>
@@ -1259,6 +1338,32 @@ export default function EmployeePerformanceManagementPage() {
                   tone="default"
                 />
               </div>
+
+              {selectedReport.managerReturnReason && (
+                <div
+                  style={{
+                    border: "1px solid #fecdd3",
+                    borderRadius: 18,
+                    padding: 16,
+                    background: "#fff1f2",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: "#9f1239",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Last Return Reason
+                  </div>
+
+                  <div style={{ fontSize: 14, color: "#881337", lineHeight: 1.7 }}>
+                    {selectedReport.managerReturnReason}
+                  </div>
+                </div>
+              )}
 
               <div
                 style={{
@@ -1419,9 +1524,35 @@ export default function EmployeePerformanceManagementPage() {
               <div>
                 <FieldLabel>Manager Note</FieldLabel>
                 <TextArea
-                  value={managerNote}
-                  onChange={(e) => setManagerNote(e.target.value)}
+                  value={getEditableField(
+                    selectedReport.id,
+                    "managerNote",
+                    selectedReport.managerNote || ""
+                  )}
+                  onChange={(e) =>
+                    setEditableField(selectedReport.id, "managerNote", e.target.value)
+                  }
                   placeholder="Add recognition, follow-up instruction, coaching note, etc."
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Return Reason to Supervisor</FieldLabel>
+                <TextArea
+                  value={getEditableField(
+                    selectedReport.id,
+                    "managerReturnReason",
+                    selectedReport.managerReturnReason || ""
+                  )}
+                  onChange={(e) =>
+                    setEditableField(
+                      selectedReport.id,
+                      "managerReturnReason",
+                      e.target.value
+                    )
+                  }
+                  placeholder="Explain clearly what the supervisor needs to correct before resubmitting."
+                  style={{ minHeight: 120 }}
                 />
               </div>
 
@@ -1450,10 +1581,12 @@ export default function EmployeePerformanceManagementPage() {
 
                 <ActionButton
                   variant="danger"
-                  onClick={() => returnToSupervisor(selectedReport)}
+                  onClick={() => sendReturnToSupervisor(selectedReport)}
                   disabled={savingId === selectedReport.id}
                 >
-                  {savingId === selectedReport.id ? "Saving..." : "Return to Supervisor"}
+                  {savingId === selectedReport.id
+                    ? "Saving..."
+                    : "Return to Supervisor"}
                 </ActionButton>
 
                 <ActionButton
