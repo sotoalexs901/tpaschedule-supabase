@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
@@ -76,7 +76,8 @@ function shouldRequireAttentionFromResponses(responses) {
   const safetyConcern = String(responses?.safety_concern || "").toLowerCase();
   const delayedFlight =
     String(responses?.delayed_flight || "").toLowerCase() === "yes" ||
-    String(responses?.delayed_flight_impact || "").toLowerCase() === "yes";
+    String(responses?.delayed_flight_impact || "").toLowerCase() === "yes" ||
+    String(responses?.service_delays || "").toLowerCase() === "yes";
 
   if (
     operationStatus.includes("not completed") ||
@@ -312,8 +313,8 @@ const BAGGAGE_FIELDS = [
     order: 6,
   },
   {
-    key: "oh_bags_total_quantity",
-    label: "OH Bags Total Quantity",
+    key: "ohd_bags_managed",
+    label: "OHD Bags Managed",
     type: "text",
     required: false,
     options: [],
@@ -321,8 +322,8 @@ const BAGGAGE_FIELDS = [
     order: 7,
   },
   {
-    key: "oh_bags_affected_flights",
-    label: "OH Bags Affected Flights",
+    key: "delayed_file",
+    label: "Delayed File",
     type: "text",
     required: false,
     options: [],
@@ -330,26 +331,26 @@ const BAGGAGE_FIELDS = [
     order: 8,
   },
   {
-    key: "oh_bags_details",
-    label: "OH Bags Details",
-    type: "textarea",
+    key: "damage_file",
+    label: "Damage File",
+    type: "text",
     required: false,
     options: [],
     active: true,
     order: 9,
   },
   {
-    key: "oh_bags_follow_up_actions",
-    label: "OH Bags Follow-up Actions",
-    type: "textarea",
+    key: "bdos",
+    label: "BDOs",
+    type: "text",
     required: false,
     options: [],
     active: true,
     order: 10,
   },
   {
-    key: "pending_item_1",
-    label: "Pending Item 1",
+    key: "total_bags_processed",
+    label: "Total Bags Processed",
     type: "text",
     required: false,
     options: [],
@@ -357,8 +358,8 @@ const BAGGAGE_FIELDS = [
     order: 11,
   },
   {
-    key: "pending_description",
-    label: "Pending Description",
+    key: "ohd_bags_follow_up_actions",
+    label: "OHD Bags Follow-up Actions",
     type: "textarea",
     required: false,
     options: [],
@@ -375,8 +376,8 @@ const BAGGAGE_FIELDS = [
     order: 13,
   },
   {
-    key: "pending_target_date",
-    label: "Pending Target Date",
+    key: "ramp_scan",
+    label: "Ramp Scan",
     type: "text",
     required: false,
     options: [],
@@ -384,13 +385,22 @@ const BAGGAGE_FIELDS = [
     order: 14,
   },
   {
+    key: "pending_target_day",
+    label: "Pending Target Day",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 15,
+  },
+  {
     key: "exception_type",
-    label: "Exception Type (select all that apply)",
+    label: "Exception Type",
     type: "checkbox-group",
     required: false,
     options: ["N/A", "Operational", "Staffing", "Safety", "Baggage", "Other"],
     active: true,
-    order: 15,
+    order: 16,
   },
   {
     key: "exception_description",
@@ -399,7 +409,7 @@ const BAGGAGE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 16,
+    order: 17,
   },
   {
     key: "exception_reason",
@@ -408,23 +418,274 @@ const BAGGAGE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 17,
+    order: 18,
   },
   {
-    key: "exception_reported_to",
+    key: "reported_to",
     label: "Reported To",
     type: "text",
     required: false,
     options: [],
     active: true,
+    order: 19,
+  },
+  {
+    key: "staffing_status",
+    label: "Staffing Status",
+    type: "checkbox-group",
+    required: false,
+    options: ["Full staffing", "Short staffed", "Overtime needed", "Call out", "Other"],
+    active: true,
+    order: 20,
+  },
+  {
+    key: "staffing_remarks",
+    label: "Staffing Remarks",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 21,
+  },
+  {
+    key: "employee_breaks",
+    label: "Employee Breaks",
+    type: "select",
+    required: false,
+    options: [
+      "All agents have taken their scheduled break",
+      "Not all agents have taken their scheduled break",
+    ],
+    active: true,
+    order: 22,
+  },
+  {
+    key: "employees_no_break_taken",
+    label: "Names of Employees / No Break Taken",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 23,
+  },
+  {
+    key: "final_remarks_recommendations",
+    label: "Final Remarks / Recommendations",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 24,
+  },
+  {
+    key: "safety_concern",
+    label: "Safety Concerns",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 25,
+  },
+  {
+    key: "additional_comments",
+    label: "Additional Comments",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 26,
+  },
+];
+
+const WCHR_FIELDS = [
+  {
+    key: "operation_status",
+    label: "Operational Status",
+    type: "select",
+    required: true,
+    options: [
+      "Operation completed with no issues",
+      "Operation completed with remarks",
+      "Operation not completed as planned",
+    ],
+    active: true,
+    order: 1,
+  },
+  {
+    key: "total_wheelchair_requests",
+    label: "Total Wheelchair Requests",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 2,
+  },
+  {
+    key: "departing_passengers_assisted",
+    label: "Departing Passengers Assisted",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 3,
+  },
+  {
+    key: "arriving_passengers_assisted",
+    label: "Arriving Passengers Assisted",
+    type: "text",
+    required: false,
+    options: [],
+    active: true,
+    order: 4,
+  },
+  {
+    key: "service_type",
+    label: "Service Type (select all that apply)",
+    type: "checkbox-group",
+    required: false,
+    options: ["WCHR", "WCHS", "WCHC", "WCBD", "WCMP"],
+    active: true,
+    order: 5,
+  },
+  {
+    key: "service_delays",
+    label: "Any Service Delays?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 6,
+  },
+  {
+    key: "delay_reasons",
+    label: "If Yes, select reason(s)",
+    type: "checkbox-group",
+    required: false,
+    options: [
+      "High passenger volume",
+      "Staffing shortage",
+      "Late flight arrival",
+      "Equipment shortage",
+      "TSA delays",
+      "Other",
+    ],
+    active: true,
+    order: 7,
+  },
+  {
+    key: "delay_details",
+    label: "Delay Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 8,
+  },
+  {
+    key: "fulfilled_all_requests",
+    label: "Were all wheelchair requests fulfilled?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 9,
+  },
+  {
+    key: "assisted_on_time",
+    label: "Were passengers assisted on time from check-in to gate?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 10,
+  },
+  {
+    key: "arrivals_picked_up_without_delay",
+    label: "Were arriving passengers picked up from the aircraft without delay?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 11,
+  },
+  {
+    key: "tsa_coordination_effective",
+    label: "Was coordination with TSA handled effectively?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 12,
+  },
+  {
+    key: "passenger_information_handled_correctly",
+    label: "Was passenger information correctly handled and recorded?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 13,
+  },
+  {
+    key: "proper_handoffs_completed",
+    label: "Were proper handoffs completed (gate / aircraft / arrivals area)?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 14,
+  },
+  {
+    key: "issue_types",
+    label: "Issue Types (select all that apply)",
+    type: "checkbox-group",
+    required: false,
+    options: [
+      "N/A",
+      "Delays",
+      "Staffing",
+      "Equipment",
+      "Customer Service",
+      "Operational",
+      "Safety",
+      "Other",
+    ],
+    active: true,
+    order: 15,
+  },
+  {
+    key: "issue_details",
+    label: "Issue Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 16,
+  },
+  {
+    key: "action_taken",
+    label: "Action Taken",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 17,
+  },
+  {
+    key: "issue_status",
+    label: "Status",
+    type: "select",
+    required: false,
+    options: ["Resolved", "Pending", "Escalated"],
+    active: true,
     order: 18,
   },
   {
     key: "staffing_status",
-    label: "Staffing Status (select all that apply)",
+    label: "Staffing Status",
     type: "checkbox-group",
     required: false,
-    options: ["Full staffing", "Short staffed", "Overtime needed", "Call out", "Other"],
+    options: ["Fully staffed", "Short staffed", "Overtime required", "Call out(s)", "Other"],
     active: true,
     order: 19,
   },
@@ -438,158 +699,79 @@ const BAGGAGE_FIELDS = [
     order: 20,
   },
   {
-    key: "employees_breaks",
-    label: "Employees Breaks",
-    type: "select",
+    key: "wheelchairs_available",
+    label: "Wheelchairs Available",
+    type: "text",
     required: false,
-    options: [
-      "All agents have taken their scheduled break",
-      "Not all agents have taken their scheduled break",
-    ],
+    options: [],
     active: true,
     order: 21,
   },
   {
-    key: "employees_no_break_taken",
-    label: "Name of Employees / No Break taken",
-    type: "textarea",
+    key: "equipment_issues",
+    label: "Any Equipment Issues?",
+    type: "yesno",
     required: false,
-    options: [],
+    options: ["Yes", "No"],
     active: true,
     order: 22,
   },
   {
-    key: "final_remarks_recommendations",
-    label: "Final Remarks / Recommendations",
+    key: "equipment_issue_details",
+    label: "If Yes, explain",
     type: "textarea",
     required: false,
     options: [],
     active: true,
     order: 23,
   },
-];
-
-const WCHR_FIELDS = [
   {
-    key: "operation_status",
-    label: "Operation Status",
+    key: "passenger_service_issues",
+    label: "Any customer complaints or service issues?",
+    type: "yesno",
+    required: false,
+    options: ["Yes", "No"],
+    active: true,
+    order: 24,
+  },
+  {
+    key: "passenger_service_issue_details",
+    label: "Complaint / Service Issue Details",
+    type: "textarea",
+    required: false,
+    options: [],
+    active: true,
+    order: 25,
+  },
+  {
+    key: "employee_breaks",
+    label: "Employees Breaks",
     type: "select",
-    required: true,
+    required: false,
     options: [
-      "Operation completed with no issues",
-      "Operation completed with remarks",
-      "Operation not completed as planned",
+      "All agents took scheduled breaks",
+      "Not all agents took scheduled breaks",
     ],
     active: true,
-    order: 1,
+    order: 26,
   },
   {
-    key: "wchr_requests_handled",
-    label: "WCHR Requests Handled",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 2,
-  },
-  {
-    key: "gate_to_gate_coordination",
-    label: "Gate to Gate Coordination Completed?",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-    active: true,
-    order: 3,
-  },
-  {
-    key: "wheelchair_availability",
-    label: "Wheelchair Availability Status",
-    type: "select",
-    required: false,
-    options: ["Adequate", "Limited", "Insufficient"],
-    active: true,
-    order: 4,
-  },
-  {
-    key: "escort_delays",
-    label: "Any Escort Delays?",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-    active: true,
-    order: 5,
-  },
-  {
-    key: "escort_delay_details",
-    label: "Escort Delay Details",
+    key: "employee_breaks_details",
+    label: "Names / Details",
     type: "textarea",
     required: false,
     options: [],
     active: true,
-    order: 6,
-  },
-  {
-    key: "missed_wchr_requests",
-    label: "Any Missed WCHR Requests?",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-    active: true,
-    order: 7,
-  },
-  {
-    key: "missed_wchr_details",
-    label: "Missed WCHR Request Details",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 8,
-  },
-  {
-    key: "passenger_complaints",
-    label: "Passenger Complaints?",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-    active: true,
-    order: 9,
-  },
-  {
-    key: "passenger_complaint_details",
-    label: "Passenger Complaint Details",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 10,
-  },
-  {
-    key: "staffing_status",
-    label: "Staffing Status",
-    type: "checkbox-group",
-    required: false,
-    options: ["Full staffing", "Short staffed", "Overtime needed", "Call out", "Other"],
-    active: true,
-    order: 11,
-  },
-  {
-    key: "staffing_remarks",
-    label: "Staffing Remarks",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 12,
+    order: 27,
   },
   {
     key: "safety_concern",
-    label: "Any Safety Concern?",
+    label: "Any safety concerns during operation?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
     active: true,
-    order: 13,
+    order: 28,
   },
   {
     key: "safety_concern_details",
@@ -598,34 +780,7 @@ const WCHR_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 14,
-  },
-  {
-    key: "delayed_flight",
-    label: "Any Delayed Flight?",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-    active: true,
-    order: 15,
-  },
-  {
-    key: "delayed_flight_minutes",
-    label: "Delayed Minutes",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 16,
-  },
-  {
-    key: "delayed_flight_reason",
-    label: "Delayed Flight Reason",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 17,
+    order: 29,
   },
   {
     key: "final_remarks_recommendations",
@@ -634,7 +789,7 @@ const WCHR_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 18,
+    order: 30,
   },
 ];
 
@@ -653,26 +808,26 @@ const CABIN_SERVICE_FIELDS = [
     order: 1,
   },
   {
-    key: "flights_serviced",
-    label: "Flights Serviced",
-    type: "text",
+    key: "flights_serviced_confirmation",
+    label: "Were all flights serviced based on the total flights entered?",
+    type: "yesno",
     required: false,
-    options: [],
+    options: ["Yes", "No"],
     active: true,
     order: 2,
   },
   {
-    key: "aircraft_tail_numbers",
-    label: "Aircraft Tail Number(s)",
-    type: "text",
+    key: "cabin_cleaning_completed_all",
+    label: "Was cabin cleaning completed for all flights serviced?",
+    type: "yesno",
     required: false,
-    options: [],
+    options: ["Yes", "No"],
     active: true,
     order: 3,
   },
   {
-    key: "cabin_cleaning_completed",
-    label: "Cabin Cleaning Completed?",
+    key: "lavatories_completed_all",
+    label: "Were lavatories serviced correctly for all flights serviced?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
@@ -680,8 +835,8 @@ const CABIN_SERVICE_FIELDS = [
     order: 4,
   },
   {
-    key: "lavatories_serviced",
-    label: "Lavatories Serviced?",
+    key: "galleys_completed_all",
+    label: "Were galleys cleaned and checked for all flights serviced?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
@@ -689,8 +844,8 @@ const CABIN_SERVICE_FIELDS = [
     order: 5,
   },
   {
-    key: "galleys_cleaned_stock_checked",
-    label: "Galleys Cleaned / Stock Checked?",
+    key: "trash_removed_all",
+    label: "Was trash removed correctly from all flights serviced?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
@@ -698,8 +853,8 @@ const CABIN_SERVICE_FIELDS = [
     order: 6,
   },
   {
-    key: "seat_pockets_trays_checked",
-    label: "Seat Pockets / Tray Tables Checked?",
+    key: "seat_checks_completed_all",
+    label: "Were seats, seat pockets, and tray tables checked on all flights serviced?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
@@ -707,40 +862,13 @@ const CABIN_SERVICE_FIELDS = [
     order: 7,
   },
   {
-    key: "carpets_cabin_floor_condition",
-    label: "Carpets / Cabin Floor Condition",
-    type: "select",
+    key: "special_cleaning_required",
+    label: "Was special cleaning required during the shift?",
+    type: "yesno",
     required: false,
-    options: ["Good", "Acceptable", "Needs Attention"],
+    options: ["Yes", "No"],
     active: true,
     order: 8,
-  },
-  {
-    key: "trash_removed_correctly",
-    label: "Trash Removed Correctly?",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-    active: true,
-    order: 9,
-  },
-  {
-    key: "seatbelt_and_visible_items_checked",
-    label: "Seatbelts / Visible Cabin Items Checked?",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-    active: true,
-    order: 10,
-  },
-  {
-    key: "special_cleaning_required",
-    label: "Special Cleaning Required?",
-    type: "yesno",
-    required: false,
-    options: ["Yes", "No"],
-    active: true,
-    order: 11,
   },
   {
     key: "special_cleaning_details",
@@ -749,16 +877,16 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 12,
+    order: 9,
   },
   {
     key: "equipment_or_supply_issues",
-    label: "Equipment / Supply Issues?",
+    label: "Were there equipment or supply issues affecting any flights serviced?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
     active: true,
-    order: 13,
+    order: 10,
   },
   {
     key: "equipment_or_supply_issue_details",
@@ -767,16 +895,16 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 14,
+    order: 11,
   },
   {
     key: "delayed_flight_impact",
-    label: "Was Cabin Service Impacted by a Delay?",
+    label: "Did any delay impact cabin service during the shift?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
     active: true,
-    order: 15,
+    order: 12,
   },
   {
     key: "delay_reason",
@@ -785,7 +913,7 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 16,
+    order: 13,
   },
   {
     key: "delay_minutes",
@@ -794,7 +922,7 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 17,
+    order: 14,
   },
   {
     key: "safety_concern",
@@ -803,7 +931,7 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: ["Yes", "No"],
     active: true,
-    order: 18,
+    order: 15,
   },
   {
     key: "safety_concern_details",
@@ -812,7 +940,7 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 19,
+    order: 16,
   },
   {
     key: "staffing_status",
@@ -821,7 +949,7 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: ["Fully staffed", "Short staffed", "Overtime required", "Call out(s)", "Other"],
     active: true,
-    order: 20,
+    order: 17,
   },
   {
     key: "staffing_remarks",
@@ -830,7 +958,16 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 21,
+    order: 18,
+  },
+  {
+    key: "quality_consistency",
+    label: "Was service quality consistent across all flights serviced?",
+    type: "select",
+    required: false,
+    options: ["Yes", "Mostly Yes", "Needs Improvement"],
+    active: true,
+    order: 19,
   },
   {
     key: "final_remarks_recommendations",
@@ -839,7 +976,7 @@ const CABIN_SERVICE_FIELDS = [
     required: false,
     options: [],
     active: true,
-    order: 22,
+    order: 20,
   },
 ];
 
@@ -1055,6 +1192,7 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     department: "Baggage Handling",
     airlineDefault: "",
     fields: BAGGAGE_FIELDS,
+    hideFlightNumber: false,
   },
   wchr: {
     key: "wchr",
@@ -1062,6 +1200,7 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     department: "WCHR Service",
     airlineDefault: "WCHR",
     fields: WCHR_FIELDS,
+    hideFlightNumber: false,
   },
   cabin_service: {
     key: "cabin_service",
@@ -1069,6 +1208,7 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     department: "Cabin Service",
     airlineDefault: "",
     fields: CABIN_SERVICE_FIELDS,
+    hideFlightNumber: true,
   },
   passenger_service: {
     key: "passenger_service",
@@ -1076,6 +1216,7 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     department: "Passenger Service",
     airlineDefault: "",
     fields: PASSENGER_SERVICE_FIELDS,
+    hideFlightNumber: false,
   },
 };
 
@@ -1140,6 +1281,7 @@ export default function SupervisorOperationalReportPage() {
         prev.templateKey === form.templateKey
           ? prev.airline
           : activeTemplate.airlineDefault || "",
+      flightNumber: activeTemplate.hideFlightNumber ? "" : prev.flightNumber,
       responses: buildInitialResponses(activeTemplate.fields || []),
     }));
   }, [activeTemplate, form.templateKey]);
@@ -1163,6 +1305,7 @@ export default function SupervisorOperationalReportPage() {
         templateKey: nextTemplate.key,
         department: nextTemplate.department,
         airline: nextTemplate.airlineDefault || "",
+        flightNumber: nextTemplate.hideFlightNumber ? "" : prev.flightNumber,
         responses: buildInitialResponses(nextTemplate.fields || []),
       }));
       return;
@@ -1274,7 +1417,9 @@ export default function SupervisorOperationalReportPage() {
         reportDate: form.reportDate,
         department: String(form.department || "").trim(),
         shift: String(form.shift || "").trim(),
-        flightNumber: String(form.flightNumber || "").trim(),
+        flightNumber: activeTemplate.hideFlightNumber
+          ? ""
+          : String(form.flightNumber || "").trim(),
         flightsHandled: String(form.flightsHandled || "").trim(),
         supervisorReporting:
           String(form.supervisorReporting || "").trim() || getVisibleName(user),
@@ -1577,17 +1722,23 @@ export default function SupervisorOperationalReportPage() {
             />
           </div>
 
-          <div>
-            <FieldLabel>Flight Number</FieldLabel>
-            <TextInput
-              value={form.flightNumber}
-              onChange={(e) => handleFormChange("flightNumber", e.target.value)}
-              placeholder="Example: DL1234"
-            />
-          </div>
+          {!activeTemplate.hideFlightNumber && (
+            <div>
+              <FieldLabel>Flight Number</FieldLabel>
+              <TextInput
+                value={form.flightNumber}
+                onChange={(e) => handleFormChange("flightNumber", e.target.value)}
+                placeholder="Example: DL1234"
+              />
+            </div>
+          )}
 
           <div>
-            <FieldLabel>Flights Handled</FieldLabel>
+            <FieldLabel>
+              {activeTemplate.key === "cabin_service"
+                ? "Flights Serviced"
+                : "Flights Handled"}
+            </FieldLabel>
             <TextInput
               value={form.flightsHandled}
               onChange={(e) => handleFormChange("flightsHandled", e.target.value)}
