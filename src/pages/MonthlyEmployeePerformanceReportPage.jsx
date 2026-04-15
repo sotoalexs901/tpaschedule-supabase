@@ -317,11 +317,9 @@ function formatDateTime(value) {
 
 function getRatingPoints(rating) {
   const key = String(rating || "").trim().toLowerCase();
-
   if (key === "exceeds") return 4;
   if (key === "meets") return 3;
   if (key === "below") return 2;
-
   return 0;
 }
 
@@ -380,7 +378,6 @@ function printReportHtml(report, language = "en") {
   const followUpItems = Array.isArray(report.followUpItems)
     ? report.followUpItems
     : [];
-
   const answers = report.answers || {};
 
   const html = `
@@ -547,6 +544,12 @@ const LABELS = {
     approved: "Approved",
     submitted: "Submitted",
     draft: "Draft",
+    returned: "Returned",
+    returnToSupervisor: "Return to Supervisor",
+    resubmitReport: "Resubmit Report",
+    returnedReports: "Returned Reports",
+    reportReturned: "Report returned to supervisor successfully.",
+    reportResubmitted: "Report resubmitted successfully.",
   },
   es: {
     title: "Reporte Mensual de Desempeño del Empleado",
@@ -616,6 +619,12 @@ const LABELS = {
     approved: "Aprobado",
     submitted: "Enviado",
     draft: "Borrador",
+    returned: "Devuelto",
+    returnToSupervisor: "Devolver al Supervisor",
+    resubmitReport: "Reenviar Reporte",
+    returnedReports: "Reportes Devueltos",
+    reportReturned: "Reporte devuelto al supervisor correctamente.",
+    reportResubmitted: "Reporte reenviado correctamente.",
   },
 };
 
@@ -1202,76 +1211,33 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
   const needsFollowUp = calculatedScore < 70 || followUpItems.length > 0;
 
-  const dutyManagers = useMemo(() => {
-    return employees.filter(
-      (emp) =>
-        normalizeLookup(emp.role) === "duty_manager" ||
-        normalizeLookup(emp.role) === "duty manager"
-    );
-  }, [employees]);
-
-  const supervisorNames = useMemo(() => {
-    return Array.from(
-      new Set(reports.map((r) => normalizeText(r.supervisorName)).filter(Boolean))
-    ).sort((a, b) => a.localeCompare(b));
-  }, [reports]);
-
-  const filteredReports = useMemo(() => {
-    return reports.filter((report) => {
-      if (filters.month !== "all" && report.month !== filters.month) return false;
-      if (filters.employeeId !== "all" && report.employeeId !== filters.employeeId)
-        return false;
-      if (
-        filters.supervisorName !== "all" &&
-        normalizeText(report.supervisorName) !== filters.supervisorName
-      )
-        return false;
-
-      if (filters.followUpStatus !== "all") {
-        const status = normalizeLookup(report.managerStatus || "");
-        if (status !== normalizeLookup(filters.followUpStatus)) return false;
-      }
-
-      if (filters.scoreBand !== "all") {
-        const score = Number(report.score || 0);
-        if (filters.scoreBand === "high" && score < 85) return false;
-        if (filters.scoreBand === "medium" && (score < 70 || score >= 85))
-          return false;
-        if (filters.scoreBand === "low" && score >= 70) return false;
-      }
-
-      return true;
-    });
-  }, [reports, filters]);
-
-  const groupedReportsByEmployee = useMemo(() => {
-    const map = {};
-    filteredReports.forEach((report) => {
-      const employeeName = report.employeeName || "Unknown Employee";
-      if (!map[employeeName]) map[employeeName] = [];
-      map[employeeName].push(report);
-    });
-
-    Object.keys(map).forEach((key) => {
-      map[key] = map[key].sort((a, b) => {
-        const left = a.month || "";
-        const right = b.month || "";
-        return right.localeCompare(left);
-      });
-    });
-
-    return map;
-  }, [filteredReports]);
-
-  const selectedReport = useMemo(() => {
-    return reports.find((r) => r.id === selectedReportId) || null;
-  }, [reports, selectedReportId]);
-
   const savedDrafts = useMemo(() => {
     return reports
       .filter(
         (r) =>
           normalizeLookup(r.managerStatus || "") === "draft" &&
+          String(r.supervisorId || "") === String(user?.id || "")
+      )
+      .sort((a, b) => {
+        const left =
+          typeof a?.updatedAt?.toDate === "function"
+            ? a.updatedAt.toDate().getTime()
+            : new Date(a?.updatedAt || 0).getTime();
+
+        const right =
+          typeof b?.updatedAt?.toDate === "function"
+            ? b.updatedAt.toDate().getTime()
+            : new Date(b?.updatedAt || 0).getTime();
+
+        return right - left;
+      });
+  }, [reports, user?.id]);
+
+  const returnedReports = useMemo(() => {
+    return reports
+      .filter(
+        (r) =>
+          normalizeLookup(r.managerStatus || "") === "returned" &&
           String(r.supervisorId || "") === String(user?.id || "")
       )
       .sort((a, b) => {
@@ -1297,10 +1263,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
         [field]: value,
       },
     }));
-  }
-
-  function getManagementField(report, field) {
-    return managementEdit[report.id]?.[field] ?? report[field] ?? "";
   }
 
   function loadReportIntoForm(report) {
@@ -1368,6 +1330,42 @@ export default function MonthlyEmployeePerformanceReportPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function handleLoadReturnedReport(report) {
+    if (!report) return;
+
+    setEditingReportId(report.id || "");
+    setEditingDraftId("");
+    setSelectedReportId(report.id || "");
+    setTab("create");
+
+    setForm({
+      employeeId: report.employeeId || "",
+      employeeName: report.employeeName || "",
+      month: report.month || getCurrentMonthValue(),
+      templateKey: report.templateKey || "passenger",
+      department: report.department || "",
+      roleTitle: report.roleTitle || "",
+      hireDate: report.hireDate || "",
+      commentsCompany: report.commentsCompany || "",
+      commentsEmployee: report.commentsEmployee || "",
+    });
+
+    const template = TEMPLATE_MAP[report.templateKey] || TEMPLATE_MAP.passenger;
+    const nextAnswers = {};
+    template.questions.forEach((q) => {
+      nextAnswers[q.id] = report.answers?.[q.id] || { rating: "", note: "" };
+    });
+    setAnswers(nextAnswers);
+
+    setStatusMessage(
+      `${t.returned}: ${report.employeeName || "-"} · ${formatMonthValue(
+        report.month
+      )}`
+    );
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function resetCreateForm() {
     setEditingReportId("");
     setEditingDraftId("");
@@ -1425,11 +1423,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
         needsFollowUp,
         followUpItems,
         managerStatus: "draft",
-        assignedDutyManagerId: "",
-        assignedDutyManagerName: "",
         managerNote: "",
-        monthClosed: false,
-        congratulationsSent: false,
         updatedAt: serverTimestamp(),
       };
 
@@ -1544,12 +1538,21 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       if (editingReportId) {
         const currentReport = reports.find((r) => r.id === editingReportId);
+        const previousStatus = normalizeLookup(currentReport?.managerStatus || "");
+
+        const nextManagerStatus =
+          previousStatus === "returned"
+            ? needsFollowUp
+              ? "follow_up"
+              : "submitted"
+            : currentReport?.managerStatus || (needsFollowUp ? "follow_up" : "submitted");
 
         const updatePayload = {
           ...basePayload,
-          managerStatus:
-            currentReport?.managerStatus ||
-            (needsFollowUp ? "follow_up" : "submitted"),
+          managerStatus: nextManagerStatus,
+          returnedToSupervisor: false,
+          returnedAt: null,
+          returnedBy: "",
         };
 
         await updateDoc(
@@ -1569,7 +1572,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
           )
         );
 
-        setStatusMessage(t.reportUpdated);
+        setStatusMessage(
+          previousStatus === "returned" ? t.reportResubmitted : t.reportUpdated
+        );
         resetCreateForm();
         return;
       }
@@ -1577,11 +1582,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
       const payload = {
         ...basePayload,
         managerStatus: needsFollowUp ? "follow_up" : "submitted",
-        assignedDutyManagerId: "",
-        assignedDutyManagerName: "",
         managerNote: "",
-        monthClosed: false,
-        congratulationsSent: false,
         createdAt: serverTimestamp(),
       };
 
@@ -1633,178 +1634,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
     } catch (err) {
       console.error("Error deleting report:", err);
       setStatusMessage("Could not delete report.");
-    }
-  }
-
-  async function updateManagerStatus(reportId, nextStatus, extra = {}) {
-    try {
-      const payload = {
-        managerStatus: nextStatus,
-        managerReviewedBy: getVisibleUserName(user),
-        managerReviewedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        ...extra,
-      };
-
-      await updateDoc(doc(db, "employeePerformanceReports", reportId), payload);
-
-      setReports((prev) =>
-        prev.map((item) =>
-          item.id === reportId
-            ? {
-                ...item,
-                ...extra,
-                managerStatus: nextStatus,
-                managerReviewedBy: getVisibleUserName(user),
-                managerReviewedAt: new Date(),
-              }
-            : item
-        )
-      );
-
-      setStatusMessage(t.managerUpdated);
-    } catch (err) {
-      console.error("Error updating manager status:", err);
-      setStatusMessage("Could not update manager status.");
-    }
-  }
-
-  async function assignDutyManager(report) {
-    try {
-      const assignedDutyManagerId = getManagementField(
-        report,
-        "assignedDutyManagerId"
-      );
-      const duty = dutyManagers.find((item) => item.id === assignedDutyManagerId);
-
-      const payload = {
-        assignedDutyManagerId: assignedDutyManagerId || "",
-        assignedDutyManagerName: duty?.name || "",
-      };
-
-      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
-        ...payload,
-        updatedAt: serverTimestamp(),
-      });
-
-      setReports((prev) =>
-        prev.map((item) =>
-          item.id === report.id
-            ? {
-                ...item,
-                ...payload,
-              }
-            : item
-        )
-      );
-
-      setStatusMessage(t.dutyAssigned);
-    } catch (err) {
-      console.error("Error assigning duty manager:", err);
-      setStatusMessage("Could not assign duty manager.");
-    }
-  }
-
-  async function sendCongratulations(report) {
-    try {
-      const managerNote = normalizeText(getManagementField(report, "managerNote"));
-      const body =
-        managerNote ||
-        `Congratulations ${report.employeeName}. Your ${formatMonthValue(
-          report.month
-        )} performance report was reviewed positively. Keep up the great work.`;
-
-      await addDoc(collection(db, "messages"), {
-        toUserId: report.employeeId || "",
-        toUserName: report.employeeName || "",
-        fromUserId: user?.id || "",
-        fromUserName: getVisibleUserName(user),
-        subject: `Congratulations - ${formatMonthValue(report.month)} EPR`,
-        body,
-        read: false,
-        category: "employee_performance",
-        createdAt: serverTimestamp(),
-      });
-
-      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
-        congratulationsSent: true,
-        congratulationsSentBy: getVisibleUserName(user),
-        congratulationsSentAt: serverTimestamp(),
-        managerStatus: "approved",
-        updatedAt: serverTimestamp(),
-      });
-
-      setReports((prev) =>
-        prev.map((item) =>
-          item.id === report.id
-            ? {
-                ...item,
-                congratulationsSent: true,
-                congratulationsSentBy: getVisibleUserName(user),
-                congratulationsSentAt: new Date(),
-                managerStatus: "approved",
-              }
-            : item
-        )
-      );
-
-      setStatusMessage(t.congratulationsSent);
-    } catch (err) {
-      console.error("Error sending congratulations:", err);
-      setStatusMessage("Could not send congratulations.");
-    }
-  }
-
-  async function closeMonth(report) {
-    try {
-      const managerNote = normalizeText(getManagementField(report, "managerNote"));
-
-      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
-        monthClosed: true,
-        closedMonthBy: getVisibleUserName(user),
-        closedMonthAt: serverTimestamp(),
-        managerNote,
-        managerStatus: report.needsFollowUp ? "follow_up" : "closed",
-        updatedAt: serverTimestamp(),
-      });
-
-      if (report.employeeId) {
-        await addDoc(collection(db, "messages"), {
-          toUserId: report.employeeId,
-          toUserName: report.employeeName || "",
-          fromUserId: user?.id || "",
-          fromUserName: getVisibleUserName(user),
-          subject: `Monthly EPR Closed - ${formatMonthValue(report.month)}`,
-          body:
-            managerNote ||
-            `Your ${formatMonthValue(
-              report.month
-            )} employee performance report has been processed and closed.`,
-          read: false,
-          category: "employee_performance",
-          createdAt: serverTimestamp(),
-        });
-      }
-
-      setReports((prev) =>
-        prev.map((item) =>
-          item.id === report.id
-            ? {
-                ...item,
-                monthClosed: true,
-                closedMonthBy: getVisibleUserName(user),
-                closedMonthAt: new Date(),
-                managerNote,
-                managerStatus: item.needsFollowUp ? "follow_up" : "closed",
-              }
-            : item
-        )
-      );
-
-      setStatusMessage(t.monthClosed);
-    } catch (err) {
-      console.error("Error closing month:", err);
-      setStatusMessage("Could not close month.");
     }
   }
 
@@ -1910,15 +1739,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
             {canCreate && (
               <TabButton active={tab === "drafts"} onClick={() => setTab("drafts")}>
                 {t.draftsTab}
-              </TabButton>
-            )}
-
-            {canManage && (
-              <TabButton
-                active={tab === "management"}
-                onClick={() => setTab("management")}
-              >
-                {t.managementTab}
               </TabButton>
             )}
           </div>
@@ -2251,7 +2071,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 {saving
                   ? "Saving..."
                   : editingReportId || editingDraftId
-                  ? t.updateReport
+                  ? normalizeLookup(
+                      reports.find((r) => r.id === editingReportId)?.managerStatus || ""
+                    ) === "returned"
+                    ? t.resubmitReport
+                    : t.updateReport
                   : t.saveReport}
               </ActionButton>
 
@@ -2343,490 +2167,83 @@ export default function MonthlyEmployeePerformanceReportPage() {
               ))}
             </div>
           )}
-        </PageCard>
-      )}
 
-      {tab === "management" && canManage && (
-        <>
-          <PageCard style={{ padding: 22 }}>
-            <div style={{ marginBottom: 14 }}>
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: 20,
-                  fontWeight: 800,
-                  color: "#0f172a",
-                }}
-              >
-                {t.managementFilters}
-              </h2>
-            </div>
-
-            <div
+          <div style={{ marginTop: 24 }}>
+            <h2
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 14,
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                marginBottom: 14,
               }}
             >
-              <div>
-                <FieldLabel>{t.month}</FieldLabel>
-                <SelectInput
-                  value={filters.month}
-                  onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, month: e.target.value }))
-                  }
-                >
-                  <option value="all">{t.all}</option>
-                  {monthOptions.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </SelectInput>
-              </div>
+              {t.returnedReports}
+            </h2>
 
-              <div>
-                <FieldLabel>{t.employee}</FieldLabel>
-                <SelectInput
-                  value={filters.employeeId}
-                  onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, employeeId: e.target.value }))
-                  }
-                >
-                  <option value="all">{t.all}</option>
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name}
-                    </option>
-                  ))}
-                </SelectInput>
+            {returnedReports.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: 14 }}>
+                No returned reports found.
               </div>
-
-              <div>
-                <FieldLabel>{t.supervisor}</FieldLabel>
-                <SelectInput
-                  value={filters.supervisorName}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      supervisorName: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="all">{t.all}</option>
-                  {supervisorNames.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </SelectInput>
-              </div>
-
-              <div>
-                <FieldLabel>{t.followUpStatus}</FieldLabel>
-                <SelectInput
-                  value={filters.followUpStatus}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      followUpStatus: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="all">{t.all}</option>
-                  <option value="draft">{t.draft}</option>
-                  <option value="submitted">{t.submitted}</option>
-                  <option value="approved">{t.approved}</option>
-                  <option value="follow_up">{t.followUp}</option>
-                  <option value="closed">{t.closed}</option>
-                </SelectInput>
-              </div>
-
-              <div>
-                <FieldLabel>{t.scoreBand}</FieldLabel>
-                <SelectInput
-                  value={filters.scoreBand}
-                  onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, scoreBand: e.target.value }))
-                  }
-                >
-                  <option value="all">{t.all}</option>
-                  <option value="high">85 - 100</option>
-                  <option value="medium">70 - 84.99</option>
-                  <option value="low">0 - 69.99</option>
-                </SelectInput>
-              </div>
-            </div>
-          </PageCard>
-
-          <div ref={printAreaRef} style={{ display: "grid", gap: 14 }}>
-            {loading ? (
-              <PageCard style={{ padding: 22 }}>Loading...</PageCard>
-            ) : Object.keys(groupedReportsByEmployee).length === 0 ? (
-              <PageCard style={{ padding: 22 }}>{t.noReports}</PageCard>
             ) : (
-              Object.entries(groupedReportsByEmployee).map(([employeeName, items]) => (
-                <PageCard key={employeeName} style={{ padding: 18 }}>
+              <div style={{ display: "grid", gap: 12 }}>
+                {returnedReports.map((report) => (
                   <div
+                    key={report.id}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                      marginBottom: 12,
+                      border: "1px solid #fecdd3",
+                      borderRadius: 18,
+                      padding: 16,
+                      background: "#fffafc",
                     }}
                   >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 20,
-                          fontWeight: 900,
-                          color: "#0f172a",
-                        }}
-                      >
-                        {employeeName}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 16,
+                            fontWeight: 800,
+                            color: "#0f172a",
+                          }}
+                        >
+                          {report.employeeName || "-"} · {formatMonthValue(report.month)}
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 13,
+                            color: "#64748b",
+                          }}
+                        >
+                          {t.template}: {report.templateLabel || "-"} · {t.managerNote}:{" "}
+                          {report.managerNote || "-"}
+                        </div>
                       </div>
-                      <div
-                        style={{
-                          marginTop: 4,
-                          fontSize: 13,
-                          color: "#64748b",
-                        }}
-                      >
-                        {items.length} report(s)
+
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <ActionButton
+                          variant="warning"
+                          onClick={() => handleLoadReturnedReport(report)}
+                        >
+                          {t.resubmitReport}
+                        </ActionButton>
                       </div>
                     </div>
                   </div>
-
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {items.map((report) => (
-                      <div
-                        key={report.id}
-                        style={{
-                          border: "1px solid #dbeafe",
-                          borderRadius: 18,
-                          padding: 16,
-                          background:
-                            selectedReportId === report.id ? "#edf7ff" : "#ffffff",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 12,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 16,
-                                fontWeight: 800,
-                                color: "#0f172a",
-                              }}
-                            >
-                              {report.templateLabel} · {formatMonthValue(report.month)}
-                            </div>
-                            <div
-                              style={{
-                                marginTop: 4,
-                                fontSize: 13,
-                                color: "#64748b",
-                              }}
-                            >
-                              {t.supervisor}: {report.supervisorName || "-"} ·{" "}
-                              {formatDateTime(report.createdAt)}
-                            </div>
-                          </div>
-
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <ActionButton
-                              variant="secondary"
-                              onClick={() => setSelectedReportId(report.id)}
-                            >
-                              {t.openReport}
-                            </ActionButton>
-                            <ActionButton
-                              variant="warning"
-                              onClick={() => loadReportIntoForm(report)}
-                            >
-                              {t.editReport}
-                            </ActionButton>
-                            <ActionButton
-                              variant="dark"
-                              onClick={() => printReportHtml(report, language)}
-                            >
-                              {t.print}
-                            </ActionButton>
-                            <ActionButton
-                              variant="danger"
-                              onClick={() => handleDeleteReport(report)}
-                            >
-                              {t.deleteReport}
-                            </ActionButton>
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 12,
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                            gap: 10,
-                          }}
-                        >
-                          <InfoCard
-                            label={t.score}
-                            value={`${formatScore(report.score)} / 100`}
-                            tone={getPerformanceTone(report.score)}
-                          />
-                          <InfoCard
-                            label={t.status}
-                            value={
-                              report.managerStatus || report.performanceStatus || "-"
-                            }
-                            tone={
-                              normalizeLookup(report.managerStatus) === "approved"
-                                ? "green"
-                                : normalizeLookup(report.managerStatus) ===
-                                  "follow_up"
-                                ? "amber"
-                                : normalizeLookup(report.managerStatus) === "closed"
-                                ? "blue"
-                                : normalizeLookup(report.managerStatus) === "draft"
-                                ? "default"
-                                : "default"
-                            }
-                          />
-                          <InfoCard
-                            label={t.assignedDutyManager}
-                            value={report.assignedDutyManagerName || "-"}
-                            tone="default"
-                          />
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 14,
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                            gap: 12,
-                          }}
-                        >
-                          <div>
-                            <FieldLabel>{t.assignDutyManager}</FieldLabel>
-                            <SelectInput
-                              value={getManagementField(
-                                report,
-                                "assignedDutyManagerId"
-                              )}
-                              onChange={(e) =>
-                                setManagementEdit((prev) => ({
-                                  ...prev,
-                                  [report.id]: {
-                                    ...(prev[report.id] || {}),
-                                    assignedDutyManagerId: e.target.value,
-                                  },
-                                }))
-                              }
-                            >
-                              <option value="">{t.all}</option>
-                              {dutyManagers.map((dm) => (
-                                <option key={dm.id} value={dm.id}>
-                                  {dm.name}
-                                </option>
-                              ))}
-                            </SelectInput>
-                          </div>
-
-                          <div>
-                            <FieldLabel>{t.managerNote}</FieldLabel>
-                            <TextArea
-                              value={getManagementField(report, "managerNote")}
-                              onChange={(e) =>
-                                setManagementEdit((prev) => ({
-                                  ...prev,
-                                  [report.id]: {
-                                    ...(prev[report.id] || {}),
-                                    managerNote: e.target.value,
-                                  },
-                                }))
-                              }
-                              style={{ minHeight: 70 }}
-                            />
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 14,
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <ActionButton
-                            variant="secondary"
-                            onClick={() => assignDutyManager(report)}
-                          >
-                            {t.assignDutyManager}
-                          </ActionButton>
-
-                          <ActionButton
-                            variant="success"
-                            onClick={() =>
-                              updateManagerStatus(report.id, "approved", {
-                                managerNote: normalizeText(
-                                  getManagementField(report, "managerNote")
-                                ),
-                              })
-                            }
-                          >
-                            {t.approve}
-                          </ActionButton>
-
-                          <ActionButton
-                            variant="warning"
-                            onClick={() =>
-                              updateManagerStatus(report.id, "follow_up", {
-                                managerNote: normalizeText(
-                                  getManagementField(report, "managerNote")
-                                ),
-                              })
-                            }
-                          >
-                            {t.markFollowUp}
-                          </ActionButton>
-
-                          <ActionButton
-                            variant="primary"
-                            onClick={() => sendCongratulations(report)}
-                          >
-                            {t.congratulations}
-                          </ActionButton>
-
-                          <ActionButton
-                            variant="dark"
-                            onClick={() => closeMonth(report)}
-                          >
-                            {t.closeMonth}
-                          </ActionButton>
-
-                          {normalizeLookup(report.managerStatus) === "follow_up" && (
-                            <ActionButton
-                              variant="danger"
-                              onClick={() =>
-                                updateManagerStatus(report.id, "closed", {
-                                  managerNote: normalizeText(
-                                    getManagementField(report, "managerNote")
-                                  ),
-                                })
-                              }
-                            >
-                              {t.closeFollowUp}
-                            </ActionButton>
-                          )}
-                        </div>
-
-                        {selectedReportId === report.id && (
-                          <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
-                            <div
-                              style={{
-                                border: "1px solid #e2e8f0",
-                                borderRadius: 16,
-                                padding: 14,
-                                background: "#ffffff",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontSize: 14,
-                                  fontWeight: 800,
-                                  color: "#0f172a",
-                                  marginBottom: 8,
-                                }}
-                              >
-                                {t.questionsToFollow}
-                              </div>
-
-                              {Array.isArray(report.followUpItems) &&
-                              report.followUpItems.length > 0 ? (
-                                <div style={{ display: "grid", gap: 8 }}>
-                                  {report.followUpItems.map((item) => (
-                                    <div
-                                      key={item.id}
-                                      style={{ color: "#7c2d12", fontSize: 14 }}
-                                    >
-                                      •{" "}
-                                      {(language === "es" ? item.es : item.en) ||
-                                        item.en ||
-                                        item.es}
-                                      {item.note ? ` — ${item.note}` : ""}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div style={{ color: "#64748b", fontSize: 14 }}>
-                                  No follow up items.
-                                </div>
-                              )}
-                            </div>
-
-                            <div
-                              style={{
-                                border: "1px solid #e2e8f0",
-                                borderRadius: 16,
-                                padding: 14,
-                                background: "#ffffff",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontSize: 14,
-                                  fontWeight: 800,
-                                  color: "#0f172a",
-                                  marginBottom: 8,
-                                }}
-                              >
-                                Comments
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: 14,
-                                  color: "#334155",
-                                  lineHeight: 1.7,
-                                }}
-                              >
-                                <div>
-                                  <strong>Company:</strong>{" "}
-                                  {report.commentsCompany || "-"}
-                                </div>
-                                <div style={{ marginTop: 8 }}>
-                                  <strong>Employee:</strong>{" "}
-                                  {report.commentsEmployee || "-"}
-                                </div>
-                                <div style={{ marginTop: 8 }}>
-                                  <strong>Manager:</strong>{" "}
-                                  {getManagementField(report, "managerNote") ||
-                                    report.managerNote ||
-                                    "-"}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </PageCard>
-              ))
+                ))}
+              </div>
             )}
           </div>
-        </>
+        </PageCard>
       )}
     </div>
   );
