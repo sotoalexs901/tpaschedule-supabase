@@ -44,6 +44,62 @@ function normalizeCabinServiceValue(value) {
   return raw;
 }
 
+function normalizeOperationalDepartment(value) {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  if (!raw) return "";
+
+  if (
+    raw.includes("wchr") ||
+    raw.includes("wheelchair")
+  ) {
+    return "wchr";
+  }
+
+  if (
+    raw.includes("baggage") ||
+    raw.includes("bag room") ||
+    raw.includes("bso")
+  ) {
+    return "baggage";
+  }
+
+  if (
+    raw.includes("cabin service") ||
+    raw.includes("dl cabin service") ||
+    raw === "cabin"
+  ) {
+    return "cabin_service";
+  }
+
+  if (
+    raw.includes("passenger") ||
+    raw.includes("pax") ||
+    raw.includes("gate") ||
+    raw.includes("check-in") ||
+    raw.includes("check in") ||
+    raw.includes("ticket counter")
+  ) {
+    return "passenger_service";
+  }
+
+  return raw.replace(/[^a-z0-9]+/g, "_");
+}
+
+function getDepartmentLabel(value) {
+  const key = normalizeOperationalDepartment(value);
+
+  if (key === "wchr") return "WCHR";
+  if (key === "baggage") return "Baggage";
+  if (key === "cabin_service") return "Cabin Service";
+  if (key === "passenger_service") return "Passenger Service";
+
+  return String(value || "—").trim() || "—";
+}
+
 function tsToDate(value) {
   if (!value) return null;
   if (typeof value?.toDate === "function") return value.toDate();
@@ -441,6 +497,10 @@ function buildPrintableHtml(report) {
             <div class="info-value">${escapeHtml(report.normalizedAirline || "—")}</div>
           </div>
           <div class="info-card">
+            <div class="info-label">Department</div>
+            <div class="info-value">${escapeHtml(report.departmentLabel || "—")}</div>
+          </div>
+          <div class="info-card">
             <div class="info-label">Report Date</div>
             <div class="info-value">${escapeHtml(report.reportDate || "—")}</div>
           </div>
@@ -513,6 +573,7 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
         <tr>
           <td>${escapeHtml(report.reportDate || "—")}</td>
           <td>${escapeHtml(report.normalizedAirline || "—")}</td>
+          <td>${escapeHtml(report.departmentLabel || "—")}</td>
           <td>${escapeHtml(report.flightNumber || "—")}</td>
           <td>${escapeHtml(report.affectedFlightNumber || "—")}</td>
           <td>${escapeHtml(String(Number(report.delayedTimeMinutes || 0)))} min</td>
@@ -603,6 +664,7 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
             <tr>
               <th>Date</th>
               <th>Airline</th>
+              <th>Department</th>
               <th>Flight Number</th>
               <th>Affected Flight</th>
               <th>Delayed Time</th>
@@ -901,6 +963,7 @@ export default function OperationalReportAdminPage() {
 
   const [filters, setFilters] = useState({
     airline: "all",
+    department: "all",
     lifecycle: "active",
     dateMode: "quick",
     range: "today",
@@ -910,6 +973,7 @@ export default function OperationalReportAdminPage() {
 
   const [editForm, setEditForm] = useState({
     airline: "",
+    department: "",
     reportDate: "",
     shift: "",
     flightNumber: "",
@@ -941,13 +1005,13 @@ export default function OperationalReportAdminPage() {
         const snap = await getDocs(q);
         let rows = snap.docs.map((d) => {
           const data = d.data();
+          const rawDepartment = data.department || data.reportType || data.airline || "";
           return {
             id: d.id,
             ...data,
             normalizedAirline: normalizeAirlineName(data.airline),
-            normalizedDepartment: normalizeCabinServiceValue(
-              data.department || data.airline
-            ),
+            normalizedDepartment: normalizeOperationalDepartment(rawDepartment),
+            departmentLabel: getDepartmentLabel(rawDepartment),
             reviewStatus: data.reviewStatus || "submitted",
             managerNotes: data.managerNotes || "",
             followUpRequired: Boolean(data.followUpRequired),
@@ -983,6 +1047,20 @@ export default function OperationalReportAdminPage() {
       if (r.normalizedAirline) set.add(r.normalizedAirline);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [reports]);
+
+  const departmentOptions = useMemo(() => {
+    const map = new Map();
+
+    reports.forEach((r) => {
+      if (r.normalizedDepartment) {
+        map.set(r.normalizedDepartment, r.departmentLabel || getDepartmentLabel(r.normalizedDepartment));
+      }
+    });
+
+    return Array.from(map.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [reports]);
 
   const filteredReports = useMemo(() => {
@@ -1041,6 +1119,13 @@ export default function OperationalReportAdminPage() {
       }
 
       if (filters.airline !== "all" && r.normalizedAirline !== filters.airline) {
+        return false;
+      }
+
+      if (
+        filters.department !== "all" &&
+        r.normalizedDepartment !== filters.department
+      ) {
         return false;
       }
 
@@ -1172,6 +1257,7 @@ export default function OperationalReportAdminPage() {
     setEditingId(report.id);
     setEditForm({
       airline: report.airline || "",
+      department: report.department || report.departmentLabel || "",
       reportDate: report.reportDate || "",
       shift: report.shift || "",
       flightNumber: report.flightNumber || "",
@@ -1217,6 +1303,7 @@ export default function OperationalReportAdminPage() {
 
       const payload = {
         airline: normalizeAirlineName(editForm.airline),
+        department: String(editForm.department || "").trim(),
         reportDate: editForm.reportDate,
         shift: editForm.shift,
         flightNumber: editForm.flightNumber,
@@ -1246,6 +1333,8 @@ export default function OperationalReportAdminPage() {
                 ...item,
                 ...payload,
                 normalizedAirline: normalizeAirlineName(payload.airline),
+                normalizedDepartment: normalizeOperationalDepartment(payload.department),
+                departmentLabel: getDepartmentLabel(payload.department),
               }
             : item
         )
@@ -1623,6 +1712,23 @@ export default function OperationalReportAdminPage() {
           </div>
 
           <div>
+            <FieldLabel>Department</FieldLabel>
+            <SelectInput
+              value={filters.department}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, department: e.target.value }))
+              }
+            >
+              <option value="all">All</option>
+              {departmentOptions.map((department) => (
+                <option key={department.value} value={department.value}>
+                  {department.label}
+                </option>
+              ))}
+            </SelectInput>
+          </div>
+
+          <div>
             <FieldLabel>View</FieldLabel>
             <SelectInput
               value={filters.lifecycle}
@@ -1865,7 +1971,7 @@ export default function OperationalReportAdminPage() {
                       width: "100%",
                       borderCollapse: "separate",
                       borderSpacing: 0,
-                      minWidth: 1100,
+                      minWidth: 1200,
                       background: "#fff",
                     }}
                   >
@@ -1873,6 +1979,7 @@ export default function OperationalReportAdminPage() {
                       <tr style={{ background: "#f8fbff" }}>
                         <th style={thStyle()}>Date</th>
                         <th style={thStyle()}>Airline</th>
+                        <th style={thStyle()}>Department</th>
                         <th style={thStyle()}>Flight Number</th>
                         <th style={thStyle()}>Affected Flight</th>
                         <th style={thStyle()}>Delayed Time</th>
@@ -1899,6 +2006,7 @@ export default function OperationalReportAdminPage() {
                           >
                             <td style={tdStyle}>{report.reportDate || "—"}</td>
                             <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
+                            <td style={tdStyle}>{report.departmentLabel || "—"}</td>
                             <td style={tdStyle}>{report.flightNumber || "—"}</td>
                             <td style={tdStyle}>{report.affectedFlightNumber || "—"}</td>
                             <td style={tdStyle}>
@@ -1958,13 +2066,14 @@ export default function OperationalReportAdminPage() {
                   width: "100%",
                   borderCollapse: "separate",
                   borderSpacing: 0,
-                  minWidth: 1500,
+                  minWidth: 1650,
                   background: "#fff",
                 }}
               >
                 <thead>
                   <tr style={{ background: "#f8fbff" }}>
                     <th style={thStyle()}>Airline</th>
+                    <th style={thStyle()}>Department</th>
                     <th style={thStyle()}>Date</th>
                     <th style={thStyle()}>Flight Number</th>
                     <th style={thStyle()}>Affected Flight</th>
@@ -1991,6 +2100,7 @@ export default function OperationalReportAdminPage() {
                       }}
                     >
                       <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
+                      <td style={tdStyle}>{report.departmentLabel || "—"}</td>
                       <td style={tdStyle}>{report.reportDate || "—"}</td>
                       <td style={tdStyle}>{report.flightNumber || "—"}</td>
                       <td style={tdStyle}>{report.affectedFlightNumber || "—"}</td>
@@ -2086,6 +2196,14 @@ export default function OperationalReportAdminPage() {
                     <TextInput
                       value={editForm.airline}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, airline: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Department</FieldLabel>
+                    <TextInput
+                      value={editForm.department}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
                     />
                   </div>
 
@@ -2368,6 +2486,7 @@ export default function OperationalReportAdminPage() {
                   }}
                 >
                   <InfoCard label="Airline" value={selectedReport.normalizedAirline || "—"} />
+                  <InfoCard label="Department" value={selectedReport.departmentLabel || "—"} />
                   <InfoCard label="Report Date" value={selectedReport.reportDate || "—"} />
                   <InfoCard label="Shift" value={selectedReport.shift || "—"} />
                   <InfoCard label="Flight Number" value={selectedReport.flightNumber || "—"} />
