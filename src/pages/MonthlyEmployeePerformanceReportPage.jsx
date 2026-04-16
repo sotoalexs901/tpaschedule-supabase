@@ -320,68 +320,6 @@ function normalizeLookup(value) {
   return normalizeText(value).toLowerCase();
 }
 
-function normalizeDepartment(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
-function normalizeRoleLike(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]/g, " ")
-    .replace(/\s+/g, " ");
-}
-
-function isDutyManagerUser(emp) {
-  const values = [
-    emp?.role,
-    emp?.position,
-    emp?.title,
-    emp?.jobTitle,
-    emp?.job_title,
-    emp?.employeeRole,
-    emp?.userRole,
-    emp?.profileRole,
-  ]
-    .map(normalizeRoleLike)
-    .filter(Boolean);
-
-  return values.some(
-    (value) =>
-      value === "duty manager" ||
-      value.includes("duty manager") ||
-      value.includes("duty mgr")
-  );
-}
-
-function buildUserMatchKeys(user) {
-  return [
-    user?.id,
-    user?.uid,
-    user?.username,
-    user?.email,
-    user?.displayName,
-    user?.fullName,
-    user?.name,
-  ]
-    .map((item) => String(item || "").trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function buildReportDutyMatchKeys(report) {
-  return [
-    report?.followUpDutyManagerId,
-    report?.assignedDutyManagerId,
-    report?.followUpDutyManagerName,
-    report?.assignedDutyManagerName,
-  ]
-    .map((item) => String(item || "").trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function formatMonthValue(value) {
   const [year, month] = String(value || "").split("-").map(Number);
   if (!year || !month) return value || "-";
@@ -494,8 +432,8 @@ function getStatusTone(status) {
     value === "follow_up_assigned" ||
     value === "follow_up_in_progress" ||
     value === "follow_up_resubmitted" ||
-    value === "returned_to_supervisor" ||
-    value === "resubmitted_to_manager"
+    value === "resubmitted_to_manager" ||
+    value === "returned_to_supervisor"
   ) {
     return "amber";
   }
@@ -643,6 +581,11 @@ function printReportHtml(report, language = "en") {
                       ? `<div><strong>Details:</strong> ${item.details}</div>`
                       : ""
                   }
+                  ${
+                    item.dutyManagerName
+                      ? `<div><strong>Duty Manager:</strong> ${item.dutyManagerName}</div>`
+                      : ""
+                  }
                 </div>
               `
                   )
@@ -691,6 +634,7 @@ const LABELS = {
     createTab: "Create EPR",
     managementTab: "Management",
     draftsTab: "Drafts",
+    returnedTab: "Returned Reports",
     followUpTab: "My Follow Up Cases",
     draftsSaved: "Saved Drafts",
     saveDraft: "Save Draft",
@@ -752,6 +696,7 @@ const LABELS = {
     createTab: "Crear EPR",
     managementTab: "Management",
     draftsTab: "Borradores",
+    returnedTab: "Reportes Retornados",
     followUpTab: "Mis Casos de Seguimiento",
     draftsSaved: "Borradores Guardados",
     saveDraft: "Guardar Borrador",
@@ -1003,9 +948,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
             role: emp.role || "",
             username: emp.username || "",
             email: emp.email || "",
-            position: emp.position || "",
-            title: emp.title || "",
-            jobTitle: emp.jobTitle || emp.job_title || "",
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -1082,19 +1024,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const needsFollowUp = calculatedScore < 70 || followUpItems.length > 0;
 
   const dutyManagers = useMemo(() => {
-    return employees
-      .filter((emp) => isDutyManagerUser(emp))
-      .map((emp) => ({
-        ...emp,
-        name:
-          emp.name ||
-          emp.fullName ||
-          emp.employeeName ||
-          emp.displayName ||
-          emp.username ||
-          "Unnamed Duty Manager",
-      }))
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    return employees.filter(
+      (emp) =>
+        normalizeLookup(emp.role) === "duty_manager" ||
+        normalizeLookup(emp.role) === "duty manager"
+    );
   }, [employees]);
 
   const supervisorNames = useMemo(() => {
@@ -1200,23 +1134,19 @@ export default function MonthlyEmployeePerformanceReportPage() {
     return reports
       .filter((r) => {
         if (!canHandleFollowUp) return false;
-
-        const status = normalizeLookup(r.managerStatus || "");
-        const validStatuses = [
+        if (
+          String(r.followUpDutyManagerId || "") !== String(user?.id || "") &&
+          user?.role !== "station_manager"
+        ) {
+          return false;
+        }
+        return [
           "follow_up_assigned",
           "follow_up_in_progress",
           "follow_up_completed",
           "follow_up_resubmitted",
-        ];
-
-        if (!validStatuses.includes(status)) return false;
-
-        if (user?.role === "station_manager") return true;
-
-        const userKeys = buildUserMatchKeys(user);
-        const reportKeys = buildReportDutyMatchKeys(r);
-
-        return reportKeys.some((key) => userKeys.includes(key));
+          "resubmitted_to_manager",
+        ].includes(normalizeLookup(r.managerStatus || ""));
       })
       .sort((a, b) => {
         const left =
@@ -1733,8 +1663,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
       const payload = {
         followUpDutyManagerId: assignedDutyManagerId || "",
         followUpDutyManagerName: duty?.name || "",
-        assignedDutyManagerId: assignedDutyManagerId || "",
-        assignedDutyManagerName: duty?.name || "",
         managerStatus: assignedDutyManagerId ? "follow_up_assigned" : report.managerStatus,
         managerNote: normalizeText(getManagementField(report, "managerNote")),
         followUpHistory: history,
@@ -2169,83 +2097,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       {statusMessage && <CenterToast message={statusMessage} tone={statusTone} />}
 
-      {returnedReports.length > 0 && user?.role === "supervisor" && (
-        <PageCard style={{ padding: 18 }}>
-          <div
-            style={{
-              background: "#fff7ed",
-              border: "1px solid #fdba74",
-              borderRadius: 18,
-              padding: 16,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 900,
-                color: "#9a3412",
-                marginBottom: 10,
-              }}
-            >
-              Returned Reports Requiring Correction
-            </div>
-
-            <div style={{ display: "grid", gap: 10 }}>
-              {returnedReports.map((report) => (
-                <div
-                  key={report.id}
-                  style={{
-                    border: "1px solid #fdba74",
-                    borderRadius: 14,
-                    background: "#ffffff",
-                    padding: 14,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 800,
-                          color: "#0f172a",
-                        }}
-                      >
-                        {report.employeeName} · {formatMonthValue(report.month)}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 13,
-                          color: "#7c2d12",
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        <strong>Return reason:</strong> {report.returnReason || "-"}
-                      </div>
-                    </div>
-
-                    <ActionButton
-                      variant="warning"
-                      onClick={() => loadReportIntoForm(report)}
-                    >
-                      Fix and Resubmit
-                    </ActionButton>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </PageCard>
-      )}
-
       <PageCard style={{ padding: 18 }}>
         <div
           style={{
@@ -2266,6 +2117,12 @@ export default function MonthlyEmployeePerformanceReportPage() {
             {canCreate && (
               <TabButton active={tab === "drafts"} onClick={() => setTab("drafts")}>
                 {t.draftsTab}
+              </TabButton>
+            )}
+
+            {user?.role === "supervisor" && (
+              <TabButton active={tab === "returned"} onClick={() => setTab("returned")}>
+                {t.returnedTab}
               </TabButton>
             )}
 
@@ -2642,61 +2499,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
             </h2>
           </div>
 
-          {returnedReports.length > 0 && (
-            <div style={{ marginBottom: 18, display: "grid", gap: 12 }}>
-              {returnedReports.map((draft) => (
-                <div
-                  key={draft.id}
-                  style={{
-                    border: "1px solid #fdba74",
-                    borderRadius: 18,
-                    padding: 16,
-                    background: "#fff7ed",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: "#0f172a",
-                        }}
-                      >
-                        {draft.employeeName || "-"} · {formatMonthValue(draft.month)}
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 13,
-                          color: "#9a3412",
-                        }}
-                      >
-                        <strong>Return reason:</strong> {draft.returnReason || "-"}
-                      </div>
-                    </div>
-
-                    <ActionButton
-                      variant="warning"
-                      onClick={() => handleLoadDraft(draft)}
-                    >
-                      Fix and Resubmit
-                    </ActionButton>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           {savedDrafts.length === 0 ? (
             <div style={{ color: "#64748b", fontSize: 14 }}>{t.noDrafts}</div>
           ) : (
@@ -2755,6 +2557,83 @@ export default function MonthlyEmployeePerformanceReportPage() {
                         {t.deleteReport}
                       </ActionButton>
                     </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </PageCard>
+      )}
+
+      {tab === "returned" && user?.role === "supervisor" && (
+        <PageCard style={{ padding: 22 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
+              {t.returnedTab}
+            </h2>
+          </div>
+
+          {returnedReports.length === 0 ? (
+            <div style={{ color: "#64748b", fontSize: 14 }}>
+              No returned reports.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {returnedReports.map((report) => (
+                <div
+                  key={report.id}
+                  style={{
+                    border: "1px solid #fdba74",
+                    borderRadius: 18,
+                    padding: 16,
+                    background: "#fff7ed",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {report.employeeName || "-"} · {formatMonthValue(report.month)}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 13,
+                          color: "#9a3412",
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        <strong>Return reason:</strong> {report.returnReason || "-"}
+                      </div>
+                    </div>
+
+                    <ActionButton
+                      variant="warning"
+                      onClick={() => handleLoadDraft(report)}
+                    >
+                      Fix and Resubmit
+                    </ActionButton>
                   </div>
                 </div>
               ))}
@@ -3044,6 +2923,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   <option value="follow_up_assigned">Follow Up Assigned</option>
                   <option value="follow_up_in_progress">Follow Up In Progress</option>
                   <option value="follow_up_resubmitted">Resubmitted to Manager</option>
+                  <option value="resubmitted_to_manager">Resubmitted to Manager</option>
                   <option value="returned_to_supervisor">Returned to Supervisor</option>
                   <option value="closed">{t.closed}</option>
                 </SelectInput>
