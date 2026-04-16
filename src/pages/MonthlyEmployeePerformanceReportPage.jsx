@@ -327,6 +327,61 @@ function normalizeDepartment(value) {
     .replace(/\s+/g, " ");
 }
 
+function normalizeRoleLike(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function isDutyManagerUser(emp) {
+  const values = [
+    emp?.role,
+    emp?.position,
+    emp?.title,
+    emp?.jobTitle,
+    emp?.job_title,
+    emp?.employeeRole,
+    emp?.userRole,
+    emp?.profileRole,
+  ]
+    .map(normalizeRoleLike)
+    .filter(Boolean);
+
+  return values.some(
+    (value) =>
+      value === "duty manager" ||
+      value.includes("duty manager") ||
+      value.includes("duty mgr")
+  );
+}
+
+function buildUserMatchKeys(user) {
+  return [
+    user?.id,
+    user?.uid,
+    user?.username,
+    user?.email,
+    user?.displayName,
+    user?.fullName,
+    user?.name,
+  ]
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function buildReportDutyMatchKeys(report) {
+  return [
+    report?.followUpDutyManagerId,
+    report?.assignedDutyManagerId,
+    report?.followUpDutyManagerName,
+    report?.assignedDutyManagerName,
+  ]
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function formatMonthValue(value) {
   const [year, month] = String(value || "").split("-").map(Number);
   if (!year || !month) return value || "-";
@@ -439,7 +494,8 @@ function getStatusTone(status) {
     value === "follow_up_assigned" ||
     value === "follow_up_in_progress" ||
     value === "follow_up_resubmitted" ||
-    value === "returned_to_supervisor"
+    value === "returned_to_supervisor" ||
+    value === "resubmitted_to_manager"
   ) {
     return "amber";
   }
@@ -454,6 +510,7 @@ function getStatusLabel(status) {
   if (value === "follow_up_in_progress") return "Follow Up In Progress";
   if (value === "follow_up_completed") return "Follow Up Completed";
   if (value === "follow_up_resubmitted") return "Resubmitted to Manager";
+  if (value === "resubmitted_to_manager") return "Resubmitted to Manager";
   if (value === "recognized") return "Recognized";
   if (value === "approved") return "Approved";
   if (value === "follow_up") return "Follow Up";
@@ -946,6 +1003,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
             role: emp.role || "",
             username: emp.username || "",
             email: emp.email || "",
+            position: emp.position || "",
+            title: emp.title || "",
+            jobTitle: emp.jobTitle || emp.job_title || "",
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -1022,11 +1082,19 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const needsFollowUp = calculatedScore < 70 || followUpItems.length > 0;
 
   const dutyManagers = useMemo(() => {
-    return employees.filter(
-      (emp) =>
-        normalizeLookup(emp.role) === "duty_manager" ||
-        normalizeLookup(emp.role) === "duty manager"
-    );
+    return employees
+      .filter((emp) => isDutyManagerUser(emp))
+      .map((emp) => ({
+        ...emp,
+        name:
+          emp.name ||
+          emp.fullName ||
+          emp.employeeName ||
+          emp.displayName ||
+          emp.username ||
+          "Unnamed Duty Manager",
+      }))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }, [employees]);
 
   const supervisorNames = useMemo(() => {
@@ -1132,18 +1200,23 @@ export default function MonthlyEmployeePerformanceReportPage() {
     return reports
       .filter((r) => {
         if (!canHandleFollowUp) return false;
-        if (
-          String(r.followUpDutyManagerId || "") !== String(user?.id || "") &&
-          user?.role !== "station_manager"
-        ) {
-          return false;
-        }
-        return [
+
+        const status = normalizeLookup(r.managerStatus || "");
+        const validStatuses = [
           "follow_up_assigned",
           "follow_up_in_progress",
           "follow_up_completed",
           "follow_up_resubmitted",
-        ].includes(normalizeLookup(r.managerStatus || ""));
+        ];
+
+        if (!validStatuses.includes(status)) return false;
+
+        if (user?.role === "station_manager") return true;
+
+        const userKeys = buildUserMatchKeys(user);
+        const reportKeys = buildReportDutyMatchKeys(r);
+
+        return reportKeys.some((key) => userKeys.includes(key));
       })
       .sort((a, b) => {
         const left =
@@ -1660,6 +1733,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
       const payload = {
         followUpDutyManagerId: assignedDutyManagerId || "",
         followUpDutyManagerName: duty?.name || "",
+        assignedDutyManagerId: assignedDutyManagerId || "",
+        assignedDutyManagerName: duty?.name || "",
         managerStatus: assignedDutyManagerId ? "follow_up_assigned" : report.managerStatus,
         managerNote: normalizeText(getManagementField(report, "managerNote")),
         followUpHistory: history,
