@@ -382,6 +382,37 @@ function buildHistoryEntry(type, byUser, note = "", extra = {}) {
   };
 }
 
+function normalizeRoleLike(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function isDutyManagerUser(emp) {
+  const values = [
+    emp?.role,
+    emp?.position,
+    emp?.title,
+    emp?.jobTitle,
+    emp?.job_title,
+    emp?.employeeRole,
+    emp?.userRole,
+    emp?.profileRole,
+  ]
+    .map(normalizeRoleLike)
+    .filter(Boolean);
+
+  return values.some(
+    (value) =>
+      value === "duty manager" ||
+      value === "duty_manager" ||
+      value.includes("duty manager") ||
+      value.includes("duty mgr")
+  );
+}
+
 const COMMON_QUESTIONS = [
   { id: "1", en: "Accepts responsibility for actions and responds to consequences.", weight: 3 },
   { id: "2", en: "Is rarely absent, arrives on time, and works required hours.", weight: 3 },
@@ -561,10 +592,7 @@ export default function EmployeePerformanceManagementPage() {
 
   const dutyManagers = useMemo(() => {
     return employees
-      .filter((emp) => {
-        const role = String(emp.role || "").toLowerCase().trim();
-        return role === "duty_manager" || role === "duty manager";
-      })
+      .filter((emp) => isDutyManagerUser(emp))
       .map((emp) => ({
         id: emp.id,
         name:
@@ -662,7 +690,11 @@ export default function EmployeePerformanceManagementPage() {
     if (selectedReport) {
       setManagerNote(selectedReport.managerNote || "");
       setReturnReason(selectedReport.returnReason || "");
-      setSelectedDutyManagerId(selectedReport.followUpDutyManagerId || "");
+      setSelectedDutyManagerId(
+        selectedReport.followUpDutyManagerId ||
+          selectedReport.assignedDutyManagerId ||
+          ""
+      );
     } else {
       setManagerNote("");
       setReturnReason("");
@@ -884,6 +916,8 @@ export default function EmployeePerformanceManagementPage() {
         managerNote: managerNote || "",
         followUpDutyManagerId: selectedDutyManagerId,
         followUpDutyManagerName: duty?.name || "",
+        assignedDutyManagerId: selectedDutyManagerId,
+        assignedDutyManagerName: duty?.name || "",
         followUpHistory: history,
         updatedAt: serverTimestamp(),
       });
@@ -899,6 +933,8 @@ export default function EmployeePerformanceManagementPage() {
                 managerNote: managerNote || "",
                 followUpDutyManagerId: selectedDutyManagerId,
                 followUpDutyManagerName: duty?.name || "",
+                assignedDutyManagerId: selectedDutyManagerId,
+                assignedDutyManagerName: duty?.name || "",
                 followUpHistory: history,
                 updatedAt: new Date(),
               }
@@ -1505,7 +1541,11 @@ export default function EmployeePerformanceManagementPage() {
                 />
                 <InfoCard
                   label="Duty Manager"
-                  value={selectedReport.followUpDutyManagerName || "-"}
+                  value={
+                    selectedReport.followUpDutyManagerName ||
+                    selectedReport.assignedDutyManagerName ||
+                    "-"
+                  }
                   tone="default"
                 />
                 <InfoCard
@@ -1748,6 +1788,11 @@ export default function EmployeePerformanceManagementPage() {
                         {item.details ? (
                           <div style={{ marginTop: 6, fontSize: 14, color: "#334155" }}>
                             <strong>Details:</strong> {item.details}
+                          </div>
+                        ) : null}
+                        {item.dutyManagerName ? (
+                          <div style={{ marginTop: 6, fontSize: 14, color: "#334155" }}>
+                            <strong>Duty Manager:</strong> {item.dutyManagerName}
                           </div>
                         ) : null}
                       </div>
