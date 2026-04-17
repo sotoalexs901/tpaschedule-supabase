@@ -117,6 +117,7 @@ export default function ScheduleGrid({
   onSaveDraft,
   approved = false,
   blockedByEmployee = {},
+  dailyHeadcount = {},
 }) {
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
@@ -674,6 +675,41 @@ export default function ScheduleGrid({
                 </React.Fragment>
               );
             })}
+
+            <tr>
+              <td
+                style={{
+                  background: "#0f172a",
+                  color: "#ffffff",
+                  fontWeight: 900,
+                  padding: "14px",
+                  borderTop: `2px solid ${borderSoft}`,
+                  textAlign: "left",
+                  fontSize: 13,
+                  letterSpacing: "0.04em",
+                }}
+              >
+                DAILY HEADCOUNT
+              </td>
+
+              {days.map((day) => (
+                <td
+                  key={`headcount-${day}`}
+                  style={{
+                    background: headerSoft,
+                    color: headerColor,
+                    fontWeight: 900,
+                    textAlign: "center",
+                    padding: "14px 10px",
+                    borderTop: `2px solid ${borderSoft}`,
+                    borderLeft: `1px solid ${borderSoft}`,
+                    fontSize: 16,
+                  }}
+                >
+                  {Number(dailyHeadcount?.[day] || 0)}
+                </td>
+              ))}
+            </tr>
           </tbody>
         </table>
       </div>
