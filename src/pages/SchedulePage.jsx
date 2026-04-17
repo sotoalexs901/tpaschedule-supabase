@@ -45,8 +45,6 @@ const AIRLINE_COLORS = {
   CABIN: "#1FA86A",
   "AA-BSO": "#A8A8A8",
   OTHER: "#555555",
-
-  // Nuevos personalizados para Other
   AM: "#0F766E",
   AMS: "#7C3AED",
 };
@@ -656,7 +654,42 @@ export default function SchedulePage() {
     return { employeeTotals, airlineTotal, dailyTotals };
   };
 
+  const calculateDailyHeadcount = () => {
+    const dailyHeadcount = {
+      mon: 0,
+      tue: 0,
+      wed: 0,
+      thu: 0,
+      fri: 0,
+      sat: 0,
+      sun: 0,
+    };
+
+    DAY_KEYS.forEach((dayKey) => {
+      let count = 0;
+
+      rows.forEach((row) => {
+        const hasShift = (row[dayKey] || []).some(
+          (shift) =>
+            shift.start &&
+            shift.end &&
+            shift.start !== "OFF" &&
+            shift.end !== "OFF"
+        );
+
+        if (row.employeeId && hasShift) {
+          count += 1;
+        }
+      });
+
+      dailyHeadcount[dayKey] = count;
+    });
+
+    return dailyHeadcount;
+  };
+
   const { employeeTotals, airlineTotal, dailyTotals } = calculateTotals();
+  const dailyHeadcount = useMemo(() => calculateDailyHeadcount(), [rows]);
 
   const budgetKey = `${normalizeAirlineName(airlineKey)}__${normalizeDepartmentName(
     department
@@ -745,6 +778,7 @@ export default function SchedulePage() {
     totals: employeeTotals,
     airlineWeeklyHours: airlineTotal,
     airlineDailyHours: dailyTotals,
+    airlineDailyHeadcount: dailyHeadcount,
     budget: selectedWeeklyBudget,
     status,
     createdBy: user?.username || null,
@@ -1254,6 +1288,7 @@ export default function SchedulePage() {
           onSave={handleSaveSchedule}
           onSaveDraft={handleSaveDraft}
           blockedByEmployee={blockedByEmployeeForSelectedWeek}
+          dailyHeadcount={dailyHeadcount}
         />
       </div>
 
@@ -1408,6 +1443,16 @@ export default function SchedulePage() {
                   }}
                 >
                   {dailyTotals[dKey].toFixed(2)} hrs
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#1769aa",
+                  }}
+                >
+                  Headcount: {dailyHeadcount[dKey] || 0}
                 </div>
               </div>
             ))}
