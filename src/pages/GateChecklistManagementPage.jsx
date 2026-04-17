@@ -378,6 +378,14 @@ function DetailsRow({ label, value }) {
   );
 }
 
+function getStdValue(report) {
+  return report?.std || report?.etd || "";
+}
+
+function getNewStdValue(report) {
+  return report?.newStd || report?.newEtd || "";
+}
+
 function createEditDraft(report) {
   return {
     airline: report.airline || "SY",
@@ -405,8 +413,8 @@ function createEditDraft(report) {
     delayCode: report.delayCode || "",
     controllable: report.controllable || "No",
     blockIn: report.blockIn || "",
-    etd: report.etd || "",
-    newEtd: report.newEtd || "",
+    std: report.std || report.etd || "",
+    newStd: report.newStd || report.newEtd || "",
     boardingDeadline: report.boardingDeadline || "",
     actualDepartureTime: report.actualDepartureTime || "",
     actualArrivalTime: report.actualArrivalTime || "",
@@ -441,6 +449,8 @@ function printReportDetails(report) {
     ? report.checklistSections
     : [];
   const actuals = report?.actuals || {};
+  const std = getStdValue(report);
+  const newStd = getNewStdValue(report);
 
   const html = `
     <html>
@@ -526,8 +536,8 @@ function printReportDetails(report) {
             <div><div class="label">Controllable</div><div class="value">${report.controllable || "-"}</div></div>
             <div><div class="label">Block In</div><div class="value">${report.blockIn || "-"}</div></div>
 
-            <div><div class="label">ETD</div><div class="value">${report.etd || "-"}</div></div>
-            <div><div class="label">New ETD</div><div class="value">${report.newEtd || "-"}</div></div>
+            <div><div class="label">STD</div><div class="value">${std || "-"}</div></div>
+            <div><div class="label">New STD</div><div class="value">${newStd || "-"}</div></div>
             <div><div class="label">${report.airline === "SY" ? "D-10" : "D-15"}</div><div class="value">${report.boardingDeadline || "-"}</div></div>
             <div><div class="label">Actual Departure</div><div class="value">${report.actualDepartureTime || "-"}</div></div>
 
@@ -806,7 +816,7 @@ export default function GateChecklistManagementPage() {
         airline: item.airline || "-",
         flight: item.flight || "-",
         route: `${item.origin || "-"} - ${item.destination || "-"}`,
-        etd: item.etd || "-",
+        std: getStdValue(item) || "-",
         pushTime: item.pushTime || "-",
         delayTimeMinutes: safeNumber(item.delayTimeMinutes),
         delayCode: item.delayCode || "-",
@@ -972,7 +982,7 @@ export default function GateChecklistManagementPage() {
         "Flight",
         "Origin",
         "Destination",
-        "ETD",
+        "STD",
         "Push Time",
         "OTP",
         "Final Total Pax",
@@ -1000,7 +1010,7 @@ export default function GateChecklistManagementPage() {
           item.flight || "",
           item.origin || "",
           item.destination || "",
-          item.etd || "",
+          getStdValue(item) || "",
           item.pushTime || "",
           item.isOtpDeparture === true
             ? "YES"
@@ -1063,8 +1073,8 @@ export default function GateChecklistManagementPage() {
         delayCode: editDraft.delayCode || "",
         controllable: editDraft.controllable || "No",
         blockIn: editDraft.blockIn || "",
-        etd: editDraft.etd || "",
-        newEtd: editDraft.newEtd || "",
+        std: editDraft.std || "",
+        newStd: editDraft.newStd || "",
         boardingDeadline: editDraft.boardingDeadline || "",
         actualDepartureTime: editDraft.actualDepartureTime || "",
         actualArrivalTime: editDraft.actualArrivalTime || "",
@@ -1555,7 +1565,7 @@ export default function GateChecklistManagementPage() {
                 <th style={thStyle}>Airline</th>
                 <th style={thStyle}>Flight</th>
                 <th style={thStyle}>Route</th>
-                <th style={thStyle}>ETD</th>
+                <th style={thStyle}>STD</th>
                 <th style={thStyle}>Push Back</th>
                 <th style={thStyle}>Delay Time</th>
                 <th style={thStyle}>Delay Code</th>
@@ -1574,7 +1584,7 @@ export default function GateChecklistManagementPage() {
                     <td style={tdStyle}>{item.airline}</td>
                     <td style={tdStyle}>{item.flight}</td>
                     <td style={tdStyle}>{item.route}</td>
-                    <td style={tdStyle}>{item.etd}</td>
+                    <td style={tdStyle}>{item.std}</td>
                     <td style={tdStyle}>{item.pushTime}</td>
                     <td style={tdStyle}>{item.delayTimeMinutes}</td>
                     <td style={tdStyle}>{item.delayCode}</td>
@@ -1711,7 +1721,7 @@ export default function GateChecklistManagementPage() {
                 <th style={thStyle}>Airline</th>
                 <th style={thStyle}>Flight</th>
                 <th style={thStyle}>Route</th>
-                <th style={thStyle}>ETD</th>
+                <th style={thStyle}>STD</th>
                 <th style={thStyle}>Push</th>
                 <th style={thStyle}>OTP</th>
                 <th style={thStyle}>OUT Pax</th>
@@ -1748,7 +1758,7 @@ export default function GateChecklistManagementPage() {
                       <td style={tdStyle}>
                         {item.origin || "-"} - {item.destination || "-"}
                       </td>
-                      <td style={tdStyle}>{item.etd || "-"}</td>
+                      <td style={tdStyle}>{getStdValue(item) || "-"}</td>
                       <td style={tdStyle}>{item.pushTime || "-"}</td>
                       <td style={tdStyle}>
                         {item.isOtpDeparture === true
@@ -2076,21 +2086,21 @@ export default function GateChecklistManagementPage() {
                 </div>
 
                 <div>
-                  <FieldLabel>ETD</FieldLabel>
+                  <FieldLabel>STD</FieldLabel>
                   <TimeInput
-                    value={editDraft.etd}
+                    value={editDraft.std}
                     onChange={(e) =>
-                      setEditDraft((prev) => ({ ...prev, etd: e.target.value }))
+                      setEditDraft((prev) => ({ ...prev, std: e.target.value }))
                     }
                   />
                 </div>
 
                 <div>
-                  <FieldLabel>New ETD</FieldLabel>
+                  <FieldLabel>New STD</FieldLabel>
                   <TimeInput
-                    value={editDraft.newEtd}
+                    value={editDraft.newStd}
                     onChange={(e) =>
-                      setEditDraft((prev) => ({ ...prev, newEtd: e.target.value }))
+                      setEditDraft((prev) => ({ ...prev, newStd: e.target.value }))
                     }
                   />
                 </div>
@@ -2316,8 +2326,8 @@ export default function GateChecklistManagementPage() {
                 <DetailsRow label="Delay Code" value={selectedReport.delayCode} />
                 <DetailsRow label="Controllable" value={selectedReport.controllable} />
                 <DetailsRow label="Block In" value={selectedReport.blockIn} />
-                <DetailsRow label="ETD" value={selectedReport.etd} />
-                <DetailsRow label="New ETD" value={selectedReport.newEtd} />
+                <DetailsRow label="STD" value={getStdValue(selectedReport)} />
+                <DetailsRow label="New STD" value={getNewStdValue(selectedReport)} />
                 <DetailsRow label="Boarding Deadline" value={selectedReport.boardingDeadline} />
                 <DetailsRow label="Actual Departure" value={selectedReport.actualDepartureTime} />
                 <DetailsRow label="Actual Arrival" value={selectedReport.actualArrivalTime} />
