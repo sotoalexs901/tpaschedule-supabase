@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -67,9 +67,10 @@ function FieldLabel({ children }) {
   );
 }
 
-function TextInput(props) {
+const TextInput = React.forwardRef(function TextInput(props, ref) {
   return (
     <input
+      ref={ref}
       {...props}
       style={{
         width: "100%",
@@ -86,11 +87,12 @@ function TextInput(props) {
       }}
     />
   );
-}
+});
 
-function TimeInput(props) {
+const TimeInput = React.forwardRef(function TimeInput(props, ref) {
   return (
     <input
+      ref={ref}
       type="time"
       step="60"
       {...props}
@@ -109,7 +111,7 @@ function TimeInput(props) {
       }}
     />
   );
-}
+});
 
 function TextArea(props) {
   return (
@@ -514,45 +516,45 @@ function getAirlineTurnRules(airline) {
   };
 }
 
-function calculateNewEtdAndDeadline(airline, blockIn, etd) {
+function calculateNewStdAndDeadline(airline, blockIn, std) {
   const blockInMinutes = toMinutesFromTime(blockIn);
-  const etdMinutes = toMinutesFromTime(etd);
+  const stdMinutes = toMinutesFromTime(std);
   const rules = getAirlineTurnRules(airline);
 
-  if (etdMinutes === null) {
+  if (stdMinutes === null) {
     return {
-      newEtd: "",
+      newStd: "",
       boardingDeadline: "",
     };
   }
 
-  let referenceEtdMinutes = etdMinutes;
+  let referenceStdMinutes = stdMinutes;
 
   if (blockInMinutes !== null) {
-    let adjustedEtdMinutes = etdMinutes;
+    let adjustedStdMinutes = stdMinutes;
 
-    if (adjustedEtdMinutes < blockInMinutes) {
-      adjustedEtdMinutes += 24 * 60;
+    if (adjustedStdMinutes < blockInMinutes) {
+      adjustedStdMinutes += 24 * 60;
     }
 
-    const currentTurnMinutes = adjustedEtdMinutes - blockInMinutes;
+    const currentTurnMinutes = adjustedStdMinutes - blockInMinutes;
 
     if (currentTurnMinutes < rules.minTurnMinutes) {
-      referenceEtdMinutes = blockInMinutes + rules.minTurnMinutes;
+      referenceStdMinutes = blockInMinutes + rules.minTurnMinutes;
 
       return {
-        newEtd: minutesToTime(referenceEtdMinutes),
+        newStd: minutesToTime(referenceStdMinutes),
         boardingDeadline: minutesToTime(
-          referenceEtdMinutes - rules.boardingOffsetMinutes
+          referenceStdMinutes - rules.boardingOffsetMinutes
         ),
       };
     }
   }
 
   return {
-    newEtd: "",
+    newStd: "",
     boardingDeadline: minutesToTime(
-      referenceEtdMinutes - rules.boardingOffsetMinutes
+      referenceStdMinutes - rules.boardingOffsetMinutes
     ),
   };
 }
@@ -590,8 +592,8 @@ function createInitialForm(user) {
     delayTimeMinutes: "",
     controllable: "No",
     blockIn: "",
-    etd: "",
-    newEtd: "",
+    std: "",
+    newStd: "",
     boardingDeadline: "",
     actualDepartureTime: "",
     actualArrivalTime: "",
@@ -613,9 +615,72 @@ function createInitialForm(user) {
   };
 }
 
+function hasChecklistDependentData(form, specials, gateCheck, delayAnnouncements, actuals) {
+  const formFieldsToCheck = [
+    "flight",
+    "aircraft",
+    "origin",
+    "destination",
+    "finalTotalPax",
+    "totalIbPax",
+    "delayCode",
+    "delayTimeMinutes",
+    "blockIn",
+    "newStd",
+    "boardingDeadline",
+    "actualDepartureTime",
+    "actualArrivalTime",
+    "gpuConnected",
+    "gateAgent1Arrival",
+    "gateAgent2Arrival",
+    "brakeReleaseTime",
+    "pushTime",
+    "checkedBags",
+    "notLoadedBags",
+    "remarks",
+    "expeditor",
+    "supervisor",
+    "firstPaxOff",
+    "lastPaxOff",
+    "firstPaxOn",
+    "lastPaxOn",
+  ];
+
+  const formHasData = formFieldsToCheck.some((key) => {
+    const value = form[key];
+    return String(value || "").trim() !== "";
+  });
+
+  const specialsHasData = Object.values(specials || {}).some(
+    (value) => String(value || "").trim() !== ""
+  );
+
+  const gateCheckHasData = Object.values(gateCheck || {}).some(
+    (value) => String(value || "").trim() !== ""
+  );
+
+  const delayAnnouncementsHasData = (delayAnnouncements || []).some(
+    (value) => String(value || "").trim() !== ""
+  );
+
+  const actualsHasData = Object.values(actuals || {}).some(
+    (value) => String(value || "").trim() !== ""
+  );
+
+  return (
+    formHasData ||
+    specialsHasData ||
+    gateCheckHasData ||
+    delayAnnouncementsHasData ||
+    actualsHasData
+  );
+}
+
 export default function GateChecklistPage() {
   const { user } = useUser();
   const { isMobile, isTablet } = useViewport();
+
+  const flightRef = useRef(null);
 
   const isSupervisorOrManager =
     user?.role === "supervisor" ||
@@ -645,21 +710,24 @@ export default function GateChecklistPage() {
   const isClosed = currentStatus === "closed";
   const isSubmitted = currentStatus === "submitted";
 
+  const stdUnlocked = !!String(form.std || "").trim();
+
   const canEdit = !isClosed && (!isExisting || currentStatus === "draft" || true);
   const canReopen = isExisting && (isSubmitted || isClosed) && isSupervisorOrManager;
   const canClose = isExisting;
-  const canSubmit = !!form.airline && !!form.flight && !!form.date && canEdit;
+  const canSubmit =
+    !!form.airline && !!form.flight && !!form.date && !!form.std && canEdit;
 
   useEffect(() => {
-    const { newEtd, boardingDeadline } = calculateNewEtdAndDeadline(
+    const { newStd, boardingDeadline } = calculateNewStdAndDeadline(
       form.airline,
       form.blockIn,
-      form.etd
+      form.std
     );
 
     setForm((prev) => {
       if (
-        prev.newEtd === newEtd &&
+        prev.newStd === newStd &&
         prev.boardingDeadline === boardingDeadline
       ) {
         return prev;
@@ -667,11 +735,55 @@ export default function GateChecklistPage() {
 
       return {
         ...prev,
-        newEtd,
+        newStd,
         boardingDeadline,
       };
     });
-  }, [form.airline, form.blockIn, form.etd]);
+  }, [form.airline, form.blockIn, form.std]);
+
+  function clearDependentSections() {
+    setSpecials(createInitialSpecials());
+    setGateCheck(createInitialGateCheck());
+    setDelayAnnouncements(["", "", "", ""]);
+    setActuals({});
+  }
+
+  function resetDependentFieldsKeepingBase(prev, overrides = {}) {
+    return {
+      ...prev,
+      flight: "",
+      aircraft: "",
+      origin: "",
+      destination: "",
+      finalTotalPax: "",
+      totalIbPax: "",
+      delayCode: "",
+      delay: "No",
+      delayTimeMinutes: "",
+      controllable: "No",
+      blockIn: "",
+      std: "",
+      newStd: "",
+      boardingDeadline: "",
+      actualDepartureTime: "",
+      actualArrivalTime: "",
+      gpuConnected: "",
+      gateAgent1Arrival: "",
+      gateAgent2Arrival: "",
+      brakeReleaseTime: "",
+      pushTime: "",
+      checkedBags: "",
+      notLoadedBags: "",
+      remarks: "",
+      expeditor: "",
+      supervisor: "",
+      firstPaxOff: "",
+      lastPaxOff: "",
+      firstPaxOn: "",
+      lastPaxOn: "",
+      ...overrides,
+    };
+  }
 
   function resetAll() {
     setEditingId("");
@@ -685,13 +797,92 @@ export default function GateChecklistPage() {
     setStatusMessage("");
   }
 
+  function handleStdChange(nextStd) {
+    if (!canEdit) return;
+
+    const currentStd = String(form.std || "").trim();
+    const nextValue = String(nextStd || "").trim();
+
+    if (currentStd === nextValue) return;
+
+    const hasDependentData = hasChecklistDependentData(
+      form,
+      specials,
+      gateCheck,
+      delayAnnouncements,
+      actuals
+    );
+
+    if (currentStd && hasDependentData) {
+      const ok = window.confirm(
+        "Changing STD will clear the form, continue?"
+      );
+      if (!ok) return;
+
+      setForm((prev) =>
+        resetDependentFieldsKeepingBase(prev, {
+          std: nextValue,
+        })
+      );
+      clearDependentSections();
+
+      if (nextValue) {
+        setTimeout(() => {
+          flightRef.current?.focus();
+        }, 0);
+      }
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      std: nextValue,
+    }));
+
+    if (nextValue) {
+      setTimeout(() => {
+        flightRef.current?.focus();
+      }, 0);
+    }
+  }
+
   function updateField(field, value) {
     if (!canEdit) return;
+
+    if (field === "airline") {
+      setForm((prev) =>
+        resetDependentFieldsKeepingBase(prev, {
+          airline: value,
+        })
+      );
+      clearDependentSections();
+      return;
+    }
+
+    if (field === "date") {
+      setForm((prev) =>
+        resetDependentFieldsKeepingBase(prev, {
+          date: value,
+        })
+      );
+      clearDependentSections();
+      return;
+    }
+
+    if (field === "std") {
+      handleStdChange(value);
+      return;
+    }
+
+    if (field !== "airline" && field !== "date" && field !== "std" && !stdUnlocked) {
+      return;
+    }
+
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
   function updateActual(sectionIndex, taskIndex, value) {
-    if (!canEdit) return;
+    if (!canEdit || !stdUnlocked) return;
     const key = `${sectionIndex}-${taskIndex}`;
     setActuals((prev) => ({ ...prev, [key]: value }));
   }
@@ -703,7 +894,7 @@ export default function GateChecklistPage() {
   function buildPayload(nextStatus) {
     const weekStart = getWeekStart(form.date);
     const month = String(form.date || "").slice(0, 7);
-    const otpDepartureMinutes = getOtpMinutes(form.etd, form.pushTime);
+    const otpDepartureMinutes = getOtpMinutes(form.std, form.pushTime);
     const isOtpDeparture =
       otpDepartureMinutes !== null ? otpDepartureMinutes <= 15 : null;
 
@@ -734,8 +925,8 @@ export default function GateChecklistPage() {
       lastPaxOn: form.lastPaxOn || "",
 
       blockIn: form.blockIn || "",
-      etd: form.etd || "",
-      newEtd: form.newEtd || "",
+      std: form.std || "",
+      newStd: form.newStd || "",
       boardingDeadline: form.boardingDeadline || "",
       actualDepartureTime: form.actualDepartureTime || "",
       actualArrivalTime: form.actualArrivalTime || "",
@@ -800,8 +991,8 @@ export default function GateChecklistPage() {
   }
 
   async function handleSubmitChecklist() {
-    if (!form.airline || !form.flight || !form.date) {
-      setStatusMessage("Please complete airline, flight and date.");
+    if (!form.airline || !form.flight || !form.date || !form.std) {
+      setStatusMessage("Please complete airline, date, STD and flight.");
       return;
     }
 
@@ -943,8 +1134,8 @@ export default function GateChecklistPage() {
             : "",
         controllable: data.controllable || "No",
         blockIn: data.blockIn || "",
-        etd: data.etd || "",
-        newEtd: data.newEtd || "",
+        std: data.std || data.etd || "",
+        newStd: data.newStd || data.newEtd || "",
         boardingDeadline: data.boardingDeadline || "",
         actualDepartureTime: data.actualDepartureTime || "",
         actualArrivalTime: data.actualArrivalTime || "",
@@ -1094,7 +1285,7 @@ export default function GateChecklistPage() {
           }}
         >
           Printable gate checklist with 24-hour time selection, draft, submit,
-          close flight, reopen, baggage counts, New ETD, D-10/D-15, delay
+          close flight, reopen, baggage counts, New STD, D-10/D-15, delay
           tracking, and pax flow.
         </p>
       </div>
@@ -1166,6 +1357,15 @@ export default function GateChecklistPage() {
           </div>
           <div style={statusPillStyle("#f8fafc", "#cbd5e1", "#334155")}>
             Editable: <b>{canEdit ? "Yes" : "No"}</b>
+          </div>
+          <div
+            style={statusPillStyle(
+              stdUnlocked ? "#ecfdf5" : "#fff7ed",
+              stdUnlocked ? "#a7f3d0" : "#fdba74",
+              stdUnlocked ? "#166534" : "#9a3412"
+            )}
+          >
+            Form: <b>{stdUnlocked ? "Unlocked" : "Locked until STD"}</b>
           </div>
         </div>
       </PageCard>
@@ -1263,6 +1463,28 @@ export default function GateChecklistPage() {
             </div>
 
             <div>
+              <FieldLabel>Date</FieldLabel>
+              <TextInput
+                type="date"
+                value={form.date}
+                disabled={!canEdit}
+                onChange={(e) => updateField("date", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>STD</FieldLabel>
+              <TimeInput
+                value={form.std}
+                disabled={!canEdit}
+                onChange={(e) => updateField("std", e.target.value)}
+                style={{
+                  border: stdUnlocked ? "1px solid #cbd5e1" : "2px solid #f59e0b",
+                }}
+              />
+            </div>
+
+            <div>
               <FieldLabel>Gate Agent</FieldLabel>
               <TextInput value={form.gateAgent} disabled />
             </div>
@@ -1271,7 +1493,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Expeditor</FieldLabel>
               <TextInput
                 value={form.expeditor}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("expeditor", e.target.value)}
               />
             </div>
@@ -1280,11 +1502,32 @@ export default function GateChecklistPage() {
               <FieldLabel>Supervisor</FieldLabel>
               <TextInput
                 value={form.supervisor}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("supervisor", e.target.value)}
               />
             </div>
           </div>
+
+          {!stdUnlocked && (
+            <PageCard
+              className="no-print"
+              style={{
+                padding: 14,
+                background: "#fff7ed",
+                border: "1px solid #fdba74",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#9a3412",
+                }}
+              >
+                Enter Airline, Date and STD first. The rest of the checklist will unlock after STD is assigned.
+              </div>
+            </PageCard>
+          )}
 
           <div
             style={{
@@ -1300,19 +1543,10 @@ export default function GateChecklistPage() {
             <div>
               <FieldLabel>Flight</FieldLabel>
               <TextInput
+                ref={flightRef}
                 value={form.flight}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("flight", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Date</FieldLabel>
-              <TextInput
-                type="date"
-                value={form.date}
-                disabled={!canEdit}
-                onChange={(e) => updateField("date", e.target.value)}
               />
             </div>
 
@@ -1320,7 +1554,7 @@ export default function GateChecklistPage() {
               <FieldLabel>A/C</FieldLabel>
               <TextInput
                 value={form.aircraft}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("aircraft", e.target.value)}
               />
             </div>
@@ -1329,7 +1563,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Orig</FieldLabel>
               <TextInput
                 value={form.origin}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("origin", e.target.value)}
               />
             </div>
@@ -1338,7 +1572,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Dest</FieldLabel>
               <TextInput
                 value={form.destination}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("destination", e.target.value)}
               />
             </div>
@@ -1349,7 +1583,7 @@ export default function GateChecklistPage() {
                 type="number"
                 min="0"
                 value={form.finalTotalPax}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("finalTotalPax", e.target.value)}
               />
             </div>
@@ -1360,7 +1594,7 @@ export default function GateChecklistPage() {
                 type="number"
                 min="0"
                 value={form.totalIbPax}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("totalIbPax", e.target.value)}
               />
             </div>
@@ -1369,7 +1603,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Delay Code</FieldLabel>
               <TextInput
                 value={form.delayCode}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("delayCode", e.target.value)}
               />
             </div>
@@ -1391,7 +1625,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Delay</FieldLabel>
               <SelectInput
                 value={form.delay}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("delay", e.target.value)}
               >
                 <option value="No">No</option>
@@ -1405,7 +1639,7 @@ export default function GateChecklistPage() {
                 type="number"
                 min="0"
                 value={form.delayTimeMinutes}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("delayTimeMinutes", e.target.value)}
               />
             </div>
@@ -1414,7 +1648,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Controllable</FieldLabel>
               <SelectInput
                 value={form.controllable}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("controllable", e.target.value)}
               >
                 <option value="No">No</option>
@@ -1426,23 +1660,23 @@ export default function GateChecklistPage() {
               <FieldLabel>Block In</FieldLabel>
               <TimeInput
                 value={form.blockIn}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("blockIn", e.target.value)}
               />
             </div>
 
             <div>
-              <FieldLabel>ETD</FieldLabel>
+              <FieldLabel>STD</FieldLabel>
               <TimeInput
-                value={form.etd}
+                value={form.std}
                 disabled={!canEdit}
-                onChange={(e) => updateField("etd", e.target.value)}
+                onChange={(e) => updateField("std", e.target.value)}
               />
             </div>
 
             <div>
-              <FieldLabel>New ETD</FieldLabel>
-              <TimeInput value={form.newEtd} disabled />
+              <FieldLabel>New STD</FieldLabel>
+              <TimeInput value={form.newStd} disabled />
             </div>
 
             <div>
@@ -1454,7 +1688,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Actual Departure Time</FieldLabel>
               <TimeInput
                 value={form.actualDepartureTime}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) =>
                   updateField("actualDepartureTime", e.target.value)
                 }
@@ -1465,7 +1699,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Actual Arrival Time</FieldLabel>
               <TimeInput
                 value={form.actualArrivalTime}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("actualArrivalTime", e.target.value)}
               />
             </div>
@@ -1474,7 +1708,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Gate Agent 1 Arrival</FieldLabel>
               <TimeInput
                 value={form.gateAgent1Arrival}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("gateAgent1Arrival", e.target.value)}
               />
             </div>
@@ -1483,7 +1717,7 @@ export default function GateChecklistPage() {
               <FieldLabel>Gate Agent 2 Arrival</FieldLabel>
               <TimeInput
                 value={form.gateAgent2Arrival}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("gateAgent2Arrival", e.target.value)}
               />
             </div>
@@ -1493,7 +1727,7 @@ export default function GateChecklistPage() {
               <TextInput
                 type="number"
                 min="0"
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 value={form.checkedBags}
                 onChange={(e) => updateField("checkedBags", e.target.value)}
               />
@@ -1504,7 +1738,7 @@ export default function GateChecklistPage() {
               <TextInput
                 type="number"
                 min="0"
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 value={form.notLoadedBags}
                 onChange={(e) => updateField("notLoadedBags", e.target.value)}
               />
@@ -1514,7 +1748,7 @@ export default function GateChecklistPage() {
               <FieldLabel>GPU Connected Y or N</FieldLabel>
               <TextInput
                 value={form.gpuConnected}
-                disabled={!canEdit}
+                disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("gpuConnected", e.target.value)}
               />
             </div>
@@ -1546,6 +1780,7 @@ export default function GateChecklistPage() {
                   borderCollapse: "collapse",
                   tableLayout: "fixed",
                   fontSize: 13,
+                  opacity: stdUnlocked ? 1 : 0.65,
                 }}
               >
                 <thead>
@@ -1587,7 +1822,7 @@ export default function GateChecklistPage() {
                           {section.tasks.map((task, taskIndex) => (
                             <TimeInput
                               key={`${sectionIndex}-${taskIndex}`}
-                              disabled={!canEdit}
+                              disabled={!canEdit || !stdUnlocked}
                               value={actuals[`${sectionIndex}-${taskIndex}`] || ""}
                               onChange={(e) =>
                                 updateActual(sectionIndex, taskIndex, e.target.value)
@@ -1603,7 +1838,7 @@ export default function GateChecklistPage() {
               </table>
             </div>
 
-            <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ display: "grid", gap: 14, opacity: stdUnlocked ? 1 : 0.65 }}>
               <PageCard style={{ padding: 14 }}>
                 <div
                   style={{
@@ -1621,7 +1856,7 @@ export default function GateChecklistPage() {
                     <FieldLabel>Brake Release Time</FieldLabel>
                     <TimeInput
                       value={form.brakeReleaseTime}
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       onChange={(e) => updateField("brakeReleaseTime", e.target.value)}
                     />
                   </div>
@@ -1630,7 +1865,7 @@ export default function GateChecklistPage() {
                     <FieldLabel>Push Time</FieldLabel>
                     <TimeInput
                       value={form.pushTime}
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       onChange={(e) => updateField("pushTime", e.target.value)}
                     />
                   </div>
@@ -1654,7 +1889,7 @@ export default function GateChecklistPage() {
                     <FieldLabel>First Pax Off</FieldLabel>
                     <TimeInput
                       value={form.firstPaxOff}
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       onChange={(e) => updateField("firstPaxOff", e.target.value)}
                     />
                   </div>
@@ -1663,7 +1898,7 @@ export default function GateChecklistPage() {
                     <FieldLabel>Last Pax Off</FieldLabel>
                     <TimeInput
                       value={form.lastPaxOff}
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       onChange={(e) => updateField("lastPaxOff", e.target.value)}
                     />
                   </div>
@@ -1672,7 +1907,7 @@ export default function GateChecklistPage() {
                     <FieldLabel>First Pax On</FieldLabel>
                     <TimeInput
                       value={form.firstPaxOn}
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       onChange={(e) => updateField("firstPaxOn", e.target.value)}
                     />
                   </div>
@@ -1681,7 +1916,7 @@ export default function GateChecklistPage() {
                     <FieldLabel>Last Pax On</FieldLabel>
                     <TimeInput
                       value={form.lastPaxOn}
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       onChange={(e) => updateField("lastPaxOn", e.target.value)}
                     />
                   </div>
@@ -1713,7 +1948,7 @@ export default function GateChecklistPage() {
                     >
                       <div style={{ fontSize: 13, fontWeight: 700 }}>{item}</div>
                       <TextInput
-                        disabled={!canEdit}
+                        disabled={!canEdit || !stdUnlocked}
                         value={specials[item]}
                         onChange={(e) =>
                           setSpecials((prev) => ({
@@ -1743,7 +1978,7 @@ export default function GateChecklistPage() {
                   {delayAnnouncements.map((item, index) => (
                     <TimeInput
                       key={index}
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       value={item}
                       onChange={(e) =>
                         setDelayAnnouncements((prev) =>
@@ -1771,7 +2006,7 @@ export default function GateChecklistPage() {
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>BAGS</div>
                     <TextInput
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       value={gateCheck.bags}
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, bags: e.target.value }))
@@ -1782,7 +2017,7 @@ export default function GateChecklistPage() {
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>STROLLERS/CARSEATS</div>
                     <TextInput
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       value={gateCheck.strollersCarSeats}
                       onChange={(e) =>
                         setGateCheck((prev) => ({
@@ -1796,7 +2031,7 @@ export default function GateChecklistPage() {
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>WCHRS</div>
                     <TextInput
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       value={gateCheck.wchrs}
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, wchrs: e.target.value }))
@@ -1807,7 +2042,7 @@ export default function GateChecklistPage() {
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>OTHER</div>
                     <TextInput
-                      disabled={!canEdit}
+                      disabled={!canEdit || !stdUnlocked}
                       value={gateCheck.other}
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, other: e.target.value }))
@@ -1819,11 +2054,11 @@ export default function GateChecklistPage() {
             </div>
           </div>
 
-          <PageCard style={{ padding: 16 }}>
+          <PageCard style={{ padding: 16, opacity: stdUnlocked ? 1 : 0.65 }}>
             <FieldLabel>Notes</FieldLabel>
             <TextArea
               value={form.remarks}
-              disabled={!canEdit}
+              disabled={!canEdit || !stdUnlocked}
               onChange={(e) => updateField("remarks", e.target.value)}
               placeholder="Add notes here..."
               style={{ minHeight: 120 }}
