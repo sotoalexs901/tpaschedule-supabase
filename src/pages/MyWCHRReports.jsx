@@ -55,6 +55,15 @@ function tsToDate(val) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function getWchrAgentName(row) {
+  return (
+    row?.wchr_agent_name ||
+    row?.assigned_wchr_agent ||
+    row?.activity_agent_name ||
+    "—"
+  );
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -266,6 +275,7 @@ export default function MyWCHRReports() {
     setEditingRow({
       ...row,
       flight_date: toInputDateValue(row.flight_date),
+      wchr_agent_name: getWchrAgentName(row) === "—" ? "" : getWchrAgentName(row),
     });
     setError("");
     setMessage("");
@@ -276,6 +286,8 @@ export default function MyWCHRReports() {
 
     try {
       setSavingEdit(true);
+
+      const finalWchrAgentName = editingRow.wchr_agent_name || "";
 
       await updateDoc(doc(db, "wch_reports", editingRow.id), {
         passenger_name: editingRow.passenger_name || "",
@@ -291,6 +303,9 @@ export default function MyWCHRReports() {
         pnr: editingRow.pnr || "",
         wch_type: editingRow.wch_type || "",
         wheelchair_number: editingRow.wheelchair_number || "",
+        wchr_agent_name: finalWchrAgentName,
+        assigned_wchr_agent: finalWchrAgentName,
+        activity_agent_name: finalWchrAgentName,
       });
 
       setRows((prev) =>
@@ -303,6 +318,9 @@ export default function MyWCHRReports() {
                   flight_date: editingRow.flight_date
                     ? new Date(`${editingRow.flight_date}T00:00:00`)
                     : r.flight_date,
+                  wchr_agent_name: finalWchrAgentName,
+                  assigned_wchr_agent: finalWchrAgentName,
+                  activity_agent_name: finalWchrAgentName,
                 }
               : r
           )
@@ -329,6 +347,8 @@ export default function MyWCHRReports() {
     const printWindow = window.open("", "_blank", "width=900,height=700");
     if (!printWindow) return;
 
+    const wchrAgentName = getWchrAgentName(row);
+
     printWindow.document.write(`
       <html>
         <head>
@@ -354,6 +374,7 @@ export default function MyWCHRReports() {
             <div class="box"><div class="label">Flight</div>${row.airline || "-"} ${row.flight_number || ""}</div>
             <div class="box"><div class="label">Date</div>${formatMMDDYYYYFromFirestore(row.flight_date) || "-"}</div>
             <div class="box"><div class="label">WCHR Type</div>${row.wch_type || "-"}</div>
+            <div class="box"><div class="label">WCHR Agent Name</div>${wchrAgentName}</div>
             <div class="box"><div class="label">Wheelchair #</div>${row.wheelchair_number || "-"}</div>
             <div class="box"><div class="label">Origin</div>${row.origin || "-"}</div>
             <div class="box"><div class="label">Destination</div>${row.destination || "-"}</div>
@@ -708,6 +729,10 @@ export default function MyWCHRReports() {
                                 label="Wheelchair #"
                                 value={r.wheelchair_number || "—"}
                               />
+                              <InfoMini
+                                label="WCHR Agent"
+                                value={getWchrAgentName(r)}
+                              />
                             </div>
 
                             <div
@@ -865,6 +890,13 @@ export default function MyWCHRReports() {
                 value={editingRow.wheelchair_number || ""}
                 onChange={(v) =>
                   setEditingRow((prev) => ({ ...prev, wheelchair_number: v }))
+                }
+              />
+              <EditField
+                label="WCHR Agent Name"
+                value={editingRow.wchr_agent_name || ""}
+                onChange={(v) =>
+                  setEditingRow((prev) => ({ ...prev, wchr_agent_name: v }))
                 }
               />
             </div>
