@@ -119,14 +119,51 @@ function normalizeWheelchairNumber(value) {
   return String(Number(digits));
 }
 
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeLookup(value) {
+  return normalizeText(value).toLowerCase();
+}
+
+function getReportAgentName(report) {
+  return (
+    normalizeText(report?.wchr_agent_name) ||
+    normalizeText(report?.assigned_wchr_agent) ||
+    normalizeText(report?.activity_agent_name) ||
+    normalizeText(report?.employee_login) ||
+    normalizeText(report?.employee_name) ||
+    "Unknown"
+  );
+}
+
+function userMatchesActivityName(user, activityName) {
+  const target = normalizeLookup(activityName);
+  if (!target) return false;
+
+  const candidates = [
+    user?.username,
+    user?.displayName,
+    user?.fullName,
+    user?.name,
+    user?.email,
+  ]
+    .map((v) => normalizeLookup(v))
+    .filter(Boolean);
+
+  return candidates.includes(target);
+}
+
+function findMatchedUser(users, activityName) {
+  return users.find((u) => userMatchesActivityName(u, activityName)) || null;
+}
+
 function buildCountByLogin(reports) {
   const counts = {};
 
   for (const r of reports) {
-    const login = String(
-      r.employee_login || r.employee_name || "Unknown"
-    ).trim() || "Unknown";
-
+    const login = getReportAgentName(r);
     counts[login] = (counts[login] || 0) + 1;
   }
 
@@ -197,9 +234,7 @@ function buildProductivityTable(reports, users) {
   const byLogin = {};
 
   for (const r of reports || []) {
-    const login = String(
-      r.employee_login || r.employee_name || "Unknown"
-    ).trim() || "Unknown";
+    const login = getReportAgentName(r);
 
     if (!byLogin[login]) {
       byLogin[login] = {
@@ -223,7 +258,7 @@ function buildProductivityTable(reports, users) {
 
   return Object.values(byLogin)
     .map((row) => {
-      const matchedUser = users.find((u) => u.username === row.login);
+      const matchedUser = findMatchedUser(users, row.login);
       return {
         ...row,
         role: matchedUser?.role || "",
@@ -351,6 +386,10 @@ export default function AdminActivityDashboard() {
         return {
           id: user.id,
           username: user.username || "—",
+          displayName: user.displayName || "",
+          fullName: user.fullName || "",
+          name: user.name || "",
+          email: user.email || "",
           role: user.role || "—",
           online: Boolean(p?.online),
           currentPage: p?.currentPage || "—",
@@ -366,9 +405,7 @@ export default function AdminActivityDashboard() {
     const set = new Set();
 
     reports.forEach((r) => {
-      const login = String(
-        r.employee_login || r.employee_name || "Unknown"
-      ).trim();
+      const login = getReportAgentName(r);
       if (login) set.add(login);
     });
 
@@ -386,7 +423,11 @@ export default function AdminActivityDashboard() {
   const filteredUsers = useMemo(() => {
     return mergedUsers.filter((u) => {
       if (selectedRole !== "all" && u.role !== selectedRole) return false;
-      if (selectedLogin !== "all" && u.username !== selectedLogin) return false;
+
+      if (selectedLogin !== "all") {
+        if (!userMatchesActivityName(u, selectedLogin)) return false;
+      }
+
       return true;
     });
   }, [mergedUsers, selectedLogin, selectedRole]);
@@ -398,14 +439,12 @@ export default function AdminActivityDashboard() {
       if (activeStartDate && submitted < activeStartDate) return false;
       if (activeEndDate && submitted > activeEndDate) return false;
 
-      const login = String(
-        r.employee_login || r.employee_name || "Unknown"
-      ).trim();
+      const login = getReportAgentName(r);
 
       if (selectedLogin !== "all" && login !== selectedLogin) return false;
 
       if (selectedRole !== "all") {
-        const matchedUser = mergedUsers.find((u) => u.username === login);
+        const matchedUser = findMatchedUser(mergedUsers, login);
         if (!matchedUser || matchedUser.role !== selectedRole) return false;
       }
 
@@ -487,13 +526,23 @@ export default function AdminActivityDashboard() {
     });
   }, [filteredReports, mergedUsers, selectedRole, selectedLogin]);
 
+  const recentWchrReports = useMemo(() => {
+    return [...filteredReports]
+      .sort((a, b) => {
+        const A = toDateSafe(a.submitted_at)?.getTime() || 0;
+        const B = toDateSafe(b.submitted_at)?.getTime() || 0;
+        return B - A;
+      })
+      .slice(0, 25);
+  }, [filteredReports]);
+
   const handleExportCsv = () => {
     const rows = [
       ["ADMIN ACTIVITY DASHBOARD"],
       ["Range", safeRangeLabel(range)],
       ["From", fromDate || "—"],
       ["To", toDate || "—"],
-      ["Login Filter", selectedLogin],
+      ["Agent/Login Filter", selectedLogin],
       ["Role Filter", selectedRole],
       [],
       ["SUMMARY"],
@@ -502,8 +551,8 @@ export default function AdminActivityDashboard() {
       ["Users With Activity", activeUsers],
       ["WCHR Reports", totalWchr],
       [],
-      ["TOP WCHR LOGINS"],
-      ["Login", "Count"],
+      ["TOP WCHR LOGINS / AGENTS"],
+      ["Agent / Login", "Count"],
       ...topWchrLogins.map((r) => [r.label, r.count]),
       [],
       ["TOP AIRLINES"],
@@ -524,8 +573,8 @@ export default function AdminActivityDashboard() {
       ["Hour", "Count"],
       ...hourlyWchr.map((r) => [r.label, r.count]),
       [],
-      ["PRODUCTIVITY BY LOGIN"],
-      ["Login", "Role", "Online", "Today", "This Week", "This Month", "Total"],
+      ["PRODUCTIVITY BY AGENT / LOGIN"],
+      ["Agent / Login", "Role", "Online", "Today", "This Week", "This Month", "Total"],
       ...productivityRows.map((r) => [
         r.login,
         normalizeRole(r.role),
@@ -545,6 +594,32 @@ export default function AdminActivityDashboard() {
         u.currentPage || "—",
         formatDate(u.lastSeen),
         formatDate(u.lastLoginAt),
+      ]),
+      [],
+      ["RECENT WCHR REPORTS"],
+      [
+        "Submitted At",
+        "WCHR Agent",
+        "Employee Login",
+        "Employee Name",
+        "Passenger",
+        "Airline",
+        "Flight",
+        "WCHR Type",
+        "Wheelchair Number",
+        "Status",
+      ],
+      ...recentWchrReports.map((r) => [
+        formatDate(r.submitted_at),
+        getReportAgentName(r),
+        r.employee_login || "",
+        r.employee_name || "",
+        r.passenger_name || "",
+        r.airline || "",
+        r.flight_number || "",
+        r.wch_type || "",
+        r.wheelchair_number || "",
+        r.status || "",
       ]),
     ];
 
@@ -640,7 +715,7 @@ export default function AdminActivityDashboard() {
             />
           </FilterField>
 
-          <FilterField label="Login">
+          <FilterField label="Agent / Login">
             <select
               value={selectedLogin}
               onChange={(e) => setSelectedLogin(e.target.value)}
@@ -692,7 +767,7 @@ export default function AdminActivityDashboard() {
           gap: 16,
         }}
       >
-        <Panel title="Top WCHR Logins">
+        <Panel title="Top WCHR Logins / Agents">
           <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
         </Panel>
 
@@ -754,6 +829,51 @@ export default function AdminActivityDashboard() {
         </Panel>
       </div>
 
+      <Panel title="Recent WCHR Reports">
+        {recentWchrReports.length === 0 ? (
+          <InfoBox text="No WCHR reports for this filter." />
+        ) : (
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
+              <thead style={{ background: "#f8fbff" }}>
+                <tr>
+                  <th style={th}>Submitted At</th>
+                  <th style={th}>WCHR Agent</th>
+                  <th style={th}>Passenger</th>
+                  <th style={th}>Airline</th>
+                  <th style={th}>Flight</th>
+                  <th style={th}>Type</th>
+                  <th style={th}>Wheelchair</th>
+                  <th style={th}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentWchrReports.map((r, i) => (
+                  <tr
+                    key={r.id}
+                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                  >
+                    <td style={td}>{formatDate(r.submitted_at)}</td>
+                    <td style={td}>
+                      <div style={{ fontWeight: 700 }}>{getReportAgentName(r)}</div>
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                        {r.employee_login || r.employee_name || "—"}
+                      </div>
+                    </td>
+                    <td style={td}>{r.passenger_name || "—"}</td>
+                    <td style={td}>{r.airline || "—"}</td>
+                    <td style={td}>{r.flight_number || "—"}</td>
+                    <td style={td}>{r.wch_type || "—"}</td>
+                    <td style={td}>{r.wheelchair_number || "—"}</td>
+                    <td style={td}>{r.status || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
       <Panel title="Recent User Activity">
         {recentUsers.length === 0 ? (
           <InfoBox text="No recent activity for this filter." />
@@ -801,7 +921,7 @@ export default function AdminActivityDashboard() {
         )}
       </Panel>
 
-      <Panel title="WCHR Productivity by Login">
+      <Panel title="WCHR Productivity by Agent / Login">
         {productivityRows.length === 0 ? (
           <InfoBox text="No productivity data for this filter." />
         ) : (
@@ -809,7 +929,7 @@ export default function AdminActivityDashboard() {
             <table style={tableStyle}>
               <thead style={{ background: "#f8fbff" }}>
                 <tr>
-                  <th style={th}>Login</th>
+                  <th style={th}>Agent / Login</th>
                   <th style={th}>Role</th>
                   <th style={th}>Status</th>
                   <th style={th}>Today</th>
