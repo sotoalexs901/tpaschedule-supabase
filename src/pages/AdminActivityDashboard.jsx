@@ -468,7 +468,6 @@ export default function AdminActivityDashboard() {
   );
 
   const dailyWchr = useMemo(() => buildDailyCounts(filteredReports), [filteredReports]);
-
   const hourlyWchr = useMemo(() => buildHourlyCounts(filteredReports), [filteredReports]);
 
   const mostUsedWheelchairToday = useMemo(() => {
@@ -792,7 +791,6 @@ export default function AdminActivityDashboard() {
                 : "—"
             }
           />
-
           <StatCard
             label="This Week"
             value={
@@ -801,7 +799,6 @@ export default function AdminActivityDashboard() {
                 : "—"
             }
           />
-
           <StatCard
             label="This Month"
             value={
