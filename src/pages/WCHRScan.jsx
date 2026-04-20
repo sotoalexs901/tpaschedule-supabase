@@ -268,11 +268,12 @@ function FieldLabel({ children }) {
   );
 }
 
-function EditInput({ label, value, onChange, placeholder = "" }) {
+function EditInput({ label, value, onChange, placeholder = "", type = "text" }) {
   return (
     <div>
       <FieldLabel>{label}</FieldLabel>
       <input
+        type={type}
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -295,22 +296,32 @@ export default function WCHRScan() {
   const navigate = useNavigate();
   const { user } = useUser();
 
+  const [mode, setMode] = useState("scan");
   const [step, setStep] = useState("upload");
   const [error, setError] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [wchType, setWchType] = useState("WCHR");
   const [wchrAgentName, setWchrAgentName] = useState("");
-  const [parsed, setParsed] = useState(null);
+  const [parsed, setParsed] = useState({
+    passenger_name: "",
+    airline: "",
+    flight_number: "",
+    flight_date: "",
+    destination: "",
+    seat: "",
+    gate: "",
+    pnr: "",
+    wheelchair_number: "",
+    raw_text: "",
+  });
 
   const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
 
   const canScan = useMemo(() => Boolean(imageFile), [imageFile]);
 
   const canSubmit = useMemo(() => {
-    if (!imageUrl || !parsed) return false;
-
-    return [
+    const required = [
       parsed.passenger_name,
       parsed.airline,
       parsed.flight_number,
@@ -320,12 +331,31 @@ export default function WCHRScan() {
       parsed.gate,
       parsed.pnr,
       wchType,
-    ].every((v) => String(v || "").trim().length > 0);
-  }, [imageUrl, parsed, wchType]);
+      wchrAgentName,
+    ];
+
+    if (mode === "scan") {
+      if (!imageUrl || !parsed) return false;
+      return required.every((v) => String(v || "").trim().length > 0);
+    }
+
+    return required.every((v) => String(v || "").trim().length > 0);
+  }, [imageUrl, parsed, wchType, wchrAgentName, mode]);
 
   const handlePickFile = (file) => {
     setError("");
-    setParsed(null);
+    setParsed({
+      passenger_name: "",
+      airline: "",
+      flight_number: "",
+      flight_date: "",
+      destination: "",
+      seat: "",
+      gate: "",
+      pnr: "",
+      wheelchair_number: "",
+      raw_text: "",
+    });
     setImageUrl("");
     setImageFile(file || null);
   };
@@ -421,7 +451,7 @@ export default function WCHRScan() {
 
     if (!canSubmit) {
       setError(
-        "Please complete Passenger Name, Airline, Flight Number, Flight Date, Destination, Seat, Gate, Reservation Code and WCHR Type before submit."
+        "Please complete Passenger Name, Airline, Flight Number, Flight Date, Destination, Seat, Gate, Reservation Code, WCHR Type and WCHR Agent Name before submit."
       );
       return;
     }
@@ -468,13 +498,13 @@ export default function WCHRScan() {
         wch_type: wchType,
         status,
         flight_key,
-        image_url: imageUrl,
+        image_url: mode === "scan" ? imageUrl : "",
         raw_text: parsed.raw_text || "",
 
-        // New fields for WCHR responsible agent / user activity reports
         wchr_agent_name: finalWchrAgentName,
         assigned_wchr_agent: finalWchrAgentName,
         activity_agent_name: finalWchrAgentName,
+        entry_mode: mode,
       });
 
       const short = docRef.id.slice(-6).toUpperCase();
@@ -485,7 +515,7 @@ export default function WCHRScan() {
       navigate("/wchr/my-reports");
     } catch (e) {
       console.error(e);
-      setStep("preview");
+      setStep(mode === "scan" ? "preview" : "manual");
       setError(e?.message || "Unexpected error while submitting.");
     }
   };
@@ -552,7 +582,7 @@ export default function WCHRScan() {
                 fontWeight: 800,
               }}
             >
-              WCHR Scan
+              WCHR Report
             </h1>
             <p
               style={{
@@ -562,8 +592,7 @@ export default function WCHRScan() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Scan a boarding pass and keep only the required fields for the WCHR
-              report.
+              Choose between scanning a boarding pass or entering the information manually.
             </p>
           </div>
 
@@ -597,22 +626,32 @@ export default function WCHRScan() {
       <PageCard style={{ padding: 22 }}>
         <div style={{ display: "grid", gap: 14 }}>
           <div>
-            <FieldLabel>Boarding Pass Photo</FieldLabel>
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={(e) => handlePickFile(e.target.files?.[0])}
-              style={{
-                width: "100%",
-                border: "1px solid #dbeafe",
-                background: "#ffffff",
-                borderRadius: 14,
-                padding: "12px 14px",
-                fontSize: 14,
-                color: "#0f172a",
-              }}
-            />
+            <FieldLabel>Entry Method</FieldLabel>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <ActionButton
+                variant={mode === "scan" ? "primary" : "secondary"}
+                onClick={() => {
+                  setMode("scan");
+                  setStep("upload");
+                  setError("");
+                }}
+              >
+                Scan Boarding Pass
+              </ActionButton>
+
+              <ActionButton
+                variant={mode === "manual" ? "primary" : "secondary"}
+                onClick={() => {
+                  setMode("manual");
+                  setStep("manual");
+                  setError("");
+                  setImageFile(null);
+                  setImageUrl("");
+                }}
+              >
+                Manual Entry
+              </ActionButton>
+            </div>
           </div>
 
           <div
@@ -663,21 +702,123 @@ export default function WCHRScan() {
             </div>
           </div>
 
-          <div>
-            <ActionButton
-              onClick={handleScan}
-              variant="primary"
-              disabled={
-                !canScan || step === "scanning" || step === "submitting"
-              }
-            >
-              {step === "scanning" ? "Scanning..." : "Scan & Preview"}
-            </ActionButton>
-          </div>
+          {mode === "scan" && (
+            <>
+              <div>
+                <FieldLabel>Boarding Pass Photo</FieldLabel>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => handlePickFile(e.target.files?.[0])}
+                  style={{
+                    width: "100%",
+                    border: "1px solid #dbeafe",
+                    background: "#ffffff",
+                    borderRadius: 14,
+                    padding: "12px 14px",
+                    fontSize: 14,
+                    color: "#0f172a",
+                  }}
+                />
+              </div>
+
+              <div>
+                <ActionButton
+                  onClick={handleScan}
+                  variant="primary"
+                  disabled={
+                    !canScan || step === "scanning" || step === "submitting"
+                  }
+                >
+                  {step === "scanning" ? "Scanning..." : "Scan & Preview"}
+                </ActionButton>
+              </div>
+            </>
+          )}
         </div>
       </PageCard>
 
-      {step === "preview" && parsed && (
+      {mode === "manual" && (
+        <PageCard style={{ padding: 22 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <EditInput
+              label="Passenger Name"
+              value={parsed.passenger_name}
+              onChange={(value) => handleParsedChange("passenger_name", value)}
+              placeholder="VERGARA / CLAUDIA"
+            />
+            <EditInput
+              label="Airline"
+              value={parsed.airline}
+              onChange={(value) => handleParsedChange("airline", value)}
+              placeholder="SY"
+            />
+            <EditInput
+              label="Flight Number"
+              value={parsed.flight_number}
+              onChange={(value) => handleParsedChange("flight_number", value)}
+              placeholder="1234"
+            />
+            <EditInput
+              label="Flight Date"
+              type="date"
+              value={parsed.flight_date}
+              onChange={(value) => handleParsedChange("flight_date", value)}
+            />
+            <EditInput
+              label="Destination"
+              value={parsed.destination}
+              onChange={(value) => handleParsedChange("destination", value)}
+              placeholder="TPA"
+            />
+            <EditInput
+              label="Seat"
+              value={parsed.seat}
+              onChange={(value) => handleParsedChange("seat", value)}
+              placeholder="12A"
+            />
+            <EditInput
+              label="Gate"
+              value={parsed.gate}
+              onChange={(value) => handleParsedChange("gate", value)}
+              placeholder="F86"
+            />
+            <EditInput
+              label="PNR / Reservation Code"
+              value={parsed.pnr}
+              onChange={(value) => handleParsedChange("pnr", value)}
+              placeholder="A7ILFB"
+            />
+            <EditInput
+              label="WCHR Number"
+              value={parsed.wheelchair_number}
+              onChange={(value) =>
+                handleParsedChange("wheelchair_number", value)
+              }
+              placeholder="EAR23 or 23"
+            />
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <ActionButton
+              onClick={handleSubmit}
+              variant="success"
+              disabled={!canSubmit || step === "submitting"}
+            >
+              {step === "submitting" ? "Submitting..." : "Submit Report"}
+            </ActionButton>
+          </div>
+        </PageCard>
+      )}
+
+      {mode === "scan" && step === "preview" && parsed && (
         <PageCard style={{ padding: 22 }}>
           {imageUrl && (
             <div style={{ marginBottom: 16 }}>
@@ -784,8 +925,20 @@ export default function WCHRScan() {
           >
             <ActionButton
               onClick={() => {
-                setParsed(null);
+                setParsed({
+                  passenger_name: "",
+                  airline: "",
+                  flight_number: "",
+                  flight_date: "",
+                  destination: "",
+                  seat: "",
+                  gate: "",
+                  pnr: "",
+                  wheelchair_number: "",
+                  raw_text: "",
+                });
                 setImageUrl("");
+                setImageFile(null);
                 setStep("upload");
               }}
               variant="secondary"
