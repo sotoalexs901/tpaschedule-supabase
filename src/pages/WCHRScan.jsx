@@ -300,6 +300,7 @@ export default function WCHRScan() {
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [wchType, setWchType] = useState("WCHR");
+  const [wchrAgentName, setWchrAgentName] = useState("");
   const [parsed, setParsed] = useState(null);
 
   const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
@@ -443,6 +444,7 @@ export default function WCHRScan() {
       const finalWheelchairNumber = cleanWheelchairNumber(
         parsed.wheelchair_number
       );
+      const finalWchrAgentName = safeText(wchrAgentName);
 
       const docRef = await addDoc(collection(db, "wch_reports"), {
         report_id: "",
@@ -468,6 +470,11 @@ export default function WCHRScan() {
         flight_key,
         image_url: imageUrl,
         raw_text: parsed.raw_text || "",
+
+        // New fields for WCHR responsible agent / user activity reports
+        wchr_agent_name: finalWchrAgentName,
+        assigned_wchr_agent: finalWchrAgentName,
+        activity_agent_name: finalWchrAgentName,
       });
 
       const short = docRef.id.slice(-6).toUpperCase();
@@ -608,25 +615,52 @@ export default function WCHRScan() {
             />
           </div>
 
-          <div style={{ maxWidth: 260 }}>
-            <FieldLabel>WCHR Type</FieldLabel>
-            <select
-              value={wchType}
-              onChange={(e) => setWchType(e.target.value)}
-              style={{
-                width: "100%",
-                border: "1px solid #dbeafe",
-                background: "#ffffff",
-                borderRadius: 14,
-                padding: "12px 14px",
-                fontSize: 14,
-                color: "#0f172a",
-              }}
-            >
-              <option value="WCHR">WCHR</option>
-              <option value="WCHS">WCHS</option>
-              <option value="WCHC">WCHC</option>
-            </select>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <div>
+              <FieldLabel>WCHR Type</FieldLabel>
+              <select
+                value={wchType}
+                onChange={(e) => setWchType(e.target.value)}
+                style={{
+                  width: "100%",
+                  border: "1px solid #dbeafe",
+                  background: "#ffffff",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                  fontSize: 14,
+                  color: "#0f172a",
+                }}
+              >
+                <option value="WCHR">WCHR</option>
+                <option value="WCHS">WCHS</option>
+                <option value="WCHC">WCHC</option>
+              </select>
+            </div>
+
+            <div>
+              <FieldLabel>WCHR Agent Name</FieldLabel>
+              <input
+                value={wchrAgentName}
+                onChange={(e) => setWchrAgentName(e.target.value)}
+                placeholder="Example: Maria Lopez"
+                style={{
+                  width: "100%",
+                  border: "1px solid #dbeafe",
+                  background: "#ffffff",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                  fontSize: 14,
+                  color: "#0f172a",
+                  outline: "none",
+                }}
+              />
+            </div>
           </div>
 
           <div>
@@ -719,6 +753,12 @@ export default function WCHRScan() {
                 handleParsedChange("wheelchair_number", value)
               }
               placeholder="EAR23 or 23"
+            />
+            <EditInput
+              label="WCHR Agent Name"
+              value={wchrAgentName}
+              onChange={setWchrAgentName}
+              placeholder="Example: Maria Lopez"
             />
           </div>
 
