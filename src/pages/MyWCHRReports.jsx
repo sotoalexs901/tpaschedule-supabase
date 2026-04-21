@@ -55,6 +55,25 @@ function tsToDate(val) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function safeText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeText(value) {
+  return safeText(value).toLowerCase();
+}
+
+function getUserDisplayName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    user?.email ||
+    ""
+  );
+}
+
 function getWchrAgentName(row) {
   return (
     row?.wchr_agent_name ||
@@ -62,6 +81,43 @@ function getWchrAgentName(row) {
     row?.activity_agent_name ||
     "—"
   );
+}
+
+function dedupeReports(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    if (!map.has(row.id)) {
+      map.set(row.id, row);
+    }
+  });
+  return Array.from(map.values());
+}
+
+function rowBelongsToUser(row, user) {
+  const userId = safeText(user?.id);
+  const username = normalizeText(user?.username);
+  const displayName = normalizeText(getUserDisplayName(user));
+  const email = normalizeText(user?.email);
+
+  const assignedId = safeText(row?.wchr_agent_id);
+  const employeeId = safeText(row?.employee_id);
+
+  const reportNames = [
+    row?.wchr_agent_name,
+    row?.assigned_wchr_agent,
+    row?.activity_agent_name,
+    row?.employee_name,
+    row?.employee_login,
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  if (userId && (assignedId === userId || employeeId === userId)) return true;
+  if (username && reportNames.includes(username)) return true;
+  if (displayName && reportNames.includes(displayName)) return true;
+  if (email && reportNames.includes(email)) return true;
+
+  return false;
 }
 
 function PageCard({ children, style = {} }) {
@@ -155,6 +211,25 @@ function TextInput(props) {
   );
 }
 
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        borderRadius: 12,
+        padding: "10px 12px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 function statusBadge(status) {
   const s = String(status || "").toUpperCase();
 
@@ -215,6 +290,7 @@ export default function MyWCHRReports() {
 
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [editingRow, setEditingRow] = useState(null);
@@ -230,29 +306,65 @@ export default function MyWCHRReports() {
       setLoading(true);
 
       try {
-        if (!employeeId) {
+        if (!user) {
           setRows([]);
+          setEmployees([]);
           setLoading(false);
           return;
         }
 
-        const q = query(
-          collection(db, "wch_reports"),
-          where("employee_id", "==", employeeId),
-          limit(100)
+        const employeeSnap = await getDocs(collection(db, "employees"));
+        const employeeRows = employeeSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) =>
+            String(a.name || "").localeCompare(String(b.name || ""))
+          );
+
+        const queries = [];
+        const seenKeys = new Set();
+
+        const pushQuery = (field, value) => {
+          const clean = safeText(value);
+          if (!clean) return;
+          const key = `${field}:${clean}`;
+          if (seenKeys.has(key)) return;
+          seenKeys.add(key);
+          queries.push(
+            getDocs(
+              query(collection(db, "wch_reports"), where(field, "==", clean), limit(100))
+            )
+          );
+        };
+
+        pushQuery("employee_id", user?.id);
+        pushQuery("wchr_agent_id", user?.id);
+        pushQuery("employee_login", user?.username);
+        pushQuery("employee_name", getUserDisplayName(user));
+        pushQuery("wchr_agent_name", getUserDisplayName(user));
+        pushQuery("assigned_wchr_agent", getUserDisplayName(user));
+        pushQuery("activity_agent_name", getUserDisplayName(user));
+        pushQuery("wchr_agent_name", user?.username);
+        pushQuery("assigned_wchr_agent", user?.username);
+        pushQuery("activity_agent_name", user?.username);
+
+        const snaps = await Promise.all(queries);
+
+        const allRows = snaps.flatMap((snap) =>
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         );
 
-        const snap = await getDocs(q);
-
-        const data = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
+        const filtered = dedupeReports(allRows)
+          .filter((row) => rowBelongsToUser(row, user))
           .sort((a, b) => {
             const ta = tsToDate(a.submitted_at)?.getTime() || 0;
             const tb = tsToDate(b.submitted_at)?.getTime() || 0;
             return tb - ta;
           });
 
-        if (mounted) setRows(data);
+        if (mounted) {
+          setEmployees(employeeRows);
+          setRows(filtered);
+        }
       } catch (e) {
         console.error(e);
         if (mounted) setError(e?.message || "Failed to load reports.");
@@ -266,17 +378,27 @@ export default function MyWCHRReports() {
     return () => {
       mounted = false;
     };
-  }, [employeeId]);
+  }, [employeeId, user]);
 
   const groupedReports = useMemo(() => groupReports(rows), [rows]);
   const totalReports = rows.length;
 
   const handleOpenEdit = (row) => {
+    const currentAgentName = getWchrAgentName(row);
+    const matchedEmployee =
+      employees.find(
+        (emp) =>
+          safeText(emp.id) === safeText(row?.wchr_agent_id) ||
+          safeText(emp.name) === safeText(currentAgentName)
+      ) || null;
+
     setEditingRow({
       ...row,
       flight_date: toInputDateValue(row.flight_date),
-      wchr_agent_name: getWchrAgentName(row) === "—" ? "" : getWchrAgentName(row),
+      wchr_agent_name: currentAgentName === "—" ? "" : currentAgentName,
+      wchr_agent_id: matchedEmployee?.id || row?.wchr_agent_id || "",
     });
+
     setError("");
     setMessage("");
   };
@@ -287,7 +409,12 @@ export default function MyWCHRReports() {
     try {
       setSavingEdit(true);
 
-      const finalWchrAgentName = editingRow.wchr_agent_name || "";
+      const matchedEmployee =
+        employees.find((emp) => emp.id === editingRow.wchr_agent_id) || null;
+
+      const finalWchrAgentName =
+        matchedEmployee?.name || editingRow.wchr_agent_name || "";
+      const finalWchrAgentId = matchedEmployee?.id || "";
 
       await updateDoc(doc(db, "wch_reports", editingRow.id), {
         passenger_name: editingRow.passenger_name || "",
@@ -303,6 +430,7 @@ export default function MyWCHRReports() {
         pnr: editingRow.pnr || "",
         wch_type: editingRow.wch_type || "",
         wheelchair_number: editingRow.wheelchair_number || "",
+        wchr_agent_id: finalWchrAgentId,
         wchr_agent_name: finalWchrAgentName,
         assigned_wchr_agent: finalWchrAgentName,
         activity_agent_name: finalWchrAgentName,
@@ -318,6 +446,7 @@ export default function MyWCHRReports() {
                   flight_date: editingRow.flight_date
                     ? new Date(`${editingRow.flight_date}T00:00:00`)
                     : r.flight_date,
+                  wchr_agent_id: finalWchrAgentId,
                   wchr_agent_name: finalWchrAgentName,
                   assigned_wchr_agent: finalWchrAgentName,
                   activity_agent_name: finalWchrAgentName,
@@ -474,7 +603,7 @@ export default function MyWCHRReports() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Review, edit and print your boarding pass scan reports.
+              Review, edit and print your boarding pass scan reports and assigned WCHR reports.
             </p>
           </div>
 
@@ -892,13 +1021,43 @@ export default function MyWCHRReports() {
                   setEditingRow((prev) => ({ ...prev, wheelchair_number: v }))
                 }
               />
-              <EditField
-                label="WCHR Agent Name"
-                value={editingRow.wchr_agent_name || ""}
-                onChange={(v) =>
-                  setEditingRow((prev) => ({ ...prev, wchr_agent_name: v }))
-                }
-              />
+
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#475569",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  WCHR Agent Name
+                </label>
+                <SelectInput
+                  value={editingRow.wchr_agent_id || ""}
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    const selectedEmployee =
+                      employees.find((emp) => emp.id === selectedId) || null;
+
+                    setEditingRow((prev) => ({
+                      ...prev,
+                      wchr_agent_id: selectedId,
+                      wchr_agent_name: selectedEmployee?.name || "",
+                    }));
+                  }}
+                >
+                  <option value="">Select employee</option>
+                  {employees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
             </div>
 
             <div
