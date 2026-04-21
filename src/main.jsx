@@ -71,6 +71,9 @@ import EmployeePerformanceManagementPage from "./pages/EmployeePerformanceManage
 import GateChecklistPage from "./pages/GateChecklistPage.jsx";
 import GateChecklistManagementPage from "./pages/GateChecklistManagementPage.jsx";
 
+import FuelEntryPage from "./pages/FuelEntryPage.jsx";
+import FuelManagementPage from "./pages/FuelManagementPage.jsx";
+
 function ProtectedRoute({
   children,
   roles,
@@ -514,6 +517,17 @@ function AppRouter() {
           />
 
           <Route
+            path="fuel-entry"
+            element={
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
+                <FuelEntryPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="operational-report/reports"
             element={
               <ProtectedRoute
@@ -574,6 +588,17 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["duty_manager", "station_manager"]}>
                 <GateChecklistManagementPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="fuel-management"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <FuelManagementPage />
               </ProtectedRoute>
             }
           />
