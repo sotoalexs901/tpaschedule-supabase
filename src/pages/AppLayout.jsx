@@ -310,6 +310,17 @@ export default function AppLayout() {
   const canManageGateChecklist =
     user?.role === "duty_manager" || user?.role === "station_manager";
 
+  const canSubmitFuel =
+    user?.role === "agent" ||
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageFuel =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
   const navSections = useMemo(() => {
     const sections = [];
 
@@ -486,6 +497,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canSubmitFuel) {
+      submissionReports.push({
+        to: "/fuel-entry",
+        label: "Fuel Entry",
+        icon: "⛽",
+      });
+    }
+
     if (canAccessTimesheets) {
       managementReports.push({
         to: "/timesheets/reports",
@@ -553,6 +572,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canManageFuel) {
+      managementReports.push({
+        to: "/fuel-management",
+        label: "Fuel Management",
+        icon: "⛽",
+      });
+    }
+
     if (canAccessWchrTools) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
@@ -609,6 +636,8 @@ export default function AppLayout() {
     canManageEmployeePerformance,
     canSubmitGateChecklist,
     canManageGateChecklist,
+    canSubmitFuel,
+    canManageFuel,
     unreadMessages,
     unreadNotifications,
     pendingTimeOff,
