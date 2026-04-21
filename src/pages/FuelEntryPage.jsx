@@ -4,6 +4,10 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import {
+  runFuelPhotoOcr,
+  compareFuelPhotoReadings,
+} from "../utils/fuelPhotoOcr";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -291,8 +295,51 @@ export default function FuelEntryPage() {
       setStatusMessage("");
 
       let photoUrl = "";
+      let photoCheckStatus = "missing";
+      let ocrRawText = "";
+      let ocrStartReading = null;
+      let ocrEndReading = null;
+      let photoCheckNotes = "";
+      let photoCheckNumbersDetected = [];
+      let photoCheckStartDiff = null;
+      let photoCheckEndDiff = null;
+      let ocrProviderResult = null;
+
       if (photoFile) {
         photoUrl = await uploadPhoto(photoFile);
+
+        try {
+          const ocrResult = await runFuelPhotoOcr(photoUrl);
+          ocrProviderResult = ocrResult?.providerResult || null;
+
+          const comparison = compareFuelPhotoReadings({
+            startReading: start,
+            endReading: end,
+            rawText: ocrResult?.rawText || "",
+            tolerance: 5,
+          });
+
+          ocrRawText = comparison.rawText || "";
+          photoCheckStatus = comparison.status || "pending_review";
+          ocrStartReading = comparison.matchedStart;
+          ocrEndReading = comparison.matchedEnd;
+          photoCheckNumbersDetected = comparison.numbersDetected || [];
+          photoCheckStartDiff = comparison.startDiff;
+          photoCheckEndDiff = comparison.endDiff;
+
+          if (photoCheckStatus === "match") {
+            photoCheckNotes = "OCR matched start and end readings.";
+          } else if (photoCheckStatus === "mismatch") {
+            photoCheckNotes = "OCR could not match the entered readings.";
+          } else {
+            photoCheckNotes = "OCR requires manual review.";
+          }
+        } catch (ocrError) {
+          console.error("Fuel OCR error:", ocrError);
+          photoCheckStatus = "pending_review";
+          photoCheckNotes =
+            ocrError?.message || "OCR could not validate this photo.";
+        }
       }
 
       const totalGallons = Number((end - start).toFixed(2));
@@ -317,10 +364,15 @@ export default function FuelEntryPage() {
         notes: form.notes || "",
 
         photoUrl,
-        photoCheckStatus: photoUrl ? "pending_review" : "missing",
-        ocrStartReading: null,
-        ocrEndReading: null,
-        photoCheckNotes: "",
+        photoCheckStatus,
+        photoCheckNotes,
+        ocrRawText,
+        ocrStartReading,
+        ocrEndReading,
+        photoCheckNumbersDetected,
+        photoCheckStartDiff,
+        photoCheckEndDiff,
+        ocrProviderResult,
 
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -328,7 +380,16 @@ export default function FuelEntryPage() {
 
       setForm(createInitialForm(user));
       setPhotoFile(null);
-      setStatusMessage("Fuel record saved successfully.");
+
+      if (photoUrl && photoCheckStatus === "match") {
+        setStatusMessage("Fuel record saved successfully. OCR matched the photo.");
+      } else if (photoUrl && photoCheckStatus !== "match") {
+        setStatusMessage(
+          "Fuel record saved successfully. Photo was uploaded, but OCR needs review."
+        );
+      } else {
+        setStatusMessage("Fuel record saved successfully.");
+      }
     } catch (error) {
       console.error("Error saving fuel log:", error);
       setStatusMessage("Could not save fuel record.");
