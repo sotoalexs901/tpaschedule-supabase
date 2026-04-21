@@ -1,5 +1,5 @@
 // src/pages/WCHRScan.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -9,6 +9,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
@@ -184,6 +185,21 @@ function guessPnr(scanResult, rawText) {
   return "";
 }
 
+function emptyParsed() {
+  return {
+    passenger_name: "",
+    airline: "",
+    flight_number: "",
+    flight_date: "",
+    destination: "",
+    seat: "",
+    gate: "",
+    pnr: "",
+    wheelchair_number: "",
+    raw_text: "",
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -296,27 +312,39 @@ export default function WCHRScan() {
   const navigate = useNavigate();
   const { user } = useUser();
 
+  const [employees, setEmployees] = useState([]);
+
   const [mode, setMode] = useState("scan");
   const [step, setStep] = useState("upload");
   const [error, setError] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [wchType, setWchType] = useState("WCHR");
-  const [wchrAgentName, setWchrAgentName] = useState("");
-  const [parsed, setParsed] = useState({
-    passenger_name: "",
-    airline: "",
-    flight_number: "",
-    flight_date: "",
-    destination: "",
-    seat: "",
-    gate: "",
-    pnr: "",
-    wheelchair_number: "",
-    raw_text: "",
-  });
+
+  const [selectedWchrAgentId, setSelectedWchrAgentId] = useState("");
+  const [selectedWchrAgentName, setSelectedWchrAgentName] = useState("");
+
+  const [parsed, setParsed] = useState(emptyParsed());
 
   const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
+
+  useEffect(() => {
+    async function loadEmployees() {
+      try {
+        const snap = await getDocs(collection(db, "employees"));
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) =>
+            String(a.name || "").localeCompare(String(b.name || ""))
+          );
+        setEmployees(rows);
+      } catch (e) {
+        console.error("Error loading employees:", e);
+      }
+    }
+
+    loadEmployees();
+  }, []);
 
   const canScan = useMemo(() => Boolean(imageFile), [imageFile]);
 
@@ -331,7 +359,7 @@ export default function WCHRScan() {
       parsed.gate,
       parsed.pnr,
       wchType,
-      wchrAgentName,
+      selectedWchrAgentName,
     ];
 
     if (mode === "scan") {
@@ -340,22 +368,11 @@ export default function WCHRScan() {
     }
 
     return required.every((v) => String(v || "").trim().length > 0);
-  }, [imageUrl, parsed, wchType, wchrAgentName, mode]);
+  }, [imageUrl, parsed, wchType, selectedWchrAgentName, mode]);
 
   const handlePickFile = (file) => {
     setError("");
-    setParsed({
-      passenger_name: "",
-      airline: "",
-      flight_number: "",
-      flight_date: "",
-      destination: "",
-      seat: "",
-      gate: "",
-      pnr: "",
-      wheelchair_number: "",
-      raw_text: "",
-    });
+    setParsed(emptyParsed());
     setImageUrl("");
     setImageFile(file || null);
   };
@@ -365,6 +382,12 @@ export default function WCHRScan() {
       ...prev,
       [field]: value,
     }));
+  };
+
+  const handleChangeAgent = (employeeId) => {
+    setSelectedWchrAgentId(employeeId);
+    const found = employees.find((emp) => emp.id === employeeId);
+    setSelectedWchrAgentName(found?.name || "");
   };
 
   const uploadToStorage = async (file) => {
@@ -474,7 +497,7 @@ export default function WCHRScan() {
       const finalWheelchairNumber = cleanWheelchairNumber(
         parsed.wheelchair_number
       );
-      const finalWchrAgentName = safeText(wchrAgentName);
+      const finalWchrAgentName = safeText(selectedWchrAgentName);
 
       const docRef = await addDoc(collection(db, "wch_reports"), {
         report_id: "",
@@ -501,9 +524,12 @@ export default function WCHRScan() {
         image_url: mode === "scan" ? imageUrl : "",
         raw_text: parsed.raw_text || "",
 
+        // agent fields aligned for admin reports
+        wchr_agent_id: selectedWchrAgentId || "",
         wchr_agent_name: finalWchrAgentName,
         assigned_wchr_agent: finalWchrAgentName,
         activity_agent_name: finalWchrAgentName,
+
         entry_mode: mode,
       });
 
@@ -684,10 +710,9 @@ export default function WCHRScan() {
 
             <div>
               <FieldLabel>WCHR Agent Name</FieldLabel>
-              <input
-                value={wchrAgentName}
-                onChange={(e) => setWchrAgentName(e.target.value)}
-                placeholder="Example: Maria Lopez"
+              <select
+                value={selectedWchrAgentId}
+                onChange={(e) => handleChangeAgent(e.target.value)}
                 style={{
                   width: "100%",
                   border: "1px solid #dbeafe",
@@ -698,7 +723,14 @@ export default function WCHRScan() {
                   color: "#0f172a",
                   outline: "none",
                 }}
-              />
+              >
+                <option value="">Select employee</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -895,12 +927,6 @@ export default function WCHRScan() {
               }
               placeholder="EAR23 or 23"
             />
-            <EditInput
-              label="WCHR Agent Name"
-              value={wchrAgentName}
-              onChange={setWchrAgentName}
-              placeholder="Example: Maria Lopez"
-            />
           </div>
 
           <div style={{ marginTop: 12 }}>
@@ -925,18 +951,7 @@ export default function WCHRScan() {
           >
             <ActionButton
               onClick={() => {
-                setParsed({
-                  passenger_name: "",
-                  airline: "",
-                  flight_number: "",
-                  flight_date: "",
-                  destination: "",
-                  seat: "",
-                  gate: "",
-                  pnr: "",
-                  wheelchair_number: "",
-                  raw_text: "",
-                });
+                setParsed(emptyParsed());
                 setImageUrl("");
                 setImageFile(null);
                 setStep("upload");
