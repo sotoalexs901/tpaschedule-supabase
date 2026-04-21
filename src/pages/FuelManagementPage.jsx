@@ -96,6 +96,10 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function formatFixed(value, decimals = 2) {
+  return safeNumber(value).toFixed(decimals);
+}
+
 function getEmployeeName(item) {
   return (
     normalizeText(item.employeeName) ||
@@ -116,6 +120,30 @@ function getAirlineUse(item) {
 
 function getPhotoStatus(item) {
   return normalizeText(item.photoCheckStatus || item.photo_check_status || "—");
+}
+
+function getOcrStart(item) {
+  const value = item.ocrStartReading ?? item.ocr_start_reading;
+  return value === null || value === undefined ? null : safeNumber(value);
+}
+
+function getOcrEnd(item) {
+  const value = item.ocrEndReading ?? item.ocr_end_reading;
+  return value === null || value === undefined ? null : safeNumber(value);
+}
+
+function getStartDiff(item) {
+  const value = item.photoCheckStartDiff ?? item.photo_check_start_diff;
+  return value === null || value === undefined ? null : safeNumber(value);
+}
+
+function getEndDiff(item) {
+  const value = item.photoCheckEndDiff ?? item.photo_check_end_diff;
+  return value === null || value === undefined ? null : safeNumber(value);
+}
+
+function getPhotoNotes(item) {
+  return normalizeText(item.photoCheckNotes || item.photo_check_notes || "");
 }
 
 function matchesRange(item, startDate, endDate) {
@@ -185,6 +213,24 @@ function buildDailyRows(items) {
   });
 
   return Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function buildOcrSummary(items) {
+  let match = 0;
+  let mismatch = 0;
+  let pending = 0;
+  let missing = 0;
+
+  items.forEach((item) => {
+    const status = getPhotoStatus(item).toLowerCase();
+
+    if (status === "match") match += 1;
+    else if (status === "mismatch") mismatch += 1;
+    else if (status === "missing") missing += 1;
+    else pending += 1;
+  });
+
+  return { match, mismatch, pending, missing };
 }
 
 function downloadCsv(filename, rows) {
@@ -354,6 +400,11 @@ function StatCard({ label, value, tone = "default" }) {
       border: "#fdba74",
       color: "#9a3412",
     },
+    red: {
+      bg: "#fff1f2",
+      border: "#fecdd3",
+      color: "#be123c",
+    },
   };
 
   const current = tones[tone] || tones.default;
@@ -393,6 +444,43 @@ function StatCard({ label, value, tone = "default" }) {
   );
 }
 
+function StatusPill({ status }) {
+  const value = normalizeText(status).toLowerCase();
+
+  const map = {
+    match: { bg: "#ecfdf5", border: "#a7f3d0", color: "#166534", label: "MATCH" },
+    mismatch: { bg: "#fff1f2", border: "#fecdd3", color: "#be123c", label: "MISMATCH" },
+    pending_review: { bg: "#fff7ed", border: "#fdba74", color: "#9a3412", label: "PENDING REVIEW" },
+    missing: { bg: "#f8fafc", border: "#cbd5e1", color: "#334155", label: "MISSING" },
+  };
+
+  const current = map[value] || {
+    bg: "#f8fafc",
+    border: "#cbd5e1",
+    color: "#334155",
+    label: status || "—",
+  };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "6px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 800,
+        background: current.bg,
+        border: `1px solid ${current.border}`,
+        color: current.color,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {current.label}
+    </span>
+  );
+}
+
 const tableWrapStyle = {
   width: "100%",
   maxWidth: "100%",
@@ -407,7 +495,7 @@ const tableStyle = {
   width: "100%",
   borderCollapse: "separate",
   borderSpacing: 0,
-  minWidth: 1000,
+  minWidth: 1500,
   background: "#fff",
 };
 
@@ -561,6 +649,7 @@ export default function FuelManagementPage() {
   );
 
   const dailyRows = useMemo(() => buildDailyRows(filteredRows), [filteredRows]);
+  const ocrSummary = useMemo(() => buildOcrSummary(filteredRows), [filteredRows]);
 
   function handleExportCsv() {
     const csvRows = [
@@ -576,8 +665,14 @@ export default function FuelManagementPage() {
       ["Total Gallons", totalGallons.toFixed(2)],
       ["Top Agent by Gallons", topAgentByGallons.label],
       ["Top Agent Gallons", topAgentByGallons.value.toFixed(2)],
+      ["Top Agent by Entries", topAgentByEntries.label],
+      ["Top Agent Entries", topAgentByEntries.value],
       ["Top Airline/Use", topAirlineByGallons.label],
       ["Top Airline/Use Gallons", topAirlineByGallons.value.toFixed(2)],
+      ["OCR Match", ocrSummary.match],
+      ["OCR Mismatch", ocrSummary.mismatch],
+      ["OCR Pending Review", ocrSummary.pending],
+      ["OCR Missing", ocrSummary.missing],
       [],
       ["DETAILS"],
       [
@@ -590,7 +685,12 @@ export default function FuelManagementPage() {
         "End Reading",
         "Total Gallons",
         "Photo Status",
+        "OCR Start",
+        "OCR End",
+        "Start Diff",
+        "End Diff",
         "Photo URL",
+        "Photo Notes",
         "Notes",
         "Created At",
       ],
@@ -600,11 +700,16 @@ export default function FuelManagementPage() {
         item.equipmentNumber || "",
         getEmployeeName(item),
         getAirlineUse(item),
-        safeNumber(item.startReading).toFixed(2),
-        safeNumber(item.endReading).toFixed(2),
-        safeNumber(item.totalGallons).toFixed(2),
+        formatFixed(item.startReading),
+        formatFixed(item.endReading),
+        formatFixed(item.totalGallons),
         getPhotoStatus(item),
+        getOcrStart(item) === null ? "" : formatFixed(getOcrStart(item)),
+        getOcrEnd(item) === null ? "" : formatFixed(getOcrEnd(item)),
+        getStartDiff(item) === null ? "" : formatFixed(getStartDiff(item)),
+        getEndDiff(item) === null ? "" : formatFixed(getEndDiff(item)),
         item.photoUrl || "",
+        getPhotoNotes(item),
         item.notes || "",
         formatDateTime(item.createdAt),
       ]),
@@ -665,7 +770,7 @@ export default function FuelManagementPage() {
             color: "rgba(255,255,255,0.92)",
           }}
         >
-          Daily, weekly and monthly control of fuel usage by employee and airline/use.
+          Daily, weekly and monthly control of fuel usage by employee and airline/use, including OCR photo validation.
         </p>
       </div>
 
@@ -786,6 +891,19 @@ export default function FuelManagementPage() {
           value={`${topAirlineByGallons.label} (${topAirlineByGallons.value.toFixed(2)})`}
           tone="blue"
         />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 14,
+        }}
+      >
+        <StatCard label="OCR Match" value={String(ocrSummary.match)} tone="green" />
+        <StatCard label="OCR Mismatch" value={String(ocrSummary.mismatch)} tone="red" />
+        <StatCard label="Pending Review" value={String(ocrSummary.pending)} tone="amber" />
+        <StatCard label="Missing Photo" value={String(ocrSummary.missing)} />
       </div>
 
       <div
@@ -986,15 +1104,21 @@ export default function FuelManagementPage() {
                 <th style={thStyle}>Start</th>
                 <th style={thStyle}>End</th>
                 <th style={thStyle}>Gallons</th>
+                <th style={thStyle}>OCR Status</th>
+                <th style={thStyle}>OCR Start</th>
+                <th style={thStyle}>OCR End</th>
+                <th style={thStyle}>Start Diff</th>
+                <th style={thStyle}>End Diff</th>
                 <th style={thStyle}>Photo</th>
                 <th style={thStyle}>Created</th>
+                <th style={thStyle}>OCR Notes</th>
                 <th style={thStyle}>Notes</th>
               </tr>
             </thead>
             <tbody>
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={tdStyle}>
+                  <td colSpan={17} style={tdStyle}>
                     {loading ? "Loading..." : "No records found."}
                   </td>
                 </tr>
@@ -1006,10 +1130,25 @@ export default function FuelManagementPage() {
                     <td style={tdStyle}>{item.equipmentNumber || "—"}</td>
                     <td style={tdStyle}>{getEmployeeName(item)}</td>
                     <td style={tdStyle}>{getAirlineUse(item)}</td>
-                    <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
-                    <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
+                    <td style={tdStyle}>{formatFixed(item.startReading)}</td>
+                    <td style={tdStyle}>{formatFixed(item.endReading)}</td>
                     <td style={{ ...tdStyle, fontWeight: 800 }}>
-                      {safeNumber(item.totalGallons).toFixed(2)}
+                      {formatFixed(item.totalGallons)}
+                    </td>
+                    <td style={tdStyle}>
+                      <StatusPill status={getPhotoStatus(item)} />
+                    </td>
+                    <td style={tdStyle}>
+                      {getOcrStart(item) === null ? "—" : formatFixed(getOcrStart(item))}
+                    </td>
+                    <td style={tdStyle}>
+                      {getOcrEnd(item) === null ? "—" : formatFixed(getOcrEnd(item))}
+                    </td>
+                    <td style={tdStyle}>
+                      {getStartDiff(item) === null ? "—" : formatFixed(getStartDiff(item))}
+                    </td>
+                    <td style={tdStyle}>
+                      {getEndDiff(item) === null ? "—" : formatFixed(getEndDiff(item))}
                     </td>
                     <td style={tdStyle}>
                       {item.photoUrl ? (
@@ -1019,13 +1158,14 @@ export default function FuelManagementPage() {
                           rel="noreferrer"
                           style={{ color: "#1769aa", fontWeight: 700 }}
                         >
-                          {getPhotoStatus(item)}
+                          Open Photo
                         </a>
                       ) : (
-                        getPhotoStatus(item)
+                        "—"
                       )}
                     </td>
                     <td style={tdStyle}>{formatDateTime(item.createdAt)}</td>
+                    <td style={tdStyle}>{getPhotoNotes(item) || "—"}</td>
                     <td style={tdStyle}>{item.notes || "—"}</td>
                   </tr>
                 ))
