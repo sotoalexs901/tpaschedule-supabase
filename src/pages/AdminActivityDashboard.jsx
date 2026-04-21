@@ -308,7 +308,9 @@ export default function AdminActivityDashboard() {
   const [users, setUsers] = useState([]);
   const [presence, setPresence] = useState([]);
   const [reports, setReports] = useState([]);
+
   const [activeTab, setActiveTab] = useState("overview");
+  const [activeWchrTab, setActiveWchrTab] = useState("summary");
 
   const [range, setRange] = useState("week");
   const [selectedLogin, setSelectedLogin] = useState("all");
@@ -676,23 +678,11 @@ export default function AdminActivityDashboard() {
         </div>
       </Panel>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <TabButton
-          active={activeTab === "overview"}
-          onClick={() => setActiveTab("overview")}
-        >
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>
           Overview
         </TabButton>
-        <TabButton
-          active={activeTab === "wchr"}
-          onClick={() => setActiveTab("wchr")}
-        >
+        <TabButton active={activeTab === "wchr"} onClick={() => setActiveTab("wchr")}>
           WCHR Activity
         </TabButton>
         <TabButton
@@ -701,10 +691,7 @@ export default function AdminActivityDashboard() {
         >
           User Activity
         </TabButton>
-        <TabButton
-          active={activeTab === "users"}
-          onClick={() => setActiveTab("users")}
-        >
+        <TabButton active={activeTab === "users"} onClick={() => setActiveTab("users")}>
           Users
         </TabButton>
       </div>
@@ -732,17 +719,11 @@ export default function AdminActivityDashboard() {
             }}
           >
             <Panel title="Top WCHR Logins / Agents">
-              <BarChartList
-                rows={topWchrLogins}
-                emptyText="No WCHR activity for this filter."
-              />
+              <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
             </Panel>
 
             <Panel title="Top Airlines">
-              <BarChartList
-                rows={topAirlines}
-                emptyText="No airline data for this filter."
-              />
+              <BarChartList rows={topAirlines} emptyText="No airline data for this filter." />
             </Panel>
           </div>
 
@@ -785,112 +766,145 @@ export default function AdminActivityDashboard() {
 
       {activeTab === "wchr" && (
         <>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
-            }}
-          >
-            <Panel title="WCHR by Day">
-              <VerticalBars rows={dailyWchr} />
-            </Panel>
-
-            <Panel title="WCHR by Hour">
-              <VerticalBars rows={hourlyWchr} compact />
-            </Panel>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <SubTabButton
+              active={activeWchrTab === "summary"}
+              onClick={() => setActiveWchrTab("summary")}
+            >
+              Summary
+            </SubTabButton>
+            <SubTabButton
+              active={activeWchrTab === "productivity"}
+              onClick={() => setActiveWchrTab("productivity")}
+            >
+              Productivity
+            </SubTabButton>
+            <SubTabButton
+              active={activeWchrTab === "recent_reports"}
+              onClick={() => setActiveWchrTab("recent_reports")}
+            >
+              Recent Reports
+            </SubTabButton>
           </div>
 
-          <Panel title="WCHR Productivity by Agent / Login">
-            {productivityRows.length === 0 ? (
-              <InfoBox text="No productivity data for this filter." />
-            ) : (
-              <div style={tableWrapStyle}>
-                <table style={tableStyle}>
-                  <thead style={{ background: "#f8fbff" }}>
-                    <tr>
-                      <th style={th}>Agent / Login</th>
-                      <th style={th}>Role</th>
-                      <th style={th}>Status</th>
-                      <th style={th}>Today</th>
-                      <th style={th}>This Week</th>
-                      <th style={th}>This Month</th>
-                      <th style={th}>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {productivityRows.map((row, i) => (
-                      <tr
-                        key={row.login}
-                        style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
-                      >
-                        <td style={td}>
-                          <div style={{ fontWeight: 700 }}>{row.login}</div>
-                        </td>
-                        <td style={td}>{normalizeRole(row.role)}</td>
-                        <td style={td}>
-                          {row.online ? (
-                            <span style={badge("green")}>ONLINE</span>
-                          ) : (
-                            <span style={badge("gray")}>OFFLINE</span>
-                          )}
-                        </td>
-                        <td style={td}>{row.today}</td>
-                        <td style={td}>{row.week}</td>
-                        <td style={td}>{row.month}</td>
-                        <td style={{ ...td, fontWeight: 800 }}>{row.total}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
+          {activeWchrTab === "summary" && (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 16,
+                }}
+              >
+                <Panel title="WCHR by Day">
+                  <VerticalBars rows={dailyWchr} />
+                </Panel>
 
-          <Panel title="Recent WCHR Reports">
-            {recentWchrReports.length === 0 ? (
-              <InfoBox text="No WCHR reports for this filter." />
-            ) : (
-              <div style={tableWrapStyle}>
-                <table style={tableStyle}>
-                  <thead style={{ background: "#f8fbff" }}>
-                    <tr>
-                      <th style={th}>Submitted At</th>
-                      <th style={th}>WCHR Agent</th>
-                      <th style={th}>Passenger</th>
-                      <th style={th}>Airline</th>
-                      <th style={th}>Flight</th>
-                      <th style={th}>Type</th>
-                      <th style={th}>Wheelchair</th>
-                      <th style={th}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentWchrReports.map((r, i) => (
-                      <tr
-                        key={r.id}
-                        style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
-                      >
-                        <td style={td}>{formatDate(r.submitted_at)}</td>
-                        <td style={td}>
-                          <div style={{ fontWeight: 700 }}>{getReportAgentName(r)}</div>
-                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                            {r.employee_login || r.employee_name || "—"}
-                          </div>
-                        </td>
-                        <td style={td}>{r.passenger_name || "—"}</td>
-                        <td style={td}>{r.airline || "—"}</td>
-                        <td style={td}>{r.flight_number || "—"}</td>
-                        <td style={td}>{r.wch_type || "—"}</td>
-                        <td style={td}>{r.wheelchair_number || "—"}</td>
-                        <td style={td}>{r.status || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <Panel title="WCHR by Hour">
+                  <VerticalBars rows={hourlyWchr} compact />
+                </Panel>
               </div>
-            )}
-          </Panel>
+
+              <Panel title="Top WCHR Logins / Agents">
+                <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
+              </Panel>
+            </>
+          )}
+
+          {activeWchrTab === "productivity" && (
+            <Panel title="WCHR Productivity by Agent / Login">
+              {productivityRows.length === 0 ? (
+                <InfoBox text="No productivity data for this filter." />
+              ) : (
+                <div style={tableWrapStyle}>
+                  <table style={tableStyle}>
+                    <thead style={{ background: "#f8fbff" }}>
+                      <tr>
+                        <th style={th}>Agent / Login</th>
+                        <th style={th}>Role</th>
+                        <th style={th}>Status</th>
+                        <th style={th}>Today</th>
+                        <th style={th}>This Week</th>
+                        <th style={th}>This Month</th>
+                        <th style={th}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {productivityRows.map((row, i) => (
+                        <tr
+                          key={row.login}
+                          style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                        >
+                          <td style={td}>
+                            <div style={{ fontWeight: 700 }}>{row.login}</div>
+                          </td>
+                          <td style={td}>{normalizeRole(row.role)}</td>
+                          <td style={td}>
+                            {row.online ? (
+                              <span style={badge("green")}>ONLINE</span>
+                            ) : (
+                              <span style={badge("gray")}>OFFLINE</span>
+                            )}
+                          </td>
+                          <td style={td}>{row.today}</td>
+                          <td style={td}>{row.week}</td>
+                          <td style={td}>{row.month}</td>
+                          <td style={{ ...td, fontWeight: 800 }}>{row.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Panel>
+          )}
+
+          {activeWchrTab === "recent_reports" && (
+            <Panel title="Recent WCHR Reports">
+              {recentWchrReports.length === 0 ? (
+                <InfoBox text="No WCHR reports for this filter." />
+              ) : (
+                <div style={tableWrapStyle}>
+                  <table style={tableStyle}>
+                    <thead style={{ background: "#f8fbff" }}>
+                      <tr>
+                        <th style={th}>Submitted At</th>
+                        <th style={th}>WCHR Agent</th>
+                        <th style={th}>Passenger</th>
+                        <th style={th}>Airline</th>
+                        <th style={th}>Flight</th>
+                        <th style={th}>Type</th>
+                        <th style={th}>Wheelchair</th>
+                        <th style={th}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentWchrReports.map((r, i) => (
+                        <tr
+                          key={r.id}
+                          style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                        >
+                          <td style={td}>{formatDate(r.submitted_at)}</td>
+                          <td style={td}>
+                            <div style={{ fontWeight: 700 }}>{getReportAgentName(r)}</div>
+                            <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                              {r.employee_login || r.employee_name || "—"}
+                            </div>
+                          </td>
+                          <td style={td}>{r.passenger_name || "—"}</td>
+                          <td style={td}>{r.airline || "—"}</td>
+                          <td style={td}>{r.flight_number || "—"}</td>
+                          <td style={td}>{r.wch_type || "—"}</td>
+                          <td style={td}>{r.wheelchair_number || "—"}</td>
+                          <td style={td}>{r.status || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Panel>
+          )}
         </>
       )}
 
@@ -1088,6 +1102,26 @@ function TabButton({ children, active, onClick }) {
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
+        fontWeight: 800,
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SubTabButton({ children, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        border: active ? "1px solid #0f4c81" : "1px solid #dbeafe",
+        background: active ? "#edf7ff" : "#ffffff",
+        color: active ? "#0f4c81" : "#475569",
+        borderRadius: 10,
+        padding: "8px 12px",
+        fontSize: 12,
         fontWeight: 800,
         cursor: "pointer",
       }}
