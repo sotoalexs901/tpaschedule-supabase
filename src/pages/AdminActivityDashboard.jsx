@@ -94,28 +94,18 @@ function endOfDay(dateLike) {
 }
 
 function getRangeDates(range) {
-  if (range === "today") {
-    return { start: startOfToday(), end: endOfToday() };
-  }
-  if (range === "week") {
-    return { start: startOfWeek(), end: endOfWeek() };
-  }
-  if (range === "last_week") {
-    return { start: startOfLastWeek(), end: endOfLastWeek() };
-  }
-  if (range === "month") {
-    return { start: startOfMonth(), end: endOfMonth() };
-  }
+  if (range === "today") return { start: startOfToday(), end: endOfToday() };
+  if (range === "week") return { start: startOfWeek(), end: endOfWeek() };
+  if (range === "last_week") return { start: startOfLastWeek(), end: endOfLastWeek() };
+  if (range === "month") return { start: startOfMonth(), end: endOfMonth() };
   return { start: null, end: null };
 }
 
 function normalizeWheelchairNumber(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-
   const digits = raw.replace(/\D/g, "");
   if (!digits) return "";
-
   return String(Number(digits));
 }
 
@@ -161,7 +151,6 @@ function findMatchedUser(users, activityName) {
 
 function buildCountByLogin(reports) {
   const counts = {};
-
   for (const r of reports) {
     const login = getReportAgentName(r);
     counts[login] = (counts[login] || 0) + 1;
@@ -174,7 +163,6 @@ function buildCountByLogin(reports) {
 
 function buildCountByAirline(reports) {
   const counts = {};
-
   for (const r of reports) {
     const airline = String(r.airline || "Unknown").trim().toUpperCase() || "Unknown";
     counts[airline] = (counts[airline] || 0) + 1;
@@ -250,7 +238,6 @@ function buildProductivityTable(reports, users) {
     if (!submitted) continue;
 
     byLogin[login].total += 1;
-
     if (submitted >= startOfToday()) byLogin[login].today += 1;
     if (submitted >= startOfWeek()) byLogin[login].week += 1;
     if (submitted >= startOfMonth()) byLogin[login].month += 1;
@@ -274,7 +261,6 @@ function buildMostUsedWheelchair(reports) {
   for (const r of reports || []) {
     const chair = normalizeWheelchairNumber(r.wheelchair_number);
     if (!chair) continue;
-
     counts[chair] = (counts[chair] || 0) + 1;
   }
 
@@ -291,18 +277,13 @@ function buildMostUsedWheelchair(reports) {
     }
   }
 
-  return {
-    chair: topChair,
-    count: topCount,
-  };
+  return { chair: topChair, count: topCount };
 }
 
 function downloadCSV(filename, rows) {
   const csv = rows
     .map((row) =>
-      row
-        .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
-        .join(",")
+      row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")
     )
     .join("\n");
 
@@ -327,6 +308,7 @@ export default function AdminActivityDashboard() {
   const [users, setUsers] = useState([]);
   const [presence, setPresence] = useState([]);
   const [reports, setReports] = useState([]);
+  const [activeTab, setActiveTab] = useState("overview");
 
   const [range, setRange] = useState("week");
   const [selectedLogin, setSelectedLogin] = useState("all");
@@ -337,25 +319,19 @@ export default function AdminActivityDashboard() {
   useEffect(() => {
     const unsubUsers = onSnapshot(
       collection(db, "users"),
-      (snap) => {
-        setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
+      (snap) => setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (err) => console.error("Error loading users:", err)
     );
 
     const unsubPresence = onSnapshot(
       collection(db, "user_presence"),
-      (snap) => {
-        setPresence(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
+      (snap) => setPresence(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (err) => console.error("Error loading presence:", err)
     );
 
     const unsubReports = onSnapshot(
       collection(db, "wch_reports"),
-      (snap) => {
-        setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
+      (snap) => setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (err) => console.error("Error loading WCHR reports:", err)
     );
 
@@ -368,7 +344,6 @@ export default function AdminActivityDashboard() {
 
   useEffect(() => {
     if (range === "custom") return;
-
     const { start, end } = getRangeDates(range);
     setFromDate(formatInputDate(start));
     setToDate(formatInputDate(end));
@@ -382,7 +357,6 @@ export default function AdminActivityDashboard() {
     return users
       .map((user) => {
         const p = presenceMap.get(String(user.id)) || null;
-
         return {
           id: user.id,
           username: user.username || "—",
@@ -403,12 +377,10 @@ export default function AdminActivityDashboard() {
 
   const loginOptions = useMemo(() => {
     const set = new Set();
-
     reports.forEach((r) => {
       const login = getReportAgentName(r);
       if (login) set.add(login);
     });
-
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [reports]);
 
@@ -423,11 +395,9 @@ export default function AdminActivityDashboard() {
   const filteredUsers = useMemo(() => {
     return mergedUsers.filter((u) => {
       if (selectedRole !== "all" && u.role !== selectedRole) return false;
-
-      if (selectedLogin !== "all") {
-        if (!userMatchesActivityName(u, selectedLogin)) return false;
+      if (selectedLogin !== "all" && !userMatchesActivityName(u, selectedLogin)) {
+        return false;
       }
-
       return true;
     });
   }, [mergedUsers, selectedLogin, selectedRole]);
@@ -473,7 +443,6 @@ export default function AdminActivityDashboard() {
   const mostUsedWheelchairToday = useMemo(() => {
     const start = startOfToday();
     const end = endOfToday();
-
     return buildMostUsedWheelchair(
       reports.filter((r) => {
         const submitted = toDateSafe(r.submitted_at);
@@ -485,7 +454,6 @@ export default function AdminActivityDashboard() {
   const mostUsedWheelchairWeek = useMemo(() => {
     const start = startOfWeek();
     const end = endOfWeek();
-
     return buildMostUsedWheelchair(
       reports.filter((r) => {
         const submitted = toDateSafe(r.submitted_at);
@@ -497,7 +465,6 @@ export default function AdminActivityDashboard() {
   const mostUsedWheelchairMonth = useMemo(() => {
     const start = startOfMonth();
     const end = endOfMonth();
-
     return buildMostUsedWheelchair(
       reports.filter((r) => {
         const submitted = toDateSafe(r.submitted_at);
@@ -557,43 +524,6 @@ export default function AdminActivityDashboard() {
       ["TOP AIRLINES"],
       ["Airline", "Count"],
       ...topAirlines.map((r) => [r.label, r.count]),
-      [],
-      ["MOST USED WCHR IN STATION"],
-      ["Period", "WCHR Number", "Count"],
-      ["Today", mostUsedWheelchairToday.chair || "—", mostUsedWheelchairToday.count || 0],
-      ["This Week", mostUsedWheelchairWeek.chair || "—", mostUsedWheelchairWeek.count || 0],
-      ["This Month", mostUsedWheelchairMonth.chair || "—", mostUsedWheelchairMonth.count || 0],
-      [],
-      ["WCHR BY DAY"],
-      ["Day", "Count"],
-      ...dailyWchr.map((r) => [r.label, r.count]),
-      [],
-      ["WCHR BY HOUR"],
-      ["Hour", "Count"],
-      ...hourlyWchr.map((r) => [r.label, r.count]),
-      [],
-      ["PRODUCTIVITY BY AGENT / LOGIN"],
-      ["Agent / Login", "Role", "Online", "Today", "This Week", "This Month", "Total"],
-      ...productivityRows.map((r) => [
-        r.login,
-        normalizeRole(r.role),
-        r.online ? "ONLINE" : "OFFLINE",
-        r.today,
-        r.week,
-        r.month,
-        r.total,
-      ]),
-      [],
-      ["ALL REGISTERED USERS"],
-      ["Username", "Role", "Online", "Current Page", "Last Seen", "First Login Tracked"],
-      ...mergedUsers.map((u) => [
-        u.username,
-        normalizeRole(u.role),
-        u.online ? "ONLINE" : "OFFLINE",
-        u.currentPage || "—",
-        formatDate(u.lastSeen),
-        formatDate(u.lastLoginAt),
-      ]),
       [],
       ["RECENT WCHR REPORTS"],
       [
@@ -748,268 +678,319 @@ export default function AdminActivityDashboard() {
 
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
         }}
       >
-        <StatCard label="Filtered Users" value={totalUsers} />
-        <StatCard label="Online Now" value={onlineUsers} />
-        <StatCard label="Users With Activity" value={activeUsers} />
-        <StatCard label="WCHR Reports" value={totalWchr} />
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 16,
-        }}
-      >
-        <Panel title="Top WCHR Logins / Agents">
-          <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
-        </Panel>
-
-        <Panel title="Top Airlines">
-          <BarChartList rows={topAirlines} emptyText="No airline data for this filter." />
-        </Panel>
-      </div>
-
-      <Panel title="Most Used WCHR in Station">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-          }}
+        <TabButton
+          active={activeTab === "overview"}
+          onClick={() => setActiveTab("overview")}
         >
-          <StatCard
-            label="Today"
-            value={
-              mostUsedWheelchairToday.chair
-                ? `${mostUsedWheelchairToday.chair} (${mostUsedWheelchairToday.count})`
-                : "—"
-            }
-          />
-          <StatCard
-            label="This Week"
-            value={
-              mostUsedWheelchairWeek.chair
-                ? `${mostUsedWheelchairWeek.chair} (${mostUsedWheelchairWeek.count})`
-                : "—"
-            }
-          />
-          <StatCard
-            label="This Month"
-            value={
-              mostUsedWheelchairMonth.chair
-                ? `${mostUsedWheelchairMonth.chair} (${mostUsedWheelchairMonth.count})`
-                : "—"
-            }
-          />
-        </div>
-      </Panel>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 16,
-        }}
-      >
-        <Panel title="WCHR by Day">
-          <VerticalBars rows={dailyWchr} />
-        </Panel>
-
-        <Panel title="WCHR by Hour">
-          <VerticalBars rows={hourlyWchr} compact />
-        </Panel>
+          Overview
+        </TabButton>
+        <TabButton
+          active={activeTab === "wchr"}
+          onClick={() => setActiveTab("wchr")}
+        >
+          WCHR Activity
+        </TabButton>
+        <TabButton
+          active={activeTab === "user_activity"}
+          onClick={() => setActiveTab("user_activity")}
+        >
+          User Activity
+        </TabButton>
+        <TabButton
+          active={activeTab === "users"}
+          onClick={() => setActiveTab("users")}
+        >
+          Users
+        </TabButton>
       </div>
 
-      <Panel title="Recent WCHR Reports">
-        {recentWchrReports.length === 0 ? (
-          <InfoBox text="No WCHR reports for this filter." />
-        ) : (
-          <div style={tableWrapStyle}>
-            <table style={tableStyle}>
-              <thead style={{ background: "#f8fbff" }}>
-                <tr>
-                  <th style={th}>Submitted At</th>
-                  <th style={th}>WCHR Agent</th>
-                  <th style={th}>Passenger</th>
-                  <th style={th}>Airline</th>
-                  <th style={th}>Flight</th>
-                  <th style={th}>Type</th>
-                  <th style={th}>Wheelchair</th>
-                  <th style={th}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentWchrReports.map((r, i) => (
-                  <tr
-                    key={r.id}
-                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
-                  >
-                    <td style={td}>{formatDate(r.submitted_at)}</td>
-                    <td style={td}>
-                      <div style={{ fontWeight: 700 }}>{getReportAgentName(r)}</div>
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                        {r.employee_login || r.employee_name || "—"}
-                      </div>
-                    </td>
-                    <td style={td}>{r.passenger_name || "—"}</td>
-                    <td style={td}>{r.airline || "—"}</td>
-                    <td style={td}>{r.flight_number || "—"}</td>
-                    <td style={td}>{r.wch_type || "—"}</td>
-                    <td style={td}>{r.wheelchair_number || "—"}</td>
-                    <td style={td}>{r.status || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {activeTab === "overview" && (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <StatCard label="Filtered Users" value={totalUsers} />
+            <StatCard label="Online Now" value={onlineUsers} />
+            <StatCard label="Users With Activity" value={activeUsers} />
+            <StatCard label="WCHR Reports" value={totalWchr} />
           </div>
-        )}
-      </Panel>
 
-      <Panel title="Recent User Activity">
-        {recentUsers.length === 0 ? (
-          <InfoBox text="No recent activity for this filter." />
-        ) : (
-          <div style={tableWrapStyle}>
-            <table style={tableStyle}>
-              <thead style={{ background: "#f8fbff" }}>
-                <tr>
-                  <th style={th}>User</th>
-                  <th style={th}>Role</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Current Page</th>
-                  <th style={th}>Last Seen</th>
-                  <th style={th}>First Login Tracked</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentUsers.map((u, i) => (
-                  <tr
-                    key={u.id}
-                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
-                  >
-                    <td style={td}>
-                      <div style={{ fontWeight: 700 }}>{u.username}</div>
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                        {u.employeeId || "No linked employee"}
-                      </div>
-                    </td>
-                    <td style={td}>{normalizeRole(u.role)}</td>
-                    <td style={td}>
-                      {u.online ? (
-                        <span style={badge("green")}>ONLINE</span>
-                      ) : (
-                        <span style={badge("gray")}>OFFLINE</span>
-                      )}
-                    </td>
-                    <td style={td}>{u.currentPage || "—"}</td>
-                    <td style={td}>{formatDate(u.lastSeen)}</td>
-                    <td style={td}>{formatDate(u.lastLoginAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 16,
+            }}
+          >
+            <Panel title="Top WCHR Logins / Agents">
+              <BarChartList
+                rows={topWchrLogins}
+                emptyText="No WCHR activity for this filter."
+              />
+            </Panel>
 
-      <Panel title="WCHR Productivity by Agent / Login">
-        {productivityRows.length === 0 ? (
-          <InfoBox text="No productivity data for this filter." />
-        ) : (
-          <div style={tableWrapStyle}>
-            <table style={tableStyle}>
-              <thead style={{ background: "#f8fbff" }}>
-                <tr>
-                  <th style={th}>Agent / Login</th>
-                  <th style={th}>Role</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Today</th>
-                  <th style={th}>This Week</th>
-                  <th style={th}>This Month</th>
-                  <th style={th}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {productivityRows.map((row, i) => (
-                  <tr
-                    key={row.login}
-                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
-                  >
-                    <td style={td}>
-                      <div style={{ fontWeight: 700 }}>{row.login}</div>
-                    </td>
-                    <td style={td}>{normalizeRole(row.role)}</td>
-                    <td style={td}>
-                      {row.online ? (
-                        <span style={badge("green")}>ONLINE</span>
-                      ) : (
-                        <span style={badge("gray")}>OFFLINE</span>
-                      )}
-                    </td>
-                    <td style={td}>{row.today}</td>
-                    <td style={td}>{row.week}</td>
-                    <td style={td}>{row.month}</td>
-                    <td style={{ ...td, fontWeight: 800 }}>{row.total}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Panel title="Top Airlines">
+              <BarChartList
+                rows={topAirlines}
+                emptyText="No airline data for this filter."
+              />
+            </Panel>
           </div>
-        )}
-      </Panel>
 
-      <Panel title="All Registered Users">
-        {mergedUsers.length === 0 ? (
-          <InfoBox text="No registered users found." />
-        ) : (
-          <div style={tableWrapStyle}>
-            <table style={tableStyle}>
-              <thead style={{ background: "#f8fbff" }}>
-                <tr>
-                  <th style={th}>User</th>
-                  <th style={th}>Role</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Current Page</th>
-                  <th style={th}>Last Seen</th>
-                  <th style={th}>First Login Tracked</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mergedUsers.map((u, i) => (
-                  <tr
-                    key={u.id}
-                    style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
-                  >
-                    <td style={td}>
-                      <div style={{ fontWeight: 700 }}>{u.username}</div>
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                        {u.employeeId || "No linked employee"}
-                      </div>
-                    </td>
-                    <td style={td}>{normalizeRole(u.role)}</td>
-                    <td style={td}>
-                      {u.online ? (
-                        <span style={badge("green")}>ONLINE</span>
-                      ) : (
-                        <span style={badge("gray")}>OFFLINE</span>
-                      )}
-                    </td>
-                    <td style={td}>{u.currentPage || "—"}</td>
-                    <td style={td}>{formatDate(u.lastSeen)}</td>
-                    <td style={td}>{formatDate(u.lastLoginAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <Panel title="Most Used WCHR in Station">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+              }}
+            >
+              <StatCard
+                label="Today"
+                value={
+                  mostUsedWheelchairToday.chair
+                    ? `${mostUsedWheelchairToday.chair} (${mostUsedWheelchairToday.count})`
+                    : "—"
+                }
+              />
+              <StatCard
+                label="This Week"
+                value={
+                  mostUsedWheelchairWeek.chair
+                    ? `${mostUsedWheelchairWeek.chair} (${mostUsedWheelchairWeek.count})`
+                    : "—"
+                }
+              />
+              <StatCard
+                label="This Month"
+                value={
+                  mostUsedWheelchairMonth.chair
+                    ? `${mostUsedWheelchairMonth.chair} (${mostUsedWheelchairMonth.count})`
+                    : "—"
+                }
+              />
+            </div>
+          </Panel>
+        </>
+      )}
+
+      {activeTab === "wchr" && (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 16,
+            }}
+          >
+            <Panel title="WCHR by Day">
+              <VerticalBars rows={dailyWchr} />
+            </Panel>
+
+            <Panel title="WCHR by Hour">
+              <VerticalBars rows={hourlyWchr} compact />
+            </Panel>
           </div>
-        )}
-      </Panel>
+
+          <Panel title="WCHR Productivity by Agent / Login">
+            {productivityRows.length === 0 ? (
+              <InfoBox text="No productivity data for this filter." />
+            ) : (
+              <div style={tableWrapStyle}>
+                <table style={tableStyle}>
+                  <thead style={{ background: "#f8fbff" }}>
+                    <tr>
+                      <th style={th}>Agent / Login</th>
+                      <th style={th}>Role</th>
+                      <th style={th}>Status</th>
+                      <th style={th}>Today</th>
+                      <th style={th}>This Week</th>
+                      <th style={th}>This Month</th>
+                      <th style={th}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productivityRows.map((row, i) => (
+                      <tr
+                        key={row.login}
+                        style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                      >
+                        <td style={td}>
+                          <div style={{ fontWeight: 700 }}>{row.login}</div>
+                        </td>
+                        <td style={td}>{normalizeRole(row.role)}</td>
+                        <td style={td}>
+                          {row.online ? (
+                            <span style={badge("green")}>ONLINE</span>
+                          ) : (
+                            <span style={badge("gray")}>OFFLINE</span>
+                          )}
+                        </td>
+                        <td style={td}>{row.today}</td>
+                        <td style={td}>{row.week}</td>
+                        <td style={td}>{row.month}</td>
+                        <td style={{ ...td, fontWeight: 800 }}>{row.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Recent WCHR Reports">
+            {recentWchrReports.length === 0 ? (
+              <InfoBox text="No WCHR reports for this filter." />
+            ) : (
+              <div style={tableWrapStyle}>
+                <table style={tableStyle}>
+                  <thead style={{ background: "#f8fbff" }}>
+                    <tr>
+                      <th style={th}>Submitted At</th>
+                      <th style={th}>WCHR Agent</th>
+                      <th style={th}>Passenger</th>
+                      <th style={th}>Airline</th>
+                      <th style={th}>Flight</th>
+                      <th style={th}>Type</th>
+                      <th style={th}>Wheelchair</th>
+                      <th style={th}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentWchrReports.map((r, i) => (
+                      <tr
+                        key={r.id}
+                        style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                      >
+                        <td style={td}>{formatDate(r.submitted_at)}</td>
+                        <td style={td}>
+                          <div style={{ fontWeight: 700 }}>{getReportAgentName(r)}</div>
+                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                            {r.employee_login || r.employee_name || "—"}
+                          </div>
+                        </td>
+                        <td style={td}>{r.passenger_name || "—"}</td>
+                        <td style={td}>{r.airline || "—"}</td>
+                        <td style={td}>{r.flight_number || "—"}</td>
+                        <td style={td}>{r.wch_type || "—"}</td>
+                        <td style={td}>{r.wheelchair_number || "—"}</td>
+                        <td style={td}>{r.status || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </>
+      )}
+
+      {activeTab === "user_activity" && (
+        <Panel title="Recent User Activity">
+          {recentUsers.length === 0 ? (
+            <InfoBox text="No recent activity for this filter." />
+          ) : (
+            <div style={tableWrapStyle}>
+              <table style={tableStyle}>
+                <thead style={{ background: "#f8fbff" }}>
+                  <tr>
+                    <th style={th}>User</th>
+                    <th style={th}>Role</th>
+                    <th style={th}>Status</th>
+                    <th style={th}>Current Page</th>
+                    <th style={th}>Last Seen</th>
+                    <th style={th}>First Login Tracked</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentUsers.map((u, i) => (
+                    <tr
+                      key={u.id}
+                      style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                    >
+                      <td style={td}>
+                        <div style={{ fontWeight: 700 }}>{u.username}</div>
+                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                          {u.employeeId || "No linked employee"}
+                        </div>
+                      </td>
+                      <td style={td}>{normalizeRole(u.role)}</td>
+                      <td style={td}>
+                        {u.online ? (
+                          <span style={badge("green")}>ONLINE</span>
+                        ) : (
+                          <span style={badge("gray")}>OFFLINE</span>
+                        )}
+                      </td>
+                      <td style={td}>{u.currentPage || "—"}</td>
+                      <td style={td}>{formatDate(u.lastSeen)}</td>
+                      <td style={td}>{formatDate(u.lastLoginAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      )}
+
+      {activeTab === "users" && (
+        <Panel title="All Registered Users">
+          {mergedUsers.length === 0 ? (
+            <InfoBox text="No registered users found." />
+          ) : (
+            <div style={tableWrapStyle}>
+              <table style={tableStyle}>
+                <thead style={{ background: "#f8fbff" }}>
+                  <tr>
+                    <th style={th}>User</th>
+                    <th style={th}>Role</th>
+                    <th style={th}>Status</th>
+                    <th style={th}>Current Page</th>
+                    <th style={th}>Last Seen</th>
+                    <th style={th}>First Login Tracked</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mergedUsers.map((u, i) => (
+                    <tr
+                      key={u.id}
+                      style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                    >
+                      <td style={td}>
+                        <div style={{ fontWeight: 700 }}>{u.username}</div>
+                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                          {u.employeeId || "No linked employee"}
+                        </div>
+                      </td>
+                      <td style={td}>{normalizeRole(u.role)}</td>
+                      <td style={td}>
+                        {u.online ? (
+                          <span style={badge("green")}>ONLINE</span>
+                        ) : (
+                          <span style={badge("gray")}>OFFLINE</span>
+                        )}
+                      </td>
+                      <td style={td}>{u.currentPage || "—"}</td>
+                      <td style={td}>{formatDate(u.lastSeen)}</td>
+                      <td style={td}>{formatDate(u.lastLoginAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      )}
     </div>
   );
 }
@@ -1093,6 +1074,26 @@ function FilterField({ label, children }) {
       </div>
       {children}
     </div>
+  );
+}
+
+function TabButton({ children, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        border: active ? "1px solid #1769aa" : "1px solid #cfe7fb",
+        background: active ? "#1769aa" : "#ffffff",
+        color: active ? "#ffffff" : "#1769aa",
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
