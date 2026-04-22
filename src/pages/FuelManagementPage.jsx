@@ -1,4 +1,3 @@
-// src/pages/FuelManagementPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
@@ -96,10 +95,6 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-function formatFixed(value, decimals = 2) {
-  return safeNumber(value).toFixed(decimals);
-}
-
 function getEmployeeName(item) {
   return (
     normalizeText(item.employeeName) ||
@@ -111,39 +106,11 @@ function getEmployeeName(item) {
 }
 
 function getAirlineUse(item) {
-  return (
-    normalizeText(item.airlineUse) ||
-    normalizeText(item.airline_use) ||
-    "Unknown"
-  );
+  return normalizeText(item.airlineUse) || normalizeText(item.airline_use) || "Unknown";
 }
 
 function getPhotoStatus(item) {
   return normalizeText(item.photoCheckStatus || item.photo_check_status || "—");
-}
-
-function getOcrStart(item) {
-  const value = item.ocrStartReading ?? item.ocr_start_reading;
-  return value === null || value === undefined ? null : safeNumber(value);
-}
-
-function getOcrEnd(item) {
-  const value = item.ocrEndReading ?? item.ocr_end_reading;
-  return value === null || value === undefined ? null : safeNumber(value);
-}
-
-function getStartDiff(item) {
-  const value = item.photoCheckStartDiff ?? item.photo_check_start_diff;
-  return value === null || value === undefined ? null : safeNumber(value);
-}
-
-function getEndDiff(item) {
-  const value = item.photoCheckEndDiff ?? item.photo_check_end_diff;
-  return value === null || value === undefined ? null : safeNumber(value);
-}
-
-function getPhotoNotes(item) {
-  return normalizeText(item.photoCheckNotes || item.photo_check_notes || "");
 }
 
 function matchesRange(item, startDate, endDate) {
@@ -160,9 +127,7 @@ function buildTopEntity(items, getKey, getValue) {
   items.forEach((item) => {
     const key = getKey(item) || "Unknown";
     const value = getValue(item);
-    if (!map[key]) {
-      map[key] = 0;
-    }
+    if (!map[key]) map[key] = 0;
     map[key] += value;
   });
 
@@ -184,9 +149,7 @@ function buildCountRows(items, getKey, getValue) {
 
   items.forEach((item) => {
     const key = getKey(item) || "Unknown";
-    if (!map[key]) {
-      map[key] = 0;
-    }
+    if (!map[key]) map[key] = 0;
     map[key] += getValue(item);
   });
 
@@ -202,7 +165,8 @@ function buildDailyRows(items) {
     const key = item.date || formatInputDate(item.createdAt) || "Unknown";
     if (!map[key]) {
       map[key] = {
-        date: key,
+        key,
+        label: key,
         records: 0,
         gallons: 0,
       };
@@ -212,25 +176,49 @@ function buildDailyRows(items) {
     map[key].gallons += safeNumber(item.totalGallons);
   });
 
-  return Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
+  return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
 }
 
-function buildOcrSummary(items) {
-  let match = 0;
-  let mismatch = 0;
-  let pending = 0;
-  let missing = 0;
+function buildWeeklyRows(items) {
+  const map = {};
 
   items.forEach((item) => {
-    const status = getPhotoStatus(item).toLowerCase();
+    const key = item.weekKey || "Unknown";
+    if (!map[key]) {
+      map[key] = {
+        key,
+        label: key,
+        records: 0,
+        gallons: 0,
+      };
+    }
 
-    if (status === "match") match += 1;
-    else if (status === "mismatch") mismatch += 1;
-    else if (status === "missing") missing += 1;
-    else pending += 1;
+    map[key].records += 1;
+    map[key].gallons += safeNumber(item.totalGallons);
   });
 
-  return { match, mismatch, pending, missing };
+  return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
+}
+
+function buildMonthlyRows(items) {
+  const map = {};
+
+  items.forEach((item) => {
+    const key = item.monthKey || String(item.date || "").slice(0, 7) || "Unknown";
+    if (!map[key]) {
+      map[key] = {
+        key,
+        label: key,
+        records: 0,
+        gallons: 0,
+      };
+    }
+
+    map[key].records += 1;
+    map[key].gallons += safeNumber(item.totalGallons);
+  });
+
+  return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
 }
 
 function downloadCsv(filename, rows) {
@@ -380,31 +368,10 @@ function ActionButton({
 
 function StatCard({ label, value, tone = "default" }) {
   const tones = {
-    default: {
-      bg: "#f8fbff",
-      border: "#dbeafe",
-      color: "#0f172a",
-    },
-    blue: {
-      bg: "#edf7ff",
-      border: "#cfe7fb",
-      color: "#1769aa",
-    },
-    green: {
-      bg: "#ecfdf5",
-      border: "#a7f3d0",
-      color: "#166534",
-    },
-    amber: {
-      bg: "#fff7ed",
-      border: "#fdba74",
-      color: "#9a3412",
-    },
-    red: {
-      bg: "#fff1f2",
-      border: "#fecdd3",
-      color: "#be123c",
-    },
+    default: { bg: "#f8fbff", border: "#dbeafe", color: "#0f172a" },
+    blue: { bg: "#edf7ff", border: "#cfe7fb", color: "#1769aa" },
+    green: { bg: "#ecfdf5", border: "#a7f3d0", color: "#166534" },
+    amber: { bg: "#fff7ed", border: "#fdba74", color: "#9a3412" },
   };
 
   const current = tones[tone] || tones.default;
@@ -444,40 +411,27 @@ function StatCard({ label, value, tone = "default" }) {
   );
 }
 
-function StatusPill({ status }) {
-  const value = normalizeText(status).toLowerCase();
-
-  const map = {
-    match: { bg: "#ecfdf5", border: "#a7f3d0", color: "#166534", label: "MATCH" },
-    mismatch: { bg: "#fff1f2", border: "#fecdd3", color: "#be123c", label: "MISMATCH" },
-    pending_review: { bg: "#fff7ed", border: "#fdba74", color: "#9a3412", label: "PENDING REVIEW" },
-    missing: { bg: "#f8fafc", border: "#cbd5e1", color: "#334155", label: "MISSING" },
-  };
-
-  const current = map[value] || {
-    bg: "#f8fafc",
-    border: "#cbd5e1",
-    color: "#334155",
-    label: status || "—",
-  };
-
+function TabButton({ active, children, onClick }) {
   return (
-    <span
+    <button
+      onClick={onClick}
+      type="button"
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "6px 10px",
-        borderRadius: 999,
-        fontSize: 12,
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
         fontWeight: 800,
-        background: current.bg,
-        border: `1px solid ${current.border}`,
-        color: current.color,
+        cursor: "pointer",
+        border: active ? "none" : "1px solid #cfe7fb",
+        background: active
+          ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)"
+          : "#ffffff",
+        color: active ? "#ffffff" : "#1769aa",
         whiteSpace: "nowrap",
       }}
     >
-      {current.label}
-    </span>
+      {children}
+    </button>
   );
 }
 
@@ -495,7 +449,7 @@ const tableStyle = {
   width: "100%",
   borderCollapse: "separate",
   borderSpacing: 0,
-  minWidth: 1500,
+  minWidth: 1000,
   background: "#fff",
 };
 
@@ -528,6 +482,7 @@ export default function FuelManagementPage() {
   const [toDate, setToDate] = useState(todayDateInput());
   const [selectedEmployee, setSelectedEmployee] = useState("all");
   const [selectedAirlineUse, setSelectedAirlineUse] = useState("all");
+  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -578,11 +533,9 @@ export default function FuelManagementPage() {
         if (selectedEmployee !== "all" && getEmployeeName(item) !== selectedEmployee) {
           return false;
         }
-
         if (selectedAirlineUse !== "all" && getAirlineUse(item) !== selectedAirlineUse) {
           return false;
         }
-
         return true;
       })
       .sort((a, b) => {
@@ -610,11 +563,7 @@ export default function FuelManagementPage() {
 
   const topAgentByEntries = useMemo(
     () =>
-      buildTopEntity(
-        filteredRows,
-        (item) => getEmployeeName(item),
-        () => 1
-      ),
+      buildTopEntity(filteredRows, (item) => getEmployeeName(item), () => 1),
     [filteredRows]
   );
 
@@ -649,7 +598,18 @@ export default function FuelManagementPage() {
   );
 
   const dailyRows = useMemo(() => buildDailyRows(filteredRows), [filteredRows]);
-  const ocrSummary = useMemo(() => buildOcrSummary(filteredRows), [filteredRows]);
+  const weeklyRows = useMemo(() => buildWeeklyRows(filteredRows), [filteredRows]);
+  const monthlyRows = useMemo(() => buildMonthlyRows(filteredRows), [filteredRows]);
+
+  const ocrRows = useMemo(() => {
+    return filteredRows.filter(
+      (item) =>
+        item.photoUrl ||
+        item.ocrStartReading !== null ||
+        item.ocrEndReading !== null ||
+        item.photoCheckStatus
+    );
+  }, [filteredRows]);
 
   function handleExportCsv() {
     const csvRows = [
@@ -665,14 +625,8 @@ export default function FuelManagementPage() {
       ["Total Gallons", totalGallons.toFixed(2)],
       ["Top Agent by Gallons", topAgentByGallons.label],
       ["Top Agent Gallons", topAgentByGallons.value.toFixed(2)],
-      ["Top Agent by Entries", topAgentByEntries.label],
-      ["Top Agent Entries", topAgentByEntries.value],
       ["Top Airline/Use", topAirlineByGallons.label],
       ["Top Airline/Use Gallons", topAirlineByGallons.value.toFixed(2)],
-      ["OCR Match", ocrSummary.match],
-      ["OCR Mismatch", ocrSummary.mismatch],
-      ["OCR Pending Review", ocrSummary.pending],
-      ["OCR Missing", ocrSummary.missing],
       [],
       ["DETAILS"],
       [
@@ -684,13 +638,10 @@ export default function FuelManagementPage() {
         "Start Reading",
         "End Reading",
         "Total Gallons",
-        "Photo Status",
         "OCR Start",
         "OCR End",
-        "Start Diff",
-        "End Diff",
+        "Photo Status",
         "Photo URL",
-        "Photo Notes",
         "Notes",
         "Created At",
       ],
@@ -700,16 +651,13 @@ export default function FuelManagementPage() {
         item.equipmentNumber || "",
         getEmployeeName(item),
         getAirlineUse(item),
-        formatFixed(item.startReading),
-        formatFixed(item.endReading),
-        formatFixed(item.totalGallons),
+        safeNumber(item.startReading).toFixed(2),
+        safeNumber(item.endReading).toFixed(2),
+        safeNumber(item.totalGallons).toFixed(2),
+        item.ocrStartReading ?? "",
+        item.ocrEndReading ?? "",
         getPhotoStatus(item),
-        getOcrStart(item) === null ? "" : formatFixed(getOcrStart(item)),
-        getOcrEnd(item) === null ? "" : formatFixed(getOcrEnd(item)),
-        getStartDiff(item) === null ? "" : formatFixed(getStartDiff(item)),
-        getEndDiff(item) === null ? "" : formatFixed(getEndDiff(item)),
         item.photoUrl || "",
-        getPhotoNotes(item),
         item.notes || "",
         formatDateTime(item.createdAt),
       ]),
@@ -770,7 +718,7 @@ export default function FuelManagementPage() {
             color: "rgba(255,255,255,0.92)",
           }}
         >
-          Daily, weekly and monthly control of fuel usage by employee and airline/use, including OCR photo validation.
+          Daily, weekly and monthly control of fuel usage by employee and airline/use.
         </p>
       </div>
 
@@ -867,313 +815,456 @@ export default function FuelManagementPage() {
         </div>
       </PageCard>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 14,
-        }}
-      >
-        <StatCard label="Total Records" value={String(totalRecords)} />
-        <StatCard label="Total Gallons" value={totalGallons.toFixed(2)} tone="blue" />
-        <StatCard
-          label="Top Agent by Gallons"
-          value={`${topAgentByGallons.label} (${topAgentByGallons.value.toFixed(2)})`}
-          tone="green"
-        />
-        <StatCard
-          label="Top Agent by Entries"
-          value={`${topAgentByEntries.label} (${topAgentByEntries.value})`}
-          tone="amber"
-        />
-        <StatCard
-          label="Top Airline / Use"
-          value={`${topAirlineByGallons.label} (${topAirlineByGallons.value.toFixed(2)})`}
-          tone="blue"
-        />
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 14,
-        }}
-      >
-        <StatCard label="OCR Match" value={String(ocrSummary.match)} tone="green" />
-        <StatCard label="OCR Mismatch" value={String(ocrSummary.mismatch)} tone="red" />
-        <StatCard label="Pending Review" value={String(ocrSummary.pending)} tone="amber" />
-        <StatCard label="Missing Photo" value={String(ocrSummary.missing)} />
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 14,
-        }}
-      >
-        <PageCard style={{ padding: 20 }}>
-          <h2
-            style={{
-              margin: "0 0 12px",
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
-            Gallons by Agent
-          </h2>
-
-          {gallonsByAgent.length === 0 ? (
-            <div style={{ color: "#64748b", fontWeight: 700 }}>No data found.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {gallonsByAgent.map((row) => {
-                const max = Math.max(...gallonsByAgent.map((x) => x.value), 1);
-                return (
-                  <div key={row.label}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        marginBottom: 6,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "#334155",
-                      }}
-                    >
-                      <span>{row.label}</span>
-                      <span>{row.value.toFixed(2)}</span>
-                    </div>
-
-                    <div
-                      style={{
-                        height: 12,
-                        borderRadius: 999,
-                        background: "#e2e8f0",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${(row.value / max) * 100}%`,
-                          height: "100%",
-                          borderRadius: 999,
-                          background:
-                            "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </PageCard>
-
-        <PageCard style={{ padding: 20 }}>
-          <h2
-            style={{
-              margin: "0 0 12px",
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
-            Gallons by Airline / Use
-          </h2>
-
-          {gallonsByAirlineUse.length === 0 ? (
-            <div style={{ color: "#64748b", fontWeight: 700 }}>No data found.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {gallonsByAirlineUse.map((row) => {
-                const max = Math.max(...gallonsByAirlineUse.map((x) => x.value), 1);
-                return (
-                  <div key={row.label}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        marginBottom: 6,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "#334155",
-                      }}
-                    >
-                      <span>{row.label}</span>
-                      <span>{row.value.toFixed(2)}</span>
-                    </div>
-
-                    <div
-                      style={{
-                        height: 12,
-                        borderRadius: 999,
-                        background: "#e2e8f0",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${(row.value / max) * 100}%`,
-                          height: "100%",
-                          borderRadius: 999,
-                          background:
-                            "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)",
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </PageCard>
-      </div>
-
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 12 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
-            Daily Summary
-          </h2>
-        </div>
-
-        <div style={tableWrapStyle}>
-          <table style={{ ...tableStyle, minWidth: 700 }}>
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                <th style={thStyle}>Date</th>
-                <th style={thStyle}>Records</th>
-                <th style={thStyle}>Gallons</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dailyRows.length === 0 ? (
-                <tr>
-                  <td colSpan={3} style={tdStyle}>
-                    {loading ? "Loading..." : "No data found."}
-                  </td>
-                </tr>
-              ) : (
-                dailyRows.map((item) => (
-                  <tr key={item.date}>
-                    <td style={tdStyle}>{item.date}</td>
-                    <td style={tdStyle}>{item.records}</td>
-                    <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      <PageCard style={{ padding: 16 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>
+            Overview
+          </TabButton>
+          <TabButton active={activeTab === "daily"} onClick={() => setActiveTab("daily")}>
+            Daily
+          </TabButton>
+          <TabButton active={activeTab === "weekly"} onClick={() => setActiveTab("weekly")}>
+            Weekly
+          </TabButton>
+          <TabButton active={activeTab === "monthly"} onClick={() => setActiveTab("monthly")}>
+            Monthly
+          </TabButton>
+          <TabButton active={activeTab === "ocr"} onClick={() => setActiveTab("ocr")}>
+            OCR Review
+          </TabButton>
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 12 }}>
-          <h2
+      {activeTab === "overview" && (
+        <>
+          <div
             style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 900,
-              color: "#0f172a",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
             }}
           >
-            Fuel Records
-          </h2>
-        </div>
+            <StatCard label="Total Records" value={String(totalRecords)} />
+            <StatCard label="Total Gallons" value={totalGallons.toFixed(2)} tone="blue" />
+            <StatCard
+              label="Top Agent by Gallons"
+              value={`${topAgentByGallons.label} (${topAgentByGallons.value.toFixed(2)})`}
+              tone="green"
+            />
+            <StatCard
+              label="Top Agent by Entries"
+              value={`${topAgentByEntries.label} (${topAgentByEntries.value})`}
+              tone="amber"
+            />
+            <StatCard
+              label="Top Airline / Use"
+              value={`${topAirlineByGallons.label} (${topAirlineByGallons.value.toFixed(2)})`}
+              tone="blue"
+            />
+          </div>
 
-        <div style={tableWrapStyle}>
-          <table style={tableStyle}>
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                <th style={thStyle}>Date</th>
-                <th style={thStyle}>Time</th>
-                <th style={thStyle}>Equipment</th>
-                <th style={thStyle}>Employee</th>
-                <th style={thStyle}>Airline / Use</th>
-                <th style={thStyle}>Start</th>
-                <th style={thStyle}>End</th>
-                <th style={thStyle}>Gallons</th>
-                <th style={thStyle}>OCR Status</th>
-                <th style={thStyle}>OCR Start</th>
-                <th style={thStyle}>OCR End</th>
-                <th style={thStyle}>Start Diff</th>
-                <th style={thStyle}>End Diff</th>
-                <th style={thStyle}>Photo</th>
-                <th style={thStyle}>Created</th>
-                <th style={thStyle}>OCR Notes</th>
-                <th style={thStyle}>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={17} style={tdStyle}>
-                    {loading ? "Loading..." : "No records found."}
-                  </td>
-                </tr>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 14,
+            }}
+          >
+            <PageCard style={{ padding: 20 }}>
+              <h2
+                style={{
+                  margin: "0 0 12px",
+                  fontSize: 20,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                Gallons by Agent
+              </h2>
+
+              {gallonsByAgent.length === 0 ? (
+                <div style={{ color: "#64748b", fontWeight: 700 }}>No data found.</div>
               ) : (
-                filteredRows.map((item) => (
-                  <tr key={item.id}>
-                    <td style={tdStyle}>{item.date || "—"}</td>
-                    <td style={tdStyle}>{item.time || "—"}</td>
-                    <td style={tdStyle}>{item.equipmentNumber || "—"}</td>
-                    <td style={tdStyle}>{getEmployeeName(item)}</td>
-                    <td style={tdStyle}>{getAirlineUse(item)}</td>
-                    <td style={tdStyle}>{formatFixed(item.startReading)}</td>
-                    <td style={tdStyle}>{formatFixed(item.endReading)}</td>
-                    <td style={{ ...tdStyle, fontWeight: 800 }}>
-                      {formatFixed(item.totalGallons)}
-                    </td>
-                    <td style={tdStyle}>
-                      <StatusPill status={getPhotoStatus(item)} />
-                    </td>
-                    <td style={tdStyle}>
-                      {getOcrStart(item) === null ? "—" : formatFixed(getOcrStart(item))}
-                    </td>
-                    <td style={tdStyle}>
-                      {getOcrEnd(item) === null ? "—" : formatFixed(getOcrEnd(item))}
-                    </td>
-                    <td style={tdStyle}>
-                      {getStartDiff(item) === null ? "—" : formatFixed(getStartDiff(item))}
-                    </td>
-                    <td style={tdStyle}>
-                      {getEndDiff(item) === null ? "—" : formatFixed(getEndDiff(item))}
-                    </td>
-                    <td style={tdStyle}>
-                      {item.photoUrl ? (
-                        <a
-                          href={item.photoUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: "#1769aa", fontWeight: 700 }}
+                <div style={{ display: "grid", gap: 10 }}>
+                  {gallonsByAgent.map((row) => {
+                    const max = Math.max(...gallonsByAgent.map((x) => x.value), 1);
+                    return (
+                      <div key={row.label}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            marginBottom: 6,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "#334155",
+                          }}
                         >
-                          Open Photo
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td style={tdStyle}>{formatDateTime(item.createdAt)}</td>
-                    <td style={tdStyle}>{getPhotoNotes(item) || "—"}</td>
-                    <td style={tdStyle}>{item.notes || "—"}</td>
-                  </tr>
-                ))
+                          <span>{row.label}</span>
+                          <span>{row.value.toFixed(2)}</span>
+                        </div>
+
+                        <div
+                          style={{
+                            height: 12,
+                            borderRadius: 999,
+                            background: "#e2e8f0",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${(row.value / max) * 100}%`,
+                              height: "100%",
+                              borderRadius: 999,
+                              background:
+                                "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-      </PageCard>
+            </PageCard>
+
+            <PageCard style={{ padding: 20 }}>
+              <h2
+                style={{
+                  margin: "0 0 12px",
+                  fontSize: 20,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                Gallons by Airline / Use
+              </h2>
+
+              {gallonsByAirlineUse.length === 0 ? (
+                <div style={{ color: "#64748b", fontWeight: 700 }}>No data found.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {gallonsByAirlineUse.map((row) => {
+                    const max = Math.max(...gallonsByAirlineUse.map((x) => x.value), 1);
+                    return (
+                      <div key={row.label}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            marginBottom: 6,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "#334155",
+                          }}
+                        >
+                          <span>{row.label}</span>
+                          <span>{row.value.toFixed(2)}</span>
+                        </div>
+
+                        <div
+                          style={{
+                            height: 12,
+                            borderRadius: 999,
+                            background: "#e2e8f0",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${(row.value / max) * 100}%`,
+                              height: "100%",
+                              borderRadius: 999,
+                              background:
+                                "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </PageCard>
+          </div>
+
+          <PageCard style={{ padding: 20 }}>
+            <div style={{ marginBottom: 12 }}>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                Fuel Records
+              </h2>
+            </div>
+
+            <div style={tableWrapStyle}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr style={{ background: "#f8fbff" }}>
+                    <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Time</th>
+                    <th style={thStyle}>Equipment</th>
+                    <th style={thStyle}>Employee</th>
+                    <th style={thStyle}>Airline / Use</th>
+                    <th style={thStyle}>Start</th>
+                    <th style={thStyle}>End</th>
+                    <th style={thStyle}>Gallons</th>
+                    <th style={thStyle}>Photo</th>
+                    <th style={thStyle}>Created</th>
+                    <th style={thStyle}>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} style={tdStyle}>
+                        {loading ? "Loading..." : "No records found."}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRows.map((item) => (
+                      <tr key={item.id}>
+                        <td style={tdStyle}>{item.date || "—"}</td>
+                        <td style={tdStyle}>{item.time || "—"}</td>
+                        <td style={tdStyle}>{item.equipmentNumber || "—"}</td>
+                        <td style={tdStyle}>{getEmployeeName(item)}</td>
+                        <td style={tdStyle}>{getAirlineUse(item)}</td>
+                        <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
+                        <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
+                        <td style={{ ...tdStyle, fontWeight: 800 }}>
+                          {safeNumber(item.totalGallons).toFixed(2)}
+                        </td>
+                        <td style={tdStyle}>
+                          {item.photoUrl ? (
+                            <a
+                              href={item.photoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#1769aa", fontWeight: 700 }}
+                            >
+                              {getPhotoStatus(item)}
+                            </a>
+                          ) : (
+                            getPhotoStatus(item)
+                          )}
+                        </td>
+                        <td style={tdStyle}>{formatDateTime(item.createdAt)}</td>
+                        <td style={tdStyle}>{item.notes || "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </PageCard>
+        </>
+      )}
+
+      {activeTab === "daily" && (
+        <PageCard style={{ padding: 20 }}>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              Daily Summary
+            </h2>
+          </div>
+
+          <div style={tableWrapStyle}>
+            <table style={{ ...tableStyle, minWidth: 700 }}>
+              <thead>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle}>Date</th>
+                  <th style={thStyle}>Records</th>
+                  <th style={thStyle}>Gallons</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} style={tdStyle}>
+                      {loading ? "Loading..." : "No data found."}
+                    </td>
+                  </tr>
+                ) : (
+                  dailyRows.map((item) => (
+                    <tr key={item.key}>
+                      <td style={tdStyle}>{item.label}</td>
+                      <td style={tdStyle}>{item.records}</td>
+                      <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </PageCard>
+      )}
+
+      {activeTab === "weekly" && (
+        <PageCard style={{ padding: 20 }}>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              Weekly Summary
+            </h2>
+          </div>
+
+          <div style={tableWrapStyle}>
+            <table style={{ ...tableStyle, minWidth: 700 }}>
+              <thead>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle}>Week Start</th>
+                  <th style={thStyle}>Records</th>
+                  <th style={thStyle}>Gallons</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weeklyRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} style={tdStyle}>
+                      {loading ? "Loading..." : "No data found."}
+                    </td>
+                  </tr>
+                ) : (
+                  weeklyRows.map((item) => (
+                    <tr key={item.key}>
+                      <td style={tdStyle}>{item.label}</td>
+                      <td style={tdStyle}>{item.records}</td>
+                      <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </PageCard>
+      )}
+
+      {activeTab === "monthly" && (
+        <PageCard style={{ padding: 20 }}>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              Monthly Summary
+            </h2>
+          </div>
+
+          <div style={tableWrapStyle}>
+            <table style={{ ...tableStyle, minWidth: 700 }}>
+              <thead>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle}>Month</th>
+                  <th style={thStyle}>Records</th>
+                  <th style={thStyle}>Gallons</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} style={tdStyle}>
+                      {loading ? "Loading..." : "No data found."}
+                    </td>
+                  </tr>
+                ) : (
+                  monthlyRows.map((item) => (
+                    <tr key={item.key}>
+                      <td style={tdStyle}>{item.label}</td>
+                      <td style={tdStyle}>{item.records}</td>
+                      <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </PageCard>
+      )}
+
+      {activeTab === "ocr" && (
+        <PageCard style={{ padding: 20 }}>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              OCR Review
+            </h2>
+            <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 14, fontWeight: 700 }}>
+              Review uploaded photos and compare entered readings vs OCR detected readings.
+            </p>
+          </div>
+
+          <div style={tableWrapStyle}>
+            <table style={{ ...tableStyle, minWidth: 1200 }}>
+              <thead>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle}>Date</th>
+                  <th style={thStyle}>Employee</th>
+                  <th style={thStyle}>Airline / Use</th>
+                  <th style={thStyle}>Entered Start</th>
+                  <th style={thStyle}>Entered End</th>
+                  <th style={thStyle}>OCR Start</th>
+                  <th style={thStyle}>OCR End</th>
+                  <th style={thStyle}>Gallons</th>
+                  <th style={thStyle}>Photo Status</th>
+                  <th style={thStyle}>Photo</th>
+                  <th style={thStyle}>Review Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ocrRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} style={tdStyle}>
+                      {loading ? "Loading..." : "No OCR review data found."}
+                    </td>
+                  </tr>
+                ) : (
+                  ocrRows.map((item) => (
+                    <tr key={item.id}>
+                      <td style={tdStyle}>{item.date || "—"}</td>
+                      <td style={tdStyle}>{getEmployeeName(item)}</td>
+                      <td style={tdStyle}>{getAirlineUse(item)}</td>
+                      <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
+                      <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
+                      <td style={tdStyle}>
+                        {item.ocrStartReading !== null && item.ocrStartReading !== undefined
+                          ? item.ocrStartReading
+                          : "—"}
+                      </td>
+                      <td style={tdStyle}>
+                        {item.ocrEndReading !== null && item.ocrEndReading !== undefined
+                          ? item.ocrEndReading
+                          : "—"}
+                      </td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>
+                        {safeNumber(item.totalGallons).toFixed(2)}
+                      </td>
+                      <td style={tdStyle}>{getPhotoStatus(item)}</td>
+                      <td style={tdStyle}>
+                        {item.photoUrl ? (
+                          <a
+                            href={item.photoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: "#1769aa", fontWeight: 700 }}
+                          >
+                            Open Photo
+                          </a>
+                        ) : (
+                          "No photo"
+                        )}
+                      </td>
+                      <td style={tdStyle}>{item.photoCheckNotes || "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </PageCard>
+      )}
     </div>
   );
 }
