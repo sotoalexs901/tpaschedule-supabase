@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
-  onSnapshot,
-  updateDoc,
   deleteDoc,
   doc,
+  onSnapshot,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { db, storage } from "../firebase";
+import { db } from "../firebase";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -82,9 +81,15 @@ function endOfDay(dateLike) {
 }
 
 function getRangeDates(range) {
-  if (range === "today") return { start: startOfToday(), end: endOfToday() };
-  if (range === "week") return { start: startOfWeek(), end: endOfWeek() };
-  if (range === "month") return { start: startOfMonth(), end: endOfMonth() };
+  if (range === "today") {
+    return { start: startOfToday(), end: endOfToday() };
+  }
+  if (range === "week") {
+    return { start: startOfWeek(), end: endOfWeek() };
+  }
+  if (range === "month") {
+    return { start: startOfMonth(), end: endOfMonth() };
+  }
   return { start: null, end: null };
 }
 
@@ -111,17 +116,29 @@ function getAirlineUse(item) {
   return normalizeText(item.airlineUse) || normalizeText(item.airline_use) || "Unknown";
 }
 
-function getPhotoStatus(item) {
+function getOverallPhotoStatus(item) {
   return normalizeText(item.photoCheckStatus || item.photo_check_status || "—");
 }
 
-function getMonthKeyFromItem(item) {
+function getStartPhotoStatus(item) {
+  return normalizeText(item.startPhotoCheckStatus || "—");
+}
+
+function getEndPhotoStatus(item) {
+  return normalizeText(item.endPhotoCheckStatus || "—");
+}
+
+function getMonthKey(item) {
   return (
     normalizeText(item.monthKey) ||
     String(item.date || "").slice(0, 7) ||
-    formatInputDate(item.createdAt || item.updatedAt).slice(0, 7) ||
+    formatInputDate(item.createdAt).slice(0, 7) ||
     ""
   );
+}
+
+function isMonthClosed(item) {
+  return Boolean(item.monthClosed);
 }
 
 function matchesRange(item, startDate, endDate) {
@@ -175,8 +192,14 @@ function buildDailyRows(items) {
   items.forEach((item) => {
     const key = item.date || formatInputDate(item.createdAt) || "Unknown";
     if (!map[key]) {
-      map[key] = { key, label: key, records: 0, gallons: 0 };
+      map[key] = {
+        key,
+        label: key,
+        records: 0,
+        gallons: 0,
+      };
     }
+
     map[key].records += 1;
     map[key].gallons += safeNumber(item.totalGallons);
   });
@@ -190,8 +213,14 @@ function buildWeeklyRows(items) {
   items.forEach((item) => {
     const key = item.weekKey || "Unknown";
     if (!map[key]) {
-      map[key] = { key, label: key, records: 0, gallons: 0 };
+      map[key] = {
+        key,
+        label: key,
+        records: 0,
+        gallons: 0,
+      };
     }
+
     map[key].records += 1;
     map[key].gallons += safeNumber(item.totalGallons);
   });
@@ -203,15 +232,14 @@ function buildMonthlyRows(items) {
   const map = {};
 
   items.forEach((item) => {
-    const key = getMonthKeyFromItem(item) || "Unknown";
+    const key = getMonthKey(item) || "Unknown";
     if (!map[key]) {
       map[key] = {
         key,
         label: key,
         records: 0,
         gallons: 0,
-        closed: false,
-        closedAt: null,
+        monthClosed: false,
       };
     }
 
@@ -219,78 +247,35 @@ function buildMonthlyRows(items) {
     map[key].gallons += safeNumber(item.totalGallons);
 
     if (item.monthClosed) {
-      map[key].closed = true;
-      map[key].closedAt = item.monthClosedAt || map[key].closedAt;
+      map[key].monthClosed = true;
     }
   });
 
   return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
 }
 
-function getMissingItems(item) {
-  const missing = [];
+function groupRowsByMonth(items) {
+  const grouped = {};
 
-  if (!normalizeText(item.date)) missing.push("Date");
-  if (!normalizeText(item.time)) missing.push("Time");
-  if (!normalizeText(item.equipmentNumber)) missing.push("Equipment");
-  if (!normalizeText(getEmployeeName(item)) || getEmployeeName(item) === "Unknown") {
-    missing.push("Employee");
-  }
-  if (!normalizeText(getAirlineUse(item)) || getAirlineUse(item) === "Unknown") {
-    missing.push("Airline / Use");
-  }
-  if (item.startReading === undefined || item.startReading === null || item.startReading === "") {
-    missing.push("Start Reading");
-  }
-  if (item.endReading === undefined || item.endReading === null || item.endReading === "") {
-    missing.push("End Reading");
-  }
-  if (!item.photoUrl) missing.push("Photo");
+  items.forEach((item) => {
+    const monthKey = getMonthKey(item) || "Unknown";
+    if (!grouped[monthKey]) grouped[monthKey] = [];
+    grouped[monthKey].push(item);
+  });
 
-  return missing;
-}
-
-function isPendingReview(item) {
-  const status = getPhotoStatus(item).toLowerCase();
-  if (status === "pending_review" || status === "missing") return true;
-  if (getMissingItems(item).length > 0) return true;
-  return false;
-}
-
-function createEditDraft(item) {
-  return {
-    id: item.id,
-    date: item.date || "",
-    time: item.time || "",
-    equipmentNumber: item.equipmentNumber || "",
-    employeeName: getEmployeeName(item),
-    airlineUse: getAirlineUse(item),
-    startReading:
-      item.startReading !== undefined && item.startReading !== null
-        ? String(item.startReading)
-        : "",
-    endReading:
-      item.endReading !== undefined && item.endReading !== null
-        ? String(item.endReading)
-        : "",
-    totalGallons:
-      item.totalGallons !== undefined && item.totalGallons !== null
-        ? String(item.totalGallons)
-        : "",
-    notes: item.notes || "",
-    photoCheckStatus: getPhotoStatus(item),
-    photoCheckNotes: item.photoCheckNotes || "",
-    photoUrl: item.photoUrl || "",
-    ocrStartReading:
-      item.ocrStartReading !== undefined && item.ocrStartReading !== null
-        ? String(item.ocrStartReading)
-        : "",
-    ocrEndReading:
-      item.ocrEndReading !== undefined && item.ocrEndReading !== null
-        ? String(item.ocrEndReading)
-        : "",
-    monthClosed: !!item.monthClosed,
-  };
+  return Object.entries(grouped)
+    .map(([month, rows]) => ({
+      month,
+      rows: rows.sort((a, b) => {
+        const A = toDateSafe(a.createdAt)?.getTime() || 0;
+        const B = toDateSafe(b.createdAt)?.getTime() || 0;
+        return B - A;
+      }),
+      gallons: rows.reduce((sum, item) => sum + safeNumber(item.totalGallons), 0),
+      records: rows.length,
+      monthClosed: rows.some((r) => r.monthClosed),
+    }))
+    .sort((a, b) => b.month.localeCompare(a.month));
 }
 
 function downloadCsv(filename, rows) {
@@ -408,7 +393,7 @@ function TextArea(props) {
         padding: "10px 12px",
         fontSize: 14,
         color: "#0f172a",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
         resize: "vertical",
         minHeight: 90,
@@ -451,6 +436,11 @@ function ActionButton({
     },
     danger: {
       background: "#dc2626",
+      color: "#ffffff",
+      border: "none",
+    },
+    dark: {
+      background: "#0f172a",
       color: "#ffffff",
       border: "none",
     },
@@ -547,6 +537,47 @@ function TabButton({ active, children, onClick }) {
   );
 }
 
+function statusTone(status) {
+  const value = normalizeText(status).toLowerCase();
+
+  if (value === "match" || value === "approved") return "green";
+  if (value === "mismatch") return "red";
+  if (value === "pending_review") return "amber";
+  return "default";
+}
+
+function StatusBadge({ status }) {
+  const tone = statusTone(status);
+
+  const tones = {
+    default: { bg: "#f8fafc", border: "#cbd5e1", color: "#334155" },
+    green: { bg: "#dcfce7", border: "#86efac", color: "#166534" },
+    amber: { bg: "#fff7ed", border: "#fdba74", color: "#9a3412" },
+    red: { bg: "#fff1f2", border: "#fecdd3", color: "#9f1239" },
+  };
+
+  const current = tones[tone] || tones.default;
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "5px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 800,
+        background: current.bg,
+        color: current.color,
+        border: `1px solid ${current.border}`,
+        textTransform: "uppercase",
+      }}
+    >
+      {status || "—"}
+    </span>
+  );
+}
+
 const tableWrapStyle = {
   width: "100%",
   maxWidth: "100%",
@@ -585,9 +616,28 @@ const tdStyle = {
   verticalAlign: "top",
 };
 
+function createEditDraft(item) {
+  return {
+    date: item.date || "",
+    time: item.time || "",
+    equipmentNumber: item.equipmentNumber || "",
+    employeeName: getEmployeeName(item),
+    airlineUse: getAirlineUse(item),
+    startReading: String(item.startReading ?? ""),
+    endReading: String(item.endReading ?? ""),
+    totalGallons: String(item.totalGallons ?? ""),
+    notes: item.notes || "",
+    photoCheckNotes: item.photoCheckNotes || "",
+    startPhotoCheckNotes: item.startPhotoCheckNotes || "",
+    endPhotoCheckNotes: item.endPhotoCheckNotes || "",
+  };
+}
+
 export default function FuelManagementPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [workingId, setWorkingId] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   const [range, setRange] = useState("today");
   const [fromDate, setFromDate] = useState(todayDateInput());
@@ -596,10 +646,8 @@ export default function FuelManagementPage() {
   const [selectedAirlineUse, setSelectedAirlineUse] = useState("all");
   const [activeTab, setActiveTab] = useState("overview");
 
-  const [statusMessage, setStatusMessage] = useState("");
-  const [workingId, setWorkingId] = useState("");
-  const [editingRow, setEditingRow] = useState(null);
-  const [editPhotoFile, setEditPhotoFile] = useState(null);
+  const [editingRowId, setEditingRowId] = useState("");
+  const [editDraft, setEditDraft] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -662,6 +710,23 @@ export default function FuelManagementPage() {
       });
   }, [rows, activeStartDate, activeEndDate, selectedEmployee, selectedAirlineUse]);
 
+  const pendingReviewRows = useMemo(() => {
+    return filteredRows.filter((item) => {
+      const overall = getOverallPhotoStatus(item).toLowerCase();
+      const startStatus = getStartPhotoStatus(item).toLowerCase();
+      const endStatus = getEndPhotoStatus(item).toLowerCase();
+
+      return (
+        overall === "pending_review" ||
+        overall === "mismatch" ||
+        startStatus === "pending_review" ||
+        startStatus === "mismatch" ||
+        endStatus === "pending_review" ||
+        endStatus === "mismatch"
+      );
+    });
+  }, [filteredRows]);
+
   const totalRecords = filteredRows.length;
   const totalGallons = filteredRows.reduce(
     (sum, item) => sum + safeNumber(item.totalGallons),
@@ -679,7 +744,8 @@ export default function FuelManagementPage() {
   );
 
   const topAgentByEntries = useMemo(
-    () => buildTopEntity(filteredRows, (item) => getEmployeeName(item), () => 1),
+    () =>
+      buildTopEntity(filteredRows, (item) => getEmployeeName(item), () => 1),
     [filteredRows]
   );
 
@@ -716,76 +782,53 @@ export default function FuelManagementPage() {
   const dailyRows = useMemo(() => buildDailyRows(filteredRows), [filteredRows]);
   const weeklyRows = useMemo(() => buildWeeklyRows(filteredRows), [filteredRows]);
   const monthlyRows = useMemo(() => buildMonthlyRows(filteredRows), [filteredRows]);
+  const groupedByMonth = useMemo(() => groupRowsByMonth(filteredRows), [filteredRows]);
 
-  const pendingRows = useMemo(() => {
-    return filteredRows.filter((item) => isPendingReview(item));
-  }, [filteredRows]);
-
-  async function uploadEditPhoto(file, itemId) {
-    const path = `fuel_logs/manual-review/${itemId}/${Date.now()}-${file.name}`;
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file, {
-      contentType: file.type || "image/jpeg",
-    });
-    return await getDownloadURL(storageRef);
-  }
-
-  function handleOpenEdit(item) {
-    setEditingRow(createEditDraft(item));
-    setEditPhotoFile(null);
+  function startEditing(item) {
+    setEditingRowId(item.id);
+    setEditDraft(createEditDraft(item));
     setStatusMessage("");
   }
 
-  function handleEditChange(field, value) {
-    setEditingRow((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+  function cancelEditing() {
+    setEditingRowId("");
+    setEditDraft(null);
   }
 
-  async function handleSaveEdit() {
-    if (!editingRow?.id) return;
+  async function saveEditing(itemId) {
+    if (!editDraft) return;
 
-    const start = safeNumber(editingRow.startReading);
-    const end = safeNumber(editingRow.endReading);
-    const totalGallons = end >= start ? Number((end - start).toFixed(2)) : 0;
+    const startReading = safeNumber(editDraft.startReading);
+    const endReading = safeNumber(editDraft.endReading);
+    const totalGallons =
+      endReading >= startReading ? Number((endReading - startReading).toFixed(2)) : 0;
 
     try {
-      setWorkingId(editingRow.id);
+      setWorkingId(itemId);
 
-      let nextPhotoUrl = editingRow.photoUrl || "";
-      if (editPhotoFile) {
-        nextPhotoUrl = await uploadEditPhoto(editPhotoFile, editingRow.id);
-      }
-
-      const monthKey = String(editingRow.date || "").slice(0, 7);
-
-      await updateDoc(doc(db, "fuel_logs", editingRow.id), {
-        date: editingRow.date || "",
-        time: editingRow.time || "",
-        equipmentNumber: editingRow.equipmentNumber || "",
-        employeeName: editingRow.employeeName || "",
-        airlineUse: editingRow.airlineUse || "",
-        startReading: start,
-        endReading: end,
+      await updateDoc(doc(db, "fuel_logs", itemId), {
+        date: editDraft.date || "",
+        time: editDraft.time || "",
+        dayKey: editDraft.date || "",
+        monthKey: String(editDraft.date || "").slice(0, 7),
+        equipmentNumber: editDraft.equipmentNumber || "",
+        employeeName: editDraft.employeeName || "",
+        airlineUse: editDraft.airlineUse || "",
+        startReading,
+        endReading,
         totalGallons,
-        notes: editingRow.notes || "",
-        photoUrl: nextPhotoUrl,
-        photoCheckStatus: editingRow.photoCheckStatus || (nextPhotoUrl ? "pending_review" : "missing"),
-        photoCheckNotes: editingRow.photoCheckNotes || "",
-        ocrStartReading:
-          editingRow.ocrStartReading === "" ? null : safeNumber(editingRow.ocrStartReading),
-        ocrEndReading:
-          editingRow.ocrEndReading === "" ? null : safeNumber(editingRow.ocrEndReading),
-        monthKey,
+        notes: editDraft.notes || "",
+        photoCheckNotes: editDraft.photoCheckNotes || "",
+        startPhotoCheckNotes: editDraft.startPhotoCheckNotes || "",
+        endPhotoCheckNotes: editDraft.endPhotoCheckNotes || "",
         updatedAt: serverTimestamp(),
       });
 
-      setEditingRow(null);
-      setEditPhotoFile(null);
       setStatusMessage("Fuel record updated successfully.");
+      setEditingRowId("");
+      setEditDraft(null);
     } catch (error) {
-      console.error("Error updating fuel record:", error);
+      console.error("Error updating fuel log:", error);
       setStatusMessage("Could not update fuel record.");
     } finally {
       setWorkingId("");
@@ -800,8 +843,12 @@ export default function FuelManagementPage() {
       setWorkingId(itemId);
       await deleteDoc(doc(db, "fuel_logs", itemId));
       setStatusMessage("Fuel record deleted successfully.");
+      if (editingRowId === itemId) {
+        setEditingRowId("");
+        setEditDraft(null);
+      }
     } catch (error) {
-      console.error("Error deleting fuel record:", error);
+      console.error("Error deleting fuel log:", error);
       setStatusMessage("Could not delete fuel record.");
     } finally {
       setWorkingId("");
@@ -813,31 +860,31 @@ export default function FuelManagementPage() {
       setWorkingId(item.id);
       await updateDoc(doc(db, "fuel_logs", item.id), {
         photoCheckStatus: "approved",
-        photoCheckNotes: item.photoCheckNotes || "Approved manually from management.",
+        startPhotoCheckStatus: item.startPhotoUrl ? "approved" : item.startPhotoCheckStatus || "missing",
+        endPhotoCheckStatus: item.endPhotoUrl ? "approved" : item.endPhotoCheckStatus || "missing",
+        photoCheckNotes: item.photoCheckNotes || "Approved manually.",
         updatedAt: serverTimestamp(),
       });
-      setStatusMessage("Fuel record approved successfully.");
+      setStatusMessage("Fuel photo review approved.");
     } catch (error) {
-      console.error("Error approving fuel record:", error);
-      setStatusMessage("Could not approve fuel record.");
+      console.error("Error approving fuel review:", error);
+      setStatusMessage("Could not approve this record.");
     } finally {
       setWorkingId("");
     }
   }
 
   async function handleCloseMonth(monthKey) {
-    const monthItems = rows.filter((item) => getMonthKeyFromItem(item) === monthKey);
-    if (!monthItems.length) {
-      setStatusMessage("No records found for that month.");
-      return;
-    }
+    const monthItems = rows.filter((item) => getMonthKey(item) === monthKey);
+    if (!monthItems.length) return;
 
-    const ok = window.confirm(`Close month ${monthKey} for ${monthItems.length} fuel records?`);
+    const ok = window.confirm(
+      `Close month ${monthKey} for ${monthItems.length} fuel records?`
+    );
     if (!ok) return;
 
     try {
       setWorkingId(monthKey);
-
       await Promise.all(
         monthItems.map((item) =>
           updateDoc(doc(db, "fuel_logs", item.id), {
@@ -847,7 +894,6 @@ export default function FuelManagementPage() {
           })
         )
       );
-
       setStatusMessage(`Month ${monthKey} closed successfully.`);
     } catch (error) {
       console.error("Error closing month:", error);
@@ -884,11 +930,13 @@ export default function FuelManagementPage() {
         "Start Reading",
         "End Reading",
         "Total Gallons",
+        "Overall Status",
+        "Start Photo Status",
+        "End Photo Status",
         "OCR Start",
         "OCR End",
-        "Photo Status",
-        "Month Closed",
-        "Photo URL",
+        "Start Photo URL",
+        "End Photo URL",
         "Notes",
         "Created At",
       ],
@@ -901,11 +949,13 @@ export default function FuelManagementPage() {
         safeNumber(item.startReading).toFixed(2),
         safeNumber(item.endReading).toFixed(2),
         safeNumber(item.totalGallons).toFixed(2),
+        getOverallPhotoStatus(item),
+        getStartPhotoStatus(item),
+        getEndPhotoStatus(item),
         item.ocrStartReading ?? "",
         item.ocrEndReading ?? "",
-        getPhotoStatus(item),
-        item.monthClosed ? "YES" : "NO",
-        item.photoUrl || "",
+        item.startPhotoUrl || "",
+        item.endPhotoUrl || "",
         item.notes || "",
         formatDateTime(item.createdAt),
       ]),
@@ -1098,9 +1148,6 @@ export default function FuelManagementPage() {
           <TabButton active={activeTab === "pending"} onClick={() => setActiveTab("pending")}>
             Pending Review
           </TabButton>
-          <TabButton active={activeTab === "records"} onClick={() => setActiveTab("records")}>
-            All Records
-          </TabButton>
         </div>
       </PageCard>
 
@@ -1130,11 +1177,6 @@ export default function FuelManagementPage() {
               value={`${topAirlineByGallons.label} (${topAirlineByGallons.value.toFixed(2)})`}
               tone="blue"
             />
-            <StatCard
-              label="Pending Review"
-              value={String(pendingRows.length)}
-              tone={pendingRows.length > 0 ? "red" : "green"}
-            />
           </div>
 
           <div
@@ -1145,7 +1187,14 @@ export default function FuelManagementPage() {
             }}
           >
             <PageCard style={{ padding: 20 }}>
-              <h2 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              <h2
+                style={{
+                  margin: "0 0 12px",
+                  fontSize: 20,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
                 Gallons by Agent
               </h2>
 
@@ -1171,6 +1220,7 @@ export default function FuelManagementPage() {
                           <span>{row.label}</span>
                           <span>{row.value.toFixed(2)}</span>
                         </div>
+
                         <div
                           style={{
                             height: 12,
@@ -1197,7 +1247,14 @@ export default function FuelManagementPage() {
             </PageCard>
 
             <PageCard style={{ padding: 20 }}>
-              <h2 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              <h2
+                style={{
+                  margin: "0 0 12px",
+                  fontSize: 20,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
                 Gallons by Airline / Use
               </h2>
 
@@ -1223,6 +1280,7 @@ export default function FuelManagementPage() {
                           <span>{row.label}</span>
                           <span>{row.value.toFixed(2)}</span>
                         </div>
+
                         <div
                           style={{
                             height: 12,
@@ -1248,14 +1306,285 @@ export default function FuelManagementPage() {
               )}
             </PageCard>
           </div>
+
+          <PageCard style={{ padding: 20 }}>
+            <div style={{ marginBottom: 12 }}>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                Fuel Records by Month
+              </h2>
+            </div>
+
+            {groupedByMonth.length === 0 ? (
+              <div style={{ color: "#64748b", fontWeight: 700 }}>
+                {loading ? "Loading..." : "No records found."}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 18 }}>
+                {groupedByMonth.map((group) => (
+                  <PageCard key={group.month} style={{ padding: 16 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        marginBottom: 12,
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 20,
+                            fontWeight: 900,
+                            color: "#0f172a",
+                          }}
+                        >
+                          {group.month}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 14,
+                            color: "#64748b",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Records: {group.records} · Gallons: {group.gallons.toFixed(2)}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <StatusBadge status={group.monthClosed ? "closed" : "open"} />
+                        <ActionButton
+                          variant="warning"
+                          onClick={() => handleCloseMonth(group.month)}
+                          disabled={workingId === group.month || group.monthClosed}
+                        >
+                          {group.monthClosed
+                            ? "Closed"
+                            : workingId === group.month
+                            ? "Closing..."
+                            : "Close Month"}
+                        </ActionButton>
+                      </div>
+                    </div>
+
+                    <div style={tableWrapStyle}>
+                      <table style={tableStyle}>
+                        <thead>
+                          <tr style={{ background: "#f8fbff" }}>
+                            <th style={thStyle}>Date</th>
+                            <th style={thStyle}>Time</th>
+                            <th style={thStyle}>Equipment</th>
+                            <th style={thStyle}>Employee</th>
+                            <th style={thStyle}>Airline / Use</th>
+                            <th style={thStyle}>Start</th>
+                            <th style={thStyle}>End</th>
+                            <th style={thStyle}>Gallons</th>
+                            <th style={thStyle}>Status</th>
+                            <th style={thStyle}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((item) => (
+                            <tr key={item.id}>
+                              <td style={tdStyle}>{item.date || "—"}</td>
+                              <td style={tdStyle}>{item.time || "—"}</td>
+                              <td style={tdStyle}>{item.equipmentNumber || "—"}</td>
+                              <td style={tdStyle}>{getEmployeeName(item)}</td>
+                              <td style={tdStyle}>{getAirlineUse(item)}</td>
+                              <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
+                              <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
+                              <td style={{ ...tdStyle, fontWeight: 800 }}>
+                                {safeNumber(item.totalGallons).toFixed(2)}
+                              </td>
+                              <td style={tdStyle}>
+                                <StatusBadge status={getOverallPhotoStatus(item)} />
+                              </td>
+                              <td style={tdStyle}>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  {editingRowId !== item.id ? (
+                                    <ActionButton
+                                      variant="secondary"
+                                      onClick={() => startEditing(item)}
+                                    >
+                                      Edit
+                                    </ActionButton>
+                                  ) : (
+                                    <>
+                                      <ActionButton
+                                        variant="success"
+                                        onClick={() => saveEditing(item.id)}
+                                        disabled={workingId === item.id}
+                                      >
+                                        {workingId === item.id ? "Saving..." : "Save"}
+                                      </ActionButton>
+                                      <ActionButton
+                                        variant="secondary"
+                                        onClick={cancelEditing}
+                                        disabled={workingId === item.id}
+                                      >
+                                        Cancel
+                                      </ActionButton>
+                                    </>
+                                  )}
+
+                                  <ActionButton
+                                    variant="danger"
+                                    onClick={() => handleDelete(item.id)}
+                                    disabled={workingId === item.id}
+                                  >
+                                    {workingId === item.id ? "Deleting..." : "Delete"}
+                                  </ActionButton>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+
+                          {editingRowId &&
+                            editDraft &&
+                            group.rows.some((item) => item.id === editingRowId) && (
+                              <tr>
+                                <td colSpan={10} style={tdStyle}>
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                                      gap: 12,
+                                    }}
+                                  >
+                                    <div>
+                                      <FieldLabel>Date</FieldLabel>
+                                      <TextInput
+                                        type="date"
+                                        value={editDraft.date}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({ ...prev, date: e.target.value }))
+                                        }
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <FieldLabel>Time</FieldLabel>
+                                      <TextInput
+                                        value={editDraft.time}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({ ...prev, time: e.target.value }))
+                                        }
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <FieldLabel>Equipment</FieldLabel>
+                                      <TextInput
+                                        value={editDraft.equipmentNumber}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({
+                                            ...prev,
+                                            equipmentNumber: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <FieldLabel>Employee</FieldLabel>
+                                      <TextInput
+                                        value={editDraft.employeeName}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({
+                                            ...prev,
+                                            employeeName: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <FieldLabel>Airline / Use</FieldLabel>
+                                      <TextInput
+                                        value={editDraft.airlineUse}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({
+                                            ...prev,
+                                            airlineUse: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <FieldLabel>Start Reading</FieldLabel>
+                                      <TextInput
+                                        type="number"
+                                        step="0.01"
+                                        value={editDraft.startReading}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({
+                                            ...prev,
+                                            startReading: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <FieldLabel>End Reading</FieldLabel>
+                                      <TextInput
+                                        type="number"
+                                        step="0.01"
+                                        value={editDraft.endReading}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({
+                                            ...prev,
+                                            endReading: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+
+                                    <div style={{ gridColumn: "1 / -1" }}>
+                                      <FieldLabel>Notes</FieldLabel>
+                                      <TextArea
+                                        value={editDraft.notes}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({
+                                            ...prev,
+                                            notes: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </PageCard>
+                ))}
+              </div>
+            )}
+          </PageCard>
         </>
       )}
 
       {activeTab === "daily" && (
         <PageCard style={{ padding: 20 }}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
-            Daily Summary
-          </h2>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              Daily Summary
+            </h2>
+          </div>
 
           <div style={tableWrapStyle}>
             <table style={{ ...tableStyle, minWidth: 700 }}>
@@ -1290,9 +1619,11 @@ export default function FuelManagementPage() {
 
       {activeTab === "weekly" && (
         <PageCard style={{ padding: 20 }}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
-            Weekly Summary
-          </h2>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              Weekly Summary
+            </h2>
+          </div>
 
           <div style={tableWrapStyle}>
             <table style={{ ...tableStyle, minWidth: 700 }}>
@@ -1327,26 +1658,27 @@ export default function FuelManagementPage() {
 
       {activeTab === "monthly" && (
         <PageCard style={{ padding: 20 }}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
-            Monthly Summary
-          </h2>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+              Monthly Summary
+            </h2>
+          </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 900 }}>
+            <table style={{ ...tableStyle, minWidth: 850 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Month</th>
                   <th style={thStyle}>Records</th>
                   <th style={thStyle}>Gallons</th>
-                  <th style={thStyle}>Closed</th>
-                  <th style={thStyle}>Closed At</th>
+                  <th style={thStyle}>Status</th>
                   <th style={thStyle}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {monthlyRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={tdStyle}>
+                    <td colSpan={5} style={tdStyle}>
                       {loading ? "Loading..." : "No data found."}
                     </td>
                   </tr>
@@ -1356,15 +1688,16 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
                       <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
-                      <td style={tdStyle}>{item.closed ? "YES" : "NO"}</td>
-                      <td style={tdStyle}>{formatDateTime(item.closedAt)}</td>
+                      <td style={tdStyle}>
+                        <StatusBadge status={item.monthClosed ? "closed" : "open"} />
+                      </td>
                       <td style={tdStyle}>
                         <ActionButton
                           variant="warning"
                           onClick={() => handleCloseMonth(item.key)}
-                          disabled={workingId === item.key || item.closed}
+                          disabled={workingId === item.key || item.monthClosed}
                         >
-                          {item.closed
+                          {item.monthClosed
                             ? "Closed"
                             : workingId === item.key
                             ? "Closing..."
@@ -1386,13 +1719,20 @@ export default function FuelManagementPage() {
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
               Pending Review
             </h2>
-            <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 14, fontWeight: 700 }}>
-              Review missing data, add or replace photos, edit records, or approve them to remove from pending.
+            <p
+              style={{
+                margin: "6px 0 0",
+                color: "#64748b",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              Review records with pending or mismatch OCR validation. You can approve them to remove them from this tab.
             </p>
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 1400 }}>
+            <table style={{ ...tableStyle, minWidth: 1700 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Date</th>
@@ -1400,57 +1740,102 @@ export default function FuelManagementPage() {
                   <th style={thStyle}>Airline / Use</th>
                   <th style={thStyle}>Entered Start</th>
                   <th style={thStyle}>Entered End</th>
-                  <th style={thStyle}>Gallons</th>
-                  <th style={thStyle}>Photo Status</th>
-                  <th style={thStyle}>Missing</th>
-                  <th style={thStyle}>Photo</th>
+                  <th style={thStyle}>OCR Start</th>
+                  <th style={thStyle}>OCR End</th>
+                  <th style={thStyle}>Start Diff</th>
+                  <th style={thStyle}>End Diff</th>
+                  <th style={thStyle}>Start Photo</th>
+                  <th style={thStyle}>End Photo</th>
+                  <th style={thStyle}>Start Status</th>
+                  <th style={thStyle}>End Status</th>
+                  <th style={thStyle}>Overall</th>
                   <th style={thStyle}>Notes</th>
                   <th style={thStyle}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {pendingRows.length === 0 ? (
+                {pendingReviewRows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} style={tdStyle}>
-                      {loading ? "Loading..." : "No pending review items."}
+                    <td colSpan={16} style={tdStyle}>
+                      {loading ? "Loading..." : "No pending review records."}
                     </td>
                   </tr>
                 ) : (
-                  pendingRows.map((item) => (
+                  pendingReviewRows.map((item) => (
                     <tr key={item.id}>
                       <td style={tdStyle}>{item.date || "—"}</td>
                       <td style={tdStyle}>{getEmployeeName(item)}</td>
                       <td style={tdStyle}>{getAirlineUse(item)}</td>
                       <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
                       <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
-                      <td style={{ ...tdStyle, fontWeight: 800 }}>
-                        {safeNumber(item.totalGallons).toFixed(2)}
-                      </td>
-                      <td style={tdStyle}>{getPhotoStatus(item)}</td>
-                      <td style={tdStyle}>{getMissingItems(item).join(", ") || "Complete"}</td>
                       <td style={tdStyle}>
-                        {item.photoUrl ? (
+                        {item.ocrStartReading !== null && item.ocrStartReading !== undefined
+                          ? item.ocrStartReading
+                          : "—"}
+                      </td>
+                      <td style={tdStyle}>
+                        {item.ocrEndReading !== null && item.ocrEndReading !== undefined
+                          ? item.ocrEndReading
+                          : "—"}
+                      </td>
+                      <td style={tdStyle}>
+                        {item.startPhotoDiff !== null && item.startPhotoDiff !== undefined
+                          ? item.startPhotoDiff
+                          : "—"}
+                      </td>
+                      <td style={tdStyle}>
+                        {item.endPhotoDiff !== null && item.endPhotoDiff !== undefined
+                          ? item.endPhotoDiff
+                          : "—"}
+                      </td>
+                      <td style={tdStyle}>
+                        {item.startPhotoUrl ? (
                           <a
-                            href={item.photoUrl}
+                            href={item.startPhotoUrl}
                             target="_blank"
                             rel="noreferrer"
                             style={{ color: "#1769aa", fontWeight: 700 }}
                           >
-                            Open Photo
+                            Open Start
                           </a>
                         ) : (
                           "No photo"
                         )}
                       </td>
-                      <td style={tdStyle}>{item.photoCheckNotes || "—"}</td>
+                      <td style={tdStyle}>
+                        {item.endPhotoUrl ? (
+                          <a
+                            href={item.endPhotoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: "#1769aa", fontWeight: 700 }}
+                          >
+                            Open End
+                          </a>
+                        ) : (
+                          "No photo"
+                        )}
+                      </td>
+                      <td style={tdStyle}>
+                        <StatusBadge status={getStartPhotoStatus(item)} />
+                      </td>
+                      <td style={tdStyle}>
+                        <StatusBadge status={getEndPhotoStatus(item)} />
+                      </td>
+                      <td style={tdStyle}>
+                        <StatusBadge status={getOverallPhotoStatus(item)} />
+                      </td>
+                      <td style={tdStyle}>
+                        <div>{item.photoCheckNotes || "—"}</div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
+                          Start: {item.startPhotoCheckNotes || "—"}
+                        </div>
+                        <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
+                          End: {item.endPhotoCheckNotes || "—"}
+                        </div>
+                      </td>
                       <td style={tdStyle}>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <ActionButton
-                            variant="secondary"
-                            onClick={() => handleOpenEdit(item)}
-                          >
-                            Edit
-                          </ActionButton>
                           <ActionButton
                             variant="success"
                             onClick={() => handleApprove(item)}
@@ -1458,94 +1843,15 @@ export default function FuelManagementPage() {
                           >
                             {workingId === item.id ? "Approving..." : "Approve"}
                           </ActionButton>
-                          <ActionButton
-                            variant="danger"
-                            onClick={() => handleDelete(item.id)}
-                            disabled={workingId === item.id}
-                          >
-                            {workingId === item.id ? "Deleting..." : "Delete"}
-                          </ActionButton>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </PageCard>
-      )}
 
-      {activeTab === "records" && (
-        <PageCard style={{ padding: 20 }}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
-            All Fuel Records
-          </h2>
-
-          <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 1400 }}>
-              <thead>
-                <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle}>Date</th>
-                  <th style={thStyle}>Time</th>
-                  <th style={thStyle}>Equipment</th>
-                  <th style={thStyle}>Employee</th>
-                  <th style={thStyle}>Airline / Use</th>
-                  <th style={thStyle}>Start</th>
-                  <th style={thStyle}>End</th>
-                  <th style={thStyle}>Gallons</th>
-                  <th style={thStyle}>Photo Status</th>
-                  <th style={thStyle}>Month Closed</th>
-                  <th style={thStyle}>Created</th>
-                  <th style={thStyle}>Notes</th>
-                  <th style={thStyle}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={13} style={tdStyle}>
-                      {loading ? "Loading..." : "No records found."}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredRows.map((item) => (
-                    <tr key={item.id}>
-                      <td style={tdStyle}>{item.date || "—"}</td>
-                      <td style={tdStyle}>{item.time || "—"}</td>
-                      <td style={tdStyle}>{item.equipmentNumber || "—"}</td>
-                      <td style={tdStyle}>{getEmployeeName(item)}</td>
-                      <td style={tdStyle}>{getAirlineUse(item)}</td>
-                      <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
-                      <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
-                      <td style={{ ...tdStyle, fontWeight: 800 }}>
-                        {safeNumber(item.totalGallons).toFixed(2)}
-                      </td>
-                      <td style={tdStyle}>
-                        {item.photoUrl ? (
-                          <a
-                            href={item.photoUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: "#1769aa", fontWeight: 700 }}
-                          >
-                            {getPhotoStatus(item)}
-                          </a>
-                        ) : (
-                          getPhotoStatus(item)
-                        )}
-                      </td>
-                      <td style={tdStyle}>{item.monthClosed ? "YES" : "NO"}</td>
-                      <td style={tdStyle}>{formatDateTime(item.createdAt)}</td>
-                      <td style={tdStyle}>{item.notes || "—"}</td>
-                      <td style={tdStyle}>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                           <ActionButton
                             variant="secondary"
-                            onClick={() => handleOpenEdit(item)}
+                            onClick={() => startEditing(item)}
+                            disabled={workingId === item.id}
                           >
                             Edit
                           </ActionButton>
+
                           <ActionButton
                             variant="danger"
                             onClick={() => handleDelete(item.id)}
@@ -1561,230 +1867,192 @@ export default function FuelManagementPage() {
               </tbody>
             </table>
           </div>
-        </PageCard>
-      )}
 
-      {editingRow && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.45)",
-            backdropFilter: "blur(4px)",
-            zIndex: 9999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              maxWidth: 900,
-              maxHeight: "90vh",
-              overflowY: "auto",
-              background: "#fff",
-              borderRadius: 22,
-              padding: 20,
-              boxShadow: "0 24px 60px rgba(15,23,42,0.20)",
-            }}
-          >
-            <h2
-              style={{
-                marginTop: 0,
-                marginBottom: 16,
-                fontSize: 22,
-                fontWeight: 800,
-                color: "#0f172a",
-              }}
-            >
-              Edit Fuel Record
-            </h2>
-
-            {editingRow.monthClosed && (
-              <div
-                style={{
-                  marginBottom: 14,
-                  padding: "12px 14px",
-                  borderRadius: 14,
-                  background: "#fff7ed",
-                  border: "1px solid #fdba74",
-                  color: "#9a3412",
-                  fontWeight: 800,
-                  fontSize: 14,
-                }}
-              >
-                This record belongs to a closed month.
-              </div>
-            )}
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 12,
-              }}
-            >
-              <div>
-                <FieldLabel>Date</FieldLabel>
-                <TextInput
-                  type="date"
-                  value={editingRow.date}
-                  onChange={(e) => handleEditChange("date", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Time</FieldLabel>
-                <TextInput
-                  value={editingRow.time}
-                  onChange={(e) => handleEditChange("time", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Equipment</FieldLabel>
-                <TextInput
-                  value={editingRow.equipmentNumber}
-                  onChange={(e) => handleEditChange("equipmentNumber", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Employee</FieldLabel>
-                <TextInput
-                  value={editingRow.employeeName}
-                  onChange={(e) => handleEditChange("employeeName", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Airline / Use</FieldLabel>
-                <TextInput
-                  value={editingRow.airlineUse}
-                  onChange={(e) => handleEditChange("airlineUse", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Start Reading</FieldLabel>
-                <TextInput
-                  type="number"
-                  step="0.01"
-                  value={editingRow.startReading}
-                  onChange={(e) => handleEditChange("startReading", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>End Reading</FieldLabel>
-                <TextInput
-                  type="number"
-                  step="0.01"
-                  value={editingRow.endReading}
-                  onChange={(e) => handleEditChange("endReading", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Total Gallons</FieldLabel>
-                <TextInput
-                  disabled
-                  value={(
-                    safeNumber(editingRow.endReading) - safeNumber(editingRow.startReading)
-                  ).toFixed(2)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>OCR Start</FieldLabel>
-                <TextInput
-                  type="number"
-                  step="0.01"
-                  value={editingRow.ocrStartReading}
-                  onChange={(e) => handleEditChange("ocrStartReading", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>OCR End</FieldLabel>
-                <TextInput
-                  type="number"
-                  step="0.01"
-                  value={editingRow.ocrEndReading}
-                  onChange={(e) => handleEditChange("ocrEndReading", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Photo Status</FieldLabel>
-                <SelectInput
-                  value={editingRow.photoCheckStatus}
-                  onChange={(e) => handleEditChange("photoCheckStatus", e.target.value)}
+          {editingRowId && editDraft && (
+            <div style={{ marginTop: 18 }}>
+              <PageCard style={{ padding: 18 }}>
+                <h3
+                  style={{
+                    margin: "0 0 12px",
+                    fontSize: 18,
+                    fontWeight: 900,
+                    color: "#0f172a",
+                  }}
                 >
-                  <option value="">Select status</option>
-                  <option value="pending_review">Pending Review</option>
-                  <option value="approved">Approved</option>
-                  <option value="missing">Missing</option>
-                  <option value="mismatch">Mismatch</option>
-                </SelectInput>
-              </div>
+                  Edit Fuel Record
+                </h3>
 
-              <div>
-                <FieldLabel>Add / Replace Photo</FieldLabel>
-                <TextInput
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setEditPhotoFile(e.target.files?.[0] || null)}
-                />
-              </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <FieldLabel>Date</FieldLabel>
+                    <TextInput
+                      type="date"
+                      value={editDraft.date}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({ ...prev, date: e.target.value }))
+                      }
+                    />
+                  </div>
 
-              <div style={{ gridColumn: "1 / -1" }}>
-                <FieldLabel>Review Notes</FieldLabel>
-                <TextArea
-                  value={editingRow.photoCheckNotes}
-                  onChange={(e) => handleEditChange("photoCheckNotes", e.target.value)}
-                />
-              </div>
+                  <div>
+                    <FieldLabel>Time</FieldLabel>
+                    <TextInput
+                      value={editDraft.time}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({ ...prev, time: e.target.value }))
+                      }
+                    />
+                  </div>
 
-              <div style={{ gridColumn: "1 / -1" }}>
-                <FieldLabel>Notes</FieldLabel>
-                <TextArea
-                  value={editingRow.notes}
-                  onChange={(e) => handleEditChange("notes", e.target.value)}
-                />
-              </div>
+                  <div>
+                    <FieldLabel>Equipment</FieldLabel>
+                    <TextInput
+                      value={editDraft.equipmentNumber}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          equipmentNumber: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Employee</FieldLabel>
+                    <TextInput
+                      value={editDraft.employeeName}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          employeeName: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Airline / Use</FieldLabel>
+                    <TextInput
+                      value={editDraft.airlineUse}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          airlineUse: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Start Reading</FieldLabel>
+                    <TextInput
+                      type="number"
+                      step="0.01"
+                      value={editDraft.startReading}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          startReading: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>End Reading</FieldLabel>
+                    <TextInput
+                      type="number"
+                      step="0.01"
+                      value={editDraft.endReading}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          endReading: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <FieldLabel>General Review Notes</FieldLabel>
+                    <TextArea
+                      value={editDraft.photoCheckNotes}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          photoCheckNotes: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Start Photo Notes</FieldLabel>
+                    <TextArea
+                      value={editDraft.startPhotoCheckNotes}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          startPhotoCheckNotes: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>End Photo Notes</FieldLabel>
+                    <TextArea
+                      value={editDraft.endPhotoCheckNotes}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          endPhotoCheckNotes: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <FieldLabel>Notes</FieldLabel>
+                    <TextArea
+                      value={editDraft.notes}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          notes: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+                  <ActionButton
+                    variant="success"
+                    onClick={() => saveEditing(editingRowId)}
+                    disabled={workingId === editingRowId}
+                  >
+                    {workingId === editingRowId ? "Saving..." : "Save Changes"}
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="secondary"
+                    onClick={cancelEditing}
+                    disabled={workingId === editingRowId}
+                  >
+                    Cancel
+                  </ActionButton>
+                </div>
+              </PageCard>
             </div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                marginTop: 18,
-              }}
-            >
-              <ActionButton
-                variant="success"
-                onClick={handleSaveEdit}
-                disabled={workingId === editingRow.id}
-              >
-                {workingId === editingRow.id ? "Saving..." : "Save Changes"}
-              </ActionButton>
-
-              <ActionButton
-                variant="secondary"
-                onClick={() => {
-                  setEditingRow(null);
-                  setEditPhotoFile(null);
-                }}
-              >
-                Cancel
-              </ActionButton>
-            </div>
-          </div>
-        </div>
+          )}
+        </PageCard>
       )}
     </div>
   );
