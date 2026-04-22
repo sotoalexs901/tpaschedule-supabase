@@ -5,7 +5,7 @@ import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import {
   runFuelPhotoOcr,
-  compareFuelPhotoReadings,
+  compareSingleFuelReading,
 } from "../utils/fuelPhotoOcr";
 
 function pad2(n) {
@@ -49,6 +49,15 @@ function getWeekKey(dateStr) {
 function safeNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function createPreviewUrl(file) {
+  if (!file) return "";
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return "";
+  }
 }
 
 function PageCard({ children, style = {} }) {
@@ -201,6 +210,73 @@ function ActionButton({
   );
 }
 
+function PhotoPreviewCard({ title, file, previewUrl }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #dbeafe",
+        borderRadius: 16,
+        padding: 14,
+        background: "#f8fbff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: "#1769aa",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          marginBottom: 8,
+        }}
+      >
+        {title}
+      </div>
+
+      {file ? (
+        <>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#0f172a",
+              marginBottom: 10,
+              wordBreak: "break-word",
+            }}
+          >
+            {file.name}
+          </div>
+
+          {previewUrl ? (
+            <img
+              src={previewUrl}
+              alt={title}
+              style={{
+                width: "100%",
+                maxHeight: 220,
+                objectFit: "contain",
+                borderRadius: 12,
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+              }}
+            />
+          ) : null}
+        </>
+      ) : (
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#64748b",
+          }}
+        >
+          No photo selected.
+        </div>
+      )}
+    </div>
+  );
+}
+
 const AIRLINE_USE_OPTIONS = [
   { value: "", label: "Select option" },
   { value: "SY", label: "SUN COUNTRY (SY)" },
@@ -234,6 +310,18 @@ export default function FuelEntryPage() {
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
+  const REQUIRE_BOTH_PHOTOS = true;
+
+  const startPhotoPreview = useMemo(
+    () => createPreviewUrl(startPhotoFile),
+    [startPhotoFile]
+  );
+
+  const endPhotoPreview = useMemo(
+    () => createPreviewUrl(endPhotoFile),
+    [endPhotoFile]
+  );
+
   const calculatedGallons = useMemo(() => {
     const start = safeNumber(form.startReading);
     const end = safeNumber(form.endReading);
@@ -244,6 +332,10 @@ export default function FuelEntryPage() {
     return (end - start).toFixed(2);
   }, [form.startReading, form.endReading]);
 
+  const hasRequiredPhotos = REQUIRE_BOTH_PHOTOS
+    ? !!startPhotoFile && !!endPhotoFile
+    : true;
+
   const canSave =
     !!form.date &&
     !!form.time &&
@@ -252,7 +344,8 @@ export default function FuelEntryPage() {
     !!form.airlineUse &&
     form.startReading !== "" &&
     form.endReading !== "" &&
-    calculatedGallons !== "";
+    calculatedGallons !== "" &&
+    hasRequiredPhotos;
 
   function updateField(field, value) {
     setForm((prev) => ({
@@ -284,39 +377,33 @@ export default function FuelEntryPage() {
     let status = "pending_review";
     let notes = "";
     let providerResult = null;
+    let confidenceScore = 0;
 
     try {
       const ocrResult = await runFuelPhotoOcr(photoUrl);
       providerResult = ocrResult?.providerResult || null;
 
-      const comparison = compareFuelPhotoReadings({
-        startReading: expectedReading,
-        endReading: expectedReading,
+      const comparison = compareSingleFuelReading({
+        reading: expectedReading,
         rawText: ocrResult?.rawText || "",
         tolerance: 5,
       });
 
       rawText = comparison.rawText || "";
       numbersDetected = comparison.numbersDetected || [];
+      matchedReading = comparison.matchedValue;
+      diff = comparison.diff;
+      confidenceScore = comparison.confidenceScore || 0;
+      status = comparison.status || "pending_review";
 
-      if (label === "start") {
-        matchedReading = comparison.matchedStart;
-        diff = comparison.startDiff;
-      } else {
-        matchedReading = comparison.matchedEnd;
-        diff = comparison.endDiff;
-      }
-
-      if (matchedReading !== null && matchedReading !== undefined) {
-        if (diff !== null && diff !== undefined && diff <= 5) {
-          status = "match";
-          notes = `${label === "start" ? "Start" : "End"} photo matched reading.`;
-        } else {
-          status = "mismatch";
-          notes = `${label === "start" ? "Start" : "End"} photo did not match entered reading.`;
-        }
-      } else {
+      if (status === "match") {
+        notes = `${label === "start" ? "Start" : "End"} photo matched reading.`;
+      } else if (status === "near_match") {
         status = "pending_review";
+        notes = `${label === "start" ? "Start" : "End"} photo is close, but needs manual review.`;
+      } else if (status === "mismatch") {
+        notes = `${label === "start" ? "Start" : "End"} photo did not match entered reading.`;
+      } else {
         notes = `${label === "start" ? "Start" : "End"} photo needs manual review.`;
       }
     } catch (error) {
@@ -335,11 +422,19 @@ export default function FuelEntryPage() {
       status,
       notes,
       providerResult,
+      confidenceScore,
     };
   }
 
   async function handleSave() {
     if (!canSave) {
+      if (REQUIRE_BOTH_PHOTOS && (!startPhotoFile || !endPhotoFile)) {
+        setStatusMessage(
+          "Please complete all required fields and upload both start and end photos."
+        );
+        return;
+      }
+
       setStatusMessage("Please complete all required fields.");
       return;
     }
@@ -380,6 +475,9 @@ export default function FuelEntryPage() {
       let startOcrProviderResult = null;
       let endOcrProviderResult = null;
 
+      let startConfidenceScore = 0;
+      let endConfidenceScore = 0;
+
       if (startPhotoFile) {
         startPhotoUrl = await uploadPhoto(startPhotoFile, "start");
 
@@ -396,6 +494,7 @@ export default function FuelEntryPage() {
         startPhotoNumbersDetected = startValidation.numbersDetected;
         startPhotoDiff = startValidation.diff;
         startOcrProviderResult = startValidation.providerResult;
+        startConfidenceScore = startValidation.confidenceScore;
       }
 
       if (endPhotoFile) {
@@ -414,10 +513,17 @@ export default function FuelEntryPage() {
         endPhotoNumbersDetected = endValidation.numbersDetected;
         endPhotoDiff = endValidation.diff;
         endOcrProviderResult = endValidation.providerResult;
+        endConfidenceScore = endValidation.confidenceScore;
       }
 
       let overallPhotoCheckStatus = "missing";
       const hasAnyPhoto = !!startPhotoUrl || !!endPhotoUrl;
+      const pendingPhotoItems = [];
+
+      if (!startPhotoUrl) pendingPhotoItems.push("missing_start_photo");
+      if (!endPhotoUrl) pendingPhotoItems.push("missing_end_photo");
+      if (startPhotoCheckStatus !== "match") pendingPhotoItems.push("review_start_photo");
+      if (endPhotoCheckStatus !== "match") pendingPhotoItems.push("review_end_photo");
 
       if (!hasAnyPhoto) {
         overallPhotoCheckStatus = "missing";
@@ -463,6 +569,9 @@ export default function FuelEntryPage() {
         photoUrl: endPhotoUrl || startPhotoUrl || "",
 
         photoCheckStatus: overallPhotoCheckStatus,
+        pendingPhotoItems,
+        missingStartPhoto: !startPhotoUrl,
+        missingEndPhoto: !endPhotoUrl,
 
         startPhotoCheckStatus,
         endPhotoCheckStatus,
@@ -489,12 +598,18 @@ export default function FuelEntryPage() {
         photoCheckStartDiff: startPhotoDiff,
         photoCheckEndDiff: endPhotoDiff,
 
+        startConfidenceScore,
+        endConfidenceScore,
+
         startOcrProviderResult,
         endOcrProviderResult,
         ocrProviderResult: {
           start: startOcrProviderResult,
           end: endOcrProviderResult,
         },
+
+        monthClosed: false,
+        monthClosedAt: null,
 
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -705,6 +820,28 @@ export default function FuelEntryPage() {
               onChange={(e) => setEndPhotoFile(e.target.files?.[0] || null)}
             />
           </div>
+
+          {(startPhotoFile || endPhotoFile) && (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                gap: 14,
+              }}
+            >
+              <PhotoPreviewCard
+                title="Start Reading Photo"
+                file={startPhotoFile}
+                previewUrl={startPhotoPreview}
+              />
+              <PhotoPreviewCard
+                title="End Reading Photo"
+                file={endPhotoFile}
+                previewUrl={endPhotoPreview}
+              />
+            </div>
+          )}
 
           <div style={{ gridColumn: "1 / -1" }}>
             <FieldLabel>Notes</FieldLabel>
