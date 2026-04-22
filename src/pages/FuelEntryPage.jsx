@@ -1,4 +1,3 @@
-// src/pages/FuelEntryPage.jsx
 import React, { useMemo, useState } from "react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -230,7 +229,8 @@ export default function FuelEntryPage() {
   const { user } = useUser();
 
   const [form, setForm] = useState(() => createInitialForm(user));
-  const [photoFile, setPhotoFile] = useState(null);
+  const [startPhotoFile, setStartPhotoFile] = useState(null);
+  const [endPhotoFile, setEndPhotoFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -264,9 +264,9 @@ export default function FuelEntryPage() {
     }));
   }
 
-  async function uploadPhoto(file) {
+  async function uploadPhoto(file, label) {
     const safeUser = (user?.username || user?.id || "unknown").toString();
-    const path = `fuel_logs/${safeUser}/${form.date}/${Date.now()}-${file.name}`;
+    const path = `fuel_logs/${safeUser}/${form.date}/${label}-${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
 
     await uploadBytes(storageRef, file, {
@@ -274,6 +274,68 @@ export default function FuelEntryPage() {
     });
 
     return await getDownloadURL(storageRef);
+  }
+
+  async function runSinglePhotoValidation({ photoUrl, expectedReading, label }) {
+    let rawText = "";
+    let matchedReading = null;
+    let numbersDetected = [];
+    let diff = null;
+    let status = "pending_review";
+    let notes = "";
+    let providerResult = null;
+
+    try {
+      const ocrResult = await runFuelPhotoOcr(photoUrl);
+      providerResult = ocrResult?.providerResult || null;
+
+      const comparison = compareFuelPhotoReadings({
+        startReading: expectedReading,
+        endReading: expectedReading,
+        rawText: ocrResult?.rawText || "",
+        tolerance: 5,
+      });
+
+      rawText = comparison.rawText || "";
+      numbersDetected = comparison.numbersDetected || [];
+
+      if (label === "start") {
+        matchedReading = comparison.matchedStart;
+        diff = comparison.startDiff;
+      } else {
+        matchedReading = comparison.matchedEnd;
+        diff = comparison.endDiff;
+      }
+
+      if (matchedReading !== null && matchedReading !== undefined) {
+        if (diff !== null && diff !== undefined && diff <= 5) {
+          status = "match";
+          notes = `${label === "start" ? "Start" : "End"} photo matched reading.`;
+        } else {
+          status = "mismatch";
+          notes = `${label === "start" ? "Start" : "End"} photo did not match entered reading.`;
+        }
+      } else {
+        status = "pending_review";
+        notes = `${label === "start" ? "Start" : "End"} photo needs manual review.`;
+      }
+    } catch (error) {
+      console.error(`Fuel OCR error (${label}):`, error);
+      status = "pending_review";
+      notes =
+        error?.message ||
+        `${label === "start" ? "Start" : "End"} photo could not be validated.`;
+    }
+
+    return {
+      rawText,
+      matchedReading,
+      numbersDetected,
+      diff,
+      status,
+      notes,
+      providerResult,
+    };
   }
 
   async function handleSave() {
@@ -294,52 +356,85 @@ export default function FuelEntryPage() {
       setSaving(true);
       setStatusMessage("");
 
-      let photoUrl = "";
-      let photoCheckStatus = "missing";
-      let ocrRawText = "";
+      let startPhotoUrl = "";
+      let endPhotoUrl = "";
+
+      let startPhotoCheckStatus = "missing";
+      let endPhotoCheckStatus = "missing";
+
+      let startOcrRawText = "";
+      let endOcrRawText = "";
+
       let ocrStartReading = null;
       let ocrEndReading = null;
-      let photoCheckNotes = "";
-      let photoCheckNumbersDetected = [];
-      let photoCheckStartDiff = null;
-      let photoCheckEndDiff = null;
-      let ocrProviderResult = null;
 
-      if (photoFile) {
-        photoUrl = await uploadPhoto(photoFile);
+      let startPhotoCheckNotes = "";
+      let endPhotoCheckNotes = "";
 
-        try {
-          const ocrResult = await runFuelPhotoOcr(photoUrl);
-          ocrProviderResult = ocrResult?.providerResult || null;
+      let startPhotoNumbersDetected = [];
+      let endPhotoNumbersDetected = [];
 
-          const comparison = compareFuelPhotoReadings({
-            startReading: start,
-            endReading: end,
-            rawText: ocrResult?.rawText || "",
-            tolerance: 5,
-          });
+      let startPhotoDiff = null;
+      let endPhotoDiff = null;
 
-          ocrRawText = comparison.rawText || "";
-          photoCheckStatus = comparison.status || "pending_review";
-          ocrStartReading = comparison.matchedStart;
-          ocrEndReading = comparison.matchedEnd;
-          photoCheckNumbersDetected = comparison.numbersDetected || [];
-          photoCheckStartDiff = comparison.startDiff;
-          photoCheckEndDiff = comparison.endDiff;
+      let startOcrProviderResult = null;
+      let endOcrProviderResult = null;
 
-          if (photoCheckStatus === "match") {
-            photoCheckNotes = "OCR matched start and end readings.";
-          } else if (photoCheckStatus === "mismatch") {
-            photoCheckNotes = "OCR could not match the entered readings.";
-          } else {
-            photoCheckNotes = "OCR requires manual review.";
-          }
-        } catch (ocrError) {
-          console.error("Fuel OCR error:", ocrError);
-          photoCheckStatus = "pending_review";
-          photoCheckNotes =
-            ocrError?.message || "OCR could not validate this photo.";
-        }
+      if (startPhotoFile) {
+        startPhotoUrl = await uploadPhoto(startPhotoFile, "start");
+
+        const startValidation = await runSinglePhotoValidation({
+          photoUrl: startPhotoUrl,
+          expectedReading: start,
+          label: "start",
+        });
+
+        startPhotoCheckStatus = startValidation.status;
+        startOcrRawText = startValidation.rawText;
+        ocrStartReading = startValidation.matchedReading;
+        startPhotoCheckNotes = startValidation.notes;
+        startPhotoNumbersDetected = startValidation.numbersDetected;
+        startPhotoDiff = startValidation.diff;
+        startOcrProviderResult = startValidation.providerResult;
+      }
+
+      if (endPhotoFile) {
+        endPhotoUrl = await uploadPhoto(endPhotoFile, "end");
+
+        const endValidation = await runSinglePhotoValidation({
+          photoUrl: endPhotoUrl,
+          expectedReading: end,
+          label: "end",
+        });
+
+        endPhotoCheckStatus = endValidation.status;
+        endOcrRawText = endValidation.rawText;
+        ocrEndReading = endValidation.matchedReading;
+        endPhotoCheckNotes = endValidation.notes;
+        endPhotoNumbersDetected = endValidation.numbersDetected;
+        endPhotoDiff = endValidation.diff;
+        endOcrProviderResult = endValidation.providerResult;
+      }
+
+      let overallPhotoCheckStatus = "missing";
+      const hasAnyPhoto = !!startPhotoUrl || !!endPhotoUrl;
+
+      if (!hasAnyPhoto) {
+        overallPhotoCheckStatus = "missing";
+      } else if (
+        startPhotoUrl &&
+        endPhotoUrl &&
+        startPhotoCheckStatus === "match" &&
+        endPhotoCheckStatus === "match"
+      ) {
+        overallPhotoCheckStatus = "match";
+      } else if (
+        startPhotoCheckStatus === "mismatch" ||
+        endPhotoCheckStatus === "mismatch"
+      ) {
+        overallPhotoCheckStatus = "mismatch";
+      } else {
+        overallPhotoCheckStatus = "pending_review";
       }
 
       const totalGallons = Number((end - start).toFixed(2));
@@ -363,29 +458,59 @@ export default function FuelEntryPage() {
         totalGallons,
         notes: form.notes || "",
 
-        photoUrl,
-        photoCheckStatus,
-        photoCheckNotes,
-        ocrRawText,
+        startPhotoUrl,
+        endPhotoUrl,
+        photoUrl: endPhotoUrl || startPhotoUrl || "",
+
+        photoCheckStatus: overallPhotoCheckStatus,
+
+        startPhotoCheckStatus,
+        endPhotoCheckStatus,
+
+        startPhotoCheckNotes,
+        endPhotoCheckNotes,
+
+        startOcrRawText,
+        endOcrRawText,
+        ocrRawText: `${startOcrRawText || ""}\n\n${endOcrRawText || ""}`.trim(),
+
         ocrStartReading,
         ocrEndReading,
-        photoCheckNumbersDetected,
-        photoCheckStartDiff,
-        photoCheckEndDiff,
-        ocrProviderResult,
+
+        startPhotoNumbersDetected,
+        endPhotoNumbersDetected,
+        photoCheckNumbersDetected: [
+          ...startPhotoNumbersDetected,
+          ...endPhotoNumbersDetected,
+        ],
+
+        startPhotoDiff,
+        endPhotoDiff,
+        photoCheckStartDiff: startPhotoDiff,
+        photoCheckEndDiff: endPhotoDiff,
+
+        startOcrProviderResult,
+        endOcrProviderResult,
+        ocrProviderResult: {
+          start: startOcrProviderResult,
+          end: endOcrProviderResult,
+        },
 
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
       setForm(createInitialForm(user));
-      setPhotoFile(null);
+      setStartPhotoFile(null);
+      setEndPhotoFile(null);
 
-      if (photoUrl && photoCheckStatus === "match") {
-        setStatusMessage("Fuel record saved successfully. OCR matched the photo.");
-      } else if (photoUrl && photoCheckStatus !== "match") {
+      if (overallPhotoCheckStatus === "match") {
         setStatusMessage(
-          "Fuel record saved successfully. Photo was uploaded, but OCR needs review."
+          "Fuel record saved successfully. Start and end photos matched OCR."
+        );
+      } else if (hasAnyPhoto) {
+        setStatusMessage(
+          "Fuel record saved successfully. One or both photos need manual review."
         );
       } else {
         setStatusMessage("Fuel record saved successfully.");
@@ -451,6 +576,7 @@ export default function FuelEntryPage() {
           }}
         >
           Register daily fuel usage by equipment, employee and airline/use.
+          Upload one photo for the start reading and another photo for the end reading.
         </p>
       </div>
 
@@ -563,11 +689,20 @@ export default function FuelEntryPage() {
           </div>
 
           <div style={{ gridColumn: "1 / -1" }}>
-            <FieldLabel>Photo</FieldLabel>
+            <FieldLabel>Start Photo</FieldLabel>
             <TextInput
               type="file"
               accept="image/*"
-              onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+              onChange={(e) => setStartPhotoFile(e.target.files?.[0] || null)}
+            />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <FieldLabel>End Photo</FieldLabel>
+            <TextInput
+              type="file"
+              accept="image/*"
+              onChange={(e) => setEndPhotoFile(e.target.files?.[0] || null)}
             />
           </div>
 
@@ -601,7 +736,8 @@ export default function FuelEntryPage() {
             variant="secondary"
             onClick={() => {
               setForm(createInitialForm(user));
-              setPhotoFile(null);
+              setStartPhotoFile(null);
+              setEndPhotoFile(null);
               setStatusMessage("");
             }}
             disabled={saving}
