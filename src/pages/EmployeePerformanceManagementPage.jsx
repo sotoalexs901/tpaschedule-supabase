@@ -68,6 +68,25 @@ function TextArea(props) {
   );
 }
 
+function TextInput(props) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #dbeafe",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        borderRadius: 14,
+        padding: "12px 14px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 function SelectInput(props) {
   return (
     <select
@@ -407,7 +426,6 @@ function isDutyManagerUser(emp) {
   return values.some(
     (value) =>
       value === "duty manager" ||
-      value === "duty_manager" ||
       value.includes("duty manager") ||
       value.includes("duty mgr")
   );
@@ -506,6 +524,28 @@ function getQuestionsForReport(report) {
   return TEMPLATE_MAP[templateKey]?.questions || [];
 }
 
+function cloneReportForEdit(report) {
+  return {
+    employeeName: report?.employeeName || "",
+    department: report?.department || "",
+    roleTitle: report?.roleTitle || "",
+    commentsCompany: report?.commentsCompany || "",
+    commentsEmployee: report?.commentsEmployee || "",
+    needsFollowUp: Boolean(report?.needsFollowUp),
+    managerNote: report?.managerNote || "",
+    returnReason: report?.returnReason || "",
+    answers: JSON.parse(JSON.stringify(report?.answers || {})),
+    followUpItems: Array.isArray(report?.followUpItems)
+      ? report.followUpItems.map((item) => ({
+          id: item?.id || "",
+          en: item?.en || "",
+          es: item?.es || "",
+          note: item?.note || "",
+        }))
+      : [],
+  };
+}
+
 export default function EmployeePerformanceManagementPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -523,6 +563,8 @@ export default function EmployeePerformanceManagementPage() {
   const [returnReason, setReturnReason] = useState("");
   const [selectedDutyManagerId, setSelectedDutyManagerId] = useState("");
   const [employees, setEmployees] = useState([]);
+  const [isEditingReport, setIsEditingReport] = useState(false);
+  const [editForm, setEditForm] = useState(null);
 
   const [expandedSupervisors, setExpandedSupervisors] = useState({});
   const [expandedEmployees, setExpandedEmployees] = useState({});
@@ -695,10 +737,14 @@ export default function EmployeePerformanceManagementPage() {
           selectedReport.assignedDutyManagerId ||
           ""
       );
+      setIsEditingReport(false);
+      setEditForm(null);
     } else {
       setManagerNote("");
       setReturnReason("");
       setSelectedDutyManagerId("");
+      setIsEditingReport(false);
+      setEditForm(null);
     }
   }, [selectedReport]);
 
@@ -968,6 +1014,279 @@ export default function EmployeePerformanceManagementPage() {
     }));
   }
 
+  function startEditingReport() {
+    if (!selectedReport) return;
+    setEditForm(cloneReportForEdit(selectedReport));
+    setIsEditingReport(true);
+  }
+
+  function cancelEditingReport() {
+    setIsEditingReport(false);
+    setEditForm(null);
+  }
+
+  function updateEditField(field, value) {
+    setEditForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
+
+  function updateAnswerField(questionId, field, value) {
+    setEditForm((prev) => ({
+      ...prev,
+      answers: {
+        ...(prev?.answers || {}),
+        [questionId]: {
+          ...(prev?.answers?.[questionId] || {}),
+          [field]: value,
+        },
+      },
+    }));
+  }
+
+  function updateFollowUpItem(index, field, value) {
+    setEditForm((prev) => {
+      const items = [...(prev?.followUpItems || [])];
+      items[index] = {
+        ...(items[index] || {}),
+        [field]: value,
+      };
+      return {
+        ...prev,
+        followUpItems: items,
+      };
+    });
+  }
+
+  function addFollowUpItem() {
+    setEditForm((prev) => ({
+      ...prev,
+      followUpItems: [
+        ...(prev?.followUpItems || []),
+        { id: `${Date.now()}`, en: "", es: "", note: "" },
+      ],
+    }));
+  }
+
+  function removeFollowUpItem(index) {
+    setEditForm((prev) => ({
+      ...prev,
+      followUpItems: (prev?.followUpItems || []).filter((_, i) => i !== index),
+    }));
+  }
+
+  async function saveEditedReport() {
+    if (!selectedReport || !editForm) return;
+
+    try {
+      setSavingId(selectedReport.id);
+
+      const updatedPayload = {
+        employeeName: editForm.employeeName || "",
+        department: editForm.department || "",
+        roleTitle: editForm.roleTitle || "",
+        commentsCompany: editForm.commentsCompany || "",
+        commentsEmployee: editForm.commentsEmployee || "",
+        needsFollowUp: Boolean(editForm.needsFollowUp),
+        managerNote: editForm.managerNote || "",
+        returnReason: editForm.returnReason || "",
+        answers: editForm.answers || {},
+        followUpItems: Array.isArray(editForm.followUpItems)
+          ? editForm.followUpItems
+              .map((item) => ({
+                id: item?.id || `${Date.now()}`,
+                en: item?.en || "",
+                es: item?.es || "",
+                note: item?.note || "",
+              }))
+              .filter((item) => safeText(item.en || item.es || item.note))
+          : [],
+        updatedAt: serverTimestamp(),
+        managerEditedBy: getVisibleUserName(user),
+        managerEditedAt: serverTimestamp(),
+      };
+
+      await updateDoc(doc(db, "employeePerformanceReports", selectedReport.id), updatedPayload);
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === selectedReport.id
+            ? {
+                ...item,
+                ...updatedPayload,
+                updatedAt: new Date(),
+                managerEditedBy: getVisibleUserName(user),
+                managerEditedAt: new Date(),
+              }
+            : item
+        )
+      );
+
+      setManagerNote(editForm.managerNote || "");
+      setReturnReason(editForm.returnReason || "");
+      setIsEditingReport(false);
+      setEditForm(null);
+      setStatusMessage("EPR updated successfully.");
+      setStatusTone("green");
+    } catch (err) {
+      console.error("Error updating EPR:", err);
+      setStatusMessage("Could not update EPR.");
+      setStatusTone("red");
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  function exportSelectedReportToPdf() {
+    if (!selectedReport) return;
+
+    const report = isEditingReport && editForm
+      ? {
+          ...selectedReport,
+          ...editForm,
+        }
+      : selectedReport;
+
+    const questions = getQuestionsForReport(report);
+
+    const questionsHtml = questions
+      .map((question, index) => {
+        const answer = report?.answers?.[question.id] || {};
+        return `
+          <div style="border:1px solid #dbeafe;border-radius:12px;padding:12px;margin-bottom:10px;">
+            <div style="font-size:14px;font-weight:700;color:#0f172a;">
+              ${index + 1}. ${question.en || question.es || question.id}
+            </div>
+            <div style="margin-top:8px;font-size:13px;color:#334155;">
+              <strong>Answer:</strong> ${getRatingLabel(answer.rating)}
+            </div>
+            <div style="margin-top:4px;font-size:13px;color:#334155;">
+              <strong>Weight:</strong> ${question.weight ?? "-"}
+            </div>
+            <div style="margin-top:4px;font-size:13px;color:#334155;">
+              <strong>Note:</strong> ${answer.note || "-"}
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    const followUpHtml =
+      Array.isArray(report?.followUpItems) && report.followUpItems.length > 0
+        ? report.followUpItems
+            .map(
+              (item) => `
+                <li style="margin-bottom:8px;">
+                  <strong>${item.en || item.es || "-"}</strong>
+                  ${item.note ? ` — ${item.note}` : ""}
+                </li>
+              `
+            )
+            .join("")
+        : `<li>No follow-up questions.</li>`;
+
+    const printWindow = window.open("", "_blank", "width=1100,height=800");
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>EPR ${report.employeeName || ""}</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              color: #111827;
+              padding: 24px;
+            }
+            h1, h2, h3 { margin: 0 0 12px; }
+            .top {
+              margin-bottom: 18px;
+              border-bottom: 2px solid #dbeafe;
+              padding-bottom: 12px;
+            }
+            .grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 12px;
+              margin-bottom: 18px;
+            }
+            .card {
+              border: 1px solid #dbeafe;
+              border-radius: 12px;
+              padding: 12px;
+            }
+            .label {
+              font-size: 11px;
+              font-weight: bold;
+              color: #64748b;
+              text-transform: uppercase;
+              margin-bottom: 6px;
+            }
+            .value {
+              font-size: 14px;
+              font-weight: 700;
+              color: #0f172a;
+              white-space: pre-wrap;
+            }
+            .section {
+              margin-top: 22px;
+            }
+            ul {
+              padding-left: 20px;
+            }
+            @media print {
+              body { padding: 12px; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="top">
+            <h1>Employee Performance Report</h1>
+            <div style="font-size:14px;color:#475569;">
+              ${report.templateLabel || "-"} · ${formatMonthValue(report.month)} · Supervisor: ${report.supervisorName || "-"}
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card"><div class="label">Employee</div><div class="value">${report.employeeName || "-"}</div></div>
+            <div class="card"><div class="label">Department</div><div class="value">${report.department || "-"}</div></div>
+            <div class="card"><div class="label">Role</div><div class="value">${report.roleTitle || "-"}</div></div>
+            <div class="card"><div class="label">Score</div><div class="value">${formatScore(report.score)} / 100</div></div>
+            <div class="card"><div class="label">Status</div><div class="value">${getStatusLabel(report.managerStatus || "submitted")}</div></div>
+            <div class="card"><div class="label">Follow Up</div><div class="value">${report.needsFollowUp ? "Yes" : "No"}</div></div>
+            <div class="card"><div class="label">Duty Manager</div><div class="value">${report.followUpDutyManagerName || report.assignedDutyManagerName || "-"}</div></div>
+            <div class="card"><div class="label">Sent</div><div class="value">${formatDateTime(report.createdAt)}</div></div>
+          </div>
+
+          <div class="section">
+            <h2>Comments</h2>
+            <div class="grid">
+              <div class="card"><div class="label">Company</div><div class="value">${report.commentsCompany || "-"}</div></div>
+              <div class="card"><div class="label">Employee</div><div class="value">${report.commentsEmployee || "-"}</div></div>
+              <div class="card"><div class="label">Manager Note</div><div class="value">${report.managerNote || "-"}</div></div>
+              <div class="card"><div class="label">Return Reason</div><div class="value">${report.returnReason || "-"}</div></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Follow Up Questions</h2>
+            <ul>${followUpHtml}</ul>
+          </div>
+
+          <div class="section">
+            <h2>Questions and Answers</h2>
+            ${questionsHtml || "<div>No details available.</div>"}
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
   if (!canAccess) {
     return (
       <PageCard style={{ padding: 22 }}>
@@ -1028,8 +1347,8 @@ export default function EmployeePerformanceManagementPage() {
           }}
         >
           Review reports by supervisor, open employee details, return reports to
-          supervisors, assign follow up to a duty manager, and review the full
-          follow up history.
+          supervisors, assign follow up to a duty manager, edit received EPRs,
+          and export them as PDF for printing.
         </p>
       </div>
 
@@ -1475,7 +1794,7 @@ export default function EmployeePerformanceManagementPage() {
                       color: "#0f172a",
                     }}
                   >
-                    {selectedReport.employeeName || "-"}
+                    {(isEditingReport ? editForm?.employeeName : selectedReport.employeeName) || "-"}
                   </h2>
                   <p
                     style={{
@@ -1490,16 +1809,45 @@ export default function EmployeePerformanceManagementPage() {
                   </p>
                 </div>
 
-                <ActionButton
-                  variant="secondary"
-                  onClick={() =>
-                    navigate(
-                      `/monthly-employee-performance-report?reportId=${selectedReport.id}&action=edit`
-                    )
-                  }
-                >
-                  Open in Monthly EPR
-                </ActionButton>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {!isEditingReport ? (
+                    <ActionButton variant="secondary" onClick={startEditingReport}>
+                      Edit Received EPR
+                    </ActionButton>
+                  ) : (
+                    <>
+                      <ActionButton
+                        variant="success"
+                        onClick={saveEditedReport}
+                        disabled={savingId === selectedReport.id}
+                      >
+                        {savingId === selectedReport.id ? "Saving..." : "Save EPR Changes"}
+                      </ActionButton>
+
+                      <ActionButton variant="secondary" onClick={cancelEditingReport}>
+                        Cancel Edit
+                      </ActionButton>
+                    </>
+                  )}
+
+                  <ActionButton
+                    variant="dark"
+                    onClick={exportSelectedReportToPdf}
+                  >
+                    Export as PDF / Print
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="secondary"
+                    onClick={() =>
+                      navigate(
+                        `/monthly-employee-performance-report?reportId=${selectedReport.id}&action=edit`
+                      )
+                    }
+                  >
+                    Open in Monthly EPR
+                  </ActionButton>
+                </div>
               </div>
 
               <div
@@ -1521,17 +1869,33 @@ export default function EmployeePerformanceManagementPage() {
                 />
                 <InfoCard
                   label="Follow Up"
-                  value={selectedReport.needsFollowUp ? "Yes" : "No"}
-                  tone={selectedReport.needsFollowUp ? "amber" : "green"}
+                  value={
+                    isEditingReport
+                      ? editForm?.needsFollowUp
+                        ? "Yes"
+                        : "No"
+                      : selectedReport.needsFollowUp
+                      ? "Yes"
+                      : "No"
+                  }
+                  tone={
+                    isEditingReport
+                      ? editForm?.needsFollowUp
+                        ? "amber"
+                        : "green"
+                      : selectedReport.needsFollowUp
+                      ? "amber"
+                      : "green"
+                  }
                 />
                 <InfoCard
                   label="Department"
-                  value={selectedReport.department || "-"}
+                  value={isEditingReport ? editForm?.department || "-" : selectedReport.department || "-"}
                   tone="default"
                 />
                 <InfoCard
                   label="Role"
-                  value={selectedReport.roleTitle || "-"}
+                  value={isEditingReport ? editForm?.roleTitle || "-" : selectedReport.roleTitle || "-"}
                   tone="default"
                 />
                 <InfoCard
@@ -1550,12 +1914,79 @@ export default function EmployeePerformanceManagementPage() {
                 />
                 <InfoCard
                   label="Return Reason"
-                  value={selectedReport.returnReason || "-"}
+                  value={isEditingReport ? editForm?.returnReason || "-" : selectedReport.returnReason || "-"}
                   tone={
-                    selectedReport.returnReason ? "amber" : "default"
+                    (isEditingReport ? editForm?.returnReason : selectedReport.returnReason)
+                      ? "amber"
+                      : "default"
                   }
                 />
               </div>
+
+              {isEditingReport && editForm && (
+                <div
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 18,
+                    padding: 16,
+                    background: "#ffffff",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                      marginBottom: 12,
+                    }}
+                  >
+                    Edit Main EPR Information
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <FieldLabel>Employee Name</FieldLabel>
+                      <TextInput
+                        value={editForm.employeeName}
+                        onChange={(e) => updateEditField("employeeName", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Department</FieldLabel>
+                      <TextInput
+                        value={editForm.department}
+                        onChange={(e) => updateEditField("department", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Role Title</FieldLabel>
+                      <TextInput
+                        value={editForm.roleTitle}
+                        onChange={(e) => updateEditField("roleTitle", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Needs Follow Up</FieldLabel>
+                      <SelectInput
+                        value={editForm.needsFollowUp ? "yes" : "no"}
+                        onChange={(e) => updateEditField("needsFollowUp", e.target.value === "yes")}
+                      >
+                        <option value="no">No</option>
+                        <option value="yes">Yes</option>
+                      </SelectInput>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div
                 style={{
@@ -1576,15 +2007,67 @@ export default function EmployeePerformanceManagementPage() {
                   Follow Up Questions
                 </div>
 
-                {Array.isArray(selectedReport.followUpItems) &&
-                selectedReport.followUpItems.length > 0 ? (
+                {(isEditingReport ? editForm?.followUpItems : selectedReport?.followUpItems)?.length > 0 ? (
                   <div style={{ display: "grid", gap: 8 }}>
-                    {selectedReport.followUpItems.map((item) => (
-                      <div key={item.id} style={{ fontSize: 14, color: "#7c2d12" }}>
-                        • {item.en || item.es}
-                        {item.note ? ` — ${item.note}` : ""}
+                    {(isEditingReport ? editForm.followUpItems : selectedReport.followUpItems).map((item, index) => (
+                      <div
+                        key={item.id || index}
+                        style={{
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 12,
+                          padding: 12,
+                          background: "#f8fbff",
+                        }}
+                      >
+                        {isEditingReport ? (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            <TextInput
+                              value={item.en || ""}
+                              onChange={(e) => updateFollowUpItem(index, "en", e.target.value)}
+                              placeholder="Question"
+                            />
+                            <TextArea
+                              value={item.note || ""}
+                              onChange={(e) => updateFollowUpItem(index, "note", e.target.value)}
+                              placeholder="Note"
+                              style={{ minHeight: 70 }}
+                            />
+                            <div>
+                              <ActionButton
+                                variant="danger"
+                                onClick={() => removeFollowUpItem(index)}
+                              >
+                                Remove
+                              </ActionButton>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 14, color: "#7c2d12" }}>
+                            • {item.en || item.es}
+                            {item.note ? ` — ${item.note}` : ""}
+                          </div>
+                        )}
                       </div>
                     ))}
+
+                    {isEditingReport && (
+                      <div>
+                        <ActionButton variant="secondary" onClick={addFollowUpItem}>
+                          Add Follow Up Item
+                        </ActionButton>
+                      </div>
+                    )}
+                  </div>
+                ) : isEditingReport ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div style={{ fontSize: 14, color: "#64748b" }}>
+                      No follow-up questions on this report.
+                    </div>
+                    <div>
+                      <ActionButton variant="secondary" onClick={addFollowUpItem}>
+                        Add Follow Up Item
+                      </ActionButton>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ fontSize: 14, color: "#64748b" }}>
@@ -1612,28 +2095,64 @@ export default function EmployeePerformanceManagementPage() {
                   Comments
                 </div>
 
-                <div style={{ display: "grid", gap: 10, color: "#334155", fontSize: 14 }}>
-                  <div>
-                    <strong>Company:</strong> {selectedReport.commentsCompany || "-"}
+                {isEditingReport ? (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div>
+                      <FieldLabel>Company Comments</FieldLabel>
+                      <TextArea
+                        value={editForm.commentsCompany}
+                        onChange={(e) => updateEditField("commentsCompany", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Employee Comments</FieldLabel>
+                      <TextArea
+                        value={editForm.commentsEmployee}
+                        onChange={(e) => updateEditField("commentsEmployee", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Manager Note</FieldLabel>
+                      <TextArea
+                        value={editForm.managerNote}
+                        onChange={(e) => updateEditField("managerNote", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel>Return Reason</FieldLabel>
+                      <TextArea
+                        value={editForm.returnReason}
+                        onChange={(e) => updateEditField("returnReason", e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <strong>Employee:</strong> {selectedReport.commentsEmployee || "-"}
+                ) : (
+                  <div style={{ display: "grid", gap: 10, color: "#334155", fontSize: 14 }}>
+                    <div>
+                      <strong>Company:</strong> {selectedReport.commentsCompany || "-"}
+                    </div>
+                    <div>
+                      <strong>Employee:</strong> {selectedReport.commentsEmployee || "-"}
+                    </div>
+                    <div>
+                      <strong>Manager Note Saved:</strong> {selectedReport.managerNote || "-"}
+                    </div>
+                    <div>
+                      <strong>Return Reason Saved:</strong> {selectedReport.returnReason || "-"}
+                    </div>
+                    <div>
+                      <strong>Latest Follow Up Action:</strong>{" "}
+                      {selectedReport.followUpLastAction || "-"}
+                    </div>
+                    <div>
+                      <strong>Latest Follow Up Details:</strong>{" "}
+                      {selectedReport.followUpLastDetails || "-"}
+                    </div>
                   </div>
-                  <div>
-                    <strong>Manager Note Saved:</strong> {selectedReport.managerNote || "-"}
-                  </div>
-                  <div>
-                    <strong>Return Reason Saved:</strong> {selectedReport.returnReason || "-"}
-                  </div>
-                  <div>
-                    <strong>Latest Follow Up Action:</strong>{" "}
-                    {selectedReport.followUpLastAction || "-"}
-                  </div>
-                  <div>
-                    <strong>Latest Follow Up Details:</strong>{" "}
-                    {selectedReport.followUpLastDetails || "-"}
-                  </div>
-                </div>
+                )}
               </div>
 
               <div
@@ -1658,7 +2177,10 @@ export default function EmployeePerformanceManagementPage() {
                 <div style={{ display: "grid", gap: 10 }}>
                   {getQuestionsForReport(selectedReport).length > 0 ? (
                     getQuestionsForReport(selectedReport).map((question, index) => {
-                      const answer = selectedReport?.answers?.[question.id] || {};
+                      const answer = isEditingReport
+                        ? editForm?.answers?.[question.id] || {}
+                        : selectedReport?.answers?.[question.id] || {};
+
                       const isBelow =
                         String(answer?.rating || "").toLowerCase() === "below";
 
@@ -1683,35 +2205,74 @@ export default function EmployeePerformanceManagementPage() {
                             {index + 1}. {question.en || question.es || question.id}
                           </div>
 
-                          <div
-                            style={{
-                              marginTop: 10,
-                              display: "grid",
-                              gridTemplateColumns:
-                                "repeat(auto-fit, minmax(160px, 1fr))",
-                              gap: 10,
-                              fontSize: 14,
-                              color: "#334155",
-                            }}
-                          >
-                            <div>
-                              <strong>Answer:</strong> {getRatingLabel(answer.rating)}
-                            </div>
-                            <div>
-                              <strong>Weight:</strong> {question.weight ?? "-"}
-                            </div>
-                          </div>
-
-                          {safeText(answer.note) && (
+                          {isEditingReport ? (
                             <div
                               style={{
                                 marginTop: 10,
-                                fontSize: 14,
-                                color: "#7c2d12",
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                                gap: 10,
                               }}
                             >
-                              <strong>Note:</strong> {answer.note}
+                              <div>
+                                <FieldLabel>Answer</FieldLabel>
+                                <SelectInput
+                                  value={answer?.rating || ""}
+                                  onChange={(e) =>
+                                    updateAnswerField(question.id, "rating", e.target.value)
+                                  }
+                                >
+                                  <option value="">Select</option>
+                                  <option value="exceeds">Exceeds</option>
+                                  <option value="meets">Meets</option>
+                                  <option value="below">Does Not Meet</option>
+                                </SelectInput>
+                              </div>
+
+                              <div>
+                                <FieldLabel>Note</FieldLabel>
+                                <TextArea
+                                  value={answer?.note || ""}
+                                  onChange={(e) =>
+                                    updateAnswerField(question.id, "note", e.target.value)
+                                  }
+                                  style={{ minHeight: 80 }}
+                                />
+                              </div>
                             </div>
+                          ) : (
+                            <>
+                              <div
+                                style={{
+                                  marginTop: 10,
+                                  display: "grid",
+                                  gridTemplateColumns:
+                                    "repeat(auto-fit, minmax(160px, 1fr))",
+                                  gap: 10,
+                                  fontSize: 14,
+                                  color: "#334155",
+                                }}
+                              >
+                                <div>
+                                  <strong>Answer:</strong> {getRatingLabel(answer.rating)}
+                                </div>
+                                <div>
+                                  <strong>Weight:</strong> {question.weight ?? "-"}
+                                </div>
+                              </div>
+
+                              {safeText(answer.note) && (
+                                <div
+                                  style={{
+                                    marginTop: 10,
+                                    fontSize: 14,
+                                    color: "#7c2d12",
+                                  }}
+                                >
+                                  <strong>Note:</strong> {answer.note}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       );
@@ -1805,96 +2366,100 @@ export default function EmployeePerformanceManagementPage() {
                 )}
               </div>
 
-              <div>
-                <FieldLabel>Manager Note</FieldLabel>
-                <TextArea
-                  value={managerNote}
-                  onChange={(e) => setManagerNote(e.target.value)}
-                  placeholder="Add recognition, follow-up instruction, coaching note, etc."
-                />
-              </div>
+              {!isEditingReport && (
+                <>
+                  <div>
+                    <FieldLabel>Manager Note</FieldLabel>
+                    <TextArea
+                      value={managerNote}
+                      onChange={(e) => setManagerNote(e.target.value)}
+                      placeholder="Add recognition, follow-up instruction, coaching note, etc."
+                    />
+                  </div>
 
-              <div>
-                <FieldLabel>Reason to Return to Supervisor</FieldLabel>
-                <TextArea
-                  value={returnReason}
-                  onChange={(e) => setReturnReason(e.target.value)}
-                  placeholder="Write clearly what the supervisor must correct."
-                />
-              </div>
+                  <div>
+                    <FieldLabel>Reason to Return to Supervisor</FieldLabel>
+                    <TextArea
+                      value={returnReason}
+                      onChange={(e) => setReturnReason(e.target.value)}
+                      placeholder="Write clearly what the supervisor must correct."
+                    />
+                  </div>
 
-              <div>
-                <FieldLabel>Assign Duty Manager for Follow Up</FieldLabel>
-                <SelectInput
-                  value={selectedDutyManagerId}
-                  onChange={(e) => setSelectedDutyManagerId(e.target.value)}
-                >
-                  <option value="">Select duty manager</option>
-                  {dutyManagers.map((dm) => (
-                    <option key={dm.id} value={dm.id}>
-                      {dm.name}
-                    </option>
-                  ))}
-                </SelectInput>
-              </div>
+                  <div>
+                    <FieldLabel>Assign Duty Manager for Follow Up</FieldLabel>
+                    <SelectInput
+                      value={selectedDutyManagerId}
+                      onChange={(e) => setSelectedDutyManagerId(e.target.value)}
+                    >
+                      <option value="">Select duty manager</option>
+                      {dutyManagers.map((dm) => (
+                        <option key={dm.id} value={dm.id}>
+                          {dm.name}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                <ActionButton
-                  variant="success"
-                  onClick={() => updateManagerStatus(selectedReport.id, "approved")}
-                  disabled={savingId === selectedReport.id}
-                >
-                  {savingId === selectedReport.id ? "Saving..." : "Approve"}
-                </ActionButton>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <ActionButton
+                      variant="success"
+                      onClick={() => updateManagerStatus(selectedReport.id, "approved")}
+                      disabled={savingId === selectedReport.id}
+                    >
+                      {savingId === selectedReport.id ? "Saving..." : "Approve"}
+                    </ActionButton>
 
-                <ActionButton
-                  variant="warning"
-                  onClick={() => updateManagerStatus(selectedReport.id, "follow_up")}
-                  disabled={savingId === selectedReport.id}
-                >
-                  {savingId === selectedReport.id ? "Saving..." : "Mark Follow Up"}
-                </ActionButton>
+                    <ActionButton
+                      variant="warning"
+                      onClick={() => updateManagerStatus(selectedReport.id, "follow_up")}
+                      disabled={savingId === selectedReport.id}
+                    >
+                      {savingId === selectedReport.id ? "Saving..." : "Mark Follow Up"}
+                    </ActionButton>
 
-                <ActionButton
-                  variant="secondary"
-                  onClick={() => assignDutyManagerForFollowUp(selectedReport)}
-                  disabled={savingId === selectedReport.id}
-                >
-                  {savingId === selectedReport.id ? "Saving..." : "Assign Duty Manager"}
-                </ActionButton>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => assignDutyManagerForFollowUp(selectedReport)}
+                      disabled={savingId === selectedReport.id}
+                    >
+                      {savingId === selectedReport.id ? "Saving..." : "Assign Duty Manager"}
+                    </ActionButton>
 
-                <ActionButton
-                  variant="danger"
-                  onClick={() => returnToSupervisor(selectedReport)}
-                  disabled={savingId === selectedReport.id}
-                >
-                  {savingId === selectedReport.id ? "Saving..." : "Return to Supervisor"}
-                </ActionButton>
+                    <ActionButton
+                      variant="danger"
+                      onClick={() => returnToSupervisor(selectedReport)}
+                      disabled={savingId === selectedReport.id}
+                    >
+                      {savingId === selectedReport.id ? "Saving..." : "Return to Supervisor"}
+                    </ActionButton>
 
-                <ActionButton
-                  variant="dark"
-                  onClick={() => updateManagerStatus(selectedReport.id, "recognized")}
-                  disabled={savingId === selectedReport.id}
-                >
-                  {savingId === selectedReport.id
-                    ? "Saving..."
-                    : "Recognize / Congratulate"}
-                </ActionButton>
+                    <ActionButton
+                      variant="dark"
+                      onClick={() => updateManagerStatus(selectedReport.id, "recognized")}
+                      disabled={savingId === selectedReport.id}
+                    >
+                      {savingId === selectedReport.id
+                        ? "Saving..."
+                        : "Recognize / Congratulate"}
+                    </ActionButton>
 
-                <ActionButton
-                  variant="secondary"
-                  onClick={() => updateManagerStatus(selectedReport.id, "closed")}
-                  disabled={savingId === selectedReport.id}
-                >
-                  {savingId === selectedReport.id ? "Saving..." : "Close Case"}
-                </ActionButton>
-              </div>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => updateManagerStatus(selectedReport.id, "closed")}
+                      disabled={savingId === selectedReport.id}
+                    >
+                      {savingId === selectedReport.id ? "Saving..." : "Close Case"}
+                    </ActionButton>
+                  </div>
+                </>
+              )}
             </div>
           </PageCard>
         )}
