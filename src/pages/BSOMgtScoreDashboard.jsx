@@ -26,12 +26,6 @@ function formatInputDate(value) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function formatDateLabel(value) {
-  const d = toDateSafe(value);
-  if (!d) return "—";
-  return d.toLocaleDateString();
-}
-
 function todayDateInput() {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -176,8 +170,13 @@ function PageCard({ children, style = {} }) {
       style={{
         background: "#ffffff",
         border: "1px solid #dbeafe",
-        borderRadius: 20,
+        borderRadius: 22,
         boxShadow: "0 14px 34px rgba(15,23,42,0.06)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        overflow: "hidden",
         ...style,
       }}
     >
@@ -210,6 +209,7 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -230,6 +230,7 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -250,6 +251,7 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -276,8 +278,7 @@ function ActionButton({
 }) {
   const variants = {
     primary: {
-      background:
-        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
       color: "#ffffff",
       border: "none",
     },
@@ -331,10 +332,11 @@ function MetricTile({ title, value, subtitle, grade }) {
     <div
       style={{
         border: "2px solid #1f2937",
-        borderRadius: 6,
+        borderRadius: 8,
         background: "#ffffff",
         overflow: "hidden",
         minHeight: 220,
+        minWidth: 0,
         display: "grid",
         gridTemplateRows: "auto 1fr auto",
       }}
@@ -360,6 +362,7 @@ function MetricTile({ title, value, subtitle, grade }) {
           alignItems: "center",
           justifyContent: "center",
           gap: 12,
+          minWidth: 0,
         }}
       >
         <div
@@ -368,6 +371,7 @@ function MetricTile({ title, value, subtitle, grade }) {
             fontWeight: 900,
             color: "#0f172a",
             textAlign: "center",
+            wordBreak: "break-word",
           }}
         >
           {value}
@@ -387,6 +391,7 @@ function MetricTile({ title, value, subtitle, grade }) {
               border: `2px solid ${gradeStyle.border}`,
               fontWeight: 900,
               fontSize: 28,
+              flexShrink: 0,
             }}
           >
             {grade}
@@ -432,7 +437,7 @@ function BarList({ rows, suffix = "" }) {
               color: "#334155",
             }}
           >
-            <span>{row.label}</span>
+            <span style={{ minWidth: 0, wordBreak: "break-word" }}>{row.label}</span>
             <span>
               {row.value.toFixed(2)}
               {suffix}
@@ -473,7 +478,7 @@ const FILE_PERCENT_THRESHOLDS = { A: 5, B: 10, C: 20, D: 30 };
 export default function BSOMgtScoreDashboardPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [windowWidth, setWindowWidth] = useState(() =>
+  const [windowWidth, setWindowWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1400
   );
 
@@ -562,29 +567,14 @@ export default function BSOMgtScoreDashboardPage() {
 
   const totalFlights = filteredRows.length;
 
-  const avgFirstBagMinutes = average(filteredRows, (item) =>
-    safeNumber(item.firstBagMinutes)
-  );
-  const avgLastBagMinutes = average(filteredRows, (item) =>
-    safeNumber(item.lastBagMinutes)
-  );
-  const avgScanWindowMinutes = average(filteredRows, (item) =>
-    safeNumber(item.scanWindowMinutes)
-  );
-  const avgOnHandBagsPerFlight = average(filteredRows, (item) =>
-    safeNumber(item.onHandBags)
-  );
-  const avgFilesPerFlight = average(filteredRows, (item) =>
-    safeNumber(item.filesCreated)
-  );
+  const avgFirstBagMinutes = average(filteredRows, (item) => safeNumber(item.firstBagMinutes));
+  const avgLastBagMinutes = average(filteredRows, (item) => safeNumber(item.lastBagMinutes));
+  const avgScanWindowMinutes = average(filteredRows, (item) => safeNumber(item.scanWindowMinutes));
+  const avgOnHandBagsPerFlight = average(filteredRows, (item) => safeNumber(item.onHandBags));
+  const avgFilesPerFlight = average(filteredRows, (item) => safeNumber(item.filesCreated));
 
-  const flightsWithOnHand = filteredRows.filter(
-    (item) => safeNumber(item.onHandBags) > 0
-  ).length;
-
-  const flightsWithFiles = filteredRows.filter(
-    (item) => safeNumber(item.filesCreated) > 0
-  ).length;
+  const flightsWithOnHand = filteredRows.filter((item) => safeNumber(item.onHandBags) > 0).length;
+  const flightsWithFiles = filteredRows.filter((item) => safeNumber(item.filesCreated) > 0).length;
 
   const percentFlightsWithOnHand = percent(flightsWithOnHand, totalFlights);
   const percentFlightsWithFiles = percent(flightsWithFiles, totalFlights);
@@ -594,14 +584,8 @@ export default function BSOMgtScoreDashboardPage() {
   const gradeScanWindow = getLetterGrade(avgScanWindowMinutes, SCAN_WINDOW_THRESHOLDS);
   const gradeOhdBags = getLetterGrade(avgOnHandBagsPerFlight, OHD_BAGS_THRESHOLDS);
   const gradeFiles = getLetterGrade(avgFilesPerFlight, FILES_THRESHOLDS);
-  const gradeOhdPercent = getLetterGrade(
-    percentFlightsWithOnHand,
-    OHD_PERCENT_THRESHOLDS
-  );
-  const gradeFilesPercent = getLetterGrade(
-    percentFlightsWithFiles,
-    FILE_PERCENT_THRESHOLDS
-  );
+  const gradeOhdPercent = getLetterGrade(percentFlightsWithOnHand, OHD_PERCENT_THRESHOLDS);
+  const gradeFilesPercent = getLetterGrade(percentFlightsWithFiles, FILE_PERCENT_THRESHOLDS);
 
   const overallGrade = useMemo(() => {
     const grades = [
@@ -615,11 +599,14 @@ export default function BSOMgtScoreDashboardPage() {
     ];
 
     const scoreMap = { A: 4, B: 3, C: 2, D: 1, F: 0 };
-    const reverseMap = ["F", "D", "C", "B", "A"];
     const avg =
       grades.reduce((sum, item) => sum + (scoreMap[item] ?? 0), 0) / grades.length;
 
-    return reverseMap[Math.round(avg)] || "C";
+    if (avg >= 3.5) return "A";
+    if (avg >= 2.5) return "B";
+    if (avg >= 1.5) return "C";
+    if (avg >= 0.75) return "D";
+    return "F";
   }, [
     gradeFirstBag,
     gradeLastBag,
@@ -735,8 +722,10 @@ export default function BSOMgtScoreDashboardPage() {
         gap: 18,
         fontFamily: "Arial, Helvetica, sans-serif",
         width: "100%",
-        maxWidth: 1400,
+        maxWidth: "100%",
         margin: "0 auto",
+        overflowX: "hidden",
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -747,6 +736,9 @@ export default function BSOMgtScoreDashboardPage() {
           padding: isMobile ? 16 : 22,
           color: "#0f172a",
           boxShadow: "0 16px 34px rgba(15,23,42,0.06)",
+          width: "100%",
+          maxWidth: "100%",
+          boxSizing: "border-box",
         }}
       >
         <div
@@ -757,7 +749,7 @@ export default function BSOMgtScoreDashboardPage() {
             alignItems: "center",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div
               style={{
                 fontSize: 12,
@@ -773,10 +765,11 @@ export default function BSOMgtScoreDashboardPage() {
             <h1
               style={{
                 margin: "8px 0 6px",
-                fontSize: isMobile ? 28 : 36,
-                lineHeight: 1,
+                fontSize: isMobile ? 26 : 36,
+                lineHeight: 1.05,
                 fontWeight: 900,
                 color: "#0f172a",
+                wordBreak: "break-word",
               }}
             >
               <span
@@ -784,6 +777,7 @@ export default function BSOMgtScoreDashboardPage() {
                   background: "#fde047",
                   padding: "0 8px",
                   marginRight: 6,
+                  display: "inline-block",
                 }}
               >
                 TPA
@@ -801,8 +795,8 @@ export default function BSOMgtScoreDashboardPage() {
                 fontWeight: 700,
               }}
             >
-              Responsive management dashboard for On-Hand bags, files, first bag,
-              last bag, and scan window. Includes date search, editing, and delete.
+              Responsive management dashboard for On-Hand bags, files, first bag, last bag, and scan window.
+              Includes date search, editing, and delete.
             </p>
           </div>
 
@@ -810,6 +804,7 @@ export default function BSOMgtScoreDashboardPage() {
             style={{
               justifySelf: isMobile ? "start" : "end",
               textAlign: isMobile ? "left" : "right",
+              minWidth: 0,
             }}
           >
             <div
@@ -857,11 +852,15 @@ export default function BSOMgtScoreDashboardPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : isTablet
+              ? "1fr 1fr"
+              : "repeat(6, minmax(0, 1fr))",
             gap: 12,
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <FieldLabel>Range</FieldLabel>
             <SelectInput value={range} onChange={(e) => setRange(e.target.value)}>
               <option value="today">Today</option>
@@ -871,7 +870,7 @@ export default function BSOMgtScoreDashboardPage() {
             </SelectInput>
           </div>
 
-          <div>
+          <div style={{ minWidth: 0 }}>
             <FieldLabel>From</FieldLabel>
             <TextInput
               type="date"
@@ -883,7 +882,7 @@ export default function BSOMgtScoreDashboardPage() {
             />
           </div>
 
-          <div>
+          <div style={{ minWidth: 0 }}>
             <FieldLabel>To</FieldLabel>
             <TextInput
               type="date"
@@ -895,7 +894,7 @@ export default function BSOMgtScoreDashboardPage() {
             />
           </div>
 
-          <div>
+          <div style={{ minWidth: 0 }}>
             <FieldLabel>Search Exact Date</FieldLabel>
             <TextInput
               type="date"
@@ -904,7 +903,7 @@ export default function BSOMgtScoreDashboardPage() {
             />
           </div>
 
-          <div>
+          <div style={{ minWidth: 0 }}>
             <FieldLabel>Station</FieldLabel>
             <SelectInput
               value={selectedStation}
@@ -919,7 +918,7 @@ export default function BSOMgtScoreDashboardPage() {
             </SelectInput>
           </div>
 
-          <div>
+          <div style={{ minWidth: 0 }}>
             <FieldLabel>Airline</FieldLabel>
             <SelectInput
               value={selectedAirline}
@@ -945,6 +944,8 @@ export default function BSOMgtScoreDashboardPage() {
             ? "repeat(2, minmax(0, 1fr))"
             : "repeat(4, minmax(0, 1fr))",
           gap: 14,
+          width: "100%",
+          maxWidth: "100%",
         }}
       >
         <MetricTile
@@ -1001,6 +1002,8 @@ export default function BSOMgtScoreDashboardPage() {
           display: "grid",
           gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
           gap: 14,
+          width: "100%",
+          maxWidth: "100%",
         }}
       >
         <PageCard style={{ padding: 20 }}>
@@ -1091,12 +1094,13 @@ export default function BSOMgtScoreDashboardPage() {
                       marginBottom: 10,
                     }}
                   >
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div
                         style={{
                           fontSize: 16,
                           fontWeight: 900,
                           color: "#0f172a",
+                          wordBreak: "break-word",
                         }}
                       >
                         {item.airline || "—"} {item.flightNumber || ""}
@@ -1107,6 +1111,7 @@ export default function BSOMgtScoreDashboardPage() {
                           fontWeight: 700,
                           color: "#64748b",
                           marginTop: 4,
+                          wordBreak: "break-word",
                         }}
                       >
                         {item.station || "—"} · {item.origin || "—"} · {item.date || "—"}
@@ -1163,9 +1168,12 @@ export default function BSOMgtScoreDashboardPage() {
           <div
             style={{
               width: "100%",
+              maxWidth: "100%",
               overflowX: "auto",
+              overflowY: "hidden",
               borderRadius: 18,
               border: "1px solid #e2e8f0",
+              WebkitOverflowScrolling: "touch",
             }}
           >
             <table
@@ -1312,7 +1320,9 @@ export default function BSOMgtScoreDashboardPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 12,
             }}
           >
@@ -1531,4 +1541,5 @@ const cellStyle = {
   fontSize: 14,
   color: "#0f172a",
   verticalAlign: "top",
+  whiteSpace: "nowrap",
 };
