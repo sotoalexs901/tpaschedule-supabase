@@ -102,6 +102,10 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function formatMoney(value) {
+  return `$${safeNumber(value).toFixed(2)}`;
+}
+
 function getEmployeeName(item) {
   return (
     normalizeText(item.employeeName) ||
@@ -139,6 +143,16 @@ function getMonthKey(item) {
 
 function isMonthClosed(item) {
   return Boolean(item.monthClosed);
+}
+
+function getPricePerGallon(item) {
+  return safeNumber(item.pricePerGallon);
+}
+
+function getTotalCost(item) {
+  const stored = safeNumber(item.totalCost);
+  if (stored > 0) return stored;
+  return safeNumber(item.totalGallons) * getPricePerGallon(item);
 }
 
 function matchesRange(item, startDate, endDate) {
@@ -197,11 +211,13 @@ function buildDailyRows(items) {
         label: key,
         records: 0,
         gallons: 0,
+        cost: 0,
       };
     }
 
     map[key].records += 1;
     map[key].gallons += safeNumber(item.totalGallons);
+    map[key].cost += getTotalCost(item);
   });
 
   return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
@@ -218,11 +234,13 @@ function buildWeeklyRows(items) {
         label: key,
         records: 0,
         gallons: 0,
+        cost: 0,
       };
     }
 
     map[key].records += 1;
     map[key].gallons += safeNumber(item.totalGallons);
+    map[key].cost += getTotalCost(item);
   });
 
   return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
@@ -239,12 +257,14 @@ function buildMonthlyRows(items) {
         label: key,
         records: 0,
         gallons: 0,
+        cost: 0,
         monthClosed: false,
       };
     }
 
     map[key].records += 1;
     map[key].gallons += safeNumber(item.totalGallons);
+    map[key].cost += getTotalCost(item);
 
     if (item.monthClosed) {
       map[key].monthClosed = true;
@@ -272,6 +292,7 @@ function groupRowsByMonth(items) {
         return B - A;
       }),
       gallons: rows.reduce((sum, item) => sum + safeNumber(item.totalGallons), 0),
+      cost: rows.reduce((sum, item) => sum + getTotalCost(item), 0),
       records: rows.length,
       monthClosed: rows.some((r) => r.monthClosed),
     }))
@@ -543,6 +564,7 @@ function statusTone(status) {
   if (value === "match" || value === "approved") return "green";
   if (value === "mismatch") return "red";
   if (value === "pending_review") return "amber";
+  if (value === "closed") return "blue";
   return "default";
 }
 
@@ -554,6 +576,7 @@ function StatusBadge({ status }) {
     green: { bg: "#dcfce7", border: "#86efac", color: "#166534" },
     amber: { bg: "#fff7ed", border: "#fdba74", color: "#9a3412" },
     red: { bg: "#fff1f2", border: "#fecdd3", color: "#9f1239" },
+    blue: { bg: "#dbeafe", border: "#93c5fd", color: "#1d4ed8" },
   };
 
   const current = tones[tone] || tones.default;
@@ -626,6 +649,8 @@ function createEditDraft(item) {
     startReading: String(item.startReading ?? ""),
     endReading: String(item.endReading ?? ""),
     totalGallons: String(item.totalGallons ?? ""),
+    pricePerGallon: String(item.pricePerGallon ?? ""),
+    totalCost: String(item.totalCost ?? ""),
     notes: item.notes || "",
     photoCheckNotes: item.photoCheckNotes || "",
     startPhotoCheckNotes: item.startPhotoCheckNotes || "",
@@ -732,6 +757,7 @@ export default function FuelManagementPage() {
     (sum, item) => sum + safeNumber(item.totalGallons),
     0
   );
+  const totalCost = filteredRows.reduce((sum, item) => sum + getTotalCost(item), 0);
 
   const topAgentByGallons = useMemo(
     () =>
@@ -800,8 +826,10 @@ export default function FuelManagementPage() {
 
     const startReading = safeNumber(editDraft.startReading);
     const endReading = safeNumber(editDraft.endReading);
+    const pricePerGallon = safeNumber(editDraft.pricePerGallon);
     const totalGallons =
       endReading >= startReading ? Number((endReading - startReading).toFixed(2)) : 0;
+    const totalCost = Number((totalGallons * pricePerGallon).toFixed(2));
 
     try {
       setWorkingId(itemId);
@@ -817,6 +845,8 @@ export default function FuelManagementPage() {
         startReading,
         endReading,
         totalGallons,
+        pricePerGallon,
+        totalCost,
         notes: editDraft.notes || "",
         photoCheckNotes: editDraft.photoCheckNotes || "",
         startPhotoCheckNotes: editDraft.startPhotoCheckNotes || "",
@@ -915,6 +945,7 @@ export default function FuelManagementPage() {
       ["SUMMARY"],
       ["Total Records", totalRecords],
       ["Total Gallons", totalGallons.toFixed(2)],
+      ["Total Cost", totalCost.toFixed(2)],
       ["Top Agent by Gallons", topAgentByGallons.label],
       ["Top Agent Gallons", topAgentByGallons.value.toFixed(2)],
       ["Top Airline/Use", topAirlineByGallons.label],
@@ -930,6 +961,8 @@ export default function FuelManagementPage() {
         "Start Reading",
         "End Reading",
         "Total Gallons",
+        "Price Per Gallon",
+        "Total Cost",
         "Overall Status",
         "Start Photo Status",
         "End Photo Status",
@@ -949,6 +982,8 @@ export default function FuelManagementPage() {
         safeNumber(item.startReading).toFixed(2),
         safeNumber(item.endReading).toFixed(2),
         safeNumber(item.totalGallons).toFixed(2),
+        getPricePerGallon(item).toFixed(2),
+        getTotalCost(item).toFixed(2),
         getOverallPhotoStatus(item),
         getStartPhotoStatus(item),
         getEndPhotoStatus(item),
@@ -963,6 +998,19 @@ export default function FuelManagementPage() {
 
     downloadCsv("fuel-management-report.csv", csvRows);
   }
+
+  const editCalculatedGallons = useMemo(() => {
+    if (!editDraft) return 0;
+    const start = safeNumber(editDraft.startReading);
+    const end = safeNumber(editDraft.endReading);
+    if (end < start) return 0;
+    return Number((end - start).toFixed(2));
+  }, [editDraft]);
+
+  const editCalculatedTotalCost = useMemo(() => {
+    if (!editDraft) return 0;
+    return Number((editCalculatedGallons * safeNumber(editDraft.pricePerGallon)).toFixed(2));
+  }, [editDraft, editCalculatedGallons]);
 
   return (
     <div
@@ -1016,7 +1064,7 @@ export default function FuelManagementPage() {
             color: "rgba(255,255,255,0.92)",
           }}
         >
-          Daily, weekly and monthly control of fuel usage by employee and airline/use.
+          Daily, weekly and monthly control of fuel usage, price per gallon, and total fuel cost.
         </p>
       </div>
 
@@ -1162,6 +1210,7 @@ export default function FuelManagementPage() {
           >
             <StatCard label="Total Records" value={String(totalRecords)} />
             <StatCard label="Total Gallons" value={totalGallons.toFixed(2)} tone="blue" />
+            <StatCard label="Total Cost" value={formatMoney(totalCost)} tone="green" />
             <StatCard
               label="Top Agent by Gallons"
               value={`${topAgentByGallons.label} (${topAgentByGallons.value.toFixed(2)})`}
@@ -1357,7 +1406,7 @@ export default function FuelManagementPage() {
                             fontWeight: 700,
                           }}
                         >
-                          Records: {group.records} · Gallons: {group.gallons.toFixed(2)}
+                          Records: {group.records} · Gallons: {group.gallons.toFixed(2)} · Cost: {formatMoney(group.cost)}
                         </div>
                       </div>
 
@@ -1389,6 +1438,8 @@ export default function FuelManagementPage() {
                             <th style={thStyle}>Start</th>
                             <th style={thStyle}>End</th>
                             <th style={thStyle}>Gallons</th>
+                            <th style={thStyle}>Price / Gallon</th>
+                            <th style={thStyle}>Total Cost</th>
                             <th style={thStyle}>Status</th>
                             <th style={thStyle}>Actions</th>
                           </tr>
@@ -1406,6 +1457,8 @@ export default function FuelManagementPage() {
                               <td style={{ ...tdStyle, fontWeight: 800 }}>
                                 {safeNumber(item.totalGallons).toFixed(2)}
                               </td>
+                              <td style={tdStyle}>{formatMoney(getPricePerGallon(item))}</td>
+                              <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(getTotalCost(item))}</td>
                               <td style={tdStyle}>
                                 <StatusBadge status={getOverallPhotoStatus(item)} />
                               </td>
@@ -1453,7 +1506,7 @@ export default function FuelManagementPage() {
                             editDraft &&
                             group.rows.some((item) => item.id === editingRowId) && (
                               <tr>
-                                <td colSpan={10} style={tdStyle}>
+                                <td colSpan={12} style={tdStyle}>
                                   <div
                                     style={{
                                       display: "grid",
@@ -1551,6 +1604,32 @@ export default function FuelManagementPage() {
                                       />
                                     </div>
 
+                                    <div>
+                                      <FieldLabel>Price Per Gallon</FieldLabel>
+                                      <TextInput
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={editDraft.pricePerGallon}
+                                        onChange={(e) =>
+                                          setEditDraft((prev) => ({
+                                            ...prev,
+                                            pricePerGallon: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <FieldLabel>Total Gallons</FieldLabel>
+                                      <TextInput value={editCalculatedGallons.toFixed(2)} disabled />
+                                    </div>
+
+                                    <div>
+                                      <FieldLabel>Total Cost</FieldLabel>
+                                      <TextInput value={editCalculatedTotalCost.toFixed(2)} disabled />
+                                    </div>
+
                                     <div style={{ gridColumn: "1 / -1" }}>
                                       <FieldLabel>Notes</FieldLabel>
                                       <TextArea
@@ -1587,18 +1666,19 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 700 }}>
+            <table style={{ ...tableStyle, minWidth: 900 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Date</th>
                   <th style={thStyle}>Records</th>
                   <th style={thStyle}>Gallons</th>
+                  <th style={thStyle}>Total Cost</th>
                 </tr>
               </thead>
               <tbody>
                 {dailyRows.length === 0 ? (
                   <tr>
-                    <td colSpan={3} style={tdStyle}>
+                    <td colSpan={4} style={tdStyle}>
                       {loading ? "Loading..." : "No data found."}
                     </td>
                   </tr>
@@ -1608,6 +1688,7 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
                       <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(item.cost)}</td>
                     </tr>
                   ))
                 )}
@@ -1626,18 +1707,19 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 700 }}>
+            <table style={{ ...tableStyle, minWidth: 900 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Week Start</th>
                   <th style={thStyle}>Records</th>
                   <th style={thStyle}>Gallons</th>
+                  <th style={thStyle}>Total Cost</th>
                 </tr>
               </thead>
               <tbody>
                 {weeklyRows.length === 0 ? (
                   <tr>
-                    <td colSpan={3} style={tdStyle}>
+                    <td colSpan={4} style={tdStyle}>
                       {loading ? "Loading..." : "No data found."}
                     </td>
                   </tr>
@@ -1647,6 +1729,7 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
                       <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(item.cost)}</td>
                     </tr>
                   ))
                 )}
@@ -1665,12 +1748,13 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 850 }}>
+            <table style={{ ...tableStyle, minWidth: 1000 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Month</th>
                   <th style={thStyle}>Records</th>
                   <th style={thStyle}>Gallons</th>
+                  <th style={thStyle}>Total Cost</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Action</th>
                 </tr>
@@ -1678,7 +1762,7 @@ export default function FuelManagementPage() {
               <tbody>
                 {monthlyRows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} style={tdStyle}>
+                    <td colSpan={6} style={tdStyle}>
                       {loading ? "Loading..." : "No data found."}
                     </td>
                   </tr>
@@ -1688,6 +1772,7 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
                       <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(item.cost)}</td>
                       <td style={tdStyle}>
                         <StatusBadge status={item.monthClosed ? "closed" : "open"} />
                       </td>
@@ -1732,7 +1817,7 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 1700 }}>
+            <table style={{ ...tableStyle, minWidth: 1850 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Date</th>
@@ -1740,6 +1825,9 @@ export default function FuelManagementPage() {
                   <th style={thStyle}>Airline / Use</th>
                   <th style={thStyle}>Entered Start</th>
                   <th style={thStyle}>Entered End</th>
+                  <th style={thStyle}>Gallons</th>
+                  <th style={thStyle}>Price / Gallon</th>
+                  <th style={thStyle}>Total Cost</th>
                   <th style={thStyle}>OCR Start</th>
                   <th style={thStyle}>OCR End</th>
                   <th style={thStyle}>Start Diff</th>
@@ -1756,7 +1844,7 @@ export default function FuelManagementPage() {
               <tbody>
                 {pendingReviewRows.length === 0 ? (
                   <tr>
-                    <td colSpan={16} style={tdStyle}>
+                    <td colSpan={19} style={tdStyle}>
                       {loading ? "Loading..." : "No pending review records."}
                     </td>
                   </tr>
@@ -1768,6 +1856,9 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{getAirlineUse(item)}</td>
                       <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
                       <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
+                      <td style={tdStyle}>{safeNumber(item.totalGallons).toFixed(2)}</td>
+                      <td style={tdStyle}>{formatMoney(getPricePerGallon(item))}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(getTotalCost(item))}</td>
                       <td style={tdStyle}>
                         {item.ocrStartReading !== null && item.ocrStartReading !== undefined
                           ? item.ocrStartReading
@@ -1977,6 +2068,32 @@ export default function FuelManagementPage() {
                         }))
                       }
                     />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Price Per Gallon</FieldLabel>
+                    <TextInput
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={editDraft.pricePerGallon}
+                      onChange={(e) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          pricePerGallon: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Total Gallons</FieldLabel>
+                    <TextInput value={editCalculatedGallons.toFixed(2)} disabled />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Total Cost</FieldLabel>
+                    <TextInput value={editCalculatedTotalCost.toFixed(2)} disabled />
                   </div>
 
                   <div style={{ gridColumn: "1 / -1" }}>
