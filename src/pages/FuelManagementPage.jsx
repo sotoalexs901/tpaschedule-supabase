@@ -6,6 +6,7 @@ import {
   onSnapshot,
   serverTimestamp,
   updateDoc,
+  setDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -141,18 +142,16 @@ function getMonthKey(item) {
   );
 }
 
-function isMonthClosed(item) {
-  return Boolean(item.monthClosed);
+function getPricePerGallon(item, defaultPricePerGallon = 0) {
+  const rowPrice = safeNumber(item.pricePerGallon);
+  if (rowPrice > 0) return rowPrice;
+  return safeNumber(defaultPricePerGallon);
 }
 
-function getPricePerGallon(item) {
-  return safeNumber(item.pricePerGallon);
-}
-
-function getTotalCost(item) {
+function getTotalCost(item, defaultPricePerGallon = 0) {
   const stored = safeNumber(item.totalCost);
   if (stored > 0) return stored;
-  return safeNumber(item.totalGallons) * getPricePerGallon(item);
+  return safeNumber(item.totalGallons) * getPricePerGallon(item, defaultPricePerGallon);
 }
 
 function matchesRange(item, startDate, endDate) {
@@ -200,7 +199,7 @@ function buildCountRows(items, getKey, getValue) {
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 }
 
-function buildDailyRows(items) {
+function buildDailyRows(items, defaultPricePerGallon = 0) {
   const map = {};
 
   items.forEach((item) => {
@@ -217,13 +216,13 @@ function buildDailyRows(items) {
 
     map[key].records += 1;
     map[key].gallons += safeNumber(item.totalGallons);
-    map[key].cost += getTotalCost(item);
+    map[key].cost += getTotalCost(item, defaultPricePerGallon);
   });
 
   return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
 }
 
-function buildWeeklyRows(items) {
+function buildWeeklyRows(items, defaultPricePerGallon = 0) {
   const map = {};
 
   items.forEach((item) => {
@@ -240,13 +239,13 @@ function buildWeeklyRows(items) {
 
     map[key].records += 1;
     map[key].gallons += safeNumber(item.totalGallons);
-    map[key].cost += getTotalCost(item);
+    map[key].cost += getTotalCost(item, defaultPricePerGallon);
   });
 
   return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
 }
 
-function buildMonthlyRows(items) {
+function buildMonthlyRows(items, defaultPricePerGallon = 0) {
   const map = {};
 
   items.forEach((item) => {
@@ -264,7 +263,7 @@ function buildMonthlyRows(items) {
 
     map[key].records += 1;
     map[key].gallons += safeNumber(item.totalGallons);
-    map[key].cost += getTotalCost(item);
+    map[key].cost += getTotalCost(item, defaultPricePerGallon);
 
     if (item.monthClosed) {
       map[key].monthClosed = true;
@@ -274,7 +273,7 @@ function buildMonthlyRows(items) {
   return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
 }
 
-function groupRowsByMonth(items) {
+function groupRowsByMonth(items, defaultPricePerGallon = 0) {
   const grouped = {};
 
   items.forEach((item) => {
@@ -292,7 +291,7 @@ function groupRowsByMonth(items) {
         return B - A;
       }),
       gallons: rows.reduce((sum, item) => sum + safeNumber(item.totalGallons), 0),
-      cost: rows.reduce((sum, item) => sum + getTotalCost(item), 0),
+      cost: rows.reduce((sum, item) => sum + getTotalCost(item, defaultPricePerGallon), 0),
       records: rows.length,
       monthClosed: rows.some((r) => r.monthClosed),
     }))
@@ -639,7 +638,11 @@ const tdStyle = {
   verticalAlign: "top",
 };
 
-function createEditDraft(item) {
+function createEditDraft(item, defaultPricePerGallon = 0) {
+  const pricePerGallon = getPricePerGallon(item, defaultPricePerGallon);
+  const totalGallons = safeNumber(item.totalGallons);
+  const totalCost = getTotalCost(item, defaultPricePerGallon);
+
   return {
     date: item.date || "",
     time: item.time || "",
@@ -648,9 +651,9 @@ function createEditDraft(item) {
     airlineUse: getAirlineUse(item),
     startReading: String(item.startReading ?? ""),
     endReading: String(item.endReading ?? ""),
-    totalGallons: String(item.totalGallons ?? ""),
-    pricePerGallon: String(item.pricePerGallon ?? ""),
-    totalCost: String(item.totalCost ?? ""),
+    totalGallons: String(totalGallons),
+    pricePerGallon: String(pricePerGallon),
+    totalCost: String(totalCost),
     notes: item.notes || "",
     photoCheckNotes: item.photoCheckNotes || "",
     startPhotoCheckNotes: item.startPhotoCheckNotes || "",
@@ -674,6 +677,14 @@ export default function FuelManagementPage() {
   const [editingRowId, setEditingRowId] = useState("");
   const [editDraft, setEditDraft] = useState(null);
 
+  const [pricePerGallon, setPricePerGallon] = useState("");
+  const [savingPrice, setSavingPrice] = useState(false);
+
+  const defaultPricePerGallon = useMemo(
+    () => safeNumber(pricePerGallon),
+    [pricePerGallon]
+  );
+
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, "fuel_logs"),
@@ -688,6 +699,22 @@ export default function FuelManagementPage() {
       (error) => {
         console.error("Error loading fuel logs:", error);
         setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      doc(db, "fuel_settings", "current"),
+      (snap) => {
+        const data = snap.data() || {};
+        const price = safeNumber(data.pricePerGallon);
+        setPricePerGallon(price > 0 ? String(price) : "");
+      },
+      (error) => {
+        console.error("Error loading fuel settings:", error);
       }
     );
 
@@ -757,7 +784,10 @@ export default function FuelManagementPage() {
     (sum, item) => sum + safeNumber(item.totalGallons),
     0
   );
-  const totalCost = filteredRows.reduce((sum, item) => sum + getTotalCost(item), 0);
+  const totalCost = filteredRows.reduce(
+    (sum, item) => sum + getTotalCost(item, defaultPricePerGallon),
+    0
+  );
 
   const topAgentByGallons = useMemo(
     () =>
@@ -805,14 +835,29 @@ export default function FuelManagementPage() {
     [filteredRows]
   );
 
-  const dailyRows = useMemo(() => buildDailyRows(filteredRows), [filteredRows]);
-  const weeklyRows = useMemo(() => buildWeeklyRows(filteredRows), [filteredRows]);
-  const monthlyRows = useMemo(() => buildMonthlyRows(filteredRows), [filteredRows]);
-  const groupedByMonth = useMemo(() => groupRowsByMonth(filteredRows), [filteredRows]);
+  const dailyRows = useMemo(
+    () => buildDailyRows(filteredRows, defaultPricePerGallon),
+    [filteredRows, defaultPricePerGallon]
+  );
+
+  const weeklyRows = useMemo(
+    () => buildWeeklyRows(filteredRows, defaultPricePerGallon),
+    [filteredRows, defaultPricePerGallon]
+  );
+
+  const monthlyRows = useMemo(
+    () => buildMonthlyRows(filteredRows, defaultPricePerGallon),
+    [filteredRows, defaultPricePerGallon]
+  );
+
+  const groupedByMonth = useMemo(
+    () => groupRowsByMonth(filteredRows, defaultPricePerGallon),
+    [filteredRows, defaultPricePerGallon]
+  );
 
   function startEditing(item) {
     setEditingRowId(item.id);
-    setEditDraft(createEditDraft(item));
+    setEditDraft(createEditDraft(item, defaultPricePerGallon));
     setStatusMessage("");
   }
 
@@ -821,15 +866,48 @@ export default function FuelManagementPage() {
     setEditDraft(null);
   }
 
+  async function handleSavePricePerGallon() {
+    const numericPrice = safeNumber(pricePerGallon);
+
+    if (numericPrice <= 0) {
+      setStatusMessage("Please enter a valid price per gallon.");
+      return;
+    }
+
+    try {
+      setSavingPrice(true);
+
+      await setDoc(
+        doc(db, "fuel_settings", "current"),
+        {
+          pricePerGallon: Number(numericPrice.toFixed(4)),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setStatusMessage("Price per gallon saved successfully.");
+    } catch (error) {
+      console.error("Error saving price per gallon:", error);
+      setStatusMessage("Could not save price per gallon.");
+    } finally {
+      setSavingPrice(false);
+    }
+  }
+
   async function saveEditing(itemId) {
     if (!editDraft) return;
 
     const startReading = safeNumber(editDraft.startReading);
     const endReading = safeNumber(editDraft.endReading);
-    const pricePerGallon = safeNumber(editDraft.pricePerGallon);
+    const pricePerGallonValue =
+      safeNumber(editDraft.pricePerGallon) > 0
+        ? safeNumber(editDraft.pricePerGallon)
+        : defaultPricePerGallon;
+
     const totalGallons =
       endReading >= startReading ? Number((endReading - startReading).toFixed(2)) : 0;
-    const totalCost = Number((totalGallons * pricePerGallon).toFixed(2));
+    const totalCost = Number((totalGallons * pricePerGallonValue).toFixed(2));
 
     try {
       setWorkingId(itemId);
@@ -845,7 +923,7 @@ export default function FuelManagementPage() {
         startReading,
         endReading,
         totalGallons,
-        pricePerGallon,
+        pricePerGallon: pricePerGallonValue,
         totalCost,
         notes: editDraft.notes || "",
         photoCheckNotes: editDraft.photoCheckNotes || "",
@@ -890,8 +968,12 @@ export default function FuelManagementPage() {
       setWorkingId(item.id);
       await updateDoc(doc(db, "fuel_logs", item.id), {
         photoCheckStatus: "approved",
-        startPhotoCheckStatus: item.startPhotoUrl ? "approved" : item.startPhotoCheckStatus || "missing",
-        endPhotoCheckStatus: item.endPhotoUrl ? "approved" : item.endPhotoCheckStatus || "missing",
+        startPhotoCheckStatus: item.startPhotoUrl
+          ? "approved"
+          : item.startPhotoCheckStatus || "missing",
+        endPhotoCheckStatus: item.endPhotoUrl
+          ? "approved"
+          : item.endPhotoCheckStatus || "missing",
         photoCheckNotes: item.photoCheckNotes || "Approved manually.",
         updatedAt: serverTimestamp(),
       });
@@ -941,6 +1023,7 @@ export default function FuelManagementPage() {
       ["To", toDate || "—"],
       ["Employee", selectedEmployee],
       ["Airline/Use", selectedAirlineUse],
+      ["Default Price Per Gallon", defaultPricePerGallon.toFixed(4)],
       [],
       ["SUMMARY"],
       ["Total Records", totalRecords],
@@ -982,8 +1065,8 @@ export default function FuelManagementPage() {
         safeNumber(item.startReading).toFixed(2),
         safeNumber(item.endReading).toFixed(2),
         safeNumber(item.totalGallons).toFixed(2),
-        getPricePerGallon(item).toFixed(2),
-        getTotalCost(item).toFixed(2),
+        getPricePerGallon(item, defaultPricePerGallon).toFixed(4),
+        getTotalCost(item, defaultPricePerGallon).toFixed(2),
         getOverallPhotoStatus(item),
         getStartPhotoStatus(item),
         getEndPhotoStatus(item),
@@ -1009,8 +1092,12 @@ export default function FuelManagementPage() {
 
   const editCalculatedTotalCost = useMemo(() => {
     if (!editDraft) return 0;
-    return Number((editCalculatedGallons * safeNumber(editDraft.pricePerGallon)).toFixed(2));
-  }, [editDraft, editCalculatedGallons]);
+    const price =
+      safeNumber(editDraft.pricePerGallon) > 0
+        ? safeNumber(editDraft.pricePerGallon)
+        : defaultPricePerGallon;
+    return Number((editCalculatedGallons * price).toFixed(2));
+  }, [editDraft, editCalculatedGallons, defaultPricePerGallon]);
 
   return (
     <div
@@ -1099,6 +1186,38 @@ export default function FuelManagementPage() {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <ActionButton variant="secondary" onClick={handleExportCsv}>
               Export CSV
+            </ActionButton>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(220px, 320px) auto",
+            gap: 12,
+            alignItems: "end",
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <FieldLabel>Price Per Gallon</FieldLabel>
+            <TextInput
+              type="number"
+              step="0.0001"
+              min="0"
+              value={pricePerGallon}
+              onChange={(e) => setPricePerGallon(e.target.value)}
+              placeholder="0.0000"
+            />
+          </div>
+
+          <div>
+            <ActionButton
+              variant="success"
+              onClick={handleSavePricePerGallon}
+              disabled={savingPrice}
+            >
+              {savingPrice ? "Saving..." : "Save Price"}
             </ActionButton>
           </div>
         </div>
@@ -1208,6 +1327,7 @@ export default function FuelManagementPage() {
               gap: 14,
             }}
           >
+            <StatCard label="Price Per Gallon" value={defaultPricePerGallon.toFixed(4)} tone="blue" />
             <StatCard label="Total Records" value={String(totalRecords)} />
             <StatCard label="Total Gallons" value={totalGallons.toFixed(2)} tone="blue" />
             <StatCard label="Total Cost" value={formatMoney(totalCost)} tone="green" />
@@ -1457,8 +1577,12 @@ export default function FuelManagementPage() {
                               <td style={{ ...tdStyle, fontWeight: 800 }}>
                                 {safeNumber(item.totalGallons).toFixed(2)}
                               </td>
-                              <td style={tdStyle}>{formatMoney(getPricePerGallon(item))}</td>
-                              <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(getTotalCost(item))}</td>
+                              <td style={tdStyle}>
+                                {formatMoney(getPricePerGallon(item, defaultPricePerGallon))}
+                              </td>
+                              <td style={{ ...tdStyle, fontWeight: 800 }}>
+                                {formatMoney(getTotalCost(item, defaultPricePerGallon))}
+                              </td>
                               <td style={tdStyle}>
                                 <StatusBadge status={getOverallPhotoStatus(item)} />
                               </td>
@@ -1608,7 +1732,7 @@ export default function FuelManagementPage() {
                                       <FieldLabel>Price Per Gallon</FieldLabel>
                                       <TextInput
                                         type="number"
-                                        step="0.01"
+                                        step="0.0001"
                                         min="0"
                                         value={editDraft.pricePerGallon}
                                         onChange={(e) =>
@@ -1857,8 +1981,12 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
                       <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
                       <td style={tdStyle}>{safeNumber(item.totalGallons).toFixed(2)}</td>
-                      <td style={tdStyle}>{formatMoney(getPricePerGallon(item))}</td>
-                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(getTotalCost(item))}</td>
+                      <td style={tdStyle}>
+                        {formatMoney(getPricePerGallon(item, defaultPricePerGallon))}
+                      </td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>
+                        {formatMoney(getTotalCost(item, defaultPricePerGallon))}
+                      </td>
                       <td style={tdStyle}>
                         {item.ocrStartReading !== null && item.ocrStartReading !== undefined
                           ? item.ocrStartReading
@@ -2074,7 +2202,7 @@ export default function FuelManagementPage() {
                     <FieldLabel>Price Per Gallon</FieldLabel>
                     <TextInput
                       type="number"
-                      step="0.01"
+                      step="0.0001"
                       min="0"
                       value={editDraft.pricePerGallon}
                       onChange={(e) =>
