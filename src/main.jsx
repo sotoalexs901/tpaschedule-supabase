@@ -74,6 +74,9 @@ import GateChecklistManagementPage from "./pages/GateChecklistManagementPage.jsx
 import FuelEntryPage from "./pages/FuelEntryPage.jsx";
 import FuelManagementPage from "./pages/FuelManagementPage.jsx";
 
+import BSOOperationsPage from "./pages/BSOOperationsPage.jsx";
+import BSOMgtScoreDashboard from "./pages/BSOMgtScoreDashboard.jsx";
+
 function ProtectedRoute({
   children,
   roles,
@@ -528,6 +531,17 @@ function AppRouter() {
           />
 
           <Route
+            path="bso/operations"
+            element={
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
+                <BSOOperationsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="operational-report/reports"
             element={
               <ProtectedRoute
@@ -599,6 +613,17 @@ function AppRouter() {
                 roles={["supervisor", "duty_manager", "station_manager"]}
               >
                 <FuelManagementPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="bso/mgt-score-dashboard"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <BSOMgtScoreDashboard />
               </ProtectedRoute>
             }
           />
