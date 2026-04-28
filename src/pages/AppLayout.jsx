@@ -321,6 +321,17 @@ export default function AppLayout() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
+  const canSubmitBSO =
+    user?.role === "agent" ||
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageBSO =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
   const navSections = useMemo(() => {
     const sections = [];
 
@@ -505,6 +516,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canSubmitBSO) {
+      submissionReports.push({
+        to: "/bso/operations",
+        label: "BSO OPERATIONS",
+        icon: "🛄",
+      });
+    }
+
     if (canAccessTimesheets) {
       managementReports.push({
         to: "/timesheets/reports",
@@ -580,6 +599,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canManageBSO) {
+      managementReports.push({
+        to: "/bso/mgt-score-dashboard",
+        label: "BSO MGT SCORE DASHBOARD",
+        icon: "📊",
+      });
+    }
+
     if (canAccessWchrTools) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
@@ -638,6 +665,8 @@ export default function AppLayout() {
     canManageGateChecklist,
     canSubmitFuel,
     canManageFuel,
+    canSubmitBSO,
+    canManageBSO,
     unreadMessages,
     unreadNotifications,
     pendingTimeOff,
