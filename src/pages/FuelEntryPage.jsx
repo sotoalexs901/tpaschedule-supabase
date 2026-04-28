@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import React, { useEffect, useMemo, useState } from "react";
+import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -287,7 +287,7 @@ const AIRLINE_USE_OPTIONS = [
   { value: "Otro", label: "Otro" },
 ];
 
-function createInitialForm(user) {
+function createInitialForm(user, pricePerGallon = "") {
   return {
     date: todayInputValue(),
     time: nowTimeValue(),
@@ -297,6 +297,8 @@ function createInitialForm(user) {
     startReading: "",
     endReading: "",
     totalGallons: "",
+    pricePerGallon: pricePerGallon ? String(pricePerGallon) : "",
+    totalCost: "",
     notes: "",
   };
 }
@@ -304,13 +306,77 @@ function createInitialForm(user) {
 export default function FuelEntryPage() {
   const { user } = useUser();
 
-  const [form, setForm] = useState(() => createInitialForm(user));
+  const [fuelPrice, setFuelPrice] = useState("");
+  const [loadingPrice, setLoadingPrice] = useState(true);
+  const [priceMessage, setPriceMessage] = useState("");
+
+  const [form, setForm] = useState(() => createInitialForm(user, ""));
   const [startPhotoFile, setStartPhotoFile] = useState(null);
   const [endPhotoFile, setEndPhotoFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   const REQUIRE_BOTH_PHOTOS = true;
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadFuelPrice() {
+      try {
+        setLoadingPrice(true);
+        setPriceMessage("");
+
+        const settingsRef = doc(db, "fuel_settings", "current");
+        const snap = await getDoc(settingsRef);
+
+        if (!mounted) return;
+
+        if (!snap.exists()) {
+          setFuelPrice("");
+          setPriceMessage("Fuel price is not configured yet in management.");
+          setForm((prev) => ({
+            ...prev,
+            pricePerGallon: "",
+            totalCost: "",
+          }));
+          return;
+        }
+
+        const data = snap.data();
+        const price = safeNumber(data?.pricePerGallon);
+
+        if (!price || price <= 0) {
+          setFuelPrice("");
+          setPriceMessage("Fuel price is missing or invalid in management settings.");
+          setForm((prev) => ({
+            ...prev,
+            pricePerGallon: "",
+            totalCost: "",
+          }));
+          return;
+        }
+
+        setFuelPrice(String(price));
+        setForm((prev) => ({
+          ...prev,
+          pricePerGallon: String(price),
+        }));
+      } catch (error) {
+        console.error("Error loading fuel price:", error);
+        if (!mounted) return;
+        setFuelPrice("");
+        setPriceMessage("Could not load fuel price from management settings.");
+      } finally {
+        if (mounted) setLoadingPrice(false);
+      }
+    }
+
+    loadFuelPrice();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const startPhotoPreview = useMemo(
     () => createPreviewUrl(startPhotoFile),
@@ -332,6 +398,14 @@ export default function FuelEntryPage() {
     return (end - start).toFixed(2);
   }, [form.startReading, form.endReading]);
 
+  const calculatedTotalCost = useMemo(() => {
+    const gallons = safeNumber(calculatedGallons);
+    const price = safeNumber(form.pricePerGallon);
+
+    if (!calculatedGallons || !price) return "";
+    return (gallons * price).toFixed(2);
+  }, [calculatedGallons, form.pricePerGallon]);
+
   const hasRequiredPhotos = REQUIRE_BOTH_PHOTOS
     ? !!startPhotoFile && !!endPhotoFile
     : true;
@@ -345,14 +419,16 @@ export default function FuelEntryPage() {
     form.startReading !== "" &&
     form.endReading !== "" &&
     calculatedGallons !== "" &&
-    hasRequiredPhotos;
+    form.pricePerGallon !== "" &&
+    hasRequiredPhotos &&
+    !loadingPrice;
 
   function updateField(field, value) {
     setForm((prev) => ({
       ...prev,
       [field]: value,
       ...(field === "startReading" || field === "endReading"
-        ? { totalGallons: "" }
+        ? { totalGallons: "", totalCost: "" }
         : {}),
     }));
   }
@@ -428,6 +504,16 @@ export default function FuelEntryPage() {
 
   async function handleSave() {
     if (!canSave) {
+      if (loadingPrice) {
+        setStatusMessage("Fuel price is still loading. Please wait a moment.");
+        return;
+      }
+
+      if (!form.pricePerGallon) {
+        setStatusMessage("Fuel price is not configured in management.");
+        return;
+      }
+
       if (REQUIRE_BOTH_PHOTOS && (!startPhotoFile || !endPhotoFile)) {
         setStatusMessage(
           "Please complete all required fields and upload both start and end photos."
@@ -441,6 +527,7 @@ export default function FuelEntryPage() {
 
     const start = safeNumber(form.startReading);
     const end = safeNumber(form.endReading);
+    const pricePerGallon = safeNumber(form.pricePerGallon);
 
     if (end < start) {
       setStatusMessage("End reading cannot be less than start reading.");
@@ -544,6 +631,7 @@ export default function FuelEntryPage() {
       }
 
       const totalGallons = Number((end - start).toFixed(2));
+      const totalCost = Number((totalGallons * pricePerGallon).toFixed(2));
 
       await addDoc(collection(db, "fuel_logs"), {
         date: form.date,
@@ -562,6 +650,8 @@ export default function FuelEntryPage() {
         startReading: start,
         endReading: end,
         totalGallons,
+        pricePerGallon,
+        totalCost,
         notes: form.notes || "",
 
         startPhotoUrl,
@@ -615,7 +705,7 @@ export default function FuelEntryPage() {
         updatedAt: serverTimestamp(),
       });
 
-      setForm(createInitialForm(user));
+      setForm(createInitialForm(user, fuelPrice));
       setStartPhotoFile(null);
       setEndPhotoFile(null);
 
@@ -713,6 +803,24 @@ export default function FuelEntryPage() {
         </PageCard>
       )}
 
+      {priceMessage && (
+        <PageCard style={{ padding: 14 }}>
+          <div
+            style={{
+              padding: "12px 14px",
+              borderRadius: 14,
+              background: "#fff7ed",
+              border: "1px solid #fdba74",
+              color: "#9a3412",
+              fontWeight: 800,
+              fontSize: 14,
+            }}
+          >
+            {priceMessage}
+          </div>
+        </PageCard>
+      )}
+
       <PageCard style={{ padding: 20 }}>
         <div
           style={{
@@ -803,6 +911,24 @@ export default function FuelEntryPage() {
             />
           </div>
 
+          <div>
+            <FieldLabel>Price Per Gallon</FieldLabel>
+            <TextInput
+              value={form.pricePerGallon}
+              disabled
+              placeholder={loadingPrice ? "Loading..." : "Managed from dashboard"}
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Total Cost</FieldLabel>
+            <TextInput
+              value={calculatedTotalCost}
+              disabled
+              placeholder="Calculated automatically"
+            />
+          </div>
+
           <div style={{ gridColumn: "1 / -1" }}>
             <FieldLabel>Start Photo</FieldLabel>
             <TextInput
@@ -872,7 +998,7 @@ export default function FuelEntryPage() {
           <ActionButton
             variant="secondary"
             onClick={() => {
-              setForm(createInitialForm(user));
+              setForm(createInitialForm(user, fuelPrice));
               setStartPhotoFile(null);
               setEndPhotoFile(null);
               setStatusMessage("");
