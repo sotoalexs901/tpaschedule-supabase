@@ -20,11 +20,6 @@ function todayInputValue() {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function nowTimeValue() {
-  const d = new Date();
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
 function toDateSafe(value) {
   if (!value) return null;
   if (typeof value?.toDate === "function") return value.toDate();
@@ -107,6 +102,11 @@ function PageCard({ children, style = {} }) {
         border: "1px solid #dbeafe",
         borderRadius: 20,
         boxShadow: "0 14px 34px rgba(15,23,42,0.06)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        overflow: "hidden",
         ...style,
       }}
     >
@@ -139,6 +139,7 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -159,6 +160,7 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -179,6 +181,7 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "10px 12px",
@@ -270,6 +273,7 @@ function MiniStat({ label, value, tone = "blue" }) {
         border: `1px solid ${current.border}`,
         borderRadius: 16,
         padding: "14px 16px",
+        minWidth: 0,
       }}
     >
       <div
@@ -289,6 +293,7 @@ function MiniStat({ label, value, tone = "blue" }) {
           fontSize: 24,
           fontWeight: 900,
           color: current.color,
+          wordBreak: "break-word",
         }}
       >
         {value}
@@ -311,18 +316,15 @@ function createInitialForm(user) {
     beltNumber: "",
     shift: "",
     agentName: getVisibleUserName(user),
-
     scheduledArrivalTime: "",
     actualArrivalTime: "",
     firstBagTime: "",
     lastBagTime: "",
     scanStartTime: "",
     scanEndTime: "",
-
     totalBagsHandled: "",
     onHandBags: "",
     filesCreated: "",
-
     notes: "",
   };
 }
@@ -339,7 +341,7 @@ export default function BSOOperationsPage() {
   const [editingId, setEditingId] = useState("");
   const [editDraft, setEditDraft] = useState(null);
   const [workingId, setWorkingId] = useState("");
-  const [windowWidth, setWindowWidth] = useState(() =>
+  const [windowWidth, setWindowWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1200
   );
 
@@ -449,39 +451,31 @@ export default function BSOOperationsPage() {
         dayKey: form.date,
         weekKey: getWeekKey(form.date),
         monthKey: String(form.date || "").slice(0, 7),
-
         station: form.station || "",
         airline: form.airline || "",
         flightNumber: form.flightNumber || "",
         origin: form.origin || "",
         beltNumber: form.beltNumber || "",
         shift: form.shift || "",
-
         agentId: user?.id || "",
         agentName: form.agentName || "",
         agentLogin: user?.username || user?.email || "",
         agentRole: user?.role || "",
-
         scheduledArrivalTime: form.scheduledArrivalTime || "",
         actualArrivalTime: form.actualArrivalTime || "",
         firstBagTime: form.firstBagTime || "",
         lastBagTime: form.lastBagTime || "",
         scanStartTime: form.scanStartTime || "",
         scanEndTime: form.scanEndTime || "",
-
         firstBagMinutes,
         lastBagMinutes,
         scanWindowMinutes,
-
         totalBagsHandled,
         onHandBags,
         filesCreated,
-
         hasOnHand: onHandBags > 0,
         hasFiles: filesCreated > 0,
-
         notes: form.notes || "",
-
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -609,8 +603,10 @@ export default function BSOOperationsPage() {
         gap: 18,
         fontFamily: "Arial, Helvetica, sans-serif",
         width: "100%",
-        maxWidth: 1320,
+        maxWidth: "100%",
         margin: "0 auto",
+        overflowX: "hidden",
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -621,6 +617,9 @@ export default function BSOOperationsPage() {
           padding: isMobile ? 16 : 22,
           color: "#0f172a",
           boxShadow: "0 16px 34px rgba(15,23,42,0.06)",
+          width: "100%",
+          maxWidth: "100%",
+          boxSizing: "border-box",
         }}
       >
         <div
@@ -631,7 +630,7 @@ export default function BSOOperationsPage() {
             alignItems: "center",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div
               style={{
                 fontSize: 12,
@@ -647,10 +646,11 @@ export default function BSOOperationsPage() {
             <h1
               style={{
                 margin: "8px 0 6px",
-                fontSize: isMobile ? 28 : 36,
-                lineHeight: 1,
+                fontSize: isMobile ? 26 : 36,
+                lineHeight: 1.05,
                 fontWeight: 900,
                 color: "#0f172a",
+                wordBreak: "break-word",
               }}
             >
               <span
@@ -658,6 +658,7 @@ export default function BSOOperationsPage() {
                   background: "#fde047",
                   padding: "0 8px",
                   marginRight: 6,
+                  display: "inline-block",
                 }}
               >
                 TPA
@@ -719,6 +720,8 @@ export default function BSOOperationsPage() {
             ? "repeat(2, minmax(0, 1fr))"
             : "repeat(4, minmax(0, 1fr))",
           gap: 14,
+          width: "100%",
+          maxWidth: "100%",
         }}
       >
         <MiniStat label="Total Flights" value={String(totalFlights)} tone="slate" />
@@ -731,11 +734,15 @@ export default function BSOOperationsPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : isTablet
+              ? "1fr 1fr"
+              : "repeat(3, minmax(0, 1fr))",
             gap: 12,
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <FieldLabel>Search Exact Date</FieldLabel>
             <TextInput
               type="date"
@@ -744,7 +751,7 @@ export default function BSOOperationsPage() {
             />
           </div>
 
-          <div>
+          <div style={{ minWidth: 0 }}>
             <FieldLabel>Airline Filter</FieldLabel>
             <SelectInput
               value={selectedAirline}
@@ -759,7 +766,13 @@ export default function BSOOperationsPage() {
             </SelectInput>
           </div>
 
-          <div style={{ display: "flex", alignItems: "end" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: isMobile ? "stretch" : "end",
+              minWidth: 0,
+            }}
+          >
             <ActionButton
               variant="secondary"
               onClick={() => {
@@ -790,7 +803,9 @@ export default function BSOOperationsPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(220px, 1fr))",
             gap: 14,
           }}
         >
@@ -1069,12 +1084,13 @@ export default function BSOOperationsPage() {
                       marginBottom: 10,
                     }}
                   >
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div
                         style={{
                           fontSize: 16,
                           fontWeight: 900,
                           color: "#0f172a",
+                          wordBreak: "break-word",
                         }}
                       >
                         {item.airline || "—"} {item.flightNumber || ""}
@@ -1085,6 +1101,7 @@ export default function BSOOperationsPage() {
                           color: "#64748b",
                           fontWeight: 700,
                           marginTop: 4,
+                          wordBreak: "break-word",
                         }}
                       >
                         {item.date || "—"} · {item.station || "—"} · {item.origin || "—"}
@@ -1138,9 +1155,12 @@ export default function BSOOperationsPage() {
           <div
             style={{
               width: "100%",
+              maxWidth: "100%",
               overflowX: "auto",
+              overflowY: "hidden",
               borderRadius: 18,
               border: "1px solid #e2e8f0",
+              WebkitOverflowScrolling: "touch",
             }}
           >
             <table
@@ -1275,7 +1295,9 @@ export default function BSOOperationsPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 14,
             }}
           >
@@ -1526,4 +1548,5 @@ const cellStyle = {
   fontSize: 14,
   color: "#0f172a",
   verticalAlign: "top",
+  whiteSpace: "nowrap",
 };
