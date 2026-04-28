@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  doc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "../firebase";
 
 function pad2(n) {
@@ -17,6 +24,12 @@ function formatInputDate(value) {
   const d = toDateSafe(value);
   if (!d) return "";
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function formatDateLabel(value) {
+  const d = toDateSafe(value);
+  if (!d) return "—";
+  return d.toLocaleDateString();
 }
 
 function todayDateInput() {
@@ -97,6 +110,66 @@ function percent(part, total) {
   return (part / total) * 100;
 }
 
+function buildCountRows(items, getKey, getValue) {
+  const map = {};
+
+  items.forEach((item) => {
+    const key = getKey(item) || "Unknown";
+    if (!map[key]) map[key] = 0;
+    map[key] += getValue(item);
+  });
+
+  return Object.entries(map)
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+}
+
+function getGradeStyles(grade) {
+  if (grade === "A") {
+    return { color: "#1d4ed8", bg: "#dbeafe", border: "#93c5fd" };
+  }
+  if (grade === "B") {
+    return { color: "#1769aa", bg: "#edf7ff", border: "#cfe7fb" };
+  }
+  if (grade === "C") {
+    return { color: "#b45309", bg: "#fff7ed", border: "#fdba74" };
+  }
+  if (grade === "D" || grade === "F") {
+    return { color: "#b91c1c", bg: "#fff1f2", border: "#fecdd3" };
+  }
+  return { color: "#334155", bg: "#f8fafc", border: "#cbd5e1" };
+}
+
+function createEditDraft(item) {
+  return {
+    date: item.date || "",
+    station: item.station || "",
+    airline: item.airline || "",
+    flightNumber: item.flightNumber || "",
+    origin: item.origin || "",
+    beltNumber: item.beltNumber || "",
+    agentName: item.agentName || "",
+    actualArrivalTime: item.actualArrivalTime || "",
+    firstBagTime: item.firstBagTime || "",
+    lastBagTime: item.lastBagTime || "",
+    scanStartTime: item.scanStartTime || "",
+    scanEndTime: item.scanEndTime || "",
+    onHandBags: String(item.onHandBags ?? ""),
+    filesCreated: String(item.filesCreated ?? ""),
+    totalBagsHandled: String(item.totalBagsHandled ?? ""),
+    notes: item.notes || "",
+  };
+}
+
+function getMinutesBetween(dateStr, startTime, endTime) {
+  if (!dateStr || !startTime || !endTime) return 0;
+  const start = new Date(`${dateStr}T${startTime}:00`);
+  const end = new Date(`${dateStr}T${endTime}:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  const diff = (end.getTime() - start.getTime()) / 60000;
+  return diff > 0 ? Number(diff.toFixed(2)) : 0;
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -162,7 +235,7 @@ function TextInput(props) {
         padding: "10px 12px",
         fontSize: 14,
         color: "#0f172a",
-        background: "#ffffff",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
         boxSizing: "border-box",
         ...props.style,
@@ -171,56 +244,168 @@ function TextInput(props) {
   );
 }
 
-function StatCard({ label, value, grade }) {
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        border: "1px solid #cbd5e1",
+        borderRadius: 12,
+        padding: "10px 12px",
+        fontSize: 14,
+        color: "#0f172a",
+        background: "#ffffff",
+        outline: "none",
+        resize: "vertical",
+        minHeight: 90,
+        fontFamily: "inherit",
+        boxSizing: "border-box",
+        ...props.style,
+      }}
+    />
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  variant = "primary",
+  type = "button",
+  disabled = false,
+}) {
+  const variants = {
+    primary: {
+      background:
+        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+      color: "#ffffff",
+      border: "none",
+    },
+    secondary: {
+      background: "#ffffff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+    },
+    success: {
+      background: "#16a34a",
+      color: "#ffffff",
+      border: "none",
+    },
+    warning: {
+      background: "#f59e0b",
+      color: "#ffffff",
+      border: "none",
+    },
+    danger: {
+      background: "#dc2626",
+      color: "#ffffff",
+      border: "none",
+    },
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 12,
+        padding: "10px 14px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
+        whiteSpace: "nowrap",
+        ...variants[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MetricTile({ title, value, subtitle, grade }) {
+  const gradeStyle = getGradeStyles(grade);
+
   return (
     <div
       style={{
-        background: "#f8fbff",
-        border: "1px solid #dbeafe",
-        borderRadius: 16,
-        padding: "14px 16px",
+        border: "2px solid #1f2937",
+        borderRadius: 6,
+        background: "#ffffff",
+        overflow: "hidden",
+        minHeight: 220,
+        display: "grid",
+        gridTemplateRows: "auto 1fr auto",
       }}
     >
       <div
         style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
+          padding: "10px 12px",
+          borderBottom: "1px solid #dbeafe",
+          textAlign: "center",
+          fontSize: 15,
+          fontWeight: 900,
+          color: "#334155",
         }}
       >
-        {label}
+        {title}
       </div>
 
       <div
         style={{
-          marginTop: 6,
-          fontSize: 24,
-          fontWeight: 900,
-          color: "#0f172a",
+          padding: 16,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 12,
         }}
       >
-        {value}
-      </div>
-
-      {grade ? (
         <div
           style={{
-            marginTop: 8,
-            display: "inline-flex",
-            padding: "5px 10px",
-            borderRadius: 999,
-            background: "#edf7ff",
-            border: "1px solid #cfe7fb",
-            color: "#1769aa",
-            fontWeight: 800,
-            fontSize: 12,
+            fontSize: 34,
+            fontWeight: 900,
+            color: "#0f172a",
+            textAlign: "center",
           }}
         >
-          Grade {grade}
+          {value}
         </div>
-      ) : null}
+
+        {grade ? (
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 64,
+              height: 64,
+              borderRadius: 999,
+              background: gradeStyle.bg,
+              color: gradeStyle.color,
+              border: `2px solid ${gradeStyle.border}`,
+              fontWeight: 900,
+              fontSize: 28,
+            }}
+          >
+            {grade}
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        style={{
+          borderTop: "1px solid #e2e8f0",
+          padding: "10px 12px",
+          textAlign: "center",
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#64748b",
+        }}
+      >
+        {subtitle}
+      </div>
     </div>
   );
 }
@@ -277,20 +462,6 @@ function BarList({ rows, suffix = "" }) {
   );
 }
 
-function buildCountRows(items, getKey, getValue) {
-  const map = {};
-
-  items.forEach((item) => {
-    const key = getKey(item) || "Unknown";
-    if (!map[key]) map[key] = 0;
-    map[key] += getValue(item);
-  });
-
-  return Object.entries(map)
-    .map(([label, value]) => ({ label, value }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
-}
-
 const FIRST_BAG_THRESHOLDS = { A: 15, B: 20, C: 25, D: 30 };
 const LAST_BAG_THRESHOLDS = { A: 30, B: 40, C: 50, D: 60 };
 const SCAN_WINDOW_THRESHOLDS = { A: 20, B: 30, C: 40, D: 50 };
@@ -302,12 +473,30 @@ const FILE_PERCENT_THRESHOLDS = { A: 5, B: 10, C: 20, D: 30 };
 export default function BSOMgtScoreDashboardPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [windowWidth, setWindowWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1400
+  );
 
   const [range, setRange] = useState("week");
   const [fromDate, setFromDate] = useState(todayDateInput());
   const [toDate, setToDate] = useState(todayDateInput());
   const [selectedAirline, setSelectedAirline] = useState("all");
   const [selectedStation, setSelectedStation] = useState("all");
+  const [searchDate, setSearchDate] = useState("");
+
+  const [editingId, setEditingId] = useState("");
+  const [editDraft, setEditDraft] = useState(null);
+  const [workingId, setWorkingId] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1100;
+
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -361,6 +550,7 @@ export default function BSOMgtScoreDashboardPage() {
         if (activeEndDate && createdAt > activeEndDate) return false;
         if (selectedAirline !== "all" && item.airline !== selectedAirline) return false;
         if (selectedStation !== "all" && item.station !== selectedStation) return false;
+        if (searchDate && item.date !== searchDate) return false;
         return true;
       })
       .sort((a, b) => {
@@ -368,7 +558,7 @@ export default function BSOMgtScoreDashboardPage() {
         const B = toDateSafe(b.createdAt)?.getTime() || 0;
         return B - A;
       });
-  }, [rows, activeStartDate, activeEndDate, selectedAirline, selectedStation]);
+  }, [rows, activeStartDate, activeEndDate, selectedAirline, selectedStation, searchDate]);
 
   const totalFlights = filteredRows.length;
 
@@ -388,8 +578,13 @@ export default function BSOMgtScoreDashboardPage() {
     safeNumber(item.filesCreated)
   );
 
-  const flightsWithOnHand = filteredRows.filter((item) => safeNumber(item.onHandBags) > 0).length;
-  const flightsWithFiles = filteredRows.filter((item) => safeNumber(item.filesCreated) > 0).length;
+  const flightsWithOnHand = filteredRows.filter(
+    (item) => safeNumber(item.onHandBags) > 0
+  ).length;
+
+  const flightsWithFiles = filteredRows.filter(
+    (item) => safeNumber(item.filesCreated) > 0
+  ).length;
 
   const percentFlightsWithOnHand = percent(flightsWithOnHand, totalFlights);
   const percentFlightsWithFiles = percent(flightsWithFiles, totalFlights);
@@ -399,8 +594,41 @@ export default function BSOMgtScoreDashboardPage() {
   const gradeScanWindow = getLetterGrade(avgScanWindowMinutes, SCAN_WINDOW_THRESHOLDS);
   const gradeOhdBags = getLetterGrade(avgOnHandBagsPerFlight, OHD_BAGS_THRESHOLDS);
   const gradeFiles = getLetterGrade(avgFilesPerFlight, FILES_THRESHOLDS);
-  const gradeOhdPercent = getLetterGrade(percentFlightsWithOnHand, OHD_PERCENT_THRESHOLDS);
-  const gradeFilesPercent = getLetterGrade(percentFlightsWithFiles, FILE_PERCENT_THRESHOLDS);
+  const gradeOhdPercent = getLetterGrade(
+    percentFlightsWithOnHand,
+    OHD_PERCENT_THRESHOLDS
+  );
+  const gradeFilesPercent = getLetterGrade(
+    percentFlightsWithFiles,
+    FILE_PERCENT_THRESHOLDS
+  );
+
+  const overallGrade = useMemo(() => {
+    const grades = [
+      gradeFirstBag,
+      gradeLastBag,
+      gradeScanWindow,
+      gradeOhdBags,
+      gradeFiles,
+      gradeOhdPercent,
+      gradeFilesPercent,
+    ];
+
+    const scoreMap = { A: 4, B: 3, C: 2, D: 1, F: 0 };
+    const reverseMap = ["F", "D", "C", "B", "A"];
+    const avg =
+      grades.reduce((sum, item) => sum + (scoreMap[item] ?? 0), 0) / grades.length;
+
+    return reverseMap[Math.round(avg)] || "C";
+  }, [
+    gradeFirstBag,
+    gradeLastBag,
+    gradeScanWindow,
+    gradeOhdBags,
+    gradeFiles,
+    gradeOhdPercent,
+    gradeFilesPercent,
+  ]);
 
   const agentRows = useMemo(
     () =>
@@ -422,6 +650,84 @@ export default function BSOMgtScoreDashboardPage() {
     [filteredRows]
   );
 
+  function startEditing(item) {
+    setEditingId(item.id);
+    setEditDraft(createEditDraft(item));
+    setStatusMessage("");
+  }
+
+  function cancelEditing() {
+    setEditingId("");
+    setEditDraft(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editingId || !editDraft) return;
+
+    const firstBagMinutes = getMinutesBetween(
+      editDraft.date,
+      editDraft.actualArrivalTime,
+      editDraft.firstBagTime
+    );
+
+    const lastBagMinutes = getMinutesBetween(
+      editDraft.date,
+      editDraft.actualArrivalTime,
+      editDraft.lastBagTime
+    );
+
+    const scanWindowMinutes = getMinutesBetween(
+      editDraft.date,
+      editDraft.scanStartTime,
+      editDraft.scanEndTime
+    );
+
+    try {
+      setWorkingId(editingId);
+
+      await updateDoc(doc(db, "bso_operations", editingId), {
+        ...editDraft,
+        onHandBags: safeNumber(editDraft.onHandBags),
+        filesCreated: safeNumber(editDraft.filesCreated),
+        totalBagsHandled: safeNumber(editDraft.totalBagsHandled),
+        firstBagMinutes,
+        lastBagMinutes,
+        scanWindowMinutes,
+        updatedAt: serverTimestamp(),
+      });
+
+      setStatusMessage("Record updated successfully.");
+      setEditingId("");
+      setEditDraft(null);
+    } catch (error) {
+      console.error("Error updating BSO record:", error);
+      setStatusMessage("Could not update the record.");
+    } finally {
+      setWorkingId("");
+    }
+  }
+
+  async function handleDelete(itemId) {
+    const ok = window.confirm("Delete this BSO record permanently?");
+    if (!ok) return;
+
+    try {
+      setWorkingId(itemId);
+      await deleteDoc(doc(db, "bso_operations", itemId));
+      setStatusMessage("Record deleted successfully.");
+
+      if (editingId === itemId) {
+        setEditingId("");
+        setEditDraft(null);
+      }
+    } catch (error) {
+      console.error("Error deleting BSO record:", error);
+      setStatusMessage("Could not delete the record.");
+    } finally {
+      setWorkingId("");
+    }
+  }
+
   return (
     <div
       style={{
@@ -429,61 +735,130 @@ export default function BSOMgtScoreDashboardPage() {
         gap: 18,
         fontFamily: "Arial, Helvetica, sans-serif",
         width: "100%",
-        maxWidth: 1320,
+        maxWidth: 1400,
         margin: "0 auto",
       }}
     >
       <div
         style={{
-          background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+          background: "linear-gradient(135deg, #ffffff 0%, #f8fbff 100%)",
+          border: "1px solid #dbeafe",
           borderRadius: 24,
-          padding: 24,
-          color: "#fff",
+          padding: isMobile ? 16 : 22,
+          color: "#0f172a",
+          boxShadow: "0 16px 34px rgba(15,23,42,0.06)",
         }}
       >
         <div
           style={{
-            fontSize: 12,
-            fontWeight: 800,
-            textTransform: "uppercase",
-            letterSpacing: "0.2em",
-            opacity: 0.85,
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "1fr auto",
+            gap: 16,
+            alignItems: "center",
           }}
         >
-          TPA OPS · BSO
+          <div>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: "0.18em",
+                color: "#64748b",
+              }}
+            >
+              TPA OPS · BSO
+            </div>
+
+            <h1
+              style={{
+                margin: "8px 0 6px",
+                fontSize: isMobile ? 28 : 36,
+                lineHeight: 1,
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              <span
+                style={{
+                  background: "#fde047",
+                  padding: "0 8px",
+                  marginRight: 6,
+                }}
+              >
+                TPA
+              </span>
+              BSO Scorecard
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                fontSize: 14,
+                maxWidth: 800,
+                lineHeight: 1.6,
+                color: "#475569",
+                fontWeight: 700,
+              }}
+            >
+              Responsive management dashboard for On-Hand bags, files, first bag,
+              last bag, and scan window. Includes date search, editing, and delete.
+            </p>
+          </div>
+
+          <div
+            style={{
+              justifySelf: isMobile ? "start" : "end",
+              textAlign: isMobile ? "left" : "right",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 800,
+                color: "#64748b",
+                marginBottom: 8,
+              }}
+            >
+              Overall Grade
+            </div>
+            <div
+              style={{
+                fontSize: isMobile ? 34 : 48,
+                fontWeight: 900,
+                color: getGradeStyles(overallGrade).color,
+              }}
+            >
+              {overallGrade}
+            </div>
+          </div>
         </div>
-
-        <h1
-          style={{
-            margin: "10px 0 6px",
-            fontSize: 30,
-            lineHeight: 1.05,
-            fontWeight: 900,
-          }}
-        >
-          BSO MGT SCORE DASHBOARD
-        </h1>
-
-        <p
-          style={{
-            margin: 0,
-            fontSize: 14,
-            maxWidth: 900,
-            lineHeight: 1.6,
-            color: "rgba(255,255,255,0.92)",
-          }}
-        >
-          Score and trend dashboard for On-Hand, files, first bag, last bag, and scan window.
-        </p>
       </div>
 
-      <PageCard style={{ padding: 20 }}>
+      {statusMessage && (
+        <PageCard style={{ padding: 14 }}>
+          <div
+            style={{
+              padding: "12px 14px",
+              borderRadius: 14,
+              background: "#edf7ff",
+              border: "1px solid #cfe7fb",
+              color: "#1769aa",
+              fontWeight: 800,
+              fontSize: 14,
+            }}
+          >
+            {statusMessage}
+          </div>
+        </PageCard>
+      )}
+
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 12,
           }}
         >
           <div>
@@ -517,6 +892,15 @@ export default function BSOMgtScoreDashboardPage() {
                 setRange("custom");
                 setToDate(e.target.value);
               }}
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Search Exact Date</FieldLabel>
+            <TextInput
+              type="date"
+              value={searchDate}
+              onChange={(e) => setSearchDate(e.target.value)}
             />
           </div>
 
@@ -555,52 +939,67 @@ export default function BSOMgtScoreDashboardPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : isTablet
+            ? "repeat(2, minmax(0, 1fr))"
+            : "repeat(4, minmax(0, 1fr))",
           gap: 14,
         }}
       >
-        <StatCard label="Flights" value={String(totalFlights)} />
-        <StatCard
-          label="Avg First Bag"
-          value={`${avgFirstBagMinutes.toFixed(2)} min`}
+        <MetricTile
+          title="First Bag"
+          value={`${avgFirstBagMinutes.toFixed(1)} min`}
+          subtitle="Average first bag delivery"
           grade={gradeFirstBag}
         />
-        <StatCard
-          label="Avg Last Bag"
-          value={`${avgLastBagMinutes.toFixed(2)} min`}
+        <MetricTile
+          title="Last Bag"
+          value={`${avgLastBagMinutes.toFixed(1)} min`}
+          subtitle="Average last bag delivery"
           grade={gradeLastBag}
         />
-        <StatCard
-          label="Avg Scan Window"
-          value={`${avgScanWindowMinutes.toFixed(2)} min`}
+        <MetricTile
+          title="Scan Window"
+          value={`${avgScanWindowMinutes.toFixed(1)} min`}
+          subtitle="Average scan duration"
           grade={gradeScanWindow}
         />
-        <StatCard
-          label="Avg OHD / Flight"
-          value={avgOnHandBagsPerFlight.toFixed(2)}
-          grade={gradeOhdBags}
-        />
-        <StatCard
-          label="Avg Files / Flight"
-          value={avgFilesPerFlight.toFixed(2)}
-          grade={gradeFiles}
-        />
-        <StatCard
-          label="% Flights With OHD"
-          value={`${percentFlightsWithOnHand.toFixed(2)}%`}
+        <MetricTile
+          title="On-Hand"
+          value={`${percentFlightsWithOnHand.toFixed(1)}%`}
+          subtitle={`${avgOnHandBagsPerFlight.toFixed(2)} avg bags / flight`}
           grade={gradeOhdPercent}
         />
-        <StatCard
-          label="% Flights With Files"
-          value={`${percentFlightsWithFiles.toFixed(2)}%`}
+        <MetricTile
+          title="Files Created"
+          value={`${percentFlightsWithFiles.toFixed(1)}%`}
+          subtitle={`${avgFilesPerFlight.toFixed(2)} avg files / flight`}
           grade={gradeFilesPercent}
+        />
+        <MetricTile
+          title="Flights"
+          value={String(totalFlights)}
+          subtitle="Total records in selected range"
+        />
+        <MetricTile
+          title="Avg OHD / Flight"
+          value={avgOnHandBagsPerFlight.toFixed(2)}
+          subtitle="On-hand bags average"
+          grade={gradeOhdBags}
+        />
+        <MetricTile
+          title="Avg Files / Flight"
+          value={avgFilesPerFlight.toFixed(2)}
+          subtitle="Files average"
+          grade={gradeFiles}
         />
       </div>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
           gap: 14,
         }}
       >
@@ -633,8 +1032,17 @@ export default function BSOMgtScoreDashboardPage() {
         </PageCard>
       </div>
 
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 12 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginBottom: 12,
+          }}
+        >
           <h2
             style={{
               margin: 0,
@@ -645,103 +1053,474 @@ export default function BSOMgtScoreDashboardPage() {
           >
             BSO Operations Detail
           </h2>
-        </div>
 
-        <div
-          style={{
-            width: "100%",
-            overflowX: "auto",
-            borderRadius: 18,
-            border: "1px solid #e2e8f0",
-          }}
-        >
-          <table
+          <div
             style={{
-              width: "100%",
-              borderCollapse: "separate",
-              borderSpacing: 0,
-              minWidth: 1200,
-              background: "#fff",
+              fontSize: 13,
+              color: "#64748b",
+              fontWeight: 700,
             }}
           >
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                {[
-                  "Date",
-                  "Station",
-                  "Airline",
-                  "Flight",
-                  "Origin",
-                  "Belt",
-                  "Agent",
-                  "Actual Arrival",
-                  "First Bag",
-                  "Last Bag",
-                  "Scan Start",
-                  "Scan End",
-                  "First Bag Min",
-                  "Last Bag Min",
-                  "Scan Window",
-                  "OHD Bags",
-                  "Files",
-                ].map((label) => (
-                  <th
-                    key={label}
+            {searchDate ? `Showing date ${searchDate}` : "Showing selected date range"}
+          </div>
+        </div>
+
+        {isMobile ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            {filteredRows.length === 0 ? (
+              <div style={{ color: "#64748b", fontWeight: 700 }}>
+                {loading ? "Loading..." : "No records found."}
+              </div>
+            ) : (
+              filteredRows.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    border: "1px solid #dbeafe",
+                    borderRadius: 16,
+                    padding: 14,
+                    background: "#ffffff",
+                  }}
+                >
+                  <div
                     style={{
-                      padding: 14,
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#475569",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                      textAlign: "left",
-                      borderBottom: "1px solid #e2e8f0",
-                      whiteSpace: "nowrap",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      alignItems: "flex-start",
+                      marginBottom: 10,
                     }}
                   >
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 900,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {item.airline || "—"} {item.flightNumber || ""}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "#64748b",
+                          marginTop: 4,
+                        }}
+                      >
+                        {item.station || "—"} · {item.origin || "—"} · {item.date || "—"}
+                      </div>
+                    </div>
+                  </div>
 
-            <tbody>
-              {filteredRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={17}
-                    style={{ padding: 14, fontSize: 14, color: "#0f172a" }}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                      fontSize: 13,
+                      color: "#334155",
+                    }}
                   >
-                    {loading ? "Loading..." : "No records found."}
-                  </td>
+                    <div><strong>Agent:</strong> {item.agentName || "—"}</div>
+                    <div><strong>Belt:</strong> {item.beltNumber || "—"}</div>
+                    <div><strong>Arrival:</strong> {item.actualArrivalTime || "—"}</div>
+                    <div><strong>First Bag:</strong> {item.firstBagTime || "—"}</div>
+                    <div><strong>Last Bag:</strong> {item.lastBagTime || "—"}</div>
+                    <div><strong>Scan Window:</strong> {safeNumber(item.scanWindowMinutes).toFixed(2)}</div>
+                    <div><strong>OHD:</strong> {safeNumber(item.onHandBags)}</div>
+                    <div><strong>Files:</strong> {safeNumber(item.filesCreated)}</div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginTop: 14,
+                    }}
+                  >
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => startEditing(item)}
+                    >
+                      Edit
+                    </ActionButton>
+                    <ActionButton
+                      variant="danger"
+                      onClick={() => handleDelete(item.id)}
+                      disabled={workingId === item.id}
+                    >
+                      {workingId === item.id ? "Deleting..." : "Delete"}
+                    </ActionButton>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              width: "100%",
+              overflowX: "auto",
+              borderRadius: 18,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                minWidth: 1400,
+                background: "#fff",
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f8fbff" }}>
+                  {[
+                    "Date",
+                    "Station",
+                    "Airline",
+                    "Flight",
+                    "Origin",
+                    "Belt",
+                    "Agent",
+                    "Actual Arrival",
+                    "First Bag",
+                    "Last Bag",
+                    "Scan Start",
+                    "Scan End",
+                    "First Bag Min",
+                    "Last Bag Min",
+                    "Scan Window",
+                    "OHD Bags",
+                    "Files",
+                    "Actions",
+                  ].map((label) => (
+                    <th
+                      key={label}
+                      style={{
+                        padding: 14,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#475569",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        textAlign: "left",
+                        borderBottom: "1px solid #e2e8f0",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {label}
+                    </th>
+                  ))}
                 </tr>
-              ) : (
-                filteredRows.map((item) => (
-                  <tr key={item.id}>
-                    <td style={cellStyle}>{item.date || "—"}</td>
-                    <td style={cellStyle}>{item.station || "—"}</td>
-                    <td style={cellStyle}>{item.airline || "—"}</td>
-                    <td style={cellStyle}>{item.flightNumber || "—"}</td>
-                    <td style={cellStyle}>{item.origin || "—"}</td>
-                    <td style={cellStyle}>{item.beltNumber || "—"}</td>
-                    <td style={cellStyle}>{item.agentName || "—"}</td>
-                    <td style={cellStyle}>{item.actualArrivalTime || "—"}</td>
-                    <td style={cellStyle}>{item.firstBagTime || "—"}</td>
-                    <td style={cellStyle}>{item.lastBagTime || "—"}</td>
-                    <td style={cellStyle}>{item.scanStartTime || "—"}</td>
-                    <td style={cellStyle}>{item.scanEndTime || "—"}</td>
-                    <td style={cellStyle}>{safeNumber(item.firstBagMinutes).toFixed(2)}</td>
-                    <td style={cellStyle}>{safeNumber(item.lastBagMinutes).toFixed(2)}</td>
-                    <td style={cellStyle}>{safeNumber(item.scanWindowMinutes).toFixed(2)}</td>
-                    <td style={cellStyle}>{safeNumber(item.onHandBags)}</td>
-                    <td style={cellStyle}>{safeNumber(item.filesCreated)}</td>
+              </thead>
+
+              <tbody>
+                {filteredRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={18}
+                      style={{ padding: 14, fontSize: 14, color: "#0f172a" }}
+                    >
+                      {loading ? "Loading..." : "No records found."}
+                    </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filteredRows.map((item) => (
+                    <tr key={item.id}>
+                      <td style={cellStyle}>{item.date || "—"}</td>
+                      <td style={cellStyle}>{item.station || "—"}</td>
+                      <td style={cellStyle}>{item.airline || "—"}</td>
+                      <td style={cellStyle}>{item.flightNumber || "—"}</td>
+                      <td style={cellStyle}>{item.origin || "—"}</td>
+                      <td style={cellStyle}>{item.beltNumber || "—"}</td>
+                      <td style={cellStyle}>{item.agentName || "—"}</td>
+                      <td style={cellStyle}>{item.actualArrivalTime || "—"}</td>
+                      <td style={cellStyle}>{item.firstBagTime || "—"}</td>
+                      <td style={cellStyle}>{item.lastBagTime || "—"}</td>
+                      <td style={cellStyle}>{item.scanStartTime || "—"}</td>
+                      <td style={cellStyle}>{item.scanEndTime || "—"}</td>
+                      <td style={cellStyle}>{safeNumber(item.firstBagMinutes).toFixed(2)}</td>
+                      <td style={cellStyle}>{safeNumber(item.lastBagMinutes).toFixed(2)}</td>
+                      <td style={cellStyle}>{safeNumber(item.scanWindowMinutes).toFixed(2)}</td>
+                      <td style={cellStyle}>{safeNumber(item.onHandBags)}</td>
+                      <td style={cellStyle}>{safeNumber(item.filesCreated)}</td>
+                      <td style={cellStyle}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <ActionButton
+                            variant="secondary"
+                            onClick={() => startEditing(item)}
+                          >
+                            Edit
+                          </ActionButton>
+                          <ActionButton
+                            variant="danger"
+                            onClick={() => handleDelete(item.id)}
+                            disabled={workingId === item.id}
+                          >
+                            {workingId === item.id ? "Deleting..." : "Delete"}
+                          </ActionButton>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </PageCard>
+
+      {editingId && editDraft && (
+        <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+              marginBottom: 14,
+            }}
+          >
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              Edit BSO Record
+            </h2>
+
+            <div
+              style={{
+                fontSize: 13,
+                color: "#64748b",
+                fontWeight: 700,
+              }}
+            >
+              Editing date {editDraft.date || "—"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <div>
+              <FieldLabel>Date</FieldLabel>
+              <TextInput
+                type="date"
+                value={editDraft.date}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, date: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Station</FieldLabel>
+              <TextInput
+                value={editDraft.station}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, station: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Airline</FieldLabel>
+              <TextInput
+                value={editDraft.airline}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, airline: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Flight Number</FieldLabel>
+              <TextInput
+                value={editDraft.flightNumber}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, flightNumber: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Origin</FieldLabel>
+              <TextInput
+                value={editDraft.origin}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, origin: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Belt Number</FieldLabel>
+              <TextInput
+                value={editDraft.beltNumber}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, beltNumber: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Agent</FieldLabel>
+              <TextInput
+                value={editDraft.agentName}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, agentName: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Actual Arrival</FieldLabel>
+              <TextInput
+                type="time"
+                value={editDraft.actualArrivalTime}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    actualArrivalTime: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>First Bag</FieldLabel>
+              <TextInput
+                type="time"
+                value={editDraft.firstBagTime}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, firstBagTime: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Last Bag</FieldLabel>
+              <TextInput
+                type="time"
+                value={editDraft.lastBagTime}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, lastBagTime: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Scan Start</FieldLabel>
+              <TextInput
+                type="time"
+                value={editDraft.scanStartTime}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, scanStartTime: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Scan End</FieldLabel>
+              <TextInput
+                type="time"
+                value={editDraft.scanEndTime}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, scanEndTime: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>On-Hand Bags</FieldLabel>
+              <TextInput
+                type="number"
+                min="0"
+                value={editDraft.onHandBags}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, onHandBags: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Files Created</FieldLabel>
+              <TextInput
+                type="number"
+                min="0"
+                value={editDraft.filesCreated}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, filesCreated: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Total Bags Handled</FieldLabel>
+              <TextInput
+                type="number"
+                min="0"
+                value={editDraft.totalBagsHandled}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    totalBagsHandled: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FieldLabel>Notes</FieldLabel>
+              <TextArea
+                value={editDraft.notes}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, notes: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              marginTop: 16,
+            }}
+          >
+            <ActionButton
+              variant="success"
+              onClick={handleSaveEdit}
+              disabled={workingId === editingId}
+            >
+              {workingId === editingId ? "Saving..." : "Save Changes"}
+            </ActionButton>
+
+            <ActionButton
+              variant="secondary"
+              onClick={cancelEditing}
+              disabled={workingId === editingId}
+            >
+              Cancel
+            </ActionButton>
+          </div>
+        </PageCard>
+      )}
     </div>
   );
 }
