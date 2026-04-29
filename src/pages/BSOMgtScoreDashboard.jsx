@@ -467,8 +467,7 @@ function BarList({ rows, suffix = "" }) {
   );
 }
 
-const FIRST_BAG_THRESHOLDS = { A: 15, B: 20, C: 25, D: 30 };
-const LAST_BAG_THRESHOLDS = { A: 30, B: 40, C: 50, D: 60 };
+const CLAIM_SCAN_TOTAL_THRESHOLDS = { A: 15, B: 20, C: 25, D: 30 };
 const SCAN_WINDOW_THRESHOLDS = { A: 20, B: 30, C: 40, D: 50 };
 const OHD_BAGS_THRESHOLDS = { A: 0.25, B: 0.5, C: 1, D: 2 };
 const FILES_THRESHOLDS = { A: 0.1, B: 0.25, C: 0.5, D: 1 };
@@ -567,33 +566,52 @@ export default function BSOMgtScoreDashboardPage() {
 
   const totalFlights = filteredRows.length;
 
-  const avgFirstBagMinutes = average(filteredRows, (item) => safeNumber(item.firstBagMinutes));
-  const avgLastBagMinutes = average(filteredRows, (item) => safeNumber(item.lastBagMinutes));
-  const avgScanWindowMinutes = average(filteredRows, (item) => safeNumber(item.scanWindowMinutes));
-  const avgOnHandBagsPerFlight = average(filteredRows, (item) => safeNumber(item.onHandBags));
-  const avgFilesPerFlight = average(filteredRows, (item) => safeNumber(item.filesCreated));
+  const avgClaimScanTotalMinutes = average(filteredRows, (item) =>
+    safeNumber(item.firstBagMinutes)
+  );
+  const avgScanWindowMinutes = average(filteredRows, (item) =>
+    safeNumber(item.scanWindowMinutes)
+  );
+  const avgOnHandBagsPerFlight = average(filteredRows, (item) =>
+    safeNumber(item.onHandBags)
+  );
+  const avgFilesManagementPerFlight = average(filteredRows, (item) =>
+    safeNumber(item.filesCreated)
+  );
 
   const flightsWithOnHand = filteredRows.filter((item) => safeNumber(item.onHandBags) > 0).length;
-  const flightsWithFiles = filteredRows.filter((item) => safeNumber(item.filesCreated) > 0).length;
+  const flightsWithFilesManagement = filteredRows.filter(
+    (item) => safeNumber(item.filesCreated) > 0
+  ).length;
 
   const percentFlightsWithOnHand = percent(flightsWithOnHand, totalFlights);
-  const percentFlightsWithFiles = percent(flightsWithFiles, totalFlights);
+  const percentFlightsWithFilesManagement = percent(
+    flightsWithFilesManagement,
+    totalFlights
+  );
 
-  const gradeFirstBag = getLetterGrade(avgFirstBagMinutes, FIRST_BAG_THRESHOLDS);
-  const gradeLastBag = getLetterGrade(avgLastBagMinutes, LAST_BAG_THRESHOLDS);
+  const gradeClaimScanTotal = getLetterGrade(
+    avgClaimScanTotalMinutes,
+    CLAIM_SCAN_TOTAL_THRESHOLDS
+  );
   const gradeScanWindow = getLetterGrade(avgScanWindowMinutes, SCAN_WINDOW_THRESHOLDS);
   const gradeOhdBags = getLetterGrade(avgOnHandBagsPerFlight, OHD_BAGS_THRESHOLDS);
-  const gradeFiles = getLetterGrade(avgFilesPerFlight, FILES_THRESHOLDS);
+  const gradeFilesManagement = getLetterGrade(
+    avgFilesManagementPerFlight,
+    FILES_THRESHOLDS
+  );
   const gradeOhdPercent = getLetterGrade(percentFlightsWithOnHand, OHD_PERCENT_THRESHOLDS);
-  const gradeFilesPercent = getLetterGrade(percentFlightsWithFiles, FILE_PERCENT_THRESHOLDS);
+  const gradeFilesPercent = getLetterGrade(
+    percentFlightsWithFilesManagement,
+    FILE_PERCENT_THRESHOLDS
+  );
 
   const overallGrade = useMemo(() => {
     const grades = [
-      gradeFirstBag,
-      gradeLastBag,
+      gradeClaimScanTotal,
       gradeScanWindow,
       gradeOhdBags,
-      gradeFiles,
+      gradeFilesManagement,
       gradeOhdPercent,
       gradeFilesPercent,
     ];
@@ -608,11 +626,10 @@ export default function BSOMgtScoreDashboardPage() {
     if (avg >= 0.75) return "D";
     return "F";
   }, [
-    gradeFirstBag,
-    gradeLastBag,
+    gradeClaimScanTotal,
     gradeScanWindow,
     gradeOhdBags,
-    gradeFiles,
+    gradeFilesManagement,
     gradeOhdPercent,
     gradeFilesPercent,
   ]);
@@ -651,15 +668,9 @@ export default function BSOMgtScoreDashboardPage() {
   async function handleSaveEdit() {
     if (!editingId || !editDraft) return;
 
-    const firstBagMinutes = getMinutesBetween(
+    const claimScanTotalMinutes = getMinutesBetween(
       editDraft.date,
-      editDraft.actualArrivalTime,
-      editDraft.firstBagTime
-    );
-
-    const lastBagMinutes = getMinutesBetween(
-      editDraft.date,
-      editDraft.actualArrivalTime,
+      editDraft.firstBagTime,
       editDraft.lastBagTime
     );
 
@@ -677,8 +688,8 @@ export default function BSOMgtScoreDashboardPage() {
         onHandBags: safeNumber(editDraft.onHandBags),
         filesCreated: safeNumber(editDraft.filesCreated),
         totalBagsHandled: safeNumber(editDraft.totalBagsHandled),
-        firstBagMinutes,
-        lastBagMinutes,
+        firstBagMinutes: claimScanTotalMinutes,
+        lastBagMinutes: 0,
         scanWindowMinutes,
         updatedAt: serverTimestamp(),
       });
@@ -795,8 +806,9 @@ export default function BSOMgtScoreDashboardPage() {
                 fontWeight: 700,
               }}
             >
-              Responsive management dashboard for On-Hand bags, files, first bag, last bag, and scan window.
-              Includes date search, editing, and delete.
+              Responsive management dashboard for On-Hand bags, Files Management,
+              Claim Scan Start, Claim Scan Last, and scan window. Includes date
+              search, editing, and delete.
             </p>
           </div>
 
@@ -949,16 +961,10 @@ export default function BSOMgtScoreDashboardPage() {
         }}
       >
         <MetricTile
-          title="First Bag"
-          value={`${avgFirstBagMinutes.toFixed(1)} min`}
-          subtitle="Average first bag delivery"
-          grade={gradeFirstBag}
-        />
-        <MetricTile
-          title="Last Bag"
-          value={`${avgLastBagMinutes.toFixed(1)} min`}
-          subtitle="Average last bag delivery"
-          grade={gradeLastBag}
+          title="Claim Scan Total Time"
+          value={`${avgClaimScanTotalMinutes.toFixed(1)} min`}
+          subtitle="Average from Claim Scan Start to Claim Scan Last"
+          grade={gradeClaimScanTotal}
         />
         <MetricTile
           title="Scan Window"
@@ -973,9 +979,9 @@ export default function BSOMgtScoreDashboardPage() {
           grade={gradeOhdPercent}
         />
         <MetricTile
-          title="Files Created"
-          value={`${percentFlightsWithFiles.toFixed(1)}%`}
-          subtitle={`${avgFilesPerFlight.toFixed(2)} avg files / flight`}
+          title="Files Management"
+          value={`${percentFlightsWithFilesManagement.toFixed(1)}%`}
+          subtitle={`${avgFilesManagementPerFlight.toFixed(2)} avg / flight`}
           grade={gradeFilesPercent}
         />
         <MetricTile
@@ -990,10 +996,10 @@ export default function BSOMgtScoreDashboardPage() {
           grade={gradeOhdBags}
         />
         <MetricTile
-          title="Avg Files / Flight"
-          value={avgFilesPerFlight.toFixed(2)}
-          subtitle="Files average"
-          grade={gradeFiles}
+          title="Avg Files Management"
+          value={avgFilesManagementPerFlight.toFixed(2)}
+          subtitle="Files Management average"
+          grade={gradeFilesManagement}
         />
       </div>
 
@@ -1131,11 +1137,12 @@ export default function BSOMgtScoreDashboardPage() {
                     <div><strong>Agent:</strong> {item.agentName || "—"}</div>
                     <div><strong>Belt:</strong> {item.beltNumber || "—"}</div>
                     <div><strong>Arrival:</strong> {item.actualArrivalTime || "—"}</div>
-                    <div><strong>First Bag:</strong> {item.firstBagTime || "—"}</div>
-                    <div><strong>Last Bag:</strong> {item.lastBagTime || "—"}</div>
+                    <div><strong>Claim Scan Start:</strong> {item.firstBagTime || "—"}</div>
+                    <div><strong>Claim Scan Last:</strong> {item.lastBagTime || "—"}</div>
+                    <div><strong>Claim Scan Total:</strong> {safeNumber(item.firstBagMinutes).toFixed(2)}</div>
                     <div><strong>Scan Window:</strong> {safeNumber(item.scanWindowMinutes).toFixed(2)}</div>
                     <div><strong>OHD:</strong> {safeNumber(item.onHandBags)}</div>
-                    <div><strong>Files:</strong> {safeNumber(item.filesCreated)}</div>
+                    <div><strong>Files Management:</strong> {safeNumber(item.filesCreated)}</div>
                   </div>
 
                   <div
@@ -1196,15 +1203,14 @@ export default function BSOMgtScoreDashboardPage() {
                     "Belt",
                     "Agent",
                     "Actual Arrival",
-                    "First Bag",
-                    "Last Bag",
+                    "Claim Scan Start",
+                    "Claim Scan Last",
                     "Scan Start",
                     "Scan End",
-                    "First Bag Min",
-                    "Last Bag Min",
+                    "Claim Scan Total Time",
                     "Scan Window",
                     "OHD Bags",
-                    "Files",
+                    "Files Management",
                     "Actions",
                   ].map((label) => (
                     <th
@@ -1231,7 +1237,7 @@ export default function BSOMgtScoreDashboardPage() {
                 {filteredRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={18}
+                      colSpan={17}
                       style={{ padding: 14, fontSize: 14, color: "#0f172a" }}
                     >
                       {loading ? "Loading..." : "No records found."}
@@ -1253,7 +1259,6 @@ export default function BSOMgtScoreDashboardPage() {
                       <td style={cellStyle}>{item.scanStartTime || "—"}</td>
                       <td style={cellStyle}>{item.scanEndTime || "—"}</td>
                       <td style={cellStyle}>{safeNumber(item.firstBagMinutes).toFixed(2)}</td>
-                      <td style={cellStyle}>{safeNumber(item.lastBagMinutes).toFixed(2)}</td>
                       <td style={cellStyle}>{safeNumber(item.scanWindowMinutes).toFixed(2)}</td>
                       <td style={cellStyle}>{safeNumber(item.onHandBags)}</td>
                       <td style={cellStyle}>{safeNumber(item.filesCreated)}</td>
@@ -1412,7 +1417,7 @@ export default function BSOMgtScoreDashboardPage() {
             </div>
 
             <div>
-              <FieldLabel>First Bag</FieldLabel>
+              <FieldLabel>Claim Scan Start</FieldLabel>
               <TextInput
                 type="time"
                 value={editDraft.firstBagTime}
@@ -1423,7 +1428,7 @@ export default function BSOMgtScoreDashboardPage() {
             </div>
 
             <div>
-              <FieldLabel>Last Bag</FieldLabel>
+              <FieldLabel>Claim Scan Last</FieldLabel>
               <TextInput
                 type="time"
                 value={editDraft.lastBagTime}
@@ -1468,7 +1473,7 @@ export default function BSOMgtScoreDashboardPage() {
             </div>
 
             <div>
-              <FieldLabel>Files Created</FieldLabel>
+              <FieldLabel>Files Management</FieldLabel>
               <TextInput
                 type="number"
                 min="0"
