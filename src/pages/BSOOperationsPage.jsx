@@ -380,13 +380,9 @@ export default function BSOOperationsPage() {
     }));
   }
 
-  const firstBagMinutes = useMemo(() => {
-    return getMinutesBetween(form.date, form.actualArrivalTime, form.firstBagTime);
-  }, [form.date, form.actualArrivalTime, form.firstBagTime]);
-
-  const lastBagMinutes = useMemo(() => {
-    return getMinutesBetween(form.date, form.actualArrivalTime, form.lastBagTime);
-  }, [form.date, form.actualArrivalTime, form.lastBagTime]);
+  const claimScanTotalMinutes = useMemo(() => {
+    return getMinutesBetween(form.date, form.firstBagTime, form.lastBagTime);
+  }, [form.date, form.firstBagTime, form.lastBagTime]);
 
   const scanWindowMinutes = useMemo(() => {
     return getMinutesBetween(form.date, form.scanStartTime, form.scanEndTime);
@@ -414,8 +410,11 @@ export default function BSOOperationsPage() {
 
   const totalFlights = filteredRows.length;
   const totalOnHand = filteredRows.reduce((sum, item) => sum + safeNumber(item.onHandBags), 0);
-  const totalFiles = filteredRows.reduce((sum, item) => sum + safeNumber(item.filesCreated), 0);
-  const avgFirstBag = filteredRows.length
+  const totalFilesManagement = filteredRows.reduce(
+    (sum, item) => sum + safeNumber(item.filesCreated),
+    0
+  );
+  const avgClaimScanTotal = filteredRows.length
     ? filteredRows.reduce((sum, item) => sum + safeNumber(item.firstBagMinutes), 0) /
       filteredRows.length
     : 0;
@@ -467,8 +466,8 @@ export default function BSOOperationsPage() {
         lastBagTime: form.lastBagTime || "",
         scanStartTime: form.scanStartTime || "",
         scanEndTime: form.scanEndTime || "",
-        firstBagMinutes,
-        lastBagMinutes,
+        firstBagMinutes: claimScanTotalMinutes,
+        lastBagMinutes: 0,
         scanWindowMinutes,
         totalBagsHandled,
         onHandBags,
@@ -504,16 +503,12 @@ export default function BSOOperationsPage() {
   async function handleSaveEdit() {
     if (!editingId || !editDraft) return;
 
-    const nextFirstBagMinutes = getMinutesBetween(
+    const nextClaimScanTotalMinutes = getMinutesBetween(
       editDraft.date,
-      editDraft.actualArrivalTime,
-      editDraft.firstBagTime
-    );
-    const nextLastBagMinutes = getMinutesBetween(
-      editDraft.date,
-      editDraft.actualArrivalTime,
+      editDraft.firstBagTime,
       editDraft.lastBagTime
     );
+
     const nextScanWindowMinutes = getMinutesBetween(
       editDraft.date,
       editDraft.scanStartTime,
@@ -528,8 +523,8 @@ export default function BSOOperationsPage() {
         totalBagsHandled: safeNumber(editDraft.totalBagsHandled),
         onHandBags: safeNumber(editDraft.onHandBags),
         filesCreated: safeNumber(editDraft.filesCreated),
-        firstBagMinutes: nextFirstBagMinutes,
-        lastBagMinutes: nextLastBagMinutes,
+        firstBagMinutes: nextClaimScanTotalMinutes,
+        lastBagMinutes: 0,
         scanWindowMinutes: nextScanWindowMinutes,
         hasOnHand: safeNumber(editDraft.onHandBags) > 0,
         hasFiles: safeNumber(editDraft.filesCreated) > 0,
@@ -569,20 +564,11 @@ export default function BSOOperationsPage() {
     }
   }
 
-  const editFirstBagMinutes = useMemo(() => {
+  const editClaimScanTotalMinutes = useMemo(() => {
     if (!editDraft) return 0;
     return getMinutesBetween(
       editDraft.date,
-      editDraft.actualArrivalTime,
-      editDraft.firstBagTime
-    );
-  }, [editDraft]);
-
-  const editLastBagMinutes = useMemo(() => {
-    if (!editDraft) return 0;
-    return getMinutesBetween(
-      editDraft.date,
-      editDraft.actualArrivalTime,
+      editDraft.firstBagTime,
       editDraft.lastBagTime
     );
   }, [editDraft]);
@@ -676,7 +662,7 @@ export default function BSOOperationsPage() {
                 fontWeight: 700,
               }}
             >
-              Register On-Hand bags, files, first bag time, last bag time, and scan window by flight.
+              Register On-Hand bags, Files Management, claim scan start, claim scan last, and scan window by flight.
             </p>
           </div>
 
@@ -726,8 +712,12 @@ export default function BSOOperationsPage() {
       >
         <MiniStat label="Total Flights" value={String(totalFlights)} tone="slate" />
         <MiniStat label="On-Hand Bags" value={String(totalOnHand)} tone="amber" />
-        <MiniStat label="Files Created" value={String(totalFiles)} tone="blue" />
-        <MiniStat label="Avg First Bag" value={`${avgFirstBag.toFixed(2)} min`} tone="green" />
+        <MiniStat label="Files Management" value={String(totalFilesManagement)} tone="blue" />
+        <MiniStat
+          label="Avg Claim Scan Total Time"
+          value={`${avgClaimScanTotal.toFixed(2)} min`}
+          tone="green"
+        />
       </div>
 
       <PageCard style={{ padding: isMobile ? 14 : 20 }}>
@@ -916,7 +906,7 @@ export default function BSOOperationsPage() {
           </div>
 
           <div>
-            <FieldLabel>First Bag Time</FieldLabel>
+            <FieldLabel>Claim Scan Start</FieldLabel>
             <TextInput
               type="time"
               value={form.firstBagTime}
@@ -925,7 +915,7 @@ export default function BSOOperationsPage() {
           </div>
 
           <div>
-            <FieldLabel>Last Bag Time</FieldLabel>
+            <FieldLabel>Claim Scan Last</FieldLabel>
             <TextInput
               type="time"
               value={form.lastBagTime}
@@ -972,7 +962,7 @@ export default function BSOOperationsPage() {
           </div>
 
           <div>
-            <FieldLabel>Files Created</FieldLabel>
+            <FieldLabel>Files Management</FieldLabel>
             <TextInput
               type="number"
               min="0"
@@ -982,13 +972,8 @@ export default function BSOOperationsPage() {
           </div>
 
           <div>
-            <FieldLabel>First Bag Minutes</FieldLabel>
-            <TextInput value={String(firstBagMinutes || 0)} disabled />
-          </div>
-
-          <div>
-            <FieldLabel>Last Bag Minutes</FieldLabel>
-            <TextInput value={String(lastBagMinutes || 0)} disabled />
+            <FieldLabel>Claim Scan Total Time</FieldLabel>
+            <TextInput value={String(claimScanTotalMinutes || 0)} disabled />
           </div>
 
           <div>
@@ -1121,11 +1106,12 @@ export default function BSOOperationsPage() {
                     <div><strong>Agent:</strong> {item.agentName || "—"}</div>
                     <div><strong>Belt:</strong> {item.beltNumber || "—"}</div>
                     <div><strong>Arrival:</strong> {item.actualArrivalTime || "—"}</div>
-                    <div><strong>First Bag:</strong> {item.firstBagTime || "—"}</div>
-                    <div><strong>Last Bag:</strong> {item.lastBagTime || "—"}</div>
+                    <div><strong>Claim Scan Start:</strong> {item.firstBagTime || "—"}</div>
+                    <div><strong>Claim Scan Last:</strong> {item.lastBagTime || "—"}</div>
+                    <div><strong>Claim Scan Total Time:</strong> {safeNumber(item.firstBagMinutes).toFixed(2)}</div>
                     <div><strong>Scan Window:</strong> {safeNumber(item.scanWindowMinutes).toFixed(2)}</div>
                     <div><strong>On-Hand:</strong> {safeNumber(item.onHandBags)}</div>
-                    <div><strong>Files:</strong> {safeNumber(item.filesCreated)}</div>
+                    <div><strong>Files Management:</strong> {safeNumber(item.filesCreated)}</div>
                   </div>
 
                   <div
@@ -1184,15 +1170,14 @@ export default function BSOOperationsPage() {
                     "Agent",
                     "Scheduled Arrival",
                     "Actual Arrival",
-                    "First Bag",
-                    "Last Bag",
+                    "Claim Scan Start",
+                    "Claim Scan Last",
                     "Scan Start",
                     "Scan End",
-                    "First Bag Min",
-                    "Last Bag Min",
+                    "Claim Scan Total Time",
                     "Scan Window",
                     "On-Hand",
-                    "Files",
+                    "Files Management",
                     "Created",
                     "Actions",
                   ].map((label) => (
@@ -1219,7 +1204,7 @@ export default function BSOOperationsPage() {
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={20} style={cellStyle}>
+                    <td colSpan={19} style={cellStyle}>
                       No records found.
                     </td>
                   </tr>
@@ -1240,7 +1225,6 @@ export default function BSOOperationsPage() {
                       <td style={cellStyle}>{item.scanStartTime || "—"}</td>
                       <td style={cellStyle}>{item.scanEndTime || "—"}</td>
                       <td style={cellStyle}>{safeNumber(item.firstBagMinutes).toFixed(2)}</td>
-                      <td style={cellStyle}>{safeNumber(item.lastBagMinutes).toFixed(2)}</td>
                       <td style={cellStyle}>{safeNumber(item.scanWindowMinutes).toFixed(2)}</td>
                       <td style={cellStyle}>{safeNumber(item.onHandBags)}</td>
                       <td style={cellStyle}>{safeNumber(item.filesCreated)}</td>
@@ -1411,7 +1395,7 @@ export default function BSOOperationsPage() {
             </div>
 
             <div>
-              <FieldLabel>First Bag Time</FieldLabel>
+              <FieldLabel>Claim Scan Start</FieldLabel>
               <TextInput
                 type="time"
                 value={editDraft.firstBagTime}
@@ -1422,7 +1406,7 @@ export default function BSOOperationsPage() {
             </div>
 
             <div>
-              <FieldLabel>Last Bag Time</FieldLabel>
+              <FieldLabel>Claim Scan Last</FieldLabel>
               <TextInput
                 type="time"
                 value={editDraft.lastBagTime}
@@ -1482,7 +1466,7 @@ export default function BSOOperationsPage() {
             </div>
 
             <div>
-              <FieldLabel>Files Created</FieldLabel>
+              <FieldLabel>Files Management</FieldLabel>
               <TextInput
                 type="number"
                 min="0"
@@ -1494,13 +1478,8 @@ export default function BSOOperationsPage() {
             </div>
 
             <div>
-              <FieldLabel>First Bag Minutes</FieldLabel>
-              <TextInput value={String(editFirstBagMinutes || 0)} disabled />
-            </div>
-
-            <div>
-              <FieldLabel>Last Bag Minutes</FieldLabel>
-              <TextInput value={String(editLastBagMinutes || 0)} disabled />
+              <FieldLabel>Claim Scan Total Time</FieldLabel>
+              <TextInput value={String(editClaimScanTotalMinutes || 0)} disabled />
             </div>
 
             <div>
