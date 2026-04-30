@@ -101,6 +101,10 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function formatMoney(value) {
+  return `$${safeNumber(value).toFixed(2)}`;
+}
+
 function getEmployeeName(item) {
   return (
     normalizeText(item.employeeName) ||
@@ -122,6 +126,34 @@ function getFinalReading(item) {
     return safeNumber(item.endReading);
   }
   return 0;
+}
+
+function getFuelConsumed(item) {
+  if (item.fuelConsumed !== undefined && item.fuelConsumed !== null && item.fuelConsumed !== "") {
+    return safeNumber(item.fuelConsumed);
+  }
+  if (item.totalGallons !== undefined && item.totalGallons !== null && item.totalGallons !== "") {
+    return safeNumber(item.totalGallons);
+  }
+  return 0;
+}
+
+function getPricePerGallon(item) {
+  if (
+    item.pricePerGallon !== undefined &&
+    item.pricePerGallon !== null &&
+    item.pricePerGallon !== ""
+  ) {
+    return safeNumber(item.pricePerGallon);
+  }
+  return 0;
+}
+
+function getTotalCost(item) {
+  if (item.totalCost !== undefined && item.totalCost !== null && item.totalCost !== "") {
+    return safeNumber(item.totalCost);
+  }
+  return Number((getFuelConsumed(item) * getPricePerGallon(item)).toFixed(2));
 }
 
 function getOcrFinalReading(item) {
@@ -236,17 +268,22 @@ function buildDailyRows(items) {
         label: key,
         records: 0,
         totalFinalReading: 0,
+        totalConsumed: 0,
+        totalCost: 0,
       };
     }
 
     map[key].records += 1;
     map[key].totalFinalReading += getFinalReading(item);
+    map[key].totalConsumed += getFuelConsumed(item);
+    map[key].totalCost += getTotalCost(item);
   });
 
   return Object.values(map)
     .map((item) => ({
       ...item,
       avgFinalReading: item.records ? item.totalFinalReading / item.records : 0,
+      avgConsumed: item.records ? item.totalConsumed / item.records : 0,
     }))
     .sort((a, b) => b.key.localeCompare(a.key));
 }
@@ -262,17 +299,22 @@ function buildWeeklyRows(items) {
         label: key,
         records: 0,
         totalFinalReading: 0,
+        totalConsumed: 0,
+        totalCost: 0,
       };
     }
 
     map[key].records += 1;
     map[key].totalFinalReading += getFinalReading(item);
+    map[key].totalConsumed += getFuelConsumed(item);
+    map[key].totalCost += getTotalCost(item);
   });
 
   return Object.values(map)
     .map((item) => ({
       ...item,
       avgFinalReading: item.records ? item.totalFinalReading / item.records : 0,
+      avgConsumed: item.records ? item.totalConsumed / item.records : 0,
     }))
     .sort((a, b) => b.key.localeCompare(a.key));
 }
@@ -288,17 +330,22 @@ function buildMonthlyRows(items) {
         label: key,
         records: 0,
         totalFinalReading: 0,
+        totalConsumed: 0,
+        totalCost: 0,
       };
     }
 
     map[key].records += 1;
     map[key].totalFinalReading += getFinalReading(item);
+    map[key].totalConsumed += getFuelConsumed(item);
+    map[key].totalCost += getTotalCost(item);
   });
 
   return Object.values(map)
     .map((item) => ({
       ...item,
       avgFinalReading: item.records ? item.totalFinalReading / item.records : 0,
+      avgConsumed: item.records ? item.totalConsumed / item.records : 0,
     }))
     .sort((a, b) => b.key.localeCompare(a.key));
 }
@@ -738,6 +785,8 @@ function createEditDraft(item) {
     employeeName: getEmployeeName(item),
     airlineUse: getAirlineUse(item),
     finalReading: String(getFinalReading(item)),
+    fuelConsumed: String(getFuelConsumed(item)),
+    pricePerGallon: String(getPricePerGallon(item)),
     notes: item.notes || "",
     photoCheckNotes: item.photoCheckNotes || "",
     finalPhotoCheckNotes: getFinalPhotoNotes(item),
@@ -914,6 +963,17 @@ export default function FuelManagementPage() {
       ? filteredRows.reduce((sum, item) => sum + getFinalReading(item), 0) / totalRecords
       : 0;
 
+  const totalConsumed = filteredRows.reduce((sum, item) => sum + getFuelConsumed(item), 0);
+  const totalCost = filteredRows.reduce((sum, item) => sum + getTotalCost(item), 0);
+  const avgConsumed =
+    totalRecords > 0
+      ? filteredRows.reduce((sum, item) => sum + getFuelConsumed(item), 0) / totalRecords
+      : 0;
+  const avgPricePerGallon =
+    totalRecords > 0
+      ? filteredRows.reduce((sum, item) => sum + getPricePerGallon(item), 0) / totalRecords
+      : 0;
+
   const topAgentByEntries = useMemo(
     () => buildTopEntity(filteredRows, (item) => getEmployeeName(item), () => 1),
     [filteredRows]
@@ -965,10 +1025,9 @@ export default function FuelManagementPage() {
     if (!editDraft) return;
 
     const finalReading = safeNumber(editDraft.finalReading);
-    if (!finalReading && finalReading !== 0) {
-      setStatusMessage("Please enter a valid final reading.");
-      return;
-    }
+    const fuelConsumed = safeNumber(editDraft.fuelConsumed);
+    const pricePerGallon = safeNumber(editDraft.pricePerGallon);
+    const totalCostValue = Number((fuelConsumed * pricePerGallon).toFixed(2));
 
     try {
       setWorkingId(item.id);
@@ -1019,8 +1078,15 @@ export default function FuelManagementPage() {
         equipmentNumber: editDraft.equipmentNumber || "",
         employeeName: editDraft.employeeName || "",
         airlineUse: editDraft.airlineUse || "",
+
         finalReading,
         endReading: finalReading,
+
+        fuelConsumed,
+        totalGallons: fuelConsumed,
+        pricePerGallon,
+        totalCost: totalCostValue,
+
         notes: editDraft.notes || "",
 
         finalPhotoUrl,
@@ -1031,7 +1097,7 @@ export default function FuelManagementPage() {
         finalPhotoCheckStatus: validationStatus,
         endPhotoCheckStatus: validationStatus,
 
-        photoCheckNotes: validationNotes,
+        photoCheckNotes: editDraft.photoCheckNotes || validationNotes,
         finalPhotoCheckNotes: validationNotes,
         endPhotoCheckNotes: validationNotes,
 
@@ -1132,6 +1198,10 @@ export default function FuelManagementPage() {
       ["Approved", approvedCount],
       ["Pending Review", pendingCount],
       ["Average Final Reading", avgFinalReading.toFixed(2)],
+      ["Total Fuel Consumed", totalConsumed.toFixed(2)],
+      ["Average Fuel Consumed", avgConsumed.toFixed(2)],
+      ["Average Price Per Gallon", avgPricePerGallon.toFixed(2)],
+      ["Total Cost", totalCost.toFixed(2)],
       ["Top Agent by Entries", topAgentByEntries.label],
       ["Top Airline/Use by Entries", topAirlineByEntries.label],
       [],
@@ -1143,6 +1213,9 @@ export default function FuelManagementPage() {
         "Employee",
         "Airline/Use",
         "Final Reading",
+        "Fuel Consumed",
+        "Price Per Gallon",
+        "Total Cost",
         "OCR Final Reading",
         "Photo Diff",
         "Overall Status",
@@ -1158,6 +1231,9 @@ export default function FuelManagementPage() {
         getEmployeeName(item),
         getAirlineUse(item),
         getFinalReading(item).toFixed(2),
+        getFuelConsumed(item).toFixed(2),
+        getPricePerGallon(item).toFixed(2),
+        getTotalCost(item).toFixed(2),
         getOcrFinalReading(item) ?? "",
         getFinalPhotoDiff(item) ?? "",
         getOverallPhotoStatus(item),
@@ -1225,7 +1301,8 @@ export default function FuelManagementPage() {
             color: "rgba(255,255,255,0.92)",
           }}
         >
-          Control final fuel readings, photo validation, auto approval, pending review, edit and delete.
+          Control final fuel readings, fuel consumed, price per gallon, total cost,
+          photo validation, auto approval, pending review, edit and delete.
         </p>
       </div>
 
@@ -1370,6 +1447,13 @@ export default function FuelManagementPage() {
             <StatCard label="Approved" value={String(approvedCount)} tone="green" />
             <StatCard label="Pending Review" value={String(pendingCount)} tone="amber" />
             <StatCard label="Avg Final Reading" value={avgFinalReading.toFixed(2)} tone="blue" />
+            <StatCard label="Fuel Consumed" value={totalConsumed.toFixed(2)} tone="amber" />
+            <StatCard label="Total Cost" value={formatMoney(totalCost)} tone="green" />
+            <StatCard
+              label="Avg Price Per Gallon"
+              value={formatMoney(avgPricePerGallon)}
+              tone="blue"
+            />
             <StatCard
               label="Top Agent by Entries"
               value={`${topAgentByEntries.label} (${topAgentByEntries.value})`}
@@ -1525,7 +1609,7 @@ export default function FuelManagementPage() {
             </div>
 
             <div style={tableWrapStyle}>
-              <table style={{ ...tableStyle, minWidth: 1500 }}>
+              <table style={{ ...tableStyle, minWidth: 1700 }}>
                 <thead>
                   <tr style={{ background: "#f8fbff" }}>
                     <th style={thStyle}>Date</th>
@@ -1534,6 +1618,9 @@ export default function FuelManagementPage() {
                     <th style={thStyle}>Employee</th>
                     <th style={thStyle}>Airline / Use</th>
                     <th style={thStyle}>Final Reading</th>
+                    <th style={thStyle}>Fuel Consumed</th>
+                    <th style={thStyle}>Price / Gallon</th>
+                    <th style={thStyle}>Total Cost</th>
                     <th style={thStyle}>OCR Final</th>
                     <th style={thStyle}>Diff</th>
                     <th style={thStyle}>Status</th>
@@ -1545,7 +1632,7 @@ export default function FuelManagementPage() {
                 <tbody>
                   {filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={12} style={tdStyle}>
+                      <td colSpan={15} style={tdStyle}>
                         {loading ? "Loading..." : "No records found."}
                       </td>
                     </tr>
@@ -1559,6 +1646,11 @@ export default function FuelManagementPage() {
                         <td style={tdStyle}>{getAirlineUse(item)}</td>
                         <td style={{ ...tdStyle, fontWeight: 800 }}>
                           {getFinalReading(item).toFixed(2)}
+                        </td>
+                        <td style={tdStyle}>{getFuelConsumed(item).toFixed(2)}</td>
+                        <td style={tdStyle}>{formatMoney(getPricePerGallon(item))}</td>
+                        <td style={{ ...tdStyle, fontWeight: 800 }}>
+                          {formatMoney(getTotalCost(item))}
                         </td>
                         <td style={tdStyle}>
                           {getOcrFinalReading(item) !== null && getOcrFinalReading(item) !== undefined
@@ -1625,19 +1717,21 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 900 }}>
+            <table style={{ ...tableStyle, minWidth: 1100 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Date</th>
                   <th style={thStyle}>Records</th>
                   <th style={thStyle}>Total Final Reading</th>
-                  <th style={thStyle}>Avg Final Reading</th>
+                  <th style={thStyle}>Fuel Consumed</th>
+                  <th style={thStyle}>Avg Consumed</th>
+                  <th style={thStyle}>Total Cost</th>
                 </tr>
               </thead>
               <tbody>
                 {dailyRows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={tdStyle}>
+                    <td colSpan={6} style={tdStyle}>
                       {loading ? "Loading..." : "No data found."}
                     </td>
                   </tr>
@@ -1647,8 +1741,10 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
                       <td style={tdStyle}>{item.totalFinalReading.toFixed(2)}</td>
+                      <td style={tdStyle}>{item.totalConsumed.toFixed(2)}</td>
+                      <td style={tdStyle}>{item.avgConsumed.toFixed(2)}</td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>
-                        {item.avgFinalReading.toFixed(2)}
+                        {formatMoney(item.totalCost)}
                       </td>
                     </tr>
                   ))
@@ -1668,19 +1764,21 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 900 }}>
+            <table style={{ ...tableStyle, minWidth: 1100 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Week Start</th>
                   <th style={thStyle}>Records</th>
                   <th style={thStyle}>Total Final Reading</th>
-                  <th style={thStyle}>Avg Final Reading</th>
+                  <th style={thStyle}>Fuel Consumed</th>
+                  <th style={thStyle}>Avg Consumed</th>
+                  <th style={thStyle}>Total Cost</th>
                 </tr>
               </thead>
               <tbody>
                 {weeklyRows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={tdStyle}>
+                    <td colSpan={6} style={tdStyle}>
                       {loading ? "Loading..." : "No data found."}
                     </td>
                   </tr>
@@ -1690,8 +1788,10 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
                       <td style={tdStyle}>{item.totalFinalReading.toFixed(2)}</td>
+                      <td style={tdStyle}>{item.totalConsumed.toFixed(2)}</td>
+                      <td style={tdStyle}>{item.avgConsumed.toFixed(2)}</td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>
-                        {item.avgFinalReading.toFixed(2)}
+                        {formatMoney(item.totalCost)}
                       </td>
                     </tr>
                   ))
@@ -1711,19 +1811,21 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 900 }}>
+            <table style={{ ...tableStyle, minWidth: 1100 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Month</th>
                   <th style={thStyle}>Records</th>
                   <th style={thStyle}>Total Final Reading</th>
-                  <th style={thStyle}>Avg Final Reading</th>
+                  <th style={thStyle}>Fuel Consumed</th>
+                  <th style={thStyle}>Avg Consumed</th>
+                  <th style={thStyle}>Total Cost</th>
                 </tr>
               </thead>
               <tbody>
                 {monthlyRows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={tdStyle}>
+                    <td colSpan={6} style={tdStyle}>
                       {loading ? "Loading..." : "No data found."}
                     </td>
                   </tr>
@@ -1733,8 +1835,10 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
                       <td style={tdStyle}>{item.totalFinalReading.toFixed(2)}</td>
+                      <td style={tdStyle}>{item.totalConsumed.toFixed(2)}</td>
+                      <td style={tdStyle}>{item.avgConsumed.toFixed(2)}</td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>
-                        {item.avgFinalReading.toFixed(2)}
+                        {formatMoney(item.totalCost)}
                       </td>
                     </tr>
                   ))
@@ -1764,13 +1868,16 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 1550 }}>
+            <table style={{ ...tableStyle, minWidth: 1700 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Date</th>
                   <th style={thStyle}>Employee</th>
                   <th style={thStyle}>Airline / Use</th>
                   <th style={thStyle}>Final Reading</th>
+                  <th style={thStyle}>Fuel Consumed</th>
+                  <th style={thStyle}>Price / Gallon</th>
+                  <th style={thStyle}>Total Cost</th>
                   <th style={thStyle}>OCR Final</th>
                   <th style={thStyle}>Diff</th>
                   <th style={thStyle}>Photo</th>
@@ -1783,7 +1890,7 @@ export default function FuelManagementPage() {
               <tbody>
                 {pendingReviewRows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} style={tdStyle}>
+                    <td colSpan={14} style={tdStyle}>
                       {loading ? "Loading..." : "No pending review records."}
                     </td>
                   </tr>
@@ -1795,6 +1902,11 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{getAirlineUse(item)}</td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>
                         {getFinalReading(item).toFixed(2)}
+                      </td>
+                      <td style={tdStyle}>{getFuelConsumed(item).toFixed(2)}</td>
+                      <td style={tdStyle}>{formatMoney(getPricePerGallon(item))}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>
+                        {formatMoney(getTotalCost(item))}
                       </td>
                       <td style={tdStyle}>
                         {getOcrFinalReading(item) !== null && getOcrFinalReading(item) !== undefined
@@ -1960,6 +2072,46 @@ export default function FuelManagementPage() {
                     finalReading: e.target.value,
                   }))
                 }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Fuel Consumed</FieldLabel>
+              <TextInput
+                type="number"
+                step="0.01"
+                value={editDraft.fuelConsumed}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    fuelConsumed: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Price Per Gallon</FieldLabel>
+              <TextInput
+                type="number"
+                step="0.0001"
+                value={editDraft.pricePerGallon}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    pricePerGallon: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Total Cost</FieldLabel>
+              <TextInput
+                value={formatMoney(
+                  safeNumber(editDraft.fuelConsumed) * safeNumber(editDraft.pricePerGallon)
+                )}
+                disabled
               />
             </div>
 
