@@ -294,11 +294,8 @@ function createInitialForm(user, pricePerGallon = "") {
     equipmentNumber: "",
     employeeName: getVisibleUserName(user),
     airlineUse: "",
-    startReading: "",
-    endReading: "",
-    totalGallons: "",
+    finalReading: "",
     pricePerGallon: pricePerGallon ? String(pricePerGallon) : "",
-    totalCost: "",
     notes: "",
   };
 }
@@ -311,12 +308,9 @@ export default function FuelEntryPage() {
   const [priceMessage, setPriceMessage] = useState("");
 
   const [form, setForm] = useState(() => createInitialForm(user, ""));
-  const [startPhotoFile, setStartPhotoFile] = useState(null);
-  const [endPhotoFile, setEndPhotoFile] = useState(null);
+  const [finalPhotoFile, setFinalPhotoFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-
-  const REQUIRE_BOTH_PHOTOS = true;
 
   useEffect(() => {
     let mounted = true;
@@ -337,7 +331,6 @@ export default function FuelEntryPage() {
           setForm((prev) => ({
             ...prev,
             pricePerGallon: "",
-            totalCost: "",
           }));
           return;
         }
@@ -351,7 +344,6 @@ export default function FuelEntryPage() {
           setForm((prev) => ({
             ...prev,
             pricePerGallon: "",
-            totalCost: "",
           }));
           return;
         }
@@ -378,64 +370,21 @@ export default function FuelEntryPage() {
     };
   }, []);
 
-  const startPhotoPreview = useMemo(
-    () => createPreviewUrl(startPhotoFile),
-    [startPhotoFile]
+  const finalPhotoPreview = useMemo(
+    () => createPreviewUrl(finalPhotoFile),
+    [finalPhotoFile]
   );
-
-  const endPhotoPreview = useMemo(
-    () => createPreviewUrl(endPhotoFile),
-    [endPhotoFile]
-  );
-
-  const calculatedGallons = useMemo(() => {
-    const start = safeNumber(form.startReading);
-    const end = safeNumber(form.endReading);
-
-    if (!form.startReading || !form.endReading) return "";
-    if (end < start) return "";
-
-    return (end - start).toFixed(2);
-  }, [form.startReading, form.endReading]);
-
-  const calculatedTotalCost = useMemo(() => {
-    const gallons = safeNumber(calculatedGallons);
-    const price = safeNumber(form.pricePerGallon);
-
-    if (!calculatedGallons || !price) return "";
-    return (gallons * price).toFixed(2);
-  }, [calculatedGallons, form.pricePerGallon]);
-
-  const hasRequiredPhotos = REQUIRE_BOTH_PHOTOS
-    ? !!startPhotoFile && !!endPhotoFile
-    : true;
-
-  const canSave =
-    !!form.date &&
-    !!form.time &&
-    !!form.equipmentNumber &&
-    !!form.employeeName &&
-    !!form.airlineUse &&
-    form.startReading !== "" &&
-    form.endReading !== "" &&
-    calculatedGallons !== "" &&
-    form.pricePerGallon !== "" &&
-    hasRequiredPhotos &&
-    !loadingPrice;
 
   function updateField(field, value) {
     setForm((prev) => ({
       ...prev,
       [field]: value,
-      ...(field === "startReading" || field === "endReading"
-        ? { totalGallons: "", totalCost: "" }
-        : {}),
     }));
   }
 
-  async function uploadPhoto(file, label) {
+  async function uploadPhoto(file) {
     const safeUser = (user?.username || user?.id || "unknown").toString();
-    const path = `fuel_logs/${safeUser}/${form.date}/${label}-${Date.now()}-${file.name}`;
+    const path = `fuel_logs/${safeUser}/${form.date}/final-${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
 
     await uploadBytes(storageRef, file, {
@@ -445,7 +394,7 @@ export default function FuelEntryPage() {
     return await getDownloadURL(storageRef);
   }
 
-  async function runSinglePhotoValidation({ photoUrl, expectedReading, label }) {
+  async function runFinalPhotoValidation({ photoUrl, expectedReading }) {
     let rawText = "";
     let matchedReading = null;
     let numbersDetected = [];
@@ -473,21 +422,19 @@ export default function FuelEntryPage() {
       status = comparison.status || "pending_review";
 
       if (status === "match") {
-        notes = `${label === "start" ? "Start" : "End"} photo matched reading.`;
+        notes = "Final photo matched entered reading.";
       } else if (status === "near_match") {
         status = "pending_review";
-        notes = `${label === "start" ? "Start" : "End"} photo is close, but needs manual review.`;
+        notes = "Final photo is close, but needs manual review.";
       } else if (status === "mismatch") {
-        notes = `${label === "start" ? "Start" : "End"} photo did not match entered reading.`;
+        notes = "Final photo did not match entered reading.";
       } else {
-        notes = `${label === "start" ? "Start" : "End"} photo needs manual review.`;
+        notes = "Final photo needs manual review.";
       }
     } catch (error) {
-      console.error(`Fuel OCR error (${label}):`, error);
+      console.error("Fuel OCR error (final):", error);
       status = "pending_review";
-      notes =
-        error?.message ||
-        `${label === "start" ? "Start" : "End"} photo could not be validated.`;
+      notes = error?.message || "Final photo could not be validated.";
     }
 
     return {
@@ -502,6 +449,17 @@ export default function FuelEntryPage() {
     };
   }
 
+  const canSave =
+    !!form.date &&
+    !!form.time &&
+    !!form.equipmentNumber &&
+    !!form.employeeName &&
+    !!form.airlineUse &&
+    form.finalReading !== "" &&
+    form.pricePerGallon !== "" &&
+    !!finalPhotoFile &&
+    !loadingPrice;
+
   async function handleSave() {
     if (!canSave) {
       if (loadingPrice) {
@@ -514,10 +472,8 @@ export default function FuelEntryPage() {
         return;
       }
 
-      if (REQUIRE_BOTH_PHOTOS && (!startPhotoFile || !endPhotoFile)) {
-        setStatusMessage(
-          "Please complete all required fields and upload both start and end photos."
-        );
+      if (!finalPhotoFile) {
+        setStatusMessage("Please upload the final reading photo.");
         return;
       }
 
@@ -525,113 +481,25 @@ export default function FuelEntryPage() {
       return;
     }
 
-    const start = safeNumber(form.startReading);
-    const end = safeNumber(form.endReading);
+    const finalReading = safeNumber(form.finalReading);
     const pricePerGallon = safeNumber(form.pricePerGallon);
-
-    if (end < start) {
-      setStatusMessage("End reading cannot be less than start reading.");
-      return;
-    }
 
     try {
       setSaving(true);
       setStatusMessage("");
 
-      let startPhotoUrl = "";
-      let endPhotoUrl = "";
+      const finalPhotoUrl = await uploadPhoto(finalPhotoFile);
 
-      let startPhotoCheckStatus = "missing";
-      let endPhotoCheckStatus = "missing";
+      const finalValidation = await runFinalPhotoValidation({
+        photoUrl: finalPhotoUrl,
+        expectedReading: finalReading,
+      });
 
-      let startOcrRawText = "";
-      let endOcrRawText = "";
+      const overallPhotoCheckStatus =
+        finalValidation.status === "match" ? "approved" : "pending_review";
 
-      let ocrStartReading = null;
-      let ocrEndReading = null;
-
-      let startPhotoCheckNotes = "";
-      let endPhotoCheckNotes = "";
-
-      let startPhotoNumbersDetected = [];
-      let endPhotoNumbersDetected = [];
-
-      let startPhotoDiff = null;
-      let endPhotoDiff = null;
-
-      let startOcrProviderResult = null;
-      let endOcrProviderResult = null;
-
-      let startConfidenceScore = 0;
-      let endConfidenceScore = 0;
-
-      if (startPhotoFile) {
-        startPhotoUrl = await uploadPhoto(startPhotoFile, "start");
-
-        const startValidation = await runSinglePhotoValidation({
-          photoUrl: startPhotoUrl,
-          expectedReading: start,
-          label: "start",
-        });
-
-        startPhotoCheckStatus = startValidation.status;
-        startOcrRawText = startValidation.rawText;
-        ocrStartReading = startValidation.matchedReading;
-        startPhotoCheckNotes = startValidation.notes;
-        startPhotoNumbersDetected = startValidation.numbersDetected;
-        startPhotoDiff = startValidation.diff;
-        startOcrProviderResult = startValidation.providerResult;
-        startConfidenceScore = startValidation.confidenceScore;
-      }
-
-      if (endPhotoFile) {
-        endPhotoUrl = await uploadPhoto(endPhotoFile, "end");
-
-        const endValidation = await runSinglePhotoValidation({
-          photoUrl: endPhotoUrl,
-          expectedReading: end,
-          label: "end",
-        });
-
-        endPhotoCheckStatus = endValidation.status;
-        endOcrRawText = endValidation.rawText;
-        ocrEndReading = endValidation.matchedReading;
-        endPhotoCheckNotes = endValidation.notes;
-        endPhotoNumbersDetected = endValidation.numbersDetected;
-        endPhotoDiff = endValidation.diff;
-        endOcrProviderResult = endValidation.providerResult;
-        endConfidenceScore = endValidation.confidenceScore;
-      }
-
-      let overallPhotoCheckStatus = "missing";
-      const hasAnyPhoto = !!startPhotoUrl || !!endPhotoUrl;
-      const pendingPhotoItems = [];
-
-      if (!startPhotoUrl) pendingPhotoItems.push("missing_start_photo");
-      if (!endPhotoUrl) pendingPhotoItems.push("missing_end_photo");
-      if (startPhotoCheckStatus !== "match") pendingPhotoItems.push("review_start_photo");
-      if (endPhotoCheckStatus !== "match") pendingPhotoItems.push("review_end_photo");
-
-      if (!hasAnyPhoto) {
-        overallPhotoCheckStatus = "missing";
-      } else if (
-        startPhotoUrl &&
-        endPhotoUrl &&
-        startPhotoCheckStatus === "match" &&
-        endPhotoCheckStatus === "match"
-      ) {
-        overallPhotoCheckStatus = "match";
-      } else if (
-        startPhotoCheckStatus === "mismatch" ||
-        endPhotoCheckStatus === "mismatch"
-      ) {
-        overallPhotoCheckStatus = "mismatch";
-      } else {
-        overallPhotoCheckStatus = "pending_review";
-      }
-
-      const totalGallons = Number((end - start).toFixed(2));
-      const totalCost = Number((totalGallons * pricePerGallon).toFixed(2));
+      const pendingPhotoItems =
+        finalValidation.status === "match" ? [] : ["review_final_photo"];
 
       await addDoc(collection(db, "fuel_logs"), {
         date: form.date,
@@ -647,55 +515,54 @@ export default function FuelEntryPage() {
         employeeRole: user?.role || "",
 
         airlineUse: form.airlineUse || "",
-        startReading: start,
-        endReading: end,
-        totalGallons,
+
+        finalReading,
+        endReading: finalReading,
+        startReading: 0,
+
+        totalGallons: 0,
         pricePerGallon,
-        totalCost,
+        totalCost: 0,
+
         notes: form.notes || "",
 
-        startPhotoUrl,
-        endPhotoUrl,
-        photoUrl: endPhotoUrl || startPhotoUrl || "",
+        finalPhotoUrl,
+        endPhotoUrl: finalPhotoUrl,
+        photoUrl: finalPhotoUrl,
 
         photoCheckStatus: overallPhotoCheckStatus,
         pendingPhotoItems,
-        missingStartPhoto: !startPhotoUrl,
-        missingEndPhoto: !endPhotoUrl,
+        missingFinalPhoto: !finalPhotoUrl,
+        missingEndPhoto: !finalPhotoUrl,
 
-        startPhotoCheckStatus,
-        endPhotoCheckStatus,
+        finalPhotoCheckStatus: finalValidation.status,
+        endPhotoCheckStatus: finalValidation.status,
 
-        startPhotoCheckNotes,
-        endPhotoCheckNotes,
+        finalPhotoCheckNotes: finalValidation.notes,
+        endPhotoCheckNotes: finalValidation.notes,
 
-        startOcrRawText,
-        endOcrRawText,
-        ocrRawText: `${startOcrRawText || ""}\n\n${endOcrRawText || ""}`.trim(),
+        finalOcrRawText: finalValidation.rawText,
+        endOcrRawText: finalValidation.rawText,
+        ocrRawText: finalValidation.rawText || "",
 
-        ocrStartReading,
-        ocrEndReading,
+        ocrFinalReading: finalValidation.matchedReading,
+        ocrEndReading: finalValidation.matchedReading,
 
-        startPhotoNumbersDetected,
-        endPhotoNumbersDetected,
-        photoCheckNumbersDetected: [
-          ...startPhotoNumbersDetected,
-          ...endPhotoNumbersDetected,
-        ],
+        finalPhotoNumbersDetected: finalValidation.numbersDetected,
+        endPhotoNumbersDetected: finalValidation.numbersDetected,
+        photoCheckNumbersDetected: [...finalValidation.numbersDetected],
 
-        startPhotoDiff,
-        endPhotoDiff,
-        photoCheckStartDiff: startPhotoDiff,
-        photoCheckEndDiff: endPhotoDiff,
+        finalPhotoDiff: finalValidation.diff,
+        endPhotoDiff: finalValidation.diff,
+        photoCheckEndDiff: finalValidation.diff,
 
-        startConfidenceScore,
-        endConfidenceScore,
+        finalConfidenceScore: finalValidation.confidenceScore,
+        endConfidenceScore: finalValidation.confidenceScore,
 
-        startOcrProviderResult,
-        endOcrProviderResult,
+        finalOcrProviderResult: finalValidation.providerResult,
+        endOcrProviderResult: finalValidation.providerResult,
         ocrProviderResult: {
-          start: startOcrProviderResult,
-          end: endOcrProviderResult,
+          final: finalValidation.providerResult,
         },
 
         monthClosed: false,
@@ -706,19 +573,16 @@ export default function FuelEntryPage() {
       });
 
       setForm(createInitialForm(user, fuelPrice));
-      setStartPhotoFile(null);
-      setEndPhotoFile(null);
+      setFinalPhotoFile(null);
 
-      if (overallPhotoCheckStatus === "match") {
+      if (overallPhotoCheckStatus === "approved") {
         setStatusMessage(
-          "Fuel record saved successfully. Start and end photos matched OCR."
-        );
-      } else if (hasAnyPhoto) {
-        setStatusMessage(
-          "Fuel record saved successfully. One or both photos need manual review."
+          "Fuel record saved successfully. Final reading matched OCR and was approved automatically."
         );
       } else {
-        setStatusMessage("Fuel record saved successfully.");
+        setStatusMessage(
+          "Fuel record saved successfully. Final reading is pending review."
+        );
       }
     } catch (error) {
       console.error("Error saving fuel log:", error);
@@ -780,8 +644,8 @@ export default function FuelEntryPage() {
             color: "rgba(255,255,255,0.92)",
           }}
         >
-          Register daily fuel usage by equipment, employee and airline/use.
-          Upload one photo for the start reading and another photo for the end reading.
+          Register final fuel reading by equipment, employee and airline/use.
+          Upload one final reading photo and enter the final total.
         </p>
       </div>
 
@@ -879,35 +743,14 @@ export default function FuelEntryPage() {
           </div>
 
           <div>
-            <FieldLabel>Start Reading</FieldLabel>
+            <FieldLabel>Final Reading</FieldLabel>
             <TextInput
               type="number"
               step="0.01"
               min="0"
-              value={form.startReading}
-              onChange={(e) => updateField("startReading", e.target.value)}
+              value={form.finalReading}
+              onChange={(e) => updateField("finalReading", e.target.value)}
               placeholder="0.00"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>End Reading</FieldLabel>
-            <TextInput
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.endReading}
-              onChange={(e) => updateField("endReading", e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
-
-          <div>
-            <FieldLabel>Total Gallons</FieldLabel>
-            <TextInput
-              value={calculatedGallons}
-              disabled
-              placeholder="Calculated automatically"
             />
           </div>
 
@@ -920,51 +763,25 @@ export default function FuelEntryPage() {
             />
           </div>
 
-          <div>
-            <FieldLabel>Total Cost</FieldLabel>
-            <TextInput
-              value={calculatedTotalCost}
-              disabled
-              placeholder="Calculated automatically"
-            />
-          </div>
-
           <div style={{ gridColumn: "1 / -1" }}>
-            <FieldLabel>Start Photo</FieldLabel>
+            <FieldLabel>Final Reading Photo</FieldLabel>
             <TextInput
               type="file"
               accept="image/*"
-              onChange={(e) => setStartPhotoFile(e.target.files?.[0] || null)}
+              onChange={(e) => setFinalPhotoFile(e.target.files?.[0] || null)}
             />
           </div>
 
-          <div style={{ gridColumn: "1 / -1" }}>
-            <FieldLabel>End Photo</FieldLabel>
-            <TextInput
-              type="file"
-              accept="image/*"
-              onChange={(e) => setEndPhotoFile(e.target.files?.[0] || null)}
-            />
-          </div>
-
-          {(startPhotoFile || endPhotoFile) && (
+          {finalPhotoFile && (
             <div
               style={{
                 gridColumn: "1 / -1",
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                gap: 14,
               }}
             >
               <PhotoPreviewCard
-                title="Start Reading Photo"
-                file={startPhotoFile}
-                previewUrl={startPhotoPreview}
-              />
-              <PhotoPreviewCard
-                title="End Reading Photo"
-                file={endPhotoFile}
-                previewUrl={endPhotoPreview}
+                title="Final Reading Photo"
+                file={finalPhotoFile}
+                previewUrl={finalPhotoPreview}
               />
             </div>
           )}
@@ -999,8 +816,7 @@ export default function FuelEntryPage() {
             variant="secondary"
             onClick={() => {
               setForm(createInitialForm(user, fuelPrice));
-              setStartPhotoFile(null);
-              setEndPhotoFile(null);
+              setFinalPhotoFile(null);
               setStatusMessage("");
             }}
             disabled={saving}
