@@ -129,6 +129,71 @@ function formatWeekStartLabel(value) {
   )}`;
 }
 
+function getAllDatesInMonth(monthKey) {
+  const raw = String(monthKey || "").trim();
+  if (!raw) return [];
+
+  const [year, month] = raw.split("-").map(Number);
+  if (!year || !month) return [];
+
+  const dates = [];
+  const current = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+
+  while (current <= end) {
+    dates.push(
+      `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(
+        current.getDate()
+      ).padStart(2, "0")}`
+    );
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function getAllWeekStartsInMonth(monthKey) {
+  const raw = String(monthKey || "").trim();
+  if (!raw) return [];
+
+  const [year, month] = raw.split("-").map(Number);
+  if (!year || !month) return [];
+
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+
+  const firstMonday = new Date(firstDay);
+  const firstDayWeek = firstMonday.getDay();
+  const diffToMonday = firstDayWeek === 0 ? -6 : 1 - firstDayWeek;
+  firstMonday.setDate(firstMonday.getDate() + diffToMonday);
+
+  const weeks = [];
+  const cursor = new Date(firstMonday);
+
+  while (cursor <= lastDay) {
+    const weekStart = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(cursor.getDate()).padStart(2, "0")}`;
+
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+
+    const touchesMonth =
+      cursor.getMonth() === month - 1 ||
+      weekEnd.getMonth() === month - 1 ||
+      (cursor < firstDay && weekEnd >= firstDay);
+
+    if (touchesMonth) {
+      weeks.push(weekStart);
+    }
+
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return weeks;
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -176,6 +241,7 @@ function TextInput(props) {
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -195,6 +261,7 @@ function SelectInput(props) {
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -279,6 +346,84 @@ function TabButton({ active, children, onClick }) {
   );
 }
 
+function ConfirmModal({
+  open,
+  title,
+  message,
+  onConfirm,
+  onCancel,
+  confirmText = "Yes",
+  cancelText = "Cancel",
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 9999,
+        padding: 20,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          background: "#ffffff",
+          borderRadius: 24,
+          boxShadow: "0 24px 80px rgba(15,23,42,0.22)",
+          border: "1px solid #dbeafe",
+          padding: 24,
+        }}
+      >
+        <h3
+          style={{
+            margin: "0 0 10px",
+            fontSize: 22,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          {title}
+        </h3>
+
+        <p
+          style={{
+            margin: 0,
+            fontSize: 14,
+            lineHeight: 1.7,
+            color: "#475569",
+          }}
+        >
+          {message}
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 10,
+            marginTop: 22,
+            flexWrap: "wrap",
+          }}
+        >
+          <ActionButton variant="secondary" onClick={onCancel}>
+            {cancelText}
+          </ActionButton>
+          <ActionButton variant="success" onClick={onConfirm}>
+            {confirmText}
+          </ActionButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BudgetsPage() {
   const { user } = useUser();
 
@@ -313,6 +458,11 @@ export default function BudgetsPage() {
 
   const [monthlyForm, setMonthlyForm] = useState({
     finalMonthlyBudgetHours: "",
+  });
+
+  const [confirmModal, setConfirmModal] = useState({
+    open: false,
+    type: "",
   });
 
   const loadData = async () => {
@@ -606,6 +756,109 @@ export default function BudgetsPage() {
     }
   };
 
+  const runSetupFullMonthWeeklyBudget = async () => {
+    if (!canCreateWeekly || selectedMonthClosed) return;
+
+    const airline = normalizeAirlineName(selectedAirline);
+    const department = normalizeDepartmentName(weeklyForm.department);
+    const weeklyHours = Number(weeklyForm.weeklyHours || 0);
+
+    if (!airline || !department || !weeklyHours) {
+      setStatusMessage(
+        "Please select department and enter weekly budget hours first."
+      );
+      return;
+    }
+
+    try {
+      const weekStarts = getAllWeekStartsInMonth(selectedMonth);
+
+      for (const weekStart of weekStarts) {
+        const q = query(
+          collection(db, "airlineBudgets"),
+          where("airline", "==", airline),
+          where("department", "==", department),
+          where("weekStart", "==", weekStart)
+        );
+
+        const snap = await getDocs(q);
+
+        if (!snap.empty) {
+          await updateDoc(doc(db, "airlineBudgets", snap.docs[0].id), {
+            budgetHours: weeklyHours,
+          });
+        } else {
+          await addDoc(collection(db, "airlineBudgets"), {
+            airline,
+            department,
+            weekStart,
+            budgetHours: weeklyHours,
+          });
+        }
+      }
+
+      setStatusMessage(
+        `Weekly budget auto-filled for all weeks in ${formatMonthLabel(selectedMonth)}.`
+      );
+
+      setConfirmModal({ open: false, type: "" });
+      loadData();
+    } catch (err) {
+      console.error("Error auto-filling weekly budgets:", err);
+      setStatusMessage("Error auto-filling weekly budgets.");
+      setConfirmModal({ open: false, type: "" });
+    }
+  };
+
+  const runSetupFullMonthDailyBudget = async () => {
+    if (!canCreateDaily || selectedMonthClosed) return;
+
+    const airline = normalizeAirlineName(selectedAirline);
+    const dailyHours = Number(dailyForm.dailyHours || 0);
+
+    if (!airline || !dailyHours) {
+      setStatusMessage("Please enter daily budget hours first.");
+      return;
+    }
+
+    try {
+      const dates = getAllDatesInMonth(selectedMonth);
+
+      for (const date of dates) {
+        const q = query(
+          collection(db, "airlineDailyBudgets"),
+          where("airline", "==", airline),
+          where("date", "==", date)
+        );
+
+        const snap = await getDocs(q);
+
+        if (!snap.empty) {
+          await updateDoc(doc(db, "airlineDailyBudgets", snap.docs[0].id), {
+            dailyBudgetHours: dailyHours,
+          });
+        } else {
+          await addDoc(collection(db, "airlineDailyBudgets"), {
+            airline,
+            date,
+            dailyBudgetHours: dailyHours,
+          });
+        }
+      }
+
+      setStatusMessage(
+        `Daily budget auto-filled for all days in ${formatMonthLabel(selectedMonth)}.`
+      );
+
+      setConfirmModal({ open: false, type: "" });
+      loadData();
+    } catch (err) {
+      console.error("Error auto-filling daily budgets:", err);
+      setStatusMessage("Error auto-filling daily budgets.");
+      setConfirmModal({ open: false, type: "" });
+    }
+  };
+
   const saveMonthlyBudgetConfig = async (isClosingAction = null) => {
     const airline = normalizeAirlineName(selectedAirline);
     const month = String(selectedMonth || "").trim();
@@ -755,148 +1008,103 @@ export default function BudgetsPage() {
     statusMessage.toLowerCase().includes("updated") ||
     statusMessage.toLowerCase().includes("deleted") ||
     statusMessage.toLowerCase().includes("closed") ||
-    statusMessage.toLowerCase().includes("reopened");
+    statusMessage.toLowerCase().includes("reopened") ||
+    statusMessage.toLowerCase().includes("auto-filled");
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gap: 18,
-        fontFamily: "Poppins, Inter, system-ui, sans-serif",
-      }}
-    >
+    <>
       <div
         style={{
-          background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
-          color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          position: "relative",
-          overflow: "hidden",
+          display: "grid",
+          gap: 18,
+          fontFamily: "Poppins, Inter, system-ui, sans-serif",
         }}
       >
         <div
           style={{
-            position: "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
-          }}
-        />
-
-        <div style={{ position: "relative" }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
-            TPA OPS · Budgets
-          </p>
-
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
-            Airline Budget Config
-          </h1>
-
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 820,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            Weekly and daily budgets stay exactly as they are today. A new monthly
-            layer lets you select a month, save a final monthly budget, and close
-            the month when complete without damaging previous records.
-          </p>
-        </div>
-      </div>
-
-      {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
-          <div
-            style={{
-              background: success ? "#ecfdf5" : "#edf7ff",
-              border: `1px solid ${success ? "#a7f3d0" : "#cfe7fb"}`,
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: success ? "#065f46" : "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
-            }}
-          >
-            {statusMessage}
-          </div>
-        </PageCard>
-      )}
-
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Airline Tabs
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Select the airline first, then manage budgets inside that tab.
-          </p>
-        </div>
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {AIRLINE_OPTIONS.map((item) => (
-            <TabButton
-              key={item.value}
-              active={selectedAirline === item.value}
-              onClick={() => setSelectedAirline(item.value)}
-            >
-              {item.label}
-            </TabButton>
-          ))}
-        </div>
-      </PageCard>
-
-      <PageCard style={{ padding: 22 }}>
-        <div
-          style={{
-            marginBottom: 16,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
+            background:
+              "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+            borderRadius: 28,
+            padding: 24,
+            color: "#fff",
+            boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+            position: "relative",
+            overflow: "hidden",
           }}
         >
-          <div>
+          <div
+            style={{
+              position: "absolute",
+              width: 220,
+              height: 220,
+              borderRadius: "999px",
+              background: "rgba(255,255,255,0.08)",
+              top: -80,
+              right: -40,
+            }}
+          />
+
+          <div style={{ position: "relative" }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 700,
+              }}
+            >
+              TPA OPS · Budgets
+            </p>
+
+            <h1
+              style={{
+                margin: "10px 0 6px",
+                fontSize: 32,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              Airline Budget Config
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 820,
+                fontSize: 14,
+                color: "rgba(255,255,255,0.88)",
+              }}
+            >
+              Weekly and daily budgets stay exactly as they are today. A new monthly
+              layer lets you select a month, save a final monthly budget, and close
+              the month when complete without damaging previous records.
+            </p>
+          </div>
+        </div>
+
+        {statusMessage && (
+          <PageCard style={{ padding: 16 }}>
+            <div
+              style={{
+                background: success ? "#ecfdf5" : "#edf7ff",
+                border: `1px solid ${success ? "#a7f3d0" : "#cfe7fb"}`,
+                borderRadius: 16,
+                padding: "14px 16px",
+                color: success ? "#065f46" : "#1769aa",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              {statusMessage}
+            </div>
+          </PageCard>
+        )}
+
+        <PageCard style={{ padding: 22 }}>
+          <div style={{ marginBottom: 14 }}>
             <h2
               style={{
                 margin: 0,
@@ -906,7 +1114,7 @@ export default function BudgetsPage() {
                 letterSpacing: "-0.02em",
               }}
             >
-              Monthly Control · {selectedAirline}
+              Airline Tabs
             </h2>
             <p
               style={{
@@ -915,135 +1123,701 @@ export default function BudgetsPage() {
                 color: "#64748b",
               }}
             >
-              Select a month, save the final monthly budget, and close it when complete.
+              Select the airline first, then manage budgets inside that tab.
             </p>
           </div>
 
-          <div>
-            {selectedMonthClosed ? (
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  background: "#fff1f2",
-                  color: "#9f1239",
-                  border: "1px solid #fecdd3",
-                  fontWeight: 800,
-                  fontSize: 12,
-                }}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {AIRLINE_OPTIONS.map((item) => (
+              <TabButton
+                key={item.value}
+                active={selectedAirline === item.value}
+                onClick={() => setSelectedAirline(item.value)}
               >
-                Month Closed
-              </span>
-            ) : (
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  background: "#ecfdf5",
-                  color: "#166534",
-                  border: "1px solid #a7f3d0",
-                  fontWeight: 800,
-                  fontSize: 12,
-                }}
-              >
-                Month Open
-              </span>
-            )}
+                {item.label}
+              </TabButton>
+            ))}
           </div>
-        </div>
+        </PageCard>
 
-        <details open>
-          <summary
+        <PageCard style={{ padding: 22 }}>
+          <div
             style={{
-              cursor: "pointer",
-              fontSize: 14,
-              fontWeight: 800,
-              color: "#1769aa",
               marginBottom: 16,
-            }}
-          >
-            Open / Close Monthly Budget Setup
-          </summary>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 14,
-              marginBottom: 18,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
             }}
           >
             <div>
-              <FieldLabel>Month</FieldLabel>
-              <SelectInput
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  letterSpacing: "-0.02em",
+                }}
               >
-                {availableMonths.map((monthKey) => (
-                  <option key={monthKey} value={monthKey}>
-                    {formatMonthLabel(monthKey)}
-                  </option>
-                ))}
-              </SelectInput>
+                Monthly Control · {selectedAirline}
+              </h2>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 13,
+                  color: "#64748b",
+                }}
+              >
+                Select a month, save the final monthly budget, and close it when complete.
+              </p>
             </div>
 
             <div>
-              <FieldLabel>Final Monthly Budget Hours</FieldLabel>
-              <TextInput
-                type="number"
-                step="0.01"
-                value={monthlyForm.finalMonthlyBudgetHours}
-                disabled={selectedMonthClosed && !isStationManager}
-                onChange={(e) =>
-                  setMonthlyForm((prev) => ({
-                    ...prev,
-                    finalMonthlyBudgetHours: e.target.value,
-                  }))
-                }
-                placeholder="Example: 620"
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Weekly Total in Month</FieldLabel>
-              <TextInput value={weeklyTotalForSelectedMonth.toFixed(2)} disabled />
-            </div>
-
-            <div>
-              <FieldLabel>Daily Total in Month</FieldLabel>
-              <TextInput value={dailyTotalForSelectedMonth.toFixed(2)} disabled />
+              {selectedMonthClosed ? (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    background: "#fff1f2",
+                    color: "#9f1239",
+                    border: "1px solid #fecdd3",
+                    fontWeight: 800,
+                    fontSize: 12,
+                  }}
+                >
+                  Month Closed
+                </span>
+              ) : (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    background: "#ecfdf5",
+                    color: "#166534",
+                    border: "1px solid #a7f3d0",
+                    fontWeight: 800,
+                    fontSize: 12,
+                  }}
+                >
+                  Month Open
+                </span>
+              )}
             </div>
           </div>
 
+          <details open>
+            <summary
+              style={{
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 800,
+                color: "#1769aa",
+                marginBottom: 16,
+              }}
+            >
+              Open / Close Monthly Budget Setup
+            </summary>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 14,
+                marginBottom: 18,
+              }}
+            >
+              <div>
+                <FieldLabel>Month</FieldLabel>
+                <SelectInput
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                >
+                  {availableMonths.map((monthKey) => (
+                    <option key={monthKey} value={monthKey}>
+                      {formatMonthLabel(monthKey)}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel>Final Monthly Budget Hours</FieldLabel>
+                <TextInput
+                  type="number"
+                  step="0.01"
+                  value={monthlyForm.finalMonthlyBudgetHours}
+                  disabled={selectedMonthClosed && !isStationManager}
+                  onChange={(e) =>
+                    setMonthlyForm((prev) => ({
+                      ...prev,
+                      finalMonthlyBudgetHours: e.target.value,
+                    }))
+                  }
+                  placeholder="Example: 620"
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Weekly Total in Month</FieldLabel>
+                <TextInput value={weeklyTotalForSelectedMonth.toFixed(2)} disabled />
+              </div>
+
+              <div>
+                <FieldLabel>Daily Total in Month</FieldLabel>
+                <TextInput value={dailyTotalForSelectedMonth.toFixed(2)} disabled />
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginBottom: 12,
+              }}
+            >
+              <ActionButton
+                onClick={() => saveMonthlyBudgetConfig()}
+                disabled={selectedMonthClosed && !isStationManager}
+              >
+                Save Monthly Budget
+              </ActionButton>
+
+              {isStationManager && (
+                <ActionButton
+                  variant={selectedMonthClosed ? "secondary" : "danger"}
+                  onClick={toggleCloseMonth}
+                >
+                  {selectedMonthClosed ? "Reopen Month" : "Close Month"}
+                </ActionButton>
+              )}
+            </div>
+
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: "14px 16px",
+                color: "#475569",
+                fontSize: 13,
+                lineHeight: 1.7,
+              }}
+            >
+              <strong style={{ color: "#0f172a" }}>Monthly dropdown logic:</strong>{" "}
+              once a month is closed, the weekly and daily records for that selected month stay
+              visible but become locked. This protects April while you start entering May.
+            </div>
+          </details>
+        </PageCard>
+
+        <PageCard style={{ padding: 22 }}>
           <div
             style={{
+              marginBottom: 16,
               display: "flex",
-              gap: 10,
+              justifyContent: "space-between",
+              gap: 12,
               flexWrap: "wrap",
-              marginBottom: 12,
+              alignItems: "center",
             }}
           >
-            <ActionButton
-              onClick={() => saveMonthlyBudgetConfig()}
-              disabled={selectedMonthClosed && !isStationManager}
-            >
-              Save Monthly Budget
-            </ActionButton>
-
-            {isStationManager && (
-              <ActionButton
-                variant={selectedMonthClosed ? "secondary" : "danger"}
-                onClick={toggleCloseMonth}
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  letterSpacing: "-0.02em",
+                }}
               >
-                {selectedMonthClosed ? "Reopen Month" : "Close Month"}
-              </ActionButton>
+                Weekly Budget · {selectedAirline} · {formatMonthLabel(selectedMonth)}
+              </h2>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 13,
+                  color: "#64748b",
+                }}
+              >
+                Used to create schedules. Filtered by airline and selected month.
+              </p>
+            </div>
+
+            {selectedMonthClosed && (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#9f1239",
+                  fontWeight: 800,
+                }}
+              >
+                This month is closed. Weekly budgets are locked.
+              </div>
             )}
           </div>
 
+          {canCreateWeekly && !selectedMonthClosed && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 14,
+                marginBottom: 18,
+              }}
+            >
+              <div>
+                <FieldLabel>Department</FieldLabel>
+                <SelectInput
+                  value={weeklyForm.department}
+                  onChange={(e) =>
+                    setWeeklyForm((prev) => ({
+                      ...prev,
+                      department: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Select department</option>
+                  {DEPARTMENT_OPTIONS.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel>Week Start</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={weeklyForm.weekStart}
+                  onChange={(e) =>
+                    setWeeklyForm((prev) => ({
+                      ...prev,
+                      weekStart: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Weekly Budget Hours</FieldLabel>
+                <TextInput
+                  type="number"
+                  step="0.01"
+                  value={weeklyForm.weeklyHours}
+                  onChange={(e) =>
+                    setWeeklyForm((prev) => ({
+                      ...prev,
+                      weeklyHours: e.target.value,
+                    }))
+                  }
+                  placeholder="Example: 22"
+                />
+              </div>
+            </div>
+          )}
+
+          {canCreateWeekly && !selectedMonthClosed && (
+            <div style={{ marginBottom: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <ActionButton onClick={createWeeklyBudget}>
+                Save Weekly Budget
+              </ActionButton>
+
+              <ActionButton
+                variant="secondary"
+                onClick={() => {
+                  const department = normalizeDepartmentName(weeklyForm.department);
+                  const weeklyHours = Number(weeklyForm.weeklyHours || 0);
+
+                  if (!department || !weeklyHours) {
+                    setStatusMessage(
+                      "Please select department and enter weekly budget hours first."
+                    );
+                    return;
+                  }
+
+                  setConfirmModal({
+                    open: true,
+                    type: "weekly",
+                  });
+                }}
+              >
+                Setup Full Month
+              </ActionButton>
+            </div>
+          )}
+
+          <div
+            style={{
+              overflowX: "auto",
+              borderRadius: 18,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                minWidth: 980,
+                background: "#fff",
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle({ textAlign: "left" })}>Airline</th>
+                  <th style={thStyle({ textAlign: "left" })}>Department</th>
+                  <th style={thStyle({ textAlign: "left" })}>Week Start</th>
+                  <th style={thStyle({ textAlign: "left" })}>Weekly Hours</th>
+                  <th style={thStyle({ textAlign: "center" })}>Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {selectedWeeklyBudgets.map((item, index) => (
+                  <tr
+                    key={item.id}
+                    style={{
+                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                    }}
+                  >
+                    <td style={tdStyle}>{item.airline}</td>
+                    <td style={tdStyle}>{item.department || "—"}</td>
+                    <td style={tdStyle}>
+                      <TextInput
+                        defaultValue={item.weekStart || ""}
+                        disabled={!canEditWeekly || selectedMonthClosed}
+                        type="date"
+                        onBlur={(e) =>
+                          canEditWeekly &&
+                          !selectedMonthClosed &&
+                          updateWeeklyBudgetWeekStart(item.id, e.target.value)
+                        }
+                        style={{
+                          maxWidth: 170,
+                          background:
+                            canEditWeekly && !selectedMonthClosed ? "#fff" : "#f8fafc",
+                          color:
+                            canEditWeekly && !selectedMonthClosed ? "#0f172a" : "#64748b",
+                          cursor:
+                            canEditWeekly && !selectedMonthClosed ? "text" : "not-allowed",
+                        }}
+                      />
+                      {!item.weekStart && (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#b45309",
+                          }}
+                        >
+                          Legacy record without week
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 12,
+                          color: "#64748b",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {formatWeekStartLabel(item.weekStart)}
+                      </div>
+                    </td>
+                    <td style={tdStyle}>
+                      <TextInput
+                        defaultValue={item.budgetHours}
+                        disabled={!canEditWeekly || selectedMonthClosed}
+                        type="number"
+                        step="0.01"
+                        onBlur={(e) =>
+                          canEditWeekly &&
+                          !selectedMonthClosed &&
+                          updateWeeklyBudgetField(item.id, e.target.value)
+                        }
+                        style={{
+                          maxWidth: 140,
+                          background:
+                            canEditWeekly && !selectedMonthClosed ? "#fff" : "#f8fafc",
+                          color:
+                            canEditWeekly && !selectedMonthClosed ? "#0f172a" : "#64748b",
+                          cursor:
+                            canEditWeekly && !selectedMonthClosed ? "text" : "not-allowed",
+                        }}
+                      />
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                      {canDeleteWeekly && !selectedMonthClosed ? (
+                        <ActionButton
+                          variant="danger"
+                          onClick={() => deleteWeeklyBudget(item.id)}
+                        >
+                          Delete
+                        </ActionButton>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#64748b",
+                          }}
+                        >
+                          Weekly locked
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+
+                {selectedWeeklyBudgets.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      style={{
+                        padding: 18,
+                        textAlign: "center",
+                        fontSize: 13,
+                        color: "#64748b",
+                      }}
+                    >
+                      No weekly budgets found for {selectedAirline} in{" "}
+                      {formatMonthLabel(selectedMonth)}.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </PageCard>
+
+        <PageCard style={{ padding: 22 }}>
+          <div
+            style={{
+              marginBottom: 16,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                Daily Budget · {selectedAirline} · {formatMonthLabel(selectedMonth)}
+              </h2>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 13,
+                  color: "#64748b",
+                }}
+              >
+                Used for timesheets. Filtered by airline and selected month.
+              </p>
+            </div>
+
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 14,
+                padding: "12px 14px",
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
+              Stored Daily Total: {dailyTotalForSelectedMonth.toFixed(2)} hrs
+            </div>
+          </div>
+
+          {canCreateDaily && !selectedMonthClosed && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 14,
+                marginBottom: 18,
+              }}
+            >
+              <div>
+                <FieldLabel>Date</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={dailyForm.date}
+                  onChange={(e) =>
+                    setDailyForm((prev) => ({
+                      ...prev,
+                      date: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Daily Budget Hours</FieldLabel>
+                <TextInput
+                  type="number"
+                  step="0.01"
+                  value={dailyForm.dailyHours}
+                  onChange={(e) =>
+                    setDailyForm((prev) => ({
+                      ...prev,
+                      dailyHours: e.target.value,
+                    }))
+                  }
+                  placeholder="Example: 44"
+                />
+              </div>
+            </div>
+          )}
+
+          {canCreateDaily && !selectedMonthClosed && (
+            <div style={{ marginBottom: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <ActionButton onClick={createDailyBudget}>
+                Save Daily Budget
+              </ActionButton>
+
+              <ActionButton
+                variant="secondary"
+                onClick={() => {
+                  const dailyHours = Number(dailyForm.dailyHours || 0);
+
+                  if (!dailyHours) {
+                    setStatusMessage("Please enter daily budget hours first.");
+                    return;
+                  }
+
+                  setConfirmModal({
+                    open: true,
+                    type: "daily",
+                  });
+                }}
+              >
+                Setup Full Month
+              </ActionButton>
+            </div>
+          )}
+
+          <div
+            style={{
+              overflowX: "auto",
+              borderRadius: 18,
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                minWidth: 760,
+                background: "#fff",
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f8fbff" }}>
+                  <th style={thStyle({ textAlign: "left" })}>Airline</th>
+                  <th style={thStyle({ textAlign: "left" })}>Date</th>
+                  <th style={thStyle({ textAlign: "left" })}>Daily Hours</th>
+                  <th style={thStyle({ textAlign: "center" })}>Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {selectedDailyBudgets.map((item, index) => (
+                  <tr
+                    key={item.id}
+                    style={{
+                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                    }}
+                  >
+                    <td style={tdStyle}>{item.airline}</td>
+                    <td style={tdStyle}>{item.date || "—"}</td>
+                    <td style={tdStyle}>
+                      <TextInput
+                        defaultValue={item.dailyBudgetHours}
+                        disabled={!canEditDaily || selectedMonthClosed}
+                        type="number"
+                        step="0.01"
+                        onBlur={(e) =>
+                          canEditDaily &&
+                          !selectedMonthClosed &&
+                          updateDailyBudgetField(item.id, e.target.value)
+                        }
+                        style={{
+                          maxWidth: 140,
+                          background:
+                            canEditDaily && !selectedMonthClosed ? "#fff" : "#f8fafc",
+                          color:
+                            canEditDaily && !selectedMonthClosed ? "#0f172a" : "#64748b",
+                          cursor:
+                            canEditDaily && !selectedMonthClosed ? "text" : "not-allowed",
+                        }}
+                      />
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                      {canDeleteDaily && !selectedMonthClosed ? (
+                        <ActionButton
+                          variant="danger"
+                          onClick={() => deleteDailyBudget(item.id)}
+                        >
+                          Delete
+                        </ActionButton>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#64748b",
+                          }}
+                        >
+                          Daily locked
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+
+                {selectedDailyBudgets.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      style={{
+                        padding: 18,
+                        textAlign: "center",
+                        fontSize: 13,
+                        color: "#64748b",
+                      }}
+                    >
+                      No daily budgets found for {selectedAirline} in{" "}
+                      {formatMonthLabel(selectedMonth)}.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </PageCard>
+
+        <PageCard style={{ padding: 20 }}>
           <div
             style={{
               background: "#f8fbff",
@@ -1055,509 +1829,58 @@ export default function BudgetsPage() {
               lineHeight: 1.7,
             }}
           >
-            <strong style={{ color: "#0f172a" }}>Monthly dropdown logic:</strong>{" "}
-            once a month is closed, the weekly and daily records for that selected month stay
-            visible but become locked. This protects April while you start entering May.
-          </div>
-        </details>
-      </PageCard>
-
-      <PageCard style={{ padding: 22 }}>
-        <div
-          style={{
-            marginBottom: 16,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Weekly Budget · {selectedAirline} · {formatMonthLabel(selectedMonth)}
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Used to create schedules. Filtered by airline and selected month.
-            </p>
-          </div>
-
-          {selectedMonthClosed && (
-            <div
-              style={{
-                fontSize: 13,
-                color: "#9f1239",
-                fontWeight: 800,
-              }}
-            >
-              This month is closed. Weekly budgets are locked.
-            </div>
-          )}
-        </div>
-
-        {canCreateWeekly && !selectedMonthClosed && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 14,
-              marginBottom: 18,
-            }}
-          >
-            <div>
-              <FieldLabel>Department</FieldLabel>
-              <SelectInput
-                value={weeklyForm.department}
-                onChange={(e) =>
-                  setWeeklyForm((prev) => ({
-                    ...prev,
-                    department: e.target.value,
-                  }))
-                }
-              >
-                <option value="">Select department</option>
-                {DEPARTMENT_OPTIONS.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
-                  </option>
-                ))}
-              </SelectInput>
-            </div>
-
-            <div>
-              <FieldLabel>Week Start</FieldLabel>
-              <TextInput
-                type="date"
-                value={weeklyForm.weekStart}
-                onChange={(e) =>
-                  setWeeklyForm((prev) => ({
-                    ...prev,
-                    weekStart: e.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Weekly Budget Hours</FieldLabel>
-              <TextInput
-                type="number"
-                step="0.01"
-                value={weeklyForm.weeklyHours}
-                onChange={(e) =>
-                  setWeeklyForm((prev) => ({
-                    ...prev,
-                    weeklyHours: e.target.value,
-                  }))
-                }
-                placeholder="Example: 22"
-              />
-            </div>
-          </div>
-        )}
-
-        {canCreateWeekly && !selectedMonthClosed && (
-          <div style={{ marginBottom: 18 }}>
-            <ActionButton onClick={createWeeklyBudget}>
-              Save Weekly Budget
-            </ActionButton>
-          </div>
-        )}
-
-        <div
-          style={{
-            overflowX: "auto",
-            borderRadius: 18,
-            border: "1px solid #e2e8f0",
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "separate",
-              borderSpacing: 0,
-              minWidth: 980,
-              background: "#fff",
-            }}
-          >
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                <th style={thStyle({ textAlign: "left" })}>Airline</th>
-                <th style={thStyle({ textAlign: "left" })}>Department</th>
-                <th style={thStyle({ textAlign: "left" })}>Week Start</th>
-                <th style={thStyle({ textAlign: "left" })}>Weekly Hours</th>
-                <th style={thStyle({ textAlign: "center" })}>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {selectedWeeklyBudgets.map((item, index) => (
-                <tr
-                  key={item.id}
-                  style={{
-                    background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                  }}
-                >
-                  <td style={tdStyle}>{item.airline}</td>
-                  <td style={tdStyle}>{item.department || "—"}</td>
-                  <td style={tdStyle}>
-                    <TextInput
-                      defaultValue={item.weekStart || ""}
-                      disabled={!canEditWeekly || selectedMonthClosed}
-                      type="date"
-                      onBlur={(e) =>
-                        canEditWeekly &&
-                        !selectedMonthClosed &&
-                        updateWeeklyBudgetWeekStart(item.id, e.target.value)
-                      }
-                      style={{
-                        maxWidth: 170,
-                        background:
-                          canEditWeekly && !selectedMonthClosed ? "#fff" : "#f8fafc",
-                        color:
-                          canEditWeekly && !selectedMonthClosed ? "#0f172a" : "#64748b",
-                        cursor:
-                          canEditWeekly && !selectedMonthClosed ? "text" : "not-allowed",
-                      }}
-                    />
-                    {!item.weekStart && (
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: "#b45309",
-                        }}
-                      >
-                        Legacy record without week
-                      </div>
-                    )}
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: 12,
-                        color: "#64748b",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {formatWeekStartLabel(item.weekStart)}
-                    </div>
-                  </td>
-                  <td style={tdStyle}>
-                    <TextInput
-                      defaultValue={item.budgetHours}
-                      disabled={!canEditWeekly || selectedMonthClosed}
-                      type="number"
-                      step="0.01"
-                      onBlur={(e) =>
-                        canEditWeekly &&
-                        !selectedMonthClosed &&
-                        updateWeeklyBudgetField(item.id, e.target.value)
-                      }
-                      style={{
-                        maxWidth: 140,
-                        background:
-                          canEditWeekly && !selectedMonthClosed ? "#fff" : "#f8fafc",
-                        color:
-                          canEditWeekly && !selectedMonthClosed ? "#0f172a" : "#64748b",
-                        cursor:
-                          canEditWeekly && !selectedMonthClosed ? "text" : "not-allowed",
-                      }}
-                    />
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: "center" }}>
-                    {canDeleteWeekly && !selectedMonthClosed ? (
-                      <ActionButton
-                        variant="danger"
-                        onClick={() => deleteWeeklyBudget(item.id)}
-                      >
-                        Delete
-                      </ActionButton>
-                    ) : (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: "#64748b",
-                        }}
-                      >
-                        Weekly locked
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-
-              {selectedWeeklyBudgets.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    style={{
-                      padding: 18,
-                      textAlign: "center",
-                      fontSize: 13,
-                      color: "#64748b",
-                    }}
-                  >
-                    No weekly budgets found for {selectedAirline} in{" "}
-                    {formatMonthLabel(selectedMonth)}.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </PageCard>
-
-      <PageCard style={{ padding: 22 }}>
-        <div
-          style={{
-            marginBottom: 16,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Daily Budget · {selectedAirline} · {formatMonthLabel(selectedMonth)}
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Used for timesheets. Filtered by airline and selected month.
-            </p>
+            <strong style={{ color: "#0f172a" }}>Important:</strong> this update does not
+            overwrite your existing weekly or daily budget records. It only adds a new monthly
+            control layer using the <strong>budgetMonths</strong> collection so you can save a
+            final month total and close that month safely.
           </div>
 
           <div
             style={{
+              marginTop: 12,
               background: "#f8fbff",
               border: "1px solid #dbeafe",
-              borderRadius: 14,
-              padding: "12px 14px",
-              fontWeight: 800,
-              color: "#0f172a",
+              borderRadius: 16,
+              padding: "14px 16px",
+              color: "#475569",
+              fontSize: 13,
+              lineHeight: 1.7,
             }}
           >
-            Stored Daily Total: {dailyTotalForSelectedMonth.toFixed(2)} hrs
+            <strong style={{ color: "#0f172a" }}>Current Month Summary:</strong>{" "}
+            Weekly Total = {weeklyTotalForSelectedMonth.toFixed(2)} hrs · Daily Total ={" "}
+            {dailyTotalForSelectedMonth.toFixed(2)} hrs · Final Monthly Budget ={" "}
+            {Number(finalMonthlyBudget || 0).toFixed(2)} hrs.
           </div>
-        </div>
+        </PageCard>
+      </div>
 
-        {canCreateDaily && !selectedMonthClosed && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 14,
-              marginBottom: 18,
-            }}
-          >
-            <div>
-              <FieldLabel>Date</FieldLabel>
-              <TextInput
-                type="date"
-                value={dailyForm.date}
-                onChange={(e) =>
-                  setDailyForm((prev) => ({
-                    ...prev,
-                    date: e.target.value,
-                  }))
-                }
-              />
-            </div>
+      <ConfirmModal
+        open={confirmModal.open && confirmModal.type === "daily"}
+        title="Setup Daily Budget for Full Month"
+        message={`Do you want to fill all days in ${formatMonthLabel(
+          selectedMonth
+        )} with ${Number(dailyForm.dailyHours || 0).toFixed(2)} hours for ${normalizeAirlineName(
+          selectedAirline
+        )}?`}
+        onCancel={() => setConfirmModal({ open: false, type: "" })}
+        onConfirm={runSetupFullMonthDailyBudget}
+        confirmText="Yes, fill all days"
+      />
 
-            <div>
-              <FieldLabel>Daily Budget Hours</FieldLabel>
-              <TextInput
-                type="number"
-                step="0.01"
-                value={dailyForm.dailyHours}
-                onChange={(e) =>
-                  setDailyForm((prev) => ({
-                    ...prev,
-                    dailyHours: e.target.value,
-                  }))
-                }
-                placeholder="Example: 44"
-              />
-            </div>
-          </div>
-        )}
-
-        {canCreateDaily && !selectedMonthClosed && (
-          <div style={{ marginBottom: 18 }}>
-            <ActionButton onClick={createDailyBudget}>
-              Save Daily Budget
-            </ActionButton>
-          </div>
-        )}
-
-        <div
-          style={{
-            overflowX: "auto",
-            borderRadius: 18,
-            border: "1px solid #e2e8f0",
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "separate",
-              borderSpacing: 0,
-              minWidth: 760,
-              background: "#fff",
-            }}
-          >
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                <th style={thStyle({ textAlign: "left" })}>Airline</th>
-                <th style={thStyle({ textAlign: "left" })}>Date</th>
-                <th style={thStyle({ textAlign: "left" })}>Daily Hours</th>
-                <th style={thStyle({ textAlign: "center" })}>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {selectedDailyBudgets.map((item, index) => (
-                <tr
-                  key={item.id}
-                  style={{
-                    background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                  }}
-                >
-                  <td style={tdStyle}>{item.airline}</td>
-                  <td style={tdStyle}>{item.date || "—"}</td>
-                  <td style={tdStyle}>
-                    <TextInput
-                      defaultValue={item.dailyBudgetHours}
-                      disabled={!canEditDaily || selectedMonthClosed}
-                      type="number"
-                      step="0.01"
-                      onBlur={(e) =>
-                        canEditDaily &&
-                        !selectedMonthClosed &&
-                        updateDailyBudgetField(item.id, e.target.value)
-                      }
-                      style={{
-                        maxWidth: 140,
-                        background:
-                          canEditDaily && !selectedMonthClosed ? "#fff" : "#f8fafc",
-                        color:
-                          canEditDaily && !selectedMonthClosed ? "#0f172a" : "#64748b",
-                        cursor:
-                          canEditDaily && !selectedMonthClosed ? "text" : "not-allowed",
-                      }}
-                    />
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: "center" }}>
-                    {canDeleteDaily && !selectedMonthClosed ? (
-                      <ActionButton
-                        variant="danger"
-                        onClick={() => deleteDailyBudget(item.id)}
-                      >
-                        Delete
-                      </ActionButton>
-                    ) : (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: "#64748b",
-                        }}
-                      >
-                        Daily locked
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-
-              {selectedDailyBudgets.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={4}
-                    style={{
-                      padding: 18,
-                      textAlign: "center",
-                      fontSize: 13,
-                      color: "#64748b",
-                    }}
-                  >
-                    No daily budgets found for {selectedAirline} in{" "}
-                    {formatMonthLabel(selectedMonth)}.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </PageCard>
-
-      <PageCard style={{ padding: 20 }}>
-        <div
-          style={{
-            background: "#f8fbff",
-            border: "1px solid #dbeafe",
-            borderRadius: 16,
-            padding: "14px 16px",
-            color: "#475569",
-            fontSize: 13,
-            lineHeight: 1.7,
-          }}
-        >
-          <strong style={{ color: "#0f172a" }}>Important:</strong> this update does not
-          overwrite your existing weekly or daily budget records. It only adds a new monthly
-          control layer using the <strong>budgetMonths</strong> collection so you can save a
-          final month total and close that month safely.
-        </div>
-
-        <div
-          style={{
-            marginTop: 12,
-            background: "#f8fbff",
-            border: "1px solid #dbeafe",
-            borderRadius: 16,
-            padding: "14px 16px",
-            color: "#475569",
-            fontSize: 13,
-            lineHeight: 1.7,
-          }}
-        >
-          <strong style={{ color: "#0f172a" }}>Current Month Summary:</strong>{" "}
-          Weekly Total = {weeklyTotalForSelectedMonth.toFixed(2)} hrs · Daily Total ={" "}
-          {dailyTotalForSelectedMonth.toFixed(2)} hrs · Final Monthly Budget ={" "}
-          {Number(finalMonthlyBudget || 0).toFixed(2)} hrs.
-        </div>
-      </PageCard>
-    </div>
+      <ConfirmModal
+        open={confirmModal.open && confirmModal.type === "weekly"}
+        title="Setup Weekly Budget for Full Month"
+        message={`Do you want to fill all weeks in ${formatMonthLabel(
+          selectedMonth
+        )} with ${Number(weeklyForm.weeklyHours || 0).toFixed(2)} hours for ${normalizeAirlineName(
+          selectedAirline
+        )} / ${normalizeDepartmentName(weeklyForm.department)}?`}
+        onCancel={() => setConfirmModal({ open: false, type: "" })}
+        onConfirm={runSetupFullMonthWeeklyBudget}
+        confirmText="Yes, fill all weeks"
+      />
+    </>
   );
 }
 
