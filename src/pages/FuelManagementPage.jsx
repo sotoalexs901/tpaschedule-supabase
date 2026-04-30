@@ -6,9 +6,13 @@ import {
   onSnapshot,
   serverTimestamp,
   updateDoc,
-  setDoc,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { db, storage } from "../firebase";
+import {
+  runFuelPhotoOcr,
+  compareSingleFuelReading,
+} from "../utils/fuelPhotoOcr";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -82,15 +86,9 @@ function endOfDay(dateLike) {
 }
 
 function getRangeDates(range) {
-  if (range === "today") {
-    return { start: startOfToday(), end: endOfToday() };
-  }
-  if (range === "week") {
-    return { start: startOfWeek(), end: endOfWeek() };
-  }
-  if (range === "month") {
-    return { start: startOfMonth(), end: endOfMonth() };
-  }
+  if (range === "today") return { start: startOfToday(), end: endOfToday() };
+  if (range === "week") return { start: startOfWeek(), end: endOfWeek() };
+  if (range === "month") return { start: startOfMonth(), end: endOfMonth() };
   return { start: null, end: null };
 }
 
@@ -101,10 +99,6 @@ function safeNumber(value) {
 
 function normalizeText(value) {
   return String(value || "").trim();
-}
-
-function formatMoney(value) {
-  return `$${safeNumber(value).toFixed(2)}`;
 }
 
 function getEmployeeName(item) {
@@ -121,16 +115,60 @@ function getAirlineUse(item) {
   return normalizeText(item.airlineUse) || normalizeText(item.airline_use) || "Unknown";
 }
 
+function getFinalReading(item) {
+  const direct = item.finalReading;
+  if (direct !== undefined && direct !== null && direct !== "") return safeNumber(direct);
+  if (item.endReading !== undefined && item.endReading !== null && item.endReading !== "") {
+    return safeNumber(item.endReading);
+  }
+  return 0;
+}
+
+function getOcrFinalReading(item) {
+  if (item.ocrFinalReading !== undefined && item.ocrFinalReading !== null) {
+    return item.ocrFinalReading;
+  }
+  if (item.ocrEndReading !== undefined && item.ocrEndReading !== null) {
+    return item.ocrEndReading;
+  }
+  return null;
+}
+
+function getFinalPhotoUrl(item) {
+  return (
+    normalizeText(item.finalPhotoUrl) ||
+    normalizeText(item.endPhotoUrl) ||
+    normalizeText(item.photoUrl) ||
+    ""
+  );
+}
+
+function getFinalPhotoStatus(item) {
+  return (
+    normalizeText(item.finalPhotoCheckStatus) ||
+    normalizeText(item.endPhotoCheckStatus) ||
+    normalizeText(item.photoCheckStatus) ||
+    "—"
+  );
+}
+
 function getOverallPhotoStatus(item) {
-  return normalizeText(item.photoCheckStatus || item.photo_check_status || "—");
+  return normalizeText(item.photoCheckStatus || "—");
 }
 
-function getStartPhotoStatus(item) {
-  return normalizeText(item.startPhotoCheckStatus || "—");
+function getFinalPhotoNotes(item) {
+  return (
+    normalizeText(item.finalPhotoCheckNotes) ||
+    normalizeText(item.endPhotoCheckNotes) ||
+    normalizeText(item.photoCheckNotes) ||
+    ""
+  );
 }
 
-function getEndPhotoStatus(item) {
-  return normalizeText(item.endPhotoCheckStatus || "—");
+function getFinalPhotoDiff(item) {
+  if (item.finalPhotoDiff !== undefined && item.finalPhotoDiff !== null) return item.finalPhotoDiff;
+  if (item.endPhotoDiff !== undefined && item.endPhotoDiff !== null) return item.endPhotoDiff;
+  return null;
 }
 
 function getMonthKey(item) {
@@ -140,18 +178,6 @@ function getMonthKey(item) {
     formatInputDate(item.createdAt).slice(0, 7) ||
     ""
   );
-}
-
-function getPricePerGallon(item, defaultPricePerGallon = 0) {
-  const rowPrice = safeNumber(item.pricePerGallon);
-  if (rowPrice > 0) return rowPrice;
-  return safeNumber(defaultPricePerGallon);
-}
-
-function getTotalCost(item, defaultPricePerGallon = 0) {
-  const stored = safeNumber(item.totalCost);
-  if (stored > 0) return stored;
-  return safeNumber(item.totalGallons) * getPricePerGallon(item, defaultPricePerGallon);
 }
 
 function matchesRange(item, startDate, endDate) {
@@ -199,7 +225,7 @@ function buildCountRows(items, getKey, getValue) {
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 }
 
-function buildDailyRows(items, defaultPricePerGallon = 0) {
+function buildDailyRows(items) {
   const map = {};
 
   items.forEach((item) => {
@@ -209,20 +235,23 @@ function buildDailyRows(items, defaultPricePerGallon = 0) {
         key,
         label: key,
         records: 0,
-        gallons: 0,
-        cost: 0,
+        totalFinalReading: 0,
       };
     }
 
     map[key].records += 1;
-    map[key].gallons += safeNumber(item.totalGallons);
-    map[key].cost += getTotalCost(item, defaultPricePerGallon);
+    map[key].totalFinalReading += getFinalReading(item);
   });
 
-  return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
+  return Object.values(map)
+    .map((item) => ({
+      ...item,
+      avgFinalReading: item.records ? item.totalFinalReading / item.records : 0,
+    }))
+    .sort((a, b) => b.key.localeCompare(a.key));
 }
 
-function buildWeeklyRows(items, defaultPricePerGallon = 0) {
+function buildWeeklyRows(items) {
   const map = {};
 
   items.forEach((item) => {
@@ -232,20 +261,23 @@ function buildWeeklyRows(items, defaultPricePerGallon = 0) {
         key,
         label: key,
         records: 0,
-        gallons: 0,
-        cost: 0,
+        totalFinalReading: 0,
       };
     }
 
     map[key].records += 1;
-    map[key].gallons += safeNumber(item.totalGallons);
-    map[key].cost += getTotalCost(item, defaultPricePerGallon);
+    map[key].totalFinalReading += getFinalReading(item);
   });
 
-  return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
+  return Object.values(map)
+    .map((item) => ({
+      ...item,
+      avgFinalReading: item.records ? item.totalFinalReading / item.records : 0,
+    }))
+    .sort((a, b) => b.key.localeCompare(a.key));
 }
 
-function buildMonthlyRows(items, defaultPricePerGallon = 0) {
+function buildMonthlyRows(items) {
   const map = {};
 
   items.forEach((item) => {
@@ -255,47 +287,20 @@ function buildMonthlyRows(items, defaultPricePerGallon = 0) {
         key,
         label: key,
         records: 0,
-        gallons: 0,
-        cost: 0,
-        monthClosed: false,
+        totalFinalReading: 0,
       };
     }
 
     map[key].records += 1;
-    map[key].gallons += safeNumber(item.totalGallons);
-    map[key].cost += getTotalCost(item, defaultPricePerGallon);
-
-    if (item.monthClosed) {
-      map[key].monthClosed = true;
-    }
+    map[key].totalFinalReading += getFinalReading(item);
   });
 
-  return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
-}
-
-function groupRowsByMonth(items, defaultPricePerGallon = 0) {
-  const grouped = {};
-
-  items.forEach((item) => {
-    const monthKey = getMonthKey(item) || "Unknown";
-    if (!grouped[monthKey]) grouped[monthKey] = [];
-    grouped[monthKey].push(item);
-  });
-
-  return Object.entries(grouped)
-    .map(([month, rows]) => ({
-      month,
-      rows: rows.sort((a, b) => {
-        const A = toDateSafe(a.createdAt)?.getTime() || 0;
-        const B = toDateSafe(b.createdAt)?.getTime() || 0;
-        return B - A;
-      }),
-      gallons: rows.reduce((sum, item) => sum + safeNumber(item.totalGallons), 0),
-      cost: rows.reduce((sum, item) => sum + getTotalCost(item, defaultPricePerGallon), 0),
-      records: rows.length,
-      monthClosed: rows.some((r) => r.monthClosed),
+  return Object.values(map)
+    .map((item) => ({
+      ...item,
+      avgFinalReading: item.records ? item.totalFinalReading / item.records : 0,
     }))
-    .sort((a, b) => b.month.localeCompare(a.month));
+    .sort((a, b) => b.key.localeCompare(a.key));
 }
 
 function downloadCsv(filename, rows) {
@@ -320,6 +325,15 @@ function downloadCsv(filename, rows) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+function createPreviewUrl(file) {
+  if (!file) return "";
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return "";
+  }
 }
 
 function PageCard({ children, style = {} }) {
@@ -600,6 +614,84 @@ function StatusBadge({ status }) {
   );
 }
 
+function PhotoPreviewCard({ title, file, previewUrl, currentUrl }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #dbeafe",
+        borderRadius: 16,
+        padding: 14,
+        background: "#f8fbff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: "#1769aa",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          marginBottom: 8,
+        }}
+      >
+        {title}
+      </div>
+
+      {file ? (
+        <>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#0f172a",
+              marginBottom: 10,
+              wordBreak: "break-word",
+            }}
+          >
+            {file.name}
+          </div>
+
+          {previewUrl ? (
+            <img
+              src={previewUrl}
+              alt={title}
+              style={{
+                width: "100%",
+                maxHeight: 220,
+                objectFit: "contain",
+                borderRadius: 12,
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+              }}
+            />
+          ) : null}
+        </>
+      ) : currentUrl ? (
+        <div>
+          <a
+            href={currentUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "#1769aa", fontWeight: 800 }}
+          >
+            Open current photo
+          </a>
+        </div>
+      ) : (
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#64748b",
+          }}
+        >
+          No photo selected.
+        </div>
+      )}
+    </div>
+  );
+}
+
 const tableWrapStyle = {
   width: "100%",
   maxWidth: "100%",
@@ -638,26 +730,83 @@ const tdStyle = {
   verticalAlign: "top",
 };
 
-function createEditDraft(item, defaultPricePerGallon = 0) {
-  const pricePerGallon = getPricePerGallon(item, defaultPricePerGallon);
-  const totalGallons = safeNumber(item.totalGallons);
-  const totalCost = getTotalCost(item, defaultPricePerGallon);
-
+function createEditDraft(item) {
   return {
     date: item.date || "",
     time: item.time || "",
     equipmentNumber: item.equipmentNumber || "",
     employeeName: getEmployeeName(item),
     airlineUse: getAirlineUse(item),
-    startReading: String(item.startReading ?? ""),
-    endReading: String(item.endReading ?? ""),
-    totalGallons: String(totalGallons),
-    pricePerGallon: String(pricePerGallon),
-    totalCost: String(totalCost),
+    finalReading: String(getFinalReading(item)),
     notes: item.notes || "",
     photoCheckNotes: item.photoCheckNotes || "",
-    startPhotoCheckNotes: item.startPhotoCheckNotes || "",
-    endPhotoCheckNotes: item.endPhotoCheckNotes || "",
+    finalPhotoCheckNotes: getFinalPhotoNotes(item),
+  };
+}
+
+async function uploadFuelManagementPhoto({ file, dateKey, rowId }) {
+  const path = `fuel_logs/management/${dateKey || "no-date"}/${rowId}-${Date.now()}-${file.name}`;
+  const storageRef = ref(storage, path);
+
+  await uploadBytes(storageRef, file, {
+    contentType: file.type || "image/jpeg",
+  });
+
+  return await getDownloadURL(storageRef);
+}
+
+async function runFinalPhotoValidation({ photoUrl, expectedReading }) {
+  let rawText = "";
+  let matchedReading = null;
+  let numbersDetected = [];
+  let diff = null;
+  let status = "pending_review";
+  let notes = "";
+  let providerResult = null;
+  let confidenceScore = 0;
+
+  try {
+    const ocrResult = await runFuelPhotoOcr(photoUrl);
+    providerResult = ocrResult?.providerResult || null;
+
+    const comparison = compareSingleFuelReading({
+      reading: expectedReading,
+      rawText: ocrResult?.rawText || "",
+      tolerance: 5,
+    });
+
+    rawText = comparison.rawText || "";
+    numbersDetected = comparison.numbersDetected || [];
+    matchedReading = comparison.matchedValue;
+    diff = comparison.diff;
+    confidenceScore = comparison.confidenceScore || 0;
+    status = comparison.status || "pending_review";
+
+    if (status === "match") {
+      notes = "Final photo matched entered reading.";
+    } else if (status === "near_match") {
+      status = "pending_review";
+      notes = "Final photo is close, but needs manual review.";
+    } else if (status === "mismatch") {
+      notes = "Final photo did not match entered reading.";
+    } else {
+      notes = "Final photo needs manual review.";
+    }
+  } catch (error) {
+    console.error("Fuel OCR error (management final):", error);
+    status = "pending_review";
+    notes = error?.message || "Final photo could not be validated.";
+  }
+
+  return {
+    rawText,
+    matchedReading,
+    numbersDetected,
+    diff,
+    status,
+    notes,
+    providerResult,
+    confidenceScore,
   };
 }
 
@@ -676,14 +825,7 @@ export default function FuelManagementPage() {
 
   const [editingRowId, setEditingRowId] = useState("");
   const [editDraft, setEditDraft] = useState(null);
-
-  const [pricePerGallon, setPricePerGallon] = useState("");
-  const [savingPrice, setSavingPrice] = useState(false);
-
-  const defaultPricePerGallon = useMemo(
-    () => safeNumber(pricePerGallon),
-    [pricePerGallon]
-  );
+  const [editPhotoFile, setEditPhotoFile] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -699,22 +841,6 @@ export default function FuelManagementPage() {
       (error) => {
         console.error("Error loading fuel logs:", error);
         setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      doc(db, "fuel_settings", "current"),
-      (snap) => {
-        const data = snap.data() || {};
-        const price = safeNumber(data.pricePerGallon);
-        setPricePerGallon(price > 0 ? String(price) : "");
-      },
-      (error) => {
-        console.error("Error loading fuel settings:", error);
       }
     );
 
@@ -765,154 +891,127 @@ export default function FuelManagementPage() {
   const pendingReviewRows = useMemo(() => {
     return filteredRows.filter((item) => {
       const overall = getOverallPhotoStatus(item).toLowerCase();
-      const startStatus = getStartPhotoStatus(item).toLowerCase();
-      const endStatus = getEndPhotoStatus(item).toLowerCase();
+      const finalStatus = getFinalPhotoStatus(item).toLowerCase();
 
       return (
         overall === "pending_review" ||
         overall === "mismatch" ||
-        startStatus === "pending_review" ||
-        startStatus === "mismatch" ||
-        endStatus === "pending_review" ||
-        endStatus === "mismatch"
+        finalStatus === "pending_review" ||
+        finalStatus === "mismatch"
       );
     });
   }, [filteredRows]);
 
   const totalRecords = filteredRows.length;
-  const totalGallons = filteredRows.reduce(
-    (sum, item) => sum + safeNumber(item.totalGallons),
-    0
-  );
-  const totalCost = filteredRows.reduce(
-    (sum, item) => sum + getTotalCost(item, defaultPricePerGallon),
-    0
-  );
-
-  const topAgentByGallons = useMemo(
-    () =>
-      buildTopEntity(
-        filteredRows,
-        (item) => getEmployeeName(item),
-        (item) => safeNumber(item.totalGallons)
-      ),
-    [filteredRows]
-  );
+  const approvedCount = filteredRows.filter(
+    (item) => getOverallPhotoStatus(item).toLowerCase() === "approved"
+  ).length;
+  const pendingCount = filteredRows.filter(
+    (item) => getOverallPhotoStatus(item).toLowerCase() === "pending_review"
+  ).length;
+  const avgFinalReading =
+    totalRecords > 0
+      ? filteredRows.reduce((sum, item) => sum + getFinalReading(item), 0) / totalRecords
+      : 0;
 
   const topAgentByEntries = useMemo(
-    () =>
-      buildTopEntity(filteredRows, (item) => getEmployeeName(item), () => 1),
+    () => buildTopEntity(filteredRows, (item) => getEmployeeName(item), () => 1),
     [filteredRows]
   );
 
-  const topAirlineByGallons = useMemo(
-    () =>
-      buildTopEntity(
-        filteredRows,
-        (item) => getAirlineUse(item),
-        (item) => safeNumber(item.totalGallons)
-      ),
+  const topAirlineByEntries = useMemo(
+    () => buildTopEntity(filteredRows, (item) => getAirlineUse(item), () => 1),
     [filteredRows]
   );
 
-  const gallonsByAgent = useMemo(
+  const readingsByAgent = useMemo(
     () =>
       buildCountRows(
         filteredRows,
         (item) => getEmployeeName(item),
-        (item) => safeNumber(item.totalGallons)
+        (item) => getFinalReading(item)
       ).slice(0, 10),
     [filteredRows]
   );
 
-  const gallonsByAirlineUse = useMemo(
+  const readingsByAirlineUse = useMemo(
     () =>
       buildCountRows(
         filteredRows,
         (item) => getAirlineUse(item),
-        (item) => safeNumber(item.totalGallons)
+        (item) => getFinalReading(item)
       ).slice(0, 10),
     [filteredRows]
   );
 
-  const dailyRows = useMemo(
-    () => buildDailyRows(filteredRows, defaultPricePerGallon),
-    [filteredRows, defaultPricePerGallon]
-  );
-
-  const weeklyRows = useMemo(
-    () => buildWeeklyRows(filteredRows, defaultPricePerGallon),
-    [filteredRows, defaultPricePerGallon]
-  );
-
-  const monthlyRows = useMemo(
-    () => buildMonthlyRows(filteredRows, defaultPricePerGallon),
-    [filteredRows, defaultPricePerGallon]
-  );
-
-  const groupedByMonth = useMemo(
-    () => groupRowsByMonth(filteredRows, defaultPricePerGallon),
-    [filteredRows, defaultPricePerGallon]
-  );
+  const dailyRows = useMemo(() => buildDailyRows(filteredRows), [filteredRows]);
+  const weeklyRows = useMemo(() => buildWeeklyRows(filteredRows), [filteredRows]);
+  const monthlyRows = useMemo(() => buildMonthlyRows(filteredRows), [filteredRows]);
 
   function startEditing(item) {
     setEditingRowId(item.id);
-    setEditDraft(createEditDraft(item, defaultPricePerGallon));
+    setEditDraft(createEditDraft(item));
+    setEditPhotoFile(null);
     setStatusMessage("");
   }
 
   function cancelEditing() {
     setEditingRowId("");
     setEditDraft(null);
+    setEditPhotoFile(null);
   }
 
-  async function handleSavePricePerGallon() {
-    const numericPrice = safeNumber(pricePerGallon);
+  async function saveEditing(item) {
+    if (!editDraft) return;
 
-    if (numericPrice <= 0) {
-      setStatusMessage("Please enter a valid price per gallon.");
+    const finalReading = safeNumber(editDraft.finalReading);
+    if (!finalReading && finalReading !== 0) {
+      setStatusMessage("Please enter a valid final reading.");
       return;
     }
 
     try {
-      setSavingPrice(true);
+      setWorkingId(item.id);
 
-      await setDoc(
-        doc(db, "fuel_settings", "current"),
-        {
-          pricePerGallon: Number(numericPrice.toFixed(4)),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      let finalPhotoUrl = getFinalPhotoUrl(item);
 
-      setStatusMessage("Price per gallon saved successfully.");
-    } catch (error) {
-      console.error("Error saving price per gallon:", error);
-      setStatusMessage("Could not save price per gallon.");
-    } finally {
-      setSavingPrice(false);
-    }
-  }
+      if (editPhotoFile) {
+        finalPhotoUrl = await uploadFuelManagementPhoto({
+          file: editPhotoFile,
+          dateKey: editDraft.date,
+          rowId: item.id,
+        });
+      }
 
-  async function saveEditing(itemId) {
-    if (!editDraft) return;
+      let validationStatus = "pending_review";
+      let validationNotes = editDraft.finalPhotoCheckNotes || "";
+      let validationRawText = item.finalOcrRawText || item.endOcrRawText || "";
+      let validationMatchedReading = getOcrFinalReading(item);
+      let validationNumbersDetected =
+        item.finalPhotoNumbersDetected || item.endPhotoNumbersDetected || [];
+      let validationDiff = getFinalPhotoDiff(item);
+      let validationConfidenceScore =
+        item.finalConfidenceScore || item.endConfidenceScore || 0;
+      let validationProviderResult =
+        item.finalOcrProviderResult || item.endOcrProviderResult || null;
 
-    const startReading = safeNumber(editDraft.startReading);
-    const endReading = safeNumber(editDraft.endReading);
-    const pricePerGallonValue =
-      safeNumber(editDraft.pricePerGallon) > 0
-        ? safeNumber(editDraft.pricePerGallon)
-        : defaultPricePerGallon;
+      if (finalPhotoUrl) {
+        const validation = await runFinalPhotoValidation({
+          photoUrl: finalPhotoUrl,
+          expectedReading: finalReading,
+        });
 
-    const totalGallons =
-      endReading >= startReading ? Number((endReading - startReading).toFixed(2)) : 0;
-    const totalCost = Number((totalGallons * pricePerGallonValue).toFixed(2));
+        validationStatus = validation.status === "match" ? "approved" : "pending_review";
+        validationNotes = validation.notes;
+        validationRawText = validation.rawText;
+        validationMatchedReading = validation.matchedReading;
+        validationNumbersDetected = validation.numbersDetected;
+        validationDiff = validation.diff;
+        validationConfidenceScore = validation.confidenceScore;
+        validationProviderResult = validation.providerResult;
+      }
 
-    try {
-      setWorkingId(itemId);
-
-      await updateDoc(doc(db, "fuel_logs", itemId), {
+      await updateDoc(doc(db, "fuel_logs", item.id), {
         date: editDraft.date || "",
         time: editDraft.time || "",
         dayKey: editDraft.date || "",
@@ -920,21 +1019,57 @@ export default function FuelManagementPage() {
         equipmentNumber: editDraft.equipmentNumber || "",
         employeeName: editDraft.employeeName || "",
         airlineUse: editDraft.airlineUse || "",
-        startReading,
-        endReading,
-        totalGallons,
-        pricePerGallon: pricePerGallonValue,
-        totalCost,
+        finalReading,
+        endReading: finalReading,
         notes: editDraft.notes || "",
-        photoCheckNotes: editDraft.photoCheckNotes || "",
-        startPhotoCheckNotes: editDraft.startPhotoCheckNotes || "",
-        endPhotoCheckNotes: editDraft.endPhotoCheckNotes || "",
+
+        finalPhotoUrl,
+        endPhotoUrl: finalPhotoUrl || "",
+        photoUrl: finalPhotoUrl || "",
+
+        photoCheckStatus: validationStatus,
+        finalPhotoCheckStatus: validationStatus,
+        endPhotoCheckStatus: validationStatus,
+
+        photoCheckNotes: validationNotes,
+        finalPhotoCheckNotes: validationNotes,
+        endPhotoCheckNotes: validationNotes,
+
+        finalOcrRawText: validationRawText,
+        endOcrRawText: validationRawText,
+        ocrRawText: validationRawText || "",
+
+        ocrFinalReading: validationMatchedReading,
+        ocrEndReading: validationMatchedReading,
+
+        finalPhotoNumbersDetected: validationNumbersDetected,
+        endPhotoNumbersDetected: validationNumbersDetected,
+        photoCheckNumbersDetected: [...validationNumbersDetected],
+
+        finalPhotoDiff: validationDiff,
+        endPhotoDiff: validationDiff,
+        photoCheckEndDiff: validationDiff,
+
+        finalConfidenceScore: validationConfidenceScore,
+        endConfidenceScore: validationConfidenceScore,
+
+        finalOcrProviderResult: validationProviderResult,
+        endOcrProviderResult: validationProviderResult,
+        ocrProviderResult: {
+          final: validationProviderResult,
+        },
+
         updatedAt: serverTimestamp(),
       });
 
-      setStatusMessage("Fuel record updated successfully.");
+      setStatusMessage(
+        validationStatus === "approved"
+          ? "Fuel record updated and auto approved."
+          : "Fuel record updated and left pending review."
+      );
       setEditingRowId("");
       setEditDraft(null);
+      setEditPhotoFile(null);
     } catch (error) {
       console.error("Error updating fuel log:", error);
       setStatusMessage("Could not update fuel record.");
@@ -951,9 +1086,11 @@ export default function FuelManagementPage() {
       setWorkingId(itemId);
       await deleteDoc(doc(db, "fuel_logs", itemId));
       setStatusMessage("Fuel record deleted successfully.");
+
       if (editingRowId === itemId) {
         setEditingRowId("");
         setEditDraft(null);
+        setEditPhotoFile(null);
       }
     } catch (error) {
       console.error("Error deleting fuel log:", error);
@@ -968,48 +1105,14 @@ export default function FuelManagementPage() {
       setWorkingId(item.id);
       await updateDoc(doc(db, "fuel_logs", item.id), {
         photoCheckStatus: "approved",
-        startPhotoCheckStatus: item.startPhotoUrl
-          ? "approved"
-          : item.startPhotoCheckStatus || "missing",
-        endPhotoCheckStatus: item.endPhotoUrl
-          ? "approved"
-          : item.endPhotoCheckStatus || "missing",
-        photoCheckNotes: item.photoCheckNotes || "Approved manually.",
+        finalPhotoCheckStatus: "approved",
+        endPhotoCheckStatus: "approved",
         updatedAt: serverTimestamp(),
       });
       setStatusMessage("Fuel photo review approved.");
     } catch (error) {
       console.error("Error approving fuel review:", error);
       setStatusMessage("Could not approve this record.");
-    } finally {
-      setWorkingId("");
-    }
-  }
-
-  async function handleCloseMonth(monthKey) {
-    const monthItems = rows.filter((item) => getMonthKey(item) === monthKey);
-    if (!monthItems.length) return;
-
-    const ok = window.confirm(
-      `Close month ${monthKey} for ${monthItems.length} fuel records?`
-    );
-    if (!ok) return;
-
-    try {
-      setWorkingId(monthKey);
-      await Promise.all(
-        monthItems.map((item) =>
-          updateDoc(doc(db, "fuel_logs", item.id), {
-            monthClosed: true,
-            monthClosedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        )
-      );
-      setStatusMessage(`Month ${monthKey} closed successfully.`);
-    } catch (error) {
-      console.error("Error closing month:", error);
-      setStatusMessage("Could not close month.");
     } finally {
       setWorkingId("");
     }
@@ -1023,16 +1126,14 @@ export default function FuelManagementPage() {
       ["To", toDate || "—"],
       ["Employee", selectedEmployee],
       ["Airline/Use", selectedAirlineUse],
-      ["Default Price Per Gallon", defaultPricePerGallon.toFixed(4)],
       [],
       ["SUMMARY"],
       ["Total Records", totalRecords],
-      ["Total Gallons", totalGallons.toFixed(2)],
-      ["Total Cost", totalCost.toFixed(2)],
-      ["Top Agent by Gallons", topAgentByGallons.label],
-      ["Top Agent Gallons", topAgentByGallons.value.toFixed(2)],
-      ["Top Airline/Use", topAirlineByGallons.label],
-      ["Top Airline/Use Gallons", topAirlineByGallons.value.toFixed(2)],
+      ["Approved", approvedCount],
+      ["Pending Review", pendingCount],
+      ["Average Final Reading", avgFinalReading.toFixed(2)],
+      ["Top Agent by Entries", topAgentByEntries.label],
+      ["Top Airline/Use by Entries", topAirlineByEntries.label],
       [],
       ["DETAILS"],
       [
@@ -1041,18 +1142,12 @@ export default function FuelManagementPage() {
         "Equipment",
         "Employee",
         "Airline/Use",
-        "Start Reading",
-        "End Reading",
-        "Total Gallons",
-        "Price Per Gallon",
-        "Total Cost",
+        "Final Reading",
+        "OCR Final Reading",
+        "Photo Diff",
         "Overall Status",
-        "Start Photo Status",
-        "End Photo Status",
-        "OCR Start",
-        "OCR End",
-        "Start Photo URL",
-        "End Photo URL",
+        "Final Photo Status",
+        "Final Photo URL",
         "Notes",
         "Created At",
       ],
@@ -1062,18 +1157,12 @@ export default function FuelManagementPage() {
         item.equipmentNumber || "",
         getEmployeeName(item),
         getAirlineUse(item),
-        safeNumber(item.startReading).toFixed(2),
-        safeNumber(item.endReading).toFixed(2),
-        safeNumber(item.totalGallons).toFixed(2),
-        getPricePerGallon(item, defaultPricePerGallon).toFixed(4),
-        getTotalCost(item, defaultPricePerGallon).toFixed(2),
+        getFinalReading(item).toFixed(2),
+        getOcrFinalReading(item) ?? "",
+        getFinalPhotoDiff(item) ?? "",
         getOverallPhotoStatus(item),
-        getStartPhotoStatus(item),
-        getEndPhotoStatus(item),
-        item.ocrStartReading ?? "",
-        item.ocrEndReading ?? "",
-        item.startPhotoUrl || "",
-        item.endPhotoUrl || "",
+        getFinalPhotoStatus(item),
+        getFinalPhotoUrl(item),
         item.notes || "",
         formatDateTime(item.createdAt),
       ]),
@@ -1082,22 +1171,7 @@ export default function FuelManagementPage() {
     downloadCsv("fuel-management-report.csv", csvRows);
   }
 
-  const editCalculatedGallons = useMemo(() => {
-    if (!editDraft) return 0;
-    const start = safeNumber(editDraft.startReading);
-    const end = safeNumber(editDraft.endReading);
-    if (end < start) return 0;
-    return Number((end - start).toFixed(2));
-  }, [editDraft]);
-
-  const editCalculatedTotalCost = useMemo(() => {
-    if (!editDraft) return 0;
-    const price =
-      safeNumber(editDraft.pricePerGallon) > 0
-        ? safeNumber(editDraft.pricePerGallon)
-        : defaultPricePerGallon;
-    return Number((editCalculatedGallons * price).toFixed(2));
-  }, [editDraft, editCalculatedGallons, defaultPricePerGallon]);
+  const editPhotoPreview = useMemo(() => createPreviewUrl(editPhotoFile), [editPhotoFile]);
 
   return (
     <div
@@ -1151,7 +1225,7 @@ export default function FuelManagementPage() {
             color: "rgba(255,255,255,0.92)",
           }}
         >
-          Daily, weekly and monthly control of fuel usage, price per gallon, and total fuel cost.
+          Control final fuel readings, photo validation, auto approval, pending review, edit and delete.
         </p>
       </div>
 
@@ -1193,48 +1267,13 @@ export default function FuelManagementPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(220px, 320px) auto",
-            gap: 12,
-            alignItems: "end",
-            marginBottom: 16,
-          }}
-        >
-          <div>
-            <FieldLabel>Price Per Gallon</FieldLabel>
-            <TextInput
-              type="number"
-              step="0.0001"
-              min="0"
-              value={pricePerGallon}
-              onChange={(e) => setPricePerGallon(e.target.value)}
-              placeholder="0.0000"
-            />
-          </div>
-
-          <div>
-            <ActionButton
-              variant="success"
-              onClick={handleSavePricePerGallon}
-              disabled={savingPrice}
-            >
-              {savingPrice ? "Saving..." : "Save Price"}
-            </ActionButton>
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
             gap: 14,
           }}
         >
           <div>
             <FieldLabel>Range</FieldLabel>
-            <SelectInput
-              value={range}
-              onChange={(e) => setRange(e.target.value)}
-            >
+            <SelectInput value={range} onChange={(e) => setRange(e.target.value)}>
               <option value="today">Today</option>
               <option value="week">This Week</option>
               <option value="month">This Month</option>
@@ -1327,23 +1366,18 @@ export default function FuelManagementPage() {
               gap: 14,
             }}
           >
-            <StatCard label="Price Per Gallon" value={defaultPricePerGallon.toFixed(4)} tone="blue" />
             <StatCard label="Total Records" value={String(totalRecords)} />
-            <StatCard label="Total Gallons" value={totalGallons.toFixed(2)} tone="blue" />
-            <StatCard label="Total Cost" value={formatMoney(totalCost)} tone="green" />
-            <StatCard
-              label="Top Agent by Gallons"
-              value={`${topAgentByGallons.label} (${topAgentByGallons.value.toFixed(2)})`}
-              tone="green"
-            />
+            <StatCard label="Approved" value={String(approvedCount)} tone="green" />
+            <StatCard label="Pending Review" value={String(pendingCount)} tone="amber" />
+            <StatCard label="Avg Final Reading" value={avgFinalReading.toFixed(2)} tone="blue" />
             <StatCard
               label="Top Agent by Entries"
               value={`${topAgentByEntries.label} (${topAgentByEntries.value})`}
-              tone="amber"
+              tone="green"
             />
             <StatCard
               label="Top Airline / Use"
-              value={`${topAirlineByGallons.label} (${topAirlineByGallons.value.toFixed(2)})`}
+              value={`${topAirlineByEntries.label} (${topAirlineByEntries.value})`}
               tone="blue"
             />
           </div>
@@ -1364,15 +1398,15 @@ export default function FuelManagementPage() {
                   color: "#0f172a",
                 }}
               >
-                Gallons by Agent
+                Final Reading by Agent
               </h2>
 
-              {gallonsByAgent.length === 0 ? (
+              {readingsByAgent.length === 0 ? (
                 <div style={{ color: "#64748b", fontWeight: 700 }}>No data found.</div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
-                  {gallonsByAgent.map((row) => {
-                    const max = Math.max(...gallonsByAgent.map((x) => x.value), 1);
+                  {readingsByAgent.map((row) => {
+                    const max = Math.max(...readingsByAgent.map((x) => x.value), 1);
                     return (
                       <div key={row.label}>
                         <div
@@ -1424,15 +1458,15 @@ export default function FuelManagementPage() {
                   color: "#0f172a",
                 }}
               >
-                Gallons by Airline / Use
+                Final Reading by Airline / Use
               </h2>
 
-              {gallonsByAirlineUse.length === 0 ? (
+              {readingsByAirlineUse.length === 0 ? (
                 <div style={{ color: "#64748b", fontWeight: 700 }}>No data found.</div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
-                  {gallonsByAirlineUse.map((row) => {
-                    const max = Math.max(...gallonsByAirlineUse.map((x) => x.value), 1);
+                  {readingsByAirlineUse.map((row) => {
+                    const max = Math.max(...readingsByAirlineUse.map((x) => x.value), 1);
                     return (
                       <div key={row.label}>
                         <div
@@ -1486,297 +1520,98 @@ export default function FuelManagementPage() {
                   color: "#0f172a",
                 }}
               >
-                Fuel Records by Month
+                All Fuel Records
               </h2>
             </div>
 
-            {groupedByMonth.length === 0 ? (
-              <div style={{ color: "#64748b", fontWeight: 700 }}>
-                {loading ? "Loading..." : "No records found."}
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 18 }}>
-                {groupedByMonth.map((group) => (
-                  <PageCard key={group.month} style={{ padding: 16 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        marginBottom: 12,
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: 20,
-                            fontWeight: 900,
-                            color: "#0f172a",
-                          }}
-                        >
-                          {group.month}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 4,
-                            fontSize: 14,
-                            color: "#64748b",
-                            fontWeight: 700,
-                          }}
-                        >
-                          Records: {group.records} · Gallons: {group.gallons.toFixed(2)} · Cost: {formatMoney(group.cost)}
-                        </div>
-                      </div>
+            <div style={tableWrapStyle}>
+              <table style={{ ...tableStyle, minWidth: 1500 }}>
+                <thead>
+                  <tr style={{ background: "#f8fbff" }}>
+                    <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Time</th>
+                    <th style={thStyle}>Equipment</th>
+                    <th style={thStyle}>Employee</th>
+                    <th style={thStyle}>Airline / Use</th>
+                    <th style={thStyle}>Final Reading</th>
+                    <th style={thStyle}>OCR Final</th>
+                    <th style={thStyle}>Diff</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Photo</th>
+                    <th style={thStyle}>Created</th>
+                    <th style={thStyle}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} style={tdStyle}>
+                        {loading ? "Loading..." : "No records found."}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRows.map((item) => (
+                      <tr key={item.id}>
+                        <td style={tdStyle}>{item.date || "—"}</td>
+                        <td style={tdStyle}>{item.time || "—"}</td>
+                        <td style={tdStyle}>{item.equipmentNumber || "—"}</td>
+                        <td style={tdStyle}>{getEmployeeName(item)}</td>
+                        <td style={tdStyle}>{getAirlineUse(item)}</td>
+                        <td style={{ ...tdStyle, fontWeight: 800 }}>
+                          {getFinalReading(item).toFixed(2)}
+                        </td>
+                        <td style={tdStyle}>
+                          {getOcrFinalReading(item) !== null && getOcrFinalReading(item) !== undefined
+                            ? getOcrFinalReading(item)
+                            : "—"}
+                        </td>
+                        <td style={tdStyle}>
+                          {getFinalPhotoDiff(item) !== null && getFinalPhotoDiff(item) !== undefined
+                            ? getFinalPhotoDiff(item)
+                            : "—"}
+                        </td>
+                        <td style={tdStyle}>
+                          <StatusBadge status={getOverallPhotoStatus(item)} />
+                        </td>
+                        <td style={tdStyle}>
+                          {getFinalPhotoUrl(item) ? (
+                            <a
+                              href={getFinalPhotoUrl(item)}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#1769aa", fontWeight: 700 }}
+                            >
+                              Open Photo
+                            </a>
+                          ) : (
+                            "No photo"
+                          )}
+                        </td>
+                        <td style={tdStyle}>{formatDateTime(item.createdAt)}</td>
+                        <td style={tdStyle}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <ActionButton
+                              variant="secondary"
+                              onClick={() => startEditing(item)}
+                            >
+                              Edit
+                            </ActionButton>
 
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        <StatusBadge status={group.monthClosed ? "closed" : "open"} />
-                        <ActionButton
-                          variant="warning"
-                          onClick={() => handleCloseMonth(group.month)}
-                          disabled={workingId === group.month || group.monthClosed}
-                        >
-                          {group.monthClosed
-                            ? "Closed"
-                            : workingId === group.month
-                            ? "Closing..."
-                            : "Close Month"}
-                        </ActionButton>
-                      </div>
-                    </div>
-
-                    <div style={tableWrapStyle}>
-                      <table style={tableStyle}>
-                        <thead>
-                          <tr style={{ background: "#f8fbff" }}>
-                            <th style={thStyle}>Date</th>
-                            <th style={thStyle}>Time</th>
-                            <th style={thStyle}>Equipment</th>
-                            <th style={thStyle}>Employee</th>
-                            <th style={thStyle}>Airline / Use</th>
-                            <th style={thStyle}>Start</th>
-                            <th style={thStyle}>End</th>
-                            <th style={thStyle}>Gallons</th>
-                            <th style={thStyle}>Price / Gallon</th>
-                            <th style={thStyle}>Total Cost</th>
-                            <th style={thStyle}>Status</th>
-                            <th style={thStyle}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.rows.map((item) => (
-                            <tr key={item.id}>
-                              <td style={tdStyle}>{item.date || "—"}</td>
-                              <td style={tdStyle}>{item.time || "—"}</td>
-                              <td style={tdStyle}>{item.equipmentNumber || "—"}</td>
-                              <td style={tdStyle}>{getEmployeeName(item)}</td>
-                              <td style={tdStyle}>{getAirlineUse(item)}</td>
-                              <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
-                              <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
-                              <td style={{ ...tdStyle, fontWeight: 800 }}>
-                                {safeNumber(item.totalGallons).toFixed(2)}
-                              </td>
-                              <td style={tdStyle}>
-                                {formatMoney(getPricePerGallon(item, defaultPricePerGallon))}
-                              </td>
-                              <td style={{ ...tdStyle, fontWeight: 800 }}>
-                                {formatMoney(getTotalCost(item, defaultPricePerGallon))}
-                              </td>
-                              <td style={tdStyle}>
-                                <StatusBadge status={getOverallPhotoStatus(item)} />
-                              </td>
-                              <td style={tdStyle}>
-                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                  {editingRowId !== item.id ? (
-                                    <ActionButton
-                                      variant="secondary"
-                                      onClick={() => startEditing(item)}
-                                    >
-                                      Edit
-                                    </ActionButton>
-                                  ) : (
-                                    <>
-                                      <ActionButton
-                                        variant="success"
-                                        onClick={() => saveEditing(item.id)}
-                                        disabled={workingId === item.id}
-                                      >
-                                        {workingId === item.id ? "Saving..." : "Save"}
-                                      </ActionButton>
-                                      <ActionButton
-                                        variant="secondary"
-                                        onClick={cancelEditing}
-                                        disabled={workingId === item.id}
-                                      >
-                                        Cancel
-                                      </ActionButton>
-                                    </>
-                                  )}
-
-                                  <ActionButton
-                                    variant="danger"
-                                    onClick={() => handleDelete(item.id)}
-                                    disabled={workingId === item.id}
-                                  >
-                                    {workingId === item.id ? "Deleting..." : "Delete"}
-                                  </ActionButton>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-
-                          {editingRowId &&
-                            editDraft &&
-                            group.rows.some((item) => item.id === editingRowId) && (
-                              <tr>
-                                <td colSpan={12} style={tdStyle}>
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                                      gap: 12,
-                                    }}
-                                  >
-                                    <div>
-                                      <FieldLabel>Date</FieldLabel>
-                                      <TextInput
-                                        type="date"
-                                        value={editDraft.date}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({ ...prev, date: e.target.value }))
-                                        }
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>Time</FieldLabel>
-                                      <TextInput
-                                        value={editDraft.time}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({ ...prev, time: e.target.value }))
-                                        }
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>Equipment</FieldLabel>
-                                      <TextInput
-                                        value={editDraft.equipmentNumber}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({
-                                            ...prev,
-                                            equipmentNumber: e.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>Employee</FieldLabel>
-                                      <TextInput
-                                        value={editDraft.employeeName}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({
-                                            ...prev,
-                                            employeeName: e.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>Airline / Use</FieldLabel>
-                                      <TextInput
-                                        value={editDraft.airlineUse}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({
-                                            ...prev,
-                                            airlineUse: e.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>Start Reading</FieldLabel>
-                                      <TextInput
-                                        type="number"
-                                        step="0.01"
-                                        value={editDraft.startReading}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({
-                                            ...prev,
-                                            startReading: e.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>End Reading</FieldLabel>
-                                      <TextInput
-                                        type="number"
-                                        step="0.01"
-                                        value={editDraft.endReading}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({
-                                            ...prev,
-                                            endReading: e.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>Price Per Gallon</FieldLabel>
-                                      <TextInput
-                                        type="number"
-                                        step="0.0001"
-                                        min="0"
-                                        value={editDraft.pricePerGallon}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({
-                                            ...prev,
-                                            pricePerGallon: e.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>Total Gallons</FieldLabel>
-                                      <TextInput value={editCalculatedGallons.toFixed(2)} disabled />
-                                    </div>
-
-                                    <div>
-                                      <FieldLabel>Total Cost</FieldLabel>
-                                      <TextInput value={editCalculatedTotalCost.toFixed(2)} disabled />
-                                    </div>
-
-                                    <div style={{ gridColumn: "1 / -1" }}>
-                                      <FieldLabel>Notes</FieldLabel>
-                                      <TextArea
-                                        value={editDraft.notes}
-                                        onChange={(e) =>
-                                          setEditDraft((prev) => ({
-                                            ...prev,
-                                            notes: e.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </PageCard>
-                ))}
-              </div>
-            )}
+                            <ActionButton
+                              variant="danger"
+                              onClick={() => handleDelete(item.id)}
+                              disabled={workingId === item.id}
+                            >
+                              {workingId === item.id ? "Deleting..." : "Delete"}
+                            </ActionButton>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </PageCard>
         </>
       )}
@@ -1795,8 +1630,8 @@ export default function FuelManagementPage() {
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Date</th>
                   <th style={thStyle}>Records</th>
-                  <th style={thStyle}>Gallons</th>
-                  <th style={thStyle}>Total Cost</th>
+                  <th style={thStyle}>Total Final Reading</th>
+                  <th style={thStyle}>Avg Final Reading</th>
                 </tr>
               </thead>
               <tbody>
@@ -1811,8 +1646,10 @@ export default function FuelManagementPage() {
                     <tr key={item.key}>
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
-                      <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
-                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(item.cost)}</td>
+                      <td style={tdStyle}>{item.totalFinalReading.toFixed(2)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>
+                        {item.avgFinalReading.toFixed(2)}
+                      </td>
                     </tr>
                   ))
                 )}
@@ -1836,8 +1673,8 @@ export default function FuelManagementPage() {
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Week Start</th>
                   <th style={thStyle}>Records</th>
-                  <th style={thStyle}>Gallons</th>
-                  <th style={thStyle}>Total Cost</th>
+                  <th style={thStyle}>Total Final Reading</th>
+                  <th style={thStyle}>Avg Final Reading</th>
                 </tr>
               </thead>
               <tbody>
@@ -1852,8 +1689,10 @@ export default function FuelManagementPage() {
                     <tr key={item.key}>
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
-                      <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
-                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(item.cost)}</td>
+                      <td style={tdStyle}>{item.totalFinalReading.toFixed(2)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>
+                        {item.avgFinalReading.toFixed(2)}
+                      </td>
                     </tr>
                   ))
                 )}
@@ -1872,21 +1711,19 @@ export default function FuelManagementPage() {
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 1000 }}>
+            <table style={{ ...tableStyle, minWidth: 900 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Month</th>
                   <th style={thStyle}>Records</th>
-                  <th style={thStyle}>Gallons</th>
-                  <th style={thStyle}>Total Cost</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Action</th>
+                  <th style={thStyle}>Total Final Reading</th>
+                  <th style={thStyle}>Avg Final Reading</th>
                 </tr>
               </thead>
               <tbody>
                 {monthlyRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={tdStyle}>
+                    <td colSpan={4} style={tdStyle}>
                       {loading ? "Loading..." : "No data found."}
                     </td>
                   </tr>
@@ -1895,23 +1732,9 @@ export default function FuelManagementPage() {
                     <tr key={item.key}>
                       <td style={tdStyle}>{item.label}</td>
                       <td style={tdStyle}>{item.records}</td>
-                      <td style={tdStyle}>{item.gallons.toFixed(2)}</td>
-                      <td style={{ ...tdStyle, fontWeight: 800 }}>{formatMoney(item.cost)}</td>
-                      <td style={tdStyle}>
-                        <StatusBadge status={item.monthClosed ? "closed" : "open"} />
-                      </td>
-                      <td style={tdStyle}>
-                        <ActionButton
-                          variant="warning"
-                          onClick={() => handleCloseMonth(item.key)}
-                          disabled={workingId === item.key || item.monthClosed}
-                        >
-                          {item.monthClosed
-                            ? "Closed"
-                            : workingId === item.key
-                            ? "Closing..."
-                            : "Close Month"}
-                        </ActionButton>
+                      <td style={tdStyle}>{item.totalFinalReading.toFixed(2)}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>
+                        {item.avgFinalReading.toFixed(2)}
                       </td>
                     </tr>
                   ))
@@ -1936,30 +1759,22 @@ export default function FuelManagementPage() {
                 fontWeight: 700,
               }}
             >
-              Review records with pending or mismatch OCR validation. You can approve them to remove them from this tab.
+              If photo and entered value match, it can remain auto approved. If not, it stays pending review.
             </p>
           </div>
 
           <div style={tableWrapStyle}>
-            <table style={{ ...tableStyle, minWidth: 1850 }}>
+            <table style={{ ...tableStyle, minWidth: 1550 }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle}>Date</th>
                   <th style={thStyle}>Employee</th>
                   <th style={thStyle}>Airline / Use</th>
-                  <th style={thStyle}>Entered Start</th>
-                  <th style={thStyle}>Entered End</th>
-                  <th style={thStyle}>Gallons</th>
-                  <th style={thStyle}>Price / Gallon</th>
-                  <th style={thStyle}>Total Cost</th>
-                  <th style={thStyle}>OCR Start</th>
-                  <th style={thStyle}>OCR End</th>
-                  <th style={thStyle}>Start Diff</th>
-                  <th style={thStyle}>End Diff</th>
-                  <th style={thStyle}>Start Photo</th>
-                  <th style={thStyle}>End Photo</th>
-                  <th style={thStyle}>Start Status</th>
-                  <th style={thStyle}>End Status</th>
+                  <th style={thStyle}>Final Reading</th>
+                  <th style={thStyle}>OCR Final</th>
+                  <th style={thStyle}>Diff</th>
+                  <th style={thStyle}>Photo</th>
+                  <th style={thStyle}>Photo Status</th>
                   <th style={thStyle}>Overall</th>
                   <th style={thStyle}>Notes</th>
                   <th style={thStyle}>Actions</th>
@@ -1968,7 +1783,7 @@ export default function FuelManagementPage() {
               <tbody>
                 {pendingReviewRows.length === 0 ? (
                   <tr>
-                    <td colSpan={19} style={tdStyle}>
+                    <td colSpan={11} style={tdStyle}>
                       {loading ? "Loading..." : "No pending review records."}
                     </td>
                   </tr>
@@ -1978,68 +1793,35 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>{item.date || "—"}</td>
                       <td style={tdStyle}>{getEmployeeName(item)}</td>
                       <td style={tdStyle}>{getAirlineUse(item)}</td>
-                      <td style={tdStyle}>{safeNumber(item.startReading).toFixed(2)}</td>
-                      <td style={tdStyle}>{safeNumber(item.endReading).toFixed(2)}</td>
-                      <td style={tdStyle}>{safeNumber(item.totalGallons).toFixed(2)}</td>
-                      <td style={tdStyle}>
-                        {formatMoney(getPricePerGallon(item, defaultPricePerGallon))}
-                      </td>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>
-                        {formatMoney(getTotalCost(item, defaultPricePerGallon))}
+                        {getFinalReading(item).toFixed(2)}
                       </td>
                       <td style={tdStyle}>
-                        {item.ocrStartReading !== null && item.ocrStartReading !== undefined
-                          ? item.ocrStartReading
+                        {getOcrFinalReading(item) !== null && getOcrFinalReading(item) !== undefined
+                          ? getOcrFinalReading(item)
                           : "—"}
                       </td>
                       <td style={tdStyle}>
-                        {item.ocrEndReading !== null && item.ocrEndReading !== undefined
-                          ? item.ocrEndReading
+                        {getFinalPhotoDiff(item) !== null && getFinalPhotoDiff(item) !== undefined
+                          ? getFinalPhotoDiff(item)
                           : "—"}
                       </td>
                       <td style={tdStyle}>
-                        {item.startPhotoDiff !== null && item.startPhotoDiff !== undefined
-                          ? item.startPhotoDiff
-                          : "—"}
-                      </td>
-                      <td style={tdStyle}>
-                        {item.endPhotoDiff !== null && item.endPhotoDiff !== undefined
-                          ? item.endPhotoDiff
-                          : "—"}
-                      </td>
-                      <td style={tdStyle}>
-                        {item.startPhotoUrl ? (
+                        {getFinalPhotoUrl(item) ? (
                           <a
-                            href={item.startPhotoUrl}
+                            href={getFinalPhotoUrl(item)}
                             target="_blank"
                             rel="noreferrer"
                             style={{ color: "#1769aa", fontWeight: 700 }}
                           >
-                            Open Start
+                            Open Photo
                           </a>
                         ) : (
                           "No photo"
                         )}
                       </td>
                       <td style={tdStyle}>
-                        {item.endPhotoUrl ? (
-                          <a
-                            href={item.endPhotoUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: "#1769aa", fontWeight: 700 }}
-                          >
-                            Open End
-                          </a>
-                        ) : (
-                          "No photo"
-                        )}
-                      </td>
-                      <td style={tdStyle}>
-                        <StatusBadge status={getStartPhotoStatus(item)} />
-                      </td>
-                      <td style={tdStyle}>
-                        <StatusBadge status={getEndPhotoStatus(item)} />
+                        <StatusBadge status={getFinalPhotoStatus(item)} />
                       </td>
                       <td style={tdStyle}>
                         <StatusBadge status={getOverallPhotoStatus(item)} />
@@ -2047,10 +1829,7 @@ export default function FuelManagementPage() {
                       <td style={tdStyle}>
                         <div>{item.photoCheckNotes || "—"}</div>
                         <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                          Start: {item.startPhotoCheckNotes || "—"}
-                        </div>
-                        <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
-                          End: {item.endPhotoCheckNotes || "—"}
+                          Final: {getFinalPhotoNotes(item) || "—"}
                         </div>
                       </td>
                       <td style={tdStyle}>
@@ -2086,217 +1865,186 @@ export default function FuelManagementPage() {
               </tbody>
             </table>
           </div>
+        </PageCard>
+      )}
 
-          {editingRowId && editDraft && (
-            <div style={{ marginTop: 18 }}>
-              <PageCard style={{ padding: 18 }}>
-                <h3
-                  style={{
-                    margin: "0 0 12px",
-                    fontSize: 18,
-                    fontWeight: 900,
-                    color: "#0f172a",
-                  }}
-                >
-                  Edit Fuel Record
-                </h3>
+      {editingRowId && editDraft && (
+        <PageCard style={{ padding: 18 }}>
+          <h3
+            style={{
+              margin: "0 0 12px",
+              fontSize: 18,
+              fontWeight: 900,
+              color: "#0f172a",
+            }}
+          >
+            Edit Fuel Record
+          </h3>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <div>
-                    <FieldLabel>Date</FieldLabel>
-                    <TextInput
-                      type="date"
-                      value={editDraft.date}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({ ...prev, date: e.target.value }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Time</FieldLabel>
-                    <TextInput
-                      value={editDraft.time}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({ ...prev, time: e.target.value }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Equipment</FieldLabel>
-                    <TextInput
-                      value={editDraft.equipmentNumber}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          equipmentNumber: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Employee</FieldLabel>
-                    <TextInput
-                      value={editDraft.employeeName}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          employeeName: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Airline / Use</FieldLabel>
-                    <TextInput
-                      value={editDraft.airlineUse}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          airlineUse: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Start Reading</FieldLabel>
-                    <TextInput
-                      type="number"
-                      step="0.01"
-                      value={editDraft.startReading}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          startReading: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>End Reading</FieldLabel>
-                    <TextInput
-                      type="number"
-                      step="0.01"
-                      value={editDraft.endReading}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          endReading: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Price Per Gallon</FieldLabel>
-                    <TextInput
-                      type="number"
-                      step="0.0001"
-                      min="0"
-                      value={editDraft.pricePerGallon}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          pricePerGallon: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Total Gallons</FieldLabel>
-                    <TextInput value={editCalculatedGallons.toFixed(2)} disabled />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Total Cost</FieldLabel>
-                    <TextInput value={editCalculatedTotalCost.toFixed(2)} disabled />
-                  </div>
-
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <FieldLabel>General Review Notes</FieldLabel>
-                    <TextArea
-                      value={editDraft.photoCheckNotes}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          photoCheckNotes: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Start Photo Notes</FieldLabel>
-                    <TextArea
-                      value={editDraft.startPhotoCheckNotes}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          startPhotoCheckNotes: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>End Photo Notes</FieldLabel>
-                    <TextArea
-                      value={editDraft.endPhotoCheckNotes}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          endPhotoCheckNotes: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <FieldLabel>Notes</FieldLabel>
-                    <TextArea
-                      value={editDraft.notes}
-                      onChange={(e) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          notes: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-                  <ActionButton
-                    variant="success"
-                    onClick={() => saveEditing(editingRowId)}
-                    disabled={workingId === editingRowId}
-                  >
-                    {workingId === editingRowId ? "Saving..." : "Save Changes"}
-                  </ActionButton>
-
-                  <ActionButton
-                    variant="secondary"
-                    onClick={cancelEditing}
-                    disabled={workingId === editingRowId}
-                  >
-                    Cancel
-                  </ActionButton>
-                </div>
-              </PageCard>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <div>
+              <FieldLabel>Date</FieldLabel>
+              <TextInput
+                type="date"
+                value={editDraft.date}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, date: e.target.value }))
+                }
+              />
             </div>
-          )}
+
+            <div>
+              <FieldLabel>Time</FieldLabel>
+              <TextInput
+                value={editDraft.time}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({ ...prev, time: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Equipment</FieldLabel>
+              <TextInput
+                value={editDraft.equipmentNumber}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    equipmentNumber: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Employee</FieldLabel>
+              <TextInput
+                value={editDraft.employeeName}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    employeeName: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Airline / Use</FieldLabel>
+              <TextInput
+                value={editDraft.airlineUse}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    airlineUse: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Final Reading</FieldLabel>
+              <TextInput
+                type="number"
+                step="0.01"
+                value={editDraft.finalReading}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    finalReading: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FieldLabel>Replace Final Photo</FieldLabel>
+              <TextInput
+                type="file"
+                accept="image/*"
+                onChange={(e) => setEditPhotoFile(e.target.files?.[0] || null)}
+              />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1" }}>
+              <PhotoPreviewCard
+                title="Final Photo"
+                file={editPhotoFile}
+                previewUrl={editPhotoPreview}
+                currentUrl={
+                  rows.find((r) => r.id === editingRowId)
+                    ? getFinalPhotoUrl(rows.find((r) => r.id === editingRowId))
+                    : ""
+                }
+              />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FieldLabel>General Review Notes</FieldLabel>
+              <TextArea
+                value={editDraft.photoCheckNotes}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    photoCheckNotes: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FieldLabel>Final Photo Notes</FieldLabel>
+              <TextArea
+                value={editDraft.finalPhotoCheckNotes}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    finalPhotoCheckNotes: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FieldLabel>Notes</FieldLabel>
+              <TextArea
+                value={editDraft.notes}
+                onChange={(e) =>
+                  setEditDraft((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+            <ActionButton
+              variant="success"
+              onClick={() => {
+                const currentItem = rows.find((r) => r.id === editingRowId);
+                if (currentItem) saveEditing(currentItem);
+              }}
+              disabled={workingId === editingRowId}
+            >
+              {workingId === editingRowId ? "Saving..." : "Save Changes"}
+            </ActionButton>
+
+            <ActionButton
+              variant="secondary"
+              onClick={cancelEditing}
+              disabled={workingId === editingRowId}
+            >
+              Cancel
+            </ActionButton>
+          </div>
         </PageCard>
       )}
     </div>
