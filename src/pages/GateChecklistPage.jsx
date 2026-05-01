@@ -3,9 +3,11 @@ import {
   addDoc,
   collection,
   doc,
-  getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -676,6 +678,13 @@ function hasChecklistDependentData(form, specials, gateCheck, delayAnnouncements
   );
 }
 
+function getSortDateValue(value) {
+  if (!value) return 0;
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
 export default function GateChecklistPage() {
   const { user } = useUser();
   const { isMobile, isTablet } = useViewport();
@@ -691,7 +700,9 @@ export default function GateChecklistPage() {
   const [loadingChecklist, setLoadingChecklist] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const [lookupId, setLookupId] = useState("");
+  const [lookupDate, setLookupDate] = useState("");
+  const [lookupAirline, setLookupAirline] = useState("SY");
+
   const [editingId, setEditingId] = useState("");
   const [currentStatus, setCurrentStatus] = useState("new");
 
@@ -787,8 +798,9 @@ export default function GateChecklistPage() {
 
   function resetAll() {
     setEditingId("");
-    setLookupId("");
     setCurrentStatus("new");
+    setLookupDate("");
+    setLookupAirline("SY");
     setForm(createInitialForm(user));
     setSpecials(createInitialSpecials());
     setGateCheck(createInitialGateCheck());
@@ -979,7 +991,6 @@ export default function GateChecklistPage() {
       });
 
       setEditingId(ref.id);
-      setLookupId(ref.id);
       setCurrentStatus("draft");
       setStatusMessage(`Draft saved successfully. ID: ${ref.id}`);
     } catch (error) {
@@ -1021,7 +1032,6 @@ export default function GateChecklistPage() {
       });
 
       setEditingId(ref.id);
-      setLookupId(ref.id);
       setCurrentStatus("submitted");
       setStatusMessage(`Gate checklist submitted successfully. ID: ${ref.id}`);
     } catch (error) {
@@ -1089,8 +1099,8 @@ export default function GateChecklistPage() {
   }
 
   async function handleLoadChecklist() {
-    if (!lookupId.trim()) {
-      setStatusMessage("Enter a checklist ID.");
+    if (!lookupDate.trim() || !lookupAirline.trim()) {
+      setStatusMessage("Select date and airline.");
       return;
     }
 
@@ -1098,17 +1108,42 @@ export default function GateChecklistPage() {
       setLoadingChecklist(true);
       setStatusMessage("");
 
-      const ref = doc(db, "gateChecklistReports", lookupId.trim());
-      const snap = await getDoc(ref);
+      const q = query(
+        collection(db, "gateChecklistReports"),
+        where("date", "==", lookupDate.trim()),
+        where("airline", "==", lookupAirline.trim())
+      );
 
-      if (!snap.exists()) {
-        setStatusMessage("Checklist not found.");
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        setStatusMessage("No checklist found for that date and airline.");
         return;
       }
 
-      const data = snap.data();
+      const docs = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const statusScore = (item) => {
+            if (item.status === "draft") return 3;
+            if (item.status === "submitted") return 2;
+            if (item.status === "closed") return 1;
+            return 0;
+          };
 
-      setEditingId(snap.id);
+          const statusDiff = statusScore(b) - statusScore(a);
+          if (statusDiff !== 0) return statusDiff;
+
+          const updatedDiff =
+            getSortDateValue(b.updatedAt) - getSortDateValue(a.updatedAt);
+          if (updatedDiff !== 0) return updatedDiff;
+
+          return getSortDateValue(b.createdAt) - getSortDateValue(a.createdAt);
+        });
+
+      const data = docs[0];
+
+      setEditingId(data.id);
       setCurrentStatus(data.status || "draft");
 
       setForm({
@@ -1153,7 +1188,7 @@ export default function GateChecklistPage() {
             ? String(data.notLoadedBags)
             : "",
         remarks: data.remarks || "",
-        gateAgent: data.gateAgent || "",
+        gateAgent: data.gateAgent || getVisibleUserName(user),
         expeditor: data.expeditor || "",
         supervisor: data.supervisor || "",
         firstPaxOff: data.firstPaxOff || "",
@@ -1179,7 +1214,9 @@ export default function GateChecklistPage() {
       );
 
       setActuals(data.actuals || {});
-      setStatusMessage(`Checklist ${snap.id} loaded successfully.`);
+      setStatusMessage(
+        `Checklist loaded successfully for ${lookupDate} / ${lookupAirline}.`
+      );
     } catch (error) {
       console.error("Error loading checklist:", error);
       setStatusMessage("Could not load checklist.");
@@ -1203,7 +1240,7 @@ export default function GateChecklistPage() {
       <style>{`
         @page {
           size: landscape;
-          margin: 0.2in;
+          margin: 0.15in;
         }
 
         @media print {
@@ -1211,13 +1248,13 @@ export default function GateChecklistPage() {
             background: #fff !important;
             margin: 0 !important;
             padding: 0 !important;
-            zoom: 0.84;
+            zoom: 0.74;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
 
           body {
-            font-size: 10px !important;
+            font-size: 9px !important;
           }
 
           .no-print {
@@ -1232,8 +1269,28 @@ export default function GateChecklistPage() {
           }
 
           .print-main-card {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
+            break-inside: auto !important;
+            page-break-inside: auto !important;
+          }
+
+          .print-compact-grid {
+            gap: 8px !important;
+          }
+
+          .print-compact-table th,
+          .print-compact-table td {
+            padding: 4px 6px !important;
+            font-size: 9px !important;
+          }
+
+          .print-side-card {
+            padding: 8px !important;
+          }
+
+          textarea {
+            min-height: 48px !important;
+            max-height: 70px !important;
+            overflow: hidden !important;
           }
 
           table, tr, td, th {
@@ -1314,18 +1371,32 @@ export default function GateChecklistPage() {
             display: "grid",
             gridTemplateColumns: isMobile
               ? "1fr"
-              : "minmax(220px, 320px) auto auto",
+              : "minmax(180px, 220px) minmax(180px, 220px) auto auto",
             gap: 10,
             alignItems: "end",
           }}
         >
           <div>
-            <FieldLabel>Load Checklist by ID</FieldLabel>
+            <FieldLabel>Load Checklist by Date</FieldLabel>
             <TextInput
-              value={lookupId}
-              onChange={(e) => setLookupId(e.target.value)}
-              placeholder="Paste checklist ID"
+              type="date"
+              value={lookupDate}
+              onChange={(e) => setLookupDate(e.target.value)}
             />
+          </div>
+
+          <div>
+            <FieldLabel>Airline</FieldLabel>
+            <SelectInput
+              value={lookupAirline}
+              onChange={(e) => setLookupAirline(e.target.value)}
+            >
+              {AIRLINE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </SelectInput>
           </div>
 
           <ActionButton
@@ -1370,7 +1441,7 @@ export default function GateChecklistPage() {
         </div>
       </PageCard>
 
-      <PageCard className="print-main-card" style={{ padding: isMobile ? 14 : 18 }}>
+      <PageCard className="print-main-card" style={{ padding: isMobile ? 12 : 14 }}>
         <div
           className="no-print"
           style={{
@@ -1378,7 +1449,7 @@ export default function GateChecklistPage() {
             justifyContent: "space-between",
             gap: 12,
             flexWrap: "wrap",
-            marginBottom: 14,
+            marginBottom: 12,
           }}
         >
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1424,11 +1495,11 @@ export default function GateChecklistPage() {
           </div>
         </div>
 
-        <div style={{ display: "grid", gap: 14 }}>
+        <div style={{ display: "grid", gap: 10 }}>
           <div style={{ textAlign: "center" }}>
             <div
               style={{
-                fontSize: isMobile ? 26 : 34,
+                fontSize: isMobile ? 24 : 28,
                 fontWeight: 900,
                 letterSpacing: "-0.03em",
               }}
@@ -1443,8 +1514,8 @@ export default function GateChecklistPage() {
               display: "grid",
               gridTemplateColumns: isMobile
                 ? "1fr"
-                : "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
+                : "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 10,
             }}
           >
             <div>
@@ -1530,6 +1601,7 @@ export default function GateChecklistPage() {
           )}
 
           <div
+            className="print-compact-grid"
             style={{
               display: "grid",
               gridTemplateColumns: isMobile
@@ -1610,7 +1682,7 @@ export default function GateChecklistPage() {
           </div>
 
           <div
-            className="no-print"
+            className="no-print print-compact-grid"
             style={{
               display: "grid",
               gridTemplateColumns: isMobile
@@ -1618,7 +1690,7 @@ export default function GateChecklistPage() {
                 : isTablet
                 ? "repeat(2, minmax(0, 1fr))"
                 : "repeat(4, minmax(0, 1fr))",
-              gap: 12,
+              gap: 10,
             }}
           >
             <div>
@@ -1755,12 +1827,13 @@ export default function GateChecklistPage() {
           </div>
 
           <div
+            className="print-compact-grid"
             style={{
               display: "grid",
               gridTemplateColumns: isMobile
                 ? "1fr"
-                : "minmax(0, 1.7fr) minmax(260px, 0.85fr)",
-              gap: 14,
+                : "minmax(0, 1.8fr) minmax(220px, 0.8fr)",
+              gap: 10,
               alignItems: "start",
             }}
           >
@@ -1774,12 +1847,13 @@ export default function GateChecklistPage() {
               }}
             >
               <table
+                className="print-compact-table"
                 style={{
                   width: "100%",
                   minWidth: isMobile ? 720 : 0,
                   borderCollapse: "collapse",
                   tableLayout: "fixed",
-                  fontSize: 13,
+                  fontSize: 12,
                   opacity: stdUnlocked ? 1 : 0.65,
                 }}
               >
@@ -1794,19 +1868,19 @@ export default function GateChecklistPage() {
                 <tbody>
                   {checklistSections.map((section, sectionIndex) => (
                     <tr key={section.time}>
-                      <td style={{ ...tableCellStyle, width: 120, fontWeight: 800 }}>
+                      <td style={{ ...tableCellStyle, width: 92, fontWeight: 800 }}>
                         {section.time}
                       </td>
 
                       <td style={tableCellStyle}>
-                        <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ display: "grid", gap: 5 }}>
                           {section.tasks.map((task, taskIndex) => (
                             <div
                               key={`${section.time}-${taskIndex}`}
                               style={{
                                 display: "grid",
-                                gridTemplateColumns: "18px 1fr",
-                                gap: 8,
+                                gridTemplateColumns: "14px 1fr",
+                                gap: 6,
                                 alignItems: "start",
                               }}
                             >
@@ -1818,7 +1892,7 @@ export default function GateChecklistPage() {
                       </td>
 
                       <td style={tableCellStyle}>
-                        <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ display: "grid", gap: 5 }}>
                           {section.tasks.map((task, taskIndex) => (
                             <TimeInput
                               key={`${sectionIndex}-${taskIndex}`}
@@ -1827,7 +1901,7 @@ export default function GateChecklistPage() {
                               onChange={(e) =>
                                 updateActual(sectionIndex, taskIndex, e.target.value)
                               }
-                              style={{ padding: "8px 10px", fontSize: 12 }}
+                              style={{ padding: "6px 8px", fontSize: 11 }}
                             />
                           ))}
                         </div>
@@ -1838,20 +1912,20 @@ export default function GateChecklistPage() {
               </table>
             </div>
 
-            <div style={{ display: "grid", gap: 14, opacity: stdUnlocked ? 1 : 0.65 }}>
-              <PageCard style={{ padding: 14 }}>
+            <div style={{ display: "grid", gap: 10, opacity: stdUnlocked ? 1 : 0.65 }}>
+              <PageCard className="print-side-card" style={{ padding: 12 }}>
                 <div
                   style={{
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: 900,
-                    marginBottom: 12,
+                    marginBottom: 8,
                     textAlign: "center",
                   }}
                 >
                   Push / Departure
                 </div>
 
-                <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ display: "grid", gap: 8 }}>
                   <div>
                     <FieldLabel>Brake Release Time</FieldLabel>
                     <TimeInput
@@ -1872,19 +1946,19 @@ export default function GateChecklistPage() {
                 </div>
               </PageCard>
 
-              <PageCard style={{ padding: 14 }}>
+              <PageCard className="print-side-card" style={{ padding: 12 }}>
                 <div
                   style={{
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: 900,
-                    marginBottom: 12,
+                    marginBottom: 8,
                     textAlign: "center",
                   }}
                 >
                   Pax Flow
                 </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "grid", gap: 6 }}>
                   <div>
                     <FieldLabel>First Pax Off</FieldLabel>
                     <TimeInput
@@ -1923,30 +1997,30 @@ export default function GateChecklistPage() {
                 </div>
               </PageCard>
 
-              <PageCard style={{ padding: 14 }}>
+              <PageCard className="print-side-card" style={{ padding: 12 }}>
                 <div
                   style={{
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: 900,
-                    marginBottom: 12,
+                    marginBottom: 8,
                     textAlign: "center",
                   }}
                 >
                   Specials
                 </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "grid", gap: 6 }}>
                   {BASE_SPECIALS.map((item) => (
                     <div
                       key={item}
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "110px 1fr",
-                        gap: 8,
+                        gridTemplateColumns: "88px 1fr",
+                        gap: 6,
                         alignItems: "center",
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 700 }}>{item}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>{item}</div>
                       <TextInput
                         disabled={!canEdit || !stdUnlocked}
                         value={specials[item]}
@@ -1956,25 +2030,26 @@ export default function GateChecklistPage() {
                             [item]: e.target.value,
                           }))
                         }
+                        style={{ padding: "6px 8px", fontSize: 11 }}
                       />
                     </div>
                   ))}
                 </div>
               </PageCard>
 
-              <PageCard style={{ padding: 14 }}>
+              <PageCard className="print-side-card" style={{ padding: 12 }}>
                 <div
                   style={{
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: 900,
-                    marginBottom: 12,
+                    marginBottom: 8,
                     textAlign: "center",
                   }}
                 >
-                  Delay Announcements Made (24H)
+                  Delay Announcements
                 </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "grid", gap: 6 }}>
                   {delayAnnouncements.map((item, index) => (
                     <TimeInput
                       key={index}
@@ -1990,19 +2065,19 @@ export default function GateChecklistPage() {
                 </div>
               </PageCard>
 
-              <PageCard style={{ padding: 14 }}>
+              <PageCard className="print-side-card" style={{ padding: 12 }}>
                 <div
                   style={{
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: 900,
-                    marginBottom: 12,
+                    marginBottom: 8,
                     textAlign: "center",
                   }}
                 >
                   Gate Check
                 </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "grid", gap: 6 }}>
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>BAGS</div>
                     <TextInput
@@ -2011,6 +2086,7 @@ export default function GateChecklistPage() {
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, bags: e.target.value }))
                       }
+                      style={{ padding: "6px 8px", fontSize: 11 }}
                     />
                   </div>
 
@@ -2025,6 +2101,7 @@ export default function GateChecklistPage() {
                           strollersCarSeats: e.target.value,
                         }))
                       }
+                      style={{ padding: "6px 8px", fontSize: 11 }}
                     />
                   </div>
 
@@ -2036,6 +2113,7 @@ export default function GateChecklistPage() {
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, wchrs: e.target.value }))
                       }
+                      style={{ padding: "6px 8px", fontSize: 11 }}
                     />
                   </div>
 
@@ -2047,6 +2125,7 @@ export default function GateChecklistPage() {
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, other: e.target.value }))
                       }
+                      style={{ padding: "6px 8px", fontSize: 11 }}
                     />
                   </div>
                 </div>
@@ -2054,14 +2133,14 @@ export default function GateChecklistPage() {
             </div>
           </div>
 
-          <PageCard style={{ padding: 16, opacity: stdUnlocked ? 1 : 0.65 }}>
+          <PageCard style={{ padding: 12, opacity: stdUnlocked ? 1 : 0.65 }}>
             <FieldLabel>Notes</FieldLabel>
             <TextArea
               value={form.remarks}
               disabled={!canEdit || !stdUnlocked}
               onChange={(e) => updateField("remarks", e.target.value)}
               placeholder="Add notes here..."
-              style={{ minHeight: 120 }}
+              style={{ minHeight: 70 }}
             />
           </PageCard>
         </div>
@@ -2073,27 +2152,28 @@ export default function GateChecklistPage() {
 const tableHeadStyle = {
   border: "1px solid #94a3b8",
   background: "#f8fafc",
-  padding: "10px 12px",
-  fontSize: 13,
+  padding: "8px 10px",
+  fontSize: 12,
   textAlign: "left",
   fontWeight: 900,
 };
 
 const tableCellStyle = {
   border: "1px solid #94a3b8",
-  padding: "10px 12px",
+  padding: "8px 10px",
   verticalAlign: "top",
 };
 
 const gateCheckRowStyle = {
   display: "grid",
-  gridTemplateColumns: "130px 1fr",
-  gap: 8,
+  gridTemplateColumns: "110px 1fr",
+  gap: 6,
   alignItems: "center",
 };
 
 const gateCheckLabelStyle = {
   fontWeight: 700,
+  fontSize: 12,
 };
 
 function statusPillStyle(bg, border, color) {
