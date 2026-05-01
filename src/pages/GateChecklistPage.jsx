@@ -3,9 +3,11 @@ import {
   addDoc,
   collection,
   doc,
-  getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -49,10 +51,10 @@ function PageCard({ children, style = {} }) {
   );
 }
 
-function FieldLabel({ children }) {
+function FieldLabel({ children, className = "" }) {
   return (
     <label
-      className="print-label"
+      className={className}
       style={{
         display: "block",
         marginBottom: 6,
@@ -696,7 +698,9 @@ export default function GateChecklistPage() {
   const [loadingChecklist, setLoadingChecklist] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const [lookupId, setLookupId] = useState("");
+  const [lookupDate, setLookupDate] = useState("");
+  const [lookupAirline, setLookupAirline] = useState("SY");
+
   const [editingId, setEditingId] = useState("");
   const [currentStatus, setCurrentStatus] = useState("new");
 
@@ -717,7 +721,7 @@ export default function GateChecklistPage() {
 
   const stdUnlocked = !!String(form.std || "").trim();
 
-  const canEdit = !isClosed && (!isExisting || currentStatus === "draft" || true);
+  const canEdit = !isClosed;
   const canReopen = isExisting && (isSubmitted || isClosed) && isSupervisorOrManager;
   const canClose = isExisting;
   const canSubmit =
@@ -792,7 +796,8 @@ export default function GateChecklistPage() {
 
   function resetAll() {
     setEditingId("");
-    setLookupId("");
+    setLookupDate("");
+    setLookupAirline("SY");
     setCurrentStatus("new");
     setForm(createInitialForm(user));
     setSpecials(createInitialSpecials());
@@ -984,9 +989,8 @@ export default function GateChecklistPage() {
       });
 
       setEditingId(ref.id);
-      setLookupId(ref.id);
       setCurrentStatus("draft");
-      setStatusMessage(`Draft saved successfully. ID: ${ref.id}`);
+      setStatusMessage("Draft saved successfully.");
     } catch (error) {
       console.error("Error saving draft:", error);
       setStatusMessage("Could not save draft.");
@@ -1026,9 +1030,8 @@ export default function GateChecklistPage() {
       });
 
       setEditingId(ref.id);
-      setLookupId(ref.id);
       setCurrentStatus("submitted");
-      setStatusMessage(`Gate checklist submitted successfully. ID: ${ref.id}`);
+      setStatusMessage("Gate checklist submitted successfully.");
     } catch (error) {
       console.error("Error submitting gate checklist:", error);
       setStatusMessage("Could not submit gate checklist.");
@@ -1094,8 +1097,8 @@ export default function GateChecklistPage() {
   }
 
   async function handleLoadChecklist() {
-    if (!lookupId.trim()) {
-      setStatusMessage("Enter a checklist ID.");
+    if (!lookupDate.trim() || !lookupAirline.trim()) {
+      setStatusMessage("Select date and airline.");
       return;
     }
 
@@ -1103,18 +1106,36 @@ export default function GateChecklistPage() {
       setLoadingChecklist(true);
       setStatusMessage("");
 
-      const ref = doc(db, "gateChecklistReports", lookupId.trim());
-      const snap = await getDoc(ref);
+      const q = query(
+        collection(db, "gateChecklistReports"),
+        where("date", "==", lookupDate.trim()),
+        where("airline", "==", lookupAirline.trim())
+      );
 
-      if (!snap.exists()) {
-        setStatusMessage("Checklist not found.");
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        setStatusMessage("No checklist found for that date and airline.");
         return;
       }
 
-      const data = snap.data();
+      const docs = snap.docs
+        .map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+        .sort((a, b) => {
+          const aTime =
+            (a.updatedAt?.toDate?.() || a.createdAt?.toDate?.() || new Date(0)).getTime();
+          const bTime =
+            (b.updatedAt?.toDate?.() || b.createdAt?.toDate?.() || new Date(0)).getTime();
+          return bTime - aTime;
+        });
 
-      setEditingId(snap.id);
-      setCurrentStatus(data.status || "draft");
+      const data = docs[0];
+
+      setEditingId(data.id);
+      setCurrentStatus(data.status === "closed" ? "closed" : "draft");
 
       setForm({
         airline: data.airline || "SY",
@@ -1158,7 +1179,7 @@ export default function GateChecklistPage() {
             ? String(data.notLoadedBags)
             : "",
         remarks: data.remarks || "",
-        gateAgent: data.gateAgent || "",
+        gateAgent: data.gateAgent || getVisibleUserName(user),
         expeditor: data.expeditor || "",
         supervisor: data.supervisor || "",
         firstPaxOff: data.firstPaxOff || "",
@@ -1184,7 +1205,11 @@ export default function GateChecklistPage() {
       );
 
       setActuals(data.actuals || {});
-      setStatusMessage(`Checklist ${snap.id} loaded successfully.`);
+      setStatusMessage(
+        data.status === "closed"
+          ? "Checklist loaded, but it is closed."
+          : "Checklist loaded and ready to continue."
+      );
     } catch (error) {
       console.error("Error loading checklist:", error);
       setStatusMessage("Could not load checklist.");
@@ -1208,7 +1233,7 @@ export default function GateChecklistPage() {
       <style>{`
         @page {
           size: portrait;
-          margin: 0.25in;
+          margin: 0.2in;
         }
 
         @media print {
@@ -1220,8 +1245,23 @@ export default function GateChecklistPage() {
             print-color-adjust: exact;
           }
 
-          body {
-            font-size: 11px !important;
+          body * {
+            visibility: hidden;
+          }
+
+          .print-only-area,
+          .print-only-area * {
+            visibility: visible;
+          }
+
+          .print-only-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            background: #fff;
           }
 
           .no-print {
@@ -1231,95 +1271,69 @@ export default function GateChecklistPage() {
           .print-card {
             box-shadow: none !important;
             border: 1px solid #cbd5e1 !important;
-            border-radius: 0 !important;
-            overflow: visible !important;
-            break-inside: avoid;
-            page-break-inside: avoid;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            border-radius: 10px !important;
           }
 
           .print-main-card {
-            break-inside: auto !important;
-            page-break-inside: auto !important;
-            overflow: visible !important;
-          }
-
-          .print-section {
-            break-inside: avoid;
-            page-break-inside: avoid;
-            overflow: visible !important;
-          }
-
-          .print-grid-2 {
-            display: grid !important;
-            grid-template-columns: 1fr 1fr !important;
-            gap: 10px !important;
-            align-items: start !important;
-          }
-
-          .print-grid-1 {
-            display: grid !important;
-            grid-template-columns: 1fr !important;
-            gap: 10px !important;
-          }
-
-          .print-full-width {
-            width: 100% !important;
-            max-width: 100% !important;
-            min-width: 0 !important;
-            overflow: visible !important;
-          }
-
-          .print-table-wrap {
-            overflow: visible !important;
-            border-radius: 0 !important;
-            border: 1px solid #94a3b8 !important;
-          }
-
-          .print-compact-table {
-            width: 100% !important;
-            min-width: 0 !important;
-            table-layout: fixed !important;
-            border-collapse: collapse !important;
-          }
-
-          .print-compact-table th,
-          .print-compact-table td {
-            padding: 6px 8px !important;
-            font-size: 10px !important;
-            line-height: 1.25 !important;
-            vertical-align: top !important;
-          }
-
-          .print-input,
-          .print-time,
-          .print-textarea,
-          .print-select {
-            border: 1px solid #cbd5e1 !important;
-            background: #fff !important;
-            color: #0f172a !important;
-            border-radius: 6px !important;
-            padding: 6px 8px !important;
-            font-size: 10px !important;
-            min-height: auto !important;
-            box-sizing: border-box !important;
-            appearance: none !important;
-            -webkit-appearance: none !important;
-          }
-
-          .print-textarea {
-            min-height: 60px !important;
-            resize: none !important;
-            overflow: visible !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
 
           .print-label {
             font-size: 10px !important;
             margin-bottom: 3px !important;
-            line-height: 1.2 !important;
           }
 
-          table, tr, td, th {
-            page-break-inside: avoid !important;
+          .print-input,
+          .print-time,
+          .print-select,
+          .print-textarea {
+            border: 1px solid #94a3b8 !important;
+            background: #fff !important;
+            color: #000 !important;
+            padding: 6px 8px !important;
+            font-size: 11px !important;
+            min-height: 32px !important;
+          }
+
+          .print-textarea {
+            min-height: 70px !important;
+          }
+
+          .print-grid-tight {
+            gap: 8px !important;
+          }
+
+          .print-table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            table-layout: fixed !important;
+            font-size: 10px !important;
+          }
+
+          .print-table th,
+          .print-table td {
+            border: 1px solid #94a3b8 !important;
+            padding: 6px 8px !important;
+            vertical-align: top !important;
+            font-size: 10px !important;
+          }
+
+          .print-table th {
+            background: #f8fafc !important;
+            font-weight: 900 !important;
+          }
+
+          .print-side-cards {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 8px !important;
+          }
+
+          .print-hide-header {
+            display: none !important;
           }
         }
       `}</style>
@@ -1373,7 +1387,7 @@ export default function GateChecklistPage() {
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 14 }}>
+        <PageCard className="no-print" style={{ padding: 14 }}>
           <div
             style={{
               padding: "12px 14px",
@@ -1396,18 +1410,32 @@ export default function GateChecklistPage() {
             display: "grid",
             gridTemplateColumns: isMobile
               ? "1fr"
-              : "minmax(220px, 320px) auto auto",
+              : "minmax(180px, 240px) minmax(180px, 240px) auto auto",
             gap: 10,
             alignItems: "end",
           }}
         >
           <div>
-            <FieldLabel>Load Checklist by ID</FieldLabel>
+            <FieldLabel>Fecha</FieldLabel>
             <TextInput
-              value={lookupId}
-              onChange={(e) => setLookupId(e.target.value)}
-              placeholder="Paste checklist ID"
+              type="date"
+              value={lookupDate}
+              onChange={(e) => setLookupDate(e.target.value)}
             />
+          </div>
+
+          <div>
+            <FieldLabel>Aerolínea</FieldLabel>
+            <SelectInput
+              value={lookupAirline}
+              onChange={(e) => setLookupAirline(e.target.value)}
+            >
+              {AIRLINE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </SelectInput>
           </div>
 
           <ActionButton
@@ -1452,413 +1480,404 @@ export default function GateChecklistPage() {
         </div>
       </PageCard>
 
-      <PageCard className="print-main-card" style={{ padding: isMobile ? 14 : 18 }}>
-        <div
-          className="no-print"
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 14,
-          }}
-        >
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <ActionButton variant="primary" onClick={handlePrint}>
-              Print
-            </ActionButton>
-
-            <ActionButton
-              variant="secondary"
-              onClick={handleSaveDraft}
-              disabled={saving || !canEdit}
-            >
-              {saving ? "Saving..." : "Save Draft"}
-            </ActionButton>
-
-            <ActionButton
-              variant="success"
-              onClick={handleSubmitChecklist}
-              disabled={saving || !canSubmit}
-            >
-              {saving ? "Submitting..." : "Submit Checklist"}
-            </ActionButton>
-
-            {canClose && (
-              <ActionButton
-                variant="warning"
-                onClick={handleCloseFlight}
-                disabled={saving || isClosed}
-              >
-                {saving ? "Closing..." : "Close Flight"}
-              </ActionButton>
-            )}
-
-            {canReopen && (
-              <ActionButton
-                variant="danger"
-                onClick={handleReopenChecklist}
-                disabled={saving}
-              >
-                {saving ? "Reopening..." : "Reopen Checklist"}
-              </ActionButton>
-            )}
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gap: 14 }}>
-          <div style={{ textAlign: "center" }}>
-            <div
-              style={{
-                fontSize: isMobile ? 26 : 34,
-                fontWeight: 900,
-                letterSpacing: "-0.03em",
-              }}
-            >
-              Gate Checklist
-            </div>
-          </div>
-
+      <div className="print-only-area">
+        <PageCard className="print-main-card" style={{ padding: isMobile ? 14 : 18 }}>
           <div
             className="no-print"
             style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : "repeat(auto-fit, minmax(220px, 1fr))",
+              display: "flex",
+              justifyContent: "space-between",
               gap: 12,
+              flexWrap: "wrap",
+              marginBottom: 14,
             }}
           >
-            <div>
-              <FieldLabel>Airline</FieldLabel>
-              <SelectInput
-                value={form.airline}
-                disabled={!canEdit}
-                onChange={(e) => updateField("airline", e.target.value)}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <ActionButton variant="primary" onClick={handlePrint}>
+                Print
+              </ActionButton>
+
+              <ActionButton
+                variant="secondary"
+                onClick={handleSaveDraft}
+                disabled={saving || !canEdit}
               >
-                {AIRLINE_OPTIONS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </SelectInput>
-            </div>
+                {saving ? "Saving..." : "Save Draft"}
+              </ActionButton>
 
-            <div>
-              <FieldLabel>Date</FieldLabel>
-              <TextInput
-                type="date"
-                value={form.date}
-                disabled={!canEdit}
-                onChange={(e) => updateField("date", e.target.value)}
-              />
-            </div>
+              <ActionButton
+                variant="success"
+                onClick={handleSubmitChecklist}
+                disabled={saving || !canSubmit}
+              >
+                {saving ? "Submitting..." : "Submit Checklist"}
+              </ActionButton>
 
-            <div>
-              <FieldLabel>STD</FieldLabel>
-              <TimeInput
-                value={form.std}
-                disabled={!canEdit}
-                onChange={(e) => updateField("std", e.target.value)}
-                style={{
-                  border: stdUnlocked ? "1px solid #cbd5e1" : "2px solid #f59e0b",
-                }}
-              />
-            </div>
+              {canClose && (
+                <ActionButton
+                  variant="warning"
+                  onClick={handleCloseFlight}
+                  disabled={saving || isClosed}
+                >
+                  {saving ? "Closing..." : "Close Flight"}
+                </ActionButton>
+              )}
 
-            <div>
-              <FieldLabel>Gate Agent</FieldLabel>
-              <TextInput value={form.gateAgent} disabled />
-            </div>
-
-            <div>
-              <FieldLabel>Expeditor</FieldLabel>
-              <TextInput
-                value={form.expeditor}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("expeditor", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Supervisor</FieldLabel>
-              <TextInput
-                value={form.supervisor}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("supervisor", e.target.value)}
-              />
+              {canReopen && (
+                <ActionButton
+                  variant="danger"
+                  onClick={handleReopenChecklist}
+                  disabled={saving}
+                >
+                  {saving ? "Reopening..." : "Reopen Checklist"}
+                </ActionButton>
+              )}
             </div>
           </div>
 
-          {!stdUnlocked && (
-            <PageCard
-              className="no-print"
-              style={{
-                padding: 14,
-                background: "#fff7ed",
-                border: "1px solid #fdba74",
-              }}
-            >
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ textAlign: "center" }}>
               <div
                 style={{
-                  fontSize: 14,
-                  fontWeight: 800,
-                  color: "#9a3412",
+                  fontSize: isMobile ? 26 : 34,
+                  fontWeight: 900,
+                  letterSpacing: "-0.03em",
                 }}
               >
-                Enter Airline, Date and STD first. The rest of the checklist will unlock after STD is assigned.
+                Gate Checklist
               </div>
-            </PageCard>
-          )}
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : isTablet
-                ? "repeat(2, minmax(0, 1fr))"
-                : "repeat(4, minmax(0, 1fr))",
-              gap: 8,
-            }}
-          >
-            <div>
-              <FieldLabel>Flight</FieldLabel>
-              <TextInput
-                ref={flightRef}
-                value={form.flight}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("flight", e.target.value)}
-              />
             </div>
 
-            <div>
-              <FieldLabel>A/C</FieldLabel>
-              <TextInput
-                value={form.aircraft}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("aircraft", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Orig</FieldLabel>
-              <TextInput
-                value={form.origin}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("origin", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Dest</FieldLabel>
-              <TextInput
-                value={form.destination}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("destination", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Final Total Pax</FieldLabel>
-              <TextInput
-                type="number"
-                min="0"
-                value={form.finalTotalPax}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("finalTotalPax", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Total IB Pax</FieldLabel>
-              <TextInput
-                type="number"
-                min="0"
-                value={form.totalIbPax}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("totalIbPax", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Delay Code</FieldLabel>
-              <TextInput
-                value={form.delayCode}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("delayCode", e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div
-            className="no-print"
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : isTablet
-                ? "repeat(2, minmax(0, 1fr))"
-                : "repeat(4, minmax(0, 1fr))",
-              gap: 12,
-            }}
-          >
-            <div>
-              <FieldLabel>Delay</FieldLabel>
-              <SelectInput
-                value={form.delay}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("delay", e.target.value)}
-              >
-                <option value="No">No</option>
-                <option value="Yes">Yes</option>
-              </SelectInput>
-            </div>
-
-            <div>
-              <FieldLabel>Delay Time (Minutes)</FieldLabel>
-              <TextInput
-                type="number"
-                min="0"
-                value={form.delayTimeMinutes}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("delayTimeMinutes", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Controllable</FieldLabel>
-              <SelectInput
-                value={form.controllable}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("controllable", e.target.value)}
-              >
-                <option value="No">No</option>
-                <option value="Yes">Yes</option>
-              </SelectInput>
-            </div>
-
-            <div>
-              <FieldLabel>Block In</FieldLabel>
-              <TimeInput
-                value={form.blockIn}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("blockIn", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>STD</FieldLabel>
-              <TimeInput
-                value={form.std}
-                disabled={!canEdit}
-                onChange={(e) => updateField("std", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>New STD</FieldLabel>
-              <TimeInput value={form.newStd} disabled />
-            </div>
-
-            <div>
-              <FieldLabel>{form.airline === "SY" ? "D-10" : "D-15"}</FieldLabel>
-              <TimeInput value={form.boardingDeadline} disabled />
-            </div>
-
-            <div>
-              <FieldLabel>Actual Departure Time</FieldLabel>
-              <TimeInput
-                value={form.actualDepartureTime}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) =>
-                  updateField("actualDepartureTime", e.target.value)
-                }
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Actual Arrival Time</FieldLabel>
-              <TimeInput
-                value={form.actualArrivalTime}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("actualArrivalTime", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Gate Agent 1 Arrival</FieldLabel>
-              <TimeInput
-                value={form.gateAgent1Arrival}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("gateAgent1Arrival", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Gate Agent 2 Arrival</FieldLabel>
-              <TimeInput
-                value={form.gateAgent2Arrival}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("gateAgent2Arrival", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Checked Bags</FieldLabel>
-              <TextInput
-                type="number"
-                min="0"
-                disabled={!canEdit || !stdUnlocked}
-                value={form.checkedBags}
-                onChange={(e) => updateField("checkedBags", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Not Loaded Bags</FieldLabel>
-              <TextInput
-                type="number"
-                min="0"
-                disabled={!canEdit || !stdUnlocked}
-                value={form.notLoadedBags}
-                onChange={(e) => updateField("notLoadedBags", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <FieldLabel>GPU Connected Y or N</FieldLabel>
-              <TextInput
-                value={form.gpuConnected}
-                disabled={!canEdit || !stdUnlocked}
-                onChange={(e) => updateField("gpuConnected", e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div
-            className={isMobile ? "print-grid-1" : "print-grid-2"}
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : "minmax(0, 1.4fr) minmax(260px, 1fr)",
-              gap: 10,
-              alignItems: "start",
-            }}
-          >
             <div
-              className="print-section print-full-width"
+              className="print-grid-tight"
               style={{
-                width: "100%",
-                maxWidth: "100%",
-                minWidth: 0,
-                overflowX: "auto",
-                WebkitOverflowScrolling: "touch",
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+              }}
+            >
+              <div>
+                <FieldLabel className="print-label">Airline</FieldLabel>
+                <SelectInput
+                  value={form.airline}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("airline", e.target.value)}
+                >
+                  {AIRLINE_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Date</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={form.date}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("date", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">STD</FieldLabel>
+                <TimeInput
+                  value={form.std}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("std", e.target.value)}
+                  style={{
+                    border: stdUnlocked ? "1px solid #cbd5e1" : "2px solid #f59e0b",
+                  }}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Gate Agent</FieldLabel>
+                <TextInput value={form.gateAgent} disabled />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Expeditor</FieldLabel>
+                <TextInput
+                  value={form.expeditor}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("expeditor", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Supervisor</FieldLabel>
+                <TextInput
+                  value={form.supervisor}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("supervisor", e.target.value)}
+                />
+              </div>
+            </div>
+
+            {!stdUnlocked && (
+              <PageCard
+                className="no-print"
+                style={{
+                  padding: 14,
+                  background: "#fff7ed",
+                  border: "1px solid #fdba74",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 800,
+                    color: "#9a3412",
+                  }}
+                >
+                  Enter Airline, Date and STD first. The rest of the checklist will unlock after STD is assigned.
+                </div>
+              </PageCard>
+            )}
+
+            <div
+              className="print-grid-tight"
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : isTablet
+                  ? "repeat(2, minmax(0, 1fr))"
+                  : "repeat(4, minmax(0, 1fr))",
+                gap: 8,
+              }}
+            >
+              <div>
+                <FieldLabel className="print-label">Flight</FieldLabel>
+                <TextInput
+                  ref={flightRef}
+                  value={form.flight}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("flight", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">A/C</FieldLabel>
+                <TextInput
+                  value={form.aircraft}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("aircraft", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Orig</FieldLabel>
+                <TextInput
+                  value={form.origin}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("origin", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Dest</FieldLabel>
+                <TextInput
+                  value={form.destination}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("destination", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Final Total Pax</FieldLabel>
+                <TextInput
+                  type="number"
+                  min="0"
+                  value={form.finalTotalPax}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("finalTotalPax", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Total IB Pax</FieldLabel>
+                <TextInput
+                  type="number"
+                  min="0"
+                  value={form.totalIbPax}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("totalIbPax", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Delay Code</FieldLabel>
+                <TextInput
+                  value={form.delayCode}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("delayCode", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div
+              className="print-grid-tight"
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : isTablet
+                  ? "repeat(2, minmax(0, 1fr))"
+                  : "repeat(4, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
+              <div>
+                <FieldLabel className="print-label">Delay</FieldLabel>
+                <SelectInput
+                  value={form.delay}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("delay", e.target.value)}
+                >
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Delay Time (Minutes)</FieldLabel>
+                <TextInput
+                  type="number"
+                  min="0"
+                  value={form.delayTimeMinutes}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("delayTimeMinutes", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Controllable</FieldLabel>
+                <SelectInput
+                  value={form.controllable}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("controllable", e.target.value)}
+                >
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </SelectInput>
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Block In</FieldLabel>
+                <TimeInput
+                  value={form.blockIn}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("blockIn", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">STD</FieldLabel>
+                <TimeInput
+                  value={form.std}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("std", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">New STD</FieldLabel>
+                <TimeInput value={form.newStd} disabled />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">{form.airline === "SY" ? "D-10" : "D-15"}</FieldLabel>
+                <TimeInput value={form.boardingDeadline} disabled />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Actual Departure Time</FieldLabel>
+                <TimeInput
+                  value={form.actualDepartureTime}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) =>
+                    updateField("actualDepartureTime", e.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Actual Arrival Time</FieldLabel>
+                <TimeInput
+                  value={form.actualArrivalTime}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("actualArrivalTime", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Gate Agent 1 Arrival</FieldLabel>
+                <TimeInput
+                  value={form.gateAgent1Arrival}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("gateAgent1Arrival", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Gate Agent 2 Arrival</FieldLabel>
+                <TimeInput
+                  value={form.gateAgent2Arrival}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("gateAgent2Arrival", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Checked Bags</FieldLabel>
+                <TextInput
+                  type="number"
+                  min="0"
+                  disabled={!canEdit || !stdUnlocked}
+                  value={form.checkedBags}
+                  onChange={(e) => updateField("checkedBags", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Not Loaded Bags</FieldLabel>
+                <TextInput
+                  type="number"
+                  min="0"
+                  disabled={!canEdit || !stdUnlocked}
+                  value={form.notLoadedBags}
+                  onChange={(e) => updateField("notLoadedBags", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">GPU Connected Y or N</FieldLabel>
+                <TextInput
+                  value={form.gpuConnected}
+                  disabled={!canEdit || !stdUnlocked}
+                  onChange={(e) => updateField("gpuConnected", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div
+              className="print-grid-tight"
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "minmax(0, 1.7fr) minmax(260px, 0.85fr)",
+                gap: 14,
+                alignItems: "start",
               }}
             >
               <div
-                className="print-table-wrap"
                 style={{
                   width: "100%",
                   maxWidth: "100%",
@@ -1868,13 +1887,13 @@ export default function GateChecklistPage() {
                 }}
               >
                 <table
-                  className="print-compact-table"
+                  className="print-table"
                   style={{
                     width: "100%",
                     minWidth: isMobile ? 720 : 0,
                     borderCollapse: "collapse",
                     tableLayout: "fixed",
-                    fontSize: 12,
+                    fontSize: 13,
                     opacity: stdUnlocked ? 1 : 0.65,
                   }}
                 >
@@ -1932,239 +1951,239 @@ export default function GateChecklistPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
 
-            <div
-              className="print-section"
-              style={{ display: "grid", gap: 10, opacity: stdUnlocked ? 1 : 0.65 }}
-            >
-              <PageCard style={{ padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 900,
-                    marginBottom: 12,
-                    textAlign: "center",
-                  }}
-                >
-                  Push / Departure
-                </div>
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div>
-                    <FieldLabel>Brake Release Time</FieldLabel>
-                    <TimeInput
-                      value={form.brakeReleaseTime}
-                      disabled={!canEdit || !stdUnlocked}
-                      onChange={(e) => updateField("brakeReleaseTime", e.target.value)}
-                    />
+              <div
+                className="print-side-cards"
+                style={{ display: "grid", gap: 14, opacity: stdUnlocked ? 1 : 0.65 }}
+              >
+                <PageCard style={{ padding: 14 }}>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 900,
+                      marginBottom: 12,
+                      textAlign: "center",
+                    }}
+                  >
+                    Push / Departure
                   </div>
 
-                  <div>
-                    <FieldLabel>Push Time</FieldLabel>
-                    <TimeInput
-                      value={form.pushTime}
-                      disabled={!canEdit || !stdUnlocked}
-                      onChange={(e) => updateField("pushTime", e.target.value)}
-                    />
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div>
+                      <FieldLabel className="print-label">Brake Release Time</FieldLabel>
+                      <TimeInput
+                        value={form.brakeReleaseTime}
+                        disabled={!canEdit || !stdUnlocked}
+                        onChange={(e) => updateField("brakeReleaseTime", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel className="print-label">Push Time</FieldLabel>
+                      <TimeInput
+                        value={form.pushTime}
+                        disabled={!canEdit || !stdUnlocked}
+                        onChange={(e) => updateField("pushTime", e.target.value)}
+                      />
+                    </div>
                   </div>
-                </div>
-              </PageCard>
+                </PageCard>
 
-              <PageCard style={{ padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 900,
-                    marginBottom: 12,
-                    textAlign: "center",
-                  }}
-                >
-                  Pax Flow
-                </div>
-
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div>
-                    <FieldLabel>First Pax Off</FieldLabel>
-                    <TimeInput
-                      value={form.firstPaxOff}
-                      disabled={!canEdit || !stdUnlocked}
-                      onChange={(e) => updateField("firstPaxOff", e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Last Pax Off</FieldLabel>
-                    <TimeInput
-                      value={form.lastPaxOff}
-                      disabled={!canEdit || !stdUnlocked}
-                      onChange={(e) => updateField("lastPaxOff", e.target.value)}
-                    />
+                <PageCard style={{ padding: 14 }}>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 900,
+                      marginBottom: 12,
+                      textAlign: "center",
+                    }}
+                  >
+                    Pax Flow
                   </div>
 
-                  <div>
-                    <FieldLabel>First Pax On</FieldLabel>
-                    <TimeInput
-                      value={form.firstPaxOn}
-                      disabled={!canEdit || !stdUnlocked}
-                      onChange={(e) => updateField("firstPaxOn", e.target.value)}
-                    />
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div>
+                      <FieldLabel className="print-label">First Pax Off</FieldLabel>
+                      <TimeInput
+                        value={form.firstPaxOff}
+                        disabled={!canEdit || !stdUnlocked}
+                        onChange={(e) => updateField("firstPaxOff", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel className="print-label">Last Pax Off</FieldLabel>
+                      <TimeInput
+                        value={form.lastPaxOff}
+                        disabled={!canEdit || !stdUnlocked}
+                        onChange={(e) => updateField("lastPaxOff", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel className="print-label">First Pax On</FieldLabel>
+                      <TimeInput
+                        value={form.firstPaxOn}
+                        disabled={!canEdit || !stdUnlocked}
+                        onChange={(e) => updateField("firstPaxOn", e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <FieldLabel className="print-label">Last Pax On</FieldLabel>
+                      <TimeInput
+                        value={form.lastPaxOn}
+                        disabled={!canEdit || !stdUnlocked}
+                        onChange={(e) => updateField("lastPaxOn", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </PageCard>
+
+                <PageCard style={{ padding: 14 }}>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 900,
+                      marginBottom: 12,
+                      textAlign: "center",
+                    }}
+                  >
+                    Specials
                   </div>
 
-                  <div>
-                    <FieldLabel>Last Pax On</FieldLabel>
-                    <TimeInput
-                      value={form.lastPaxOn}
-                      disabled={!canEdit || !stdUnlocked}
-                      onChange={(e) => updateField("lastPaxOn", e.target.value)}
-                    />
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {BASE_SPECIALS.map((item) => (
+                      <div
+                        key={item}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "110px 1fr",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{item}</div>
+                        <TextInput
+                          disabled={!canEdit || !stdUnlocked}
+                          value={specials[item]}
+                          onChange={(e) =>
+                            setSpecials((prev) => ({
+                              ...prev,
+                              [item]: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
                   </div>
-                </div>
-              </PageCard>
+                </PageCard>
 
-              <PageCard style={{ padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 900,
-                    marginBottom: 12,
-                    textAlign: "center",
-                  }}
-                >
-                  Specials
-                </div>
+                <PageCard style={{ padding: 14 }}>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 900,
+                      marginBottom: 12,
+                      textAlign: "center",
+                    }}
+                  >
+                    Delay Announcements Made (24H)
+                  </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
-                  {BASE_SPECIALS.map((item) => (
-                    <div
-                      key={item}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "110px 1fr",
-                        gap: 8,
-                        alignItems: "center",
-                      }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: 700 }}>{item}</div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {delayAnnouncements.map((item, index) => (
+                      <TimeInput
+                        key={index}
+                        disabled={!canEdit || !stdUnlocked}
+                        value={item}
+                        onChange={(e) =>
+                          setDelayAnnouncements((prev) =>
+                            prev.map((row, i) => (i === index ? e.target.value : row))
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                </PageCard>
+
+                <PageCard style={{ padding: 14 }}>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 900,
+                      marginBottom: 12,
+                      textAlign: "center",
+                    }}
+                  >
+                    Gate Check
+                  </div>
+
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={gateCheckRowStyle}>
+                      <div style={gateCheckLabelStyle}>BAGS</div>
                       <TextInput
                         disabled={!canEdit || !stdUnlocked}
-                        value={specials[item]}
+                        value={gateCheck.bags}
                         onChange={(e) =>
-                          setSpecials((prev) => ({
+                          setGateCheck((prev) => ({ ...prev, bags: e.target.value }))
+                        }
+                      />
+                    </div>
+
+                    <div style={gateCheckRowStyle}>
+                      <div style={gateCheckLabelStyle}>STROLLERS/CARSEATS</div>
+                      <TextInput
+                        disabled={!canEdit || !stdUnlocked}
+                        value={gateCheck.strollersCarSeats}
+                        onChange={(e) =>
+                          setGateCheck((prev) => ({
                             ...prev,
-                            [item]: e.target.value,
+                            strollersCarSeats: e.target.value,
                           }))
                         }
                       />
                     </div>
-                  ))}
-                </div>
-              </PageCard>
 
-              <PageCard style={{ padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 900,
-                    marginBottom: 12,
-                    textAlign: "center",
-                  }}
-                >
-                  Delay Announcements Made (24H)
-                </div>
+                    <div style={gateCheckRowStyle}>
+                      <div style={gateCheckLabelStyle}>WCHRS</div>
+                      <TextInput
+                        disabled={!canEdit || !stdUnlocked}
+                        value={gateCheck.wchrs}
+                        onChange={(e) =>
+                          setGateCheck((prev) => ({ ...prev, wchrs: e.target.value }))
+                        }
+                      />
+                    </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
-                  {delayAnnouncements.map((item, index) => (
-                    <TimeInput
-                      key={index}
-                      disabled={!canEdit || !stdUnlocked}
-                      value={item}
-                      onChange={(e) =>
-                        setDelayAnnouncements((prev) =>
-                          prev.map((row, i) => (i === index ? e.target.value : row))
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-              </PageCard>
-
-              <PageCard style={{ padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 900,
-                    marginBottom: 12,
-                    textAlign: "center",
-                  }}
-                >
-                  Gate Check
-                </div>
-
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={gateCheckRowStyle}>
-                    <div style={gateCheckLabelStyle}>BAGS</div>
-                    <TextInput
-                      disabled={!canEdit || !stdUnlocked}
-                      value={gateCheck.bags}
-                      onChange={(e) =>
-                        setGateCheck((prev) => ({ ...prev, bags: e.target.value }))
-                      }
-                    />
+                    <div style={gateCheckRowStyle}>
+                      <div style={gateCheckLabelStyle}>OTHER</div>
+                      <TextInput
+                        disabled={!canEdit || !stdUnlocked}
+                        value={gateCheck.other}
+                        onChange={(e) =>
+                          setGateCheck((prev) => ({ ...prev, other: e.target.value }))
+                        }
+                      />
+                    </div>
                   </div>
-
-                  <div style={gateCheckRowStyle}>
-                    <div style={gateCheckLabelStyle}>STROLLERS/CARSEATS</div>
-                    <TextInput
-                      disabled={!canEdit || !stdUnlocked}
-                      value={gateCheck.strollersCarSeats}
-                      onChange={(e) =>
-                        setGateCheck((prev) => ({
-                          ...prev,
-                          strollersCarSeats: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div style={gateCheckRowStyle}>
-                    <div style={gateCheckLabelStyle}>WCHRS</div>
-                    <TextInput
-                      disabled={!canEdit || !stdUnlocked}
-                      value={gateCheck.wchrs}
-                      onChange={(e) =>
-                        setGateCheck((prev) => ({ ...prev, wchrs: e.target.value }))
-                      }
-                    />
-                  </div>
-
-                  <div style={gateCheckRowStyle}>
-                    <div style={gateCheckLabelStyle}>OTHER</div>
-                    <TextInput
-                      disabled={!canEdit || !stdUnlocked}
-                      value={gateCheck.other}
-                      onChange={(e) =>
-                        setGateCheck((prev) => ({ ...prev, other: e.target.value }))
-                      }
-                    />
-                  </div>
-                </div>
-              </PageCard>
+                </PageCard>
+              </div>
             </div>
-          </div>
 
-          <PageCard className="print-section" style={{ padding: 16, opacity: stdUnlocked ? 1 : 0.65 }}>
-            <FieldLabel>Notes</FieldLabel>
-            <TextArea
-              value={form.remarks}
-              disabled={!canEdit || !stdUnlocked}
-              onChange={(e) => updateField("remarks", e.target.value)}
-              placeholder="Add notes here..."
-              style={{ minHeight: 120 }}
-            />
-          </PageCard>
-        </div>
-      </PageCard>
+            <PageCard style={{ padding: 16, opacity: stdUnlocked ? 1 : 0.65 }}>
+              <FieldLabel className="print-label">Notes</FieldLabel>
+              <TextArea
+                value={form.remarks}
+                disabled={!canEdit || !stdUnlocked}
+                onChange={(e) => updateField("remarks", e.target.value)}
+                placeholder="Add notes here..."
+                style={{ minHeight: 120 }}
+              />
+            </PageCard>
+          </div>
+        </PageCard>
+      </div>
     </div>
   );
 }
