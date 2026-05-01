@@ -3,11 +3,9 @@ import {
   addDoc,
   collection,
   doc,
-  getDocs,
-  query,
+  getDoc,
   serverTimestamp,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -54,6 +52,7 @@ function PageCard({ children, style = {} }) {
 function FieldLabel({ children }) {
   return (
     <label
+      className="print-label"
       style={{
         display: "block",
         marginBottom: 6,
@@ -74,6 +73,7 @@ const TextInput = React.forwardRef(function TextInput(props, ref) {
     <input
       ref={ref}
       {...props}
+      className={`print-input ${props.className || ""}`}
       style={{
         width: "100%",
         minWidth: 0,
@@ -98,6 +98,7 @@ const TimeInput = React.forwardRef(function TimeInput(props, ref) {
       type="time"
       step="60"
       {...props}
+      className={`print-time ${props.className || ""}`}
       style={{
         width: "100%",
         minWidth: 0,
@@ -119,6 +120,7 @@ function TextArea(props) {
   return (
     <textarea
       {...props}
+      className={`print-textarea ${props.className || ""}`}
       style={{
         width: "100%",
         minWidth: 0,
@@ -143,6 +145,7 @@ function SelectInput(props) {
   return (
     <select
       {...props}
+      className={`print-select ${props.className || ""}`}
       style={{
         width: "100%",
         minWidth: 0,
@@ -678,13 +681,6 @@ function hasChecklistDependentData(form, specials, gateCheck, delayAnnouncements
   );
 }
 
-function getSortDateValue(value) {
-  if (!value) return 0;
-  if (typeof value?.toDate === "function") return value.toDate().getTime();
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
-}
-
 export default function GateChecklistPage() {
   const { user } = useUser();
   const { isMobile, isTablet } = useViewport();
@@ -700,9 +696,7 @@ export default function GateChecklistPage() {
   const [loadingChecklist, setLoadingChecklist] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const [lookupDate, setLookupDate] = useState("");
-  const [lookupAirline, setLookupAirline] = useState("SY");
-
+  const [lookupId, setLookupId] = useState("");
   const [editingId, setEditingId] = useState("");
   const [currentStatus, setCurrentStatus] = useState("new");
 
@@ -798,9 +792,8 @@ export default function GateChecklistPage() {
 
   function resetAll() {
     setEditingId("");
+    setLookupId("");
     setCurrentStatus("new");
-    setLookupDate("");
-    setLookupAirline("SY");
     setForm(createInitialForm(user));
     setSpecials(createInitialSpecials());
     setGateCheck(createInitialGateCheck());
@@ -991,6 +984,7 @@ export default function GateChecklistPage() {
       });
 
       setEditingId(ref.id);
+      setLookupId(ref.id);
       setCurrentStatus("draft");
       setStatusMessage(`Draft saved successfully. ID: ${ref.id}`);
     } catch (error) {
@@ -1032,6 +1026,7 @@ export default function GateChecklistPage() {
       });
 
       setEditingId(ref.id);
+      setLookupId(ref.id);
       setCurrentStatus("submitted");
       setStatusMessage(`Gate checklist submitted successfully. ID: ${ref.id}`);
     } catch (error) {
@@ -1099,8 +1094,8 @@ export default function GateChecklistPage() {
   }
 
   async function handleLoadChecklist() {
-    if (!lookupDate.trim() || !lookupAirline.trim()) {
-      setStatusMessage("Select date and airline.");
+    if (!lookupId.trim()) {
+      setStatusMessage("Enter a checklist ID.");
       return;
     }
 
@@ -1108,42 +1103,17 @@ export default function GateChecklistPage() {
       setLoadingChecklist(true);
       setStatusMessage("");
 
-      const q = query(
-        collection(db, "gateChecklistReports"),
-        where("date", "==", lookupDate.trim()),
-        where("airline", "==", lookupAirline.trim())
-      );
+      const ref = doc(db, "gateChecklistReports", lookupId.trim());
+      const snap = await getDoc(ref);
 
-      const snap = await getDocs(q);
-
-      if (snap.empty) {
-        setStatusMessage("No checklist found for that date and airline.");
+      if (!snap.exists()) {
+        setStatusMessage("Checklist not found.");
         return;
       }
 
-      const docs = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const statusScore = (item) => {
-            if (item.status === "draft") return 3;
-            if (item.status === "submitted") return 2;
-            if (item.status === "closed") return 1;
-            return 0;
-          };
+      const data = snap.data();
 
-          const statusDiff = statusScore(b) - statusScore(a);
-          if (statusDiff !== 0) return statusDiff;
-
-          const updatedDiff =
-            getSortDateValue(b.updatedAt) - getSortDateValue(a.updatedAt);
-          if (updatedDiff !== 0) return updatedDiff;
-
-          return getSortDateValue(b.createdAt) - getSortDateValue(a.createdAt);
-        });
-
-      const data = docs[0];
-
-      setEditingId(data.id);
+      setEditingId(snap.id);
       setCurrentStatus(data.status || "draft");
 
       setForm({
@@ -1188,7 +1158,7 @@ export default function GateChecklistPage() {
             ? String(data.notLoadedBags)
             : "",
         remarks: data.remarks || "",
-        gateAgent: data.gateAgent || getVisibleUserName(user),
+        gateAgent: data.gateAgent || "",
         expeditor: data.expeditor || "",
         supervisor: data.supervisor || "",
         firstPaxOff: data.firstPaxOff || "",
@@ -1214,9 +1184,7 @@ export default function GateChecklistPage() {
       );
 
       setActuals(data.actuals || {});
-      setStatusMessage(
-        `Checklist loaded successfully for ${lookupDate} / ${lookupAirline}.`
-      );
+      setStatusMessage(`Checklist ${snap.id} loaded successfully.`);
     } catch (error) {
       console.error("Error loading checklist:", error);
       setStatusMessage("Could not load checklist.");
@@ -1239,8 +1207,8 @@ export default function GateChecklistPage() {
     >
       <style>{`
         @page {
-          size: landscape;
-          margin: 0.15in;
+          size: portrait;
+          margin: 0.25in;
         }
 
         @media print {
@@ -1248,13 +1216,12 @@ export default function GateChecklistPage() {
             background: #fff !important;
             margin: 0 !important;
             padding: 0 !important;
-            zoom: 0.74;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
 
           body {
-            font-size: 9px !important;
+            font-size: 11px !important;
           }
 
           .no-print {
@@ -1264,33 +1231,91 @@ export default function GateChecklistPage() {
           .print-card {
             box-shadow: none !important;
             border: 1px solid #cbd5e1 !important;
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
+            border-radius: 0 !important;
+            overflow: visible !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
 
           .print-main-card {
             break-inside: auto !important;
             page-break-inside: auto !important;
+            overflow: visible !important;
           }
 
-          .print-compact-grid {
-            gap: 8px !important;
+          .print-section {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            overflow: visible !important;
+          }
+
+          .print-grid-2 {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 10px !important;
+            align-items: start !important;
+          }
+
+          .print-grid-1 {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 10px !important;
+          }
+
+          .print-full-width {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            overflow: visible !important;
+          }
+
+          .print-table-wrap {
+            overflow: visible !important;
+            border-radius: 0 !important;
+            border: 1px solid #94a3b8 !important;
+          }
+
+          .print-compact-table {
+            width: 100% !important;
+            min-width: 0 !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
           }
 
           .print-compact-table th,
           .print-compact-table td {
-            padding: 4px 6px !important;
-            font-size: 9px !important;
+            padding: 6px 8px !important;
+            font-size: 10px !important;
+            line-height: 1.25 !important;
+            vertical-align: top !important;
           }
 
-          .print-side-card {
-            padding: 8px !important;
+          .print-input,
+          .print-time,
+          .print-textarea,
+          .print-select {
+            border: 1px solid #cbd5e1 !important;
+            background: #fff !important;
+            color: #0f172a !important;
+            border-radius: 6px !important;
+            padding: 6px 8px !important;
+            font-size: 10px !important;
+            min-height: auto !important;
+            box-sizing: border-box !important;
+            appearance: none !important;
+            -webkit-appearance: none !important;
           }
 
-          textarea {
-            min-height: 48px !important;
-            max-height: 70px !important;
-            overflow: hidden !important;
+          .print-textarea {
+            min-height: 60px !important;
+            resize: none !important;
+            overflow: visible !important;
+          }
+
+          .print-label {
+            font-size: 10px !important;
+            margin-bottom: 3px !important;
+            line-height: 1.2 !important;
           }
 
           table, tr, td, th {
@@ -1371,32 +1396,18 @@ export default function GateChecklistPage() {
             display: "grid",
             gridTemplateColumns: isMobile
               ? "1fr"
-              : "minmax(180px, 220px) minmax(180px, 220px) auto auto",
+              : "minmax(220px, 320px) auto auto",
             gap: 10,
             alignItems: "end",
           }}
         >
           <div>
-            <FieldLabel>Load Checklist by Date</FieldLabel>
+            <FieldLabel>Load Checklist by ID</FieldLabel>
             <TextInput
-              type="date"
-              value={lookupDate}
-              onChange={(e) => setLookupDate(e.target.value)}
+              value={lookupId}
+              onChange={(e) => setLookupId(e.target.value)}
+              placeholder="Paste checklist ID"
             />
-          </div>
-
-          <div>
-            <FieldLabel>Airline</FieldLabel>
-            <SelectInput
-              value={lookupAirline}
-              onChange={(e) => setLookupAirline(e.target.value)}
-            >
-              {AIRLINE_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </SelectInput>
           </div>
 
           <ActionButton
@@ -1441,7 +1452,7 @@ export default function GateChecklistPage() {
         </div>
       </PageCard>
 
-      <PageCard className="print-main-card" style={{ padding: isMobile ? 12 : 14 }}>
+      <PageCard className="print-main-card" style={{ padding: isMobile ? 14 : 18 }}>
         <div
           className="no-print"
           style={{
@@ -1449,7 +1460,7 @@ export default function GateChecklistPage() {
             justifyContent: "space-between",
             gap: 12,
             flexWrap: "wrap",
-            marginBottom: 12,
+            marginBottom: 14,
           }}
         >
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1495,11 +1506,11 @@ export default function GateChecklistPage() {
           </div>
         </div>
 
-        <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ display: "grid", gap: 14 }}>
           <div style={{ textAlign: "center" }}>
             <div
               style={{
-                fontSize: isMobile ? 24 : 28,
+                fontSize: isMobile ? 26 : 34,
                 fontWeight: 900,
                 letterSpacing: "-0.03em",
               }}
@@ -1514,8 +1525,8 @@ export default function GateChecklistPage() {
               display: "grid",
               gridTemplateColumns: isMobile
                 ? "1fr"
-                : "repeat(auto-fit, minmax(170px, 1fr))",
-              gap: 10,
+                : "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
             }}
           >
             <div>
@@ -1601,7 +1612,6 @@ export default function GateChecklistPage() {
           )}
 
           <div
-            className="print-compact-grid"
             style={{
               display: "grid",
               gridTemplateColumns: isMobile
@@ -1682,7 +1692,7 @@ export default function GateChecklistPage() {
           </div>
 
           <div
-            className="no-print print-compact-grid"
+            className="no-print"
             style={{
               display: "grid",
               gridTemplateColumns: isMobile
@@ -1690,7 +1700,7 @@ export default function GateChecklistPage() {
                 : isTablet
                 ? "repeat(2, minmax(0, 1fr))"
                 : "repeat(4, minmax(0, 1fr))",
-              gap: 10,
+              gap: 12,
             }}
           >
             <div>
@@ -1827,17 +1837,18 @@ export default function GateChecklistPage() {
           </div>
 
           <div
-            className="print-compact-grid"
+            className={isMobile ? "print-grid-1" : "print-grid-2"}
             style={{
               display: "grid",
               gridTemplateColumns: isMobile
                 ? "1fr"
-                : "minmax(0, 1.8fr) minmax(220px, 0.8fr)",
+                : "minmax(0, 1.4fr) minmax(260px, 1fr)",
               gap: 10,
               alignItems: "start",
             }}
           >
             <div
+              className="print-section print-full-width"
               style={{
                 width: "100%",
                 maxWidth: "100%",
@@ -1846,86 +1857,100 @@ export default function GateChecklistPage() {
                 WebkitOverflowScrolling: "touch",
               }}
             >
-              <table
-                className="print-compact-table"
+              <div
+                className="print-table-wrap"
                 style={{
                   width: "100%",
-                  minWidth: isMobile ? 720 : 0,
-                  borderCollapse: "collapse",
-                  tableLayout: "fixed",
-                  fontSize: 12,
-                  opacity: stdUnlocked ? 1 : 0.65,
+                  maxWidth: "100%",
+                  minWidth: 0,
+                  overflowX: "auto",
+                  WebkitOverflowScrolling: "touch",
                 }}
               >
-                <thead>
-                  <tr>
-                    <th style={tableHeadStyle}>Time</th>
-                    <th style={tableHeadStyle}>Gate Tasks</th>
-                    <th style={tableHeadStyle}>Actual</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {checklistSections.map((section, sectionIndex) => (
-                    <tr key={section.time}>
-                      <td style={{ ...tableCellStyle, width: 92, fontWeight: 800 }}>
-                        {section.time}
-                      </td>
-
-                      <td style={tableCellStyle}>
-                        <div style={{ display: "grid", gap: 5 }}>
-                          {section.tasks.map((task, taskIndex) => (
-                            <div
-                              key={`${section.time}-${taskIndex}`}
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "14px 1fr",
-                                gap: 6,
-                                alignItems: "start",
-                              }}
-                            >
-                              <div>•</div>
-                              <div>{task}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-
-                      <td style={tableCellStyle}>
-                        <div style={{ display: "grid", gap: 5 }}>
-                          {section.tasks.map((task, taskIndex) => (
-                            <TimeInput
-                              key={`${sectionIndex}-${taskIndex}`}
-                              disabled={!canEdit || !stdUnlocked}
-                              value={actuals[`${sectionIndex}-${taskIndex}`] || ""}
-                              onChange={(e) =>
-                                updateActual(sectionIndex, taskIndex, e.target.value)
-                              }
-                              style={{ padding: "6px 8px", fontSize: 11 }}
-                            />
-                          ))}
-                        </div>
-                      </td>
+                <table
+                  className="print-compact-table"
+                  style={{
+                    width: "100%",
+                    minWidth: isMobile ? 720 : 0,
+                    borderCollapse: "collapse",
+                    tableLayout: "fixed",
+                    fontSize: 12,
+                    opacity: stdUnlocked ? 1 : 0.65,
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      <th style={tableHeadStyle}>Time</th>
+                      <th style={tableHeadStyle}>Gate Tasks</th>
+                      <th style={tableHeadStyle}>Actual</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+
+                  <tbody>
+                    {checklistSections.map((section, sectionIndex) => (
+                      <tr key={section.time}>
+                        <td style={{ ...tableCellStyle, width: 120, fontWeight: 800 }}>
+                          {section.time}
+                        </td>
+
+                        <td style={tableCellStyle}>
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {section.tasks.map((task, taskIndex) => (
+                              <div
+                                key={`${section.time}-${taskIndex}`}
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "18px 1fr",
+                                  gap: 8,
+                                  alignItems: "start",
+                                }}
+                              >
+                                <div>•</div>
+                                <div>{task}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+
+                        <td style={tableCellStyle}>
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {section.tasks.map((task, taskIndex) => (
+                              <TimeInput
+                                key={`${sectionIndex}-${taskIndex}`}
+                                disabled={!canEdit || !stdUnlocked}
+                                value={actuals[`${sectionIndex}-${taskIndex}`] || ""}
+                                onChange={(e) =>
+                                  updateActual(sectionIndex, taskIndex, e.target.value)
+                                }
+                                style={{ padding: "8px 10px", fontSize: 12 }}
+                              />
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div style={{ display: "grid", gap: 10, opacity: stdUnlocked ? 1 : 0.65 }}>
-              <PageCard className="print-side-card" style={{ padding: 12 }}>
+            <div
+              className="print-section"
+              style={{ display: "grid", gap: 10, opacity: stdUnlocked ? 1 : 0.65 }}
+            >
+              <PageCard style={{ padding: 14 }}>
                 <div
                   style={{
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: 900,
-                    marginBottom: 8,
+                    marginBottom: 12,
                     textAlign: "center",
                   }}
                 >
                   Push / Departure
                 </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "grid", gap: 10 }}>
                   <div>
                     <FieldLabel>Brake Release Time</FieldLabel>
                     <TimeInput
@@ -1946,19 +1971,19 @@ export default function GateChecklistPage() {
                 </div>
               </PageCard>
 
-              <PageCard className="print-side-card" style={{ padding: 12 }}>
+              <PageCard style={{ padding: 14 }}>
                 <div
                   style={{
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: 900,
-                    marginBottom: 8,
+                    marginBottom: 12,
                     textAlign: "center",
                   }}
                 >
                   Pax Flow
                 </div>
 
-                <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ display: "grid", gap: 8 }}>
                   <div>
                     <FieldLabel>First Pax Off</FieldLabel>
                     <TimeInput
@@ -1997,30 +2022,30 @@ export default function GateChecklistPage() {
                 </div>
               </PageCard>
 
-              <PageCard className="print-side-card" style={{ padding: 12 }}>
+              <PageCard style={{ padding: 14 }}>
                 <div
                   style={{
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: 900,
-                    marginBottom: 8,
+                    marginBottom: 12,
                     textAlign: "center",
                   }}
                 >
                   Specials
                 </div>
 
-                <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ display: "grid", gap: 8 }}>
                   {BASE_SPECIALS.map((item) => (
                     <div
                       key={item}
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "88px 1fr",
-                        gap: 6,
+                        gridTemplateColumns: "110px 1fr",
+                        gap: 8,
                         alignItems: "center",
                       }}
                     >
-                      <div style={{ fontSize: 12, fontWeight: 700 }}>{item}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{item}</div>
                       <TextInput
                         disabled={!canEdit || !stdUnlocked}
                         value={specials[item]}
@@ -2030,26 +2055,25 @@ export default function GateChecklistPage() {
                             [item]: e.target.value,
                           }))
                         }
-                        style={{ padding: "6px 8px", fontSize: 11 }}
                       />
                     </div>
                   ))}
                 </div>
               </PageCard>
 
-              <PageCard className="print-side-card" style={{ padding: 12 }}>
+              <PageCard style={{ padding: 14 }}>
                 <div
                   style={{
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: 900,
-                    marginBottom: 8,
+                    marginBottom: 12,
                     textAlign: "center",
                   }}
                 >
-                  Delay Announcements
+                  Delay Announcements Made (24H)
                 </div>
 
-                <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ display: "grid", gap: 8 }}>
                   {delayAnnouncements.map((item, index) => (
                     <TimeInput
                       key={index}
@@ -2065,19 +2089,19 @@ export default function GateChecklistPage() {
                 </div>
               </PageCard>
 
-              <PageCard className="print-side-card" style={{ padding: 12 }}>
+              <PageCard style={{ padding: 14 }}>
                 <div
                   style={{
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: 900,
-                    marginBottom: 8,
+                    marginBottom: 12,
                     textAlign: "center",
                   }}
                 >
                   Gate Check
                 </div>
 
-                <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ display: "grid", gap: 8 }}>
                   <div style={gateCheckRowStyle}>
                     <div style={gateCheckLabelStyle}>BAGS</div>
                     <TextInput
@@ -2086,7 +2110,6 @@ export default function GateChecklistPage() {
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, bags: e.target.value }))
                       }
-                      style={{ padding: "6px 8px", fontSize: 11 }}
                     />
                   </div>
 
@@ -2101,7 +2124,6 @@ export default function GateChecklistPage() {
                           strollersCarSeats: e.target.value,
                         }))
                       }
-                      style={{ padding: "6px 8px", fontSize: 11 }}
                     />
                   </div>
 
@@ -2113,7 +2135,6 @@ export default function GateChecklistPage() {
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, wchrs: e.target.value }))
                       }
-                      style={{ padding: "6px 8px", fontSize: 11 }}
                     />
                   </div>
 
@@ -2125,7 +2146,6 @@ export default function GateChecklistPage() {
                       onChange={(e) =>
                         setGateCheck((prev) => ({ ...prev, other: e.target.value }))
                       }
-                      style={{ padding: "6px 8px", fontSize: 11 }}
                     />
                   </div>
                 </div>
@@ -2133,14 +2153,14 @@ export default function GateChecklistPage() {
             </div>
           </div>
 
-          <PageCard style={{ padding: 12, opacity: stdUnlocked ? 1 : 0.65 }}>
+          <PageCard className="print-section" style={{ padding: 16, opacity: stdUnlocked ? 1 : 0.65 }}>
             <FieldLabel>Notes</FieldLabel>
             <TextArea
               value={form.remarks}
               disabled={!canEdit || !stdUnlocked}
               onChange={(e) => updateField("remarks", e.target.value)}
               placeholder="Add notes here..."
-              style={{ minHeight: 70 }}
+              style={{ minHeight: 120 }}
             />
           </PageCard>
         </div>
@@ -2152,28 +2172,27 @@ export default function GateChecklistPage() {
 const tableHeadStyle = {
   border: "1px solid #94a3b8",
   background: "#f8fafc",
-  padding: "8px 10px",
-  fontSize: 12,
+  padding: "10px 12px",
+  fontSize: 13,
   textAlign: "left",
   fontWeight: 900,
 };
 
 const tableCellStyle = {
   border: "1px solid #94a3b8",
-  padding: "8px 10px",
+  padding: "10px 12px",
   verticalAlign: "top",
 };
 
 const gateCheckRowStyle = {
   display: "grid",
-  gridTemplateColumns: "110px 1fr",
-  gap: 6,
+  gridTemplateColumns: "130px 1fr",
+  gap: 8,
   alignItems: "center",
 };
 
 const gateCheckLabelStyle = {
   fontWeight: 700,
-  fontSize: 12,
 };
 
 function statusPillStyle(bg, border, color) {
