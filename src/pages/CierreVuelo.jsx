@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import React, { useEffect, useMemo, useState } from "react";
+import { addDoc, collection, onSnapshot, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -64,8 +64,20 @@ function emptyConcepts(list) {
   }));
 }
 
+function getUserName(person) {
+  return (
+    person?.displayName ||
+    person?.fullName ||
+    person?.name ||
+    person?.username ||
+    ""
+  );
+}
+
 export default function CierreVuelo() {
   const { user } = useUser();
+
+  const [employeeOptions, setEmployeeOptions] = useState([]);
 
   const [airlines, setAirlines] = useState(() => {
     try {
@@ -113,6 +125,27 @@ export default function CierreVuelo() {
 
   const [savingFlight, setSavingFlight] = useState(false);
   const [savingFuel, setSavingFuel] = useState(false);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        const names = snapshot.docs
+          .map((item) => ({
+            id: item.id,
+            ...item.data(),
+          }))
+          .map(getUserName)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+
+        setEmployeeOptions(Array.from(new Set(names)));
+      },
+      (error) => console.error("Error loading users:", error)
+    );
+
+    return () => unsub();
+  }, []);
 
   const monthKey = getMonthKey(flight.date);
 
@@ -210,6 +243,13 @@ export default function CierreVuelo() {
     setCardConcepts(emptyConcepts(CARD_CONCEPTS));
     setCashConcepts(emptyConcepts(CASH_CONCEPTS));
     setAgents(AGENT_TEMPLATE);
+
+    setFuel((prev) => ({
+      ...prev,
+      supervisor: "",
+      agent: "",
+      flightNumber: "",
+    }));
   };
 
   const saveFlight = async (event) => {
@@ -285,12 +325,12 @@ export default function CierreVuelo() {
   const clearFuelForm = () => {
     setFuel({
       date: "",
-      airline: "",
+      airline: flight.airline || "",
       ticketNumber: "",
       gallons: "",
       agent: "",
-      supervisor: "",
-      flightNumber: "",
+      supervisor: flight.supervisor || "",
+      flightNumber: flight.flightNumber || "",
       notes: "",
     });
   };
@@ -324,6 +364,10 @@ export default function CierreVuelo() {
     } finally {
       setSavingFuel(false);
     }
+  };
+
+  const exportPDF = () => {
+    window.print();
   };
 
   return (
@@ -403,12 +447,16 @@ export default function CierreVuelo() {
             Vuelo
             <input
               value={flight.flightNumber}
-              onChange={(e) =>
+              onChange={(e) => {
                 setFlight((prev) => ({
                   ...prev,
                   flightNumber: e.target.value,
-                }))
-              }
+                }));
+                setFuel((prev) => ({
+                  ...prev,
+                  flightNumber: e.target.value,
+                }));
+              }}
               style={inputStyle}
             />
           </label>
@@ -439,21 +487,33 @@ export default function CierreVuelo() {
 
           <label style={labelStyle}>
             Supervisor
-            <input
+            <select
               value={flight.supervisor}
-              onChange={(e) =>
+              onChange={(e) => {
                 setFlight((prev) => ({
                   ...prev,
                   supervisor: e.target.value,
-                }))
-              }
+                }));
+
+                setFuel((prev) => ({
+                  ...prev,
+                  supervisor: e.target.value,
+                }));
+              }}
               style={inputStyle}
-            />
+            >
+              <option value="">Select Supervisor</option>
+              {employeeOptions.map((name) => (
+                <option key={`supervisor-${name}`} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label style={labelStyle}>
-            Agente Cierre
-            <input
+            Agent Closing
+            <select
               value={flight.closingAgent}
               onChange={(e) =>
                 setFlight((prev) => ({
@@ -462,7 +522,14 @@ export default function CierreVuelo() {
                 }))
               }
               style={inputStyle}
-            />
+            >
+              <option value="">Select Agent Closing</option>
+              {employeeOptions.map((name) => (
+                <option key={`closing-${name}`} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 
@@ -481,7 +548,12 @@ export default function CierreVuelo() {
         />
 
         <h3 style={subSectionTitleStyle}>Agents</h3>
-        <AgentTable rows={agents} onChange={updateAgent} />
+        <AgentTable
+          rows={agents}
+          onChange={updateAgent}
+          employeeOptions={employeeOptions}
+        />
+
         <button type="button" onClick={addAgentRow} style={buttonLight}>
           + Add Agent Row
         </button>
@@ -505,6 +577,10 @@ export default function CierreVuelo() {
         <div style={actionRowStyle}>
           <button type="submit" disabled={savingFlight} style={buttonGreen}>
             {savingFlight ? "Saving..." : "Guardar Vuelo"}
+          </button>
+
+          <button type="button" onClick={exportPDF} style={buttonBlue}>
+            Export PDF
           </button>
 
           <button type="button" onClick={clearFlightForm} style={buttonGray}>
@@ -562,24 +638,25 @@ export default function CierreVuelo() {
 
           <label style={labelStyle}>
             Agente
-            <input
+            <select
               value={fuel.agent}
               onChange={(e) =>
                 setFuel((prev) => ({ ...prev, agent: e.target.value }))
               }
               style={inputStyle}
-            />
+            >
+              <option value="">Select Agent</option>
+              {employeeOptions.map((name) => (
+                <option key={`fuel-agent-${name}`} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label style={labelStyle}>
             Supervisor
-            <input
-              value={fuel.supervisor}
-              onChange={(e) =>
-                setFuel((prev) => ({ ...prev, supervisor: e.target.value }))
-              }
-              style={inputStyle}
-            />
+            <input value={fuel.supervisor} readOnly style={inputStyle} />
           </label>
 
           <label style={labelStyle}>
@@ -611,6 +688,10 @@ export default function CierreVuelo() {
         <div style={actionRowStyle}>
           <button type="submit" disabled={savingFuel} style={buttonGreen}>
             {savingFuel ? "Saving..." : "Guardar Fuel"}
+          </button>
+
+          <button type="button" onClick={exportPDF} style={buttonBlue}>
+            Export PDF
           </button>
 
           <button type="button" onClick={clearFuelForm} style={buttonGray}>
@@ -683,7 +764,7 @@ function ConceptTable({ rows, type, onChange }) {
   );
 }
 
-function AgentTable({ rows, onChange }) {
+function AgentTable({ rows, onChange, employeeOptions }) {
   return (
     <div style={tableWrapStyle}>
       <table style={tableStyle}>
@@ -700,11 +781,18 @@ function AgentTable({ rows, onChange }) {
           {rows.map((row, index) => (
             <tr key={`agent-${index}`}>
               <td style={tdStyle}>
-                <input
+                <select
                   value={row.agent}
                   onChange={(e) => onChange(index, "agent", e.target.value)}
                   style={tableInputStyle}
-                />
+                >
+                  <option value="">Select Agent</option>
+                  {employeeOptions.map((name) => (
+                    <option key={`agent-${index}-${name}`} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
               </td>
               <td style={tdStyle}>
                 <input
