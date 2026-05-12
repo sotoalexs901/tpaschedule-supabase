@@ -8,6 +8,8 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -151,7 +153,6 @@ export default function CierreVueloManagement() {
         acc.ancillaryAmount += numberValue(row.totals?.ancillaryAmount);
         acc.agentSales += numberValue(row.totals?.agentSales);
         acc.agentAmount += numberValue(row.totals?.agentAmount);
-
         return acc;
       },
       {
@@ -499,11 +500,86 @@ export default function CierreVueloManagement() {
     downloadCSV("cierre_vuelo_agentes.csv", headers, rows);
   };
 
-  const printReport = () => {
-    window.print();
+  const exportPDF = () => {
+    const docPdf = new jsPDF("landscape");
+    const airline = filters.airline || "All Airlines";
+    const month = filters.monthKey || "All Months";
+
+    docPdf.setFontSize(16);
+    docPdf.text("Cierre de Vuelo Management Report", 14, 15);
+
+    docPdf.setFontSize(10);
+    docPdf.text(`Airline: ${airline}`, 14, 24);
+    docPdf.text(`Month: ${month}`, 14, 30);
+    docPdf.text(`Generated: ${new Date().toLocaleString()}`, 14, 36);
+
+    autoTable(docPdf, {
+      startY: 44,
+      head: [["Summary", "Total"]],
+      body: [
+        ["Vuelos del Mes", monthlyReport.vuelos],
+        ["Total PAX", monthlyReport.pax],
+        ["Total Maletas", monthlyReport.bags],
+        ["Card Total", formatMoney(monthlyReport.cardAmount)],
+        ["Cash Total", formatMoney(monthlyReport.cashAmount)],
+        ["Ancillaries Total", formatMoney(monthlyReport.ancillaryAmount)],
+        ["Ventas Agentes", monthlyReport.agentSales],
+        ["Fuel Gallons", monthlyReport.fuelGallons],
+      ],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [23, 105, 170] },
+    });
+
+    autoTable(docPdf, {
+      startY: docPdf.lastAutoTable.finalY + 10,
+      head: [[
+        "Fecha",
+        "Airline",
+        "Vuelo",
+        "PAX",
+        "Maletas",
+        "Card $",
+        "Cash $",
+        "Ancillaries $",
+        "Supervisor",
+        "Agent Closing",
+      ]],
+      body: filteredFlights.map((row) => [
+        row.date || "",
+        row.airline || "",
+        row.flightNumber || "",
+        row.pax || 0,
+        row.bags || 0,
+        formatMoney(row.totals?.cardAmount),
+        formatMoney(row.totals?.cashAmount),
+        formatMoney(row.totals?.ancillaryAmount),
+        row.supervisor || "",
+        row.closingAgent || "",
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [23, 105, 170] },
+    });
+
+    autoTable(docPdf, {
+      startY: docPdf.lastAutoTable.finalY + 10,
+      head: [["Fuel Date", "Airline", "Ticket", "Gallons", "Agent", "Supervisor", "Vuelo"]],
+      body: filteredFuel.map((row) => [
+        row.date || "",
+        row.airline || "",
+        row.ticketNumber || "",
+        row.gallons || 0,
+        row.agent || "",
+        row.supervisor || "",
+        row.flightNumber || "",
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [23, 105, 170] },
+    });
+
+    docPdf.save(`cierre_vuelo_management_${airline}_${month}.pdf`);
   };
 
-  const exportPDF = () => {
+  const printReport = () => {
     window.print();
   };
 
