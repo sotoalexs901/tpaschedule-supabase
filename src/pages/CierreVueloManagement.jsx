@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -132,9 +134,7 @@ export default function CierreVueloManagement() {
       ? `${filters.airline}_${filters.monthKey}`
       : "";
 
-  const activeClosure = activeClosureKey
-    ? closures[activeClosureKey]
-    : null;
+  const activeClosure = activeClosureKey ? closures[activeClosureKey] : null;
 
   const isClosed = activeClosure?.status === "CLOSED";
 
@@ -336,6 +336,94 @@ export default function CierreVueloManagement() {
     alert("Mes reabierto.");
   };
 
+  const editFlight = async (row) => {
+    const flightNumber = prompt("Editar vuelo:", row.flightNumber || "");
+    if (flightNumber === null) return;
+
+    const pax = prompt("Editar PAX:", String(row.pax ?? ""));
+    if (pax === null) return;
+
+    const bags = prompt("Editar maletas:", String(row.bags ?? ""));
+    if (bags === null) return;
+
+    const supervisor = prompt("Editar supervisor:", row.supervisor || "");
+    if (supervisor === null) return;
+
+    const closingAgent = prompt("Editar agente cierre:", row.closingAgent || "");
+    if (closingAgent === null) return;
+
+    await updateDoc(doc(db, "cierreVueloFlights", row.id), {
+      flightNumber,
+      pax: numberValue(pax),
+      bags: numberValue(bags),
+      supervisor,
+      closingAgent,
+      updatedBy: user?.displayName || user?.name || user?.username || "",
+      updatedById: user?.id || "",
+      updatedAt: serverTimestamp(),
+    });
+
+    alert("Registro de vuelo actualizado.");
+  };
+
+  const deleteFlight = async (row) => {
+    const confirmDelete = window.confirm(
+      `¿Seguro que quieres borrar el vuelo ${row.flightNumber || ""}?`
+    );
+
+    if (!confirmDelete) return;
+
+    await deleteDoc(doc(db, "cierreVueloFlights", row.id));
+
+    alert("Registro de vuelo borrado.");
+  };
+
+  const editFuel = async (row) => {
+    const ticketNumber = prompt("Editar No. Ticket:", row.ticketNumber || "");
+    if (ticketNumber === null) return;
+
+    const gallons = prompt("Editar gallons:", String(row.gallons ?? ""));
+    if (gallons === null) return;
+
+    const agent = prompt("Editar agente:", row.agent || "");
+    if (agent === null) return;
+
+    const supervisor = prompt("Editar supervisor:", row.supervisor || "");
+    if (supervisor === null) return;
+
+    const flightNumber = prompt("Editar vuelo:", row.flightNumber || "");
+    if (flightNumber === null) return;
+
+    const notes = prompt("Editar notas:", row.notes || "");
+    if (notes === null) return;
+
+    await updateDoc(doc(db, "cierreVueloFuel", row.id), {
+      ticketNumber,
+      gallons: numberValue(gallons),
+      agent,
+      supervisor,
+      flightNumber,
+      notes,
+      updatedBy: user?.displayName || user?.name || user?.username || "",
+      updatedById: user?.id || "",
+      updatedAt: serverTimestamp(),
+    });
+
+    alert("Fuel actualizado.");
+  };
+
+  const deleteFuel = async (row) => {
+    const confirmDelete = window.confirm(
+      `¿Seguro que quieres borrar el Fuel Ticket ${row.ticketNumber || ""}?`
+    );
+
+    if (!confirmDelete) return;
+
+    await deleteDoc(doc(db, "cierreVueloFuel", row.id));
+
+    alert("Fuel borrado.");
+  };
+
   const exportFlightsCSV = () => {
     const headers = [
       "Fecha",
@@ -406,16 +494,16 @@ export default function CierreVueloManagement() {
 
   const exportAgentsCSV = () => {
     const headers = ["Agente", "Ventas", "Monto"];
-    const rows = agentReport.map((row) => [
-      row.agent,
-      row.ventas,
-      row.monto,
-    ]);
+    const rows = agentReport.map((row) => [row.agent, row.ventas, row.monto]);
 
     downloadCSV("cierre_vuelo_agentes.csv", headers, rows);
   };
 
   const printReport = () => {
+    window.print();
+  };
+
+  const exportPDF = () => {
     window.print();
   };
 
@@ -499,6 +587,10 @@ export default function CierreVueloManagement() {
             Export Agents
           </button>
 
+          <button onClick={exportPDF} style={buttonBlue}>
+            Export PDF
+          </button>
+
           <button onClick={printReport} style={buttonGray}>
             Print Report
           </button>
@@ -545,6 +637,7 @@ export default function CierreVueloManagement() {
           "Ag_$",
           "Supervisor",
           "Agente_Cierre",
+          "Actions",
         ]}
         rows={filteredFlights.map((row) => [
           row.date,
@@ -562,6 +655,14 @@ export default function CierreVueloManagement() {
           formatMoney(row.totals?.agentAmount),
           row.supervisor,
           row.closingAgent,
+          <div style={tableActionStyle}>
+            <button onClick={() => editFlight(row)} style={smallButtonBlue}>
+              Edit
+            </button>
+            <button onClick={() => deleteFlight(row)} style={smallButtonRed}>
+              Delete
+            </button>
+          </div>,
         ])}
       />
 
@@ -577,6 +678,7 @@ export default function CierreVueloManagement() {
           "Supervisor",
           "Vuelo",
           "Notas",
+          "Actions",
         ]}
         rows={filteredFuel.map((row) => [
           row.date,
@@ -588,6 +690,14 @@ export default function CierreVueloManagement() {
           row.supervisor,
           row.flightNumber,
           row.notes,
+          <div style={tableActionStyle}>
+            <button onClick={() => editFuel(row)} style={smallButtonBlue}>
+              Edit
+            </button>
+            <button onClick={() => deleteFuel(row)} style={smallButtonRed}>
+              Delete
+            </button>
+          </div>,
         ])}
       />
 
@@ -863,6 +973,11 @@ const tdStyle = {
   whiteSpace: "nowrap",
 };
 
+const tableActionStyle = {
+  display: "flex",
+  gap: 8,
+};
+
 const buttonBlue = {
   border: "none",
   background: "#1769aa",
@@ -901,4 +1016,26 @@ const buttonGreen = {
   padding: "11px 14px",
   fontWeight: 900,
   cursor: "pointer",
+};
+
+const smallButtonBlue = {
+  border: "none",
+  background: "#1769aa",
+  color: "#fff",
+  borderRadius: 10,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const smallButtonRed = {
+  border: "none",
+  background: "#dc2626",
+  color: "#fff",
+  borderRadius: 10,
+  padding: "7px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: 12,
 };
