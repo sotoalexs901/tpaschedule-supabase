@@ -672,7 +672,9 @@ export default function CierreVueloManagement() {
           <div class="meta">
             <strong>Airline:</strong> ${safeHtml(airline)}<br />
             <strong>Month:</strong> ${safeHtml(month)}<br />
-            <strong>Status:</strong> ${safeHtml(isClosed ? "MONTH CLOSED" : "MONTH OPEN")}<br />
+            <strong>Status:</strong> ${safeHtml(
+              isClosed ? "MONTH CLOSED" : "MONTH OPEN"
+            )}<br />
             <strong>Generated:</strong> ${safeHtml(new Date().toLocaleString())}
           </div>
 
@@ -694,17 +696,23 @@ export default function CierreVueloManagement() {
 
             <div class="box">
               <div class="label">Ancillaries</div>
-              <div class="value">${safeHtml(formatMoney(monthlyReport.ancillaryAmount))}</div>
+              <div class="value">${safeHtml(
+                formatMoney(monthlyReport.ancillaryAmount)
+              )}</div>
             </div>
 
             <div class="box">
               <div class="label">Cash</div>
-              <div class="value">${safeHtml(formatMoney(monthlyReport.cashAmount))}</div>
+              <div class="value">${safeHtml(
+                formatMoney(monthlyReport.cashAmount)
+              )}</div>
             </div>
 
             <div class="box">
               <div class="label">Card</div>
-              <div class="value">${safeHtml(formatMoney(monthlyReport.cardAmount))}</div>
+              <div class="value">${safeHtml(
+                formatMoney(monthlyReport.cardAmount)
+              )}</div>
             </div>
 
             <div class="box">
