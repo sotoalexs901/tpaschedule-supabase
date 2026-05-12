@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, onSnapshot, serverTimestamp } from "firebase/firestore";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -47,6 +49,10 @@ function money(value) {
 
 function qty(value) {
   return Number(value || 0);
+}
+
+function formatMoney(value) {
+  return `$${money(value).toFixed(2)}`;
 }
 
 function getMonthKey(dateValue) {
@@ -366,8 +372,130 @@ export default function CierreVuelo() {
     }
   };
 
-  const exportPDF = () => {
-    window.print();
+  const exportFlightPDF = () => {
+    if (!flight.date || !flight.airline || !flight.flightNumber) {
+      alert("Completa Fecha, Airline y Vuelo antes de exportar el PDF.");
+      return;
+    }
+
+    const doc = new jsPDF("landscape");
+
+    doc.setFontSize(16);
+    doc.text("Cierre de Vuelo", 14, 15);
+
+    doc.setFontSize(10);
+    doc.text(`Airline: ${flight.airline}`, 14, 24);
+    doc.text(`Fecha: ${flight.date}`, 14, 30);
+    doc.text(`MesClave: ${monthKey}`, 14, 36);
+    doc.text(`Vuelo: ${flight.flightNumber}`, 14, 42);
+    doc.text(`Supervisor: ${flight.supervisor || ""}`, 14, 48);
+    doc.text(`Agent Closing: ${flight.closingAgent || ""}`, 14, 54);
+
+    autoTable(doc, {
+      startY: 62,
+      head: [["Item", "Value"]],
+      body: [
+        ["Total Pasajeros", flight.pax || 0],
+        ["Total Maletas", flight.bags || 0],
+        ["Card Qty", totals.cardQty],
+        ["Card Total", formatMoney(totals.cardAmount)],
+        ["Cash Qty", totals.cashQty],
+        ["Cash Total", formatMoney(totals.cashAmount)],
+        ["Ancillaries Total", formatMoney(totals.ancillaryAmount)],
+        ["Agent Sales", totals.agentSales],
+        ["Agent Total", formatMoney(totals.agentAmount)],
+      ],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [23, 105, 170] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 10,
+      head: [["Tipo", "Concepto", "Cantidad", "Monto", "Comments", "PNR"]],
+      body: [
+        ...cardConcepts
+          .filter((row) => qty(row.cantidad) > 0 || money(row.monto) > 0)
+          .map((row) => [
+            "CARD",
+            row.concept,
+            row.cantidad || 0,
+            formatMoney(row.monto),
+            row.comments || "",
+            row.pnr || "",
+          ]),
+        ...cashConcepts
+          .filter((row) => qty(row.cantidad) > 0 || money(row.monto) > 0)
+          .map((row) => [
+            "CASH",
+            row.concept,
+            row.cantidad || 0,
+            formatMoney(row.monto),
+            row.comments || "",
+            row.pnr || "",
+          ]),
+      ],
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [23, 105, 170] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 10,
+      head: [["Agent", "Ventas", "Monto", "Auth Code", "PNR"]],
+      body: agents
+        .filter(
+          (row) =>
+            row.agent ||
+            qty(row.ventas) > 0 ||
+            money(row.monto) > 0 ||
+            row.authCode ||
+            row.pnr
+        )
+        .map((row) => [
+          row.agent || "",
+          row.ventas || 0,
+          formatMoney(row.monto),
+          row.authCode || "",
+          row.pnr || "",
+        ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [23, 105, 170] },
+    });
+
+    doc.save(`cierre_vuelo_${flight.airline}_${flight.flightNumber}_${flight.date}.pdf`);
+  };
+
+  const exportFuelPDF = () => {
+    if (!fuel.date || !fuel.airline || !fuel.ticketNumber) {
+      alert("Completa Fecha, Airline y No. Ticket antes de exportar el PDF.");
+      return;
+    }
+
+    const doc = new jsPDF("portrait");
+
+    doc.setFontSize(16);
+    doc.text("Fuel Slip", 14, 15);
+
+    doc.setFontSize(10);
+    doc.text(`Airline: ${fuel.airline}`, 14, 24);
+    doc.text(`Fecha: ${fuel.date}`, 14, 30);
+    doc.text(`MesClave: ${getMonthKey(fuel.date)}`, 14, 36);
+
+    autoTable(doc, {
+      startY: 46,
+      head: [["Field", "Value"]],
+      body: [
+        ["No. Ticket", fuel.ticketNumber || ""],
+        ["Fuel Amount Gallons", fuel.gallons || 0],
+        ["Agente", fuel.agent || ""],
+        ["Supervisor", fuel.supervisor || ""],
+        ["Vuelo", fuel.flightNumber || ""],
+        ["Notas", fuel.notes || ""],
+      ],
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [23, 105, 170] },
+    });
+
+    doc.save(`fuel_slip_${fuel.airline}_${fuel.ticketNumber}_${fuel.date}.pdf`);
   };
 
   return (
@@ -579,8 +707,8 @@ export default function CierreVuelo() {
             {savingFlight ? "Saving..." : "Guardar Vuelo"}
           </button>
 
-          <button type="button" onClick={exportPDF} style={buttonBlue}>
-            Export PDF
+          <button type="button" onClick={exportFlightPDF} style={buttonBlue}>
+            Export Flight PDF
           </button>
 
           <button type="button" onClick={clearFlightForm} style={buttonGray}>
@@ -690,8 +818,8 @@ export default function CierreVuelo() {
             {savingFuel ? "Saving..." : "Guardar Fuel"}
           </button>
 
-          <button type="button" onClick={exportPDF} style={buttonBlue}>
-            Export PDF
+          <button type="button" onClick={exportFuelPDF} style={buttonBlue}>
+            Export Fuel PDF
           </button>
 
           <button type="button" onClick={clearFuelForm} style={buttonGray}>
