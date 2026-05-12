@@ -1,86 +1,418 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
+import { db } from "../firebase";
+import { useUser } from "../UserContext.jsx";
+
+const DEFAULT_AIRLINES = [
+  "West Jet",
+  "Avianca",
+  "Sun Country",
+  "World Atlantic",
+];
+
+function numberValue(value) {
+  return Number(value || 0);
+}
+
+function formatMoney(value) {
+  return `$${numberValue(value).toFixed(2)}`;
+}
+
+function getYearMonthOptions() {
+  const now = new Date();
+  const year = now.getFullYear();
+
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = String(index + 1).padStart(2, "0");
+    return `${year}-${month}`;
+  });
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
 
 export default function CierreVueloManagement() {
-  const [records, setRecords] = useState([]);
+  const { user } = useUser();
+
+  const [flights, setFlights] = useState([]);
+  const [fuelRows, setFuelRows] = useState([]);
+  const [closures, setClosures] = useState({});
+
+  const [filters, setFilters] = useState({
+    airline: "",
+    monthKey: "",
+  });
+
+  const airlines = useMemo(() => {
+    const fromFlights = flights.map((row) => row.airline).filter(Boolean);
+    const fromFuel = fuelRows.map((row) => row.airline).filter(Boolean);
+
+    return Array.from(
+      new Set([...DEFAULT_AIRLINES, ...fromFlights, ...fromFuel])
+    );
+  }, [flights, fuelRows]);
 
   useEffect(() => {
-    loadData();
+    const unsubFlights = onSnapshot(
+      collection(db, "cierreVueloFlights"),
+      (snapshot) => {
+        setFlights(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...item.data(),
+          }))
+        );
+      },
+      (error) => console.error("Error loading cierreVueloFlights:", error)
+    );
+
+    const unsubFuel = onSnapshot(
+      collection(db, "cierreVueloFuel"),
+      (snapshot) => {
+        setFuelRows(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...item.data(),
+          }))
+        );
+      },
+      (error) => console.error("Error loading cierreVueloFuel:", error)
+    );
+
+    const unsubClosures = onSnapshot(
+      collection(db, "cierreVueloMonthClosures"),
+      (snapshot) => {
+        const next = {};
+
+        snapshot.docs.forEach((item) => {
+          next[item.id] = {
+            id: item.id,
+            ...item.data(),
+          };
+        });
+
+        setClosures(next);
+      },
+      (error) => console.error("Error loading month closures:", error)
+    );
+
+    return () => {
+      unsubFlights();
+      unsubFuel();
+      unsubClosures();
+    };
   }, []);
 
-  const loadData = () => {
-    const data =
-      JSON.parse(localStorage.getItem("cierreVuelos")) || [];
+  const filteredFlights = useMemo(() => {
+    return flights.filter((row) => {
+      if (filters.airline && row.airline !== filters.airline) return false;
+      if (filters.monthKey && row.monthKey !== filters.monthKey) return false;
+      return true;
+    });
+  }, [flights, filters]);
 
-    setRecords(data);
-  };
+  const filteredFuel = useMemo(() => {
+    return fuelRows.filter((row) => {
+      if (filters.airline && row.airline !== filters.airline) return false;
+      if (filters.monthKey && row.monthKey !== filters.monthKey) return false;
+      return true;
+    });
+  }, [fuelRows, filters]);
 
-  const closeMonth = () => {
-    const updated = records.map((r) => ({
-      ...r,
-      closed: true,
-    }));
+  const activeClosureKey =
+    filters.airline && filters.monthKey
+      ? `${filters.airline}_${filters.monthKey}`
+      : "";
 
-    localStorage.setItem(
-      "cierreVuelos",
-      JSON.stringify(updated)
+  const activeClosure = activeClosureKey
+    ? closures[activeClosureKey]
+    : null;
+
+  const isClosed = activeClosure?.status === "CLOSED";
+
+  const monthlyReport = useMemo(() => {
+    const totals = filteredFlights.reduce(
+      (acc, row) => {
+        acc.vuelos += 1;
+        acc.pax += numberValue(row.pax);
+        acc.bags += numberValue(row.bags);
+        acc.cardQty += numberValue(row.totals?.cardQty);
+        acc.cardAmount += numberValue(row.totals?.cardAmount);
+        acc.cashQty += numberValue(row.totals?.cashQty);
+        acc.cashAmount += numberValue(row.totals?.cashAmount);
+        acc.ancillaryAmount += numberValue(row.totals?.ancillaryAmount);
+        acc.agentSales += numberValue(row.totals?.agentSales);
+        acc.agentAmount += numberValue(row.totals?.agentAmount);
+
+        return acc;
+      },
+      {
+        vuelos: 0,
+        pax: 0,
+        bags: 0,
+        cardQty: 0,
+        cardAmount: 0,
+        cashQty: 0,
+        cashAmount: 0,
+        ancillaryAmount: 0,
+        agentSales: 0,
+        agentAmount: 0,
+      }
     );
 
-    setRecords(updated);
-
-    alert("Mes cerrado");
-  };
-
-  const reopenMonth = () => {
-    const updated = records.map((r) => ({
-      ...r,
-      closed: false,
-    }));
-
-    localStorage.setItem(
-      "cierreVuelos",
-      JSON.stringify(updated)
+    const fuelGallons = filteredFuel.reduce(
+      (sum, row) => sum + numberValue(row.gallons),
+      0
     );
 
-    setRecords(updated);
+    return {
+      ...totals,
+      fuelGallons,
+    };
+  }, [filteredFlights, filteredFuel]);
 
-    alert("Mes reabierto");
-  };
+  const agentReport = useMemo(() => {
+    const map = new Map();
 
-  const exportCSV = () => {
-    const headers = [
-      "Fecha",
-      "Airline",
-      "Vuelo",
-      "Pasajeros",
-      "Comentarios",
-      "Closed",
-    ];
+    filteredFlights.forEach((flight) => {
+      (flight.agents || []).forEach((agentRow) => {
+        const name = agentRow.agent || "Unknown";
 
-    const rows = records.map((r) => [
-      r.fecha,
-      r.airline,
-      r.vuelo,
-      r.pasajeros,
-      r.comentarios,
-      r.closed ? "YES" : "NO",
-    ]);
+        if (!map.has(name)) {
+          map.set(name, {
+            agent: name,
+            ventas: 0,
+            monto: 0,
+          });
+        }
 
-    const csvContent =
-      [headers, ...rows]
-        .map((e) => e.join(","))
-        .join("\n");
-
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
+        const current = map.get(name);
+        current.ventas += numberValue(agentRow.ventas);
+        current.monto += numberValue(agentRow.monto);
+      });
     });
 
-    const url = URL.createObjectURL(blob);
+    return Array.from(map.values()).sort((a, b) => b.monto - a.monto);
+  }, [filteredFlights]);
 
-    const link = document.createElement("a");
+  const conceptReport = useMemo(() => {
+    const map = new Map();
 
-    link.href = url;
-    link.download = "cierre_vuelo.csv";
-    link.click();
+    filteredFlights.forEach((flight) => {
+      [
+        ...(flight.cardConcepts || []).map((row) => ({
+          ...row,
+          type: "CARD",
+        })),
+        ...(flight.cashConcepts || []).map((row) => ({
+          ...row,
+          type: "CASH",
+        })),
+      ].forEach((row) => {
+        const key = `${row.type}_${row.concept}`;
+
+        if (!map.has(key)) {
+          map.set(key, {
+            type: row.type,
+            concept: row.concept,
+            cantidad: 0,
+            monto: 0,
+          });
+        }
+
+        const current = map.get(key);
+        current.cantidad += numberValue(row.cantidad);
+        current.monto += numberValue(row.monto);
+      });
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.monto - a.monto);
+  }, [filteredFlights]);
+
+  const annualSummary = useMemo(() => {
+    const map = new Map();
+
+    flights.forEach((row) => {
+      const month = row.monthKey || "No Month";
+
+      if (!map.has(month)) {
+        map.set(month, {
+          month,
+          vuelos: 0,
+          pax: 0,
+          bags: 0,
+          ancillaries: 0,
+          agentSales: 0,
+          fuelGallons: 0,
+        });
+      }
+
+      const current = map.get(month);
+      current.vuelos += 1;
+      current.pax += numberValue(row.pax);
+      current.bags += numberValue(row.bags);
+      current.ancillaries += numberValue(row.totals?.ancillaryAmount);
+      current.agentSales += numberValue(row.totals?.agentSales);
+    });
+
+    fuelRows.forEach((row) => {
+      const month = row.monthKey || "No Month";
+
+      if (!map.has(month)) {
+        map.set(month, {
+          month,
+          vuelos: 0,
+          pax: 0,
+          bags: 0,
+          ancillaries: 0,
+          agentSales: 0,
+          fuelGallons: 0,
+        });
+      }
+
+      map.get(month).fuelGallons += numberValue(row.gallons);
+    });
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.month.localeCompare(b.month)
+    );
+  }, [flights, fuelRows]);
+
+  const closeMonth = async () => {
+    if (!filters.airline || !filters.monthKey) {
+      alert("Selecciona Airline y Month antes de cerrar el mes.");
+      return;
+    }
+
+    const id = `${filters.airline}_${filters.monthKey}`;
+
+    await setDoc(
+      doc(db, "cierreVueloMonthClosures", id),
+      {
+        airline: filters.airline,
+        monthKey: filters.monthKey,
+        status: "CLOSED",
+        closedBy: user?.displayName || user?.name || user?.username || "",
+        closedById: user?.id || "",
+        closedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    alert("Mes cerrado.");
+  };
+
+  const reopenMonth = async () => {
+    if (!filters.airline || !filters.monthKey) {
+      alert("Selecciona Airline y Month antes de reabrir el mes.");
+      return;
+    }
+
+    const id = `${filters.airline}_${filters.monthKey}`;
+
+    await setDoc(
+      doc(db, "cierreVueloMonthClosures", id),
+      {
+        airline: filters.airline,
+        monthKey: filters.monthKey,
+        status: "OPEN",
+        reopenedBy: user?.displayName || user?.name || user?.username || "",
+        reopenedById: user?.id || "",
+        reopenedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    alert("Mes reabierto.");
+  };
+
+  const exportFlightsCSV = () => {
+    const headers = [
+      "Fecha",
+      "MesClave",
+      "Airline",
+      "Vuelo",
+      "PAX",
+      "Maletas",
+      "Card_Qty",
+      "Card_$",
+      "Cash_Qty",
+      "Cash_$",
+      "Ancillaries_$",
+      "Ag_Ventas",
+      "Ag_$",
+      "Supervisor",
+      "Agente_Cierre",
+    ];
+
+    const rows = filteredFlights.map((row) => [
+      row.date,
+      row.monthKey,
+      row.airline,
+      row.flightNumber,
+      row.pax,
+      row.bags,
+      row.totals?.cardQty,
+      row.totals?.cardAmount,
+      row.totals?.cashQty,
+      row.totals?.cashAmount,
+      row.totals?.ancillaryAmount,
+      row.totals?.agentSales,
+      row.totals?.agentAmount,
+      row.supervisor,
+      row.closingAgent,
+    ]);
+
+    downloadCSV("cierre_vuelo_registro_mes.csv", headers, rows);
+  };
+
+  const exportFuelCSV = () => {
+    const headers = [
+      "Fecha",
+      "MesClave",
+      "Airline",
+      "NoTicket",
+      "FuelAmount_Gallons",
+      "Agente",
+      "Supervisor",
+      "Vuelo",
+      "Notas",
+    ];
+
+    const rows = filteredFuel.map((row) => [
+      row.date,
+      row.monthKey,
+      row.airline,
+      row.ticketNumber,
+      row.gallons,
+      row.agent,
+      row.supervisor,
+      row.flightNumber,
+      row.notes,
+    ]);
+
+    downloadCSV("cierre_vuelo_fuel.csv", headers, rows);
+  };
+
+  const exportAgentsCSV = () => {
+    const headers = ["Agente", "Ventas", "Monto"];
+    const rows = agentReport.map((row) => [
+      row.agent,
+      row.ventas,
+      row.monto,
+    ]);
+
+    downloadCSV("cierre_vuelo_agentes.csv", headers, rows);
   };
 
   const printReport = () => {
@@ -88,90 +420,485 @@ export default function CierreVueloManagement() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">
-          Cierre de Vuelo Management
-        </h1>
+    <div style={pageStyle}>
+      <div style={headerStyle}>
+        <div>
+          <div style={eyebrowStyle}>TPA OPS SYSTEM</div>
+          <h1 style={titleStyle}>Cierre de Vuelo Management</h1>
+          <p style={subtitleStyle}>
+            Registro mensual, fuel, agentes, conceptos, resumen anual y cierre de mes.
+          </p>
+        </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={exportCSV}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg"
-          >
-            Export
-          </button>
-
-          <button
-            onClick={printReport}
-            className="bg-gray-700 text-white px-4 py-2 rounded-lg"
-          >
-            Print
-          </button>
-
-          <button
-            onClick={closeMonth}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg"
-          >
-            Close Month
-          </button>
-
-          <button
-            onClick={reopenMonth}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg"
-          >
-            Reopen
-          </button>
+        <div style={statusBadgeStyle(isClosed)}>
+          {filters.airline && filters.monthKey
+            ? isClosed
+              ? "MONTH CLOSED"
+              : "MONTH OPEN"
+            : "SELECT MONTH"}
         </div>
       </div>
 
-      <div className="overflow-auto bg-white rounded-xl shadow">
-        <table className="w-full">
-          <thead className="bg-gray-100">
+      <section style={cardStyle}>
+        <h2 style={sectionTitleStyle}>Filters</h2>
+
+        <div style={filterGridStyle}>
+          <label style={labelStyle}>
+            Airline
+            <select
+              value={filters.airline}
+              onChange={(e) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  airline: e.target.value,
+                }))
+              }
+              style={inputStyle}
+            >
+              <option value="">All Airlines</option>
+              {airlines.map((airline) => (
+                <option key={airline} value={airline}>
+                  {airline}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label style={labelStyle}>
+            Month
+            <select
+              value={filters.monthKey}
+              onChange={(e) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  monthKey: e.target.value,
+                }))
+              }
+              style={inputStyle}
+            >
+              <option value="">All Months</option>
+              {getYearMonthOptions().map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div style={actionRowStyle}>
+          <button onClick={exportFlightsCSV} style={buttonBlue}>
+            Export Registro Mes
+          </button>
+
+          <button onClick={exportFuelCSV} style={buttonBlue}>
+            Export Fuel
+          </button>
+
+          <button onClick={exportAgentsCSV} style={buttonBlue}>
+            Export Agents
+          </button>
+
+          <button onClick={printReport} style={buttonGray}>
+            Print Report
+          </button>
+
+          <button onClick={closeMonth} style={buttonRed}>
+            Close Month
+          </button>
+
+          <button onClick={reopenMonth} style={buttonGreen}>
+            Reopen Month
+          </button>
+        </div>
+      </section>
+
+      <section style={summaryGridStyle}>
+        <SummaryBox label="Vuelos del Mes" value={monthlyReport.vuelos} />
+        <SummaryBox label="Total PAX" value={monthlyReport.pax} />
+        <SummaryBox label="Total Maletas" value={monthlyReport.bags} />
+        <SummaryBox
+          label="Ancillaries $"
+          value={formatMoney(monthlyReport.ancillaryAmount)}
+        />
+        <SummaryBox label="Cash $" value={formatMoney(monthlyReport.cashAmount)} />
+        <SummaryBox label="Card $" value={formatMoney(monthlyReport.cardAmount)} />
+        <SummaryBox label="Ventas Agentes" value={monthlyReport.agentSales} />
+        <SummaryBox label="Fuel Gallons" value={monthlyReport.fuelGallons} />
+      </section>
+
+      <ReportTable
+        title="Registro del Mes"
+        headers={[
+          "Fecha",
+          "MesClave",
+          "Airline",
+          "Vuelo",
+          "PAX",
+          "Maletas",
+          "Card_Qty",
+          "Card_$",
+          "Cash_Qty",
+          "Cash_$",
+          "Ancillaries_$",
+          "Ag_Ventas",
+          "Ag_$",
+          "Supervisor",
+          "Agente_Cierre",
+        ]}
+        rows={filteredFlights.map((row) => [
+          row.date,
+          row.monthKey,
+          row.airline,
+          row.flightNumber,
+          row.pax,
+          row.bags,
+          row.totals?.cardQty,
+          formatMoney(row.totals?.cardAmount),
+          row.totals?.cashQty,
+          formatMoney(row.totals?.cashAmount),
+          formatMoney(row.totals?.ancillaryAmount),
+          row.totals?.agentSales,
+          formatMoney(row.totals?.agentAmount),
+          row.supervisor,
+          row.closingAgent,
+        ])}
+      />
+
+      <ReportTable
+        title="Registro Fuel Mes"
+        headers={[
+          "Fecha",
+          "MesClave",
+          "Airline",
+          "NoTicket",
+          "FuelAmount_Gallons",
+          "Agente",
+          "Supervisor",
+          "Vuelo",
+          "Notas",
+        ]}
+        rows={filteredFuel.map((row) => [
+          row.date,
+          row.monthKey,
+          row.airline,
+          row.ticketNumber,
+          row.gallons,
+          row.agent,
+          row.supervisor,
+          row.flightNumber,
+          row.notes,
+        ])}
+      />
+
+      <ReportTable
+        title="Registro Agentes Mes"
+        headers={["Agente", "Ventas", "$ Mes", "% Ventas", "% $"]}
+        rows={agentReport.map((row) => [
+          row.agent,
+          row.ventas,
+          formatMoney(row.monto),
+          monthlyReport.agentSales
+            ? `${((row.ventas / monthlyReport.agentSales) * 100).toFixed(1)}%`
+            : "0%",
+          monthlyReport.agentAmount
+            ? `${((row.monto / monthlyReport.agentAmount) * 100).toFixed(1)}%`
+            : "0%",
+        ])}
+      />
+
+      <ReportTable
+        title="Registro Conceptos Mes"
+        headers={["Tipo", "Concepto", "Cantidad", "Monto"]}
+        rows={conceptReport.map((row) => [
+          row.type,
+          row.concept,
+          row.cantidad,
+          formatMoney(row.monto),
+        ])}
+      />
+
+      <ReportTable
+        title="Resumen Anual"
+        headers={[
+          "Mes",
+          "Vuelos",
+          "Total PAX",
+          "Total Maletas",
+          "Ancillaries $",
+          "Ventas Agentes",
+          "Fuel Gallons",
+        ]}
+        rows={annualSummary.map((row) => [
+          row.month,
+          row.vuelos,
+          row.pax,
+          row.bags,
+          formatMoney(row.ancillaries),
+          row.agentSales,
+          row.fuelGallons,
+        ])}
+      />
+    </div>
+  );
+}
+
+function downloadCSV(filename, headers, rows) {
+  const csv = [headers, ...rows]
+    .map((row) => row.map(csvEscape).join(","))
+    .join("\n");
+
+  const blob = new Blob([csv], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  link.click();
+
+  URL.revokeObjectURL(url);
+}
+
+function ReportTable({ title, headers, rows }) {
+  return (
+    <section style={cardStyle}>
+      <h2 style={sectionTitleStyle}>{title}</h2>
+
+      <div style={tableWrapStyle}>
+        <table style={tableStyle}>
+          <thead>
             <tr>
-              <th className="p-3 text-left">Fecha</th>
-              <th className="p-3 text-left">Airline</th>
-              <th className="p-3 text-left">Vuelo</th>
-              <th className="p-3 text-left">Pasajeros</th>
-              <th className="p-3 text-left">Comentarios</th>
-              <th className="p-3 text-left">Closed</th>
+              {headers.map((header) => (
+                <th key={header} style={thStyle}>
+                  {header}
+                </th>
+              ))}
             </tr>
           </thead>
 
           <tbody>
-            {records.map((record, index) => (
-              <tr
-                key={index}
-                className="border-t"
-              >
-                <td className="p-3">
-                  {record.fecha}
-                </td>
-
-                <td className="p-3">
-                  {record.airline}
-                </td>
-
-                <td className="p-3">
-                  {record.vuelo}
-                </td>
-
-                <td className="p-3">
-                  {record.pasajeros}
-                </td>
-
-                <td className="p-3">
-                  {record.comentarios}
-                </td>
-
-                <td className="p-3">
-                  {record.closed ? "YES" : "NO"}
+            {rows.length === 0 ? (
+              <tr>
+                <td style={tdStyle} colSpan={headers.length}>
+                  No records found.
                 </td>
               </tr>
-            ))}
+            ) : (
+              rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex} style={tdStyle}>
+                      {cell ?? ""}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+function SummaryBox({ label, value }) {
+  return (
+    <div style={summaryBoxStyle}>
+      <div style={summaryLabelStyle}>{label}</div>
+      <div style={summaryValueStyle}>{value}</div>
     </div>
   );
 }
+
+const pageStyle = {
+  display: "grid",
+  gap: 18,
+};
+
+const headerStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 16,
+  flexWrap: "wrap",
+  background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+  borderRadius: 24,
+  padding: 24,
+  color: "#fff",
+  boxShadow: "0 18px 40px rgba(15,76,129,0.20)",
+};
+
+const eyebrowStyle = {
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: "0.16em",
+  opacity: 0.85,
+};
+
+const titleStyle = {
+  margin: "6px 0 4px",
+  fontSize: 34,
+  fontWeight: 900,
+};
+
+const subtitleStyle = {
+  margin: 0,
+  opacity: 0.9,
+  fontWeight: 600,
+};
+
+const statusBadgeStyle = (closed) => ({
+  background: closed ? "#dc2626" : "#16a34a",
+  color: "#fff",
+  borderRadius: 999,
+  padding: "12px 16px",
+  fontWeight: 900,
+  boxShadow: "0 10px 24px rgba(15,23,42,0.18)",
+});
+
+const cardStyle = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 22,
+  padding: 20,
+  boxShadow: "0 14px 34px rgba(15,23,42,0.08)",
+};
+
+const sectionTitleStyle = {
+  margin: "0 0 16px",
+  color: "#0f172a",
+  fontSize: 22,
+  fontWeight: 900,
+};
+
+const filterGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 14,
+};
+
+const labelStyle = {
+  display: "grid",
+  gap: 7,
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#334155",
+};
+
+const inputStyle = {
+  width: "100%",
+  border: "1px solid #cbd5e1",
+  borderRadius: 14,
+  padding: "11px 12px",
+  fontSize: 14,
+  boxSizing: "border-box",
+};
+
+const actionRowStyle = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+  marginTop: 18,
+};
+
+const summaryGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+  gap: 12,
+};
+
+const summaryBoxStyle = {
+  background: "#ffffff",
+  border: "1px solid #d7e9fb",
+  borderRadius: 18,
+  padding: 16,
+  boxShadow: "0 12px 28px rgba(15,23,42,0.07)",
+};
+
+const summaryLabelStyle = {
+  fontSize: 11,
+  color: "#64748b",
+  fontWeight: 900,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+};
+
+const summaryValueStyle = {
+  marginTop: 6,
+  color: "#0f172a",
+  fontSize: 24,
+  fontWeight: 900,
+};
+
+const tableWrapStyle = {
+  overflowX: "auto",
+  border: "1px solid #e2e8f0",
+  borderRadius: 16,
+};
+
+const tableStyle = {
+  width: "100%",
+  borderCollapse: "collapse",
+  minWidth: 850,
+};
+
+const thStyle = {
+  background: "#edf7ff",
+  color: "#1769aa",
+  padding: 10,
+  textAlign: "left",
+  fontSize: 12,
+  fontWeight: 900,
+  borderBottom: "1px solid #cfe7fb",
+  whiteSpace: "nowrap",
+};
+
+const tdStyle = {
+  padding: 9,
+  borderBottom: "1px solid #e2e8f0",
+  fontSize: 13,
+  whiteSpace: "nowrap",
+};
+
+const buttonBlue = {
+  border: "none",
+  background: "#1769aa",
+  color: "#fff",
+  borderRadius: 14,
+  padding: "11px 14px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const buttonGray = {
+  border: "none",
+  background: "#475569",
+  color: "#fff",
+  borderRadius: 14,
+  padding: "11px 14px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const buttonRed = {
+  border: "none",
+  background: "#dc2626",
+  color: "#fff",
+  borderRadius: 14,
+  padding: "11px 14px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const buttonGreen = {
+  border: "none",
+  background: "#16a34a",
+  color: "#fff",
+  borderRadius: 14,
+  padding: "11px 14px",
+  fontWeight: 900,
+  cursor: "pointer",
+};
