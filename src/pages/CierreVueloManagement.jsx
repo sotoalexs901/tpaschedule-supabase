@@ -8,8 +8,6 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -41,6 +39,15 @@ function getYearMonthOptions() {
 function csvEscape(value) {
   const text = String(value ?? "");
   return `"${text.replace(/"/g, '""')}"`;
+}
+
+function safeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 export default function CierreVueloManagement() {
@@ -501,86 +508,297 @@ export default function CierreVueloManagement() {
   };
 
   const exportPDF = () => {
-    const docPdf = new jsPDF("landscape");
+    const reportWindow = window.open("", "_blank");
+
+    if (!reportWindow) {
+      alert("Permite pop-ups para exportar el PDF.");
+      return;
+    }
+
     const airline = filters.airline || "All Airlines";
     const month = filters.monthKey || "All Months";
 
-    docPdf.setFontSize(16);
-    docPdf.text("Cierre de Vuelo Management Report", 14, 15);
+    const flightRowsHtml = filteredFlights
+      .map(
+        (row) => `
+          <tr>
+            <td>${safeHtml(row.date)}</td>
+            <td>${safeHtml(row.airline)}</td>
+            <td>${safeHtml(row.flightNumber)}</td>
+            <td>${safeHtml(row.pax || 0)}</td>
+            <td>${safeHtml(row.bags || 0)}</td>
+            <td>${safeHtml(formatMoney(row.totals?.cardAmount))}</td>
+            <td>${safeHtml(formatMoney(row.totals?.cashAmount))}</td>
+            <td>${safeHtml(formatMoney(row.totals?.ancillaryAmount))}</td>
+            <td>${safeHtml(row.supervisor)}</td>
+            <td>${safeHtml(row.closingAgent)}</td>
+          </tr>
+        `
+      )
+      .join("");
 
-    docPdf.setFontSize(10);
-    docPdf.text(`Airline: ${airline}`, 14, 24);
-    docPdf.text(`Month: ${month}`, 14, 30);
-    docPdf.text(`Generated: ${new Date().toLocaleString()}`, 14, 36);
+    const fuelRowsHtml = filteredFuel
+      .map(
+        (row) => `
+          <tr>
+            <td>${safeHtml(row.date)}</td>
+            <td>${safeHtml(row.airline)}</td>
+            <td>${safeHtml(row.ticketNumber)}</td>
+            <td>${safeHtml(row.gallons || 0)}</td>
+            <td>${safeHtml(row.agent)}</td>
+            <td>${safeHtml(row.supervisor)}</td>
+            <td>${safeHtml(row.flightNumber)}</td>
+          </tr>
+        `
+      )
+      .join("");
 
-    autoTable(docPdf, {
-      startY: 44,
-      head: [["Summary", "Total"]],
-      body: [
-        ["Vuelos del Mes", monthlyReport.vuelos],
-        ["Total PAX", monthlyReport.pax],
-        ["Total Maletas", monthlyReport.bags],
-        ["Card Total", formatMoney(monthlyReport.cardAmount)],
-        ["Cash Total", formatMoney(monthlyReport.cashAmount)],
-        ["Ancillaries Total", formatMoney(monthlyReport.ancillaryAmount)],
-        ["Ventas Agentes", monthlyReport.agentSales],
-        ["Fuel Gallons", monthlyReport.fuelGallons],
-      ],
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [23, 105, 170] },
-    });
+    const agentRowsHtml = agentReport
+      .map(
+        (row) => `
+          <tr>
+            <td>${safeHtml(row.agent)}</td>
+            <td>${safeHtml(row.ventas)}</td>
+            <td>${safeHtml(formatMoney(row.monto))}</td>
+          </tr>
+        `
+      )
+      .join("");
 
-    autoTable(docPdf, {
-      startY: docPdf.lastAutoTable.finalY + 10,
-      head: [[
-        "Fecha",
-        "Airline",
-        "Vuelo",
-        "PAX",
-        "Maletas",
-        "Card $",
-        "Cash $",
-        "Ancillaries $",
-        "Supervisor",
-        "Agent Closing",
-      ]],
-      body: filteredFlights.map((row) => [
-        row.date || "",
-        row.airline || "",
-        row.flightNumber || "",
-        row.pax || 0,
-        row.bags || 0,
-        formatMoney(row.totals?.cardAmount),
-        formatMoney(row.totals?.cashAmount),
-        formatMoney(row.totals?.ancillaryAmount),
-        row.supervisor || "",
-        row.closingAgent || "",
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [23, 105, 170] },
-    });
+    reportWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Cierre de Vuelo Report</title>
+          <style>
+            * {
+              box-sizing: border-box;
+            }
 
-    autoTable(docPdf, {
-      startY: docPdf.lastAutoTable.finalY + 10,
-      head: [["Fuel Date", "Airline", "Ticket", "Gallons", "Agent", "Supervisor", "Vuelo"]],
-      body: filteredFuel.map((row) => [
-        row.date || "",
-        row.airline || "",
-        row.ticketNumber || "",
-        row.gallons || 0,
-        row.agent || "",
-        row.supervisor || "",
-        row.flightNumber || "",
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [23, 105, 170] },
-    });
+            body {
+              font-family: Arial, sans-serif;
+              padding: 24px;
+              color: #0f172a;
+              background: #ffffff;
+            }
 
-    docPdf.save(`cierre_vuelo_management_${airline}_${month}.pdf`);
+            h1 {
+              color: #0f4c81;
+              margin: 0 0 6px;
+              font-size: 24px;
+            }
+
+            h2 {
+              margin: 26px 0 10px;
+              color: #1769aa;
+              font-size: 17px;
+            }
+
+            .meta {
+              font-size: 12px;
+              line-height: 1.6;
+              margin-bottom: 16px;
+            }
+
+            .summary {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 10px;
+              margin: 18px 0;
+            }
+
+            .box {
+              border: 1px solid #cbd5e1;
+              border-radius: 10px;
+              padding: 10px;
+              background: #f8fbff;
+            }
+
+            .label {
+              font-size: 10px;
+              font-weight: bold;
+              color: #64748b;
+              text-transform: uppercase;
+            }
+
+            .value {
+              font-size: 16px;
+              font-weight: bold;
+              margin-top: 4px;
+            }
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 8px;
+              font-size: 10px;
+            }
+
+            th {
+              background: #1769aa;
+              color: white;
+              padding: 6px;
+              border: 1px solid #dbeafe;
+              text-align: left;
+            }
+
+            td {
+              padding: 6px;
+              border: 1px solid #cbd5e1;
+            }
+
+            .footer {
+              margin-top: 24px;
+              font-size: 10px;
+              color: #64748b;
+            }
+
+            @page {
+              size: landscape;
+              margin: 12mm;
+            }
+
+            @media print {
+              body {
+                padding: 0;
+              }
+            }
+          </style>
+        </head>
+
+        <body>
+          <h1>Cierre de Vuelo Management Report</h1>
+
+          <div class="meta">
+            <strong>Airline:</strong> ${safeHtml(airline)}<br />
+            <strong>Month:</strong> ${safeHtml(month)}<br />
+            <strong>Status:</strong> ${safeHtml(isClosed ? "MONTH CLOSED" : "MONTH OPEN")}<br />
+            <strong>Generated:</strong> ${safeHtml(new Date().toLocaleString())}
+          </div>
+
+          <div class="summary">
+            <div class="box">
+              <div class="label">Vuelos del Mes</div>
+              <div class="value">${safeHtml(monthlyReport.vuelos)}</div>
+            </div>
+
+            <div class="box">
+              <div class="label">Total PAX</div>
+              <div class="value">${safeHtml(monthlyReport.pax)}</div>
+            </div>
+
+            <div class="box">
+              <div class="label">Total Maletas</div>
+              <div class="value">${safeHtml(monthlyReport.bags)}</div>
+            </div>
+
+            <div class="box">
+              <div class="label">Ancillaries</div>
+              <div class="value">${safeHtml(formatMoney(monthlyReport.ancillaryAmount))}</div>
+            </div>
+
+            <div class="box">
+              <div class="label">Cash</div>
+              <div class="value">${safeHtml(formatMoney(monthlyReport.cashAmount))}</div>
+            </div>
+
+            <div class="box">
+              <div class="label">Card</div>
+              <div class="value">${safeHtml(formatMoney(monthlyReport.cardAmount))}</div>
+            </div>
+
+            <div class="box">
+              <div class="label">Ventas Agentes</div>
+              <div class="value">${safeHtml(monthlyReport.agentSales)}</div>
+            </div>
+
+            <div class="box">
+              <div class="label">Fuel Gallons</div>
+              <div class="value">${safeHtml(monthlyReport.fuelGallons)}</div>
+            </div>
+          </div>
+
+          <h2>Registro del Mes</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Airline</th>
+                <th>Vuelo</th>
+                <th>PAX</th>
+                <th>Maletas</th>
+                <th>Card $</th>
+                <th>Cash $</th>
+                <th>Ancillaries $</th>
+                <th>Supervisor</th>
+                <th>Agent Closing</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                flightRowsHtml ||
+                `<tr><td colspan="10">No records found.</td></tr>`
+              }
+            </tbody>
+          </table>
+
+          <h2>Fuel</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Airline</th>
+                <th>Ticket</th>
+                <th>Gallons</th>
+                <th>Agent</th>
+                <th>Supervisor</th>
+                <th>Vuelo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                fuelRowsHtml ||
+                `<tr><td colspan="7">No fuel records found.</td></tr>`
+              }
+            </tbody>
+          </table>
+
+          <h2>Agents</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Ventas</th>
+                <th>Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                agentRowsHtml ||
+                `<tr><td colspan="3">No agent records found.</td></tr>`
+              }
+            </tbody>
+          </table>
+
+          <div class="footer">
+            TPA OPS SYSTEM - Cierre de Vuelo
+          </div>
+
+          <script>
+            window.onload = function () {
+              window.focus();
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    reportWindow.document.close();
   };
 
   const printReport = () => {
-    window.print();
+    exportPDF();
   };
 
   return (
