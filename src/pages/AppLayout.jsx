@@ -332,6 +332,17 @@ export default function AppLayout() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
+  const canSubmitCierreVuelo =
+    user?.role === "agent" ||
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageCierreVuelo =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
   const navSections = useMemo(() => {
     const sections = [];
 
@@ -524,6 +535,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canSubmitCierreVuelo) {
+      submissionReports.push({
+        to: "/cierre-vuelo",
+        label: "Cierre de Vuelo",
+        icon: "✈️",
+      });
+    }
+
     if (canAccessTimesheets) {
       managementReports.push({
         to: "/timesheets/reports",
@@ -607,6 +626,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canManageCierreVuelo) {
+      managementReports.push({
+        to: "/cierre-vuelo-management",
+        label: "Cierre de Vuelo Reports",
+        icon: "📘",
+      });
+    }
+
     if (canAccessWchrTools) {
       wchr.push(
         { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
@@ -667,6 +694,8 @@ export default function AppLayout() {
     canManageFuel,
     canSubmitBSO,
     canManageBSO,
+    canSubmitCierreVuelo,
+    canManageCierreVuelo,
     unreadMessages,
     unreadNotifications,
     pendingTimeOff,
