@@ -77,6 +77,9 @@ import FuelManagementPage from "./pages/FuelManagementPage.jsx";
 import BSOOperationsPage from "./pages/BSOOperationsPage.jsx";
 import BSOMgtScoreDashboard from "./pages/BSOMgtScoreDashboard.jsx";
 
+import CierreVuelo from "./pages/CierreVuelo.jsx";
+import CierreVueloManagement from "./pages/CierreVueloManagement.jsx";
+
 function ProtectedRoute({
   children,
   roles,
@@ -542,6 +545,17 @@ function AppRouter() {
           />
 
           <Route
+            path="cierre-vuelo"
+            element={
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
+                <CierreVuelo />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="operational-report/reports"
             element={
               <ProtectedRoute
@@ -624,6 +638,17 @@ function AppRouter() {
                 roles={["supervisor", "duty_manager", "station_manager"]}
               >
                 <BSOMgtScoreDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="cierre-vuelo-management"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <CierreVueloManagement />
               </ProtectedRoute>
             }
           />
