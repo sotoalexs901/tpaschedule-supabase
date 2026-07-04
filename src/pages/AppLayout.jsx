@@ -60,6 +60,7 @@ export default function AppLayout() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [navSearch, setNavSearch] = useState("");
   const [windowWidth, setWindowWidth] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth : 1200
   );
@@ -704,7 +705,45 @@ export default function AppLayout() {
     isAgent,
   ]);
 
-  const allSectionsOpen = navSections.every(
+  const quickAccessItems = useMemo(() => {
+    const allItems = navSections.flatMap((section) => section.items);
+
+    const priorityRoutes = [
+      "/dashboard",
+      "/cierre-vuelo",
+      "/cierre-vuelo-management",
+      "/fuel-entry",
+      "/fuel-management",
+      "/gate-checklist",
+      "/gate-checklist-management",
+      "/operational-report/submit",
+      "/operations-requests/submit",
+      "/wchr/scan",
+      "/my-schedule",
+    ];
+
+    return priorityRoutes
+      .map((route) => allItems.find((item) => item.to === route))
+      .filter(Boolean)
+      .slice(0, 8);
+  }, [navSections]);
+
+  const filteredNavSections = useMemo(() => {
+    const search = navSearch.trim().toLowerCase();
+
+    if (!search) return navSections;
+
+    return navSections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) =>
+          `${item.label} ${section.title}`.toLowerCase().includes(search)
+        ),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [navSections, navSearch]);
+
+  const allSectionsOpen = filteredNavSections.every(
     (section) => openSections[section.title]
   );
 
@@ -717,7 +756,7 @@ export default function AppLayout() {
 
   const setAllSections = (isOpen) => {
     const next = {};
-    navSections.forEach((section) => {
+    filteredNavSections.forEach((section) => {
       next[section.title] = isOpen;
     });
     setOpenSections((prev) => ({
@@ -978,6 +1017,45 @@ export default function AppLayout() {
             >
               <div
                 style={{
+                  display: "grid",
+                  gap: 12,
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 18,
+                  padding: 12,
+                }}
+              >
+                <input
+                  value={navSearch}
+                  onChange={(e) => setNavSearch(e.target.value)}
+                  placeholder="Search menu..."
+                  style={searchInputStyle}
+                />
+
+                {quickAccessItems.length > 0 && !navSearch && (
+                  <div>
+                    <div style={quickTitleStyle}>Quick Access</div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: isTablet
+                          ? "repeat(2, minmax(0, 1fr))"
+                          : "repeat(auto-fit, minmax(210px, 1fr))",
+                        gap: 10,
+                        marginTop: 10,
+                      }}
+                    >
+                      {quickAccessItems.map((item) => (
+                        <TopNavItem key={`quick-${item.to}`} {...item} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
                   display: "flex",
                   justifyContent: "flex-end",
                   gap: 8,
@@ -992,7 +1070,7 @@ export default function AppLayout() {
                 </button>
               </div>
 
-              {navSections.map((section) => (
+              {filteredNavSections.map((section) => (
                 <div
                   key={section.title}
                   style={{
@@ -1044,6 +1122,10 @@ export default function AppLayout() {
                   )}
                 </div>
               ))}
+
+              {filteredNavSections.length === 0 && (
+                <div style={emptySearchStyle}>No menu items found.</div>
+              )}
             </div>
           )}
 
@@ -1074,6 +1156,36 @@ export default function AppLayout() {
 
               <div
                 style={{
+                  display: "grid",
+                  gap: 12,
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 18,
+                  padding: 12,
+                }}
+              >
+                <input
+                  value={navSearch}
+                  onChange={(e) => setNavSearch(e.target.value)}
+                  placeholder="Search menu..."
+                  style={searchInputStyle}
+                />
+
+                {quickAccessItems.length > 0 && !navSearch && (
+                  <div>
+                    <div style={quickTitleStyle}>Quick Access</div>
+
+                    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                      {quickAccessItems.map((item) => (
+                        <TopNavItem key={`mobile-quick-${item.to}`} {...item} mobile />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
                   display: "flex",
                   justifyContent: "space-between",
                   gap: 8,
@@ -1088,7 +1200,7 @@ export default function AppLayout() {
                 </button>
               </div>
 
-              {navSections.map((section) => (
+              {filteredNavSections.map((section) => (
                 <div
                   key={section.title}
                   style={{
@@ -1129,6 +1241,10 @@ export default function AppLayout() {
                   )}
                 </div>
               ))}
+
+              {filteredNavSections.length === 0 && (
+                <div style={emptySearchStyle}>No menu items found.</div>
+              )}
 
               <button
                 onClick={logout}
@@ -1321,6 +1437,37 @@ const smallUtilityButtonStyle = {
   fontWeight: 700,
   cursor: "pointer",
   fontSize: 12,
+};
+
+const searchInputStyle = {
+  width: "100%",
+  border: "1px solid #cbd5e1",
+  background: "#f8fbff",
+  color: "#0f172a",
+  borderRadius: 14,
+  padding: "12px 14px",
+  fontSize: 14,
+  fontWeight: 700,
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const quickTitleStyle = {
+  fontSize: 11,
+  fontWeight: 900,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: "0.12em",
+};
+
+const emptySearchStyle = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  color: "#64748b",
+  borderRadius: 18,
+  padding: 16,
+  fontWeight: 800,
+  textAlign: "center",
 };
 
 function mobileActionButtonStyle(kind) {
