@@ -2,17 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
+
     <title>TPA OPS SYSTEM</title>
 
-    <!-- Manifest PWA -->
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta
+      name="description"
+      content="TPA OPS System - Operations Management Platform"
+    />
+
     <meta name="theme-color" content="#0b1120" />
 
-    <!-- iOS: que se vea como app al agregar a pantalla de inicio -->
+    <!-- Manifest -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Apple -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta
       name="apple-mobile-web-app-status-bar-style"
@@ -21,12 +29,13 @@
     <meta name="apple-mobile-web-app-title" content="TPA OPS" />
     <link rel="apple-touch-icon" href="/icons/tpa-ops-192.png" />
 
-    <!-- Fuentes: Inter (general) + Poppins (dashboard empleados) -->
+    <!-- Fonts -->
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     />
   </head>
+
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
