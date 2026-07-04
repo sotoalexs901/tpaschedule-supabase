@@ -322,17 +322,6 @@ export default function AppLayout() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
-  const canSubmitBSO =
-    user?.role === "agent" ||
-    user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
-
-  const canManageBSO =
-    user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
-
   const canSubmitCierreVuelo =
     user?.role === "agent" ||
     user?.role === "supervisor" ||
@@ -528,14 +517,6 @@ export default function AppLayout() {
       });
     }
 
-    if (canSubmitBSO) {
-      submissionReports.push({
-        to: "/bso/operations",
-        label: "BSO OPERATIONS",
-        icon: "🛄",
-      });
-    }
-
     if (canSubmitCierreVuelo) {
       submissionReports.push({
         to: "/cierre-vuelo",
@@ -619,14 +600,6 @@ export default function AppLayout() {
       });
     }
 
-    if (canManageBSO) {
-      managementReports.push({
-        to: "/bso/mgt-score-dashboard",
-        label: "BSO MGT SCORE DASHBOARD",
-        icon: "📊",
-      });
-    }
-
     if (canManageCierreVuelo) {
       managementReports.push({
         to: "/cierre-vuelo-management",
@@ -693,8 +666,6 @@ export default function AppLayout() {
     canManageGateChecklist,
     canSubmitFuel,
     canManageFuel,
-    canSubmitBSO,
-    canManageBSO,
     canSubmitCierreVuelo,
     canManageCierreVuelo,
     unreadMessages,
@@ -883,7 +854,7 @@ export default function AppLayout() {
                     lineHeight: 1.2,
                   }}
                 >
-                  TPA OPS SYSTEM
+                  TPA OPS PLATFORM
                 </p>
 
                 <p
