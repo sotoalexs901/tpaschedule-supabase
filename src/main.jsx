@@ -74,9 +74,6 @@ import GateChecklistManagementPage from "./pages/GateChecklistManagementPage.jsx
 import FuelEntryPage from "./pages/FuelEntryPage.jsx";
 import FuelManagementPage from "./pages/FuelManagementPage.jsx";
 
-import BSOOperationsPage from "./pages/BSOOperationsPage.jsx";
-import BSOMgtScoreDashboard from "./pages/BSOMgtScoreDashboard.jsx";
-
 import CierreVuelo from "./pages/CierreVuelo.jsx";
 import CierreVueloManagement from "./pages/CierreVueloManagement.jsx";
 
@@ -142,7 +139,6 @@ function UpdatePrompt() {
   useEffect(() => {
     let intervalId = null;
     let cancelled = false;
-
     const STORAGE_KEY = "tpa_app_version";
 
     async function checkVersion() {
@@ -303,8 +299,8 @@ function UpdatePrompt() {
                 fontWeight: 700,
               }}
             >
-              A newer version of TPA Schedule is available. Refresh the app to
-              load the latest changes without logging out manually.
+              A newer version of TPA OPS Platform is available. Refresh the app
+              to load the latest changes without logging out manually.
             </div>
 
             <div
@@ -426,9 +422,7 @@ function AppRouter() {
           <Route
             path="timesheets/submit"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <SupervisorTimesheetPage />
               </ProtectedRoute>
             }
@@ -437,9 +431,7 @@ function AppRouter() {
           <Route
             path="timesheets/reports"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <TimesheetAdminPage />
               </ProtectedRoute>
             }
@@ -448,9 +440,7 @@ function AppRouter() {
           <Route
             path="operational-report/submit"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <SupervisorOperationalReportPage />
               </ProtectedRoute>
             }
@@ -459,9 +449,7 @@ function AppRouter() {
           <Route
             path="regulated-garbage/submit"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <SupervisorRegulatedGarbagePage />
               </ProtectedRoute>
             }
@@ -470,9 +458,7 @@ function AppRouter() {
           <Route
             path="cleaning-security/submit"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <SupervisorCleaningSecurityPage />
               </ProtectedRoute>
             }
@@ -492,9 +478,7 @@ function AppRouter() {
           <Route
             path="wchr-poi/submit"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <SupervisorWchrPoiPage />
               </ProtectedRoute>
             }
@@ -503,9 +487,7 @@ function AppRouter() {
           <Route
             path="employee-performance-report"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <MonthlyEmployeePerformanceReportPage />
               </ProtectedRoute>
             }
@@ -534,17 +516,6 @@ function AppRouter() {
           />
 
           <Route
-            path="bso/operations"
-            element={
-              <ProtectedRoute
-                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
-              >
-                <BSOOperationsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
             path="cierre-vuelo"
             element={
               <ProtectedRoute
@@ -558,9 +529,7 @@ function AppRouter() {
           <Route
             path="operational-report/reports"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <OperationalReportAdminPage />
               </ProtectedRoute>
             }
@@ -623,21 +592,8 @@ function AppRouter() {
           <Route
             path="fuel-management"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <FuelManagementPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="bso/mgt-score-dashboard"
-            element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
-                <BSOMgtScoreDashboard />
               </ProtectedRoute>
             }
           />
@@ -645,9 +601,7 @@ function AppRouter() {
           <Route
             path="cierre-vuelo-management"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
                 <CierreVueloManagement />
               </ProtectedRoute>
             }
