@@ -486,17 +486,32 @@ export default function SchedulePage() {
     }
   }, [location.state]);
 
-  useEffect(() => {
-    async function loadEmployees() {
-      const snap = await getDocs(collection(db, "employees"));
-      setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    }
+ useEffect(() => {
+  async function loadEmployees() {
+    const snap = await getDocs(collection(db, "employees"));
 
-    loadEmployees().catch((err) => {
-      console.error(err);
-      setStatusMessage("Error loading employees.");
-    });
-  }, []);
+    const employeeList = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        const nameA = String(
+          a.name || a.fullName || a.displayName || a.employeeName || ""
+        ).toLowerCase();
+
+        const nameB = String(
+          b.name || b.fullName || b.displayName || b.employeeName || ""
+        ).toLowerCase();
+
+        return nameA.localeCompare(nameB);
+      });
+
+    setEmployees(employeeList);
+  }
+
+  loadEmployees().catch((err) => {
+    console.error(err);
+    setStatusMessage("Error loading employees.");
+  });
+}, []);
 
   useEffect(() => {
     async function loadBudgets() {
