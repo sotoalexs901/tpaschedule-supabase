@@ -612,11 +612,15 @@ const empName =
                               }}
                             >
                               <option value="">Select employee</option>
-                              {employees.map((employee) => (
-                                <option key={employee.id} value={employee.id}>
-                                  {employee.name}
-                                </option>
-                              ))}
+                              {sortedEmployees.map((employee) => (
+  <option key={employee.id} value={employee.id}>
+    {employee.name ||
+      employee.fullName ||
+      employee.displayName ||
+      employee.employeeName ||
+      "Unnamed"}
+  </option>
+))}
                             </select>
                           </div>
                         ) : (
