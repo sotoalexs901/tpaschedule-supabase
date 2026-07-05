@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 
 const AIRLINE_COLORS = {
   SY: "#F28C28",
@@ -120,7 +120,19 @@ export default function ScheduleGrid({
   dailyHeadcount = {},
 }) {
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const sortedEmployees = useMemo(() => {
+  return [...(employees || [])].sort((a, b) => {
+    const nameA = String(
+      a.name || a.fullName || a.displayName || a.employeeName || ""
+    ).toLowerCase();
 
+    const nameB = String(
+      b.name || b.fullName || b.displayName || b.employeeName || ""
+    ).toLowerCase();
+
+    return nameA.localeCompare(nameB);
+  });
+}, [employees]);
   const displayAirline = normalizeAirlineName(airline);
   const airlineLogo = getAirlineLogo(airline);
 
@@ -523,8 +535,9 @@ export default function ScheduleGrid({
 
           <tbody>
             {rows.map((row, rowIndex) => {
-              const emp = employees.find((e) => e.id === row.employeeId);
-              const empName = emp?.name || "";
+          const emp = sortedEmployees.find((e) => e.id === row.employeeId);
+const empName =
+  emp?.name || emp?.fullName || emp?.displayName || emp?.employeeName || "";    
 
               return (
                 <React.Fragment key={rowIndex}>
