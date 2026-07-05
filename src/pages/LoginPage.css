@@ -1,8 +1,9 @@
+/* LoginPage.css */
 .login-container {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(420px, 0.95fr);
   overflow: hidden;
   font-family: "Poppins", "Inter", system-ui, sans-serif;
   background: #eef7ff;
@@ -10,22 +11,16 @@
 
 .login-left {
   position: relative;
-  min-height: 100vh;
+  min-height: 100dvh;
   background-image:
-    linear-gradient(
-      180deg,
-      rgba(3, 14, 32, 0.68) 0%,
-      rgba(5, 34, 70, 0.42) 42%,
-      rgba(3, 14, 32, 0.72) 100%
-    ),
+    linear-gradient(180deg, rgba(3, 14, 32, 0.32), rgba(3, 14, 32, 0.82)),
     url("/images/login-aircraft.jpg");
   background-size: cover;
-  background-position: center;
+  background-position: center bottom;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
   flex-direction: column;
-  padding: 56px;
+  justify-content: space-between;
+  padding: 58px 56px;
   color: #fff;
 }
 
@@ -38,6 +33,7 @@
 
 .login-overlay-content {
   max-width: 560px;
+  position: relative;
   z-index: 2;
 }
 
@@ -47,7 +43,7 @@
 
 .login-overlay-title {
   margin: 0 0 22px;
-  font-size: 48px;
+  font-size: clamp(40px, 4vw, 56px);
   line-height: 1.02;
   font-weight: 900;
   letter-spacing: -0.05em;
@@ -73,21 +69,21 @@
 }
 
 .login-right {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 44px;
   background:
-    radial-gradient(circle at 50% 20%, rgba(90, 169, 230, 0.18), transparent 34%),
+    radial-gradient(circle at 50% 18%, rgba(90, 169, 230, 0.2), transparent 34%),
     linear-gradient(135deg, #f8fbff 0%, #eef7ff 100%);
 }
 
 .login-card {
   width: 100%;
-  max-width: 460px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.96);
+  max-width: 440px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.98);
   border-radius: 34px;
   padding: 40px 34px;
   box-shadow: 0 28px 70px rgba(15, 23, 42, 0.14);
@@ -173,6 +169,7 @@
 
 .login-field input {
   width: 100%;
+  box-sizing: border-box;
   padding: 15px 18px;
   border-radius: 999px;
   border: 1px solid #dbeafe;
@@ -210,6 +207,7 @@
 }
 
 .login-button {
+  width: 100%;
   background: linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%);
   color: #ffffff;
   padding: 15px 16px;
@@ -253,7 +251,12 @@
 @media (max-width: 900px) {
   .login-container {
     grid-template-columns: 1fr;
-    padding: 16px;
+    background-image:
+      linear-gradient(180deg, rgba(3, 14, 32, 0.58), rgba(238, 247, 255, 0.9)),
+      url("/images/login-aircraft.jpg");
+    background-size: cover;
+    background-position: center bottom;
+    padding: 18px;
   }
 
   .login-left {
@@ -261,8 +264,9 @@
   }
 
   .login-right {
-    min-height: calc(100dvh - 32px);
+    min-height: calc(100dvh - 36px);
     padding: 0;
+    background: transparent;
   }
 
   .login-card {
@@ -277,6 +281,10 @@
 }
 
 @media (max-width: 520px) {
+  .login-container {
+    padding: 14px;
+  }
+
   .login-card {
     padding: 24px 18px;
     border-radius: 24px;
