@@ -3,7 +3,9 @@
   display: flex;
   min-height: 100vh;
   width: 100%;
-  background: linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%);
+  background:
+    radial-gradient(circle at top left, rgba(90, 169, 230, 0.22), transparent 32%),
+    linear-gradient(135deg, #eaf5ff 0%, #f8fbff 48%, #eef7ff 100%);
   overflow: hidden;
   font-family: "Poppins", "Inter", system-ui, sans-serif;
 }
@@ -13,33 +15,38 @@
   flex: 1.15;
   position: relative;
   background-image:
-    linear-gradient(135deg, rgba(15, 76, 129, 0.78) 0%, rgba(23, 105, 170, 0.55) 45%, rgba(90, 169, 230, 0.28) 100%),
-    url("https://images.unsplash.com/photo-1529070538774-1843cb3265df?auto=format&fit=crop&w=1400&q=80");
+    linear-gradient(
+      135deg,
+      rgba(11, 17, 32, 0.58) 0%,
+      rgba(15, 76, 129, 0.62) 45%,
+      rgba(23, 105, 170, 0.36) 100%
+    ),
+    url("https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=1600&q=85");
   background-size: cover;
   background-position: center;
   display: flex;
   align-items: flex-end;
-  padding: 48px;
+  padding: 52px;
 }
 
 .login-left::before {
   content: "";
   position: absolute;
-  width: 280px;
-  height: 280px;
-  top: -80px;
-  right: -60px;
+  width: 300px;
+  height: 300px;
+  top: -90px;
+  right: -70px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .login-left::after {
   content: "";
   position: absolute;
-  width: 220px;
-  height: 220px;
-  bottom: 40px;
-  left: 40px;
+  width: 230px;
+  height: 230px;
+  bottom: 38px;
+  left: 42px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
 }
@@ -47,36 +54,37 @@
 .login-overlay-content {
   position: relative;
   z-index: 2;
-  max-width: 520px;
-  color: white;
+  max-width: 560px;
+  color: #ffffff;
 }
 
 .login-overlay-tag {
   display: inline-block;
-  padding: 8px 14px;
+  padding: 9px 15px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.16);
   backdrop-filter: blur(10px);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   margin-bottom: 18px;
 }
 
 .login-overlay-title {
-  margin: 0 0 12px;
-  font-size: 44px;
+  margin: 0 0 14px;
+  font-size: 48px;
   line-height: 1.02;
-  font-weight: 800;
-  letter-spacing: -0.04em;
+  font-weight: 900;
+  letter-spacing: -0.05em;
 }
 
 .login-overlay-text {
   margin: 0;
   font-size: 15px;
-  line-height: 1.7;
-  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.92);
+  max-width: 520px;
 }
 
 /* ---------- PANEL DERECHO ---------- */
@@ -93,54 +101,48 @@
 /* ---------- TARJETA LOGIN ---------- */
 .login-card {
   width: 100%;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.96);
-  border-radius: 32px;
+  border-radius: 34px;
   padding: 34px 30px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12);
 }
 
 .login-brand {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 24px;
+  margin-bottom: 26px;
 }
 
 .login-brand-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 18px;
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
   background: linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%);
-  color: white;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 26px;
-  box-shadow: 0 12px 28px rgba(23, 105, 170, 0.22);
-}
-
-.login-brand-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  box-shadow: 0 14px 30px rgba(23, 105, 170, 0.24);
 }
 
 .login-brand-title {
   margin: 0;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: #1769aa;
 }
 
 .login-brand-subtitle {
-  margin: 0;
+  margin: 2px 0 0;
   font-size: 13px;
   color: #64748b;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 /* ---------- FORMULARIO ---------- */
@@ -153,10 +155,10 @@
 
 .login-title {
   margin: 0;
-  font-size: 34px;
+  font-size: 35px;
   line-height: 1.05;
-  font-weight: 800;
-  letter-spacing: -0.04em;
+  font-weight: 900;
+  letter-spacing: -0.045em;
   color: #0f172a;
 }
 
@@ -164,7 +166,7 @@
   margin: -8px 0 8px;
   color: #64748b;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 
 /* ---------- INPUTS ---------- */
@@ -176,15 +178,16 @@
 
 .login-field label {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   color: #475569;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .login-field input {
-  padding: 14px 16px;
-  border-radius: 16px;
+  width: 100%;
+  padding: 15px 16px;
+  border-radius: 17px;
   border: 1px solid #dbeafe;
   background: #ffffff;
   font-size: 14px;
@@ -199,7 +202,12 @@
 .login-field input:focus {
   outline: none;
   border-color: #5aa9e6;
-  box-shadow: 0 0 0 4px rgba(90, 169, 230, 0.14);
+  box-shadow: 0 0 0 4px rgba(90, 169, 230, 0.16);
+}
+
+.login-field input:disabled {
+  background: #f8fafc;
+  cursor: not-allowed;
 }
 
 /* ---------- OPCIONES ---------- */
@@ -214,30 +222,36 @@
 .login-helper-text {
   font-size: 12px;
   color: #64748b;
+  line-height: 1.5;
 }
 
 /* ---------- BOTÓN LOGIN ---------- */
 .login-button {
   background: linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%);
-  color: white;
-  padding: 14px 16px;
-  border-radius: 16px;
+  color: #ffffff;
+  padding: 15px 16px;
+  border-radius: 17px;
   border: none;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0.01em;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 14px 28px rgba(23, 105, 170, 0.2);
+  box-shadow: 0 16px 30px rgba(23, 105, 170, 0.22);
 }
 
-.login-button:hover {
+.login-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 18px 34px rgba(23, 105, 170, 0.24);
+  box-shadow: 0 20px 38px rgba(23, 105, 170, 0.26);
 }
 
 .login-button:active {
   transform: translateY(0);
+}
+
+.login-button:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
 }
 
 /* ---------- ERRORES ---------- */
@@ -246,9 +260,9 @@
   border: 1px solid #fecdd3;
   color: #9f1239;
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: 15px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 /* ---------- FOOTER CARD ---------- */
@@ -268,7 +282,7 @@
   }
 
   .login-overlay-title {
-    font-size: 38px;
+    font-size: 40px;
   }
 }
 
@@ -276,6 +290,7 @@
   .login-container {
     display: block;
     padding: 18px;
+    min-height: 100dvh;
   }
 
   .login-left {
@@ -287,7 +302,7 @@
     min-width: unset;
     max-width: 100%;
     padding: 0;
-    min-height: calc(100vh - 36px);
+    min-height: calc(100dvh - 36px);
   }
 
   .login-card {
