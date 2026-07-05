@@ -925,9 +925,10 @@ export default function SchedulePage() {
   };
 
   const employeeNameMap = {};
-  employees.forEach((e) => {
-    employeeNameMap[e.id] = e.name;
-  });
+employees.forEach((e) => {
+  employeeNameMap[e.id] =
+    e.name || e.fullName || e.displayName || e.employeeName || "Unknown";
+});
 
   const canEditAirlineName =
     normalizeAirlineName(airlineKey) === "WestJet" ||
