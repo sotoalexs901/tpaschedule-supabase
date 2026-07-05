@@ -13,10 +13,22 @@ import { useUser } from "../UserContext.jsx";
 
 const FIXED_AUTHOR = "TPA Eulen Ops";
 
+function getMillis(value) {
+  if (!value) return 0;
+  if (typeof value?.toMillis === "function") return value.toMillis();
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function formatDateLabel(value) {
   if (!value) return "Not scheduled";
+
   try {
     const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+
     return date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -29,11 +41,16 @@ function formatDateLabel(value) {
 
 function formatCreatedAtLabel(value) {
   if (!value) return "—";
+
   try {
     if (typeof value?.toDate === "function") {
       return value.toDate().toLocaleString();
     }
-    return new Date(value).toLocaleString();
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "—";
+
+    return parsed.toLocaleString();
   } catch {
     return "—";
   }
@@ -42,9 +59,22 @@ function formatCreatedAtLabel(value) {
 function getInitials(name) {
   const clean = String(name || "").trim();
   if (!clean) return "U";
+
   const parts = clean.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+}
+
+function getEmployeeName(item) {
+  return (
+    item?.employeeName ||
+    item?.name ||
+    item?.displayName ||
+    item?.fullName ||
+    item?.employeeId ||
+    "Employee"
+  );
 }
 
 function useIsMobile(breakpoint = 900) {
@@ -103,6 +133,7 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
           >
             {title}
           </p>
+
           <h3
             style={{
               margin: "8px 0 4px",
@@ -115,6 +146,7 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
           >
             {value}
           </h3>
+
           <p
             style={{
               margin: 0,
@@ -201,6 +233,7 @@ function GlassCard({
           >
             {icon}
           </div>
+
           <h2
             style={{
               margin: 0,
@@ -215,6 +248,7 @@ function GlassCard({
             {title}
           </h2>
         </div>
+
         {action}
       </div>
 
@@ -225,7 +259,8 @@ function GlassCard({
 
 function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
   const photo = item?.photoURL || item?.profilePhotoURL || "";
-  const initials = getInitials(item?.employeeName || "E");
+  const employeeName = item?.employeeName || "Employee";
+  const initials = getInitials(employeeName);
   const canWrite = Boolean(item?.userId || item?.username);
 
   return (
@@ -238,13 +273,7 @@ function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
         boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 14,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
         <div
           style={{
             width: isMobile ? 62 : 68,
@@ -265,7 +294,7 @@ function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
           {photo ? (
             <img
               src={photo}
-              alt={item?.employeeName || "Employee"}
+              alt={employeeName}
               style={{
                 width: "100%",
                 height: "100%",
@@ -287,7 +316,7 @@ function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
               wordBreak: "break-word",
             }}
           >
-            {item?.employeeName || "Employee"}
+            {employeeName}
           </div>
 
           <div
@@ -303,13 +332,7 @@ function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
           </div>
 
           {!!item?.airline && (
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: 12,
-                color: "#64748b",
-              }}
-            >
+            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
               Airline: {item.airline}
             </div>
           )}
@@ -416,6 +439,7 @@ export default function DashboardPage() {
 
       if (snap.exists()) {
         const data = snap.data();
+
         setMainMessage(data.message || "");
         setMainMeta({
           updatedAt: data.updatedAt || null,
@@ -432,6 +456,7 @@ export default function DashboardPage() {
 
   const fetchEmployeeOfMonth = async () => {
     setLoadingEmployeeOfMonth(true);
+
     try {
       const qEmployee = query(
         collection(db, "employee_of_month"),
@@ -441,15 +466,8 @@ export default function DashboardPage() {
       const snap = await getDocs(qEmployee);
 
       const items = snap.docs
-        .map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }))
-        .sort((a, b) => {
-          const aTime = a.createdAt?.seconds || 0;
-          const bTime = b.createdAt?.seconds || 0;
-          return bTime - aTime;
-        });
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => getMillis(b.createdAt) - getMillis(a.createdAt));
 
       setEmployeesOfMonth(items);
     } catch (err) {
@@ -462,20 +480,27 @@ export default function DashboardPage() {
 
   const fetchEvents = async () => {
     setLoadingEvents(true);
-    try {
-      const colRef = collection(db, "dashboard_events");
-      const snap = await getDocs(colRef);
 
+    try {
+      const snap = await getDocs(collection(db, "dashboard_events"));
       const today = new Date().toISOString().slice(0, 10);
+
       const items = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((e) => !e.date || e.date >= today)
-        .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+        .sort((a, b) => {
+          const dateCompare = String(a.date || "").localeCompare(
+            String(b.date || "")
+          );
+          if (dateCompare !== 0) return dateCompare;
+          return String(a.time || "").localeCompare(String(b.time || ""));
+        })
         .slice(0, 5);
 
       setEvents(items);
     } catch (err) {
       console.error("Error loading events:", err);
+      setEvents([]);
     } finally {
       setLoadingEvents(false);
     }
@@ -483,22 +508,19 @@ export default function DashboardPage() {
 
   const fetchNotices = async () => {
     setLoadingNotices(true);
+
     try {
-      const colRef = collection(db, "dashboard_notices");
-      const snap = await getDocs(colRef);
+      const snap = await getDocs(collection(db, "dashboard_notices"));
 
       const items = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const aTime = a.createdAt?.seconds || 0;
-          const bTime = b.createdAt?.seconds || 0;
-          return bTime - aTime;
-        })
+        .sort((a, b) => getMillis(b.createdAt) - getMillis(a.createdAt))
         .slice(0, 5);
 
       setNotices(items);
     } catch (err) {
       console.error("Error loading notices:", err);
+      setNotices([]);
     } finally {
       setLoadingNotices(false);
     }
@@ -506,13 +528,18 @@ export default function DashboardPage() {
 
   const fetchBlockedEmployees = async () => {
     setLoadingBlocked(true);
+
     try {
-      const colRef = collection(db, "restrictions");
-      const snap = await getDocs(colRef);
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const snap = await getDocs(collection(db, "restrictions"));
+
+      const items = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => getEmployeeName(a).localeCompare(getEmployeeName(b)));
+
       setBlockedEmployees(items);
     } catch (err) {
       console.error("Error loading blocked employees:", err);
+      setBlockedEmployees([]);
     } finally {
       setLoadingBlocked(false);
     }
@@ -520,24 +547,23 @@ export default function DashboardPage() {
 
   const fetchPendingSchedules = async () => {
     setLoadingPending(true);
+
     try {
       const qPending = query(
         collection(db, "schedules"),
         where("status", "==", "pending")
       );
+
       const snap = await getDocs(qPending);
 
       const items = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const aTime = a.createdAt?.seconds || 0;
-          const bTime = b.createdAt?.seconds || 0;
-          return bTime - aTime;
-        });
+        .sort((a, b) => getMillis(b.createdAt) - getMillis(a.createdAt));
 
       setPendingSchedules(items);
     } catch (err) {
       console.error("Error loading pending schedules:", err);
+      setPendingSchedules([]);
     } finally {
       setLoadingPending(false);
     }
@@ -545,21 +571,19 @@ export default function DashboardPage() {
 
   const fetchPhotos = async () => {
     setLoadingPhotos(true);
+
     try {
-      const colRef = collection(db, "dashboard_photos");
-      const snap = await getDocs(colRef);
+      const snap = await getDocs(collection(db, "dashboard_photos"));
 
       const items = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const aTime = a.createdAt?.seconds || 0;
-          const bTime = b.createdAt?.seconds || 0;
-          return bTime - aTime;
-        });
+        .filter((p) => p.url)
+        .sort((a, b) => getMillis(b.createdAt) - getMillis(a.createdAt));
 
       setPhotos(items);
     } catch (err) {
       console.error("Error loading dashboard photos:", err);
+      setPhotos([]);
     } finally {
       setLoadingPhotos(false);
     }
@@ -572,6 +596,7 @@ export default function DashboardPage() {
     }
 
     setLoadingTimesheets(true);
+
     try {
       const qPending = query(
         collection(db, "timesheet_reports"),
@@ -582,15 +607,12 @@ export default function DashboardPage() {
 
       const items = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const aTime = a.createdAt?.seconds || 0;
-          const bTime = b.createdAt?.seconds || 0;
-          return bTime - aTime;
-        });
+        .sort((a, b) => getMillis(b.createdAt) - getMillis(a.createdAt));
 
       setPendingTimesheets(items);
     } catch (err) {
       console.error("Error loading pending timesheets:", err);
+      setPendingTimesheets([]);
     } finally {
       setLoadingTimesheets(false);
     }
@@ -710,6 +732,7 @@ export default function DashboardPage() {
             right: isMobile ? -60 : -50,
           }}
         />
+
         <div
           style={{
             position: "absolute",
@@ -948,7 +971,7 @@ export default function DashboardPage() {
                     >
                       <img
                         src={p.url}
-                        alt="Station highlight"
+                        alt={p.caption || "Station highlight"}
                         style={{
                           width: "100%",
                           height: "100%",
@@ -957,6 +980,22 @@ export default function DashboardPage() {
                         }}
                       />
                     </div>
+
+                    {p.caption && (
+                      <div style={{ padding: 12 }}>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: 12,
+                            color: "#475569",
+                            fontWeight: 700,
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {p.caption}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1028,8 +1067,10 @@ export default function DashboardPage() {
                         wordBreak: "break-word",
                       }}
                     >
-                      {sch.airline} — {sch.department}
+                      {sch.airlineDisplayName || sch.airline || "Airline"} —{" "}
+                      {sch.department || "Department"}
                     </p>
+
                     <p
                       style={{
                         margin: "8px 0 0",
@@ -1038,10 +1079,9 @@ export default function DashboardPage() {
                       }}
                     >
                       Total Hours:{" "}
-                      {sch.airlineWeeklyHours
-                        ? sch.airlineWeeklyHours.toFixed(2)
-                        : "0.00"}
+                      {Number(sch.airlineWeeklyHours || 0).toFixed(2)}
                     </p>
+
                     <p
                       style={{
                         margin: "6px 0 0",
@@ -1212,8 +1252,9 @@ export default function DashboardPage() {
                         wordBreak: "break-word",
                       }}
                     >
-                      {ev.title}
+                      {ev.title || "Event"}
                     </p>
+
                     <p
                       style={{
                         margin: "6px 0 0",
@@ -1225,6 +1266,7 @@ export default function DashboardPage() {
                       {formatDateLabel(ev.date)}
                       {ev.time ? ` • ${ev.time}` : ""}
                     </p>
+
                     {ev.details && (
                       <p
                         style={{
@@ -1252,9 +1294,7 @@ export default function DashboardPage() {
             {loadingNotices ? (
               <p style={{ margin: 0, color: "#94a3b8" }}>Loading notices...</p>
             ) : notices.length === 0 ? (
-              <p style={{ margin: 0, color: "#64748b" }}>
-                No notices posted.
-              </p>
+              <p style={{ margin: 0, color: "#64748b" }}>No notices posted.</p>
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
                 {notices.map((n) => (
@@ -1277,8 +1317,9 @@ export default function DashboardPage() {
                         wordBreak: "break-word",
                       }}
                     >
-                      {n.title}
+                      {n.title || "Notice"}
                     </p>
+
                     {n.body && (
                       <p
                         style={{
@@ -1292,6 +1333,7 @@ export default function DashboardPage() {
                         {n.body}
                       </p>
                     )}
+
                     {n.link && (
                       <a
                         href={n.link}
@@ -1373,9 +1415,10 @@ export default function DashboardPage() {
                         wordBreak: "break-word",
                       }}
                     >
-                      {b.employeeName || b.name || b.employeeId}
+                      {getEmployeeName(b)}
                     </span>
                   ))}
+
                   {blockedEmployees.length > 8 && (
                     <span
                       style={{
@@ -1415,8 +1458,9 @@ export default function DashboardPage() {
                             wordBreak: "break-word",
                           }}
                         >
-                          {b.employeeName || b.name || b.employeeId}
+                          {getEmployeeName(b)}
                         </p>
+
                         {b.reason && (
                           <p
                             style={{
@@ -1429,6 +1473,7 @@ export default function DashboardPage() {
                             {b.reason}
                           </p>
                         )}
+
                         <p
                           style={{
                             margin: "7px 0 0",
@@ -1437,7 +1482,8 @@ export default function DashboardPage() {
                             wordBreak: "break-word",
                           }}
                         >
-                          {b.start_date || "N/A"} → {b.end_date || "N/A"}
+                          {b.start_date || b.startDate || "N/A"} →{" "}
+                          {b.end_date || b.endDate || "N/A"}
                         </p>
                       </div>
                     ))}
