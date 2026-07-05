@@ -11,17 +11,17 @@
 }
 
 /* ---------- PANEL IZQUIERDO ---------- */
-.login-left {
-  flex: 1.15;
+..login-left {
+  flex: 1;
   position: relative;
   background-image:
     linear-gradient(
       180deg,
-      rgba(8, 20, 38, 0.82) 0%,
-      rgba(15, 76, 129, 0.54) 45%,
-      rgba(7, 18, 35, 0.78) 100%
+      rgba(8, 20, 38, 0.78) 0%,
+      rgba(15, 76, 129, 0.55) 45%,
+      rgba(7, 18, 35, 0.75) 100%
     ),
-    url("https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=1800&q=90");
+    url("https://images.unsplash.com/photo-1540962351504-03099e0a754b?auto=format&fit=crop&w=1800&q=90");
   background-size: cover;
   background-position: center;
   display: flex;
@@ -29,24 +29,23 @@
   padding: 56px;
 }
 
-.login-overlay-content {
-  position: relative;
-  z-index: 2;
-  max-width: 560px;
-  color: #ffffff;
+.login-right {
+  flex: 1;
+  max-width: none;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 44px;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(90, 169, 230, 0.18), transparent 34%),
+    linear-gradient(135deg, #f8fbff 0%, #eef7ff 100%);
 }
 
-.login-overlay-tag {
-  display: inline-block;
-  padding: 9px 15px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(10px);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  margin-bottom: 28px;
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  margin: auto;
 }
 
 .login-overlay-title {
