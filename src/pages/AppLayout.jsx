@@ -34,21 +34,9 @@ function getVisiblePosition(user) {
 function getInitials(name) {
   const clean = String(name || "").trim();
   if (!clean) return "U";
-
   const parts = clean.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
-
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
-}
-
-function getStoredBoolean(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw === null) return fallback;
-    return raw === "true";
-  } catch {
-    return fallback;
-  }
 }
 
 export default function AppLayout() {
@@ -61,27 +49,6 @@ export default function AppLayout() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
-  const [windowWidth, setWindowWidth] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth : 1200
-  );
-
-  const isMobile = windowWidth < 900;
-  const isSmallMobile = windowWidth < 640;
-  const isTablet = windowWidth >= 900 && windowWidth < 1200;
-
-  const [headerCollapsed, setHeaderCollapsed] = useState(() =>
-    getStoredBoolean("tpa_header_collapsed", false)
-  );
-
-  const [openSections, setOpenSections] = useState({
-    General: true,
-    Schedules: true,
-    "Submission of Reports": true,
-    "Management of Reports": true,
-    "Time Off": false,
-    WCHR: true,
-    Admin: false,
-  });
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
@@ -89,9 +56,7 @@ export default function AppLayout() {
 
   const logout = async () => {
     try {
-      if (user?.id) {
-        await markUserOffline(user);
-      }
+      if (user?.id) await markUserOffline(user);
     } catch (err) {
       console.error("Error marking user offline on logout:", err);
     } finally {
@@ -99,20 +64,6 @@ export default function AppLayout() {
       navigate("/login");
     }
   };
-
-  useEffect(() => {
-    const onResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("tpa_header_collapsed", String(headerCollapsed));
-    } catch {
-      // ignore
-    }
-  }, [headerCollapsed]);
 
   useEffect(() => {
     const qTimeoff = query(
@@ -235,7 +186,6 @@ export default function AppLayout() {
     user?.role === "agent" || user?.role === "supervisor";
 
   const canAccessRegularManagerSchedules = isManager && !isHhernandez;
-
   const canAccessCabinServiceOnlyManager =
     user?.role === "duty_manager" && isHhernandez;
 
@@ -332,8 +282,7 @@ export default function AppLayout() {
     user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
-
-  const navSections = useMemo(() => {
+    const navSections = useMemo(() => {
     const sections = [];
 
     const general = [
@@ -676,32 +625,8 @@ export default function AppLayout() {
     isAgent,
   ]);
 
-  const quickAccessItems = useMemo(() => {
-    const allItems = navSections.flatMap((section) => section.items);
-
-    const priorityRoutes = [
-      "/dashboard",
-      "/cierre-vuelo",
-      "/cierre-vuelo-management",
-      "/fuel-entry",
-      "/fuel-management",
-      "/gate-checklist",
-      "/gate-checklist-management",
-      "/operational-report/submit",
-      "/operations-requests/submit",
-      "/wchr/scan",
-      "/my-schedule",
-    ];
-
-    return priorityRoutes
-      .map((route) => allItems.find((item) => item.to === route))
-      .filter(Boolean)
-      .slice(0, 8);
-  }, [navSections]);
-
   const filteredNavSections = useMemo(() => {
     const search = navSearch.trim().toLowerCase();
-
     if (!search) return navSections;
 
     return navSections
@@ -714,584 +639,175 @@ export default function AppLayout() {
       .filter((section) => section.items.length > 0);
   }, [navSections, navSearch]);
 
-  const allSectionsOpen = filteredNavSections.every(
-    (section) => openSections[section.title]
-  );
-
-  const toggleSection = (title) => {
-    setOpenSections((prev) => ({
-      ...prev,
-      [title]: !prev[title],
-    }));
-  };
-
-  const setAllSections = (isOpen) => {
-    const next = {};
-    filteredNavSections.forEach((section) => {
-      next[section.title] = isOpen;
-    });
-    setOpenSections((prev) => ({
-      ...prev,
-      ...next,
-    }));
-  };
-
-  const toggleHeaderCollapsed = () => {
-    setHeaderCollapsed((prev) => !prev);
-    setMenuOpen(false);
-  };
-
   return (
     <div
       style={{
         minHeight: "100vh",
-        width: "100%",
-        maxWidth: "100%",
         background:
           "linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%)",
-        boxSizing: "border-box",
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
-      <div
+      <header
         style={{
           position: "sticky",
           top: 0,
           zIndex: 50,
-          padding: headerCollapsed
-            ? isMobile
-              ? "6px 8px 0"
-              : "8px 10px 0"
-            : isMobile
-            ? "8px 8px 0"
-            : "14px 16px 0",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
+          background: "rgba(255,255,255,0.92)",
+          backdropFilter: "blur(14px)",
+          borderBottom: "1px solid #e2e8f0",
+          boxShadow: "0 10px 28px rgba(15,23,42,0.08)",
         }}
       >
         <div
           style={{
-            width: "100%",
-            maxWidth: "100%",
-            background: "rgba(255,255,255,0.84)",
-            border: "1px solid rgba(255,255,255,0.96)",
-            boxShadow: "0 16px 40px rgba(15,23,42,0.08)",
-            borderRadius: headerCollapsed ? 18 : 28,
-            padding: headerCollapsed
-              ? isMobile
-                ? 10
-                : 12
-              : isMobile
-              ? 12
-              : 16,
-            transition: "all 0.22s ease",
-            overflow: "visible",
-            boxSizing: "border-box",
+            padding: "12px 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: isMobile ? "flex-start" : "center",
-              justifyContent: "space-between",
-              gap: 14,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div
               style={{
+                width: 46,
+                height: 46,
+                borderRadius: 16,
+                background:
+                  "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                color: "#fff",
                 display: "flex",
                 alignItems: "center",
-                gap: headerCollapsed ? 10 : 14,
-                minWidth: 0,
-                flex: "1 1 320px",
-                maxWidth: "100%",
+                justifyContent: "center",
+                fontWeight: 900,
+                overflow: "hidden",
+                boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
               }}
             >
-              <div
-                style={{
-                  width: headerCollapsed ? 42 : isMobile ? 44 : 50,
-                  height: headerCollapsed ? 42 : isMobile ? 44 : 50,
-                  borderRadius: headerCollapsed ? 14 : 18,
-                  background:
-                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#fff",
-                  fontSize: headerCollapsed ? 18 : 22,
-                  boxShadow: "0 10px 24px rgba(23,105,170,0.25)",
-                  flexShrink: 0,
-                  overflow: "hidden",
-                }}
-              >
-                {profilePhotoURL ? (
-                  <img
-                    src={profilePhotoURL}
-                    alt={visibleName}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                    }}
-                  />
-                ) : (
-                  <span>{getInitials(visibleName)}</span>
-                )}
-              </div>
-
-              <div style={{ minWidth: 0, maxWidth: "100%" }}>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: headerCollapsed ? 11 : 12,
-                    fontWeight: 800,
-                    letterSpacing: "0.14em",
-                    textTransform: "uppercase",
-                    color: "#1769aa",
-                    whiteSpace: isSmallMobile ? "normal" : "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    lineHeight: 1.2,
-                  }}
-                >
-                  TPA OPS PLATFORM
-                </p>
-
-                <p
-                  style={{
-                    margin: headerCollapsed ? "2px 0 0" : "4px 0 0",
-                    fontSize: headerCollapsed ? 13 : isMobile ? 13 : 14,
-                    color: "#0f172a",
-                    fontWeight: 800,
-                    whiteSpace: isSmallMobile ? "normal" : "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    lineHeight: 1.25,
-                  }}
-                >
-                  {visibleName}
-                </p>
-
-                {!headerCollapsed && (
-                  <p
-                    style={{
-                      margin: "2px 0 0",
-                      fontSize: 12,
-                      color: "#64748b",
-                      fontWeight: 600,
-                      whiteSpace: isSmallMobile ? "normal" : "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {visiblePosition}
-                  </p>
-                )}
-              </div>
+              {profilePhotoURL ? (
+                <img
+                  src={profilePhotoURL}
+                  alt={visibleName}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                getInitials(visibleName)
+              )}
             </div>
 
-            {isMobile ? (
+            <div>
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  flexShrink: 0,
-                  width: isSmallMobile ? "100%" : "auto",
-                  justifyContent: isSmallMobile ? "flex-end" : "flex-start",
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: "#1769aa",
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
                 }}
               >
-                <button
-                  onClick={toggleHeaderCollapsed}
-                  style={mobileActionButtonStyle("secondary")}
-                >
-                  {headerCollapsed ? "Show" : "Hide"}
-                </button>
-
-                {!headerCollapsed && (
-                  <button
-                    onClick={() => setMenuOpen((v) => !v)}
-                    style={mobileActionButtonStyle("primary")}
-                  >
-                    {menuOpen ? "Close" : "Menu"}
-                  </button>
-                )}
+                TPA OPS Platform
               </div>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  justifyContent: "flex-end",
-                  flex: "0 1 auto",
-                  maxWidth: isTablet ? 520 : "unset",
-                }}
-              >
-                {!headerCollapsed && (
-                  <>
-                    <StatusPill label="Unread Messages" value={unreadMessages} />
-                    <StatusPill label="Notifications" value={unreadNotifications} />
-                    <StatusPill label="Pending Day Off" value={pendingTimeOff} />
-                  </>
-                )}
-
-                <button
-                  onClick={toggleHeaderCollapsed}
-                  style={{
-                    border: "1px solid #cfe7fb",
-                    background: "#ffffff",
-                    color: "#1769aa",
-                    borderRadius: 14,
-                    padding: headerCollapsed ? "10px 12px" : "11px 14px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {headerCollapsed ? "Show Menu" : "Hide Menu"}
-                </button>
-
-                <button
-                  onClick={logout}
-                  style={{
-                    border: "none",
-                    background:
-                      "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
-                    color: "#fff",
-                    borderRadius: 14,
-                    padding: headerCollapsed ? "10px 14px" : "11px 16px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Logout
-                </button>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>
+                {visibleName}
               </div>
-            )}
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
+                {visiblePosition}
+              </div>
+            </div>
           </div>
 
-          {!isMobile && !headerCollapsed && (
-            <div
-              style={{
-                marginTop: 16,
-                display: "grid",
-                gap: 12,
-                maxHeight: "calc(100vh - 140px)",
-                overflowY: "auto",
-                overflowX: "visible",
-                paddingRight: 2,
-              }}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <StatusPill label="Messages" value={unreadMessages} />
+            <StatusPill label="Notifications" value={unreadNotifications} />
+            <StatusPill label="Day Off" value={pendingTimeOff} />
+
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              style={topButtonStyle}
             >
-              <div
-                style={{
-                  display: "grid",
-                  gap: 12,
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 18,
-                  padding: 12,
-                }}
-              >
-                <input
-                  value={navSearch}
-                  onChange={(e) => setNavSearch(e.target.value)}
-                  placeholder="Search menu..."
-                  style={searchInputStyle}
-                />
+              {menuOpen ? "Close Menu" : "Menu"}
+            </button>
 
-                {quickAccessItems.length > 0 && !navSearch && (
-                  <div>
-                    <div style={quickTitleStyle}>Quick Access</div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: isTablet
-                          ? "repeat(2, minmax(0, 1fr))"
-                          : "repeat(auto-fit, minmax(210px, 1fr))",
-                        gap: 10,
-                        marginTop: 10,
-                      }}
-                    >
-                      {quickAccessItems.map((item) => (
-                        <TopNavItem key={`quick-${item.to}`} {...item} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  onClick={() => setAllSections(!allSectionsOpen)}
-                  style={smallUtilityButtonStyle}
-                >
-                  {allSectionsOpen ? "Collapse All" : "Expand All"}
-                </button>
-              </div>
-
-              {filteredNavSections.map((section) => (
-                <div
-                  key={section.title}
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 18,
-                    overflow: "hidden",
-                    minWidth: 0,
-                  }}
-                >
-                  <button
-                    onClick={() => toggleSection(section.title)}
-                    style={{
-                      width: "100%",
-                      border: "none",
-                      background: "#f8fbff",
-                      padding: "12px 14px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#1769aa",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                    }}
-                  >
-                    <span>{section.title}</span>
-                    <span>{openSections[section.title] ? "−" : "+"}</span>
-                  </button>
-
-                  {openSections[section.title] && (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: isTablet
-                          ? "repeat(2, minmax(0, 1fr))"
-                          : "repeat(auto-fit, minmax(220px, 1fr))",
-                        gap: 10,
-                        padding: 12,
-                        minWidth: 0,
-                      }}
-                    >
-                      {section.items.map((item) => (
-                        <TopNavItem key={item.to} {...item} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {filteredNavSections.length === 0 && (
-                <div style={emptySearchStyle}>No menu items found.</div>
-              )}
-            </div>
-          )}
-
-          {isMobile && menuOpen && !headerCollapsed && (
-            <div
-              style={{
-                marginTop: 14,
-                display: "grid",
-                gap: 12,
-                paddingTop: 12,
-                borderTop: "1px solid #e2e8f0",
-                maxHeight: "70vh",
-                overflowY: "auto",
-                overflowX: "visible",
-              }}
-            >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isSmallMobile ? "1fr" : "1fr 1fr",
-                  gap: 10,
-                }}
-              >
-                <StatusPill label="Unread Messages" value={unreadMessages} />
-                <StatusPill label="Notifications" value={unreadNotifications} />
-                <StatusPill label="Pending Day Off" value={pendingTimeOff} />
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gap: 12,
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 18,
-                  padding: 12,
-                }}
-              >
-                <input
-                  value={navSearch}
-                  onChange={(e) => setNavSearch(e.target.value)}
-                  placeholder="Search menu..."
-                  style={searchInputStyle}
-                />
-
-                {quickAccessItems.length > 0 && !navSearch && (
-                  <div>
-                    <div style={quickTitleStyle}>Quick Access</div>
-
-                    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                      {quickAccessItems.map((item) => (
-                        <TopNavItem key={`mobile-quick-${item.to}`} {...item} mobile />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  onClick={() => setAllSections(!allSectionsOpen)}
-                  style={smallUtilityButtonStyle}
-                >
-                  {allSectionsOpen ? "Collapse All" : "Expand All"}
-                </button>
-              </div>
-
-              {filteredNavSections.map((section) => (
-                <div
-                  key={section.title}
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 18,
-                    overflow: "hidden",
-                  }}
-                >
-                  <button
-                    onClick={() => toggleSection(section.title)}
-                    style={{
-                      width: "100%",
-                      border: "none",
-                      background: "#f8fbff",
-                      padding: "12px 14px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#1769aa",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                    }}
-                  >
-                    <span>{section.title}</span>
-                    <span>{openSections[section.title] ? "−" : "+"}</span>
-                  </button>
-
-                  {openSections[section.title] && (
-                    <div style={{ display: "grid", gap: 8, padding: 12 }}>
-                      {section.items.map((item) => (
-                        <TopNavItem key={item.to} {...item} mobile />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {filteredNavSections.length === 0 && (
-                <div style={emptySearchStyle}>No menu items found.</div>
-              )}
-
-              <button
-                onClick={logout}
-                style={{
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
-                  color: "#fff",
-                  borderRadius: 14,
-                  padding: "12px 16px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                Logout
-              </button>
-            </div>
-          )}
+            <button type="button" onClick={logout} style={logoutButtonStyle}>
+              Logout
+            </button>
+          </div>
         </div>
-      </div>
+
+        {menuOpen && (
+          <div
+            style={{
+              padding: "0 16px 16px",
+              display: "grid",
+              gap: 12,
+              maxHeight: "72vh",
+              overflowY: "auto",
+            }}
+          >
+            <input
+              value={navSearch}
+              onChange={(e) => setNavSearch(e.target.value)}
+              placeholder="Search menu..."
+              style={searchInputStyle}
+            />
+
+            {filteredNavSections.map((section) => (
+              <div
+                key={section.title}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 18,
+                  padding: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 900,
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                    marginBottom: 10,
+                  }}
+                >
+                  {section.title}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 8,
+                  }}
+                >
+                  {section.items.map((item) => (
+                    <TopNavItem key={item.to} {...item} />
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {filteredNavSections.length === 0 && (
+              <div style={emptySearchStyle}>No menu items found.</div>
+            )}
+          </div>
+        )}
+      </header>
 
       <main
         style={{
           width: "100%",
-          maxWidth: "100%",
-          padding: isMobile
-            ? "10px 8px 18px"
-            : headerCollapsed
-            ? "12px 12px 24px"
-            : isTablet
-            ? "14px"
-            : "16px",
+          maxWidth: 1600,
           margin: "0 auto",
-          transition: "all 0.22s ease",
+          padding: "16px",
           boxSizing: "border-box",
-          minWidth: 0,
-          overflow: "visible",
         }}
       >
-        {headerCollapsed && (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              marginBottom: 10,
-            }}
-          >
-            <button
-              onClick={toggleHeaderCollapsed}
-              style={{
-                border: "1px solid #cfe7fb",
-                background: "rgba(255,255,255,0.92)",
-                color: "#1769aa",
-                borderRadius: 14,
-                padding: "10px 14px",
-                fontWeight: 700,
-                cursor: "pointer",
-                boxShadow: "0 10px 24px rgba(23,105,170,0.10)",
-              }}
-            >
-              Show Top Menu
-            </button>
-          </div>
-        )}
-
-        <div
-          style={{
-            width: "100%",
-            maxWidth: headerCollapsed ? "100%" : 1600,
-            minWidth: 0,
-            margin: "0 auto",
-            overflow: "visible",
-          }}
-        >
-          <Outlet />
-        </div>
+        <Outlet />
       </main>
     </div>
   );
@@ -1304,39 +820,29 @@ function StatusPill({ label, value }) {
         background: "#f8fbff",
         border: "1px solid #d7e9fb",
         borderRadius: 14,
-        padding: "10px 12px",
-        minWidth: 130,
-        maxWidth: "100%",
-        boxSizing: "border-box",
+        padding: "8px 10px",
+        minWidth: 92,
       }}
     >
-      <p
+      <div
         style={{
-          margin: 0,
-          fontSize: 11,
-          fontWeight: 700,
+          fontSize: 10,
+          fontWeight: 800,
           color: "#64748b",
           textTransform: "uppercase",
           letterSpacing: "0.08em",
         }}
       >
         {label}
-      </p>
-      <p
-        style={{
-          margin: "4px 0 0",
-          fontSize: 18,
-          fontWeight: 800,
-          color: "#0f172a",
-        }}
-      >
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>
         {value}
-      </p>
+      </div>
     </div>
   );
 }
 
-function TopNavItem({ to, label, showDot, icon, mobile = false }) {
+function TopNavItem({ to, label, showDot, icon }) {
   return (
     <NavLink
       to={to}
@@ -1345,42 +851,21 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
         alignItems: "center",
         justifyContent: "space-between",
         gap: 10,
-        padding: mobile ? "12px 14px" : "10px 14px",
+        padding: "11px 14px",
         borderRadius: 14,
         textDecoration: "none",
-        fontSize: mobile ? 15 : 14,
-        fontWeight: isActive ? 800 : 600,
+        fontSize: 14,
+        fontWeight: isActive ? 900 : 700,
         color: isActive ? "#0f4c81" : "#334155",
         background: isActive
           ? "linear-gradient(135deg, #dff0ff 0%, #eef8ff 100%)"
           : "#ffffff",
         border: isActive ? "1px solid #bfe0fb" : "1px solid #e2e8f0",
-        boxShadow: isActive ? "0 10px 22px rgba(23,105,170,0.10)" : "none",
-        minWidth: 0,
-        width: "100%",
-        whiteSpace: "normal",
-        minHeight: mobile ? 48 : "auto",
-        boxSizing: "border-box",
       })}
     >
-      <span
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          minWidth: 0,
-          flex: 1,
-        }}
-      >
-        <span style={{ fontSize: 15, flexShrink: 0 }}>{icon}</span>
-        <span
-          style={{
-            overflowWrap: "break-word",
-            wordBreak: "break-word",
-          }}
-        >
-          {label}
-        </span>
+      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span>{icon}</span>
+        <span>{label}</span>
       </span>
 
       {showDot && (
@@ -1390,8 +875,6 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
             height: 8,
             borderRadius: 999,
             background: "#ef4444",
-            boxShadow: "0 0 0 4px rgba(239,68,68,0.12)",
-            flexShrink: 0,
           }}
         />
       )}
@@ -1399,15 +882,24 @@ function TopNavItem({ to, label, showDot, icon, mobile = false }) {
   );
 }
 
-const smallUtilityButtonStyle = {
+const topButtonStyle = {
   border: "1px solid #cfe7fb",
   background: "#ffffff",
   color: "#1769aa",
-  borderRadius: 12,
-  padding: "9px 12px",
-  fontWeight: 700,
+  borderRadius: 14,
+  padding: "10px 14px",
+  fontWeight: 800,
   cursor: "pointer",
-  fontSize: 12,
+};
+
+const logoutButtonStyle = {
+  border: "none",
+  background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+  color: "#fff",
+  borderRadius: 14,
+  padding: "10px 16px",
+  fontWeight: 800,
+  cursor: "pointer",
 };
 
 const searchInputStyle = {
@@ -1423,14 +915,6 @@ const searchInputStyle = {
   boxSizing: "border-box",
 };
 
-const quickTitleStyle = {
-  fontSize: 11,
-  fontWeight: 900,
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: "0.12em",
-};
-
 const emptySearchStyle = {
   background: "#ffffff",
   border: "1px solid #e2e8f0",
@@ -1440,28 +924,3 @@ const emptySearchStyle = {
   fontWeight: 800,
   textAlign: "center",
 };
-
-function mobileActionButtonStyle(kind) {
-  if (kind === "primary") {
-    return {
-      border: "none",
-      background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
-      color: "#fff",
-      borderRadius: 14,
-      padding: "11px 14px",
-      fontWeight: 700,
-      cursor: "pointer",
-      boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
-    };
-  }
-
-  return {
-    border: "1px solid #cfe7fb",
-    background: "#ffffff",
-    color: "#1769aa",
-    borderRadius: 14,
-    padding: "11px 12px",
-    fontWeight: 700,
-    cursor: "pointer",
-  };
-}
