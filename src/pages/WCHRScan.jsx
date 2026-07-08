@@ -1,5 +1,5 @@
 // src/pages/WCHRScan.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -8,8 +8,6 @@ import {
   addDoc,
   collection,
   doc,
-  getDoc,
-  getDocs,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
@@ -22,35 +20,6 @@ function pad2(n) {
 
 function yyyymmdd(d = new Date()) {
   return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
-}
-
-function formatMMDDYYYY(dateLike) {
-  try {
-    const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
-    if (Number.isNaN(d.getTime())) return "";
-    return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${d.getFullYear()}`;
-  } catch {
-    return "";
-  }
-}
-
-function buildFlightKey({ airline, flight_number, flight_date }) {
-  const d = flight_date instanceof Date ? flight_date : new Date(flight_date);
-  const iso = Number.isNaN(d.getTime())
-    ? "unknown-date"
-    : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-
-  return `${String(airline || "UNK").trim()}-${String(flight_number || "UNK")
-    .trim()
-    .replace(/\s+/g, "")}-${iso}`;
-}
-
-async function isFlightClosed(flight_key) {
-  const flightRef = doc(db, "wch_flights", flight_key);
-  const snap = await getDoc(flightRef);
-  if (!snap.exists()) return false;
-  const data = snap.data();
-  return Boolean(data?.closed_at);
 }
 
 function safeText(v) {
@@ -190,16 +159,11 @@ function emptyParsed() {
     passenger_name: "",
     airline: "",
     flight_number: "",
-    flight_date: "",
-    destination: "",
-    seat: "",
-    gate: "",
     pnr: "",
     wheelchair_number: "",
     raw_text: "",
   };
 }
-
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -308,11 +272,93 @@ function EditInput({ label, value, onChange, placeholder = "", type = "text" }) 
   );
 }
 
+function StatusCard({ parsed, user }) {
+  const agentName =
+    user?.displayName || user?.fullName || user?.name || user?.username || "—";
+
+  return (
+    <PageCard style={{ padding: 18 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+        }}
+      >
+        <div>
+          <FieldLabel>Current Location</FieldLabel>
+          <div
+            style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: 16,
+              padding: "12px 14px",
+              fontSize: 15,
+              fontWeight: 900,
+              color: "#1d4ed8",
+            }}
+          >
+            📍 Counter
+          </div>
+        </div>
+
+        <div>
+          <FieldLabel>Status</FieldLabel>
+          <div
+            style={{
+              background: "#ecfdf5",
+              border: "1px solid #bbf7d0",
+              borderRadius: 16,
+              padding: "12px 14px",
+              fontSize: 15,
+              fontWeight: 900,
+              color: "#15803d",
+            }}
+          >
+            🟢 In Progress
+          </div>
+        </div>
+
+        <div>
+          <FieldLabel>Assigned Agent</FieldLabel>
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 16,
+              padding: "12px 14px",
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#0f172a",
+            }}
+          >
+            {agentName}
+          </div>
+        </div>
+
+        <div>
+          <FieldLabel>Wheelchair</FieldLabel>
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+              borderRadius: 16,
+              padding: "12px 14px",
+              fontSize: 14,
+              fontWeight: 800,
+              color: "#0f172a",
+            }}
+          >
+            {parsed?.wheelchair_number || "—"}
+          </div>
+        </div>
+      </div>
+    </PageCard>
+  );
+}
 export default function WCHRScan() {
   const navigate = useNavigate();
   const { user } = useUser();
-
-  const [employees, setEmployees] = useState([]);
 
   const [mode, setMode] = useState("scan");
   const [step, setStep] = useState("upload");
@@ -320,46 +366,24 @@ export default function WCHRScan() {
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [wchType, setWchType] = useState("WCHR");
-
-  const [selectedWchrAgentId, setSelectedWchrAgentId] = useState("");
-  const [selectedWchrAgentName, setSelectedWchrAgentName] = useState("");
-
   const [parsed, setParsed] = useState(emptyParsed());
 
   const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
 
-  useEffect(() => {
-    async function loadEmployees() {
-      try {
-        const snap = await getDocs(collection(db, "employees"));
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .sort((a, b) =>
-            String(a.name || "").localeCompare(String(b.name || ""))
-          );
-        setEmployees(rows);
-      } catch (e) {
-        console.error("Error loading employees:", e);
-      }
-    }
+  const currentAgentName =
+    user?.displayName || user?.fullName || user?.name || user?.username || "";
 
-    loadEmployees();
-  }, []);
+  const currentAgentId = user?.id || user?.uid || "";
 
   const canScan = useMemo(() => Boolean(imageFile), [imageFile]);
 
   const canSubmit = useMemo(() => {
     const required = [
       parsed.passenger_name,
-      parsed.airline,
       parsed.flight_number,
-      parsed.flight_date,
-      parsed.destination,
-      parsed.seat,
-      parsed.gate,
       parsed.pnr,
+      parsed.wheelchair_number,
       wchType,
-      selectedWchrAgentName,
     ];
 
     if (mode === "scan") {
@@ -368,7 +392,7 @@ export default function WCHRScan() {
     }
 
     return required.every((v) => String(v || "").trim().length > 0);
-  }, [imageUrl, parsed, wchType, selectedWchrAgentName, mode]);
+  }, [imageUrl, parsed, wchType, mode]);
 
   const handlePickFile = (file) => {
     setError("");
@@ -384,19 +408,15 @@ export default function WCHRScan() {
     }));
   };
 
-  const handleChangeAgent = (employeeId) => {
-    setSelectedWchrAgentId(employeeId);
-    const found = employees.find((emp) => emp.id === employeeId);
-    setSelectedWchrAgentName(found?.name || "");
-  };
-
   const uploadToStorage = async (file) => {
     const safeUser = (user?.username || user?.id || "unknown").toString();
     const path = `wch_reports/${safeUser}/${yyyymmdd()}/${Date.now()}-${file.name}`;
     const storageRef = ref(storage, path);
+
     await uploadBytes(storageRef, file, {
       contentType: file.type || "image/jpeg",
     });
+
     return await getDownloadURL(storageRef);
   };
 
@@ -446,10 +466,6 @@ export default function WCHRScan() {
         flight_number: safeUpper(
           scanResult?.flight_number || scanResult?.flight || ""
         ),
-        flight_date: safeText(scanResult?.flight_date || scanResult?.date || ""),
-        destination: safeUpper(scanResult?.destination || scanResult?.to || ""),
-        seat: safeUpper(scanResult?.seat || ""),
-        gate: safeUpper(scanResult?.gate || ""),
         pnr: guessPnr(scanResult, rawText),
         wheelchair_number: safeText(scanResult?.wheelchair_number || ""),
         raw_text: rawText,
@@ -463,8 +479,7 @@ export default function WCHRScan() {
       setError(e?.message || "Unexpected error while scanning.");
     }
   };
-
-  const handleSubmit = async () => {
+    const handleSubmit = async () => {
     setError("");
 
     if (!user) {
@@ -474,7 +489,7 @@ export default function WCHRScan() {
 
     if (!canSubmit) {
       setError(
-        "Please complete Passenger Name, Airline, Flight Number, Flight Date, Destination, Seat, Gate, Reservation Code, WCHR Type and WCHR Agent Name before submit."
+        "Please complete Passenger Name, Flight Number, PNR and WCHR Number before submit."
       );
       return;
     }
@@ -482,61 +497,95 @@ export default function WCHRScan() {
     try {
       setStep("submitting");
 
-      const flightDateObj = new Date(parsed.flight_date);
-      const flight_key = buildFlightKey({
-        airline: parsed.airline,
-        flight_number: parsed.flight_number,
-        flight_date: flightDateObj,
-      });
+      const now = new Date();
 
-      const closed = await isFlightClosed(flight_key);
-      const status = closed ? "LATE" : "NEW";
-
-      const finalPassengerName = safeText(parsed.passenger_name);
-      const finalPnr = safeText(parsed.pnr).toUpperCase();
+      const finalPassengerName = normalizePassengerName(parsed.passenger_name);
+      const finalPnr = cleanPnr(parsed.pnr);
       const finalWheelchairNumber = cleanWheelchairNumber(
         parsed.wheelchair_number
       );
-      const finalWchrAgentName = safeText(selectedWchrAgentName);
+
+      const flightNumber = safeUpper(parsed.flight_number);
+      const airline = safeUpper(parsed.airline || "WCHR");
+
+      const flight_key = `${airline}-${flightNumber || "UNK"}-${yyyymmdd(now)}`;
 
       const docRef = await addDoc(collection(db, "wch_reports"), {
         report_id: "",
-        employee_id: user.id || "",
-        employee_name: user.displayName || user.fullName || user.username || "",
+
+        employee_id: currentAgentId,
+        employee_name: currentAgentName,
         employee_login:
           user.username || user.loginUsername || user.email || "",
         employee_role: user.role || "",
         submitted_at: serverTimestamp(),
 
         passenger_name: finalPassengerName,
-        airline: safeUpper(parsed.airline),
-        flight_number: safeUpper(parsed.flight_number),
-        flight_date: flightDateObj,
-        destination: safeUpper(parsed.destination),
-        seat: safeUpper(parsed.seat),
-        gate: safeUpper(parsed.gate),
+        airline,
+        flight_number: flightNumber,
         pnr: finalPnr,
         wheelchair_number: finalWheelchairNumber,
-
         wch_type: wchType,
-        status,
+
+        status: "NEW",
         flight_key,
         image_url: mode === "scan" ? imageUrl : "",
         raw_text: parsed.raw_text || "",
-
-        // agent fields aligned for admin reports
-        wchr_agent_id: selectedWchrAgentId || "",
-        wchr_agent_name: finalWchrAgentName,
-        assigned_wchr_agent: finalWchrAgentName,
-        activity_agent_name: finalWchrAgentName,
-
         entry_mode: mode,
+
+        // Agent fields for WCHR reports
+        wchr_agent_id: currentAgentId,
+        wchr_agent_name: currentAgentName,
+        assigned_wchr_agent: currentAgentName,
+        activity_agent_name: currentAgentName,
+
+        // Billing fields
+        billing_ready: true,
+        billing_date: serverTimestamp(),
+        billing_passenger_name: finalPassengerName,
+        billing_pnr: finalPnr,
+        billing_wheelchair_number: finalWheelchairNumber,
+
+        // Wheelchair tracking fields
+        tracking_enabled: true,
+        tracking_status: "IN_PROGRESS",
+        current_location: "Counter",
+        last_location: "Counter",
+        pickup_location: "Counter",
+        pickup_at: serverTimestamp(),
+        dropoff_location: "",
+        dropoff_at: null,
+        last_updated_by: currentAgentName,
+        last_updated_by_id: currentAgentId,
+        last_updated_at: serverTimestamp(),
+
+        // For future hardware support
+        tracking_type: "MANUAL",
+        tracking_device_id: "",
+        tracking_device_label: "",
       });
 
       const short = docRef.id.slice(-6).toUpperCase();
       const report_id = `WCHR-${yyyymmdd()}-${short}`;
 
       await updateDoc(doc(db, "wch_reports", docRef.id), { report_id });
+
+      await addDoc(collection(db, "wch_tracking_events"), {
+        report_doc_id: docRef.id,
+        report_id,
+        wheelchair_number: finalWheelchairNumber,
+        passenger_name: finalPassengerName,
+        pnr: finalPnr,
+        flight_number: flightNumber,
+        event_type: "PICKUP",
+        location: "Counter",
+        previous_location: "",
+        notes: "Wheelchair picked up at counter",
+        tracking_status: "IN_PROGRESS",
+        employee_id: currentAgentId,
+        employee_name: currentAgentName,
+        created_at: serverTimestamp(),
+      });
 
       navigate("/wchr/my-reports");
     } catch (e) {
@@ -557,8 +606,7 @@ export default function WCHRScan() {
       </PageCard>
     );
   }
-
-  return (
+    return (
     <div
       style={{
         display: "grid",
@@ -598,8 +646,9 @@ export default function WCHRScan() {
                 fontWeight: 700,
               }}
             >
-              TPA OPS · WCHR
+              TPA OPS · WCHR TRACKING
             </p>
+
             <h1
               style={{
                 margin: "10px 0 6px",
@@ -608,8 +657,9 @@ export default function WCHRScan() {
                 fontWeight: 800,
               }}
             >
-              WCHR Report
+              Wheelchair Service
             </h1>
+
             <p
               style={{
                 margin: 0,
@@ -618,7 +668,8 @@ export default function WCHRScan() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Choose between scanning a boarding pass or entering the information manually.
+              Start a wheelchair service, identify the assigned chair, and begin
+              tracking from the counter.
             </p>
           </div>
 
@@ -653,6 +704,7 @@ export default function WCHRScan() {
         <div style={{ display: "grid", gap: 14 }}>
           <div>
             <FieldLabel>Entry Method</FieldLabel>
+
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <ActionButton
                 variant={mode === "scan" ? "primary" : "secondary"}
@@ -680,64 +732,33 @@ export default function WCHRScan() {
             </div>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: 14,
-            }}
-          >
-            <div>
-              <FieldLabel>WCHR Type</FieldLabel>
-              <select
-                value={wchType}
-                onChange={(e) => setWchType(e.target.value)}
-                style={{
-                  width: "100%",
-                  border: "1px solid #dbeafe",
-                  background: "#ffffff",
-                  borderRadius: 14,
-                  padding: "12px 14px",
-                  fontSize: 14,
-                  color: "#0f172a",
-                }}
-              >
-                <option value="WCHR">WCHR</option>
-                <option value="WCHS">WCHS</option>
-                <option value="WCHC">WCHC</option>
-              </select>
-            </div>
+          <div>
+            <FieldLabel>WCHR Type</FieldLabel>
 
-            <div>
-              <FieldLabel>WCHR Agent Name</FieldLabel>
-              <select
-                value={selectedWchrAgentId}
-                onChange={(e) => handleChangeAgent(e.target.value)}
-                style={{
-                  width: "100%",
-                  border: "1px solid #dbeafe",
-                  background: "#ffffff",
-                  borderRadius: 14,
-                  padding: "12px 14px",
-                  fontSize: 14,
-                  color: "#0f172a",
-                  outline: "none",
-                }}
-              >
-                <option value="">Select employee</option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              value={wchType}
+              onChange={(e) => setWchType(e.target.value)}
+              style={{
+                width: "100%",
+                border: "1px solid #dbeafe",
+                background: "#ffffff",
+                borderRadius: 14,
+                padding: "12px 14px",
+                fontSize: 14,
+                color: "#0f172a",
+              }}
+            >
+              <option value="WCHR">WCHR</option>
+              <option value="WCHS">WCHS</option>
+              <option value="WCHC">WCHC</option>
+            </select>
           </div>
 
           {mode === "scan" && (
             <>
               <div>
                 <FieldLabel>Boarding Pass Photo</FieldLabel>
+
                 <input
                   type="file"
                   accept="image/*"
@@ -772,204 +793,163 @@ export default function WCHRScan() {
       </PageCard>
 
       {mode === "manual" && (
-        <PageCard style={{ padding: 22 }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
-            <EditInput
-              label="Passenger Name"
-              value={parsed.passenger_name}
-              onChange={(value) => handleParsedChange("passenger_name", value)}
-              placeholder="VERGARA / CLAUDIA"
-            />
-            <EditInput
-              label="Airline"
-              value={parsed.airline}
-              onChange={(value) => handleParsedChange("airline", value)}
-              placeholder="SY"
-            />
-            <EditInput
-              label="Flight Number"
-              value={parsed.flight_number}
-              onChange={(value) => handleParsedChange("flight_number", value)}
-              placeholder="1234"
-            />
-            <EditInput
-              label="Flight Date"
-              type="date"
-              value={parsed.flight_date}
-              onChange={(value) => handleParsedChange("flight_date", value)}
-            />
-            <EditInput
-              label="Destination"
-              value={parsed.destination}
-              onChange={(value) => handleParsedChange("destination", value)}
-              placeholder="TPA"
-            />
-            <EditInput
-              label="Seat"
-              value={parsed.seat}
-              onChange={(value) => handleParsedChange("seat", value)}
-              placeholder="12A"
-            />
-            <EditInput
-              label="Gate"
-              value={parsed.gate}
-              onChange={(value) => handleParsedChange("gate", value)}
-              placeholder="F86"
-            />
-            <EditInput
-              label="PNR / Reservation Code"
-              value={parsed.pnr}
-              onChange={(value) => handleParsedChange("pnr", value)}
-              placeholder="A7ILFB"
-            />
-            <EditInput
-              label="WCHR Number"
-              value={parsed.wheelchair_number}
-              onChange={(value) =>
-                handleParsedChange("wheelchair_number", value)
-              }
-              placeholder="EAR23 or 23"
-            />
-          </div>
+        <>
+          <StatusCard parsed={parsed} user={user} />
 
-          <div style={{ marginTop: 16 }}>
-            <ActionButton
-              onClick={handleSubmit}
-              variant="success"
-              disabled={!canSubmit || step === "submitting"}
+          <PageCard style={{ padding: 22 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+              }}
             >
-              {step === "submitting" ? "Submitting..." : "Submit Report"}
-            </ActionButton>
-          </div>
-        </PageCard>
+              <EditInput
+                label="Passenger Name"
+                value={parsed.passenger_name}
+                onChange={(value) =>
+                  handleParsedChange("passenger_name", value)
+                }
+                placeholder="VERGARA / CLAUDIA"
+              />
+
+              <EditInput
+                label="Flight Number"
+                value={parsed.flight_number}
+                onChange={(value) =>
+                  handleParsedChange("flight_number", value)
+                }
+                placeholder="1234"
+              />
+
+              <EditInput
+                label="PNR / Reservation Code"
+                value={parsed.pnr}
+                onChange={(value) => handleParsedChange("pnr", value)}
+                placeholder="A7ILFB"
+              />
+
+              <EditInput
+                label="WCHR Number"
+                value={parsed.wheelchair_number}
+                onChange={(value) =>
+                  handleParsedChange("wheelchair_number", value)
+                }
+                placeholder="WCHR-023 or 023"
+              />
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <ActionButton
+                onClick={handleSubmit}
+                variant="success"
+                disabled={!canSubmit || step === "submitting"}
+              >
+                {step === "submitting"
+                  ? "Starting Service..."
+                  : "Start WCHR Service"}
+              </ActionButton>
+            </div>
+          </PageCard>
+        </>
       )}
 
       {mode === "scan" && step === "preview" && parsed && (
-        <PageCard style={{ padding: 22 }}>
-          {imageUrl && (
-            <div style={{ marginBottom: 16 }}>
-              <img
-                src={imageUrl}
-                alt="Boarding pass"
-                style={{
-                  width: "100%",
-                  maxHeight: 340,
-                  objectFit: "contain",
-                  borderRadius: 18,
-                  border: "1px solid #e2e8f0",
-                  background: "#f8fbff",
-                }}
-              />
-            </div>
-          )}
+        <>
+          <StatusCard parsed={parsed} user={user} />
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
-            <EditInput
-              label="Passenger Name"
-              value={parsed.passenger_name}
-              onChange={(value) => handleParsedChange("passenger_name", value)}
-              placeholder="VERGARA / CLAUDIA"
-            />
-            <EditInput
-              label="Airline"
-              value={parsed.airline}
-              onChange={(value) => handleParsedChange("airline", value)}
-            />
-            <EditInput
-              label="Flight Number"
-              value={parsed.flight_number}
-              onChange={(value) => handleParsedChange("flight_number", value)}
-            />
-            <EditInput
-              label="Flight Date"
-              value={parsed.flight_date}
-              onChange={(value) => handleParsedChange("flight_date", value)}
-              placeholder="2026-03-29"
-            />
-            <EditInput
-              label="Destination"
-              value={parsed.destination}
-              onChange={(value) => handleParsedChange("destination", value)}
-            />
-            <EditInput
-              label="Seat"
-              value={parsed.seat}
-              onChange={(value) => handleParsedChange("seat", value)}
-            />
-            <EditInput
-              label="Gate"
-              value={parsed.gate}
-              onChange={(value) => handleParsedChange("gate", value)}
-            />
-            <EditInput
-              label="PNR / Reservation Code"
-              value={parsed.pnr}
-              onChange={(value) => handleParsedChange("pnr", value)}
-              placeholder="A7ILFB"
-            />
-            <EditInput
-              label="WCHR Number"
-              value={parsed.wheelchair_number}
-              onChange={(value) =>
-                handleParsedChange("wheelchair_number", value)
-              }
-              placeholder="EAR23 or 23"
-            />
-          </div>
+          <PageCard style={{ padding: 22 }}>
+            {imageUrl && (
+              <div style={{ marginBottom: 16 }}>
+                <img
+                  src={imageUrl}
+                  alt="Boarding pass"
+                  style={{
+                    width: "100%",
+                    maxHeight: 340,
+                    objectFit: "contain",
+                    borderRadius: 18,
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fbff",
+                  }}
+                />
+              </div>
+            )}
 
-          <div style={{ marginTop: 12 }}>
-            <FieldLabel>Detected Date Preview</FieldLabel>
             <div
               style={{
-                background: "#f8fbff",
-                border: "1px solid #dbeafe",
-                borderRadius: 14,
-                padding: "12px 14px",
-                fontSize: 14,
-                color: "#0f172a",
-                fontWeight: 700,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
               }}
             >
-              {formatMMDDYYYY(parsed.flight_date) || "—"}
+              <EditInput
+                label="Passenger Name"
+                value={parsed.passenger_name}
+                onChange={(value) =>
+                  handleParsedChange("passenger_name", value)
+                }
+                placeholder="VERGARA / CLAUDIA"
+              />
+
+              <EditInput
+                label="Flight Number"
+                value={parsed.flight_number}
+                onChange={(value) =>
+                  handleParsedChange("flight_number", value)
+                }
+                placeholder="1234"
+              />
+
+              <EditInput
+                label="PNR / Reservation Code"
+                value={parsed.pnr}
+                onChange={(value) => handleParsedChange("pnr", value)}
+                placeholder="A7ILFB"
+              />
+
+              <EditInput
+                label="WCHR Number"
+                value={parsed.wheelchair_number}
+                onChange={(value) =>
+                  handleParsedChange("wheelchair_number", value)
+                }
+                placeholder="WCHR-023 or 023"
+              />
             </div>
-          </div>
 
-          <div
-            style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}
-          >
-            <ActionButton
-              onClick={() => {
-                setParsed(emptyParsed());
-                setImageUrl("");
-                setImageFile(null);
-                setStep("upload");
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                marginTop: 16,
+                flexWrap: "wrap",
               }}
-              variant="secondary"
             >
-              Retake / Upload Again
-            </ActionButton>
+              <ActionButton
+                onClick={() => {
+                  setParsed(emptyParsed());
+                  setImageUrl("");
+                  setImageFile(null);
+                  setStep("upload");
+                }}
+                variant="secondary"
+              >
+                Retake / Upload Again
+              </ActionButton>
 
-            <ActionButton
-              onClick={handleSubmit}
-              variant="success"
-              disabled={!canSubmit || step === "submitting"}
-            >
-              {step === "submitting" ? "Submitting..." : "Submit Report"}
-            </ActionButton>
-          </div>
-        </PageCard>
+              <ActionButton
+                onClick={handleSubmit}
+                variant="success"
+                disabled={!canSubmit || step === "submitting"}
+              >
+                {step === "submitting"
+                  ? "Starting Service..."
+                  : "Start WCHR Service"}
+              </ActionButton>
+            </div>
+          </PageCard>
+        </>
       )}
     </div>
   );
