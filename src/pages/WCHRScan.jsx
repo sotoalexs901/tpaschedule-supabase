@@ -87,7 +87,6 @@ function tryExtractPassengerFromText(rawText) {
 
   return "";
 }
-
 function tryExtractPnrFromText(rawText) {
   const text = String(rawText || "");
 
@@ -164,6 +163,7 @@ function emptyParsed() {
     raw_text: "",
   };
 }
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -207,6 +207,12 @@ function ActionButton({
       border: "none",
       boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
     },
+    warning: {
+      background: "#f59e0b",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
+    },
   };
 
   return (
@@ -229,7 +235,6 @@ function ActionButton({
     </button>
   );
 }
-
 function FieldLabel({ children }) {
   return (
     <label
@@ -352,6 +357,22 @@ function StatusCard({ parsed, user }) {
             {parsed?.wheelchair_number || "—"}
           </div>
         </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          background: "#fffbeb",
+          border: "1px solid #fde68a",
+          borderRadius: 16,
+          padding: "12px 14px",
+          color: "#92400e",
+          fontSize: 13,
+          fontWeight: 700,
+        }}
+      >
+        This wheelchair will remain active under the employee profile until it
+        is marked as Stored / Not In Use.
       </div>
     </PageCard>
   );
@@ -479,7 +500,8 @@ export default function WCHRScan() {
       setError(e?.message || "Unexpected error while scanning.");
     }
   };
-    const handleSubmit = async () => {
+
+  const handleSubmit = async () => {
     setError("");
 
     if (!user) {
@@ -533,33 +555,39 @@ export default function WCHRScan() {
         raw_text: parsed.raw_text || "",
         entry_mode: mode,
 
-        // Agent fields for WCHR reports
         wchr_agent_id: currentAgentId,
         wchr_agent_name: currentAgentName,
         assigned_wchr_agent: currentAgentName,
         activity_agent_name: currentAgentName,
 
-        // Billing fields
         billing_ready: true,
         billing_date: serverTimestamp(),
         billing_passenger_name: finalPassengerName,
         billing_pnr: finalPnr,
         billing_wheelchair_number: finalWheelchairNumber,
 
-        // Wheelchair tracking fields
         tracking_enabled: true,
         tracking_status: "IN_PROGRESS",
         current_location: "Counter",
         last_location: "Counter",
         pickup_location: "Counter",
         pickup_at: serverTimestamp(),
+
         dropoff_location: "",
         dropoff_at: null,
+        stored_location: "",
+        stored_at: null,
+
+        is_active: true,
+        alerts_enabled: true,
+        alert_after_minutes: 30,
+        last_alert_at: null,
+        last_location_update_at: serverTimestamp(),
+
         last_updated_by: currentAgentName,
         last_updated_by_id: currentAgentId,
         last_updated_at: serverTimestamp(),
 
-        // For future hardware support
         tracking_type: "MANUAL",
         tracking_device_id: "",
         tracking_device_label: "",
@@ -569,6 +597,26 @@ export default function WCHRScan() {
       const report_id = `WCHR-${yyyymmdd()}-${short}`;
 
       await updateDoc(doc(db, "wch_reports", docRef.id), { report_id });
+
+      const activeService = {
+        report_doc_id: docRef.id,
+        report_id,
+        wheelchair_number: finalWheelchairNumber,
+        passenger_name: finalPassengerName,
+        pnr: finalPnr,
+        flight_number: flightNumber,
+        current_location: "Counter",
+        tracking_status: "IN_PROGRESS",
+        is_active: true,
+        alerts_enabled: true,
+        alert_after_minutes: 30,
+        started_at: serverTimestamp(),
+        last_location_update_at: serverTimestamp(),
+      };
+
+      await updateDoc(doc(db, "employees", currentAgentId), {
+        active_wchr_service: activeService,
+      });
 
       await addDoc(collection(db, "wch_tracking_events"), {
         report_doc_id: docRef.id,
@@ -582,6 +630,8 @@ export default function WCHRScan() {
         previous_location: "",
         notes: "Wheelchair picked up at counter",
         tracking_status: "IN_PROGRESS",
+        is_active: true,
+        alerts_enabled: true,
         employee_id: currentAgentId,
         employee_name: currentAgentName,
         created_at: serverTimestamp(),
@@ -668,8 +718,8 @@ export default function WCHRScan() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Start a wheelchair service, identify the assigned chair, and begin
-              tracking from the counter.
+              Start a wheelchair service, assign the chair, and begin tracking
+              from the counter.
             </p>
           </div>
 
