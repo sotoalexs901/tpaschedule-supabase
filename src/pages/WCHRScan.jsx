@@ -14,6 +14,35 @@ import {
 
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
+const START_LOCATIONS = [
+  "Counter",
+  "TSA",
+  "Security",
+  "Train",
+  "Airside F",
+  "Gate F78",
+  "Gate F79",
+  "Gate F80",
+  "Gate F81",
+  "Gate F82",
+  "Gate F83",
+  "Gate F84",
+  "Gate F85",
+  "Gate F86",
+  "Gate F87",
+  "Gate F88",
+  "Gate F89",
+  "Gate F90",
+  "Jet Bridge",
+  "Aircraft",
+  "Baggage Claim",
+  "Customs",
+  "CBP",
+  "Wheelchair Storage",
+  "Maintenance",
+  "Other",
+];
+
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
@@ -87,6 +116,7 @@ function tryExtractPassengerFromText(rawText) {
 
   return "";
 }
+
 function tryExtractPnrFromText(rawText) {
   const text = String(rawText || "");
 
@@ -163,7 +193,6 @@ function emptyParsed() {
     raw_text: "",
   };
 }
-
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -235,6 +264,7 @@ function ActionButton({
     </button>
   );
 }
+
 function FieldLabel({ children }) {
   return (
     <label
@@ -277,7 +307,78 @@ function EditInput({ label, value, onChange, placeholder = "", type = "text" }) 
   );
 }
 
-function StatusCard({ parsed, user }) {
+function SelectInput({ label, value, onChange, options = [] }) {
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+
+      <select
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%",
+          border: "1px solid #dbeafe",
+          background: "#ffffff",
+          borderRadius: 14,
+          padding: "12px 14px",
+          fontSize: 14,
+          color: "#0f172a",
+          outline: "none",
+        }}
+      >
+        {options.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function StatusPill({ label, value, tone = "blue" }) {
+  const tones = {
+    blue: {
+      background: "#eff6ff",
+      border: "1px solid #bfdbfe",
+      color: "#1d4ed8",
+    },
+    green: {
+      background: "#ecfdf5",
+      border: "1px solid #bbf7d0",
+      color: "#15803d",
+    },
+    slate: {
+      background: "#f8fafc",
+      border: "1px solid #e2e8f0",
+      color: "#0f172a",
+    },
+    amber: {
+      background: "#fffbeb",
+      border: "1px solid #fde68a",
+      color: "#92400e",
+    },
+  };
+
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <div
+        style={{
+          borderRadius: 16,
+          padding: "12px 14px",
+          fontSize: 14,
+          fontWeight: 900,
+          ...tones[tone],
+        }}
+      >
+        {value || "—"}
+      </div>
+    </div>
+  );
+}
+
+function StatusCard({ parsed, user, startLocation }) {
   const agentName =
     user?.displayName || user?.fullName || user?.name || user?.username || "—";
 
@@ -290,73 +391,21 @@ function StatusCard({ parsed, user }) {
           gap: 12,
         }}
       >
-        <div>
-          <FieldLabel>Current Location</FieldLabel>
-          <div
-            style={{
-              background: "#eff6ff",
-              border: "1px solid #bfdbfe",
-              borderRadius: 16,
-              padding: "12px 14px",
-              fontSize: 15,
-              fontWeight: 900,
-              color: "#1d4ed8",
-            }}
-          >
-            📍 Counter
-          </div>
-        </div>
+        <StatusPill
+          label="Current Location"
+          value={`📍 ${startLocation || "Counter"}`}
+          tone="blue"
+        />
 
-        <div>
-          <FieldLabel>Status</FieldLabel>
-          <div
-            style={{
-              background: "#ecfdf5",
-              border: "1px solid #bbf7d0",
-              borderRadius: 16,
-              padding: "12px 14px",
-              fontSize: 15,
-              fontWeight: 900,
-              color: "#15803d",
-            }}
-          >
-            🟢 In Progress
-          </div>
-        </div>
+        <StatusPill label="Status" value="🟢 In Progress" tone="green" />
 
-        <div>
-          <FieldLabel>Assigned Agent</FieldLabel>
-          <div
-            style={{
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              borderRadius: 16,
-              padding: "12px 14px",
-              fontSize: 14,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
-            {agentName}
-          </div>
-        </div>
+        <StatusPill label="Assigned Agent" value={agentName} tone="slate" />
 
-        <div>
-          <FieldLabel>Wheelchair</FieldLabel>
-          <div
-            style={{
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              borderRadius: 16,
-              padding: "12px 14px",
-              fontSize: 14,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
-            {parsed?.wheelchair_number || "—"}
-          </div>
-        </div>
+        <StatusPill
+          label="Wheelchair"
+          value={parsed?.wheelchair_number || "—"}
+          tone="slate"
+        />
       </div>
 
       <div
@@ -387,6 +436,7 @@ export default function WCHRScan() {
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [wchType, setWchType] = useState("WCHR");
+  const [startLocation, setStartLocation] = useState("Counter");
   const [parsed, setParsed] = useState(emptyParsed());
 
   const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
@@ -405,6 +455,7 @@ export default function WCHRScan() {
       parsed.pnr,
       parsed.wheelchair_number,
       wchType,
+      startLocation,
     ];
 
     if (mode === "scan") {
@@ -413,7 +464,7 @@ export default function WCHRScan() {
     }
 
     return required.every((v) => String(v || "").trim().length > 0);
-  }, [imageUrl, parsed, wchType, mode]);
+  }, [imageUrl, parsed, wchType, startLocation, mode]);
 
   const handlePickFile = (file) => {
     setError("");
@@ -500,8 +551,7 @@ export default function WCHRScan() {
       setError(e?.message || "Unexpected error while scanning.");
     }
   };
-
-  const handleSubmit = async () => {
+    const handleSubmit = async () => {
     setError("");
 
     if (!user) {
@@ -511,7 +561,7 @@ export default function WCHRScan() {
 
     if (!canSubmit) {
       setError(
-        "Please complete Passenger Name, Flight Number, PNR and WCHR Number before submit."
+        "Please complete Passenger Name, Flight Number, PNR, WCHR Number, WCHR Type and Start Location before submit."
       );
       return;
     }
@@ -529,6 +579,7 @@ export default function WCHRScan() {
 
       const flightNumber = safeUpper(parsed.flight_number);
       const airline = safeUpper(parsed.airline || "WCHR");
+      const initialLocation = safeText(startLocation || "Counter");
 
       const flight_key = `${airline}-${flightNumber || "UNK"}-${yyyymmdd(now)}`;
 
@@ -568,9 +619,9 @@ export default function WCHRScan() {
 
         tracking_enabled: true,
         tracking_status: "IN_PROGRESS",
-        current_location: "Counter",
-        last_location: "Counter",
-        pickup_location: "Counter",
+        current_location: initialLocation,
+        last_location: initialLocation,
+        pickup_location: initialLocation,
         pickup_at: serverTimestamp(),
 
         dropoff_location: "",
@@ -605,7 +656,7 @@ export default function WCHRScan() {
         passenger_name: finalPassengerName,
         pnr: finalPnr,
         flight_number: flightNumber,
-        current_location: "Counter",
+        current_location: initialLocation,
         tracking_status: "IN_PROGRESS",
         is_active: true,
         alerts_enabled: true,
@@ -625,10 +676,10 @@ export default function WCHRScan() {
         passenger_name: finalPassengerName,
         pnr: finalPnr,
         flight_number: flightNumber,
-        event_type: "PICKUP",
-        location: "Counter",
+        event_type: "START_SERVICE",
+        location: initialLocation,
         previous_location: "",
-        notes: "Wheelchair picked up at counter",
+        notes: `Wheelchair service started at ${initialLocation}`,
         tracking_status: "IN_PROGRESS",
         is_active: true,
         alerts_enabled: true,
@@ -718,8 +769,8 @@ export default function WCHRScan() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Start a wheelchair service, assign the chair, and begin tracking
-              from the counter.
+              Start a wheelchair service, select the starting location, and keep
+              the chair active until it is marked as Stored / Not In Use.
             </p>
           </div>
 
@@ -782,26 +833,26 @@ export default function WCHRScan() {
             </div>
           </div>
 
-          <div>
-            <FieldLabel>WCHR Type</FieldLabel>
-
-            <select
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <SelectInput
+              label="WCHR Type"
               value={wchType}
-              onChange={(e) => setWchType(e.target.value)}
-              style={{
-                width: "100%",
-                border: "1px solid #dbeafe",
-                background: "#ffffff",
-                borderRadius: 14,
-                padding: "12px 14px",
-                fontSize: 14,
-                color: "#0f172a",
-              }}
-            >
-              <option value="WCHR">WCHR</option>
-              <option value="WCHS">WCHS</option>
-              <option value="WCHC">WCHC</option>
-            </select>
+              onChange={setWchType}
+              options={["WCHR", "WCHS", "WCHC"]}
+            />
+
+            <SelectInput
+              label="Start Location"
+              value={startLocation}
+              onChange={setStartLocation}
+              options={START_LOCATIONS}
+            />
           </div>
 
           {mode === "scan" && (
@@ -844,7 +895,11 @@ export default function WCHRScan() {
 
       {mode === "manual" && (
         <>
-          <StatusCard parsed={parsed} user={user} />
+          <StatusCard
+            parsed={parsed}
+            user={user}
+            startLocation={startLocation}
+          />
 
           <PageCard style={{ padding: 22 }}>
             <div
@@ -906,7 +961,11 @@ export default function WCHRScan() {
 
       {mode === "scan" && step === "preview" && parsed && (
         <>
-          <StatusCard parsed={parsed} user={user} />
+          <StatusCard
+            parsed={parsed}
+            user={user}
+            startLocation={startLocation}
+          />
 
           <PageCard style={{ padding: 22 }}>
             {imageUrl && (
