@@ -243,7 +243,10 @@ export default function AppLayout() {
     (user?.role === "supervisor" ||
       user?.role === "duty_manager" ||
       user?.role === "station_manager");
-
+  const canAccessWchrMonthlyClose =
+    !isDLCabinService &&
+    (user?.role === "duty_manager" || user?.role === "station_manager");
+  
   const canSubmitEmployeePerformance =
     user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
@@ -564,11 +567,19 @@ export default function AppLayout() {
       );
     }
 
-    if (canAccessWchrFlightReport) {
+        if (canAccessWchrFlightReport) {
       wchr.push({
         to: "/wchr/admin/flights",
         label: "WCHR Flight Report",
         icon: "♿",
+      });
+    }
+
+    if (canAccessWchrMonthlyClose) {
+      wchr.push({
+        to: "/wchr/monthly-close",
+        label: "WCHR Billing & Monthly Close",
+        icon: "📊",
       });
     }
 
