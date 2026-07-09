@@ -256,7 +256,6 @@ function GlassCard({
     </div>
   );
 }
-
 function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
   const photo = item?.photoURL || item?.profilePhotoURL || "";
   const employeeName = item?.employeeName || "Employee";
@@ -431,8 +430,7 @@ export default function DashboardPage() {
 
   const canTrackTimesheets =
     user?.role === "duty_manager" || user?.role === "station_manager";
-
-  const fetchMainMessage = async () => {
+    const fetchMainMessage = async () => {
     try {
       const ref = doc(db, "dashboard", "main");
       const snap = await getDoc(ref);
@@ -880,6 +878,45 @@ export default function DashboardPage() {
             </div>
           </GlassCard>
 
+          {canTrackTimesheets && (
+            <GlassCard
+              title="WCHR Billing & Monthly Close"
+              icon="📊"
+              accent="#16a34a"
+              isMobile={isMobile}
+              action={
+                <button
+                  type="button"
+                  onClick={() => navigate("/wchr/monthly-close")}
+                  style={{
+                    border: "1px solid #bbf7d0",
+                    background: "#ecfdf5",
+                    color: "#166534",
+                    borderRadius: 14,
+                    padding: "10px 14px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    width: isMobile ? "100%" : "auto",
+                  }}
+                >
+                  Open Module
+                </button>
+              }
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  color: "#475569",
+                  lineHeight: 1.6,
+                }}
+              >
+                Export billing, review monthly WCHR performance, close completed
+                months, and manage archived WCHR data.
+              </p>
+            </GlassCard>
+          )}
+
           <GlassCard
             title="Employees of the Month"
             icon="🏆"
@@ -1001,8 +1038,7 @@ export default function DashboardPage() {
               </div>
             )}
           </GlassCard>
-
-          <GlassCard
+                    <GlassCard
             title="Pending Schedules for Approval"
             icon="📥"
             accent="#10b981"
@@ -1037,15 +1073,7 @@ export default function DashboardPage() {
                 No schedules waiting for approval.
               </p>
             ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile
-                    ? "1fr"
-                    : "repeat(auto-fit, minmax(230px, 1fr))",
-                  gap: 12,
-                }}
-              >
+              <div style={{ display: "grid", gap: 12 }}>
                 {pendingSchedules.map((sch) => (
                   <div
                     key={sch.id}
@@ -1055,41 +1083,17 @@ export default function DashboardPage() {
                       background:
                         "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)",
                       border: "1px solid #d1fae5",
-                      minWidth: 0,
                     }}
                   >
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 15,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                        wordBreak: "break-word",
-                      }}
-                    >
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
                       {sch.airlineDisplayName || sch.airline || "Airline"} —{" "}
                       {sch.department || "Department"}
                     </p>
-
-                    <p
-                      style={{
-                        margin: "8px 0 0",
-                        fontSize: 13,
-                        color: "#475569",
-                      }}
-                    >
+                    <p style={{ margin: "8px 0 0", fontSize: 13 }}>
                       Total Hours:{" "}
                       {Number(sch.airlineWeeklyHours || 0).toFixed(2)}
                     </p>
-
-                    <p
-                      style={{
-                        margin: "6px 0 0",
-                        fontSize: 12,
-                        color: "#64748b",
-                        wordBreak: "break-word",
-                      }}
-                    >
+                    <p style={{ margin: "6px 0 0", fontSize: 12 }}>
                       Sent by: {sch.createdBy || "unknown"}
                     </p>
                   </div>
@@ -1142,73 +1146,23 @@ export default function DashboardPage() {
                         background:
                           "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
                         border: "1px solid #fdba74",
-                        minWidth: 0,
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <p
-                            style={{
-                              margin: 0,
-                              fontWeight: 800,
-                              color: "#0f172a",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            {item.airline || "—"} · {item.reportDate || "—"}
-                          </p>
-
-                          <p
-                            style={{
-                              margin: "7px 0 0",
-                              fontSize: 13,
-                              color: "#475569",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            Submitted by{" "}
-                            <b>
-                              {item.submittedByName ||
-                                item.submittedByUsername ||
-                                item.supervisorReporting ||
-                                "Unknown"}
-                            </b>
-                          </p>
-
-                          <p
-                            style={{
-                              margin: "6px 0 0",
-                              fontSize: 12,
-                              color: "#64748b",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            Created: {formatCreatedAtLabel(item.createdAt)}
-                          </p>
-                        </div>
-
-                        <div
-                          style={{
-                            alignSelf: "center",
-                            padding: "7px 10px",
-                            borderRadius: 999,
-                            background: "#fff1f2",
-                            border: "1px solid #fecdd3",
-                            color: "#be123c",
-                            fontSize: 12,
-                            fontWeight: 800,
-                          }}
-                        >
-                          Pending
-                        </div>
-                      </div>
+                      <p style={{ margin: 0, fontWeight: 800 }}>
+                        {item.airline || "—"} · {item.reportDate || "—"}
+                      </p>
+                      <p style={{ margin: "7px 0 0", fontSize: 13 }}>
+                        Submitted by{" "}
+                        <b>
+                          {item.submittedByName ||
+                            item.submittedByUsername ||
+                            item.supervisorReporting ||
+                            "Unknown"}
+                        </b>
+                      </p>
+                      <p style={{ margin: "6px 0 0", fontSize: 12 }}>
+                        Created: {formatCreatedAtLabel(item.createdAt)}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -1241,20 +1195,11 @@ export default function DashboardPage() {
                       background:
                         "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
                       border: "1px solid #dbeafe",
-                      minWidth: 0,
                     }}
                   >
-                    <p
-                      style={{
-                        margin: 0,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                        wordBreak: "break-word",
-                      }}
-                    >
+                    <p style={{ margin: 0, fontWeight: 800 }}>
                       {ev.title || "Event"}
                     </p>
-
                     <p
                       style={{
                         margin: "6px 0 0",
@@ -1266,16 +1211,8 @@ export default function DashboardPage() {
                       {formatDateLabel(ev.date)}
                       {ev.time ? ` • ${ev.time}` : ""}
                     </p>
-
                     {ev.details && (
-                      <p
-                        style={{
-                          margin: "8px 0 0",
-                          fontSize: 13,
-                          color: "#475569",
-                          wordBreak: "break-word",
-                        }}
-                      >
+                      <p style={{ margin: "8px 0 0", fontSize: 13 }}>
                         {ev.details}
                       </p>
                     )}
@@ -1306,30 +1243,14 @@ export default function DashboardPage() {
                       background:
                         "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
                       border: "1px solid #fde68a",
-                      minWidth: 0,
                     }}
                   >
-                    <p
-                      style={{
-                        margin: 0,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                        wordBreak: "break-word",
-                      }}
-                    >
+                    <p style={{ margin: 0, fontWeight: 800 }}>
                       {n.title || "Notice"}
                     </p>
 
                     {n.body && (
-                      <p
-                        style={{
-                          margin: "8px 0 0",
-                          fontSize: 13,
-                          color: "#475569",
-                          lineHeight: 1.55,
-                          wordBreak: "break-word",
-                        }}
-                      >
+                      <p style={{ margin: "8px 0 0", fontSize: 13 }}>
                         {n.body}
                       </p>
                     )}
@@ -1412,7 +1333,6 @@ export default function DashboardPage() {
                         fontSize: 12,
                         fontWeight: 700,
                         color: "#9f1239",
-                        wordBreak: "break-word",
                       }}
                     >
                       {getEmployeeName(b)}
@@ -1447,7 +1367,6 @@ export default function DashboardPage() {
                           background:
                             "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)",
                           border: "1px solid #fecdd3",
-                          minWidth: 0,
                         }}
                       >
                         <p
@@ -1455,33 +1374,18 @@ export default function DashboardPage() {
                             margin: 0,
                             fontWeight: 800,
                             color: "#881337",
-                            wordBreak: "break-word",
                           }}
                         >
                           {getEmployeeName(b)}
                         </p>
 
                         {b.reason && (
-                          <p
-                            style={{
-                              margin: "7px 0 0",
-                              fontSize: 13,
-                              color: "#475569",
-                              wordBreak: "break-word",
-                            }}
-                          >
+                          <p style={{ margin: "7px 0 0", fontSize: 13 }}>
                             {b.reason}
                           </p>
                         )}
 
-                        <p
-                          style={{
-                            margin: "7px 0 0",
-                            fontSize: 12,
-                            color: "#64748b",
-                            wordBreak: "break-word",
-                          }}
-                        >
+                        <p style={{ margin: "7px 0 0", fontSize: 12 }}>
                           {b.start_date || b.startDate || "N/A"} →{" "}
                           {b.end_date || b.endDate || "N/A"}
                         </p>
