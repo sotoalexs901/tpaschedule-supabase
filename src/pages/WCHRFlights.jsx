@@ -48,7 +48,21 @@ const WCHR_LOCATIONS = [
   "Other",
 ];
 
-const TRACKING_STATUS_OPTIONS = ["IN_PROGRESS", "COMPLETED", "STORED"];
+const GATE_LOCATIONS = [
+  "Gate F78",
+  "Gate F79",
+  "Gate F80",
+  "Gate F81",
+  "Gate F82",
+  "Gate F83",
+  "Gate F84",
+  "Gate F85",
+  "Gate F86",
+  "Gate F87",
+  "Gate F88",
+  "Gate F89",
+  "Gate F90",
+];
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -89,6 +103,10 @@ function safeText(v) {
   return String(v || "").trim();
 }
 
+function isGateLocation(value) {
+  return GATE_LOCATIONS.includes(safeText(value));
+}
+
 function getReportDate(report) {
   return (
     tsToDate(report.submitted_at) ||
@@ -109,21 +127,43 @@ function getMillis(val) {
   return d ? d.getTime() : 0;
 }
 
-function formatDateValue(val) {
-  const d = tsToDate(val);
-  return d ? toMMDDYYYY(d) : "—";
-}
-
 function formatDateTimeValue(val) {
   const d = tsToDate(val);
   if (!d) return "—";
   return `${toMMDDYYYY(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+function minutesBetween(startVal, endVal) {
+  const start = getMillis(startVal);
+  const end = getMillis(endVal);
+  if (!start || !end || end < start) return null;
+  return Math.round((end - start) / 60000);
+}
+
+function formatMinutes(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (value < 60) return `${value} min`;
+  const h = Math.floor(value / 60);
+  const m = value % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
 function minutesSince(val) {
   const ms = getMillis(val);
   if (!ms) return 0;
   return Math.floor((Date.now() - ms) / 60000);
+}
+
+function getCounterToGateMinutes(report) {
+  return minutesBetween(report.pickup_at || report.submitted_at, report.gate_arrived_at);
+}
+
+function getGateToDeliveredMinutes(report) {
+  return minutesBetween(report.gate_arrived_at, report.delivered_at || report.dropoff_at);
+}
+
+function getTotalDeliveredMinutes(report) {
+  return minutesBetween(report.pickup_at || report.submitted_at, report.delivered_at || report.dropoff_at);
 }
 
 function needsLocationAlert(report) {
@@ -133,12 +173,7 @@ function needsLocationAlert(report) {
   const limit = Number(report.alert_after_minutes || 30);
   const mins = minutesSince(report.last_location_update_at || report.last_updated_at);
 
-  return (
-    active &&
-    alertsEnabled &&
-    trackingStatus !== "STORED" &&
-    mins >= limit
-  );
+  return active && alertsEnabled && trackingStatus !== "STORED" && mins >= limit;
 }
 
 function normalizeLoginKey(value) {
@@ -220,6 +255,9 @@ function downloadCSV(filename, rows) {
     "Wheelchair #",
     "Current Location",
     "Tracking Status",
+    "Counter to Gate",
+    "Gate to Delivered",
+    "Total Delivered Time",
     "Last Location Update",
     "Stored At",
     "Billing Status",
@@ -245,13 +283,51 @@ function downloadCSV(filename, rows) {
         r.wheelchair_number || "",
         r.current_location || "",
         r.tracking_status || "",
-        r.last_location_update_at
-          ? formatDateTimeValue(r.last_location_update_at)
-          : "",
+        formatMinutes(getCounterToGateMinutes(r)),
+        formatMinutes(getGateToDeliveredMinutes(r)),
+        formatMinutes(getTotalDeliveredMinutes(r)),
+        r.last_location_update_at ? formatDateTimeValue(r.last_location_update_at) : "",
         r.stored_at ? formatDateTimeValue(r.stored_at) : "",
         r.status || "",
         r.last_edited_by_name || "",
         r.last_edited_at ? formatDateTimeValue(r.last_edited_at) : "",
+      ].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`);
+
+      return cols.join(",");
+    }),
+  ].join("\n");
+
+  const blob = new Blob([csvLines], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadBillingCSV(filename, rows) {
+  const headers = [
+    "Passenger Name",
+    "Date",
+    "WCHR Number",
+    "Flight Number",
+    "PNR",
+    "Agent Name",
+  ];
+
+  const csvLines = [
+    headers.join(","),
+    ...rows.map((r) => {
+      const reportDate = getReportDate(r);
+
+      const cols = [
+        r.passenger_name || "",
+        reportDate ? toMMDDYYYY(reportDate) : "",
+        r.wheelchair_number || "",
+        r.flight_number || "",
+        r.pnr || "",
+        r.wchr_agent_name || r.employee_name || "",
       ].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`);
 
       return cols.join(",");
@@ -316,6 +392,95 @@ function buildFlightsFromRows(rows) {
       if (dateA !== dateB) return dateA - dateB;
       return a.flight_number.localeCompare(b.flight_number);
     });
+}
+
+function buildEmployeeStats(rows) {
+  const map = new Map();
+
+  for (const r of rows) {
+    const agentName =
+      safeText(r.wchr_agent_name) ||
+      safeText(r.assigned_wchr_agent) ||
+      safeText(r.employee_name) ||
+      "Unknown";
+
+    const agentId = safeText(r.wchr_agent_id) || safeText(r.employee_id) || agentName;
+    const key = `${agentId}-${agentName}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        agent_id: agentId,
+        agent_name: agentName,
+        served_count: 0,
+        completed_count: 0,
+        counter_to_gate_total: 0,
+        counter_to_gate_count: 0,
+        gate_to_delivered_total: 0,
+        gate_to_delivered_count: 0,
+        total_delivered_total: 0,
+        total_delivered_count: 0,
+      });
+    }
+
+    const item = map.get(key);
+    item.served_count += 1;
+
+    const total = getTotalDeliveredMinutes(r);
+    const counterToGate = getCounterToGateMinutes(r);
+    const gateToDelivered = getGateToDeliveredMinutes(r);
+
+    if (total !== null) {
+      item.completed_count += 1;
+      item.total_delivered_total += total;
+      item.total_delivered_count += 1;
+    }
+
+    if (counterToGate !== null) {
+      item.counter_to_gate_total += counterToGate;
+      item.counter_to_gate_count += 1;
+    }
+
+    if (gateToDelivered !== null) {
+      item.gate_to_delivered_total += gateToDelivered;
+      item.gate_to_delivered_count += 1;
+    }
+  }
+
+  return Array.from(map.values())
+    .map((item) => {
+      const avgCounterToGate =
+        item.counter_to_gate_count > 0
+          ? Math.round(item.counter_to_gate_total / item.counter_to_gate_count)
+          : null;
+
+      const avgGateToDelivered =
+        item.gate_to_delivered_count > 0
+          ? Math.round(item.gate_to_delivered_total / item.gate_to_delivered_count)
+          : null;
+
+      const avgTotal =
+        item.total_delivered_count > 0
+          ? Math.round(item.total_delivered_total / item.total_delivered_count)
+          : null;
+
+      return {
+        ...item,
+        avg_counter_to_gate: avgCounterToGate,
+        avg_gate_to_delivered: avgGateToDelivered,
+        avg_total_delivered: avgTotal,
+      };
+    })
+    .sort((a, b) => {
+      const aAvg = a.avg_total_delivered ?? 999999;
+      const bAvg = b.avg_total_delivered ?? 999999;
+
+      if (aAvg !== bAvg) return aAvg - bAvg;
+      return b.served_count - a.served_count;
+    })
+    .map((item, index) => ({
+      ...item,
+      rank: index + 1,
+    }));
 }
 function PageCard({ children, style = {} }) {
   return (
@@ -486,6 +651,7 @@ function DetailField({ label, value }) {
       >
         {label}
       </div>
+
       <div
         style={{
           fontSize: 14,
@@ -557,6 +723,21 @@ function TrackingSummary({ report }) {
       />
 
       <DetailField
+        label="Counter → Gate"
+        value={formatMinutes(getCounterToGateMinutes(report))}
+      />
+
+      <DetailField
+        label="Gate → Delivered"
+        value={formatMinutes(getGateToDeliveredMinutes(report))}
+      />
+
+      <DetailField
+        label="Total Delivered Time"
+        value={formatMinutes(getTotalDeliveredMinutes(report))}
+      />
+
+      <DetailField
         label="Last Location Update"
         value={
           report.last_location_update_at
@@ -572,6 +753,110 @@ function TrackingSummary({ report }) {
         />
       )}
     </div>
+  );
+}
+
+function EmployeeLeaderboard({ employeeStats, isMobile }) {
+  if (!employeeStats.length) {
+    return (
+      <PageCard style={{ padding: 18 }}>
+        <div style={infoBoxStyle}>No employee performance data for this date.</div>
+      </PageCard>
+    );
+  }
+
+  return (
+    <PageCard style={{ padding: isMobile ? 16 : 20 }}>
+      <div style={{ marginBottom: 14 }}>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: isMobile ? 18 : 20,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Employee WCHR Performance
+        </h2>
+
+        <p
+          style={{
+            margin: "4px 0 0",
+            fontSize: 13,
+            color: "#64748b",
+            lineHeight: 1.6,
+          }}
+        >
+          Ranking is based on the fastest average delivered time. Stored / Not In Use
+          is not included in the time calculation.
+        </p>
+      </div>
+
+      <div
+        style={{
+          overflowX: "auto",
+          borderRadius: 18,
+          border: "1px solid #e2e8f0",
+        }}
+      >
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "separate",
+            borderSpacing: 0,
+            minWidth: isMobile ? 760 : 980,
+            background: "#fff",
+          }}
+        >
+          <thead>
+            <tr style={{ background: "#f8fbff" }}>
+              <th style={thStyle({ textAlign: "left" })}>Rank</th>
+              <th style={thStyle({ textAlign: "left" })}>Agent</th>
+              <th style={thStyle({ textAlign: "left" })}>WCHRs Served</th>
+              <th style={thStyle({ textAlign: "left" })}>Completed</th>
+              <th style={thStyle({ textAlign: "left" })}>Avg Counter → Gate</th>
+              <th style={thStyle({ textAlign: "left" })}>Avg Gate → Delivered</th>
+              <th style={thStyle({ textAlign: "left" })}>Avg Total</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {employeeStats.map((item, index) => (
+              <tr
+                key={`${item.agent_id}-${item.agent_name}`}
+                style={{
+                  background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                }}
+              >
+                <td style={tdStyle}>
+                  <b>#{item.rank}</b>
+                </td>
+
+                <td style={tdStyle}>
+                  <b>{item.agent_name}</b>
+                </td>
+
+                <td style={tdStyle}>{item.served_count}</td>
+
+                <td style={tdStyle}>{item.completed_count}</td>
+
+                <td style={tdStyle}>
+                  {formatMinutes(item.avg_counter_to_gate)}
+                </td>
+
+                <td style={tdStyle}>
+                  {formatMinutes(item.avg_gate_to_delivered)}
+                </td>
+
+                <td style={tdStyle}>
+                  <b>{formatMinutes(item.avg_total_delivered)}</b>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </PageCard>
   );
 }
 
@@ -733,6 +1018,10 @@ export default function WCHRFlights() {
     });
   }, [allDayReports]);
 
+  const employeeStats = useMemo(() => {
+    return buildEmployeeStats(allDayReports);
+  }, [allDayReports]);
+
   const handleDeleteReport = async (report) => {
     const ok = window.confirm(
       `Delete report ${report.report_id || report.id}?\n\nThis action cannot be undone.`
@@ -841,12 +1130,7 @@ export default function WCHRFlights() {
       );
 
       setAllDayReports(updatedAllDayReports);
-
-      const updatedReports = reports.map((r) =>
-        r.id === report.id ? { ...r, ...payload } : r
-      );
-
-      setReports(updatedReports);
+      setReports(reports.map((r) => (r.id === report.id ? { ...r, ...payload } : r)));
       setFlights(buildFlightsFromRows(updatedAllDayReports));
 
       setEditingId("");
@@ -897,6 +1181,8 @@ export default function WCHRFlights() {
       setMessage("");
 
       const previousLocation = report.current_location || "";
+      const locationIsGate = isGateLocation(newLocation);
+      const alreadyHasGateTime = Boolean(report.gate_arrived_at);
 
       const payload = {
         current_location: newLocation,
@@ -910,6 +1196,11 @@ export default function WCHRFlights() {
         last_updated_by_id: currentUserId,
       };
 
+      if (locationIsGate && !alreadyHasGateTime) {
+        payload.gate_arrived_at = serverTimestamp();
+        payload.gate_location = newLocation;
+      }
+
       await updateDoc(doc(db, "wch_reports", report.id), payload);
 
       await addDoc(collection(db, "wch_tracking_events"), {
@@ -919,10 +1210,12 @@ export default function WCHRFlights() {
         passenger_name: report.passenger_name || "",
         pnr: report.pnr || "",
         flight_number: report.flight_number || "",
-        event_type: "LOCATION_UPDATE",
+        event_type: locationIsGate ? "GATE_ARRIVAL" : "LOCATION_UPDATE",
         location: newLocation,
         previous_location: previousLocation,
-        notes: `Wheelchair location updated to ${newLocation}`,
+        notes: locationIsGate
+          ? `Wheelchair arrived at ${newLocation}`
+          : `Wheelchair location updated to ${newLocation}`,
         tracking_status: "IN_PROGRESS",
         is_active: true,
         alerts_enabled: true,
@@ -944,6 +1237,8 @@ export default function WCHRFlights() {
         });
       }
 
+      const localNow = Timestamp.now();
+
       applyReportUpdateLocally(report.id, {
         ...payload,
         current_location: newLocation,
@@ -951,15 +1246,25 @@ export default function WCHRFlights() {
         tracking_status: "IN_PROGRESS",
         is_active: true,
         alerts_enabled: true,
-        last_location_update_at: Timestamp.now(),
-        last_updated_at: Timestamp.now(),
+        last_location_update_at: localNow,
+        last_updated_at: localNow,
         last_updated_by: currentUserName,
         last_updated_by_id: currentUserId,
+        ...(locationIsGate && !alreadyHasGateTime
+          ? {
+              gate_arrived_at: localNow,
+              gate_location: newLocation,
+            }
+          : {}),
       });
 
       setTrackingEditId("");
       setTrackingLocation("");
-      setMessage("Location updated successfully.");
+      setMessage(
+        locationIsGate
+          ? "Gate arrival saved successfully."
+          : "Location updated successfully."
+      );
     } catch (e) {
       console.error(e);
       setError(e?.message || "Failed to update location.");
@@ -975,12 +1280,14 @@ export default function WCHRFlights() {
       setMessage("");
 
       const location = report.current_location || "Gate";
+      const localNow = Timestamp.now();
 
       const payload = {
         tracking_status: "COMPLETED",
         current_location: location,
         dropoff_location: location,
         dropoff_at: serverTimestamp(),
+        delivered_at: serverTimestamp(),
         is_active: true,
         alerts_enabled: true,
         last_location_update_at: serverTimestamp(),
@@ -1028,17 +1335,18 @@ export default function WCHRFlights() {
         tracking_status: "COMPLETED",
         current_location: location,
         dropoff_location: location,
-        dropoff_at: Timestamp.now(),
+        dropoff_at: localNow,
+        delivered_at: localNow,
         is_active: true,
         alerts_enabled: true,
-        last_location_update_at: Timestamp.now(),
-        last_updated_at: Timestamp.now(),
+        last_location_update_at: localNow,
+        last_updated_at: localNow,
       });
 
       setMessage("Passenger marked as delivered. Wheelchair still must be stored.");
     } catch (e) {
       console.error(e);
-      setError(e?.message || "Failed to mark completed.");
+      setError(e?.message || "Failed to mark delivered.");
     } finally {
       setSavingTrackingId("");
     }
@@ -1057,6 +1365,7 @@ export default function WCHRFlights() {
       setMessage("");
 
       const previousLocation = report.current_location || "";
+      const localNow = Timestamp.now();
 
       const payload = {
         tracking_status: "STORED",
@@ -1105,11 +1414,11 @@ export default function WCHRFlights() {
         current_location: "Wheelchair Storage",
         last_location: previousLocation,
         stored_location: "Wheelchair Storage",
-        stored_at: Timestamp.now(),
+        stored_at: localNow,
         is_active: false,
         alerts_enabled: false,
-        last_location_update_at: Timestamp.now(),
-        last_updated_at: Timestamp.now(),
+        last_location_update_at: localNow,
+        last_updated_at: localNow,
       });
 
       setMessage("Wheelchair marked as Stored / Not In Use.");
@@ -1132,7 +1441,9 @@ export default function WCHRFlights() {
 
     setMessage("");
     setError(
-      `Cannot close operation. ${first.wheelchair_number || "A wheelchair"} is still not stored. Last location: ${
+      `Cannot close operation. ${
+        first.wheelchair_number || "A wheelchair"
+      } is still not stored. Last location: ${
         first.current_location || "Unknown"
       }. Status: ${safeUpper(first.tracking_status || "IN_PROGRESS")}.`
     );
@@ -1144,6 +1455,12 @@ export default function WCHRFlights() {
     downloadCSV(filename, allDayReports);
   };
 
+  const handleExportBilling = () => {
+    if (!allDayReports.length) return;
+    const filename = `WCHR_BILLING_${toYYYYMMDD(selectedDate)}.csv`;
+    downloadBillingCSV(filename, allDayReports);
+  };
+
   const handleExportCurrentFlight = () => {
     if (!selectedFlight || !reports.length) return;
 
@@ -1152,7 +1469,7 @@ export default function WCHRFlights() {
     )}.csv`;
 
     downloadCSV(filename, reports);
-  };
+  }
     return (
     <div
       style={{
@@ -1175,76 +1492,26 @@ export default function WCHRFlights() {
           overflow: "hidden",
         }}
       >
-        <div
-          style={{
-            position: "relative",
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
-            alignItems: "flex-start",
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.78)",
-                fontWeight: 700,
-              }}
-            >
+            <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.22em", color: "rgba(255,255,255,0.78)", fontWeight: 700 }}>
               TPA OPS · WCHR TRACKING
             </p>
 
-            <h1
-              style={{
-                margin: "10px 0 6px",
-                fontSize: isMobile ? 26 : 32,
-                lineHeight: 1.05,
-                fontWeight: 800,
-              }}
-            >
+            <h1 style={{ margin: "10px 0 6px", fontSize: isMobile ? 26 : 32, lineHeight: 1.05, fontWeight: 800 }}>
               WCHR Flight Report
             </h1>
 
-            <p
-              style={{
-                margin: 0,
-                maxWidth: 780,
-                fontSize: 14,
-                color: "rgba(255,255,255,0.88)",
-                lineHeight: 1.6,
-              }}
-            >
-              Reports are grouped by report date and flight number. Track each
-              wheelchair until it is marked as Stored / Not In Use.
+            <p style={{ margin: 0, maxWidth: 780, fontSize: 14, color: "rgba(255,255,255,0.88)", lineHeight: 1.6 }}>
+              Track wheelchair service times, billing records, and employee performance by report date and flight number.
             </p>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-              width: isMobile ? "100%" : "auto",
-            }}
-          >
-            <ActionButton
-              onClick={() => navigate("/wchr/my-reports")}
-              variant="secondary"
-              style={{ width: isMobile ? "100%" : "auto" }}
-            >
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
+            <ActionButton onClick={() => navigate("/wchr/my-reports")} variant="secondary" style={{ width: isMobile ? "100%" : "auto" }}>
               My Reports
             </ActionButton>
-
-            <ActionButton
-              onClick={() => navigate("/dashboard")}
-              variant="secondary"
-              style={{ width: isMobile ? "100%" : "auto" }}
-            >
+            <ActionButton onClick={() => navigate("/dashboard")} variant="secondary" style={{ width: isMobile ? "100%" : "auto" }}>
               Back
             </ActionButton>
           </div>
@@ -1270,45 +1537,16 @@ export default function WCHRFlights() {
       )}
 
       <PageCard style={{ padding: isMobile ? 16 : 20 }}>
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              flexWrap: "wrap",
-              width: isMobile ? "100%" : "auto",
-            }}
-          >
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
             <div style={{ width: isMobile ? "100%" : "auto" }}>
-              <label
-                style={{
-                  display: "block",
-                  marginBottom: 6,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "#475569",
-                  letterSpacing: "0.03em",
-                  textTransform: "uppercase",
-                }}
-              >
+              <label style={{ display: "block", marginBottom: 6, fontSize: 12, fontWeight: 700, color: "#475569", letterSpacing: "0.03em", textTransform: "uppercase" }}>
                 Report Date
               </label>
-
               <input
                 type="date"
                 value={toYYYYMMDD(selectedDate)}
-                onChange={(e) =>
-                  setSelectedDate(new Date(e.target.value + "T00:00:00"))
-                }
+                onChange={(e) => setSelectedDate(new Date(e.target.value + "T00:00:00"))}
                 style={{
                   border: "1px solid #dbeafe",
                   background: "#ffffff",
@@ -1339,55 +1577,30 @@ export default function WCHRFlights() {
             </div>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              width: isMobile ? "100%" : "auto",
-            }}
-          >
-            <ActionButton
-              onClick={handleValidateCloseOperation}
-              variant={unresolvedReports.length ? "warning" : "success"}
-              style={{ width: isMobile ? "100%" : "auto" }}
-            >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
+            <ActionButton onClick={handleValidateCloseOperation} variant={unresolvedReports.length ? "warning" : "success"} style={{ width: isMobile ? "100%" : "auto" }}>
               Validate Close Operation
             </ActionButton>
 
-            <ActionButton
-              onClick={handleExportFullDay}
-              variant="secondary"
-              disabled={!allDayReports.length}
-              style={{ width: isMobile ? "100%" : "auto" }}
-            >
+            <ActionButton onClick={handleExportBilling} variant="success" disabled={!allDayReports.length} style={{ width: isMobile ? "100%" : "auto" }}>
+              Export Billing
+            </ActionButton>
+
+            <ActionButton onClick={handleExportFullDay} variant="secondary" disabled={!allDayReports.length} style={{ width: isMobile ? "100%" : "auto" }}>
               Export Full Day
             </ActionButton>
           </div>
         </div>
       </PageCard>
 
+      <EmployeeLeaderboard employeeStats={employeeStats} isMobile={isMobile} />
+
       <PageCard style={{ padding: isMobile ? 16 : 20 }}>
         <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: isMobile ? 18 : 20,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
+          <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 20, fontWeight: 800, color: "#0f172a" }}>
             Flight Summary
           </h2>
-
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-              lineHeight: 1.6,
-            }}
-          >
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b", lineHeight: 1.6 }}>
             The list is grouped by report date and flight number.
           </p>
         </div>
@@ -1396,105 +1609,9 @@ export default function WCHRFlights() {
           <div style={infoBoxStyle}>Loading...</div>
         ) : flights.length === 0 ? (
           <div style={infoBoxStyle}>No reports found for this date.</div>
-        ) : isMobile ? (
-          <div style={{ display: "grid", gap: 12 }}>
-            {flights.map((f) => (
-              <div
-                key={f.flight_key}
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 18,
-                  padding: 14,
-                  background:
-                    selectedFlightKey === f.flight_key ? "#edf7ff" : "#ffffff",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    alignItems: "flex-start",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 18,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                      }}
-                    >
-                      Flight {f.flight_number}
-                    </div>
-
-                    <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-                      {f.alert_reports > 0 && (
-                        <span style={statusBadge("ALERT")}>
-                          {f.alert_reports} ALERT
-                        </span>
-                      )}
-                      <span style={statusBadge("IN_PROGRESS")}>
-                        Active {f.active_reports}
-                      </span>
-                      <span style={statusBadge("STORED")}>
-                        Stored {f.stored_reports}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#64748b",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {f.report_date ? toMMDDYYYY(f.report_date) : "—"}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-                  <DetailField
-                    label="Wheelchairs"
-                    value={(f.wheelchair_numbers || []).join(", ") || "—"}
-                  />
-                  <DetailField
-                    label="Reports"
-                    value={`Total: ${f.total_reports} · NEW: ${f.new_reports} · LATE: ${f.late_reports}`}
-                  />
-                </div>
-
-                <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
-                  <ActionButton
-                    onClick={() => setSelectedFlightKey(f.flight_key)}
-                    variant="primary"
-                    style={{ width: "100%" }}
-                  >
-                    View Details
-                  </ActionButton>
-                </div>
-              </div>
-            ))}
-          </div>
         ) : (
-          <div
-            style={{
-              overflowX: "auto",
-              borderRadius: 18,
-              border: "1px solid #e2e8f0",
-            }}
-          >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                minWidth: 980,
-                background: "#fff",
-              }}
-            >
+          <div style={{ overflowX: "auto", borderRadius: 18, border: "1px solid #e2e8f0" }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 1050, background: "#fff" }}>
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle({ textAlign: "left" })}>Flight Number</th>
@@ -1529,8 +1646,7 @@ export default function WCHRFlights() {
                           textAlign: "left",
                           color: "#1769aa",
                           cursor: "pointer",
-                          fontWeight:
-                            selectedFlightKey === f.flight_key ? 900 : 700,
+                          fontWeight: selectedFlightKey === f.flight_key ? 900 : 700,
                           fontSize: 14,
                         }}
                       >
@@ -1538,13 +1654,8 @@ export default function WCHRFlights() {
                       </button>
                     </td>
 
-                    <td style={tdStyle}>
-                      {f.report_date ? toMMDDYYYY(f.report_date) : "—"}
-                    </td>
-
-                    <td style={tdStyle}>
-                      {(f.wheelchair_numbers || []).join(", ") || "—"}
-                    </td>
+                    <td style={tdStyle}>{f.report_date ? toMMDDYYYY(f.report_date) : "—"}</td>
+                    <td style={tdStyle}>{(f.wheelchair_numbers || []).join(", ") || "—"}</td>
 
                     <td style={tdStyle}>
                       Total: {f.total_reports}
@@ -1556,26 +1667,14 @@ export default function WCHRFlights() {
 
                     <td style={tdStyle}>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {f.alert_reports > 0 && (
-                          <span style={statusBadge("ALERT")}>
-                            {f.alert_reports} ALERT
-                          </span>
-                        )}
-                        <span style={statusBadge("IN_PROGRESS")}>
-                          Active {f.active_reports}
-                        </span>
-                        <span style={statusBadge("STORED")}>
-                          Stored {f.stored_reports}
-                        </span>
+                        {f.alert_reports > 0 && <span style={statusBadge("ALERT")}>{f.alert_reports} ALERT</span>}
+                        <span style={statusBadge("IN_PROGRESS")}>Active {f.active_reports}</span>
+                        <span style={statusBadge("STORED")}>Stored {f.stored_reports}</span>
                       </div>
                     </td>
 
                     <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <ActionButton
-                        onClick={() => setSelectedFlightKey(f.flight_key)}
-                        variant="primary"
-                        style={{ padding: "8px 12px", fontSize: 12 }}
-                      >
+                      <ActionButton onClick={() => setSelectedFlightKey(f.flight_key)} variant="primary" style={{ padding: "8px 12px", fontSize: 12 }}>
                         View Details
                       </ActionButton>
                     </td>
@@ -1588,45 +1687,17 @@ export default function WCHRFlights() {
       </PageCard>
 
       <PageCard style={{ padding: isMobile ? 16 : 20 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "flex-start",
-            marginBottom: 14,
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: isMobile ? 18 : 20,
-                fontWeight: 800,
-                color: "#0f172a",
-              }}
-            >
+            <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 20, fontWeight: 800, color: "#0f172a" }}>
               Flight Details
             </h2>
 
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-                lineHeight: 1.6,
-              }}
-            >
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b", lineHeight: 1.6 }}>
               {selectedFlight ? (
                 <>
-                  Showing reports for <b>Flight {selectedFlight.flight_number}</b>{" "}
-                  ·{" "}
-                  <b>
-                    {selectedFlight.report_date
-                      ? toMMDDYYYY(selectedFlight.report_date)
-                      : "—"}
-                  </b>
+                  Showing reports for <b>Flight {selectedFlight.flight_number}</b> ·{" "}
+                  <b>{selectedFlight.report_date ? toMMDDYYYY(selectedFlight.report_date) : "—"}</b>
                 </>
               ) : (
                 "Select a flight row above to view details."
@@ -1635,28 +1706,12 @@ export default function WCHRFlights() {
           </div>
 
           {selectedFlight && (
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                width: isMobile ? "100%" : "auto",
-              }}
-            >
-              <ActionButton
-                onClick={() => window.print()}
-                variant="secondary"
-                style={{ width: isMobile ? "100%" : "auto" }}
-              >
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
+              <ActionButton onClick={() => window.print()} variant="secondary" style={{ width: isMobile ? "100%" : "auto" }}>
                 Print
               </ActionButton>
 
-              <ActionButton
-                onClick={handleExportCurrentFlight}
-                variant="secondary"
-                disabled={!reports?.length}
-                style={{ width: isMobile ? "100%" : "auto" }}
-              >
+              <ActionButton onClick={handleExportCurrentFlight} variant="secondary" disabled={!reports?.length} style={{ width: isMobile ? "100%" : "auto" }}>
                 Export CSV
               </ActionButton>
             </div>
@@ -1694,61 +1749,23 @@ export default function WCHRFlights() {
                     }}
                   >
                     <div style={{ display: "grid", gap: 12 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                         <div>
-                          <div
-                            style={{
-                              fontSize: 16,
-                              fontWeight: 900,
-                              color: "#0f172a",
-                            }}
-                          >
+                          <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>
                             {r.report_id || r.id}
                           </div>
 
-                          <div
-                            style={{
-                              marginTop: 6,
-                              display: "flex",
-                              gap: 6,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <span style={statusBadge(r.status || "NEW")}>
-                              {safeUpper(r.status || "NEW")}
-                            </span>
-                            <span
-                              style={statusBadge(
-                                r.tracking_status || "IN_PROGRESS"
-                              )}
-                            >
+                          <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <span style={statusBadge(r.status || "NEW")}>{safeUpper(r.status || "NEW")}</span>
+                            <span style={statusBadge(r.tracking_status || "IN_PROGRESS")}>
                               {safeUpper(r.tracking_status || "IN_PROGRESS")}
                             </span>
-                            {alert && (
-                              <span style={statusBadge("ALERT")}>
-                                UPDATE LOCATION
-                              </span>
-                            )}
+                            {alert && <span style={statusBadge("ALERT")}>UPDATE LOCATION</span>}
                           </div>
                         </div>
 
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: "#64748b",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {r.last_edited_at
-                            ? `Edited ${formatDateTimeValue(r.last_edited_at)}`
-                            : "No edits"}
+                        <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+                          {r.last_edited_at ? `Edited ${formatDateTimeValue(r.last_edited_at)}` : "No edits"}
                         </div>
                       </div>
 
@@ -1756,134 +1773,59 @@ export default function WCHRFlights() {
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns:
-                              isMobile || isTablet
-                                ? "1fr"
-                                : "repeat(3, minmax(160px, 1fr))",
+                            gridTemplateColumns: isMobile || isTablet ? "1fr" : "repeat(3, minmax(160px, 1fr))",
                             gap: 10,
                           }}
                         >
-                          <EditInput
-                            value={editForm.passenger_name}
-                            onChange={(v) => handleEditChange("passenger_name", v)}
-                            placeholder="Passenger"
-                          />
-                          <EditInput
-                            value={editForm.airline}
-                            onChange={(v) => handleEditChange("airline", v)}
-                            placeholder="Airline"
-                          />
-                          <EditInput
-                            value={editForm.flight_number}
-                            onChange={(v) => handleEditChange("flight_number", v)}
-                            placeholder="Flight"
-                          />
-                          <EditInput
-                            value={editForm.pnr}
-                            onChange={(v) => handleEditChange("pnr", v)}
-                            placeholder="PNR"
-                          />
-                          <EditInput
-                            value={editForm.wch_type}
-                            onChange={(v) => handleEditChange("wch_type", v)}
-                            placeholder="WCHR Type"
-                          />
-                          <EditInput
-                            value={editForm.wheelchair_number}
-                            onChange={(v) =>
-                              handleEditChange("wheelchair_number", v)
-                            }
-                            placeholder="Wheelchair #"
-                          />
-                          <SelectInput
-                            value={editForm.status || "NEW"}
-                            onChange={(v) => handleEditChange("status", v)}
-                            options={["NEW", "LATE"]}
-                          />
+                          <EditInput value={editForm.passenger_name} onChange={(v) => handleEditChange("passenger_name", v)} placeholder="Passenger" />
+                          <EditInput value={editForm.airline} onChange={(v) => handleEditChange("airline", v)} placeholder="Airline" />
+                          <EditInput value={editForm.flight_number} onChange={(v) => handleEditChange("flight_number", v)} placeholder="Flight" />
+                          <EditInput value={editForm.pnr} onChange={(v) => handleEditChange("pnr", v)} placeholder="PNR" />
+                          <EditInput value={editForm.wch_type} onChange={(v) => handleEditChange("wch_type", v)} placeholder="WCHR Type" />
+                          <EditInput value={editForm.wheelchair_number} onChange={(v) => handleEditChange("wheelchair_number", v)} placeholder="Wheelchair #" />
+                          <SelectInput value={editForm.status || "NEW"} onChange={(v) => handleEditChange("status", v)} options={["NEW", "LATE"]} />
                         </div>
                       ) : (
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns:
-                              isMobile || isTablet
-                                ? "1fr"
-                                : "repeat(3, minmax(160px, 1fr))",
+                            gridTemplateColumns: isMobile || isTablet ? "1fr" : "repeat(3, minmax(160px, 1fr))",
                             gap: 12,
                           }}
                         >
-                          <DetailField
-                            label="Passenger"
-                            value={r.passenger_name}
-                          />
-                          <DetailField
-                            label="Flight"
-                            value={`${r.airline || "—"} ${r.flight_number || "—"}`}
-                          />
+                          <DetailField label="Passenger" value={r.passenger_name} />
+                          <DetailField label="Flight" value={`${r.airline || "—"} ${r.flight_number || "—"}`} />
                           <DetailField label="PNR" value={r.pnr} />
                           <DetailField label="WCHR Type" value={r.wch_type} />
-                          <DetailField
-                            label="Wheelchair #"
-                            value={r.wheelchair_number}
-                          />
-                          <DetailField
-                            label="Submitted By"
-                            value={r.employee_name}
-                          />
-                          <DetailField
-                            label="Report Date"
-                            value={getReportDate(r) ? toMMDDYYYY(getReportDate(r)) : "—"}
-                          />
-                          <DetailField
-                            label="Billing"
-                            value={r.billing_ready ? "Ready" : "Not Ready"}
-                          />
-                          <DetailField
-                            label="Last Edited By"
-                            value={r.last_edited_by_name}
-                          />
+                          <DetailField label="Wheelchair #" value={r.wheelchair_number} />
+                          <DetailField label="Agent" value={r.wchr_agent_name || r.employee_name} />
+                          <DetailField label="Report Date" value={getReportDate(r) ? toMMDDYYYY(getReportDate(r)) : "—"} />
+                          <DetailField label="Billing" value={r.billing_ready ? "Ready" : "Not Ready"} />
+                          <DetailField label="Counter → Gate" value={formatMinutes(getCounterToGateMinutes(r))} />
+                          <DetailField label="Gate → Delivered" value={formatMinutes(getGateToDeliveredMinutes(r))} />
+                          <DetailField label="Total Delivered Time" value={formatMinutes(getTotalDeliveredMinutes(r))} />
+                          <DetailField label="Last Edited By" value={r.last_edited_by_name} />
                         </div>
                       )}
 
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                        }}
-                      >
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         {isEditing ? (
                           <>
-                            <ActionButton
-                              variant="success"
-                              onClick={() => handleSaveEdit(r)}
-                              disabled={savingEdit}
-                            >
+                            <ActionButton variant="success" onClick={() => handleSaveEdit(r)} disabled={savingEdit}>
                               {savingEdit ? "Saving..." : "Save"}
                             </ActionButton>
 
-                            <ActionButton
-                              variant="secondary"
-                              onClick={handleCancelEdit}
-                              disabled={savingEdit}
-                            >
+                            <ActionButton variant="secondary" onClick={handleCancelEdit} disabled={savingEdit}>
                               Cancel
                             </ActionButton>
                           </>
                         ) : (
                           <>
-                            <ActionButton
-                              variant="secondary"
-                              onClick={() => handleStartEdit(r)}
-                            >
+                            <ActionButton variant="secondary" onClick={() => handleStartEdit(r)}>
                               Edit
                             </ActionButton>
 
-                            <ActionButton
-                              variant="danger"
-                              onClick={() => handleDeleteReport(r)}
-                              disabled={deletingId === r.id}
-                            >
+                            <ActionButton variant="danger" onClick={() => handleDeleteReport(r)} disabled={deletingId === r.id}>
                               {deletingId === r.id ? "Deleting..." : "Delete"}
                             </ActionButton>
                           </>
@@ -1895,11 +1837,7 @@ export default function WCHRFlights() {
                       <TrackingSummary report={r} />
 
                       {isTrackingEditing && (
-                        <SelectInput
-                          value={trackingLocation}
-                          onChange={setTrackingLocation}
-                          options={WCHR_LOCATIONS}
-                        />
+                        <SelectInput value={trackingLocation} onChange={setTrackingLocation} options={WCHR_LOCATIONS} />
                       )}
 
                       <div style={{ display: "grid", gap: 8 }}>
@@ -1911,9 +1849,7 @@ export default function WCHRFlights() {
                               disabled={savingTrackingId === r.id}
                               style={{ width: "100%" }}
                             >
-                              {savingTrackingId === r.id
-                                ? "Updating..."
-                                : "Save Location"}
+                              {savingTrackingId === r.id ? "Updating..." : "Save Location"}
                             </ActionButton>
 
                             <ActionButton
@@ -1939,10 +1875,7 @@ export default function WCHRFlights() {
                         <ActionButton
                           variant="warning"
                           onClick={() => handleMarkCompleted(r)}
-                          disabled={
-                            savingTrackingId === r.id ||
-                            safeUpper(r.tracking_status) === "STORED"
-                          }
+                          disabled={savingTrackingId === r.id || safeUpper(r.tracking_status) === "STORED"}
                           style={{ width: "100%" }}
                         >
                           Passenger Delivered
@@ -1951,10 +1884,7 @@ export default function WCHRFlights() {
                         <ActionButton
                           variant="success"
                           onClick={() => handleMarkStored(r)}
-                          disabled={
-                            savingTrackingId === r.id ||
-                            safeUpper(r.tracking_status) === "STORED"
-                          }
+                          disabled={savingTrackingId === r.id || safeUpper(r.tracking_status) === "STORED"}
                           style={{ width: "100%" }}
                         >
                           Mark Stored / Not In Use
@@ -1966,13 +1896,7 @@ export default function WCHRFlights() {
               );
             })}
 
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: 12,
-                color: "#64748b",
-              }}
-            >
+            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
               Total reports: <b>{reports.length}</b>
             </div>
           </div>
