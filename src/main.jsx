@@ -48,7 +48,7 @@ import OperationalReportFormBuilderPage from "./pages/OperationalReportFormBuild
 import WCHRScan from "./pages/WCHRScan.jsx";
 import MyWCHRReports from "./pages/MyWCHRReports.jsx";
 import WCHRFlights from "./pages/WCHRFlights.jsx";
-
+import WCHRMonthlyClose from "./pages/WCHRMonthlyClose.jsx";
 import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
@@ -651,7 +651,17 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
-
+<Route
+  path="wchr/monthly-close"
+  element={
+    <ProtectedRoute
+      roles={["station_manager", "duty_manager"]}
+      blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+    >
+      <WCHRMonthlyClose />
+    </ProtectedRoute>
+  }
+/>
           <Route
             path="admin/activity-dashboard"
             element={
