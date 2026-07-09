@@ -4,18 +4,51 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
 import {
-  collection,
-  getDocs,
-  query,
-  where,
-  Timestamp,
-  doc,
-  updateDoc,
-  getDoc,
-  deleteDoc,
-  increment,
+  addDoc,
   arrayUnion,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  increment,
+  query,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
+  where,
 } from "firebase/firestore";
+
+const WCHR_LOCATIONS = [
+  "Counter",
+  "TSA",
+  "Security",
+  "Train",
+  "Airside F",
+  "Gate F78",
+  "Gate F79",
+  "Gate F80",
+  "Gate F81",
+  "Gate F82",
+  "Gate F83",
+  "Gate F84",
+  "Gate F85",
+  "Gate F86",
+  "Gate F87",
+  "Gate F88",
+  "Gate F89",
+  "Gate F90",
+  "Jet Bridge",
+  "Aircraft",
+  "Baggage Claim",
+  "Customs",
+  "CBP",
+  "Wheelchair Storage",
+  "Maintenance",
+  "Other",
+];
+
+const TRACKING_STATUS_OPTIONS = ["IN_PROGRESS", "COMPLETED", "STORED"];
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -56,12 +89,17 @@ function safeText(v) {
   return String(v || "").trim();
 }
 
-function formatTimeAtGate(v) {
-  const raw = String(v || "").trim();
-  if (!raw) return "";
-  const match = raw.match(/(\d{1,2}):(\d{2})/);
-  if (!match) return raw;
-  return `${match[1].padStart(2, "0")}:${match[2]}`;
+function getReportDate(report) {
+  return (
+    tsToDate(report.submitted_at) ||
+    tsToDate(report.billing_date) ||
+    tsToDate(report.flight_date)
+  );
+}
+
+function getReportDateKey(report) {
+  const d = getReportDate(report);
+  return d ? toYYYYMMDD(d) : "NO_DATE";
 }
 
 function getMillis(val) {
@@ -71,7 +109,7 @@ function getMillis(val) {
   return d ? d.getTime() : 0;
 }
 
-function formatReportFlightDate(val) {
+function formatDateValue(val) {
   const d = tsToDate(val);
   return d ? toMMDDYYYY(d) : "—";
 }
@@ -80,6 +118,27 @@ function formatDateTimeValue(val) {
   const d = tsToDate(val);
   if (!d) return "—";
   return `${toMMDDYYYY(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function minutesSince(val) {
+  const ms = getMillis(val);
+  if (!ms) return 0;
+  return Math.floor((Date.now() - ms) / 60000);
+}
+
+function needsLocationAlert(report) {
+  const trackingStatus = safeUpper(report.tracking_status || "");
+  const active = report.is_active !== false;
+  const alertsEnabled = report.alerts_enabled !== false;
+  const limit = Number(report.alert_after_minutes || 30);
+  const mins = minutesSince(report.last_location_update_at || report.last_updated_at);
+
+  return (
+    active &&
+    alertsEnabled &&
+    trackingStatus !== "STORED" &&
+    mins >= limit
+  );
 }
 
 function normalizeLoginKey(value) {
@@ -114,7 +173,7 @@ function useViewport() {
 }
 
 async function decrementDailyWchrStats(report) {
-  const dateKey = statsDateKey(report.flight_date);
+  const dateKey = statsDateKey(report.submitted_at || report.billing_date);
   if (!dateKey) return;
 
   const airline = safeUpper(report.airline) || "UNKNOWN";
@@ -155,14 +214,15 @@ function downloadCSV(filename, rows) {
     "Passenger",
     "Airline",
     "Flight",
-    "Flight Date",
-    "Destination",
-    "Seat",
-    "Gate",
+    "Report Date",
     "PNR",
     "WCHR Type",
     "Wheelchair #",
-    "Status",
+    "Current Location",
+    "Tracking Status",
+    "Last Location Update",
+    "Stored At",
+    "Billing Status",
     "Last Edited By",
     "Last Edited At",
   ];
@@ -170,7 +230,7 @@ function downloadCSV(filename, rows) {
   const csvLines = [
     headers.join(","),
     ...rows.map((r) => {
-      const flightDate = tsToDate(r.flight_date);
+      const reportDate = getReportDate(r);
 
       const cols = [
         r.report_id || "",
@@ -179,13 +239,16 @@ function downloadCSV(filename, rows) {
         r.passenger_name || "",
         r.airline || "",
         r.flight_number || "",
-        flightDate ? toMMDDYYYY(flightDate) : "",
-        r.destination || "",
-        r.seat || "",
-        r.gate || "",
+        reportDate ? toMMDDYYYY(reportDate) : "",
         r.pnr || "",
         r.wch_type || "",
         r.wheelchair_number || "",
+        r.current_location || "",
+        r.tracking_status || "",
+        r.last_location_update_at
+          ? formatDateTimeValue(r.last_location_update_at)
+          : "",
+        r.stored_at ? formatDateTimeValue(r.stored_at) : "",
         r.status || "",
         r.last_edited_by_name || "",
         r.last_edited_at ? formatDateTimeValue(r.last_edited_at) : "",
@@ -208,68 +271,52 @@ function buildFlightsFromRows(rows) {
   const map = new Map();
 
   for (const r of rows) {
-    const airline = safeUpper(r.airline) || "UNKNOWN";
-    const reportFlightDate = tsToDate(r.flight_date);
-    const dateKey = reportFlightDate ? toYYYYMMDD(reportFlightDate) : "NO_DATE";
-    const groupKey = `${airline}-${dateKey}`;
+    const flightNumber = safeUpper(r.flight_number) || "NO_FLIGHT";
+    const dateKey = getReportDateKey(r);
+    const groupKey = `${dateKey}-${flightNumber}`;
 
     if (!map.has(groupKey)) {
       map.set(groupKey, {
         flight_key: groupKey,
-        airline,
-        flight_date: reportFlightDate,
+        flight_number: flightNumber,
+        report_date: getReportDate(r),
         total_reports: 0,
         new_reports: 0,
         late_reports: 0,
-        flights_count: 0,
-        flight_numbers: new Set(),
-        routes: new Set(),
-        operators: new Set(),
+        active_reports: 0,
+        stored_reports: 0,
+        alert_reports: 0,
+        wheelchair_numbers: new Set(),
       });
     }
 
     const item = map.get(groupKey);
     item.total_reports += 1;
 
-    const flightNumber = safeUpper(r.flight_number);
-    if (flightNumber) {
-      item.flight_numbers.add(flightNumber);
-    }
+    const chair = safeUpper(r.wheelchair_number);
+    if (chair) item.wheelchair_numbers.add(chair);
 
-    const origin = safeUpper(r.origin);
-    const destination = safeUpper(r.destination);
-    if (origin || destination) {
-      item.routes.add(`${origin || "—"} → ${destination || "—"}`);
-    }
+    if (safeUpper(r.status) === "LATE") item.late_reports += 1;
+    else item.new_reports += 1;
 
-    const operator = safeUpper(r.operator);
-    if (operator) {
-      item.operators.add(operator);
-    }
+    if (safeUpper(r.tracking_status) === "STORED") item.stored_reports += 1;
+    else item.active_reports += 1;
 
-    if (String(r.status || "").toUpperCase() === "LATE") {
-      item.late_reports += 1;
-    } else {
-      item.new_reports += 1;
-    }
+    if (needsLocationAlert(r)) item.alert_reports += 1;
   }
 
   return Array.from(map.values())
     .map((item) => ({
       ...item,
-      flights_count: item.flight_numbers.size,
-      flight_numbers: Array.from(item.flight_numbers).sort(),
-      routes: Array.from(item.routes),
-      operators: Array.from(item.operators),
+      wheelchair_numbers: Array.from(item.wheelchair_numbers).sort(),
     }))
     .sort((a, b) => {
-      const dateA = a.flight_date ? a.flight_date.getTime() : 0;
-      const dateB = b.flight_date ? b.flight_date.getTime() : 0;
+      const dateA = a.report_date ? a.report_date.getTime() : 0;
+      const dateB = b.report_date ? b.report_date.getTime() : 0;
       if (dateA !== dateB) return dateA - dateB;
-      return a.airline.localeCompare(b.airline);
+      return a.flight_number.localeCompare(b.flight_number);
     });
 }
-
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -314,6 +361,12 @@ function ActionButton({
       border: "none",
       boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
     },
+    warning: {
+      background: "#f59e0b",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
+    },
     danger: {
       background: "#fff1f2",
       color: "#b91c1c",
@@ -345,7 +398,7 @@ function ActionButton({
 }
 
 function statusBadge(kind) {
-  const k = String(kind || "").toUpperCase();
+  const k = safeUpper(kind);
   const base = {
     display: "inline-flex",
     alignItems: "center",
@@ -354,6 +407,7 @@ function statusBadge(kind) {
     fontSize: 12,
     fontWeight: 800,
     border: "1px solid transparent",
+    whiteSpace: "nowrap",
   };
 
   if (k === "LATE") {
@@ -365,21 +419,48 @@ function statusBadge(kind) {
     };
   }
 
+  if (k === "IN_PROGRESS") {
+    return {
+      ...base,
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      borderColor: "#bfdbfe",
+    };
+  }
+
+  if (k === "COMPLETED") {
+    return {
+      ...base,
+      background: "#fefce8",
+      color: "#854d0e",
+      borderColor: "#fde68a",
+    };
+  }
+
+  if (k === "STORED") {
+    return {
+      ...base,
+      background: "#ecfdf5",
+      color: "#065f46",
+      borderColor: "#a7f3d0",
+    };
+  }
+
+  if (k === "ALERT") {
+    return {
+      ...base,
+      background: "#fff1f2",
+      color: "#be123c",
+      borderColor: "#fecdd3",
+    };
+  }
+
   if (k === "NEW") {
     return {
       ...base,
       background: "#edf7ff",
       color: "#1769aa",
       borderColor: "#cfe7fb",
-    };
-  }
-
-  if (k === "OPEN") {
-    return {
-      ...base,
-      background: "#ecfdf5",
-      color: "#065f46",
-      borderColor: "#a7f3d0",
     };
   }
 
@@ -419,6 +500,98 @@ function DetailField({ label, value }) {
   );
 }
 
+function EditInput({ value, onChange, placeholder = "", type = "text" }) {
+  return (
+    <input
+      type={type}
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      style={editInputStyle}
+    />
+  );
+}
+
+function SelectInput({ value, onChange, options = [] }) {
+  return (
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      style={editInputStyle}
+    >
+      {options.map((item) => (
+        <option key={item} value={item}>
+          {item}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function TrackingSummary({ report }) {
+  const alert = needsLocationAlert(report);
+  const mins = minutesSince(report.last_location_update_at || report.last_updated_at);
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 8,
+        padding: 12,
+        borderRadius: 16,
+        border: alert ? "1px solid #fecdd3" : "1px solid #dbeafe",
+        background: alert ? "#fff1f2" : "#f8fbff",
+      }}
+    >
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <span style={statusBadge(report.tracking_status || "IN_PROGRESS")}>
+          {safeUpper(report.tracking_status || "IN_PROGRESS")}
+        </span>
+
+        {alert && <span style={statusBadge("ALERT")}>30+ MIN ALERT</span>}
+      </div>
+
+      <DetailField
+        label="Current Location"
+        value={report.current_location || "—"}
+      />
+
+      <DetailField
+        label="Last Location Update"
+        value={
+          report.last_location_update_at
+            ? `${formatDateTimeValue(report.last_location_update_at)} · ${mins} min ago`
+            : "—"
+        }
+      />
+
+      {safeUpper(report.tracking_status) === "STORED" && (
+        <DetailField
+          label="Stored At"
+          value={report.stored_at ? formatDateTimeValue(report.stored_at) : "—"}
+        />
+      )}
+    </div>
+  );
+}
+
+function buildEmployeeActivePayload(report, payload) {
+  return {
+    report_doc_id: report.id,
+    report_id: report.report_id || "",
+    wheelchair_number: safeUpper(payload.wheelchair_number || report.wheelchair_number),
+    passenger_name: safeText(payload.passenger_name || report.passenger_name),
+    pnr: safeUpper(payload.pnr || report.pnr),
+    flight_number: safeUpper(payload.flight_number || report.flight_number),
+    current_location: payload.current_location || report.current_location || "",
+    tracking_status: payload.tracking_status || report.tracking_status || "IN_PROGRESS",
+    is_active: payload.is_active !== false,
+    alerts_enabled: payload.alerts_enabled !== false,
+    alert_after_minutes: Number(report.alert_after_minutes || 30),
+    started_at: report.pickup_at || report.submitted_at || null,
+    last_location_update_at: payload.last_location_update_at || serverTimestamp(),
+  };
+}
 export default function WCHRFlights() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -439,6 +612,14 @@ export default function WCHRFlights() {
   const [editingId, setEditingId] = useState("");
   const [editForm, setEditForm] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
+
+  const [trackingEditId, setTrackingEditId] = useState("");
+  const [trackingLocation, setTrackingLocation] = useState("");
+  const [savingTrackingId, setSavingTrackingId] = useState("");
+
+  const currentUserId = user?.id || user?.uid || "";
+  const currentUserName =
+    user?.fullName || user?.displayName || user?.name || user?.username || "";
 
   useEffect(() => {
     let mounted = true;
@@ -463,20 +644,17 @@ export default function WCHRFlights() {
           .map((d) => ({ id: d.id, ...d.data() }))
           .sort((a, b) => getMillis(b.submitted_at) - getMillis(a.submitted_at));
 
-        if (mounted) {
-          setAllDayReports(rows);
-        }
+        if (!mounted) return;
+
+        setAllDayReports(rows);
 
         const flightArr = buildFlightsFromRows(rows);
+        setFlights(flightArr);
 
-        if (mounted) {
-          setFlights(flightArr);
-
-          const exists = flightArr.some((x) => x.flight_key === selectedFlightKey);
-          if (!exists) {
-            setSelectedFlightKey("");
-            setReports([]);
-          }
+        const exists = flightArr.some((x) => x.flight_key === selectedFlightKey);
+        if (!exists) {
+          setSelectedFlightKey("");
+          setReports([]);
         }
       } catch (e) {
         console.error(e);
@@ -487,6 +665,7 @@ export default function WCHRFlights() {
     }
 
     loadFlights();
+
     return () => {
       mounted = false;
     };
@@ -497,48 +676,39 @@ export default function WCHRFlights() {
 
     async function loadReportsForFlight() {
       setError("");
+
       if (!selectedFlightKey) {
         setReports([]);
         return;
       }
 
       setReportsLoading(true);
+
       try {
         const flightRows = allDayReports
           .filter((r) => {
-            const airline = safeUpper(r.airline) || "UNKNOWN";
-            const reportFlightDate = tsToDate(r.flight_date);
-            const dateKey = reportFlightDate ? toYYYYMMDD(reportFlightDate) : "NO_DATE";
-            return `${airline}-${dateKey}` === selectedFlightKey;
+            const flightNumber = safeUpper(r.flight_number) || "NO_FLIGHT";
+            const dateKey = getReportDateKey(r);
+            return `${dateKey}-${flightNumber}` === selectedFlightKey;
           })
           .map((r) => ({
             ...r,
             airline: safeUpper(r.airline),
             flight_number: safeUpper(r.flight_number),
-            origin: safeUpper(r.origin),
-            destination: safeUpper(r.destination),
-            gate: safeUpper(r.gate),
-            seat: safeUpper(r.seat),
-            boarding_group: safeUpper(r.boarding_group),
-            operator: safeUpper(r.operator),
-            time_at_gate: formatTimeAtGate(r.time_at_gate),
-            pnr: safeText(r.pnr).toUpperCase(),
+            pnr: safeUpper(r.pnr),
             employee_login: safeText(r.employee_login),
             employee_role: safeText(r.employee_role),
-            wheelchair_number: safeText(r.wheelchair_number).toUpperCase(),
+            wheelchair_number: safeUpper(r.wheelchair_number),
+            current_location: safeText(r.current_location),
+            tracking_status: safeUpper(r.tracking_status || "IN_PROGRESS"),
           }))
-          .sort((a, b) => {
-            if (safeUpper(a.flight_number) !== safeUpper(b.flight_number)) {
-              return safeUpper(a.flight_number).localeCompare(safeUpper(b.flight_number));
-            }
-            return getMillis(a.submitted_at) - getMillis(b.submitted_at);
-          });
+          .sort((a, b) => getMillis(a.submitted_at) - getMillis(b.submitted_at));
 
         if (mounted) setReports(flightRows);
       } catch (e) {
         console.error(e);
         if (mounted) {
-          setError(e?.message || "Failed to load reports for this flight group.");
+          setError(e?.message || "Failed to load reports for this flight.");
         }
       } finally {
         if (mounted) setReportsLoading(false);
@@ -546,6 +716,7 @@ export default function WCHRFlights() {
     }
 
     loadReportsForFlight();
+
     return () => {
       mounted = false;
     };
@@ -555,10 +726,18 @@ export default function WCHRFlights() {
     return flights.find((f) => f.flight_key === selectedFlightKey) || null;
   }, [flights, selectedFlightKey]);
 
+  const unresolvedReports = useMemo(() => {
+    return allDayReports.filter((r) => {
+      const status = safeUpper(r.tracking_status || "IN_PROGRESS");
+      return r.tracking_enabled !== false && status !== "STORED";
+    });
+  }, [allDayReports]);
+
   const handleDeleteReport = async (report) => {
     const ok = window.confirm(
       `Delete report ${report.report_id || report.id}?\n\nThis action cannot be undone.`
     );
+
     if (!ok) return;
 
     try {
@@ -597,16 +776,11 @@ export default function WCHRFlights() {
     setError("");
     setMessage("");
     setEditingId(report.id);
+
     setEditForm({
       passenger_name: report.passenger_name || "",
       airline: report.airline || "",
       flight_number: report.flight_number || "",
-      flight_date: tsToDate(report.flight_date)
-        ? toYYYYMMDD(tsToDate(report.flight_date))
-        : "",
-      destination: report.destination || "",
-      seat: report.seat || "",
-      gate: report.gate || "",
       pnr: report.pnr || "",
       wch_type: report.wch_type || "",
       wheelchair_number: report.wheelchair_number || "",
@@ -625,60 +799,36 @@ export default function WCHRFlights() {
       [field]: value,
     }));
   };
-
-  const handleSaveEdit = async (report) => {
+    const handleSaveEdit = async (report) => {
     try {
       setSavingEdit(true);
       setError("");
       setMessage("");
 
-      const updatedFlightDate = editForm.flight_date
-        ? Timestamp.fromDate(new Date(editForm.flight_date + "T00:00:00"))
-        : report.flight_date || null;
-
-      const updatedAirline = safeUpper(editForm.airline);
-      const updatedFlightNumber = safeUpper(editForm.flight_number);
-
-      const updatedFlightKey =
-        updatedAirline && updatedFlightNumber && editForm.flight_date
-          ? `${updatedAirline}-${updatedFlightNumber}-${editForm.flight_date}`
-          : report.flight_key || "";
-
       const nowTs = Timestamp.now();
-      const editorName =
-        user?.fullName || user?.displayName || user?.username || "";
 
       const payload = {
         passenger_name: safeText(editForm.passenger_name),
-        airline: updatedAirline,
-        flight_number: updatedFlightNumber,
-        flight_date: updatedFlightDate,
-        destination: safeUpper(editForm.destination),
-        seat: safeUpper(editForm.seat),
-        gate: safeUpper(editForm.gate),
+        airline: safeUpper(editForm.airline),
+        flight_number: safeUpper(editForm.flight_number),
         pnr: safeUpper(editForm.pnr),
         wch_type: safeUpper(editForm.wch_type),
         wheelchair_number: safeUpper(editForm.wheelchair_number),
         status: safeUpper(editForm.status || "NEW"),
-        flight_key: updatedFlightKey,
         last_edited_at: nowTs,
-        last_edited_by_id: user?.id || "",
-        last_edited_by_name: editorName,
+        last_edited_by_id: currentUserId,
+        last_edited_by_name: currentUserName,
       };
 
       await updateDoc(doc(db, "wch_reports", report.id), {
         ...payload,
         edit_history: arrayUnion({
           edited_at: nowTs,
-          edited_by_id: user?.id || "",
-          edited_by_name: editorName,
+          edited_by_id: currentUserId,
+          edited_by_name: currentUserName,
           previous_airline: report.airline || "",
           previous_flight_number: report.flight_number || "",
-          previous_flight_date: report.flight_date || null,
           previous_passenger_name: report.passenger_name || "",
-          previous_destination: report.destination || "",
-          previous_seat: report.seat || "",
-          previous_gate: report.gate || "",
           previous_pnr: report.pnr || "",
           previous_wch_type: report.wch_type || "",
           previous_wheelchair_number: report.wheelchair_number || "",
@@ -687,38 +837,17 @@ export default function WCHRFlights() {
       });
 
       const updatedAllDayReports = allDayReports.map((r) =>
-        r.id === report.id
-          ? {
-              ...r,
-              ...payload,
-            }
-          : r
+        r.id === report.id ? { ...r, ...payload } : r
       );
 
       setAllDayReports(updatedAllDayReports);
 
       const updatedReports = reports.map((r) =>
-        r.id === report.id
-          ? {
-              ...r,
-              ...payload,
-            }
-          : r
+        r.id === report.id ? { ...r, ...payload } : r
       );
 
       setReports(updatedReports);
-
-      const updatedFlights = buildFlightsFromRows(updatedAllDayReports);
-      setFlights(updatedFlights);
-
-      const newGroupKey =
-        updatedAirline && editForm.flight_date
-          ? `${updatedAirline}-${editForm.flight_date}`
-          : selectedFlightKey;
-
-      if (selectedFlightKey !== newGroupKey) {
-        setSelectedFlightKey(newGroupKey);
-      }
+      setFlights(buildFlightsFromRows(updatedAllDayReports));
 
       setEditingId("");
       setEditForm({});
@@ -731,6 +860,284 @@ export default function WCHRFlights() {
     }
   };
 
+  const handleStartTrackingEdit = (report) => {
+    setError("");
+    setMessage("");
+    setTrackingEditId(report.id);
+    setTrackingLocation(report.current_location || "Counter");
+  };
+
+  const handleCancelTrackingEdit = () => {
+    setTrackingEditId("");
+    setTrackingLocation("");
+  };
+
+  const applyReportUpdateLocally = (reportId, payload) => {
+    const updateRow = (r) => (r.id === reportId ? { ...r, ...payload } : r);
+
+    const updatedAllDayReports = allDayReports.map(updateRow);
+    const updatedReports = reports.map(updateRow);
+
+    setAllDayReports(updatedAllDayReports);
+    setReports(updatedReports);
+    setFlights(buildFlightsFromRows(updatedAllDayReports));
+  };
+
+  const handleUpdateLocation = async (report) => {
+    const newLocation = safeText(trackingLocation);
+
+    if (!newLocation) {
+      setError("Please select a location.");
+      return;
+    }
+
+    try {
+      setSavingTrackingId(report.id);
+      setError("");
+      setMessage("");
+
+      const previousLocation = report.current_location || "";
+
+      const payload = {
+        current_location: newLocation,
+        last_location: previousLocation,
+        tracking_status: "IN_PROGRESS",
+        is_active: true,
+        alerts_enabled: true,
+        last_location_update_at: serverTimestamp(),
+        last_updated_at: serverTimestamp(),
+        last_updated_by: currentUserName,
+        last_updated_by_id: currentUserId,
+      };
+
+      await updateDoc(doc(db, "wch_reports", report.id), payload);
+
+      await addDoc(collection(db, "wch_tracking_events"), {
+        report_doc_id: report.id,
+        report_id: report.report_id || "",
+        wheelchair_number: report.wheelchair_number || "",
+        passenger_name: report.passenger_name || "",
+        pnr: report.pnr || "",
+        flight_number: report.flight_number || "",
+        event_type: "LOCATION_UPDATE",
+        location: newLocation,
+        previous_location: previousLocation,
+        notes: `Wheelchair location updated to ${newLocation}`,
+        tracking_status: "IN_PROGRESS",
+        is_active: true,
+        alerts_enabled: true,
+        employee_id: currentUserId,
+        employee_name: currentUserName,
+        created_at: serverTimestamp(),
+      });
+
+      if (report.wchr_agent_id) {
+        await updateDoc(doc(db, "employees", report.wchr_agent_id), {
+          active_wchr_service: buildEmployeeActivePayload(report, {
+            ...payload,
+            current_location: newLocation,
+            tracking_status: "IN_PROGRESS",
+            is_active: true,
+            alerts_enabled: true,
+            last_location_update_at: serverTimestamp(),
+          }),
+        });
+      }
+
+      applyReportUpdateLocally(report.id, {
+        ...payload,
+        current_location: newLocation,
+        last_location: previousLocation,
+        tracking_status: "IN_PROGRESS",
+        is_active: true,
+        alerts_enabled: true,
+        last_location_update_at: Timestamp.now(),
+        last_updated_at: Timestamp.now(),
+        last_updated_by: currentUserName,
+        last_updated_by_id: currentUserId,
+      });
+
+      setTrackingEditId("");
+      setTrackingLocation("");
+      setMessage("Location updated successfully.");
+    } catch (e) {
+      console.error(e);
+      setError(e?.message || "Failed to update location.");
+    } finally {
+      setSavingTrackingId("");
+    }
+  };
+
+  const handleMarkCompleted = async (report) => {
+    try {
+      setSavingTrackingId(report.id);
+      setError("");
+      setMessage("");
+
+      const location = report.current_location || "Gate";
+
+      const payload = {
+        tracking_status: "COMPLETED",
+        current_location: location,
+        dropoff_location: location,
+        dropoff_at: serverTimestamp(),
+        is_active: true,
+        alerts_enabled: true,
+        last_location_update_at: serverTimestamp(),
+        last_updated_at: serverTimestamp(),
+        last_updated_by: currentUserName,
+        last_updated_by_id: currentUserId,
+      };
+
+      await updateDoc(doc(db, "wch_reports", report.id), payload);
+
+      await addDoc(collection(db, "wch_tracking_events"), {
+        report_doc_id: report.id,
+        report_id: report.report_id || "",
+        wheelchair_number: report.wheelchair_number || "",
+        passenger_name: report.passenger_name || "",
+        pnr: report.pnr || "",
+        flight_number: report.flight_number || "",
+        event_type: "PASSENGER_DELIVERED",
+        location,
+        previous_location: report.current_location || "",
+        notes: "Passenger delivered. Wheelchair still needs to be stored.",
+        tracking_status: "COMPLETED",
+        is_active: true,
+        alerts_enabled: true,
+        employee_id: currentUserId,
+        employee_name: currentUserName,
+        created_at: serverTimestamp(),
+      });
+
+      if (report.wchr_agent_id) {
+        await updateDoc(doc(db, "employees", report.wchr_agent_id), {
+          active_wchr_service: buildEmployeeActivePayload(report, {
+            ...payload,
+            current_location: location,
+            tracking_status: "COMPLETED",
+            is_active: true,
+            alerts_enabled: true,
+            last_location_update_at: serverTimestamp(),
+          }),
+        });
+      }
+
+      applyReportUpdateLocally(report.id, {
+        ...payload,
+        tracking_status: "COMPLETED",
+        current_location: location,
+        dropoff_location: location,
+        dropoff_at: Timestamp.now(),
+        is_active: true,
+        alerts_enabled: true,
+        last_location_update_at: Timestamp.now(),
+        last_updated_at: Timestamp.now(),
+      });
+
+      setMessage("Passenger marked as delivered. Wheelchair still must be stored.");
+    } catch (e) {
+      console.error(e);
+      setError(e?.message || "Failed to mark completed.");
+    } finally {
+      setSavingTrackingId("");
+    }
+  };
+
+  const handleMarkStored = async (report) => {
+    const ok = window.confirm(
+      `Mark ${report.wheelchair_number || "this wheelchair"} as Stored / Not In Use?`
+    );
+
+    if (!ok) return;
+
+    try {
+      setSavingTrackingId(report.id);
+      setError("");
+      setMessage("");
+
+      const previousLocation = report.current_location || "";
+
+      const payload = {
+        tracking_status: "STORED",
+        current_location: "Wheelchair Storage",
+        last_location: previousLocation,
+        stored_location: "Wheelchair Storage",
+        stored_at: serverTimestamp(),
+        is_active: false,
+        alerts_enabled: false,
+        last_location_update_at: serverTimestamp(),
+        last_updated_at: serverTimestamp(),
+        last_updated_by: currentUserName,
+        last_updated_by_id: currentUserId,
+      };
+
+      await updateDoc(doc(db, "wch_reports", report.id), payload);
+
+      await addDoc(collection(db, "wch_tracking_events"), {
+        report_doc_id: report.id,
+        report_id: report.report_id || "",
+        wheelchair_number: report.wheelchair_number || "",
+        passenger_name: report.passenger_name || "",
+        pnr: report.pnr || "",
+        flight_number: report.flight_number || "",
+        event_type: "STORED",
+        location: "Wheelchair Storage",
+        previous_location: previousLocation,
+        notes: "Wheelchair stored and marked Not In Use",
+        tracking_status: "STORED",
+        is_active: false,
+        alerts_enabled: false,
+        employee_id: currentUserId,
+        employee_name: currentUserName,
+        created_at: serverTimestamp(),
+      });
+
+      if (report.wchr_agent_id) {
+        await updateDoc(doc(db, "employees", report.wchr_agent_id), {
+          active_wchr_service: null,
+        });
+      }
+
+      applyReportUpdateLocally(report.id, {
+        ...payload,
+        tracking_status: "STORED",
+        current_location: "Wheelchair Storage",
+        last_location: previousLocation,
+        stored_location: "Wheelchair Storage",
+        stored_at: Timestamp.now(),
+        is_active: false,
+        alerts_enabled: false,
+        last_location_update_at: Timestamp.now(),
+        last_updated_at: Timestamp.now(),
+      });
+
+      setMessage("Wheelchair marked as Stored / Not In Use.");
+    } catch (e) {
+      console.error(e);
+      setError(e?.message || "Failed to mark wheelchair as stored.");
+    } finally {
+      setSavingTrackingId("");
+    }
+  };
+
+  const handleValidateCloseOperation = () => {
+    if (!unresolvedReports.length) {
+      setMessage("Operation can be closed. All wheelchairs are Stored / Not In Use.");
+      setError("");
+      return;
+    }
+
+    const first = unresolvedReports[0];
+
+    setMessage("");
+    setError(
+      `Cannot close operation. ${first.wheelchair_number || "A wheelchair"} is still not stored. Last location: ${
+        first.current_location || "Unknown"
+      }. Status: ${safeUpper(first.tracking_status || "IN_PROGRESS")}.`
+    );
+  };
+
   const handleExportFullDay = () => {
     if (!allDayReports.length) return;
     const filename = `WCHR_FULL_DAY_${toYYYYMMDD(selectedDate)}.csv`;
@@ -740,20 +1147,19 @@ export default function WCHRFlights() {
   const handleExportCurrentFlight = () => {
     if (!selectedFlight || !reports.length) return;
 
-    const filename = `WCHR_${selectedFlight.airline}_${toYYYYMMDD(
-      selectedFlight.flight_date || new Date()
+    const filename = `WCHR_FLIGHT_${selectedFlight.flight_number}_${toYYYYMMDD(
+      selectedFlight.report_date || new Date()
     )}.csv`;
 
     downloadCSV(filename, reports);
   };
-
-  return (
+    return (
     <div
       style={{
         display: "grid",
         gap: 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
-        maxWidth: 1280,
+        maxWidth: 1380,
         margin: "0 auto",
       }}
     >
@@ -771,18 +1177,6 @@ export default function WCHRFlights() {
       >
         <div
           style={{
-            position: "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
-          }}
-        />
-
-        <div
-          style={{
             position: "relative",
             display: "flex",
             justifyContent: "space-between",
@@ -791,7 +1185,7 @@ export default function WCHRFlights() {
             flexWrap: "wrap",
           }}
         >
-          <div style={{ minWidth: 0 }}>
+          <div>
             <p
               style={{
                 margin: 0,
@@ -802,7 +1196,7 @@ export default function WCHRFlights() {
                 fontWeight: 700,
               }}
             >
-              TPA OPS · WCHR
+              TPA OPS · WCHR TRACKING
             </p>
 
             <h1
@@ -811,7 +1205,6 @@ export default function WCHRFlights() {
                 fontSize: isMobile ? 26 : 32,
                 lineHeight: 1.05,
                 fontWeight: 800,
-                letterSpacing: "-0.04em",
               }}
             >
               WCHR Flight Report
@@ -820,14 +1213,14 @@ export default function WCHRFlights() {
             <p
               style={{
                 margin: 0,
-                maxWidth: 760,
+                maxWidth: 780,
                 fontSize: 14,
                 color: "rgba(255,255,255,0.88)",
                 lineHeight: 1.6,
               }}
             >
-              View reports grouped by airline and date, open details, print, edit,
-              delete and export records.
+              Reports are grouped by report date and flight number. Track each
+              wheelchair until it is marked as Stored / Not In Use.
             </p>
           </div>
 
@@ -846,6 +1239,7 @@ export default function WCHRFlights() {
             >
               My Reports
             </ActionButton>
+
             <ActionButton
               onClick={() => navigate("/dashboard")}
               variant="secondary"
@@ -906,8 +1300,9 @@ export default function WCHRFlights() {
                   textTransform: "uppercase",
                 }}
               >
-                Date
+                Report Date
               </label>
+
               <input
                 type="date"
                 value={toYYYYMMDD(selectedDate)}
@@ -953,14 +1348,18 @@ export default function WCHRFlights() {
             }}
           >
             <ActionButton
+              onClick={handleValidateCloseOperation}
+              variant={unresolvedReports.length ? "warning" : "success"}
+              style={{ width: isMobile ? "100%" : "auto" }}
+            >
+              Validate Close Operation
+            </ActionButton>
+
+            <ActionButton
               onClick={handleExportFullDay}
               variant="secondary"
               disabled={!allDayReports.length}
-              style={{
-                padding: "8px 12px",
-                fontSize: 12,
-                width: isMobile ? "100%" : "auto",
-              }}
+              style={{ width: isMobile ? "100%" : "auto" }}
             >
               Export Full Day
             </ActionButton>
@@ -976,11 +1375,11 @@ export default function WCHRFlights() {
               fontSize: isMobile ? 18 : 20,
               fontWeight: 800,
               color: "#0f172a",
-              letterSpacing: "-0.02em",
             }}
           >
-            Airlines Summary
+            Flight Summary
           </h2>
+
           <p
             style={{
               margin: "4px 0 0",
@@ -989,15 +1388,14 @@ export default function WCHRFlights() {
               lineHeight: 1.6,
             }}
           >
-            The list is grouped by airline and date. Inside details you will see
-            each flight number like WL293, WL294, etc.
+            The list is grouped by report date and flight number.
           </p>
         </div>
 
         {loading ? (
           <div style={infoBoxStyle}>Loading...</div>
         ) : flights.length === 0 ? (
-          <div style={infoBoxStyle}>No flights found for this date.</div>
+          <div style={infoBoxStyle}>No reports found for this date.</div>
         ) : isMobile ? (
           <div style={{ display: "grid", gap: 12 }}>
             {flights.map((f) => (
@@ -1028,10 +1426,21 @@ export default function WCHRFlights() {
                         color: "#0f172a",
                       }}
                     >
-                      {f.airline}
+                      Flight {f.flight_number}
                     </div>
-                    <div style={{ marginTop: 6 }}>
-                      <span style={statusBadge("OPEN")}>OPEN</span>
+
+                    <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+                      {f.alert_reports > 0 && (
+                        <span style={statusBadge("ALERT")}>
+                          {f.alert_reports} ALERT
+                        </span>
+                      )}
+                      <span style={statusBadge("IN_PROGRESS")}>
+                        Active {f.active_reports}
+                      </span>
+                      <span style={statusBadge("STORED")}>
+                        Stored {f.stored_reports}
+                      </span>
                     </div>
                   </div>
 
@@ -1042,26 +1451,14 @@ export default function WCHRFlights() {
                       fontWeight: 700,
                     }}
                   >
-                    {f.flight_date ? toMMDDYYYY(f.flight_date) : "—"}
+                    {f.report_date ? toMMDDYYYY(f.report_date) : "—"}
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    marginTop: 14,
-                    display: "grid",
-                    gap: 12,
-                  }}
-                >
+                <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
                   <DetailField
-                    label="Flights"
-                    value={`${f.flights_count || 0} flight(s) · ${
-                      (f.flight_numbers || []).join(", ") || "—"
-                    }`}
-                  />
-                  <DetailField
-                    label="Routes"
-                    value={(f.routes || []).join(" | ") || "—"}
+                    label="Wheelchairs"
+                    value={(f.wheelchair_numbers || []).join(", ") || "—"}
                   />
                   <DetailField
                     label="Reports"
@@ -1069,40 +1466,13 @@ export default function WCHRFlights() {
                   />
                 </div>
 
-                <div
-                  style={{
-                    marginTop: 14,
-                    display: "grid",
-                    gap: 8,
-                  }}
-                >
+                <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
                   <ActionButton
                     onClick={() => setSelectedFlightKey(f.flight_key)}
                     variant="primary"
                     style={{ width: "100%" }}
                   >
                     View Details
-                  </ActionButton>
-
-                  <ActionButton
-                    onClick={() => {
-                      const filename = `WCHR_${f.airline}_${toYYYYMMDD(
-                        f.flight_date || new Date()
-                      )}.csv`;
-                      const groupRows = allDayReports.filter((r) => {
-                        const airline = safeUpper(r.airline) || "UNKNOWN";
-                        const reportFlightDate = tsToDate(r.flight_date);
-                        const dateKey = reportFlightDate
-                          ? toYYYYMMDD(reportFlightDate)
-                          : "NO_DATE";
-                        return `${airline}-${dateKey}` === f.flight_key;
-                      });
-                      downloadCSV(filename, groupRows);
-                    }}
-                    variant="secondary"
-                    style={{ width: "100%" }}
-                  >
-                    Export
                   </ActionButton>
                 </div>
               </div>
@@ -1121,21 +1491,21 @@ export default function WCHRFlights() {
                 width: "100%",
                 borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 1100,
+                minWidth: 980,
                 background: "#fff",
               }}
             >
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
-                  <th style={thStyle({ textAlign: "left" })}>Airline</th>
+                  <th style={thStyle({ textAlign: "left" })}>Flight Number</th>
                   <th style={thStyle({ textAlign: "left" })}>Date</th>
-                  <th style={thStyle({ textAlign: "left" })}>Flights</th>
-                  <th style={thStyle({ textAlign: "left" })}>Routes</th>
+                  <th style={thStyle({ textAlign: "left" })}>Wheelchairs</th>
                   <th style={thStyle({ textAlign: "left" })}>Reports</th>
-                  <th style={thStyle({ textAlign: "left" })}>Status</th>
+                  <th style={thStyle({ textAlign: "left" })}>Tracking</th>
                   <th style={thStyle({ textAlign: "center" })}>Actions</th>
                 </tr>
               </thead>
+
               <tbody>
                 {flights.map((f, index) => (
                   <tr
@@ -1159,111 +1529,60 @@ export default function WCHRFlights() {
                           textAlign: "left",
                           color: "#1769aa",
                           cursor: "pointer",
-                          fontWeight: selectedFlightKey === f.flight_key ? 900 : 700,
+                          fontWeight:
+                            selectedFlightKey === f.flight_key ? 900 : 700,
                           fontSize: 14,
                         }}
                       >
-                        {f.airline}
+                        Flight {f.flight_number}
                       </button>
                     </td>
 
                     <td style={tdStyle}>
-                      {f.flight_date ? toMMDDYYYY(f.flight_date) : "—"}
+                      {f.report_date ? toMMDDYYYY(f.report_date) : "—"}
                     </td>
 
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 700 }}>
-                        {f.flights_count || 0} flight(s)
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          marginTop: 4,
-                        }}
-                      >
-                        {(f.flight_numbers || []).join(", ") || "—"}
-                      </div>
+                      {(f.wheelchair_numbers || []).join(", ") || "—"}
                     </td>
 
                     <td style={tdStyle}>
-                      {(f.routes || []).length ? (f.routes || []).join(" | ") : "—"}
-                    </td>
-
-                    <td style={tdStyle}>
-                      <div style={{ fontWeight: 700 }}>
-                        Total: {f.total_reports}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          marginTop: 4,
-                        }}
-                      >
+                      Total: {f.total_reports}
+                      <br />
+                      <span style={{ fontSize: 12, color: "#64748b" }}>
                         NEW: {f.new_reports} · LATE: {f.late_reports}
-                      </div>
+                      </span>
                     </td>
 
                     <td style={tdStyle}>
-                      <span style={statusBadge("OPEN")}>OPEN</span>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {f.alert_reports > 0 && (
+                          <span style={statusBadge("ALERT")}>
+                            {f.alert_reports} ALERT
+                          </span>
+                        )}
+                        <span style={statusBadge("IN_PROGRESS")}>
+                          Active {f.active_reports}
+                        </span>
+                        <span style={statusBadge("STORED")}>
+                          Stored {f.stored_reports}
+                        </span>
+                      </div>
                     </td>
 
                     <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          justifyContent: "center",
-                        }}
+                      <ActionButton
+                        onClick={() => setSelectedFlightKey(f.flight_key)}
+                        variant="primary"
+                        style={{ padding: "8px 12px", fontSize: 12 }}
                       >
-                        <ActionButton
-                          onClick={() => setSelectedFlightKey(f.flight_key)}
-                          variant="primary"
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                        >
-                          View Details
-                        </ActionButton>
-
-                        <ActionButton
-                          onClick={() => {
-                            const filename = `WCHR_${f.airline}_${toYYYYMMDD(
-                              f.flight_date || new Date()
-                            )}.csv`;
-                            const groupRows = allDayReports.filter((r) => {
-                              const airline = safeUpper(r.airline) || "UNKNOWN";
-                              const reportFlightDate = tsToDate(r.flight_date);
-                              const dateKey = reportFlightDate
-                                ? toYYYYMMDD(reportFlightDate)
-                                : "NO_DATE";
-                              return `${airline}-${dateKey}` === f.flight_key;
-                            });
-                            downloadCSV(filename, groupRows);
-                          }}
-                          variant="secondary"
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                        >
-                          Export
-                        </ActionButton>
-                      </div>
+                        View Details
+                      </ActionButton>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-
-            <p
-              style={{
-                margin: "10px 12px 0",
-                fontSize: 12,
-                color: "#64748b",
-                lineHeight: 1.6,
-              }}
-            >
-              Note: Reports submitted after closure rules in your workflow can still
-              be marked as <b>LATE</b>.
-            </p>
           </div>
         )}
       </PageCard>
@@ -1279,18 +1598,18 @@ export default function WCHRFlights() {
             marginBottom: 14,
           }}
         >
-          <div style={{ minWidth: 0 }}>
+          <div>
             <h2
               style={{
                 margin: 0,
                 fontSize: isMobile ? 18 : 20,
                 fontWeight: 800,
                 color: "#0f172a",
-                letterSpacing: "-0.02em",
               }}
             >
               Flight Details
             </h2>
+
             <p
               style={{
                 margin: "4px 0 0",
@@ -1301,19 +1620,16 @@ export default function WCHRFlights() {
             >
               {selectedFlight ? (
                 <>
-                  Showing reports for <b>{selectedFlight.airline}</b> ·{" "}
+                  Showing reports for <b>Flight {selectedFlight.flight_number}</b>{" "}
+                  ·{" "}
                   <b>
-                    {selectedFlight.flight_date
-                      ? toMMDDYYYY(selectedFlight.flight_date)
+                    {selectedFlight.report_date
+                      ? toMMDDYYYY(selectedFlight.report_date)
                       : "—"}
                   </b>
-                  <br />
-                  <span style={{ color: "#64748b" }}>
-                    Flights: {(selectedFlight.flight_numbers || []).join(", ") || "—"}
-                  </span>
                 </>
               ) : (
-                "Select an airline row above to view details."
+                "Select a flight row above to view details."
               )}
             </p>
           </div>
@@ -1323,7 +1639,6 @@ export default function WCHRFlights() {
               style={{
                 display: "flex",
                 gap: 10,
-                alignItems: "center",
                 flexWrap: "wrap",
                 width: isMobile ? "100%" : "auto",
               }}
@@ -1351,534 +1666,316 @@ export default function WCHRFlights() {
         {reportsLoading ? (
           <div style={infoBoxStyle}>Loading reports...</div>
         ) : !selectedFlight ? (
-          <div style={infoBoxStyle}>No airline selected.</div>
+          <div style={infoBoxStyle}>No flight selected.</div>
         ) : reports.length === 0 ? (
-          <div style={infoBoxStyle}>No reports for this airline/date.</div>
-        ) : isMobile || isTablet ? (
+          <div style={infoBoxStyle}>No reports for this flight/date.</div>
+        ) : (
           <div style={{ display: "grid", gap: 12 }}>
             {reports.map((r) => {
               const isEditing = editingId === r.id;
+              const isTrackingEditing = trackingEditId === r.id;
+              const alert = needsLocationAlert(r);
 
               return (
                 <div
                   key={r.id}
                   style={{
-                    border: "1px solid #e2e8f0",
+                    border: alert ? "1px solid #fecdd3" : "1px solid #e2e8f0",
                     borderRadius: 18,
                     padding: 14,
-                    background: "#ffffff",
+                    background: alert ? "#fff7f8" : "#ffffff",
                   }}
                 >
                   <div
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      alignItems: "flex-start",
+                      display: "grid",
+                      gridTemplateColumns: isMobile || isTablet ? "1fr" : "2fr 1.2fr",
+                      gap: 14,
                     }}
                   >
-                    <div>
+                    <div style={{ display: "grid", gap: 12 }}>
                       <div
                         style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: "#0f172a",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          flexWrap: "wrap",
                         }}
                       >
-                        {r.report_id || r.id}
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 900,
+                              color: "#0f172a",
+                            }}
+                          >
+                            {r.report_id || r.id}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: 6,
+                              display: "flex",
+                              gap: 6,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span style={statusBadge(r.status || "NEW")}>
+                              {safeUpper(r.status || "NEW")}
+                            </span>
+                            <span
+                              style={statusBadge(
+                                r.tracking_status || "IN_PROGRESS"
+                              )}
+                            >
+                              {safeUpper(r.tracking_status || "IN_PROGRESS")}
+                            </span>
+                            {alert && (
+                              <span style={statusBadge("ALERT")}>
+                                UPDATE LOCATION
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {r.last_edited_at
+                            ? `Edited ${formatDateTimeValue(r.last_edited_at)}`
+                            : "No edits"}
+                        </div>
                       </div>
-                      <div style={{ marginTop: 6 }}>
-                        {String(r.status || "").toUpperCase() === "LATE" ? (
-                          <span style={statusBadge("LATE")}>LATE</span>
+
+                      {isEditing ? (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              isMobile || isTablet
+                                ? "1fr"
+                                : "repeat(3, minmax(160px, 1fr))",
+                            gap: 10,
+                          }}
+                        >
+                          <EditInput
+                            value={editForm.passenger_name}
+                            onChange={(v) => handleEditChange("passenger_name", v)}
+                            placeholder="Passenger"
+                          />
+                          <EditInput
+                            value={editForm.airline}
+                            onChange={(v) => handleEditChange("airline", v)}
+                            placeholder="Airline"
+                          />
+                          <EditInput
+                            value={editForm.flight_number}
+                            onChange={(v) => handleEditChange("flight_number", v)}
+                            placeholder="Flight"
+                          />
+                          <EditInput
+                            value={editForm.pnr}
+                            onChange={(v) => handleEditChange("pnr", v)}
+                            placeholder="PNR"
+                          />
+                          <EditInput
+                            value={editForm.wch_type}
+                            onChange={(v) => handleEditChange("wch_type", v)}
+                            placeholder="WCHR Type"
+                          />
+                          <EditInput
+                            value={editForm.wheelchair_number}
+                            onChange={(v) =>
+                              handleEditChange("wheelchair_number", v)
+                            }
+                            placeholder="Wheelchair #"
+                          />
+                          <SelectInput
+                            value={editForm.status || "NEW"}
+                            onChange={(v) => handleEditChange("status", v)}
+                            options={["NEW", "LATE"]}
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              isMobile || isTablet
+                                ? "1fr"
+                                : "repeat(3, minmax(160px, 1fr))",
+                            gap: 12,
+                          }}
+                        >
+                          <DetailField
+                            label="Passenger"
+                            value={r.passenger_name}
+                          />
+                          <DetailField
+                            label="Flight"
+                            value={`${r.airline || "—"} ${r.flight_number || "—"}`}
+                          />
+                          <DetailField label="PNR" value={r.pnr} />
+                          <DetailField label="WCHR Type" value={r.wch_type} />
+                          <DetailField
+                            label="Wheelchair #"
+                            value={r.wheelchair_number}
+                          />
+                          <DetailField
+                            label="Submitted By"
+                            value={r.employee_name}
+                          />
+                          <DetailField
+                            label="Report Date"
+                            value={getReportDate(r) ? toMMDDYYYY(getReportDate(r)) : "—"}
+                          />
+                          <DetailField
+                            label="Billing"
+                            value={r.billing_ready ? "Ready" : "Not Ready"}
+                          />
+                          <DetailField
+                            label="Last Edited By"
+                            value={r.last_edited_by_name}
+                          />
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {isEditing ? (
+                          <>
+                            <ActionButton
+                              variant="success"
+                              onClick={() => handleSaveEdit(r)}
+                              disabled={savingEdit}
+                            >
+                              {savingEdit ? "Saving..." : "Save"}
+                            </ActionButton>
+
+                            <ActionButton
+                              variant="secondary"
+                              onClick={handleCancelEdit}
+                              disabled={savingEdit}
+                            >
+                              Cancel
+                            </ActionButton>
+                          </>
                         ) : (
-                          <span style={statusBadge("NEW")}>NEW</span>
+                          <>
+                            <ActionButton
+                              variant="secondary"
+                              onClick={() => handleStartEdit(r)}
+                            >
+                              Edit
+                            </ActionButton>
+
+                            <ActionButton
+                              variant="danger"
+                              onClick={() => handleDeleteReport(r)}
+                              disabled={deletingId === r.id}
+                            >
+                              {deletingId === r.id ? "Deleting..." : "Delete"}
+                            </ActionButton>
+                          </>
                         )}
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "#64748b",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {r.last_edited_at
-                        ? formatDateTimeValue(r.last_edited_at)
-                        : "No edits"}
-                    </div>
-                  </div>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <TrackingSummary report={r} />
 
-                  <div
-                    style={{
-                      marginTop: 14,
-                      display: "grid",
-                      gap: 12,
-                    }}
-                  >
-                    <DetailField label="Submitted By" value={r.employee_name || "—"} />
-                    <DetailField label="Employee Role" value={r.employee_role || "—"} />
+                      {isTrackingEditing && (
+                        <SelectInput
+                          value={trackingLocation}
+                          onChange={setTrackingLocation}
+                          options={WCHR_LOCATIONS}
+                        />
+                      )}
 
-                    {isEditing ? (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        <input
-                          value={editForm.passenger_name || ""}
-                          onChange={(e) =>
-                            handleEditChange("passenger_name", e.target.value)
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {isTrackingEditing ? (
+                          <>
+                            <ActionButton
+                              variant="success"
+                              onClick={() => handleUpdateLocation(r)}
+                              disabled={savingTrackingId === r.id}
+                              style={{ width: "100%" }}
+                            >
+                              {savingTrackingId === r.id
+                                ? "Updating..."
+                                : "Save Location"}
+                            </ActionButton>
+
+                            <ActionButton
+                              variant="secondary"
+                              onClick={handleCancelTrackingEdit}
+                              disabled={savingTrackingId === r.id}
+                              style={{ width: "100%" }}
+                            >
+                              Cancel
+                            </ActionButton>
+                          </>
+                        ) : (
+                          <ActionButton
+                            variant={alert ? "warning" : "secondary"}
+                            onClick={() => handleStartTrackingEdit(r)}
+                            disabled={safeUpper(r.tracking_status) === "STORED"}
+                            style={{ width: "100%" }}
+                          >
+                            Update Location
+                          </ActionButton>
+                        )}
+
+                        <ActionButton
+                          variant="warning"
+                          onClick={() => handleMarkCompleted(r)}
+                          disabled={
+                            savingTrackingId === r.id ||
+                            safeUpper(r.tracking_status) === "STORED"
                           }
-                          placeholder="Passenger"
-                          style={editInputStyle}
-                        />
-                        <input
-                          value={editForm.airline || ""}
-                          onChange={(e) => handleEditChange("airline", e.target.value)}
-                          placeholder="Airline"
-                          style={editInputStyle}
-                        />
-                        <input
-                          value={editForm.flight_number || ""}
-                          onChange={(e) =>
-                            handleEditChange("flight_number", e.target.value)
-                          }
-                          placeholder="Flight Number"
-                          style={editInputStyle}
-                        />
-                        <input
-                          type="date"
-                          value={editForm.flight_date || ""}
-                          onChange={(e) =>
-                            handleEditChange("flight_date", e.target.value)
-                          }
-                          style={editInputStyle}
-                        />
-                        <input
-                          value={editForm.destination || ""}
-                          onChange={(e) =>
-                            handleEditChange("destination", e.target.value)
-                          }
-                          placeholder="Destination"
-                          style={editInputStyle}
-                        />
-                        <input
-                          value={editForm.seat || ""}
-                          onChange={(e) => handleEditChange("seat", e.target.value)}
-                          placeholder="Seat"
-                          style={editInputStyle}
-                        />
-                        <input
-                          value={editForm.gate || ""}
-                          onChange={(e) => handleEditChange("gate", e.target.value)}
-                          placeholder="Gate"
-                          style={editInputStyle}
-                        />
-                        <input
-                          value={editForm.pnr || ""}
-                          onChange={(e) => handleEditChange("pnr", e.target.value)}
-                          placeholder="PNR"
-                          style={editInputStyle}
-                        />
-                        <input
-                          value={editForm.wch_type || ""}
-                          onChange={(e) =>
-                            handleEditChange("wch_type", e.target.value)
-                          }
-                          placeholder="WCHR Type"
-                          style={editInputStyle}
-                        />
-                        <input
-                          value={editForm.wheelchair_number || ""}
-                          onChange={(e) =>
-                            handleEditChange("wheelchair_number", e.target.value)
-                          }
-                          placeholder="Wheelchair Number"
-                          style={editInputStyle}
-                        />
-                        <select
-                          value={editForm.status || "NEW"}
-                          onChange={(e) => handleEditChange("status", e.target.value)}
-                          style={editInputStyle}
+                          style={{ width: "100%" }}
                         >
-                          <option value="NEW">NEW</option>
-                          <option value="LATE">LATE</option>
-                        </select>
-                      </div>
-                    ) : (
-                      <>
-                        <DetailField label="Passenger" value={r.passenger_name || "—"} />
-                        <DetailField
-                          label="Flight"
-                          value={`${r.airline || "—"} ${r.flight_number || "—"}`}
-                        />
-                        <DetailField
-                          label="Flight Date"
-                          value={formatReportFlightDate(r.flight_date)}
-                        />
-                        <DetailField label="Destination" value={r.destination || "—"} />
-                        <DetailField label="Seat" value={r.seat || "—"} />
-                        <DetailField label="Gate" value={r.gate || "—"} />
-                        <DetailField label="PNR" value={r.pnr || "—"} />
-                        <DetailField label="WCHR Type" value={r.wch_type || "—"} />
-                        <DetailField
-                          label="Wheelchair #"
-                          value={r.wheelchair_number || "—"}
-                        />
-                        <DetailField
-                          label="Last Edited By"
-                          value={r.last_edited_by_name || "—"}
-                        />
-                        <DetailField
-                          label="Last Edited At"
-                          value={
-                            r.last_edited_at
-                              ? formatDateTimeValue(r.last_edited_at)
-                              : "—"
-                          }
-                        />
-                      </>
-                    )}
-                  </div>
+                          Passenger Delivered
+                        </ActionButton>
 
-                  <div
-                    style={{
-                      marginTop: 14,
-                      display: "grid",
-                      gap: 8,
-                    }}
-                  >
-                    {isEditing ? (
-                      <>
                         <ActionButton
                           variant="success"
-                          onClick={() => handleSaveEdit(r)}
-                          disabled={savingEdit}
+                          onClick={() => handleMarkStored(r)}
+                          disabled={
+                            savingTrackingId === r.id ||
+                            safeUpper(r.tracking_status) === "STORED"
+                          }
                           style={{ width: "100%" }}
                         >
-                          {savingEdit ? "Saving..." : "Save"}
+                          Mark Stored / Not In Use
                         </ActionButton>
-
-                        <ActionButton
-                          variant="secondary"
-                          onClick={handleCancelEdit}
-                          disabled={savingEdit}
-                          style={{ width: "100%" }}
-                        >
-                          Cancel
-                        </ActionButton>
-                      </>
-                    ) : (
-                      <>
-                        <ActionButton
-                          variant="secondary"
-                          onClick={() => handleStartEdit(r)}
-                          style={{ width: "100%" }}
-                        >
-                          Edit
-                        </ActionButton>
-
-                        <ActionButton
-                          variant="danger"
-                          onClick={() => handleDeleteReport(r)}
-                          disabled={deletingId === r.id}
-                          style={{ width: "100%" }}
-                        >
-                          {deletingId === r.id ? "Deleting..." : "Delete"}
-                        </ActionButton>
-                      </>
-                    )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
             })}
-          </div>
-        ) : (
-          <>
-            <div
-              style={{
-                overflowX: "auto",
-                borderRadius: 18,
-                border: "1px solid #e2e8f0",
-              }}
-            >
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "separate",
-                  borderSpacing: 0,
-                  minWidth: 1850,
-                  background: "#fff",
-                }}
-              >
-                <thead>
-                  <tr style={{ background: "#f8fbff" }}>
-                    <th style={thStyle({ textAlign: "left" })}>Report ID</th>
-                    <th style={thStyle({ textAlign: "left" })}>Submitted By</th>
-                    <th style={thStyle({ textAlign: "left" })}>Employee Role</th>
-                    <th style={thStyle({ textAlign: "left" })}>Passenger</th>
-                    <th style={thStyle({ textAlign: "left" })}>Airline</th>
-                    <th style={thStyle({ textAlign: "left" })}>Flight</th>
-                    <th style={thStyle({ textAlign: "left" })}>Flight Date</th>
-                    <th style={thStyle({ textAlign: "left" })}>Destination</th>
-                    <th style={thStyle({ textAlign: "left" })}>Seat</th>
-                    <th style={thStyle({ textAlign: "left" })}>Gate</th>
-                    <th style={thStyle({ textAlign: "left" })}>PNR</th>
-                    <th style={thStyle({ textAlign: "left" })}>WCHR Type</th>
-                    <th style={thStyle({ textAlign: "left" })}>Wheelchair #</th>
-                    <th style={thStyle({ textAlign: "center" })}>Status</th>
-                    <th style={thStyle({ textAlign: "left" })}>Last Edited By</th>
-                    <th style={thStyle({ textAlign: "left" })}>Last Edited At</th>
-                    <th style={thStyle({ textAlign: "center" })}>Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {reports.map((r, index) => {
-                    const isEditing = editingId === r.id;
-
-                    return (
-                      <tr
-                        key={r.id}
-                        style={{
-                          background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                        }}
-                      >
-                        <td style={tdStyle}>{r.report_id || r.id}</td>
-                        <td style={tdStyle}>{r.employee_name || "—"}</td>
-                        <td style={tdStyle}>{r.employee_role || "—"}</td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.passenger_name || ""}
-                              onChange={(e) =>
-                                handleEditChange("passenger_name", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.passenger_name || "—"
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.airline || ""}
-                              onChange={(e) =>
-                                handleEditChange("airline", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.airline || "—"
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.flight_number || ""}
-                              onChange={(e) =>
-                                handleEditChange("flight_number", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.flight_number || "—"
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              type="date"
-                              value={editForm.flight_date || ""}
-                              onChange={(e) =>
-                                handleEditChange("flight_date", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            formatReportFlightDate(r.flight_date)
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.destination || ""}
-                              onChange={(e) =>
-                                handleEditChange("destination", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.destination || "—"
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.seat || ""}
-                              onChange={(e) =>
-                                handleEditChange("seat", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.seat || "—"
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.gate || ""}
-                              onChange={(e) =>
-                                handleEditChange("gate", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.gate || "—"
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.pnr || ""}
-                              onChange={(e) =>
-                                handleEditChange("pnr", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.pnr || "—"
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.wch_type || ""}
-                              onChange={(e) =>
-                                handleEditChange("wch_type", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.wch_type || "—"
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>
-                          {isEditing ? (
-                            <input
-                              value={editForm.wheelchair_number || ""}
-                              onChange={(e) =>
-                                handleEditChange("wheelchair_number", e.target.value)
-                              }
-                              style={editInputStyle}
-                            />
-                          ) : (
-                            r.wheelchair_number || "—"
-                          )}
-                        </td>
-
-                        <td style={{ ...tdStyle, textAlign: "center" }}>
-                          {isEditing ? (
-                            <select
-                              value={editForm.status || "NEW"}
-                              onChange={(e) =>
-                                handleEditChange("status", e.target.value)
-                              }
-                              style={editInputStyle}
-                            >
-                              <option value="NEW">NEW</option>
-                              <option value="LATE">LATE</option>
-                            </select>
-                          ) : String(r.status || "").toUpperCase() === "LATE" ? (
-                            <span style={statusBadge("LATE")}>LATE</span>
-                          ) : (
-                            <span style={statusBadge("NEW")}>NEW</span>
-                          )}
-                        </td>
-
-                        <td style={tdStyle}>{r.last_edited_by_name || "—"}</td>
-                        <td style={tdStyle}>
-                          {r.last_edited_at ? formatDateTimeValue(r.last_edited_at) : "—"}
-                        </td>
-
-                        <td style={{ ...tdStyle, textAlign: "center" }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              justifyContent: "center",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            {isEditing ? (
-                              <>
-                                <ActionButton
-                                  variant="success"
-                                  onClick={() => handleSaveEdit(r)}
-                                  disabled={savingEdit}
-                                  style={{ padding: "8px 12px", fontSize: 12 }}
-                                >
-                                  {savingEdit ? "Saving..." : "Save"}
-                                </ActionButton>
-
-                                <ActionButton
-                                  variant="secondary"
-                                  onClick={handleCancelEdit}
-                                  disabled={savingEdit}
-                                  style={{ padding: "8px 12px", fontSize: 12 }}
-                                >
-                                  Cancel
-                                </ActionButton>
-                              </>
-                            ) : (
-                              <>
-                                <ActionButton
-                                  variant="secondary"
-                                  onClick={() => handleStartEdit(r)}
-                                  style={{ padding: "8px 12px", fontSize: 12 }}
-                                >
-                                  Edit
-                                </ActionButton>
-
-                                <ActionButton
-                                  variant="danger"
-                                  onClick={() => handleDeleteReport(r)}
-                                  disabled={deletingId === r.id}
-                                  style={{ padding: "8px 12px", fontSize: 12 }}
-                                >
-                                  {deletingId === r.id ? "Deleting..." : "Delete"}
-                                </ActionButton>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
 
             <div
               style={{
-                marginTop: 10,
+                marginTop: 4,
                 fontSize: 12,
                 color: "#64748b",
               }}
             >
               Total reports: <b>{reports.length}</b>
             </div>
-          </>
+          </div>
         )}
       </PageCard>
     </div>
