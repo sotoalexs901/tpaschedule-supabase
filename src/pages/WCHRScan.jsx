@@ -9,7 +9,6 @@ import {
   collection,
   doc,
   getDoc,
-  getDocs,
   onSnapshot,
   query,
   runTransaction,
@@ -21,12 +20,18 @@ import {
 
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
+const REPORTS_COLLECTION = "wch_reports";
+const TRACKING_EVENTS_COLLECTION = "wch_tracking_events";
+const AGENT_SESSIONS_COLLECTION = "wchr_agent_sessions";
+const INVENTORY_COLLECTION = "wchr_inventory";
+const SERVICE_SEGMENTS_COLLECTION = "service_segments";
+
 const START_LOCATIONS = [
   "Counter",
   "AV Ticket Counter",
   "SY Ticket Counter",
-  "TSA",
   "Outside TSA",
+  "TSA",
   "Security",
   "Train",
   "Airside F",
@@ -47,20 +52,12 @@ const START_LOCATIONS = [
   "Aircraft",
   "Baggage Claim",
   "Customs",
-  "CBP",
   "Outside CBP",
+  "CBP",
   "Main Terminal",
   "Wheelchair Storage",
   "Maintenance",
   "Other",
-];
-
-const HANDOFF_PICKUP_LOCATIONS = [
-  "TSA",
-  "Outside TSA",
-  "CBP",
-  "Outside CBP",
-  "Main Terminal",
 ];
 
 const DELIVERY_DESTINATIONS = [
@@ -77,17 +74,31 @@ const DELIVERY_DESTINATIONS = [
   "Gate F88",
   "Gate F89",
   "Gate F90",
-  "TSA",
-  "Outside TSA",
-  "CBP",
-  "Outside CBP",
   "Main Terminal",
 ];
 
-const INVENTORY_COLLECTION = "wchr_inventory";
-const REPORTS_COLLECTION = "wch_reports";
-const TRACKING_EVENTS_COLLECTION = "wch_tracking_events";
-const AGENT_SESSIONS_COLLECTION = "wchr_agent_sessions";
+const HANDOFF_LOCATIONS = [
+  "Outside TSA",
+  "TSA",
+  "Outside CBP",
+  "CBP",
+];
+
+const GATE_LOCATIONS = [
+  "Gate F78",
+  "Gate F79",
+  "Gate F80",
+  "Gate F81",
+  "Gate F82",
+  "Gate F83",
+  "Gate F84",
+  "Gate F85",
+  "Gate F86",
+  "Gate F87",
+  "Gate F88",
+  "Gate F89",
+  "Gate F90",
+];
 
 function pad2(number) {
   return String(number).padStart(2, "0");
@@ -107,22 +118,12 @@ function safeUpper(value) {
   return safeText(value).toUpperCase();
 }
 
-function normalizeLocation(value) {
-  return safeText(value).toLowerCase();
-}
-
 function cleanPnr(value) {
   return safeUpper(value).replace(/[^A-Z0-9]/g, "");
 }
 
 function cleanWheelchairNumber(value) {
   return safeUpper(value).replace(/[^A-Z0-9-]/g, "");
-}
-
-function getWheelchairDocumentId(value) {
-  return cleanWheelchairNumber(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "_");
 }
 
 function normalizePassengerName(value) {
@@ -146,61 +147,6 @@ function normalizePassengerName(value) {
     .toLowerCase()
     .replace(/\b\w/g, (character) => character.toUpperCase())
     .trim();
-}
-
-function timestampToDate(value) {
-  if (!value) return null;
-
-  if (typeof value?.toDate === "function") {
-    return value.toDate();
-  }
-
-  const parsed = new Date(value);
-
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function formatDateTime(value) {
-  const date = timestampToDate(value);
-
-  if (!date) return "—";
-
-  return date.toLocaleString("en-US", {
-    month: "2-digit",
-    day: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function getAgentSessionId(user) {
-  return safeText(
-    user?.id ||
-      user?.uid ||
-      user?.username ||
-      user?.email
-  );
-}
-
-function isDeliveryLocation(location) {
-  return DELIVERY_DESTINATIONS.some(
-    (item) => normalizeLocation(item) === normalizeLocation(location)
-  );
-}
-
-function isHandoffLocation(location) {
-  return HANDOFF_PICKUP_LOCATIONS.some(
-    (item) => normalizeLocation(item) === normalizeLocation(location)
-  );
-}
-
-function inventoryRowMatchesLocation(row, location) {
-  return (
-    normalizeLocation(row?.location) === normalizeLocation(location) &&
-    row?.is_available !== false &&
-    safeUpper(row?.status || "STORED") !== "IN_USE"
-  );
 }
 
 function getRawScanText(scanResult) {
@@ -246,15 +192,19 @@ function tryExtractPnrFromText(rawText) {
     const match = text.match(pattern);
     const candidate = cleanPnr(match?.[1] || "");
 
-    if (candidate) return candidate;
+    if (candidate) {
+      return candidate;
+    }
   }
 
   const possibleValues = text.match(/\b[A-Z0-9]{5,8}\b/g) || [];
 
-  for (const item of possibleValues) {
-    const candidate = cleanPnr(item);
+  for (const possibleValue of possibleValues) {
+    const candidate = cleanPnr(possibleValue);
 
-    if (candidate) return candidate;
+    if (candidate) {
+      return candidate;
+    }
   }
 
   return "";
@@ -272,8 +222,8 @@ function guessPassengerName(scanResult, rawText) {
     tryExtractPassengerFromText(rawText),
   ];
 
-  for (const item of candidates) {
-    const cleaned = safeText(item);
+  for (const candidate of candidates) {
+    const cleaned = safeText(candidate);
 
     if (cleaned) {
       return normalizePassengerName(cleaned);
@@ -298,10 +248,12 @@ function guessPnr(scanResult, rawText) {
     tryExtractPnrFromText(rawText),
   ];
 
-  for (const item of candidates) {
-    const cleaned = cleanPnr(item);
+  for (const candidate of candidates) {
+    const cleaned = cleanPnr(candidate);
 
-    if (cleaned) return cleaned;
+    if (cleaned) {
+      return cleaned;
+    }
   }
 
   return "";
@@ -318,80 +270,164 @@ function emptyParsed() {
   };
 }
 
-function buildInventoryFromReport(report, inventoryRow = {}) {
-  return {
-    id: inventoryRow.id || "",
-    wheelchair_number:
-      cleanWheelchairNumber(
-        inventoryRow.wheelchair_number || report.wheelchair_number
-      ) || "",
+function timestampToDate(value) {
+  if (!value) return null;
 
-    location:
-      inventoryRow.location ||
-      report.current_location ||
-      report.delivered_location ||
-      "",
+  if (typeof value?.toDate === "function") {
+    return value.toDate();
+  }
 
-    status: inventoryRow.status || "AVAILABLE_HANDOFF",
-    is_available: inventoryRow.is_available !== false,
+  const parsed = new Date(value);
 
-    report_doc_id:
-      inventoryRow.report_doc_id ||
-      inventoryRow.assigned_report_doc_id ||
-      report.id ||
-      "",
-
-    report_id:
-      inventoryRow.report_id ||
-      inventoryRow.assigned_report_id ||
-      report.report_id ||
-      "",
-
-    passenger_name:
-      inventoryRow.passenger_name ||
-      report.passenger_name ||
-      "",
-
-    airline:
-      inventoryRow.airline ||
-      report.airline ||
-      "",
-
-    flight_number:
-      inventoryRow.flight_number ||
-      report.flight_number ||
-      "",
-
-    pnr:
-      inventoryRow.pnr ||
-      report.pnr ||
-      "",
-
-    wch_type:
-      inventoryRow.wch_type ||
-      report.wch_type ||
-      "WCHR",
-
-    original_pickup_at:
-      inventoryRow.original_pickup_at ||
-      report.pickup_at ||
-      report.submitted_at ||
-      null,
-
-    previous_agent_id:
-      inventoryRow.previous_agent_id ||
-      report.wchr_agent_id ||
-      report.employee_id ||
-      "",
-
-    previous_agent_name:
-      inventoryRow.previous_agent_name ||
-      report.wchr_agent_name ||
-      report.employee_name ||
-      "",
-  };
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function formatDateTime(value) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return date.toLocaleString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function isDeliveryLocation(location) {
+  return DELIVERY_DESTINATIONS.includes(safeText(location));
+}
+
+function isHandoffLocation(location) {
+  return HANDOFF_LOCATIONS.includes(safeText(location));
+}
+
+function isGateLocation(location) {
+  return GATE_LOCATIONS.includes(safeText(location));
+}
+
+function getAgentSessionId(user) {
+  return safeText(
+    user?.id || user?.uid || user?.username || user?.email
+  );
+}
+
+function getAgentDisplayName(user) {
+  return safeText(
+    user?.displayName ||
+      user?.fullName ||
+      user?.name ||
+      user?.username ||
+      user?.email
+  );
+}
+
+function getWheelchairDocumentId(wheelchairNumber) {
+  const cleanNumber = cleanWheelchairNumber(wheelchairNumber);
+
+  if (!cleanNumber) {
+    return "";
+  }
+
+  return cleanNumber
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function buildFlightKey(airline, flightNumber, date = new Date()) {
+  const cleanAirline = safeUpper(airline || "WCHR");
+  const cleanFlightNumber = safeUpper(flightNumber || "UNK");
+
+  return `${cleanAirline}-${cleanFlightNumber}-${yyyymmdd(date)}`;
+}
+
+function buildInventoryStatus(item) {
+  const status = safeUpper(item?.status);
+
+  if (
+    item?.available_for_handoff === true ||
+    status === "AVAILABLE_HANDOFF"
+  ) {
+    return "AVAILABLE_HANDOFF";
+  }
+
+  if (
+    item?.is_available === true ||
+    status === "AVAILABLE" ||
+    status === "STORED"
+  ) {
+    return "AVAILABLE";
+  }
+
+  if (
+    item?.is_available === false ||
+    status === "IN_USE" ||
+    status === "ASSIGNED"
+  ) {
+    return "IN_USE";
+  }
+
+  return status || "UNKNOWN";
+}
+
+function inventoryIsAvailableAtLocation(item, location) {
+  const inventoryLocation = safeText(item?.location);
+  const requestedLocation = safeText(location);
+  const status = buildInventoryStatus(item);
+
+  if (!inventoryLocation || inventoryLocation !== requestedLocation) {
+    return false;
+  }
+
+  return (
+    item?.available_for_handoff === true ||
+    item?.is_available === true ||
+    status === "AVAILABLE_HANDOFF" ||
+    status === "AVAILABLE"
+  );
+}
+
+function getReportIsDelivered(report) {
+  return (
+    report?.passenger_delivered === true ||
+    safeUpper(report?.tracking_status) === "COMPLETED"
+  );
+}
+
+function getReportIsWaitingHandoff(report) {
+  return (
+    report?.available_for_handoff === true ||
+    safeUpper(report?.tracking_status) === "WAITING_HANDOFF"
+  );
+}
+
+function normalizeInventoryRow(snapshot) {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    ...data,
+    wheelchair_number: cleanWheelchairNumber(
+      data?.wheelchair_number || snapshot.id
+    ),
+    location: safeText(data?.location),
+    passenger_name: safeText(data?.passenger_name),
+    airline: safeUpper(data?.airline),
+    flight_number: safeUpper(data?.flight_number),
+    pnr: cleanPnr(data?.pnr),
+    wch_type: safeUpper(data?.wch_type || "WCHR"),
+    previous_agent_name: safeText(data?.previous_agent_name),
+    previous_agent_id: safeText(data?.previous_agent_id),
+    report_doc_id: safeText(
+      data?.report_doc_id || data?.assigned_report_doc_id
+    ),
+    report_id: safeText(data?.report_id || data?.assigned_report_id),
+    status: buildInventoryStatus(data),
+  };
+}
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -420,7 +456,7 @@ function ActionButton({
     primary: {
       background:
         "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-      color: "#fff",
+      color: "#ffffff",
       border: "none",
       boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
     },
@@ -432,13 +468,13 @@ function ActionButton({
     },
     success: {
       background: "#16a34a",
-      color: "#fff",
+      color: "#ffffff",
       border: "none",
       boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
     },
     warning: {
       background: "#f59e0b",
-      color: "#fff",
+      color: "#ffffff",
       border: "none",
       boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
     },
@@ -462,7 +498,7 @@ function ActionButton({
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
-        opacity: disabled ? 0.65 : 1,
+        opacity: disabled ? 0.6 : 1,
         ...styles[variant],
         ...style,
       }}
@@ -479,9 +515,9 @@ function FieldLabel({ children }) {
         display: "block",
         marginBottom: 6,
         fontSize: 12,
-        fontWeight: 700,
+        fontWeight: 800,
         color: "#475569",
-        letterSpacing: "0.03em",
+        letterSpacing: "0.04em",
         textTransform: "uppercase",
       }}
     >
@@ -500,7 +536,7 @@ function EditInput({
 }) {
   return (
     <div>
-      <FieldLabel>{label}</FieldLabel>
+      {label ? <FieldLabel>{label}</FieldLabel> : null}
 
       <input
         type={type}
@@ -511,7 +547,7 @@ function EditInput({
         style={{
           width: "100%",
           border: "1px solid #dbeafe",
-          background: disabled ? "#f8fafc" : "#ffffff",
+          background: disabled ? "#f1f5f9" : "#ffffff",
           borderRadius: 14,
           padding: "12px 14px",
           fontSize: 14,
@@ -534,7 +570,7 @@ function SelectInput({
 }) {
   return (
     <div>
-      <FieldLabel>{label}</FieldLabel>
+      {label ? <FieldLabel>{label}</FieldLabel> : null}
 
       <select
         value={value || ""}
@@ -543,7 +579,7 @@ function SelectInput({
         style={{
           width: "100%",
           border: "1px solid #dbeafe",
-          background: disabled ? "#f8fafc" : "#ffffff",
+          background: disabled ? "#f1f5f9" : "#ffffff",
           borderRadius: 14,
           padding: "12px 14px",
           fontSize: 14,
@@ -553,15 +589,16 @@ function SelectInput({
           opacity: disabled ? 0.75 : 1,
         }}
       >
-        {options.map((item) => (
-          <option key={item} value={item}>
-            {item}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
           </option>
         ))}
       </select>
     </div>
   );
 }
+
 function StatusPill({ label, value, tone = "blue" }) {
   const tones = {
     blue: {
@@ -601,6 +638,7 @@ function StatusPill({ label, value, tone = "blue" }) {
           padding: "12px 14px",
           fontSize: 14,
           fontWeight: 900,
+          lineHeight: 1.4,
           wordBreak: "break-word",
           ...tones[tone],
         }}
@@ -611,331 +649,70 @@ function StatusPill({ label, value, tone = "blue" }) {
   );
 }
 
-function AvailableWheelchairsCard({
+function StatusCard({
+  parsed,
+  user,
   startLocation,
-  loading,
-  rows,
-  selectedInventoryId,
-  onSelect,
+  isContinuingService = false,
 }) {
-  if (!isHandoffLocation(startLocation)) {
-    return null;
-  }
-
-  const wheelchairList = rows
-    .map((row) => row.wheelchair_number)
-    .filter(Boolean);
+  const agentName = getAgentDisplayName(user) || "—";
 
   return (
-    <PageCard
-      style={{
-        padding: 18,
-        border: rows.length
-          ? "1px solid #bfdbfe"
-          : "1px solid #fde68a",
-        background: rows.length
-          ? "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)"
-          : "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
-      }}
-    >
+    <PageCard style={{ padding: 18 }}>
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "flex-start",
-        }}
-      >
-        <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              fontWeight: 900,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              color: rows.length ? "#1d4ed8" : "#92400e",
-            }}
-          >
-            Wheelchairs Available at This Location
-          </p>
-
-          <h2
-            style={{
-              margin: "8px 0 4px",
-              fontSize: 20,
-              color: "#0f172a",
-              fontWeight: 900,
-            }}
-          >
-            {startLocation}
-          </h2>
-
-          <p
-            style={{
-              margin: 0,
-              fontSize: 13,
-              color: "#475569",
-              lineHeight: 1.6,
-            }}
-          >
-            {loading
-              ? "Checking available wheelchairs..."
-              : rows.length
-              ? `At ${startLocation}, wheelchair${rows.length === 1 ? "" : "s"} ${wheelchairList.join(
-                  ", "
-                )} ${rows.length === 1 ? "is" : "are"} available. Which one will you take?`
-              : `No available wheelchairs were found at ${startLocation}.`}
-          </p>
-        </div>
-
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            borderRadius: 999,
-            padding: "8px 12px",
-            background: rows.length ? "#dbeafe" : "#fef3c7",
-            color: rows.length ? "#1d4ed8" : "#92400e",
-            border: rows.length
-              ? "1px solid #93c5fd"
-              : "1px solid #fde68a",
-            fontSize: 12,
-            fontWeight: 900,
-          }}
-        >
-          {loading ? "CHECKING" : `${rows.length} AVAILABLE`}
-        </span>
-      </div>
-
-      {!loading && rows.length > 0 && (
-        <div
-          style={{
-            marginTop: 16,
-            display: "grid",
-            gap: 10,
-          }}
-        >
-          {rows.map((row) => {
-            const selected = selectedInventoryId === row.id;
-
-            return (
-              <button
-                key={row.id}
-                type="button"
-                onClick={() => onSelect(row)}
-                style={{
-                  width: "100%",
-                  border: selected
-                    ? "2px solid #1769aa"
-                    : "1px solid #dbeafe",
-                  borderRadius: 16,
-                  background: selected ? "#edf7ff" : "#ffffff",
-                  padding: 14,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  boxShadow: selected
-                    ? "0 12px 24px rgba(23,105,170,0.12)"
-                    : "none",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 16,
-                        fontWeight: 900,
-                        color: "#0f172a",
-                      }}
-                    >
-                      Wheelchair {row.wheelchair_number || "—"}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontSize: 12,
-                        color: "#64748b",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {row.passenger_name
-                        ? `Passenger: ${row.passenger_name}`
-                        : "No passenger information"}
-
-                      {row.flight_number
-                        ? ` · Flight ${row.airline || ""} ${
-                            row.flight_number
-                          }`
-                        : ""}
-                    </div>
-                  </div>
-
-                  <span
-                    style={{
-                      borderRadius: 999,
-                      padding: "7px 10px",
-                      background: selected ? "#1769aa" : "#ecfdf5",
-                      color: selected ? "#ffffff" : "#15803d",
-                      border: selected
-                        ? "1px solid #1769aa"
-                        : "1px solid #bbf7d0",
-                      fontSize: 11,
-                      fontWeight: 900,
-                    }}
-                  >
-                    {selected ? "SELECTED" : "AVAILABLE"}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 12,
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(140px, 1fr))",
-                    gap: 8,
-                  }}
-                >
-                  <StatusPill
-                    label="Location"
-                    value={row.location || startLocation}
-                    tone="blue"
-                  />
-
-                  <StatusPill
-                    label="PNR"
-                    value={row.pnr || "—"}
-                    tone="slate"
-                  />
-
-                  <StatusPill
-                    label="Previous Agent"
-                    value={row.previous_agent_name || "—"}
-                    tone="slate"
-                  />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </PageCard>
-  );
-}
-
-function SelectedHandoffCard({ wheelchair, onClear }) {
-  if (!wheelchair) return null;
-
-  return (
-    <PageCard
-      style={{
-        padding: 18,
-        border: "1px solid #a7f3d0",
-        background:
-          "linear-gradient(135deg, rgba(236,253,245,0.98) 0%, rgba(255,255,255,0.98) 100%)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "flex-start",
-        }}
-      >
-        <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              fontWeight: 900,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              color: "#15803d",
-            }}
-          >
-            Existing Service Selected
-          </p>
-
-          <h2
-            style={{
-              margin: "8px 0 4px",
-              fontSize: 21,
-              fontWeight: 900,
-              color: "#0f172a",
-            }}
-          >
-            Continue Wheelchair {wheelchair.wheelchair_number || "—"}
-          </h2>
-
-          <p
-            style={{
-              margin: 0,
-              fontSize: 13,
-              color: "#475569",
-              lineHeight: 1.6,
-            }}
-          >
-            Passenger and flight information were loaded automatically. Your
-            service time will begin from {wheelchair.location || "this location"}.
-          </p>
-        </div>
-
-        <ActionButton
-          variant="secondary"
-          onClick={onClear}
-        >
-          Choose Another
-        </ActionButton>
-      </div>
-
-      <div
-        style={{
-          marginTop: 16,
           display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(170px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
           gap: 12,
         }}
       >
-        <StatusPill
-          label="Passenger"
-          value={wheelchair.passenger_name || "—"}
-          tone="slate"
-        />
-
-        <StatusPill
-          label="Flight"
-          value={
-            wheelchair.flight_number
-              ? `${wheelchair.airline || ""} ${wheelchair.flight_number}`
-              : "—"
-          }
-          tone="slate"
-        />
-
-        <StatusPill
-          label="PNR"
-          value={wheelchair.pnr || "—"}
-          tone="slate"
-        />
-
         <StatusPill
           label="Pickup Location"
-          value={wheelchair.location || "—"}
+          value={`📍 ${startLocation || "Counter"}`}
           tone="blue"
         />
+
+        <StatusPill
+          label="Status"
+          value={
+            isContinuingService
+              ? "🟠 Continuing Service"
+              : "🟢 New Service"
+          }
+          tone={isContinuingService ? "amber" : "green"}
+        />
+
+        <StatusPill
+          label="Assigned Agent"
+          value={agentName}
+          tone="slate"
+        />
+
+        <StatusPill
+          label="Wheelchair"
+          value={parsed?.wheelchair_number || "—"}
+          tone="slate"
+        />
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          background: isContinuingService ? "#eff6ff" : "#fffbeb",
+          border: isContinuingService
+            ? "1px solid #bfdbfe"
+            : "1px solid #fde68a",
+          borderRadius: 16,
+          padding: "12px 14px",
+          color: isContinuingService ? "#1d4ed8" : "#92400e",
+          fontSize: 13,
+          fontWeight: 700,
+          lineHeight: 1.6,
+        }}
+      >
+        {isContinuingService
+          ? "The passenger information is linked to the original report. Your service time begins when you accept this wheelchair."
+          : "The wheelchair remains assigned to your profile until you mark the passenger as delivered or leave the wheelchair at an approved handoff location."}
       </div>
     </PageCard>
   );
@@ -947,10 +724,15 @@ function ActiveServiceCard({
   setDeliveryLocation,
   onDelivered,
   delivering,
+  handoffLocation,
+  setHandoffLocation,
+  onHandoff,
+  savingHandoff,
 }) {
   if (!service?.is_active) return null;
 
-  const currentLocation = service.current_location || "Unknown";
+  const currentLocation = safeText(service.current_location) || "Unknown";
+  const wheelchairNumber = service.wheelchair_number || "—";
 
   return (
     <PageCard
@@ -992,7 +774,7 @@ function ActiveServiceCard({
               fontWeight: 900,
             }}
           >
-            Wheelchair {service.wheelchair_number || "—"}
+            Wheelchair {wheelchairNumber}
           </h2>
 
           <p
@@ -1003,8 +785,8 @@ function ActiveServiceCard({
               lineHeight: 1.6,
             }}
           >
-            You cannot take another wheelchair until this passenger is marked
-            as delivered.
+            You cannot accept another wheelchair until this service is
+            delivered or transferred at an approved handoff location.
           </p>
         </div>
 
@@ -1029,8 +811,7 @@ function ActiveServiceCard({
         style={{
           marginTop: 16,
           display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(180px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
           gap: 12,
         }}
       >
@@ -1044,7 +825,7 @@ function ActiveServiceCard({
           label="Flight"
           value={
             service.flight_number
-              ? `${service.airline || ""} ${service.flight_number}`
+              ? `${service.airline || ""} ${service.flight_number}`.trim()
               : "—"
           }
           tone="slate"
@@ -1077,120 +858,431 @@ function ActiveServiceCard({
             lineHeight: 1.55,
           }}
         >
-          The wheelchair appears to be at a final destination. Please click
-          “Passenger Delivered” as soon as the passenger is handed off at the
-          gate or destination.
+          This service appears to be at a final destination. Please click
+          Passenger Delivered after the passenger is handed off.
         </div>
       )}
 
       <div
         style={{
           marginTop: 16,
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 10,
-          alignItems: "end",
+          padding: 14,
+          borderRadius: 18,
+          border: "1px solid #bbf7d0",
+          background: "#f0fdf4",
         }}
       >
-        <SelectInput
-          label="Delivered At"
-          value={deliveryLocation}
-          onChange={setDeliveryLocation}
-          options={DELIVERY_DESTINATIONS}
-        />
-
-        <ActionButton
-          variant="success"
-          onClick={onDelivered}
-          disabled={delivering || !deliveryLocation}
+        <div
           style={{
-            width: "100%",
-            minHeight: 44,
+            marginBottom: 12,
+            color: "#166534",
+            fontSize: 13,
+            fontWeight: 800,
+            lineHeight: 1.55,
           }}
         >
-          {delivering
-            ? "Saving Delivery..."
-            : "Passenger Delivered"}
-        </ActionButton>
-      </div>
-    </PageCard>
-  );
-}
+          Use Passenger Delivered only when the passenger reaches the gate or
+          Main Terminal.
+        </div>
 
-function StatusCard({
-  parsed,
-  user,
-  startLocation,
-  isContinuingService = false,
-}) {
-  const agentName =
-    user?.displayName ||
-    user?.fullName ||
-    user?.name ||
-    user?.username ||
-    "—";
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 10,
+            alignItems: "end",
+          }}
+        >
+          <SelectInput
+            label="Delivered At"
+            value={deliveryLocation}
+            onChange={setDeliveryLocation}
+            options={DELIVERY_DESTINATIONS}
+          />
 
-  return (
-    <PageCard style={{ padding: 18 }}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
-        }}
-      >
-        <StatusPill
-          label="Current Location"
-          value={`📍 ${startLocation || "Counter"}`}
-          tone="blue"
-        />
-
-        <StatusPill
-          label="Status"
-          value={
-            isContinuingService
-              ? "🟢 Continuing Service"
-              : "🟢 New Service"
-          }
-          tone="green"
-        />
-
-        <StatusPill
-          label="Assigned Agent"
-          value={agentName}
-          tone="slate"
-        />
-
-        <StatusPill
-          label="Wheelchair"
-          value={parsed?.wheelchair_number || "—"}
-          tone="slate"
-        />
+          <ActionButton
+            variant="success"
+            onClick={onDelivered}
+            disabled={delivering || savingHandoff || !deliveryLocation}
+            style={{ minHeight: 45 }}
+          >
+            {delivering
+              ? "Saving Delivery..."
+              : "Passenger Delivered"}
+          </ActionButton>
+        </div>
       </div>
 
       <div
         style={{
           marginTop: 14,
-          background: "#fffbeb",
-          border: "1px solid #fde68a",
-          borderRadius: 16,
-          padding: "12px 14px",
-          color: "#92400e",
-          fontSize: 13,
-          fontWeight: 700,
-          lineHeight: 1.55,
+          padding: 14,
+          borderRadius: 18,
+          border: "1px solid #bfdbfe",
+          background: "#eff6ff",
         }}
       >
-        {isContinuingService
-          ? "This is an existing passenger service transferred from another employee. Your individual service time begins when you take the wheelchair."
-          : "This wheelchair remains assigned to you until the passenger is marked as delivered."}
+        <div
+          style={{
+            marginBottom: 12,
+            color: "#1d4ed8",
+            fontSize: 13,
+            fontWeight: 800,
+            lineHeight: 1.55,
+          }}
+        >
+          Use Leave for Next Employee when the wheelchair and passenger are
+          transferred at Outside TSA, TSA, Outside CBP or CBP. This keeps the
+          passenger report open.
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 10,
+            alignItems: "end",
+          }}
+        >
+          <SelectInput
+            label="Handoff Location"
+            value={handoffLocation}
+            onChange={setHandoffLocation}
+            options={HANDOFF_LOCATIONS}
+          />
+
+          <ActionButton
+            variant="warning"
+            onClick={onHandoff}
+            disabled={savingHandoff || delivering || !handoffLocation}
+            style={{ minHeight: 45 }}
+          >
+            {savingHandoff
+              ? "Saving Handoff..."
+              : "Leave for Next Employee"}
+          </ActionButton>
+        </div>
       </div>
     </PageCard>
   );
 }
 
+function AvailableWheelchairsCard({
+  startLocation,
+  loading,
+  rows,
+  selectedInventoryId,
+  onSelect,
+}) {
+  if (!isHandoffLocation(startLocation)) {
+    return null;
+  }
+
+  return (
+    <PageCard
+      style={{
+        padding: 18,
+        border: "1px solid #bfdbfe",
+        background:
+          "linear-gradient(135deg, rgba(239,246,255,0.98) 0%, rgba(255,255,255,0.98) 100%)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 11,
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "#1d4ed8",
+            }}
+          >
+            Wheelchairs Available at This Location
+          </p>
+
+          <h2
+            style={{
+              margin: "8px 0 4px",
+              fontSize: 22,
+              color: "#0f172a",
+              fontWeight: 900,
+            }}
+          >
+            {startLocation}
+          </h2>
+
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              color: "#64748b",
+              lineHeight: 1.6,
+            }}
+          >
+            {loading
+              ? "Checking available wheelchairs..."
+              : rows.length
+              ? `Wheelchairs ${rows
+                  .map((row) => row.wheelchair_number)
+                  .join(", ")} are available. Which one will you take?`
+              : `No wheelchairs are currently available at ${startLocation}.`}
+          </p>
+        </div>
+
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            borderRadius: 999,
+            padding: "8px 12px",
+            background: "#dbeafe",
+            color: "#1d4ed8",
+            border: "1px solid #93c5fd",
+            fontSize: 12,
+            fontWeight: 900,
+          }}
+        >
+          {loading ? "LOADING" : `${rows.length} AVAILABLE`}
+        </span>
+      </div>
+
+      {!loading && rows.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            marginTop: 16,
+          }}
+        >
+          {rows.map((row) => {
+            const selected = selectedInventoryId === row.id;
+
+            return (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => onSelect(row)}
+                style={{
+                  width: "100%",
+                  border: selected
+                    ? "2px solid #1769aa"
+                    : "1px solid #dbeafe",
+                  borderRadius: 18,
+                  padding: 14,
+                  background: selected ? "#eaf6ff" : "#ffffff",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  boxSizing: "border-box",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 900,
+                        color: "#0f172a",
+                      }}
+                    >
+                      Wheelchair {row.wheelchair_number || "—"}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 12,
+                        color: "#64748b",
+                      }}
+                    >
+                      Passenger: {row.passenger_name || "—"} · Flight:{" "}
+                      {row.airline || "—"} {row.flight_number || ""}
+                    </div>
+                  </div>
+
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      borderRadius: 999,
+                      padding: "7px 11px",
+                      background: selected ? "#1769aa" : "#ecfdf5",
+                      color: selected ? "#ffffff" : "#15803d",
+                      border: selected
+                        ? "1px solid #1769aa"
+                        : "1px solid #bbf7d0",
+                      fontSize: 11,
+                      fontWeight: 900,
+                    }}
+                  >
+                    {selected ? "SELECTED" : "AVAILABLE"}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(150px, 1fr))",
+                    gap: 8,
+                    marginTop: 12,
+                  }}
+                >
+                  <StatusPill
+                    label="Location"
+                    value={row.location || "—"}
+                    tone="blue"
+                  />
+
+                  <StatusPill
+                    label="PNR"
+                    value={row.pnr || "—"}
+                    tone="slate"
+                  />
+
+                  <StatusPill
+                    label="Previous Agent"
+                    value={row.previous_agent_name || "—"}
+                    tone="slate"
+                  />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </PageCard>
+  );
+}
+
+function SelectedHandoffCard({ wheelchair, onClear }) {
+  if (!wheelchair) return null;
+
+  return (
+    <PageCard
+      style={{
+        padding: 18,
+        border: "1px solid #a7f3d0",
+        background:
+          "linear-gradient(135deg, rgba(236,253,245,0.98) 0%, rgba(255,255,255,0.98) 100%)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 11,
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "#15803d",
+            }}
+          >
+            Existing Service Selected
+          </p>
+
+          <h2
+            style={{
+              margin: "8px 0 4px",
+              fontSize: 22,
+              color: "#0f172a",
+              fontWeight: 900,
+            }}
+          >
+            Continue Wheelchair {wheelchair.wheelchair_number || "—"}
+          </h2>
+
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              color: "#64748b",
+              lineHeight: 1.6,
+            }}
+          >
+            Passenger and flight information were loaded automatically. Your
+            service time will begin from {wheelchair.location || "the pickup location"}.
+          </p>
+        </div>
+
+        <ActionButton
+          type="button"
+          variant="secondary"
+          onClick={onClear}
+        >
+          Choose Another
+        </ActionButton>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 10,
+          marginTop: 16,
+        }}
+      >
+        <StatusPill
+          label="Passenger"
+          value={wheelchair.passenger_name || "—"}
+          tone="slate"
+        />
+
+        <StatusPill
+          label="Flight"
+          value={
+            wheelchair.flight_number
+              ? `${wheelchair.airline || ""} ${
+                  wheelchair.flight_number
+                }`.trim()
+              : "—"
+          }
+          tone="slate"
+        />
+
+        <StatusPill
+          label="PNR"
+          value={wheelchair.pnr || "—"}
+          tone="slate"
+        />
+
+        <StatusPill
+          label="Pickup Location"
+          value={wheelchair.location || "—"}
+          tone="blue"
+        />
+      </div>
+    </PageCard>
+  );
+}
 export default function WCHRScan() {
   const navigate = useNavigate();
   const { user } = useUser();
@@ -1211,33 +1303,33 @@ export default function WCHRScan() {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [activeService, setActiveService] = useState(null);
 
-  const [inventoryLoading, setInventoryLoading] = useState(false);
-  const [availableWheelchairs, setAvailableWheelchairs] = useState([]);
-  const [selectedInventory, setSelectedInventory] = useState(null);
-
   const [deliveryLocation, setDeliveryLocation] =
     useState("Main Terminal");
-
   const [delivering, setDelivering] = useState(false);
-  const [takingHandoff, setTakingHandoff] = useState(false);
+
+  const [handoffLocation, setHandoffLocation] =
+    useState("Outside TSA");
+  const [savingHandoff, setSavingHandoff] = useState(false);
+
+  const [availableWheelchairs, setAvailableWheelchairs] = useState([]);
+  const [availableLoading, setAvailableLoading] = useState(false);
+  const [selectedInventory, setSelectedInventory] = useState(null);
+  const [acceptingInventory, setAcceptingInventory] = useState(false);
 
   const scanUrl = import.meta.env.VITE_WCHR_SCAN_URL;
 
-  const currentAgentName =
-    user?.displayName ||
-    user?.fullName ||
-    user?.name ||
-    user?.username ||
-    "";
-
   const currentAgentId = getAgentSessionId(user);
+  const currentAgentName = getAgentDisplayName(user);
 
   const hasActiveService = Boolean(
-    activeService?.is_active &&
-      safeUpper(activeService?.tracking_status) !== "COMPLETED"
+    activeService?.is_active === true &&
+      safeUpper(activeService?.tracking_status) !== "COMPLETED" &&
+      safeUpper(activeService?.tracking_status) !== "HANDOFF"
   );
 
-  const isContinuingExistingService = Boolean(
+  const selectedInventoryId = selectedInventory?.id || "";
+
+  const continuingExistingService = Boolean(
     selectedInventory?.report_doc_id
   );
 
@@ -1271,9 +1363,14 @@ export default function WCHRScan() {
             ...snapshot.data(),
           };
 
+          const sessionStatus = safeUpper(
+            sessionData?.tracking_status
+          );
+
           const sessionIsActive =
             sessionData?.is_active === true &&
-            safeUpper(sessionData?.tracking_status) !== "COMPLETED";
+            sessionStatus !== "COMPLETED" &&
+            sessionStatus !== "HANDOFF";
 
           if (!sessionIsActive) {
             setActiveService(null);
@@ -1281,7 +1378,13 @@ export default function WCHRScan() {
             return;
           }
 
-          if (sessionData.report_doc_id) {
+          if (!sessionData.report_doc_id) {
+            setActiveService(sessionData);
+            setSessionLoading(false);
+            return;
+          }
+
+          try {
             const reportRef = doc(
               db,
               REPORTS_COLLECTION,
@@ -1290,87 +1393,137 @@ export default function WCHRScan() {
 
             const reportSnapshot = await getDoc(reportRef);
 
-            if (reportSnapshot.exists()) {
-              const reportData = {
-                id: reportSnapshot.id,
-                ...reportSnapshot.data(),
-              };
+            if (!reportSnapshot.exists()) {
+              await setDoc(
+                sessionRef,
+                {
+                  is_active: false,
+                  tracking_status: "CANCELLED",
+                  active_report_id: "",
+                  report_doc_id: "",
+                  inventory_doc_id: "",
+                  service_segment_id: "",
+                  updated_at: serverTimestamp(),
+                },
+                { merge: true }
+              );
 
-              const reportIsDelivered =
-                reportData?.passenger_delivered === true ||
-                safeUpper(reportData?.tracking_status) === "COMPLETED";
-
-              if (reportIsDelivered) {
-                await setDoc(
-                  sessionRef,
-                  {
-                    is_active: false,
-                    tracking_status: "COMPLETED",
-                    active_report_id: "",
-                    report_doc_id: "",
-                    completed_at:
-                      reportData.delivered_at || serverTimestamp(),
-                    updated_at: serverTimestamp(),
-                  },
-                  { merge: true }
-                );
-
-                setActiveService(null);
-                setSessionLoading(false);
-                return;
-              }
-
-              setActiveService({
-                ...sessionData,
-                passenger_name:
-                  reportData.passenger_name ||
-                  sessionData.passenger_name ||
-                  "",
-
-                wheelchair_number:
-                  reportData.wheelchair_number ||
-                  sessionData.wheelchair_number ||
-                  "",
-
-                airline:
-                  reportData.airline ||
-                  sessionData.airline ||
-                  "",
-
-                flight_number:
-                  reportData.flight_number ||
-                  sessionData.flight_number ||
-                  "",
-
-                pnr:
-                  reportData.pnr ||
-                  sessionData.pnr ||
-                  "",
-
-                current_location:
-                  reportData.current_location ||
-                  sessionData.current_location ||
-                  "",
-
-                tracking_status:
-                  reportData.tracking_status ||
-                  sessionData.tracking_status ||
-                  "IN_PROGRESS",
-
-                started_at:
-                  sessionData.started_at ||
-                  reportData.current_segment_started_at ||
-                  reportData.pickup_at ||
-                  reportData.submitted_at ||
-                  null,
-              });
-
+              setActiveService(null);
               setSessionLoading(false);
               return;
             }
+
+            const reportData = {
+              id: reportSnapshot.id,
+              ...reportSnapshot.data(),
+            };
+
+            const reportDelivered = getReportIsDelivered(reportData);
+            const reportWaitingHandoff =
+              getReportIsWaitingHandoff(reportData);
+
+            if (reportDelivered || reportWaitingHandoff) {
+              await setDoc(
+                sessionRef,
+                {
+                  is_active: false,
+                  tracking_status: reportDelivered
+                    ? "COMPLETED"
+                    : "HANDOFF",
+                  active_report_id: "",
+                  report_doc_id: "",
+                  inventory_doc_id: "",
+                  service_segment_id: "",
+                  completed_at: serverTimestamp(),
+                  updated_at: serverTimestamp(),
+                },
+                { merge: true }
+              );
+
+              setActiveService(null);
+              setSessionLoading(false);
+              return;
+            }
+
+            setActiveService({
+              ...sessionData,
+
+              report_doc_id: reportSnapshot.id,
+
+              report_id:
+                reportData.report_id ||
+                sessionData.report_id ||
+                "",
+
+              inventory_doc_id:
+                sessionData.inventory_doc_id ||
+                reportData.inventory_doc_id ||
+                getWheelchairDocumentId(
+                  reportData.wheelchair_number ||
+                    sessionData.wheelchair_number
+                ),
+
+              service_segment_id:
+                sessionData.service_segment_id ||
+                reportData.current_segment_id ||
+                "",
+
+              passenger_name:
+                reportData.passenger_name ||
+                sessionData.passenger_name ||
+                "",
+
+              airline:
+                reportData.airline ||
+                sessionData.airline ||
+                "",
+
+              wheelchair_number:
+                reportData.wheelchair_number ||
+                sessionData.wheelchair_number ||
+                "",
+
+              flight_number:
+                reportData.flight_number ||
+                sessionData.flight_number ||
+                "",
+
+              pnr:
+                reportData.pnr ||
+                sessionData.pnr ||
+                "",
+
+              current_location:
+                reportData.current_location ||
+                sessionData.current_location ||
+                "",
+
+              tracking_status:
+                reportData.tracking_status ||
+                sessionData.tracking_status ||
+                "IN_PROGRESS",
+
+              passenger_delivered:
+                reportData.passenger_delivered === true,
+
+              is_active: true,
+
+              started_at:
+                reportData.current_segment_started_at ||
+                sessionData.started_at ||
+                reportData.pickup_at ||
+                reportData.submitted_at ||
+                null,
+            });
+          } catch (reportError) {
+            console.error(
+              "Error validating active WCHR report:",
+              reportError
+            );
+
+            setActiveService(sessionData);
           }
 
-          setActiveService(sessionData);
           setSessionLoading(false);
         } catch (sessionError) {
           console.error(
@@ -1412,215 +1565,130 @@ export default function WCHRScan() {
     if (isDeliveryLocation(currentLocation)) {
       setDeliveryLocation(currentLocation);
     }
+
+    if (isHandoffLocation(currentLocation)) {
+      setHandoffLocation(currentLocation);
+    }
   }, [activeService?.current_location]);
 
   useEffect(() => {
-    let cancelled = false;
+    setSelectedInventory(null);
+    setAvailableWheelchairs([]);
 
-    async function loadAvailableWheelchairs() {
-      setSelectedInventory(null);
-      setAvailableWheelchairs([]);
+    if (
+      !startLocation ||
+      !isHandoffLocation(startLocation) ||
+      hasActiveService ||
+      sessionLoading
+    ) {
+      setAvailableLoading(false);
+      return undefined;
+    }
 
-      if (
-        hasActiveService ||
-        sessionLoading ||
-        !isHandoffLocation(startLocation)
-      ) {
-        setInventoryLoading(false);
-        return;
-      }
+    setAvailableLoading(true);
 
-      try {
-        setInventoryLoading(true);
-        setError("");
+    const inventoryQuery = query(
+      collection(db, INVENTORY_COLLECTION),
+      where("location", "==", startLocation)
+    );
 
-        const inventoryQuery = query(
-          collection(db, INVENTORY_COLLECTION),
-          where("location", "==", startLocation)
-        );
-
-        const inventorySnapshot = await getDocs(inventoryQuery);
-
-        const directInventoryRows = inventorySnapshot.docs
-          .map((inventoryDoc) => ({
-            id: inventoryDoc.id,
-            ...inventoryDoc.data(),
-          }))
+    const unsubscribe = onSnapshot(
+      inventoryQuery,
+      (snapshot) => {
+        const rows = snapshot.docs
+          .map(normalizeInventoryRow)
           .filter((row) =>
-            inventoryRowMatchesLocation(row, startLocation)
-          );
-
-        const hydratedRows = [];
-
-        for (const inventoryRow of directInventoryRows) {
-          let reportData = null;
-
-          const reportDocId =
-            inventoryRow.report_doc_id ||
-            inventoryRow.assigned_report_doc_id ||
-            "";
-
-          if (reportDocId) {
-            try {
-              const reportSnapshot = await getDoc(
-                doc(db, REPORTS_COLLECTION, reportDocId)
-              );
-
-              if (reportSnapshot.exists()) {
-                reportData = {
-                  id: reportSnapshot.id,
-                  ...reportSnapshot.data(),
-                };
+            inventoryIsAvailableAtLocation(row, startLocation)
+          )
+          .sort((first, second) =>
+            String(first.wheelchair_number || "").localeCompare(
+              String(second.wheelchair_number || ""),
+              undefined,
+              {
+                numeric: true,
+                sensitivity: "base",
               }
-            } catch (reportError) {
-              console.error(
-                "Unable to hydrate wheelchair report:",
-                reportError
-              );
-            }
-          }
-
-          hydratedRows.push(
-            reportData
-              ? buildInventoryFromReport(reportData, inventoryRow)
-              : {
-                  ...inventoryRow,
-                  id: inventoryRow.id,
-                }
-          );
-        }
-
-        if (!cancelled) {
-          setAvailableWheelchairs(
-            hydratedRows.sort((a, b) =>
-              safeText(a.wheelchair_number).localeCompare(
-                safeText(b.wheelchair_number),
-                undefined,
-                {
-                  numeric: true,
-                  sensitivity: "base",
-                }
-              )
             )
           );
-        }
-      } catch (inventoryError) {
+
+        setAvailableWheelchairs(rows);
+        setAvailableLoading(false);
+
+        setSelectedInventory((previous) => {
+          if (!previous?.id) return null;
+
+          const updatedRow =
+            rows.find((row) => row.id === previous.id) || null;
+
+          return updatedRow;
+        });
+      },
+      (inventoryError) => {
         console.error(
-          "Failed to load wheelchairs by location:",
+          "Error loading wheelchairs by location:",
           inventoryError
         );
 
-        if (!cancelled) {
-          setError(
-            inventoryError?.message ||
-              "Unable to load the available wheelchairs at this location."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setInventoryLoading(false);
-        }
+        setError(
+          inventoryError?.message ||
+            "Unable to load wheelchairs available at this location."
+        );
+
+        setAvailableWheelchairs([]);
+        setAvailableLoading(false);
       }
-    }
+    );
 
-    loadAvailableWheelchairs();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => unsubscribe();
   }, [
     startLocation,
     hasActiveService,
     sessionLoading,
   ]);
 
-  const handleSelectAvailableWheelchair = (inventoryRow) => {
-    const normalizedRow = {
-      ...inventoryRow,
+  useEffect(() => {
+    if (!selectedInventory) return;
 
-      wheelchair_number:
-        cleanWheelchairNumber(
-          inventoryRow.wheelchair_number
-        ),
+    setMode("existing");
+    setStep("existing-preview");
 
-      passenger_name:
-        normalizePassengerName(
-          inventoryRow.passenger_name
-        ),
-
-      airline:
-        safeUpper(inventoryRow.airline),
-
-      flight_number:
-        safeUpper(inventoryRow.flight_number),
-
-      pnr:
-        cleanPnr(inventoryRow.pnr),
-
-      wch_type:
-        safeUpper(
-          inventoryRow.wch_type || "WCHR"
-        ),
-
-      location:
-        safeText(
-          inventoryRow.location || startLocation
-        ),
-    };
-
-    setSelectedInventory(normalizedRow);
+    setWchType(
+      safeUpper(selectedInventory.wch_type || "WCHR")
+    );
 
     setParsed({
       passenger_name:
-        normalizedRow.passenger_name || "",
-
+        selectedInventory.passenger_name || "",
       airline:
-        normalizedRow.airline || "",
-
+        selectedInventory.airline || "",
       flight_number:
-        normalizedRow.flight_number || "",
-
+        selectedInventory.flight_number || "",
       pnr:
-        normalizedRow.pnr || "",
-
+        selectedInventory.pnr || "",
       wheelchair_number:
-        normalizedRow.wheelchair_number || "",
-
+        selectedInventory.wheelchair_number || "",
       raw_text: "",
     });
 
-    setWchType(
-      normalizedRow.wch_type || "WCHR"
-    );
+    if (
+      selectedInventory.location &&
+      selectedInventory.location !== startLocation
+    ) {
+      setStartLocation(selectedInventory.location);
+    }
 
-    setMode("manual");
-    setStep("handoff");
-    setImageFile(null);
-    setImageUrl("");
-
-    setError("");
-    setMessage(
-      `Wheelchair ${normalizedRow.wheelchair_number} selected at ${normalizedRow.location}. Passenger information was loaded automatically.`
-    );
-  };
-
-  const handleClearSelectedWheelchair = () => {
-    setSelectedInventory(null);
-    setParsed(emptyParsed());
-    setWchType("WCHR");
-    setMode("scan");
-    setStep("upload");
     setImageFile(null);
     setImageUrl("");
     setError("");
     setMessage("");
-  };
-    const canScan = useMemo(() => {
-    return (
-      Boolean(imageFile) &&
-      !hasActiveService &&
-      !sessionLoading &&
-      !selectedInventory
+  }, [selectedInventoryId]);
+
+  const canScan = useMemo(() => {
+    return Boolean(
+      imageFile &&
+        !hasActiveService &&
+        !sessionLoading &&
+        !selectedInventory
     );
   }, [
     imageFile,
@@ -1629,8 +1697,12 @@ export default function WCHRScan() {
     selectedInventory,
   ]);
 
-  const canSubmit = useMemo(() => {
-    if (hasActiveService || sessionLoading) {
+  const canSubmitNewService = useMemo(() => {
+    if (
+      hasActiveService ||
+      sessionLoading ||
+      selectedInventory
+    ) {
       return false;
     }
 
@@ -1643,45 +1715,84 @@ export default function WCHRScan() {
       startLocation,
     ];
 
-    const requiredFieldsComplete = requiredValues.every(
+    const fieldsComplete = requiredValues.every(
       (value) => safeText(value).length > 0
     );
 
-    if (!requiredFieldsComplete) {
+    if (!fieldsComplete) {
       return false;
-    }
-
-    if (selectedInventory) {
-      return Boolean(
-        selectedInventory.id &&
-          selectedInventory.report_doc_id &&
-          selectedInventory.wheelchair_number
-      );
     }
 
     if (mode === "scan") {
       return Boolean(imageUrl);
     }
 
-    return true;
+    return mode === "manual";
   }, [
     hasActiveService,
     sessionLoading,
+    selectedInventory,
     parsed,
     wchType,
     startLocation,
-    selectedInventory,
     mode,
     imageUrl,
   ]);
 
-  const resetEntryForm = () => {
+  const canAcceptExistingService = useMemo(() => {
+    return Boolean(
+      selectedInventory?.id &&
+        selectedInventory?.report_doc_id &&
+        selectedInventory?.wheelchair_number &&
+        startLocation &&
+        !hasActiveService &&
+        !sessionLoading &&
+        !acceptingInventory
+    );
+  }, [
+    selectedInventory,
+    startLocation,
+    hasActiveService,
+    sessionLoading,
+    acceptingInventory,
+  ]);
+
+  const resetNewEntryForm = (nextMode = mode) => {
     setParsed(emptyParsed());
     setImageFile(null);
     setImageUrl("");
+
+    if (nextMode === "scan") {
+      setStep("upload");
+    } else if (nextMode === "manual") {
+      setStep("manual");
+    } else {
+      setStep("upload");
+    }
+  };
+
+  const clearSelectedInventory = () => {
     setSelectedInventory(null);
-    setWchType("WCHR");
-    setStep(mode === "scan" ? "upload" : "manual");
+    setMode("scan");
+    setStep("upload");
+    setParsed(emptyParsed());
+    setImageFile(null);
+    setImageUrl("");
+    setError("");
+    setMessage("");
+  };
+
+  const handleSelectInventory = (inventoryRow) => {
+    if (hasActiveService) {
+      setError(
+        `You already have wheelchair ${
+          activeService?.wheelchair_number || ""
+        } assigned. Complete or transfer that service before accepting another wheelchair.`
+      );
+      return;
+    }
+
+    setSelectedInventory(inventoryRow);
   };
 
   const handlePickFile = (file) => {
@@ -1712,14 +1823,17 @@ export default function WCHRScan() {
       file?.name || "boarding-pass.jpg"
     ).replace(/[^a-zA-Z0-9._-]/g, "_");
 
-    const path = `wch_reports/${safeUser}/${yyyymmdd()}/${Date.now()}-${safeFileName}`;
-    const storageRef = ref(storage, path);
+    const path =
+      `wch_reports/${safeUser}/${yyyymmdd()}/` +
+      `${Date.now()}-${safeFileName}`;
 
-    await uploadBytes(storageRef, file, {
+    const storageReference = ref(storage, path);
+
+    await uploadBytes(storageReference, file, {
       contentType: file?.type || "image/jpeg",
     });
 
-    return getDownloadURL(storageRef);
+    return getDownloadURL(storageReference);
   };
 
   const callScanService = async (url) => {
@@ -1760,14 +1874,7 @@ export default function WCHRScan() {
       setError(
         `You already have wheelchair ${
           activeService?.wheelchair_number || ""
-        } assigned. Mark the passenger as delivered before taking another wheelchair.`
-      );
-      return;
-    }
-
-    if (selectedInventory) {
-      setError(
-        "You already selected an available wheelchair. Clear that selection before scanning a new boarding pass."
+        } assigned. Mark the passenger as delivered or transfer the service before taking another wheelchair.`
       );
       return;
     }
@@ -1780,15 +1887,13 @@ export default function WCHRScan() {
     try {
       setStep("scanning");
 
-      const uploadedImageUrl = await uploadToStorage(
-        imageFile
-      );
+      const uploadedImageUrl =
+        await uploadToStorage(imageFile);
 
       setImageUrl(uploadedImageUrl);
 
-      const scanResult = await callScanService(
-        uploadedImageUrl
-      );
+      const scanResult =
+        await callScanService(uploadedImageUrl);
 
       const rawText = getRawScanText(scanResult);
 
@@ -1820,10 +1925,7 @@ export default function WCHRScan() {
       setParsed(normalized);
       setStep("preview");
     } catch (scanError) {
-      console.error(
-        "WCHR scan failed:",
-        scanError
-      );
+      console.error("WCHR scan failed:", scanError);
 
       setStep("upload");
 
@@ -1837,14 +1939,14 @@ export default function WCHRScan() {
   const createAgentSession = async ({
     reportDocId,
     reportId,
+    inventoryDocId,
+    serviceSegmentId,
     wheelchairNumber,
     passengerName,
     airline,
     pnr,
     flightNumber,
     currentLocation,
-    inventoryDocId = "",
-    serviceSegmentId = "",
   }) => {
     if (!currentAgentId) {
       throw new Error(
@@ -1884,7 +1986,6 @@ export default function WCHRScan() {
         flight_number: flightNumber,
 
         current_location: currentLocation,
-        pickup_location: currentLocation,
 
         tracking_status: "IN_PROGRESS",
         passenger_delivered: false,
@@ -1894,609 +1995,11 @@ export default function WCHRScan() {
         alert_after_minutes: 30,
 
         started_at: serverTimestamp(),
-        last_location_update_at:
-          serverTimestamp(),
-
+        last_location_update_at: serverTimestamp(),
         updated_at: serverTimestamp(),
       },
-      {
-        merge: true,
-      }
+      { merge: true }
     );
-  };
-
-  const handleTakeAvailableWheelchair = async () => {
-    setError("");
-    setMessage("");
-
-    if (!user) {
-      setError("You must be logged in.");
-      return;
-    }
-
-    if (sessionLoading) {
-      setError(
-        "Please wait while your active service is verified."
-      );
-      return;
-    }
-
-    if (hasActiveService) {
-      setError(
-        `You already have wheelchair ${
-          activeService?.wheelchair_number || ""
-        } assigned. Deliver that passenger before taking another wheelchair.`
-      );
-      return;
-    }
-
-    if (!selectedInventory?.id) {
-      setError(
-        "Please select an available wheelchair."
-      );
-      return;
-    }
-
-    if (!selectedInventory?.report_doc_id) {
-      setError(
-        "The selected wheelchair is not connected to an active passenger report."
-      );
-      return;
-    }
-
-    const selectedWheelchairNumber =
-      cleanWheelchairNumber(
-        selectedInventory.wheelchair_number
-      );
-
-    const selectedPickupLocation = safeText(
-      selectedInventory.location ||
-        startLocation
-    );
-
-    if (
-      normalizeLocation(
-        selectedPickupLocation
-      ) !== normalizeLocation(startLocation)
-    ) {
-      setError(
-        `Wheelchair ${selectedWheelchairNumber} is registered at ${selectedPickupLocation}, not ${startLocation}.`
-      );
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Take wheelchair ${selectedWheelchairNumber} at ${selectedPickupLocation} and continue the service for ${
-        selectedInventory.passenger_name ||
-        "this passenger"
-      }?`
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setTakingHandoff(true);
-
-      const inventoryRef = doc(
-        db,
-        INVENTORY_COLLECTION,
-        selectedInventory.id
-      );
-
-      const reportRef = doc(
-        db,
-        REPORTS_COLLECTION,
-        selectedInventory.report_doc_id
-      );
-
-      const sessionRef = doc(
-        db,
-        AGENT_SESSIONS_COLLECTION,
-        currentAgentId
-      );
-
-      const segmentRef = doc(
-        collection(
-          db,
-          REPORTS_COLLECTION,
-          selectedInventory.report_doc_id,
-          "service_segments"
-        )
-      );
-
-      const segmentId = segmentRef.id;
-
-      const transactionResult =
-        await runTransaction(
-          db,
-          async (transaction) => {
-            const inventorySnapshot =
-              await transaction.get(
-                inventoryRef
-              );
-
-            if (!inventorySnapshot.exists()) {
-              throw new Error(
-                "This wheelchair is no longer available."
-              );
-            }
-
-            const inventoryData =
-              inventorySnapshot.data();
-
-            const currentlyAvailable =
-              inventoryData.is_available !==
-                false &&
-              safeUpper(
-                inventoryData.status ||
-                  "STORED"
-              ) !== "IN_USE";
-
-            if (!currentlyAvailable) {
-              throw new Error(
-                `Wheelchair ${selectedWheelchairNumber} was already taken by another employee.`
-              );
-            }
-
-            if (
-              normalizeLocation(
-                inventoryData.location
-              ) !==
-              normalizeLocation(
-                selectedPickupLocation
-              )
-            ) {
-              throw new Error(
-                `Wheelchair ${selectedWheelchairNumber} is no longer at ${selectedPickupLocation}.`
-              );
-            }
-
-            const reportSnapshot =
-              await transaction.get(reportRef);
-
-            if (!reportSnapshot.exists()) {
-              throw new Error(
-                "The passenger report connected to this wheelchair no longer exists."
-              );
-            }
-
-            const reportData =
-              reportSnapshot.data();
-
-            const alreadyDelivered =
-              reportData.passenger_delivered ===
-                true ||
-              safeUpper(
-                reportData.tracking_status
-              ) === "COMPLETED";
-
-            if (alreadyDelivered) {
-              throw new Error(
-                "This passenger was already marked as delivered."
-              );
-            }
-
-            transaction.update(
-              inventoryRef,
-              {
-                status: "IN_USE",
-                is_available: false,
-
-                current_agent_id:
-                  currentAgentId,
-
-                current_agent_name:
-                  currentAgentName,
-
-                checked_out_at:
-                  serverTimestamp(),
-
-                previous_location:
-                  inventoryData.location ||
-                  selectedPickupLocation,
-
-                updated_at:
-                  serverTimestamp(),
-
-                updated_by_id:
-                  currentAgentId,
-
-                updated_by_name:
-                  currentAgentName,
-              }
-            );
-
-            transaction.update(
-              reportRef,
-              {
-                tracking_status:
-                  "IN_PROGRESS",
-
-                passenger_delivered: false,
-                is_active: true,
-                alerts_enabled: true,
-
-                current_location:
-                  selectedPickupLocation,
-
-                last_location:
-                  reportData.current_location ||
-                  selectedPickupLocation,
-
-                current_segment_id:
-                  segmentId,
-
-                current_segment_started_at:
-                  serverTimestamp(),
-
-                current_segment_start_location:
-                  selectedPickupLocation,
-
-                current_segment_agent_id:
-                  currentAgentId,
-
-                current_segment_agent_name:
-                  currentAgentName,
-
-                wchr_agent_id:
-                  currentAgentId,
-
-                wchr_agent_name:
-                  currentAgentName,
-
-                assigned_wchr_agent:
-                  currentAgentName,
-
-                activity_agent_name:
-                  currentAgentName,
-
-                previous_wchr_agent_id:
-                  reportData.wchr_agent_id ||
-                  reportData.employee_id ||
-                  "",
-
-                previous_wchr_agent_name:
-                  reportData.wchr_agent_name ||
-                  reportData.employee_name ||
-                  "",
-
-                handoff_pickup_at:
-                  serverTimestamp(),
-
-                handoff_pickup_location:
-                  selectedPickupLocation,
-
-                last_location_update_at:
-                  serverTimestamp(),
-
-                last_updated_at:
-                  serverTimestamp(),
-
-                last_updated_by:
-                  currentAgentName,
-
-                last_updated_by_id:
-                  currentAgentId,
-              }
-            );
-
-            transaction.set(
-              segmentRef,
-              {
-                segment_id: segmentId,
-
-                report_doc_id:
-                  reportRef.id,
-
-                report_id:
-                  reportData.report_id ||
-                  selectedInventory.report_id ||
-                  "",
-
-                wheelchair_number:
-                  selectedWheelchairNumber,
-
-                passenger_name:
-                  reportData.passenger_name ||
-                  selectedInventory.passenger_name ||
-                  "",
-
-                airline:
-                  reportData.airline ||
-                  selectedInventory.airline ||
-                  "",
-
-                flight_number:
-                  reportData.flight_number ||
-                  selectedInventory.flight_number ||
-                  "",
-
-                pnr:
-                  reportData.pnr ||
-                  selectedInventory.pnr ||
-                  "",
-
-                agent_id:
-                  currentAgentId,
-
-                agent_name:
-                  currentAgentName,
-
-                start_location:
-                  selectedPickupLocation,
-
-                started_at:
-                  serverTimestamp(),
-
-                end_location: "",
-                ended_at: null,
-
-                segment_status:
-                  "IN_PROGRESS",
-
-                passenger_delivered: false,
-
-                created_at:
-                  serverTimestamp(),
-
-                updated_at:
-                  serverTimestamp(),
-              }
-            );
-
-            transaction.set(
-              sessionRef,
-              {
-                agent_id:
-                  currentAgentId,
-
-                agent_name:
-                  currentAgentName,
-
-                agent_username:
-                  user?.username ||
-                  user?.loginUsername ||
-                  user?.email ||
-                  "",
-
-                report_doc_id:
-                  reportRef.id,
-
-                active_report_id:
-                  reportRef.id,
-
-                report_id:
-                  reportData.report_id ||
-                  selectedInventory.report_id ||
-                  "",
-
-                inventory_doc_id:
-                  inventoryRef.id,
-
-                service_segment_id:
-                  segmentId,
-
-                wheelchair_number:
-                  selectedWheelchairNumber,
-
-                passenger_name:
-                  reportData.passenger_name ||
-                  selectedInventory.passenger_name ||
-                  "",
-
-                airline:
-                  reportData.airline ||
-                  selectedInventory.airline ||
-                  "",
-
-                pnr:
-                  reportData.pnr ||
-                  selectedInventory.pnr ||
-                  "",
-
-                flight_number:
-                  reportData.flight_number ||
-                  selectedInventory.flight_number ||
-                  "",
-
-                current_location:
-                  selectedPickupLocation,
-
-                pickup_location:
-                  selectedPickupLocation,
-
-                tracking_status:
-                  "IN_PROGRESS",
-
-                passenger_delivered: false,
-
-                is_active: true,
-                alerts_enabled: true,
-                alert_after_minutes: 30,
-
-                started_at:
-                  serverTimestamp(),
-
-                last_location_update_at:
-                  serverTimestamp(),
-
-                updated_at:
-                  serverTimestamp(),
-              },
-              {
-                merge: true,
-              }
-            );
-
-            return {
-              reportId:
-                reportData.report_id ||
-                selectedInventory.report_id ||
-                "",
-
-              passengerName:
-                reportData.passenger_name ||
-                selectedInventory.passenger_name ||
-                "",
-
-              airline:
-                reportData.airline ||
-                selectedInventory.airline ||
-                "",
-
-              flightNumber:
-                reportData.flight_number ||
-                selectedInventory.flight_number ||
-                "",
-
-              pnr:
-                reportData.pnr ||
-                selectedInventory.pnr ||
-                "",
-            };
-          }
-        );
-
-      await addDoc(
-        collection(
-          db,
-          TRACKING_EVENTS_COLLECTION
-        ),
-        {
-          report_doc_id:
-            selectedInventory.report_doc_id,
-
-          report_id:
-            transactionResult.reportId,
-
-          wheelchair_number:
-            selectedWheelchairNumber,
-
-          passenger_name:
-            transactionResult.passengerName,
-
-          airline:
-            transactionResult.airline,
-
-          pnr:
-            transactionResult.pnr,
-
-          flight_number:
-            transactionResult.flightNumber,
-
-          event_type:
-            "AGENT_HANDOFF_PICKUP",
-
-          location:
-            selectedPickupLocation,
-
-          previous_location:
-            selectedPickupLocation,
-
-          notes: `Wheelchair ${selectedWheelchairNumber} picked up by ${currentAgentName} at ${selectedPickupLocation}`,
-
-          service_segment_id:
-            segmentId,
-
-          tracking_status:
-            "IN_PROGRESS",
-
-          passenger_delivered: false,
-
-          is_active: true,
-          alerts_enabled: true,
-
-          employee_id:
-            currentAgentId,
-
-          employee_name:
-            currentAgentName,
-
-          previous_employee_id:
-            selectedInventory.previous_agent_id ||
-            "",
-
-          previous_employee_name:
-            selectedInventory.previous_agent_name ||
-            "",
-
-          created_at:
-            serverTimestamp(),
-        }
-      );
-
-      setActiveService({
-        is_active: true,
-
-        report_doc_id:
-          selectedInventory.report_doc_id,
-
-        report_id:
-          transactionResult.reportId,
-
-        inventory_doc_id:
-          selectedInventory.id,
-
-        service_segment_id:
-          segmentId,
-
-        wheelchair_number:
-          selectedWheelchairNumber,
-
-        passenger_name:
-          transactionResult.passengerName,
-
-        airline:
-          transactionResult.airline,
-
-        flight_number:
-          transactionResult.flightNumber,
-
-        pnr:
-          transactionResult.pnr,
-
-        current_location:
-          selectedPickupLocation,
-
-        tracking_status:
-          "IN_PROGRESS",
-
-        passenger_delivered: false,
-
-        started_at: new Date(),
-      });
-
-      setAvailableWheelchairs(
-        (previous) =>
-          previous.filter(
-            (row) =>
-              row.id !==
-              selectedInventory.id
-          )
-      );
-
-      setSelectedInventory(null);
-      setParsed(emptyParsed());
-      setImageFile(null);
-      setImageUrl("");
-      setStep("upload");
-
-      setMessage(
-        `Wheelchair ${selectedWheelchairNumber} is now assigned to you. Your time started at ${selectedPickupLocation}.`
-      );
-    } catch (handoffError) {
-      console.error(
-        "Error taking available wheelchair:",
-        handoffError
-      );
-
-      setError(
-        handoffError?.message ||
-          "Unable to assign this wheelchair. It may already have been taken."
-      );
-    } finally {
-      setTakingHandoff(false);
-    }
   };
     const handleSubmit = async () => {
     setError("");
@@ -2509,7 +2012,7 @@ export default function WCHRScan() {
 
     if (sessionLoading) {
       setError(
-        "Please wait while your active wheelchair service is verified."
+        "Please wait while the active wheelchair service is verified."
       );
       return;
     }
@@ -2518,17 +2021,19 @@ export default function WCHRScan() {
       setError(
         `You already have wheelchair ${
           activeService?.wheelchair_number || ""
-        } assigned. Mark the passenger as delivered before taking another wheelchair.`
+        } assigned. Complete or transfer that service before taking another wheelchair.`
       );
       return;
     }
 
     if (selectedInventory) {
-      await handleTakeAvailableWheelchair();
+      setError(
+        "An existing wheelchair service is selected. Use Continue Existing Service or choose another entry method."
+      );
       return;
     }
 
-    if (!canSubmit) {
+    if (!canSubmitNewService) {
       setError(
         "Please complete Passenger Name, Flight Number, PNR, WCHR Number, WCHR Type and Start Location before submitting."
       );
@@ -2550,41 +2055,435 @@ export default function WCHRScan() {
         parsed.wheelchair_number
       );
 
-      const flightNumber = safeUpper(
-        parsed.flight_number
-      );
-
-      const airline = safeUpper(
+      const finalAirline = safeUpper(
         parsed.airline || "WCHR"
       );
 
-      const initialLocation = safeText(
+      const finalFlightNumber = safeUpper(
+        parsed.flight_number
+      );
+
+      const finalStartLocation = safeText(
         startLocation || "Counter"
       );
 
-      const wheelchairDocumentId =
-        getWheelchairDocumentId(
-          finalWheelchairNumber
-        );
+      const inventoryDocumentId =
+        getWheelchairDocumentId(finalWheelchairNumber);
 
-      if (!wheelchairDocumentId) {
+      if (!inventoryDocumentId) {
         throw new Error(
-          "The wheelchair number is invalid."
+          "The wheelchair number is not valid."
         );
       }
 
-      const flightKey = `${airline}-${
-        flightNumber || "UNK"
-      }-${yyyymmdd(now)}`;
+      const inventoryRef = doc(
+        db,
+        INVENTORY_COLLECTION,
+        inventoryDocumentId
+      );
 
       const reportRef = doc(
         collection(db, REPORTS_COLLECTION)
       );
 
+      const segmentRef = doc(
+        collection(db, SERVICE_SEGMENTS_COLLECTION)
+      );
+
+      const trackingEventRef = doc(
+        collection(db, TRACKING_EVENTS_COLLECTION)
+      );
+
+      const sessionRef = doc(
+        db,
+        AGENT_SESSIONS_COLLECTION,
+        currentAgentId
+      );
+
+      const reportId = `WCHR-${yyyymmdd()}-${reportRef.id
+        .slice(-6)
+        .toUpperCase()}`;
+
+      const flightKey = buildFlightKey(
+        finalAirline,
+        finalFlightNumber,
+        now
+      );
+
+      await runTransaction(db, async (transaction) => {
+        const sessionSnapshot =
+          await transaction.get(sessionRef);
+
+        if (sessionSnapshot.exists()) {
+          const sessionData = sessionSnapshot.data();
+
+          const sessionStillActive =
+            sessionData?.is_active === true &&
+            !["COMPLETED", "HANDOFF", "CANCELLED"].includes(
+              safeUpper(sessionData?.tracking_status)
+            );
+
+          if (sessionStillActive) {
+            throw new Error(
+              `You already have wheelchair ${
+                sessionData?.wheelchair_number || ""
+              } assigned. Complete or transfer it before taking another wheelchair.`
+            );
+          }
+        }
+
+        const inventorySnapshot =
+          await transaction.get(inventoryRef);
+
+        if (inventorySnapshot.exists()) {
+          const inventoryData =
+            inventorySnapshot.data();
+
+          const inventoryStatus =
+            buildInventoryStatus(inventoryData);
+
+          const unavailable =
+            inventoryData?.is_available === false &&
+            inventoryData?.available_for_handoff !== true &&
+            inventoryStatus !== "AVAILABLE" &&
+            inventoryStatus !== "AVAILABLE_HANDOFF";
+
+          if (unavailable) {
+            throw new Error(
+              `Wheelchair ${finalWheelchairNumber} is already in use.`
+            );
+          }
+        }
+
+        transaction.set(reportRef, {
+          report_id: reportId,
+
+          employee_id: currentAgentId,
+          employee_name: currentAgentName,
+          employee_login:
+            user?.username ||
+            user?.loginUsername ||
+            user?.email ||
+            "",
+          employee_role: user?.role || "",
+
+          submitted_at: serverTimestamp(),
+
+          passenger_name: finalPassengerName,
+          airline: finalAirline,
+          flight_number: finalFlightNumber,
+          pnr: finalPnr,
+          wheelchair_number: finalWheelchairNumber,
+          wch_type: safeUpper(wchType || "WCHR"),
+
+          status: "NEW",
+          flight_key: flightKey,
+
+          image_url:
+            mode === "scan" ? imageUrl : "",
+
+          raw_text: parsed.raw_text || "",
+          entry_mode: mode,
+
+          wchr_agent_id: currentAgentId,
+          wchr_agent_name: currentAgentName,
+          assigned_wchr_agent: currentAgentName,
+          activity_agent_name: currentAgentName,
+
+          original_agent_id: currentAgentId,
+          original_agent_name: currentAgentName,
+
+          billing_ready: true,
+          billing_date: serverTimestamp(),
+          billing_passenger_name: finalPassengerName,
+          billing_pnr: finalPnr,
+          billing_wheelchair_number:
+            finalWheelchairNumber,
+
+          tracking_enabled: true,
+          tracking_status: "IN_PROGRESS",
+          passenger_delivered: false,
+
+          current_location: finalStartLocation,
+          last_location: finalStartLocation,
+
+          pickup_location: finalStartLocation,
+          pickup_at: serverTimestamp(),
+
+          initial_pickup_location:
+            finalStartLocation,
+          initial_pickup_at: serverTimestamp(),
+
+          gate_location: "",
+          gate_arrived_at: null,
+
+          delivered_location: "",
+          delivered_at: null,
+
+          dropoff_location: "",
+          dropoff_at: null,
+
+          handoff_location: "",
+          handed_off_at: null,
+          available_for_handoff: false,
+
+          stored_location: "",
+          stored_at: null,
+
+          inventory_doc_id:
+            inventoryDocumentId,
+
+          current_segment_id: segmentRef.id,
+          current_segment_started_at:
+            serverTimestamp(),
+          current_segment_start_location:
+            finalStartLocation,
+
+          segment_count: 1,
+
+          is_active: true,
+          alerts_enabled: true,
+          alert_after_minutes: 30,
+          last_alert_at: null,
+
+          last_location_update_at:
+            serverTimestamp(),
+
+          last_updated_by: currentAgentName,
+          last_updated_by_id: currentAgentId,
+          last_updated_at: serverTimestamp(),
+
+          tracking_type: "MANUAL",
+          tracking_device_id: "",
+          tracking_device_label: "",
+        });
+
+        transaction.set(segmentRef, {
+          report_doc_id: reportRef.id,
+          report_id: reportId,
+
+          segment_number: 1,
+
+          wheelchair_number:
+            finalWheelchairNumber,
+
+          passenger_name: finalPassengerName,
+          airline: finalAirline,
+          flight_number: finalFlightNumber,
+          pnr: finalPnr,
+
+          agent_id: currentAgentId,
+          agent_name: currentAgentName,
+
+          start_location: finalStartLocation,
+          started_at: serverTimestamp(),
+
+          end_location: "",
+          ended_at: null,
+
+          segment_status: "IN_PROGRESS",
+          segment_result: "",
+
+          is_active: true,
+
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+
+        transaction.set(inventoryRef, {
+          wheelchair_number:
+            finalWheelchairNumber,
+
+          status: "IN_USE",
+          is_available: false,
+          available_for_handoff: false,
+
+          location: finalStartLocation,
+
+          report_doc_id: reportRef.id,
+          assigned_report_doc_id:
+            reportRef.id,
+
+          report_id: reportId,
+          assigned_report_id: reportId,
+
+          passenger_name: finalPassengerName,
+          airline: finalAirline,
+          flight_number: finalFlightNumber,
+          pnr: finalPnr,
+          wch_type: safeUpper(wchType || "WCHR"),
+
+          current_agent_id: currentAgentId,
+          current_agent_name:
+            currentAgentName,
+
+          previous_agent_id: "",
+          previous_agent_name: "",
+
+          assigned_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+
+        transaction.set(sessionRef, {
+          agent_id: currentAgentId,
+          agent_name: currentAgentName,
+
+          agent_username:
+            user?.username ||
+            user?.loginUsername ||
+            user?.email ||
+            "",
+
+          report_doc_id: reportRef.id,
+          active_report_id: reportRef.id,
+          report_id: reportId,
+
+          inventory_doc_id:
+            inventoryDocumentId,
+
+          service_segment_id:
+            segmentRef.id,
+
+          wheelchair_number:
+            finalWheelchairNumber,
+
+          passenger_name: finalPassengerName,
+          airline: finalAirline,
+          pnr: finalPnr,
+          flight_number: finalFlightNumber,
+
+          current_location:
+            finalStartLocation,
+
+          tracking_status: "IN_PROGRESS",
+          passenger_delivered: false,
+
+          is_active: true,
+          alerts_enabled: true,
+          alert_after_minutes: 30,
+
+          started_at: serverTimestamp(),
+          last_location_update_at:
+            serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+
+        transaction.set(trackingEventRef, {
+          report_doc_id: reportRef.id,
+          report_id: reportId,
+
+          service_segment_id:
+            segmentRef.id,
+
+          wheelchair_number:
+            finalWheelchairNumber,
+
+          passenger_name: finalPassengerName,
+          airline: finalAirline,
+          pnr: finalPnr,
+          flight_number: finalFlightNumber,
+
+          event_type: "START_SERVICE",
+
+          location: finalStartLocation,
+          previous_location: "",
+
+          notes: `Wheelchair service started at ${finalStartLocation}`,
+
+          tracking_status: "IN_PROGRESS",
+          passenger_delivered: false,
+
+          is_active: true,
+          alerts_enabled: true,
+
+          employee_id: currentAgentId,
+          employee_name: currentAgentName,
+
+          created_at: serverTimestamp(),
+        });
+      });
+
+      setMessage(
+        `Wheelchair ${finalWheelchairNumber} is now assigned to your profile.`
+      );
+
+      resetNewEntryForm(mode);
+    } catch (submitError) {
+      console.error(
+        "Error starting WCHR service:",
+        submitError
+      );
+
+      setStep(
+        mode === "scan" ? "preview" : "manual"
+      );
+
+      setError(
+        submitError?.message ||
+          "Unexpected error while starting the wheelchair service."
+      );
+    }
+  };
+
+  const handleAcceptExistingService = async () => {
+    setError("");
+    setMessage("");
+
+    if (!user) {
+      setError("You must be logged in.");
+      return;
+    }
+
+    if (sessionLoading) {
+      setError(
+        "Please wait while your active wheelchair service is verified."
+      );
+      return;
+    }
+
+    if (hasActiveService) {
+      setError(
+        `You already have wheelchair ${
+          activeService?.wheelchair_number || ""
+        } assigned. Complete or transfer it before accepting another wheelchair.`
+      );
+      return;
+    }
+
+    if (!selectedInventory?.id) {
+      setError(
+        "Please select a wheelchair available at this location."
+      );
+      return;
+    }
+
+    if (!selectedInventory.report_doc_id) {
+      setError(
+        "This wheelchair is not linked to an active passenger report."
+      );
+      return;
+    }
+
+    if (!canAcceptExistingService) {
+      setError(
+        "The selected wheelchair cannot be accepted at this time."
+      );
+      return;
+    }
+
+    try {
+      setAcceptingInventory(true);
+
       const inventoryRef = doc(
         db,
         INVENTORY_COLLECTION,
-        wheelchairDocumentId
+        selectedInventory.id
+      );
+
+      const reportRef = doc(
+        db,
+        REPORTS_COLLECTION,
+        selectedInventory.report_doc_id
       );
 
       const sessionRef = doc(
@@ -2594,454 +2493,348 @@ export default function WCHRScan() {
       );
 
       const segmentRef = doc(
-        collection(
-          db,
-          REPORTS_COLLECTION,
-          reportRef.id,
-          "service_segments"
-        )
+        collection(db, SERVICE_SEGMENTS_COLLECTION)
       );
 
-      const shortId = reportRef.id
-        .slice(-6)
-        .toUpperCase();
-
-      const reportId = `WCHR-${yyyymmdd()}-${shortId}`;
-      const segmentId = segmentRef.id;
-
-      await runTransaction(
-        db,
-        async (transaction) => {
-          const inventorySnapshot =
-            await transaction.get(
-              inventoryRef
-            );
-
-          if (inventorySnapshot.exists()) {
-            const inventoryData =
-              inventorySnapshot.data();
-
-            const wheelchairIsInUse =
-              inventoryData.is_available ===
-                false ||
-              safeUpper(
-                inventoryData.status
-              ) === "IN_USE";
-
-            if (wheelchairIsInUse) {
-              throw new Error(
-                `Wheelchair ${finalWheelchairNumber} is already assigned or in use.`
-              );
-            }
-          }
-
-          transaction.set(
-            reportRef,
-            {
-              report_id: reportId,
-
-              employee_id:
-                currentAgentId,
-
-              employee_name:
-                currentAgentName,
-
-              employee_login:
-                user?.username ||
-                user?.loginUsername ||
-                user?.email ||
-                "",
-
-              employee_role:
-                user?.role || "",
-
-              submitted_at:
-                serverTimestamp(),
-
-              passenger_name:
-                finalPassengerName,
-
-              airline,
-              flight_number:
-                flightNumber,
-
-              pnr:
-                finalPnr,
-
-              wheelchair_number:
-                finalWheelchairNumber,
-
-              wch_type:
-                wchType,
-
-              status: "NEW",
-              flight_key:
-                flightKey,
-
-              image_url:
-                mode === "scan"
-                  ? imageUrl
-                  : "",
-
-              raw_text:
-                parsed.raw_text || "",
-
-              entry_mode:
-                mode,
-
-              wchr_agent_id:
-                currentAgentId,
-
-              wchr_agent_name:
-                currentAgentName,
-
-              assigned_wchr_agent:
-                currentAgentName,
-
-              activity_agent_name:
-                currentAgentName,
-
-              billing_ready:
-                true,
-
-              billing_date:
-                serverTimestamp(),
-
-              billing_passenger_name:
-                finalPassengerName,
-
-              billing_pnr:
-                finalPnr,
-
-              billing_wheelchair_number:
-                finalWheelchairNumber,
-
-              tracking_enabled:
-                true,
-
-              tracking_status:
-                "IN_PROGRESS",
-
-              passenger_delivered:
-                false,
-
-              current_location:
-                initialLocation,
-
-              last_location:
-                initialLocation,
-
-              pickup_location:
-                initialLocation,
-
-              pickup_at:
-                serverTimestamp(),
-
-              original_pickup_at:
-                serverTimestamp(),
-
-              gate_location: "",
-              gate_arrived_at: null,
-
-              delivered_location: "",
-              delivered_at: null,
-
-              dropoff_location: "",
-              dropoff_at: null,
-
-              stored_location: "",
-              stored_at: null,
-
-              current_segment_id:
-                segmentId,
-
-              current_segment_started_at:
-                serverTimestamp(),
-
-              current_segment_start_location:
-                initialLocation,
-
-              current_segment_agent_id:
-                currentAgentId,
-
-              current_segment_agent_name:
-                currentAgentName,
-
-              is_active: true,
-              alerts_enabled: true,
-              alert_after_minutes: 30,
-              last_alert_at: null,
-
-              last_location_update_at:
-                serverTimestamp(),
-
-              last_updated_by:
-                currentAgentName,
-
-              last_updated_by_id:
-                currentAgentId,
-
-              last_updated_at:
-                serverTimestamp(),
-
-              tracking_type:
-                "MANUAL",
-
-              tracking_device_id: "",
-              tracking_device_label: "",
-
-              created_at:
-                serverTimestamp(),
-            }
-          );
-
-          transaction.set(
-            segmentRef,
-            {
-              segment_id:
-                segmentId,
-
-              report_doc_id:
-                reportRef.id,
-
-              report_id:
-                reportId,
-
-              wheelchair_number:
-                finalWheelchairNumber,
-
-              passenger_name:
-                finalPassengerName,
-
-              airline,
-              flight_number:
-                flightNumber,
-
-              pnr:
-                finalPnr,
-
-              agent_id:
-                currentAgentId,
-
-              agent_name:
-                currentAgentName,
-
-              start_location:
-                initialLocation,
-
-              started_at:
-                serverTimestamp(),
-
-              end_location: "",
-              ended_at: null,
-
-              segment_status:
-                "IN_PROGRESS",
-
-              passenger_delivered:
-                false,
-
-              created_at:
-                serverTimestamp(),
-
-              updated_at:
-                serverTimestamp(),
-            }
-          );
-
-          transaction.set(
-            inventoryRef,
-            {
-              wheelchair_number:
-                finalWheelchairNumber,
-
-              location:
-                initialLocation,
-
-              previous_location:
-                initialLocation,
-
-              status:
-                "IN_USE",
-
-              is_available:
-                false,
-
-              report_doc_id:
-                reportRef.id,
-
-              assigned_report_doc_id:
-                reportRef.id,
-
-              report_id:
-                reportId,
-
-              assigned_report_id:
-                reportId,
-
-              passenger_name:
-                finalPassengerName,
-
-              airline,
-              flight_number:
-                flightNumber,
-
-              pnr:
-                finalPnr,
-
-              wch_type:
-                wchType,
-
-              current_agent_id:
-                currentAgentId,
-
-              current_agent_name:
-                currentAgentName,
-
-              previous_agent_id: "",
-              previous_agent_name: "",
-
-              original_pickup_at:
-                serverTimestamp(),
-
-              checked_out_at:
-                serverTimestamp(),
-
-              stored_by_id: "",
-              stored_by_name: "",
-
-              updated_at:
-                serverTimestamp(),
-
-              updated_by_id:
-                currentAgentId,
-
-              updated_by_name:
-                currentAgentName,
-            },
-            {
-              merge: true,
-            }
-          );
-
-          transaction.set(
-            sessionRef,
-            {
-              agent_id:
-                currentAgentId,
-
-              agent_name:
-                currentAgentName,
-
-              agent_username:
-                user?.username ||
-                user?.loginUsername ||
-                user?.email ||
-                "",
-
-              report_doc_id:
-                reportRef.id,
-
-              active_report_id:
-                reportRef.id,
-
-              report_id:
-                reportId,
-
-              inventory_doc_id:
-                inventoryRef.id,
-
-              service_segment_id:
-                segmentId,
-
-              wheelchair_number:
-                finalWheelchairNumber,
-
-              passenger_name:
-                finalPassengerName,
-
-              airline,
-              pnr:
-                finalPnr,
-
-              flight_number:
-                flightNumber,
-
-              current_location:
-                initialLocation,
-
-              pickup_location:
-                initialLocation,
-
-              tracking_status:
-                "IN_PROGRESS",
-
-              passenger_delivered:
-                false,
-
-              is_active: true,
-              alerts_enabled: true,
-              alert_after_minutes: 30,
-
-              started_at:
-                serverTimestamp(),
-
-              last_location_update_at:
-                serverTimestamp(),
-
-              updated_at:
-                serverTimestamp(),
-            },
-            {
-              merge: true,
-            }
+      const trackingEventRef = doc(
+        collection(db, TRACKING_EVENTS_COLLECTION)
+      );
+
+      let acceptedService = null;
+
+      await runTransaction(db, async (transaction) => {
+        const [
+          inventorySnapshot,
+          reportSnapshot,
+          sessionSnapshot,
+        ] = await Promise.all([
+          transaction.get(inventoryRef),
+          transaction.get(reportRef),
+          transaction.get(sessionRef),
+        ]);
+
+        if (!inventorySnapshot.exists()) {
+          throw new Error(
+            "This wheelchair is no longer available."
           );
         }
-      );
 
-      await addDoc(
-        collection(
-          db,
-          TRACKING_EVENTS_COLLECTION
-        ),
-        {
-          report_doc_id:
-            reportRef.id,
+        if (!reportSnapshot.exists()) {
+          throw new Error(
+            "The passenger report linked to this wheelchair no longer exists."
+          );
+        }
 
-          report_id:
-            reportId,
+        if (sessionSnapshot.exists()) {
+          const sessionData =
+            sessionSnapshot.data();
+
+          const sessionStillActive =
+            sessionData?.is_active === true &&
+            !["COMPLETED", "HANDOFF", "CANCELLED"].includes(
+              safeUpper(
+                sessionData?.tracking_status
+              )
+            );
+
+          if (sessionStillActive) {
+            throw new Error(
+              `You already have wheelchair ${
+                sessionData?.wheelchair_number || ""
+              } assigned.`
+            );
+          }
+        }
+
+        const inventoryData =
+          inventorySnapshot.data();
+
+        const reportData =
+          reportSnapshot.data();
+
+        if (
+          !inventoryIsAvailableAtLocation(
+            inventoryData,
+            startLocation
+          )
+        ) {
+          throw new Error(
+            `Wheelchair ${
+              inventoryData?.wheelchair_number ||
+              selectedInventory.wheelchair_number
+            } is no longer available at ${startLocation}.`
+          );
+        }
+
+        if (getReportIsDelivered(reportData)) {
+          throw new Error(
+            "This passenger was already marked as delivered."
+          );
+        }
+
+        if (!getReportIsWaitingHandoff(reportData)) {
+          throw new Error(
+            "This passenger report is not waiting for a new employee."
+          );
+        }
+
+        const wheelchairNumber =
+          cleanWheelchairNumber(
+            inventoryData?.wheelchair_number ||
+              reportData?.wheelchair_number ||
+              selectedInventory.wheelchair_number
+          );
+
+        const passengerName =
+          safeText(
+            reportData?.passenger_name ||
+              inventoryData?.passenger_name
+          );
+
+        const airline =
+          safeUpper(
+            reportData?.airline ||
+              inventoryData?.airline
+          );
+
+        const flightNumber =
+          safeUpper(
+            reportData?.flight_number ||
+              inventoryData?.flight_number
+          );
+
+        const pnr =
+          cleanPnr(
+            reportData?.pnr ||
+              inventoryData?.pnr
+          );
+
+        const reportId =
+          safeText(
+            reportData?.report_id ||
+              inventoryData?.report_id
+          );
+
+        const segmentNumber =
+          Number(reportData?.segment_count || 1) + 1;
+
+        transaction.set(segmentRef, {
+          report_doc_id: reportSnapshot.id,
+          report_id: reportId,
+
+          segment_number: segmentNumber,
 
           wheelchair_number:
-            finalWheelchairNumber,
+            wheelchairNumber,
+
+          passenger_name: passengerName,
+          airline,
+          flight_number: flightNumber,
+          pnr,
+
+          agent_id: currentAgentId,
+          agent_name: currentAgentName,
+
+          previous_agent_id:
+            safeText(
+              inventoryData?.previous_agent_id
+            ),
+
+          previous_agent_name:
+            safeText(
+              inventoryData?.previous_agent_name
+            ),
+
+          start_location: startLocation,
+          started_at: serverTimestamp(),
+
+          end_location: "",
+          ended_at: null,
+
+          segment_status: "IN_PROGRESS",
+          segment_result: "",
+
+          is_active: true,
+
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+
+        transaction.update(reportRef, {
+          wchr_agent_id: currentAgentId,
+          wchr_agent_name:
+            currentAgentName,
+          assigned_wchr_agent:
+            currentAgentName,
+          activity_agent_name:
+            currentAgentName,
+
+          previous_wchr_agent_id:
+            safeText(
+              inventoryData?.previous_agent_id
+            ),
+
+          previous_wchr_agent_name:
+            safeText(
+              inventoryData?.previous_agent_name
+            ),
+
+          tracking_status: "IN_PROGRESS",
+          passenger_delivered: false,
+
+          available_for_handoff: false,
+          handoff_location: "",
+          handoff_accepted_at:
+            serverTimestamp(),
+
+          current_location: startLocation,
+          last_location: startLocation,
+
+          current_segment_id:
+            segmentRef.id,
+
+          current_segment_started_at:
+            serverTimestamp(),
+
+          current_segment_start_location:
+            startLocation,
+
+          segment_count: segmentNumber,
+
+          is_active: true,
+          alerts_enabled: true,
+
+          last_location_update_at:
+            serverTimestamp(),
+
+          last_updated_by:
+            currentAgentName,
+
+          last_updated_by_id:
+            currentAgentId,
+
+          last_updated_at:
+            serverTimestamp(),
+        });
+
+        transaction.update(inventoryRef, {
+          status: "IN_USE",
+          is_available: false,
+          available_for_handoff: false,
+
+          location: startLocation,
+
+          current_agent_id:
+            currentAgentId,
+
+          current_agent_name:
+            currentAgentName,
+
+          previous_agent_id:
+            safeText(
+              inventoryData?.previous_agent_id
+            ),
+
+          previous_agent_name:
+            safeText(
+              inventoryData?.previous_agent_name
+            ),
+
+          accepted_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+
+        transaction.set(sessionRef, {
+          agent_id: currentAgentId,
+          agent_name: currentAgentName,
+
+          agent_username:
+            user?.username ||
+            user?.loginUsername ||
+            user?.email ||
+            "",
+
+          report_doc_id:
+            reportSnapshot.id,
+
+          active_report_id:
+            reportSnapshot.id,
+
+          report_id: reportId,
+
+          inventory_doc_id:
+            inventorySnapshot.id,
+
+          service_segment_id:
+            segmentRef.id,
+
+          wheelchair_number:
+            wheelchairNumber,
 
           passenger_name:
-            finalPassengerName,
+            passengerName,
 
           airline,
-          pnr:
-            finalPnr,
-
+          pnr,
           flight_number:
             flightNumber,
 
-          event_type:
-            "START_SERVICE",
+          current_location:
+            startLocation,
 
-          location:
-            initialLocation,
+          tracking_status: "IN_PROGRESS",
+          passenger_delivered: false,
 
-          previous_location: "",
+          is_active: true,
+          alerts_enabled: true,
+          alert_after_minutes: Number(
+            reportData?.alert_after_minutes || 30
+          ),
 
-          notes: `Wheelchair service started at ${initialLocation}`,
+          started_at:
+            serverTimestamp(),
+
+          last_location_update_at:
+            serverTimestamp(),
+
+          updated_at:
+            serverTimestamp(),
+        });
+
+        transaction.set(trackingEventRef, {
+          report_doc_id:
+            reportSnapshot.id,
+
+          report_id: reportId,
 
           service_segment_id:
-            segmentId,
+            segmentRef.id,
+
+          wheelchair_number:
+            wheelchairNumber,
+
+          passenger_name:
+            passengerName,
+
+          airline,
+          pnr,
+          flight_number:
+            flightNumber,
+
+          event_type: "HANDOFF_ACCEPTED",
+
+          location: startLocation,
+          previous_location:
+            startLocation,
+
+          notes:
+            `Wheelchair ${wheelchairNumber} accepted by ` +
+            `${currentAgentName} at ${startLocation}`,
 
           tracking_status:
             "IN_PROGRESS",
 
-          passenger_delivered:
-            false,
+          passenger_delivered: false,
 
           is_active: true,
           alerts_enabled: true,
@@ -3054,76 +2847,73 @@ export default function WCHRScan() {
 
           created_at:
             serverTimestamp(),
-        }
-      );
+        });
 
-      setActiveService({
-        is_active: true,
+        acceptedService = {
+          report_doc_id:
+            reportSnapshot.id,
 
-        report_doc_id:
-          reportRef.id,
+          report_id: reportId,
 
-        report_id:
-          reportId,
+          inventory_doc_id:
+            inventorySnapshot.id,
 
-        inventory_doc_id:
-          inventoryRef.id,
+          service_segment_id:
+            segmentRef.id,
 
-        service_segment_id:
-          segmentId,
+          wheelchair_number:
+            wheelchairNumber,
 
-        wheelchair_number:
-          finalWheelchairNumber,
+          passenger_name:
+            passengerName,
 
-        passenger_name:
-          finalPassengerName,
+          airline,
+          pnr,
+          flight_number:
+            flightNumber,
 
-        airline,
+          current_location:
+            startLocation,
 
-        flight_number:
-          flightNumber,
+          tracking_status:
+            "IN_PROGRESS",
 
-        pnr:
-          finalPnr,
+          passenger_delivered: false,
+          is_active: true,
 
-        current_location:
-          initialLocation,
-
-        tracking_status:
-          "IN_PROGRESS",
-
-        passenger_delivered:
-          false,
-
-        started_at:
-          new Date(),
+          started_at: Timestamp.now(),
+        };
       });
 
+      setActiveService(acceptedService);
+      setSelectedInventory(null);
+      setAvailableWheelchairs([]);
+
+      setParsed(emptyParsed());
+      setMode("scan");
+      setStep("upload");
+
       setMessage(
-        `Wheelchair ${finalWheelchairNumber} is now assigned to your profile.`
+        `Wheelchair ${
+          acceptedService?.wheelchair_number || ""
+        } is now assigned to you. Your service time started at ${startLocation}.`
       );
-
-      resetEntryForm();
-    } catch (submitError) {
+    } catch (acceptError) {
       console.error(
-        "Error starting WCHR service:",
-        submitError
-      );
-
-      setStep(
-        mode === "scan"
-          ? "preview"
-          : "manual"
+        "Error accepting existing WCHR service:",
+        acceptError
       );
 
       setError(
-        submitError?.message ||
-          "Unexpected error while starting the wheelchair service."
+        acceptError?.message ||
+          "Unable to accept the selected wheelchair."
       );
+    } finally {
+      setAcceptingInventory(false);
     }
   };
 
-  const handlePassengerDelivered = async () => {
+  const handleLeaveForNextEmployee = async () => {
     setError("");
     setMessage("");
 
@@ -3134,30 +2924,354 @@ export default function WCHRScan() {
       return;
     }
 
-    const finalDestination = safeText(
-      deliveryLocation
-    );
+    const finalHandoffLocation =
+      safeText(handoffLocation);
 
-    if (
-      !DELIVERY_DESTINATIONS.includes(
-        finalDestination
-      )
-    ) {
+    if (!isHandoffLocation(finalHandoffLocation)) {
       setError(
-        "Please select the location where the passenger was delivered."
+        "Please select Outside TSA, TSA, Outside CBP or CBP as the handoff location."
       );
       return;
     }
 
-    const confirmDelivery =
-      window.confirm(
-        `Confirm passenger delivery for wheelchair ${
-          activeService.wheelchair_number ||
-          ""
-        } at ${finalDestination}?`
+    const confirmed = window.confirm(
+      `Leave wheelchair ${
+        activeService.wheelchair_number || ""
+      } at ${finalHandoffLocation} for the next employee?\n\nThe passenger will remain active and will NOT be marked as delivered.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSavingHandoff(true);
+
+      const reportRef = doc(
+        db,
+        REPORTS_COLLECTION,
+        activeService.report_doc_id
       );
 
-    if (!confirmDelivery) return;
+      const sessionRef = doc(
+        db,
+        AGENT_SESSIONS_COLLECTION,
+        currentAgentId
+      );
+
+      const inventoryDocumentId =
+        activeService.inventory_doc_id ||
+        getWheelchairDocumentId(
+          activeService.wheelchair_number
+        );
+
+      if (!inventoryDocumentId) {
+        throw new Error(
+          "The wheelchair inventory record could not be identified."
+        );
+      }
+
+      const inventoryRef = doc(
+        db,
+        INVENTORY_COLLECTION,
+        inventoryDocumentId
+      );
+
+      const trackingEventRef = doc(
+        collection(db, TRACKING_EVENTS_COLLECTION)
+      );
+
+      const segmentRef = activeService.service_segment_id
+        ? doc(
+            db,
+            SERVICE_SEGMENTS_COLLECTION,
+            activeService.service_segment_id
+          )
+        : null;
+
+      await runTransaction(db, async (transaction) => {
+        const reportSnapshot =
+          await transaction.get(reportRef);
+
+        if (!reportSnapshot.exists()) {
+          throw new Error(
+            "The active passenger report no longer exists."
+          );
+        }
+
+        const reportData =
+          reportSnapshot.data();
+
+        if (getReportIsDelivered(reportData)) {
+          throw new Error(
+            "This passenger was already marked as delivered."
+          );
+        }
+
+        transaction.update(reportRef, {
+          passenger_delivered: false,
+          tracking_status: "WAITING_HANDOFF",
+
+          available_for_handoff: true,
+
+          handoff_location:
+            finalHandoffLocation,
+
+          handed_off_at:
+            serverTimestamp(),
+
+          handoff_by_agent_id:
+            currentAgentId,
+
+          handoff_by_agent_name:
+            currentAgentName,
+
+          current_location:
+            finalHandoffLocation,
+
+          last_location:
+            safeText(
+              activeService.current_location
+            ),
+
+          current_segment_id: "",
+
+          is_active: true,
+          alerts_enabled: true,
+
+          last_location_update_at:
+            serverTimestamp(),
+
+          last_updated_by:
+            currentAgentName,
+
+          last_updated_by_id:
+            currentAgentId,
+
+          last_updated_at:
+            serverTimestamp(),
+        });
+
+        transaction.set(
+          inventoryRef,
+          {
+            wheelchair_number:
+              cleanWheelchairNumber(
+                activeService.wheelchair_number
+              ),
+
+            status: "AVAILABLE_HANDOFF",
+            is_available: true,
+            available_for_handoff: true,
+
+            location:
+              finalHandoffLocation,
+
+            report_doc_id:
+              activeService.report_doc_id,
+
+            assigned_report_doc_id:
+              activeService.report_doc_id,
+
+            report_id:
+              activeService.report_id || "",
+
+            assigned_report_id:
+              activeService.report_id || "",
+
+            passenger_name:
+              activeService.passenger_name || "",
+
+            airline:
+              activeService.airline || "",
+
+            flight_number:
+              activeService.flight_number || "",
+
+            pnr:
+              activeService.pnr || "",
+
+            previous_agent_id:
+              currentAgentId,
+
+            previous_agent_name:
+              currentAgentName,
+
+            current_agent_id: "",
+            current_agent_name: "",
+
+            handed_off_at:
+              serverTimestamp(),
+
+            updated_at:
+              serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        transaction.set(
+          sessionRef,
+          {
+            is_active: false,
+            tracking_status: "HANDOFF",
+            passenger_delivered: false,
+
+            handoff_location:
+              finalHandoffLocation,
+
+            handed_off_at:
+              serverTimestamp(),
+
+            current_location:
+              finalHandoffLocation,
+
+            active_report_id: "",
+            report_doc_id: "",
+            inventory_doc_id: "",
+            service_segment_id: "",
+
+            completed_at:
+              serverTimestamp(),
+
+            updated_at:
+              serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        if (segmentRef) {
+          transaction.update(segmentRef, {
+            end_location:
+              finalHandoffLocation,
+
+            ended_at:
+              serverTimestamp(),
+
+            segment_status:
+              "COMPLETED",
+
+            segment_result:
+              "HANDOFF",
+
+            is_active: false,
+
+            updated_at:
+              serverTimestamp(),
+          });
+        }
+
+        transaction.set(trackingEventRef, {
+          report_doc_id:
+            activeService.report_doc_id,
+
+          report_id:
+            activeService.report_id || "",
+
+          service_segment_id:
+            activeService.service_segment_id || "",
+
+          wheelchair_number:
+            activeService.wheelchair_number || "",
+
+          passenger_name:
+            activeService.passenger_name || "",
+
+          airline:
+            activeService.airline || "",
+
+          pnr:
+            activeService.pnr || "",
+
+          flight_number:
+            activeService.flight_number || "",
+
+          event_type: "HANDOFF_AVAILABLE",
+
+          location:
+            finalHandoffLocation,
+
+          previous_location:
+            activeService.current_location || "",
+
+          notes:
+            `Wheelchair ${
+              activeService.wheelchair_number || ""
+            } left at ${finalHandoffLocation} for the next employee. Passenger remains active.`,
+
+          tracking_status:
+            "WAITING_HANDOFF",
+
+          passenger_delivered: false,
+
+          is_active: true,
+          alerts_enabled: true,
+
+          employee_id:
+            currentAgentId,
+
+          employee_name:
+            currentAgentName,
+
+          created_at:
+            serverTimestamp(),
+        });
+      });
+
+      setActiveService(null);
+
+      setMessage(
+        `Wheelchair ${
+          activeService.wheelchair_number || ""
+        } was left at ${finalHandoffLocation}. The passenger remains open for the next employee.`
+      );
+
+      setDeliveryLocation("Main Terminal");
+      setHandoffLocation("Outside TSA");
+
+      setMode("scan");
+      setStep("upload");
+      setParsed(emptyParsed());
+      setImageFile(null);
+      setImageUrl("");
+    } catch (handoffError) {
+      console.error(
+        "Error leaving wheelchair for next employee:",
+        handoffError
+      );
+
+      setError(
+        handoffError?.message ||
+          "Unable to leave the wheelchair for the next employee."
+      );
+    } finally {
+      setSavingHandoff(false);
+    }
+  };
+    const handlePassengerDelivered = async () => {
+    setError("");
+    setMessage("");
+
+    if (!activeService?.report_doc_id) {
+      setError(
+        "The active wheelchair report could not be identified."
+      );
+      return;
+    }
+
+    const finalDestination = safeText(deliveryLocation);
+
+    if (!isDeliveryLocation(finalDestination)) {
+      setError(
+        "Please select the gate or Main Terminal where the passenger was delivered."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Confirm passenger delivery for wheelchair ${
+        activeService.wheelchair_number || ""
+      } at ${finalDestination}?`
+    );
+
+    if (!confirmed) return;
 
     try {
       setDelivering(true);
@@ -3174,394 +3288,219 @@ export default function WCHRScan() {
         currentAgentId
       );
 
-      const inventoryDocId =
+      const inventoryDocumentId =
         activeService.inventory_doc_id ||
         getWheelchairDocumentId(
           activeService.wheelchair_number
         );
 
+      if (!inventoryDocumentId) {
+        throw new Error(
+          "The wheelchair inventory record could not be identified."
+        );
+      }
+
       const inventoryRef = doc(
         db,
         INVENTORY_COLLECTION,
-        inventoryDocId
+        inventoryDocumentId
       );
 
-      const segmentId =
-        activeService.service_segment_id ||
-        "";
+      const trackingEventRef = doc(
+        collection(db, TRACKING_EVENTS_COLLECTION)
+      );
 
-      const segmentRef = segmentId
+      const segmentRef = activeService.service_segment_id
         ? doc(
             db,
-            REPORTS_COLLECTION,
-            activeService.report_doc_id,
-            "service_segments",
-            segmentId
+            SERVICE_SEGMENTS_COLLECTION,
+            activeService.service_segment_id
           )
         : null;
 
-      const currentLocation =
-        activeService.current_location ||
-        finalDestination;
+      await runTransaction(db, async (transaction) => {
+        const reportSnapshot = await transaction.get(reportRef);
 
-      const destinationIsGate =
-        finalDestination.startsWith(
-          "Gate "
-        );
-
-      const destinationIsHandoff =
-        isHandoffLocation(
-          finalDestination
-        );
-
-      await runTransaction(
-        db,
-        async (transaction) => {
-          const reportSnapshot =
-            await transaction.get(
-              reportRef
-            );
-
-          if (!reportSnapshot.exists()) {
-            throw new Error(
-              "The active wheelchair report no longer exists."
-            );
-          }
-
-          const reportData =
-            reportSnapshot.data();
-
-          const reportAlreadyDelivered =
-            reportData.passenger_delivered ===
-              true ||
-            safeUpper(
-              reportData.tracking_status
-            ) === "COMPLETED";
-
-          if (reportAlreadyDelivered) {
-            throw new Error(
-              "This passenger has already been marked as delivered."
-            );
-          }
-
-          const reportPayload = {
-            passenger_delivered:
-              true,
-
-            tracking_status:
-              "COMPLETED",
-
-            delivered_location:
-              finalDestination,
-
-            delivered_at:
-              serverTimestamp(),
-
-            dropoff_location:
-              finalDestination,
-
-            dropoff_at:
-              serverTimestamp(),
-
-            current_location:
-              finalDestination,
-
-            last_location:
-              currentLocation,
-
-            is_active: false,
-            alerts_enabled: false,
-
-            last_location_update_at:
-              serverTimestamp(),
-
-            last_updated_at:
-              serverTimestamp(),
-
-            last_updated_by:
-              currentAgentName,
-
-            last_updated_by_id:
-              currentAgentId,
-
-            current_segment_id: "",
-
-            current_segment_ended_at:
-              serverTimestamp(),
-
-            current_segment_end_location:
-              finalDestination,
-          };
-
-          if (
-            destinationIsGate &&
-            !reportData.gate_arrived_at
-          ) {
-            reportPayload.gate_location =
-              finalDestination;
-
-            reportPayload.gate_arrived_at =
-              serverTimestamp();
-          }
-
-          transaction.update(
-            reportRef,
-            reportPayload
-          );
-
-          if (segmentRef) {
-            transaction.set(
-              segmentRef,
-              {
-                end_location:
-                  finalDestination,
-
-                ended_at:
-                  serverTimestamp(),
-
-                segment_status:
-                  "COMPLETED",
-
-                passenger_delivered:
-                  true,
-
-                updated_at:
-                  serverTimestamp(),
-              },
-              {
-                merge: true,
-              }
-            );
-          }
-
-          transaction.set(
-            inventoryRef,
-            {
-              wheelchair_number:
-                cleanWheelchairNumber(
-                  activeService.wheelchair_number
-                ),
-
-              location:
-                finalDestination,
-
-              previous_location:
-                currentLocation,
-
-              status:
-                destinationIsHandoff
-                  ? "AVAILABLE_HANDOFF"
-                  : "AVAILABLE",
-
-              is_available:
-                true,
-
-              report_doc_id:
-                reportRef.id,
-
-              assigned_report_doc_id:
-                reportRef.id,
-
-              report_id:
-                reportData.report_id ||
-                activeService.report_id ||
-                "",
-
-              assigned_report_id:
-                reportData.report_id ||
-                activeService.report_id ||
-                "",
-
-              passenger_name:
-                reportData.passenger_name ||
-                activeService.passenger_name ||
-                "",
-
-              airline:
-                reportData.airline ||
-                activeService.airline ||
-                "",
-
-              flight_number:
-                reportData.flight_number ||
-                activeService.flight_number ||
-                "",
-
-              pnr:
-                reportData.pnr ||
-                activeService.pnr ||
-                "",
-
-              wch_type:
-                reportData.wch_type ||
-                "WCHR",
-
-              previous_agent_id:
-                currentAgentId,
-
-              previous_agent_name:
-                currentAgentName,
-
-              current_agent_id: "",
-              current_agent_name: "",
-
-              available_for_handoff:
-                destinationIsHandoff,
-
-              delivered_at:
-                serverTimestamp(),
-
-              updated_at:
-                serverTimestamp(),
-
-              updated_by_id:
-                currentAgentId,
-
-              updated_by_name:
-                currentAgentName,
-            },
-            {
-              merge: true,
-            }
-          );
-
-          transaction.set(
-            sessionRef,
-            {
-              is_active: false,
-
-              tracking_status:
-                "COMPLETED",
-
-              passenger_delivered:
-                true,
-
-              delivered_location:
-                finalDestination,
-
-              delivered_at:
-                serverTimestamp(),
-
-              current_location:
-                finalDestination,
-
-              active_report_id: "",
-              report_doc_id: "",
-
-              inventory_doc_id: "",
-              service_segment_id: "",
-
-              completed_at:
-                serverTimestamp(),
-
-              updated_at:
-                serverTimestamp(),
-            },
-            {
-              merge: true,
-            }
+        if (!reportSnapshot.exists()) {
+          throw new Error(
+            "The active wheelchair report no longer exists."
           );
         }
-      );
 
-      await addDoc(
-        collection(
-          db,
-          TRACKING_EVENTS_COLLECTION
-        ),
-        {
-          report_doc_id:
-            activeService.report_doc_id,
+        const reportData = reportSnapshot.data();
 
-          report_id:
-            activeService.report_id ||
-            "",
+        if (getReportIsDelivered(reportData)) {
+          throw new Error(
+            "This passenger was already marked as delivered."
+          );
+        }
 
-          wheelchair_number:
-            activeService.wheelchair_number ||
-            "",
+        const previousLocation =
+          safeText(
+            reportData.current_location ||
+              activeService.current_location
+          ) || finalDestination;
 
-          passenger_name:
-            activeService.passenger_name ||
-            "",
+        const reportPayload = {
+          passenger_delivered: true,
+          tracking_status: "COMPLETED",
 
-          airline:
-            activeService.airline ||
-            "",
+          delivered_location: finalDestination,
+          delivered_at: serverTimestamp(),
 
-          pnr:
-            activeService.pnr ||
-            "",
+          dropoff_location: finalDestination,
+          dropoff_at: serverTimestamp(),
 
-          flight_number:
-            activeService.flight_number ||
-            "",
+          current_location: finalDestination,
+          last_location: previousLocation,
 
-          event_type:
-            destinationIsHandoff
-              ? "PASSENGER_DELIVERED_HANDOFF_AVAILABLE"
-              : "PASSENGER_DELIVERED",
+          available_for_handoff: false,
+          handoff_location: "",
 
-          location:
-            finalDestination,
-
-          previous_location:
-            currentLocation,
-
-          notes:
-            destinationIsHandoff
-              ? `Passenger delivered at ${finalDestination}. Wheelchair is available for another employee.`
-              : `Passenger delivered at ${finalDestination}`,
-
-          service_segment_id:
-            segmentId,
-
-          tracking_status:
-            "COMPLETED",
-
-          passenger_delivered:
-            true,
+          current_segment_id: "",
 
           is_active: false,
           alerts_enabled: false,
 
-          wheelchair_available:
-            true,
+          last_location_update_at: serverTimestamp(),
+          last_updated_at: serverTimestamp(),
+          last_updated_by: currentAgentName,
+          last_updated_by_id: currentAgentId,
+        };
 
-          available_for_handoff:
-            destinationIsHandoff,
-
-          employee_id:
-            currentAgentId,
-
-          employee_name:
-            currentAgentName,
-
-          created_at:
-            serverTimestamp(),
+        if (
+          isGateLocation(finalDestination) &&
+          !reportData.gate_arrived_at
+        ) {
+          reportPayload.gate_location = finalDestination;
+          reportPayload.gate_arrived_at = serverTimestamp();
         }
-      );
+
+        transaction.update(reportRef, reportPayload);
+
+        transaction.set(
+          inventoryRef,
+          {
+            wheelchair_number: cleanWheelchairNumber(
+              activeService.wheelchair_number
+            ),
+
+            status: "AVAILABLE",
+            is_available: true,
+            available_for_handoff: false,
+
+            location: finalDestination,
+
+            report_doc_id: "",
+            assigned_report_doc_id: "",
+            report_id: "",
+            assigned_report_id: "",
+
+            passenger_name: "",
+            airline: "",
+            flight_number: "",
+            pnr: "",
+
+            previous_agent_id: currentAgentId,
+            previous_agent_name: currentAgentName,
+
+            current_agent_id: "",
+            current_agent_name: "",
+
+            passenger_delivered_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        transaction.set(
+          sessionRef,
+          {
+            is_active: false,
+            tracking_status: "COMPLETED",
+            passenger_delivered: true,
+
+            delivered_location: finalDestination,
+            delivered_at: serverTimestamp(),
+
+            current_location: finalDestination,
+
+            active_report_id: "",
+            report_doc_id: "",
+            inventory_doc_id: "",
+            service_segment_id: "",
+
+            completed_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        if (segmentRef) {
+          transaction.update(segmentRef, {
+            end_location: finalDestination,
+            ended_at: serverTimestamp(),
+
+            segment_status: "COMPLETED",
+            segment_result: "PASSENGER_DELIVERED",
+
+            is_active: false,
+            updated_at: serverTimestamp(),
+          });
+        }
+
+        transaction.set(trackingEventRef, {
+          report_doc_id: activeService.report_doc_id,
+          report_id: activeService.report_id || "",
+
+          service_segment_id:
+            activeService.service_segment_id || "",
+
+          wheelchair_number:
+            activeService.wheelchair_number || "",
+
+          passenger_name:
+            activeService.passenger_name || "",
+
+          airline: activeService.airline || "",
+          pnr: activeService.pnr || "",
+          flight_number:
+            activeService.flight_number || "",
+
+          event_type: "PASSENGER_DELIVERED",
+
+          location: finalDestination,
+          previous_location: previousLocation,
+
+          notes: `Passenger delivered at ${finalDestination}`,
+
+          tracking_status: "COMPLETED",
+          passenger_delivered: true,
+
+          is_active: false,
+          alerts_enabled: false,
+
+          employee_id: currentAgentId,
+          employee_name: currentAgentName,
+
+          created_at: serverTimestamp(),
+        });
+      });
 
       setActiveService(null);
-      setDeliveryLocation(
-        "Main Terminal"
+      setDeliveryLocation("Main Terminal");
+      setHandoffLocation("Outside TSA");
+
+      setMessage(
+        `Passenger delivered at ${finalDestination}. You may now accept another wheelchair.`
       );
 
       setMode("scan");
       setStep("upload");
       setParsed(emptyParsed());
-      setSelectedInventory(null);
       setImageFile(null);
       setImageUrl("");
-
-      setMessage(
-        destinationIsHandoff
-          ? `Passenger delivered at ${finalDestination}. Wheelchair ${
-              activeService.wheelchair_number ||
-              ""
-            } is now available there for another employee.`
-          : `Passenger delivered at ${finalDestination}. You may now take another wheelchair.`
-      );
+      setSelectedInventory(null);
     } catch (deliveryError) {
       console.error(
         "Error marking passenger as delivered:",
@@ -3577,66 +3516,53 @@ export default function WCHRScan() {
     }
   };
 
- if (!user) {
+  if (!user) {
+    return (
+      <PageCard
+        style={{
+          padding: 22,
+          maxWidth: 900,
+          margin: "0 auto",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          You must be logged in to scan and submit a WCHR report.
+        </p>
+      </PageCard>
+    );
+  }
+
   return (
-    <PageCard
+    <div
       style={{
-        padding: 22,
-        maxWidth: 900,
+        display: "grid",
+        gap: 18,
+        fontFamily:
+          "Poppins, Inter, system-ui, sans-serif",
+        maxWidth: 980,
         margin: "0 auto",
       }}
     >
-      <p
-        style={{
-          margin: 0,
-          color: "#64748b",
-          fontSize: 14,
-          fontWeight: 600,
-        }}
-      >
-        You must be logged in to scan and submit a WCHR report.
-      </p>
-    </PageCard>
-  );
-}
-
-return (
-  <div
-    style={{
-      display: "grid",
-      gap: 18,
-      fontFamily: "Poppins, Inter, system-ui, sans-serif",
-      maxWidth: 980,
-      margin: "0 auto",
-    }}
-  >
       <div
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
           borderRadius: 28,
           padding: 24,
-          color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          position: "relative",
-          overflow: "hidden",
+          color: "#ffffff",
+          boxShadow:
+            "0 24px 60px rgba(23,105,170,0.22)",
         }}
       >
         <div
           style={{
-            position: "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: 999,
-            background: "rgba(255,255,255,0.08)",
-            top: -85,
-            right: -45,
-          }}
-        />
-
-        <div
-          style={{
-            position: "relative",
             display: "flex",
             justifyContent: "space-between",
             gap: 16,
@@ -3678,9 +3604,9 @@ return (
                 lineHeight: 1.6,
               }}
             >
-              Start a new wheelchair service or continue an existing service
-              from TSA, CBP, Main Terminal or another approved handoff
-              location.
+              Start a new passenger service or continue a
+              wheelchair left at TSA or CBP by another
+              employee.
             </p>
           </div>
 
@@ -3692,7 +3618,9 @@ return (
             }}
           >
             <ActionButton
-              onClick={() => navigate("/wchr/my-reports")}
+              onClick={() =>
+                navigate("/wchr/my-reports")
+              }
               variant="secondary"
             >
               My Reports
@@ -3712,11 +3640,17 @@ return (
         <PageCard style={{ padding: 16 }}>
           <div
             style={{
-              background: error ? "#fff1f2" : "#ecfdf5",
-              border: `1px solid ${error ? "#fecdd3" : "#a7f3d0"}`,
+              background: error
+                ? "#fff1f2"
+                : "#ecfdf5",
+              border: `1px solid ${
+                error ? "#fecdd3" : "#a7f3d0"
+              }`,
               borderRadius: 16,
               padding: "14px 16px",
-              color: error ? "#9f1239" : "#065f46",
+              color: error
+                ? "#9f1239"
+                : "#065f46",
               fontSize: 14,
               fontWeight: 700,
               lineHeight: 1.55,
@@ -3750,6 +3684,10 @@ return (
           setDeliveryLocation={setDeliveryLocation}
           onDelivered={handlePassengerDelivered}
           delivering={delivering}
+          handoffLocation={handoffLocation}
+          setHandoffLocation={setHandoffLocation}
+          onHandoff={handleLeaveForNextEmployee}
+          savingHandoff={savingHandoff}
         />
       )}
 
@@ -3770,9 +3708,13 @@ return (
               lineHeight: 1.6,
             }}
           >
-            New wheelchair assignments are blocked. Please mark wheelchair{" "}
-            <b>{activeService?.wheelchair_number || "—"}</b> as Passenger
-            Delivered before starting or accepting another service.
+            New wheelchair assignments are blocked.
+            Complete or transfer wheelchair{" "}
+            <b>
+              {activeService?.wheelchair_number ||
+                "—"}
+            </b>{" "}
+            before accepting another service.
           </div>
         </PageCard>
       )}
@@ -3780,33 +3722,20 @@ return (
       {!hasActiveService && !sessionLoading && (
         <>
           <PageCard style={{ padding: 22 }}>
-            <div
-              style={{
-                display: "grid",
-                gap: 16,
-              }}
-            >
+            <div style={{ display: "grid", gap: 14 }}>
               <div>
                 <FieldLabel>Pickup Location</FieldLabel>
 
                 <SelectInput
-                  label=""
                   value={startLocation}
                   onChange={(value) => {
                     setStartLocation(value);
                     setSelectedInventory(null);
-                    setParsed(emptyParsed());
-                    setImageFile(null);
-                    setImageUrl("");
-                    setError("");
-                    setMessage("");
 
-                    if (isHandoffLocation(value)) {
-                      setMode("manual");
-                      setStep("handoff");
-                    } else {
+                    if (mode === "existing") {
                       setMode("scan");
                       setStep("upload");
+                      setParsed(emptyParsed());
                     }
                   }}
                   options={START_LOCATIONS}
@@ -3826,198 +3755,55 @@ return (
                     lineHeight: 1.55,
                   }}
                 >
-                  Wheelchairs left at this location will appear below. Select
-                  the wheelchair you are taking so the passenger information
-                  and previous report can continue without being entered again.
+                  Wheelchairs left at this location
+                  will appear below. Select one to
+                  continue the existing passenger
+                  service without entering the
+                  passenger information again.
                 </div>
               )}
-
-              {!isHandoffLocation(startLocation) && (
-                <div>
-                  <FieldLabel>Entry Method</FieldLabel>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <ActionButton
-                      variant={mode === "scan" ? "primary" : "secondary"}
-                      onClick={() => {
-                        setMode("scan");
-                        setStep("upload");
-                        setSelectedInventory(null);
-                        setParsed(emptyParsed());
-                        setImageFile(null);
-                        setImageUrl("");
-                        setError("");
-                        setMessage("");
-                      }}
-                    >
-                      Scan Boarding Pass
-                    </ActionButton>
-
-                    <ActionButton
-                      variant={mode === "manual" ? "primary" : "secondary"}
-                      onClick={() => {
-                        setMode("manual");
-                        setStep("manual");
-                        setSelectedInventory(null);
-                        setImageFile(null);
-                        setImageUrl("");
-                        setError("");
-                        setMessage("");
-                      }}
-                    >
-                      Manual Entry
-                    </ActionButton>
-                  </div>
-                </div>
-              )}
-
-              {!selectedInventory && (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <SelectInput
-                    label="WCHR Type"
-                    value={wchType}
-                    onChange={setWchType}
-                    options={["WCHR", "WCHS", "WCHC"]}
-                  />
-                </div>
-              )}
-
-              {mode === "scan" &&
-                !isHandoffLocation(startLocation) &&
-                !selectedInventory && (
-                  <>
-                    <div>
-                      <FieldLabel>Boarding Pass Photo</FieldLabel>
-
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={(event) =>
-                          handlePickFile(event.target.files?.[0])
-                        }
-                        style={{
-                          width: "100%",
-                          border: "1px solid #dbeafe",
-                          background: "#ffffff",
-                          borderRadius: 14,
-                          padding: "12px 14px",
-                          fontSize: 14,
-                          color: "#0f172a",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <ActionButton
-                        onClick={handleScan}
-                        variant="primary"
-                        disabled={
-                          !canScan ||
-                          step === "scanning" ||
-                          step === "submitting"
-                        }
-                      >
-                        {step === "scanning"
-                          ? "Scanning..."
-                          : "Scan & Preview"}
-                      </ActionButton>
-                    </div>
-                  </>
-                )}
             </div>
           </PageCard>
 
           <AvailableWheelchairsCard
             startLocation={startLocation}
-            loading={inventoryLoading}
+            loading={availableLoading}
             rows={availableWheelchairs}
-            selectedInventoryId={selectedInventory?.id || ""}
-            onSelect={handleSelectAvailableWheelchair}
-          />
-
-          <SelectedHandoffCard
-            wheelchair={selectedInventory}
-            onClear={handleClearSelectedWheelchair}
+            selectedInventoryId={
+              selectedInventoryId
+            }
+            onSelect={handleSelectInventory}
           />
 
           {selectedInventory && (
             <>
+              <SelectedHandoffCard
+                wheelchair={selectedInventory}
+                onClear={clearSelectedInventory}
+              />
+
               <StatusCard
                 parsed={parsed}
                 user={user}
-                startLocation={
-                  selectedInventory.location || startLocation
-                }
+                startLocation={startLocation}
                 isContinuingService
               />
 
               <PageCard style={{ padding: 22 }}>
                 <div
                   style={{
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                    borderRadius: 18,
-                    padding: 16,
-                  }}
-                >
-                  <h3
-                    style={{
-                      margin: 0,
-                      fontSize: 17,
-                      fontWeight: 900,
-                      color: "#0f172a",
-                    }}
-                  >
-                    Continue Existing Passenger Service
-                  </h3>
-
-                  <p
-                    style={{
-                      margin: "6px 0 0",
-                      fontSize: 13,
-                      color: "#64748b",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    The original passenger report will remain the same. A new
-                    employee service segment will be created for your portion
-                    of the trip.
-                  </p>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 16,
                     display: "grid",
                     gridTemplateColumns:
-                      "repeat(auto-fit, minmax(190px, 1fr))",
+                      "repeat(auto-fit, minmax(180px, 1fr))",
                     gap: 12,
                   }}
                 >
                   <StatusPill
-                    label="Wheelchair"
-                    value={selectedInventory.wheelchair_number || "—"}
-                    tone="blue"
-                  />
-
-                  <StatusPill
                     label="Passenger"
-                    value={selectedInventory.passenger_name || "—"}
+                    value={
+                      selectedInventory.passenger_name ||
+                      "—"
+                    }
                     tone="slate"
                   />
 
@@ -4025,9 +3811,12 @@ return (
                     label="Flight"
                     value={
                       selectedInventory.flight_number
-                        ? `${selectedInventory.airline || ""} ${
+                        ? `${
+                            selectedInventory.airline ||
+                            ""
+                          } ${
                             selectedInventory.flight_number
-                          }`
+                          }`.trim()
                         : "—"
                     }
                     tone="slate"
@@ -4035,280 +3824,453 @@ return (
 
                   <StatusPill
                     label="PNR"
-                    value={selectedInventory.pnr || "—"}
+                    value={
+                      selectedInventory.pnr || "—"
+                    }
                     tone="slate"
                   />
 
                   <StatusPill
-                    label="Pickup Point"
-                    value={selectedInventory.location || startLocation}
-                    tone="green"
-                  />
-
-                  <StatusPill
-                    label="Previous Agent"
-                    value={selectedInventory.previous_agent_name || "—"}
-                    tone="slate"
+                    label="Wheelchair"
+                    value={
+                      selectedInventory.wheelchair_number ||
+                      "—"
+                    }
+                    tone="blue"
                   />
                 </div>
 
                 <div
                   style={{
+                    marginTop: 16,
                     display: "flex",
                     gap: 10,
                     flexWrap: "wrap",
-                    marginTop: 18,
                   }}
                 >
                   <ActionButton
                     variant="success"
-                    onClick={handleTakeAvailableWheelchair}
-                    disabled={takingHandoff || !canSubmit}
+                    onClick={
+                      handleAcceptExistingService
+                    }
+                    disabled={
+                      !canAcceptExistingService
+                    }
                   >
-                    {takingHandoff
-                      ? "Assigning Wheelchair..."
-                      : `Take Wheelchair ${
-                          selectedInventory.wheelchair_number || ""
-                        }`}
+                    {acceptingInventory
+                      ? "Accepting Service..."
+                      : "Continue Existing Service"}
                   </ActionButton>
 
                   <ActionButton
                     variant="secondary"
-                    onClick={handleClearSelectedWheelchair}
-                    disabled={takingHandoff}
+                    onClick={clearSelectedInventory}
+                    disabled={acceptingInventory}
                   >
-                    Cancel Selection
+                    Cancel
                   </ActionButton>
                 </div>
               </PageCard>
             </>
           )}
 
-          {!selectedInventory &&
-            mode === "manual" &&
-            !isHandoffLocation(startLocation) && (
-              <>
-                <StatusCard
-                  parsed={parsed}
-                  user={user}
-                  startLocation={startLocation}
-                />
-
-                <PageCard style={{ padding: 22 }}>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fit, minmax(220px, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <EditInput
-                      label="Passenger Name"
-                      value={parsed.passenger_name}
-                      onChange={(value) =>
-                        handleParsedChange("passenger_name", value)
-                      }
-                      placeholder="VERGARA / CLAUDIA"
-                    />
-
-                    <EditInput
-                      label="Airline"
-                      value={parsed.airline}
-                      onChange={(value) =>
-                        handleParsedChange("airline", value)
-                      }
-                      placeholder="AV"
-                    />
-
-                    <EditInput
-                      label="Flight Number"
-                      value={parsed.flight_number}
-                      onChange={(value) =>
-                        handleParsedChange("flight_number", value)
-                      }
-                      placeholder="581"
-                    />
-
-                    <EditInput
-                      label="PNR / Reservation Code"
-                      value={parsed.pnr}
-                      onChange={(value) =>
-                        handleParsedChange("pnr", value)
-                      }
-                      placeholder="A7ILFB"
-                    />
-
-                    <EditInput
-                      label="WCHR Number"
-                      value={parsed.wheelchair_number}
-                      onChange={(value) =>
-                        handleParsedChange("wheelchair_number", value)
-                      }
-                      placeholder="WCHR-023 or 023"
-                    />
-                  </div>
-
-                  <div style={{ marginTop: 16 }}>
-                    <ActionButton
-                      onClick={handleSubmit}
-                      variant="success"
-                      disabled={!canSubmit || step === "submitting"}
-                    >
-                      {step === "submitting"
-                        ? "Starting Service..."
-                        : "Start WCHR Service"}
-                    </ActionButton>
-                  </div>
-                </PageCard>
-              </>
-            )}
-
-          {!selectedInventory &&
-            mode === "scan" &&
-            step === "preview" &&
-            parsed &&
-            !isHandoffLocation(startLocation) && (
-              <>
-                <StatusCard
-                  parsed={parsed}
-                  user={user}
-                  startLocation={startLocation}
-                />
-
-                <PageCard style={{ padding: 22 }}>
-                  {imageUrl && (
-                    <div style={{ marginBottom: 16 }}>
-                      <img
-                        src={imageUrl}
-                        alt="Boarding pass"
-                        style={{
-                          width: "100%",
-                          maxHeight: 340,
-                          objectFit: "contain",
-                          borderRadius: 18,
-                          border: "1px solid #e2e8f0",
-                          background: "#f8fbff",
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fit, minmax(220px, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <EditInput
-                      label="Passenger Name"
-                      value={parsed.passenger_name}
-                      onChange={(value) =>
-                        handleParsedChange("passenger_name", value)
-                      }
-                      placeholder="VERGARA / CLAUDIA"
-                    />
-
-                    <EditInput
-                      label="Airline"
-                      value={parsed.airline}
-                      onChange={(value) =>
-                        handleParsedChange("airline", value)
-                      }
-                      placeholder="AV"
-                    />
-
-                    <EditInput
-                      label="Flight Number"
-                      value={parsed.flight_number}
-                      onChange={(value) =>
-                        handleParsedChange("flight_number", value)
-                      }
-                      placeholder="581"
-                    />
-
-                    <EditInput
-                      label="PNR / Reservation Code"
-                      value={parsed.pnr}
-                      onChange={(value) =>
-                        handleParsedChange("pnr", value)
-                      }
-                      placeholder="A7ILFB"
-                    />
-
-                    <EditInput
-                      label="WCHR Number"
-                      value={parsed.wheelchair_number}
-                      onChange={(value) =>
-                        handleParsedChange("wheelchair_number", value)
-                      }
-                      placeholder="WCHR-023 or 023"
-                    />
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 12,
-                      marginTop: 16,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <ActionButton
-                      onClick={() => {
-                        setParsed(emptyParsed());
-                        setImageUrl("");
-                        setImageFile(null);
-                        setStep("upload");
-                        setError("");
-                        setMessage("");
-                      }}
-                      variant="secondary"
-                      disabled={step === "submitting"}
-                    >
-                      Retake / Upload Again
-                    </ActionButton>
-
-                    <ActionButton
-                      onClick={handleSubmit}
-                      variant="success"
-                      disabled={!canSubmit || step === "submitting"}
-                    >
-                      {step === "submitting"
-                        ? "Starting Service..."
-                        : "Start WCHR Service"}
-                    </ActionButton>
-                  </div>
-                </PageCard>
-              </>
-            )}
-
-          {isHandoffLocation(startLocation) &&
-            !inventoryLoading &&
-            availableWheelchairs.length === 0 &&
-            !selectedInventory && (
-              <PageCard style={{ padding: 18 }}>
+          {!selectedInventory && (
+            <>
+              <PageCard style={{ padding: 22 }}>
                 <div
                   style={{
-                    background: "#fffbeb",
-                    border: "1px solid #fde68a",
-                    borderRadius: 16,
-                    padding: "14px 16px",
-                    color: "#92400e",
-                    fontSize: 14,
-                    fontWeight: 700,
-                    lineHeight: 1.6,
+                    display: "grid",
+                    gap: 14,
                   }}
                 >
-                  No available wheelchairs are currently registered at{" "}
-                  <b>{startLocation}</b>. Select another pickup location or
-                  confirm that the previous employee correctly released the
-                  wheelchair.
+                  <div>
+                    <FieldLabel>
+                      New Service Entry Method
+                    </FieldLabel>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <ActionButton
+                        variant={
+                          mode === "scan"
+                            ? "primary"
+                            : "secondary"
+                        }
+                        onClick={() => {
+                          setMode("scan");
+                          setStep("upload");
+                          setError("");
+                          setMessage("");
+                          setParsed(emptyParsed());
+                          setImageUrl("");
+                          setImageFile(null);
+                        }}
+                      >
+                        Scan Boarding Pass
+                      </ActionButton>
+
+                      <ActionButton
+                        variant={
+                          mode === "manual"
+                            ? "primary"
+                            : "secondary"
+                        }
+                        onClick={() => {
+                          setMode("manual");
+                          setStep("manual");
+                          setError("");
+                          setMessage("");
+                          setImageFile(null);
+                          setImageUrl("");
+                          setParsed(emptyParsed());
+                        }}
+                      >
+                        Manual Entry
+                      </ActionButton>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <SelectInput
+                      label="WCHR Type"
+                      value={wchType}
+                      onChange={setWchType}
+                      options={[
+                        "WCHR",
+                        "WCHS",
+                        "WCHC",
+                      ]}
+                    />
+
+                    <StatusPill
+                      label="Starting At"
+                      value={startLocation}
+                      tone="blue"
+                    />
+                  </div>
+
+                  {mode === "scan" && (
+                    <>
+                      <div>
+                        <FieldLabel>
+                          Boarding Pass Photo
+                        </FieldLabel>
+
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(event) =>
+                            handlePickFile(
+                              event.target.files?.[0]
+                            )
+                          }
+                          style={{
+                            width: "100%",
+                            border:
+                              "1px solid #dbeafe",
+                            background: "#ffffff",
+                            borderRadius: 14,
+                            padding: "12px 14px",
+                            fontSize: 14,
+                            color: "#0f172a",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <ActionButton
+                          onClick={handleScan}
+                          variant="primary"
+                          disabled={
+                            !canScan ||
+                            step === "scanning" ||
+                            step === "submitting"
+                          }
+                        >
+                          {step === "scanning"
+                            ? "Scanning..."
+                            : "Scan & Preview"}
+                        </ActionButton>
+                      </div>
+                    </>
+                  )}
                 </div>
               </PageCard>
-            )}
+
+              {mode === "manual" && (
+                <>
+                  <StatusCard
+                    parsed={parsed}
+                    user={user}
+                    startLocation={startLocation}
+                  />
+
+                  <PageCard style={{ padding: 22 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 12,
+                      }}
+                    >
+                      <EditInput
+                        label="Passenger Name"
+                        value={
+                          parsed.passenger_name
+                        }
+                        onChange={(value) =>
+                          handleParsedChange(
+                            "passenger_name",
+                            value
+                          )
+                        }
+                        placeholder="VERGARA / CLAUDIA"
+                      />
+
+                      <EditInput
+                        label="Airline"
+                        value={parsed.airline}
+                        onChange={(value) =>
+                          handleParsedChange(
+                            "airline",
+                            value
+                          )
+                        }
+                        placeholder="AV"
+                      />
+
+                      <EditInput
+                        label="Flight Number"
+                        value={
+                          parsed.flight_number
+                        }
+                        onChange={(value) =>
+                          handleParsedChange(
+                            "flight_number",
+                            value
+                          )
+                        }
+                        placeholder="581"
+                      />
+
+                      <EditInput
+                        label="PNR / Reservation Code"
+                        value={parsed.pnr}
+                        onChange={(value) =>
+                          handleParsedChange(
+                            "pnr",
+                            value
+                          )
+                        }
+                        placeholder="A7ILFB"
+                      />
+
+                      <EditInput
+                        label="WCHR Number"
+                        value={
+                          parsed.wheelchair_number
+                        }
+                        onChange={(value) =>
+                          handleParsedChange(
+                            "wheelchair_number",
+                            value
+                          )
+                        }
+                        placeholder="023"
+                      />
+                    </div>
+
+                    <div style={{ marginTop: 16 }}>
+                      <ActionButton
+                        onClick={handleSubmit}
+                        variant="success"
+                        disabled={
+                          !canSubmitNewService ||
+                          step === "submitting"
+                        }
+                      >
+                        {step === "submitting"
+                          ? "Starting Service..."
+                          : "Start WCHR Service"}
+                      </ActionButton>
+                    </div>
+                  </PageCard>
+                </>
+              )}
+
+              {mode === "scan" &&
+                step === "preview" && (
+                  <>
+                    <StatusCard
+                      parsed={parsed}
+                      user={user}
+                      startLocation={
+                        startLocation
+                      }
+                    />
+
+                    <PageCard
+                      style={{ padding: 22 }}
+                    >
+                      {imageUrl && (
+                        <div
+                          style={{
+                            marginBottom: 16,
+                          }}
+                        >
+                          <img
+                            src={imageUrl}
+                            alt="Boarding pass"
+                            style={{
+                              width: "100%",
+                              maxHeight: 340,
+                              objectFit:
+                                "contain",
+                              borderRadius: 18,
+                              border:
+                                "1px solid #e2e8f0",
+                              background:
+                                "#f8fbff",
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(220px, 1fr))",
+                          gap: 12,
+                        }}
+                      >
+                        <EditInput
+                          label="Passenger Name"
+                          value={
+                            parsed.passenger_name
+                          }
+                          onChange={(value) =>
+                            handleParsedChange(
+                              "passenger_name",
+                              value
+                            )
+                          }
+                          placeholder="VERGARA / CLAUDIA"
+                        />
+
+                        <EditInput
+                          label="Airline"
+                          value={parsed.airline}
+                          onChange={(value) =>
+                            handleParsedChange(
+                              "airline",
+                              value
+                            )
+                          }
+                          placeholder="AV"
+                        />
+
+                        <EditInput
+                          label="Flight Number"
+                          value={
+                            parsed.flight_number
+                          }
+                          onChange={(value) =>
+                            handleParsedChange(
+                              "flight_number",
+                              value
+                            )
+                          }
+                          placeholder="581"
+                        />
+
+                        <EditInput
+                          label="PNR / Reservation Code"
+                          value={parsed.pnr}
+                          onChange={(value) =>
+                            handleParsedChange(
+                              "pnr",
+                              value
+                            )
+                          }
+                          placeholder="A7ILFB"
+                        />
+
+                        <EditInput
+                          label="WCHR Number"
+                          value={
+                            parsed.wheelchair_number
+                          }
+                          onChange={(value) =>
+                            handleParsedChange(
+                              "wheelchair_number",
+                              value
+                            )
+                          }
+                          placeholder="023"
+                        />
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 12,
+                          marginTop: 16,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <ActionButton
+                          onClick={() => {
+                            setParsed(
+                              emptyParsed()
+                            );
+                            setImageUrl("");
+                            setImageFile(null);
+                            setStep("upload");
+                            setError("");
+                            setMessage("");
+                          }}
+                          variant="secondary"
+                          disabled={
+                            step === "submitting"
+                          }
+                        >
+                          Retake / Upload Again
+                        </ActionButton>
+
+                        <ActionButton
+                          onClick={handleSubmit}
+                          variant="success"
+                          disabled={
+                            !canSubmitNewService ||
+                            step === "submitting"
+                          }
+                        >
+                          {step === "submitting"
+                            ? "Starting Service..."
+                            : "Start WCHR Service"}
+                        </ActionButton>
+                      </div>
+                    </PageCard>
+                  </>
+                )}
+            </>
+          )}
         </>
       )}
     </div>
