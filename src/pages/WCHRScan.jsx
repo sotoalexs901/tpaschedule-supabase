@@ -3577,41 +3577,39 @@ export default function WCHRScan() {
     }
   };
 
-  if (!user) {
-    return (
-      <PageCard
-        style={{
-          padding: 22,
-          maxWidth: 900,
-          margin: "0 auto",
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            color: "#64748b",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          You must be logged in to scan and submit a WCHR report.
-        </p>
-      </PageCard>
-    );
-  }
-  if (!user) {
-  ...
-}
-    return (
-    <div
+ if (!user) {
+  return (
+    <PageCard
       style={{
-        display: "grid",
-        gap: 18,
-        fontFamily: "Poppins, Inter, system-ui, sans-serif",
-        maxWidth: 980,
+        padding: 22,
+        maxWidth: 900,
         margin: "0 auto",
       }}
     >
+      <p
+        style={{
+          margin: 0,
+          color: "#64748b",
+          fontSize: 14,
+          fontWeight: 600,
+        }}
+      >
+        You must be logged in to scan and submit a WCHR report.
+      </p>
+    </PageCard>
+  );
+}
+
+return (
+  <div
+    style={{
+      display: "grid",
+      gap: 18,
+      fontFamily: "Poppins, Inter, system-ui, sans-serif",
+      maxWidth: 980,
+      margin: "0 auto",
+    }}
+  >
       <div
         style={{
           background:
