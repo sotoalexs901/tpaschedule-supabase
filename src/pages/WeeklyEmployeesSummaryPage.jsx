@@ -5,7 +5,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 
 // ============================================================
-// CONSTANTS
+// DAY CONFIGURATION
 // ============================================================
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -30,6 +30,18 @@ const DAY_FULL = {
   sun: "Sunday",
 };
 
+const CABIN_DAY_TO_SUMMARY_DAY = {
+  monday: "mon",
+  tuesday: "tue",
+  wednesday: "wed",
+  thursday: "thu",
+  friday: "fri",
+  saturday: "sat",
+  sunday: "sun",
+};
+
+const CABIN_DEPARTMENT = "Cabin Service";
+
 // ============================================================
 // NORMALIZATION HELPERS
 // ============================================================
@@ -43,57 +55,66 @@ function normalizeText(value) {
 
 function normalizeDepartmentName(value) {
   const department = String(value || "").trim();
+
+  if (!department) {
+    return "Unknown";
+  }
+
   const upper = department.toUpperCase();
 
-  // Cabin Service
   if (
     upper === "CABIN SERVICE" ||
     upper === "DL CABIN SERVICE" ||
-    upper.includes("DL CABIN")
+    upper === "CABIN" ||
+    upper.includes("CABIN SERVICE")
   ) {
-    return "Cabin Service";
+    return CABIN_DEPARTMENT;
   }
 
-  // World Atlantic / WAL
+  return department;
+}
+
+function normalizeAirlineName(value) {
+  const airline = String(value || "").trim();
+  const upper = airline.toUpperCase();
+
   if (
     upper === "WL HAVANA AIR" ||
     upper === "WAL HAVANA AIR" ||
-    upper === "WAL HAVANA" ||
-    upper === "WORLD ATLANTIC" ||
-    upper === "WORLD ATLANTIC AIRLINES" ||
-    upper === "WAL"
+    upper === "WAL HAVANA"
   ) {
     return "World Atlantic";
   }
 
-  // Avianca
-  if (
-    upper === "AV" ||
-    upper === "AVIANCA"
-  ) {
-    return "Avianca";
+  if (upper === "WESTJET") {
+    return "WestJet";
   }
 
-  // Sun Country
   if (
-    upper === "SY" ||
-    upper === "SUN COUNTRY" ||
-    upper === "SUN COUNTRY AIRLINES"
+    upper === "CABIN SERVICE" ||
+    upper === "DL CABIN SERVICE" ||
+    upper === "CABIN"
   ) {
-    return "Sun Country";
+    return CABIN_DEPARTMENT;
   }
 
-  // Aeromexico
-  if (
-    upper === "AM" ||
-    upper === "AEROMEXICO" ||
-    upper === "AEROMÉXICO"
-  ) {
-    return "Aeromexico";
-  }
-
-  return department || "Unknown";
+  return airline || "Unknown";
 }
+
+function isCabinDepartment(value) {
+  const normalized = normalizeText(value);
+
+  return (
+    normalized === "cabin" ||
+    normalized === "cabin service" ||
+    normalized === "dl cabin service" ||
+    normalized.includes("cabin service")
+  );
+}
+
+// ============================================================
+// EMPLOYEE HELPERS
+// ============================================================
 
 function getEmployeeName(employee) {
   return (
@@ -102,16 +123,17 @@ function getEmployeeName(employee) {
     employee?.fullName ||
     employee?.displayName ||
     employee?.username ||
+    employee?.loginUsername ||
     "Unknown Employee"
   );
 }
 
 function getEmployeeDepartment(employee) {
-  return (
+  return normalizeDepartmentName(
     employee?.department ||
-    employee?.departmentName ||
-    employee?.assignedDepartment ||
-    ""
+      employee?.departmentName ||
+      employee?.dept ||
+      ""
   );
 }
 
@@ -122,14 +144,16 @@ function getEmployeeDepartment(employee) {
 function toMinutes(value) {
   if (!value) return null;
 
-  const [hours, minutes] = String(value)
-    .split(":")
-    .map(Number);
+  const parts = String(value).split(":");
 
-  if (
-    Number.isNaN(hours) ||
-    Number.isNaN(minutes)
-  ) {
+  if (parts.length < 2) {
+    return null;
+  }
+
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
     return null;
   }
 
@@ -145,10 +169,7 @@ function getBreakMinutes(value) {
     return 0;
   }
 
-  if (
-    clean === "yes" ||
-    clean.includes("30")
-  ) {
+  if (clean === "yes" || clean.includes("30")) {
     return 30;
   }
 
@@ -164,7 +185,7 @@ function getBreakMinutes(value) {
 }
 
 // ============================================================
-// WORKED HOURS
+// ACTUAL / WORKED HOURS
 // ============================================================
 
 function calculateActualHours(row) {
@@ -182,22 +203,20 @@ function calculateActualHours(row) {
   }
 
   const workedMinutes =
-    end -
-    start -
-    getBreakMinutes(row?.breakTaken);
+    end - start - getBreakMinutes(row?.breakTaken);
 
   return Math.max(0, workedMinutes) / 60;
 }
 
 // ============================================================
-// ASSIGNED HOURS
+// REGULAR SCHEDULE HOURS
 // ============================================================
 
 function calculateScheduledShiftHours(shift) {
   if (
     !shift?.start ||
     !shift?.end ||
-    shift.start === "OFF"
+    String(shift.start).toUpperCase() === "OFF"
   ) {
     return 0;
   }
@@ -211,19 +230,19 @@ function calculateScheduledShiftHours(shift) {
 
   let end = endRaw;
 
-  if (end < start) {
+  if (end <= start) {
     end += 24 * 60;
   }
 
-  let hours = (end - start) / 60;
+  let minutes = end - start;
 
-  // Automatically deduct 30 minute break
-  // when the scheduled shift exceeds 6 hours.
-  if (hours > 6 + 1 / 60) {
-    hours -= 0.5;
+  // Same paid-hours rule used by Cabin:
+  // deduct 30 minutes when shift is longer than 6 hours.
+  if (minutes >= 361) {
+    minutes -= 30;
   }
 
-  return Math.max(0, hours);
+  return Math.max(0, minutes) / 60;
 }
 
 function calculateScheduledDayHours(row, dayKey) {
@@ -239,29 +258,68 @@ function calculateScheduledDayHours(row, dayKey) {
 }
 
 // ============================================================
+// CABIN HOURS
+// ============================================================
+
+function calculateCabinSlotHours(slot) {
+  const storedPaidHours = Number(slot?.paidHours);
+
+  if (
+    Number.isFinite(storedPaidHours) &&
+    storedPaidHours >= 0 &&
+    String(slot?.paidHours ?? "").trim() !== ""
+  ) {
+    return storedPaidHours;
+  }
+
+  const start = toMinutes(slot?.start);
+  const endRaw = toMinutes(slot?.end);
+
+  if (start == null || endRaw == null) {
+    return 0;
+  }
+
+  let end = endRaw;
+
+  if (end <= start) {
+    end += 24 * 60;
+  }
+
+  let minutes = end - start;
+
+  if (minutes >= 361) {
+    minutes -= 30;
+  }
+
+  return Math.max(0, minutes) / 60;
+}
+
+// ============================================================
 // DATE HELPERS
 // ============================================================
 
 function dateKey(date) {
   return `${date.getFullYear()}-${String(
     date.getMonth() + 1
-  ).padStart(2, "0")}-${String(
-    date.getDate()
-  ).padStart(2, "0")}`;
+  ).padStart(2, "0")}-${String(date.getDate()).padStart(
+    2,
+    "0"
+  )}`;
 }
 
 function buildWeekDates(weekTag, schedules) {
   const sample = schedules[0];
 
   const startValue = String(
-    sample?.weekStart || weekTag || ""
+    sample?.weekStart ||
+      sample?.weekStartDate ||
+      weekTag ||
+      ""
   ).trim();
 
   const result = {};
 
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(startValue)
-  ) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startValue)) {
     DAY_KEYS.forEach((key) => {
       result[key] = "";
     });
@@ -269,16 +327,12 @@ function buildWeekDates(weekTag, schedules) {
     return result;
   }
 
-  const baseDate = new Date(
-    `${startValue}T00:00:00`
-  );
+  const baseDate = new Date(`${startValue}T00:00:00`);
 
   DAY_KEYS.forEach((key, index) => {
     const currentDate = new Date(baseDate);
 
-    currentDate.setDate(
-      baseDate.getDate() + index
-    );
+    currentDate.setDate(baseDate.getDate() + index);
 
     result[key] = dateKey(currentDate);
   });
@@ -286,39 +340,25 @@ function buildWeekDates(weekTag, schedules) {
   return result;
 }
 
-function formatDisplayDate(value) {
-  if (!value) return "";
-
-  const date = new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-    }
-  );
+function getCabinScheduleWeek(schedule) {
+  return String(
+    schedule?.weekStartDate ||
+      schedule?.weekStart ||
+      schedule?.weekTag ||
+      ""
+  ).trim();
 }
 
 // ============================================================
 // UI COMPONENTS
 // ============================================================
 
-function PageCard({
-  children,
-  style = {},
-}) {
+function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
-        background:
-          "rgba(255,255,255,0.94)",
-        border:
-          "1px solid rgba(255,255,255,0.96)",
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(255,255,255,0.96)",
         borderRadius: 24,
         boxShadow:
           "0 18px 42px rgba(15,23,42,0.06)",
@@ -345,7 +385,6 @@ function SelectInput(props) {
         color: "#0f172a",
         outline: "none",
         boxSizing: "border-box",
-        fontWeight: 700,
         ...props.style,
       }}
     />
@@ -361,23 +400,19 @@ function SummaryCard({
   return (
     <div
       style={{
-        background: alert
-          ? "#fff1f2"
-          : "#f8fbff",
+        background: alert ? "#fff1f2" : "#f8fbff",
         border: alert
           ? "1px solid #fecdd3"
           : "1px solid #dbeafe",
-        borderRadius: 18,
+        borderRadius: 16,
         padding: "16px 18px",
       }}
     >
       <div
         style={{
           fontSize: 11,
-          fontWeight: 900,
-          color: alert
-            ? "#9f1239"
-            : "#64748b",
+          fontWeight: 800,
+          color: alert ? "#9f1239" : "#64748b",
           textTransform: "uppercase",
           letterSpacing: "0.08em",
         }}
@@ -390,9 +425,7 @@ function SummaryCard({
           marginTop: 6,
           fontSize: 27,
           fontWeight: 900,
-          color: alert
-            ? "#9f1239"
-            : "#0f172a",
+          color: alert ? "#9f1239" : "#0f172a",
         }}
       >
         {value}
@@ -403,10 +436,7 @@ function SummaryCard({
           style={{
             marginTop: 7,
             fontSize: 12,
-            color: alert
-              ? "#be123c"
-              : "#64748b",
-            lineHeight: 1.5,
+            color: alert ? "#be123c" : "#64748b",
           }}
         >
           {subValue}
@@ -416,36 +446,14 @@ function SummaryCard({
   );
 }
 
-function Badge({
-  children,
-  tone = "blue",
-}) {
+function Badge({ children, tone = "blue" }) {
   const colors = {
-    blue: [
-      "#eff6ff",
-      "#1d4ed8",
-      "#bfdbfe",
-    ],
-    green: [
-      "#ecfdf5",
-      "#047857",
-      "#a7f3d0",
-    ],
-    amber: [
-      "#fffbeb",
-      "#b45309",
-      "#fde68a",
-    ],
-    red: [
-      "#fff1f2",
-      "#be123c",
-      "#fecdd3",
-    ],
-    gray: [
-      "#f8fafc",
-      "#475569",
-      "#e2e8f0",
-    ],
+    blue: ["#eff6ff", "#1d4ed8", "#bfdbfe"],
+    green: ["#ecfdf5", "#047857", "#a7f3d0"],
+    amber: ["#fffbeb", "#b45309", "#fde68a"],
+    red: ["#fff1f2", "#be123c", "#fecdd3"],
+    gray: ["#f8fafc", "#475569", "#e2e8f0"],
+    purple: ["#faf5ff", "#7e22ce", "#e9d5ff"],
   };
 
   const [background, color, border] =
@@ -455,7 +463,6 @@ function Badge({
     <span
       style={{
         display: "inline-flex",
-        alignItems: "center",
         padding: "6px 9px",
         borderRadius: 999,
         background,
@@ -476,37 +483,27 @@ function Badge({
 // ============================================================
 
 export default function WeeklyEmployeesSummaryPage() {
-  const [employees, setEmployees] =
-    useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [timesheets, setTimesheets] = useState([]);
 
-  const [schedules, setSchedules] =
-    useState([]);
+  // NEW:
+  // Cabin schedules and their individual assigned slots.
+  const [cabinSchedules, setCabinSchedules] = useState([]);
+  const [cabinSlots, setCabinSlots] = useState([]);
 
-  const [timesheets, setTimesheets] =
-    useState([]);
-
-  const [
-    selectedWeekTag,
-    setSelectedWeekTag,
-  ] = useState("");
-
-  const [
-    statusFilter,
-    setStatusFilter,
-  ] = useState("approved");
-
-  // Employee currently expanded.
-  // null = summary report only.
-  const [
-    expandedEmployeeId,
-    setExpandedEmployeeId,
-  ] = useState(null);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [error, setError] =
+  const [selectedWeekTag, setSelectedWeekTag] =
     useState("");
+
+  const [statusFilter, setStatusFilter] =
+    useState("approved");
+
+  // Employee whose detailed report is currently expanded.
+  const [expandedEmployeeId, setExpandedEmployeeId] =
+    useState("");
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   // ==========================================================
   // LOAD FIRESTORE DATA
@@ -522,48 +519,49 @@ export default function WeeklyEmployeesSummaryPage() {
           employeeSnapshot,
           scheduleSnapshot,
           timesheetSnapshot,
+          cabinScheduleSnapshot,
+          cabinSlotSnapshot,
         ] = await Promise.all([
-          getDocs(
-            collection(db, "employees")
-          ),
-
-          getDocs(
-            collection(db, "schedules")
-          ),
-
-          getDocs(
-            collection(
-              db,
-              "timesheet_reports"
-            )
-          ),
+          getDocs(collection(db, "employees")),
+          getDocs(collection(db, "schedules")),
+          getDocs(collection(db, "timesheet_reports")),
+          getDocs(collection(db, "cabinSchedules")),
+          getDocs(collection(db, "cabinScheduleSlots")),
         ]);
 
         setEmployees(
-          employeeSnapshot.docs.map(
-            (document) => ({
-              id: document.id,
-              ...document.data(),
-            })
-          )
+          employeeSnapshot.docs.map((document) => ({
+            id: document.id,
+            ...document.data(),
+          }))
         );
 
         setSchedules(
-          scheduleSnapshot.docs.map(
-            (document) => ({
-              id: document.id,
-              ...document.data(),
-            })
-          )
+          scheduleSnapshot.docs.map((document) => ({
+            id: document.id,
+            ...document.data(),
+          }))
         );
 
         setTimesheets(
-          timesheetSnapshot.docs.map(
-            (document) => ({
-              id: document.id,
-              ...document.data(),
-            })
-          )
+          timesheetSnapshot.docs.map((document) => ({
+            id: document.id,
+            ...document.data(),
+          }))
+        );
+
+        setCabinSchedules(
+          cabinScheduleSnapshot.docs.map((document) => ({
+            id: document.id,
+            ...document.data(),
+          }))
+        );
+
+        setCabinSlots(
+          cabinSlotSnapshot.docs.map((document) => ({
+            firestoreId: document.id,
+            ...document.data(),
+          }))
         );
       } catch (loadError) {
         console.error(
@@ -582,21 +580,31 @@ export default function WeeklyEmployeesSummaryPage() {
     load();
   }, []);
 
-  // Close expanded detail when changing week/filter.
-  useEffect(() => {
-    setExpandedEmployeeId(null);
-  }, [selectedWeekTag, statusFilter]);
-
   // ==========================================================
-  // SCHEDULE STATUS
+  // REGULAR SCHEDULE STATUS
   // ==========================================================
 
-  const scheduleMatchesStatus = (
-    schedule
-  ) => {
-    const status = String(
-      schedule?.status || ""
-    )
+  const scheduleMatchesStatus = (schedule) => {
+    const status = String(schedule?.status || "")
+      .trim()
+      .toLowerCase();
+
+    if (statusFilter === "both") {
+      return (
+        status === "approved" ||
+        status === "draft"
+      );
+    }
+
+    return status === statusFilter;
+  };
+
+  // ==========================================================
+  // CABIN SCHEDULE STATUS
+  // ==========================================================
+
+  const cabinScheduleMatchesStatus = (schedule) => {
+    const status = String(schedule?.status || "draft")
       .trim()
       .toLowerCase();
 
@@ -615,23 +623,42 @@ export default function WeeklyEmployeesSummaryPage() {
   // ==========================================================
 
   const weekTags = useMemo(() => {
+    const regularWeeks = schedules
+      .filter(scheduleMatchesStatus)
+      .filter((schedule) => {
+        const department =
+          schedule?.department ||
+          schedule?.departmentName ||
+          schedule?.airlineDisplayName ||
+          schedule?.airline ||
+          "";
+
+        // Cabin must never be taken from the old schedule
+        // collection. Cabin has its own schedule source now.
+        return !isCabinDepartment(department);
+      })
+      .map(
+        (schedule) =>
+          schedule.weekTag ||
+          schedule.weekStart
+      )
+      .filter(Boolean);
+
+    const cabinWeeks = cabinSchedules
+      .filter(cabinScheduleMatchesStatus)
+      .map(getCabinScheduleWeek)
+      .filter(Boolean);
+
     return Array.from(
-      new Set(
-        schedules
-          .filter(scheduleMatchesStatus)
-          .map(
-            (schedule) =>
-              schedule.weekTag ||
-              schedule.weekStart
-          )
-          .filter(Boolean)
-      )
+      new Set([...regularWeeks, ...cabinWeeks])
     ).sort((a, b) =>
-      String(b).localeCompare(
-        String(a)
-      )
+      String(b).localeCompare(String(a))
     );
-  }, [schedules, statusFilter]);
+  }, [
+    schedules,
+    cabinSchedules,
+    statusFilter,
+  ]);
 
   useEffect(() => {
     if (!weekTags.length) {
@@ -639,134 +666,205 @@ export default function WeeklyEmployeesSummaryPage() {
       return;
     }
 
-    if (
-      !weekTags.includes(
-        selectedWeekTag
-      )
-    ) {
-      setSelectedWeekTag(
-        weekTags[0]
-      );
+    if (!weekTags.includes(selectedWeekTag)) {
+      setSelectedWeekTag(weekTags[0]);
     }
   }, [weekTags, selectedWeekTag]);
 
   // ==========================================================
-  // SELECTED WEEK
+  // REGULAR SCHEDULES FOR SELECTED WEEK
   // ==========================================================
 
-  const selectedWeekSchedules =
-    useMemo(() => {
-      if (!selectedWeekTag) {
-        return [];
+  const selectedWeekSchedules = useMemo(() => {
+    if (!selectedWeekTag) {
+      return [];
+    }
+
+    return schedules.filter((schedule) => {
+      const scheduleWeek =
+        schedule.weekTag || schedule.weekStart;
+
+      const department =
+        schedule?.department ||
+        schedule?.departmentName ||
+        schedule?.airlineDisplayName ||
+        schedule?.airline ||
+        "";
+
+      return (
+        scheduleWeek === selectedWeekTag &&
+        scheduleMatchesStatus(schedule) &&
+        !isCabinDepartment(department)
+      );
+    });
+  }, [
+    schedules,
+    selectedWeekTag,
+    statusFilter,
+  ]);
+
+  // ==========================================================
+  // CABIN SCHEDULES FOR SELECTED WEEK
+  // ==========================================================
+
+  const selectedCabinSchedules = useMemo(() => {
+    if (!selectedWeekTag) {
+      return [];
+    }
+
+    return cabinSchedules.filter((schedule) => {
+      return (
+        getCabinScheduleWeek(schedule) ===
+          selectedWeekTag &&
+        cabinScheduleMatchesStatus(schedule)
+      );
+    });
+  }, [
+    cabinSchedules,
+    selectedWeekTag,
+    statusFilter,
+  ]);
+
+  const selectedCabinScheduleIds = useMemo(() => {
+    return new Set(
+      selectedCabinSchedules.map(
+        (schedule) => schedule.id
+      )
+    );
+  }, [selectedCabinSchedules]);
+
+  // Only slots belonging to the selected Cabin week.
+  const selectedCabinSlots = useMemo(() => {
+    if (!selectedCabinScheduleIds.size) {
+      return [];
+    }
+
+    return cabinSlots.filter((slot) => {
+      if (
+        !selectedCabinScheduleIds.has(
+          slot?.scheduleId
+        )
+      ) {
+        return false;
       }
 
-      return schedules.filter(
-        (schedule) => {
-          const scheduleWeek =
-            schedule.weekTag ||
-            schedule.weekStart;
+      // Delete candidates are not real assignments.
+      if (slot?.draftDeleteCandidate) {
+        return false;
+      }
 
-          return (
-            scheduleWeek ===
-              selectedWeekTag &&
-            scheduleMatchesStatus(
-              schedule
-            )
-          );
-        }
-      );
-    }, [
-      schedules,
-      selectedWeekTag,
-      statusFilter,
-    ]);
+      // Open slots must not count toward an employee.
+      if (
+        !String(slot?.employeeId || "").trim() &&
+        !String(slot?.employeeName || "").trim()
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    cabinSlots,
+    selectedCabinScheduleIds,
+  ]);
+
+  // ==========================================================
+  // WEEK DATES
+  // ==========================================================
 
   const weekDates = useMemo(() => {
+    const schedulesForDate =
+      selectedWeekSchedules.length > 0
+        ? selectedWeekSchedules
+        : selectedCabinSchedules;
+
     return buildWeekDates(
       selectedWeekTag,
-      selectedWeekSchedules
+      schedulesForDate
     );
   }, [
     selectedWeekTag,
     selectedWeekSchedules,
+    selectedCabinSchedules,
   ]);
 
   // ==========================================================
   // EMPLOYEE LOOKUP
   // ==========================================================
 
-  const employeeLookup =
-    useMemo(() => {
-      const byId = {};
-      const byName = {};
+  const employeeLookup = useMemo(() => {
+    const byId = {};
+    const byName = {};
 
-      employees.forEach(
-        (employee) => {
-          byId[employee.id] =
-            employee;
+    employees.forEach((employee) => {
+      byId[employee.id] = employee;
 
-          const employeeName =
-            normalizeText(
-              getEmployeeName(
-                employee
-              )
-            );
-
-          if (employeeName) {
-            byName[employeeName] =
-              employee;
-          }
-        }
+      const employeeName = normalizeText(
+        getEmployeeName(employee)
       );
 
-      return {
-        byId,
-        byName,
-      };
-    }, [employees]);
+      if (employeeName) {
+        byName[employeeName] = employee;
+      }
+
+      [
+        employee?.username,
+        employee?.loginUsername,
+        employee?.email,
+        employee?.displayName,
+        employee?.fullName,
+        employee?.employeeName,
+        employee?.name,
+      ]
+        .map(normalizeText)
+        .filter(Boolean)
+        .forEach((key) => {
+          if (!byName[key]) {
+            byName[key] = employee;
+          }
+        });
+    });
+
+    return {
+      byId,
+      byName,
+    };
+  }, [employees]);
 
   // ==========================================================
   // APPROVED TIMESHEETS FOR WEEK
   // ==========================================================
 
-  const approvedTimesheetsForWeek =
-    useMemo(() => {
-      const validDates = new Set(
-        Object.values(
-          weekDates
-        ).filter(Boolean)
+  const approvedTimesheetsForWeek = useMemo(() => {
+    const validDates = new Set(
+      Object.values(weekDates).filter(Boolean)
+    );
+
+    return timesheets.filter((report) => {
+      const status = String(report?.status || "")
+        .trim()
+        .toLowerCase();
+
+      const reportDate = String(
+        report?.reportDate || ""
+      ).trim();
+
+      return (
+        status === "approved" &&
+        validDates.has(reportDate)
       );
-
-      return timesheets.filter(
-        (report) => {
-          const status = String(
-            report?.status || ""
-          )
-            .trim()
-            .toLowerCase();
-
-          const reportDate =
-            String(
-              report?.reportDate ||
-                ""
-            ).trim();
-
-          return (
-            status ===
-              "approved" &&
-            validDates.has(
-              reportDate
-            )
-          );
-        }
-      );
-    }, [timesheets, weekDates]);
+    });
+  }, [timesheets, weekDates]);
     // ==========================================================
-  // BUILD EMPLOYEE WEEKLY DATA
+  // WEEKLY DATA BY EMPLOYEE
   // ==========================================================
 
   const employeeWeeklyData = useMemo(() => {
     const result = {};
+
+    // --------------------------------------------------------
+    // ENSURE EMPLOYEE
+    // --------------------------------------------------------
 
     const ensureEmployee = (
       employeeId,
@@ -779,10 +877,9 @@ export default function WeeklyEmployeesSummaryPage() {
         ? getEmployeeName(employeeRecord)
         : fallbackName || "Unknown Employee";
 
-      const employeeDepartment =
-        employeeRecord
-          ? getEmployeeDepartment(employeeRecord)
-          : "";
+      const employeeDepartment = employeeRecord
+        ? getEmployeeDepartment(employeeRecord)
+        : "Unknown";
 
       if (!result[employeeId]) {
         result[employeeId] = {
@@ -795,11 +892,11 @@ export default function WeeklyEmployeesSummaryPage() {
               accumulator[dayKey] = {
                 date: weekDates[dayKey] || "",
 
-                assignedByDepartment: {},
-                workedByDepartment: {},
+                scheduledByDepartment: {},
+                actualByDepartment: {},
 
-                assignedTotal: 0,
-                workedTotal: 0,
+                scheduledTotal: 0,
+                actualTotal: 0,
               };
 
               return accumulator;
@@ -807,11 +904,11 @@ export default function WeeklyEmployeesSummaryPage() {
             {}
           ),
 
-          assignedByDepartment: {},
-          workedByDepartment: {},
+          scheduledByDepartment: {},
+          actualByDepartment: {},
 
-          assignedTotal: 0,
-          workedTotal: 0,
+          scheduledTotal: 0,
+          actualTotal: 0,
 
           daysOff: 0,
         };
@@ -820,138 +917,283 @@ export default function WeeklyEmployeesSummaryPage() {
       return result[employeeId];
     };
 
+    // --------------------------------------------------------
+    // HELPER: ADD SCHEDULED HOURS
+    // --------------------------------------------------------
+
+    const addScheduledHours = ({
+      employeeId,
+      employeeName = "",
+      dayKey,
+      department,
+      hours,
+    }) => {
+      if (!employeeId || !dayKey || hours <= 0) {
+        return;
+      }
+
+      const employeeData = ensureEmployee(
+        employeeId,
+        employeeName
+      );
+
+      const normalizedDepartment =
+        normalizeDepartmentName(department);
+
+      employeeData.days[
+        dayKey
+      ].scheduledByDepartment[
+        normalizedDepartment
+      ] =
+        (employeeData.days[dayKey]
+          .scheduledByDepartment[
+            normalizedDepartment
+          ] || 0) + hours;
+
+      employeeData.days[
+        dayKey
+      ].scheduledTotal += hours;
+
+      employeeData.scheduledByDepartment[
+        normalizedDepartment
+      ] =
+        (employeeData.scheduledByDepartment[
+          normalizedDepartment
+        ] || 0) + hours;
+
+      employeeData.scheduledTotal += hours;
+    };
+
+    // --------------------------------------------------------
+    // HELPER: ADD ACTUAL HOURS
+    // --------------------------------------------------------
+
+    const addActualHours = ({
+      employeeId,
+      employeeName = "",
+      dayKey,
+      department,
+      hours,
+    }) => {
+      if (!employeeId || !dayKey || hours <= 0) {
+        return;
+      }
+
+      const employeeData = ensureEmployee(
+        employeeId,
+        employeeName
+      );
+
+      const normalizedDepartment =
+        normalizeDepartmentName(department);
+
+      employeeData.days[
+        dayKey
+      ].actualByDepartment[
+        normalizedDepartment
+      ] =
+        (employeeData.days[dayKey]
+          .actualByDepartment[
+            normalizedDepartment
+          ] || 0) + hours;
+
+      employeeData.days[
+        dayKey
+      ].actualTotal += hours;
+
+      employeeData.actualByDepartment[
+        normalizedDepartment
+      ] =
+        (employeeData.actualByDepartment[
+          normalizedDepartment
+        ] || 0) + hours;
+
+      employeeData.actualTotal += hours;
+    };
+
     // ========================================================
-    // ASSIGNED HOURS FROM SCHEDULES
+    // 1. REGULAR SCHEDULES
     // ========================================================
 
-    selectedWeekSchedules.forEach(
-      (schedule) => {
-        const department =
-          normalizeDepartmentName(
-            schedule.airlineDisplayName ||
-              schedule.airline ||
-              schedule.department ||
-              "Unknown"
-          );
+    selectedWeekSchedules.forEach((schedule) => {
+      const department = normalizeDepartmentName(
+        schedule?.department ||
+          schedule?.departmentName ||
+          schedule?.airlineDisplayName ||
+          schedule?.airline ||
+          "Unknown"
+      );
 
-        const scheduleRows =
-          Array.isArray(schedule.grid)
-            ? schedule.grid
-            : [];
+      // Extra protection:
+      // Cabin hours must never come from regular schedules.
+      if (isCabinDepartment(department)) {
+        return;
+      }
 
-        scheduleRows.forEach((row) => {
-          if (!row?.employeeId) {
+      const scheduleRows = Array.isArray(
+        schedule?.grid
+      )
+        ? schedule.grid
+        : [];
+
+      scheduleRows.forEach((row) => {
+        const rowEmployeeId = String(
+          row?.employeeId || ""
+        ).trim();
+
+        if (!rowEmployeeId) {
+          return;
+        }
+
+        DAY_KEYS.forEach((dayKey) => {
+          const scheduledHours =
+            calculateScheduledDayHours(
+              row,
+              dayKey
+            );
+
+          if (scheduledHours <= 0) {
             return;
           }
 
-          const employeeData =
-            ensureEmployee(
-              row.employeeId
-            );
-
-          DAY_KEYS.forEach(
-            (dayKey) => {
-              const assignedHours =
-                calculateScheduledDayHours(
-                  row,
-                  dayKey
-                );
-
-              if (
-                assignedHours <= 0
-              ) {
-                return;
-              }
-
-              // Daily department total
-              employeeData.days[
-                dayKey
-              ].assignedByDepartment[
-                department
-              ] =
-                (employeeData.days[
-                  dayKey
-                ].assignedByDepartment[
-                  department
-                ] || 0) +
-                assignedHours;
-
-              // Daily employee total
-              employeeData.days[
-                dayKey
-              ].assignedTotal +=
-                assignedHours;
-
-              // Weekly department total
-              employeeData
-                .assignedByDepartment[
-                department
-              ] =
-                (employeeData
-                  .assignedByDepartment[
-                  department
-                ] || 0) +
-                assignedHours;
-
-              // Weekly employee total
-              employeeData.assignedTotal +=
-                assignedHours;
-            }
-          );
+          addScheduledHours({
+            employeeId: rowEmployeeId,
+            employeeName:
+              row?.employeeName || "",
+            dayKey,
+            department,
+            hours: scheduledHours,
+          });
         });
-      }
-    );
+      });
+    });
 
     // ========================================================
-    // WORKED HOURS FROM APPROVED TIMESHEETS
+    // 2. CABIN SERVICE SCHEDULE
+    // ========================================================
+    //
+    // IMPORTANT:
+    // Cabin assigned hours come exclusively from:
+    //
+    // cabinSchedules
+    //        +
+    // cabinScheduleSlots
+    //
+    // paidHours is used when available.
+    //
+    // ========================================================
+
+    selectedCabinSlots.forEach((slot) => {
+      const cabinDayKey =
+        CABIN_DAY_TO_SUMMARY_DAY[
+          String(slot?.dayKey || "")
+            .trim()
+            .toLowerCase()
+        ];
+
+      if (!cabinDayKey) {
+        return;
+      }
+
+      const slotEmployeeId = String(
+        slot?.employeeId || ""
+      ).trim();
+
+      const slotEmployeeName = String(
+        slot?.employeeName || ""
+      ).trim();
+
+      let employeeId = slotEmployeeId;
+
+      // Some older Cabin slots may contain the
+      // employee name but not the Firestore employee ID.
+      if (!employeeId && slotEmployeeName) {
+        const matchingEmployee =
+          employeeLookup.byName[
+            normalizeText(slotEmployeeName)
+          ] || null;
+
+        employeeId =
+          matchingEmployee?.id ||
+          `name:${normalizeText(
+            slotEmployeeName
+          )}`;
+      }
+
+      if (!employeeId) {
+        return;
+      }
+
+      const scheduledHours =
+        calculateCabinSlotHours(slot);
+
+      if (scheduledHours <= 0) {
+        return;
+      }
+
+      addScheduledHours({
+        employeeId,
+        employeeName: slotEmployeeName,
+        dayKey: cabinDayKey,
+        department: CABIN_DEPARTMENT,
+        hours: scheduledHours,
+      });
+    });
+
+    // ========================================================
+    // 3. APPROVED ACTUAL TIMESHEETS
     // ========================================================
 
     approvedTimesheetsForWeek.forEach(
       (report) => {
-        const department =
-          normalizeDepartmentName(
-            report.airline ||
-              report.department ||
-              "Unknown"
-          );
-
         const reportDate = String(
-          report.reportDate || ""
+          report?.reportDate || ""
         ).trim();
 
-        const matchingDayKey =
-          DAY_KEYS.find(
-            (dayKey) =>
-              weekDates[dayKey] ===
-              reportDate
-          );
+        const matchingDayKey = DAY_KEYS.find(
+          (dayKey) =>
+            weekDates[dayKey] === reportDate
+        );
 
         if (!matchingDayKey) {
           return;
         }
 
+        // ----------------------------------------------------
+        // Determine department for actual hours.
+        // ----------------------------------------------------
+
+        let reportDepartment =
+          report?.department ||
+          report?.departmentName ||
+          report?.service ||
+          report?.airline ||
+          "Unknown";
+
+        reportDepartment =
+          normalizeDepartmentName(
+            normalizeAirlineName(
+              reportDepartment
+            )
+          );
+
         const rows = Array.isArray(
-          report.rows
+          report?.rows
         )
           ? report.rows
           : [];
 
         rows.forEach((row) => {
-          const rowEmployeeId =
-            String(
-              row?.employeeId || ""
-            ).trim();
+          const rowEmployeeId = String(
+            row?.employeeId || ""
+          ).trim();
 
-          const rowEmployeeName =
-            String(
-              row?.employeeName || ""
-            ).trim();
+          const rowEmployeeName = String(
+            row?.employeeName || ""
+          ).trim();
 
-          let employeeId =
-            rowEmployeeId;
+          let employeeId = rowEmployeeId;
 
-          // Some older timesheets may not contain
-          // employeeId, so match by employee name.
           if (
             !employeeId &&
             rowEmployeeName
@@ -974,58 +1216,41 @@ export default function WeeklyEmployeesSummaryPage() {
             return;
           }
 
-          const workedHours =
+          const actualHours =
             calculateActualHours(row);
 
-          if (workedHours <= 0) {
+          if (actualHours <= 0) {
             return;
           }
 
-          const employeeData =
-            ensureEmployee(
-              employeeId,
-              rowEmployeeName
+          // Row-level department has priority if
+          // the timesheet stores it there.
+          let actualDepartment =
+            row?.department ||
+            row?.departmentName ||
+            row?.service ||
+            reportDepartment;
+
+          actualDepartment =
+            normalizeDepartmentName(
+              normalizeAirlineName(
+                actualDepartment
+              )
             );
 
-          // Daily department worked hours
-          employeeData.days[
-            matchingDayKey
-          ].workedByDepartment[
-            department
-          ] =
-            (employeeData.days[
-              matchingDayKey
-            ].workedByDepartment[
-              department
-            ] || 0) +
-            workedHours;
-
-          // Daily worked total
-          employeeData.days[
-            matchingDayKey
-          ].workedTotal +=
-            workedHours;
-
-          // Weekly department worked hours
-          employeeData
-            .workedByDepartment[
-            department
-          ] =
-            (employeeData
-              .workedByDepartment[
-              department
-            ] || 0) +
-            workedHours;
-
-          // Weekly employee worked total
-          employeeData.workedTotal +=
-            workedHours;
+          addActualHours({
+            employeeId,
+            employeeName: rowEmployeeName,
+            dayKey: matchingDayKey,
+            department: actualDepartment,
+            hours: actualHours,
+          });
         });
       }
     );
 
     // ========================================================
-    // CALCULATE DAYS OFF
+    // 4. CALCULATE DAYS OFF
     // ========================================================
 
     Object.values(result).forEach(
@@ -1033,23 +1258,21 @@ export default function WeeklyEmployeesSummaryPage() {
         employeeData.daysOff =
           DAY_KEYS.filter(
             (dayKey) =>
-              employeeData.days[
-                dayKey
-              ].assignedTotal <= 0
+              employeeData.days[dayKey]
+                .scheduledTotal <= 0
           ).length;
       }
     );
 
     // ========================================================
-    // FINAL EMPLOYEE LIST
+    // 5. RETURN SORTED EMPLOYEES
     // ========================================================
 
     return Object.values(result)
       .filter(
         (employeeData) =>
-          employeeData.assignedTotal >
-            0 ||
-          employeeData.workedTotal > 0
+          employeeData.scheduledTotal > 0 ||
+          employeeData.actualTotal > 0
       )
       .sort((a, b) =>
         a.employeeName.localeCompare(
@@ -1062,259 +1285,250 @@ export default function WeeklyEmployeesSummaryPage() {
       );
   }, [
     selectedWeekSchedules,
+    selectedCabinSlots,
     approvedTimesheetsForWeek,
     employeeLookup,
     weekDates,
   ]);
 
   // ==========================================================
+  // STATION DAILY TOTALS
+  // ==========================================================
+
+  const stationDailyTotals = useMemo(() => {
+    return DAY_KEYS.reduce(
+      (accumulator, dayKey) => {
+        accumulator[dayKey] = {
+          scheduled:
+            employeeWeeklyData.reduce(
+              (sum, employee) =>
+                sum +
+                employee.days[dayKey]
+                  .scheduledTotal,
+              0
+            ),
+
+          actual:
+            employeeWeeklyData.reduce(
+              (sum, employee) =>
+                sum +
+                employee.days[dayKey]
+                  .actualTotal,
+              0
+            ),
+        };
+
+        return accumulator;
+      },
+      {}
+    );
+  }, [employeeWeeklyData]);
+
+  // ==========================================================
+  // WEEKLY TOTALS BY DEPARTMENT
+  // ==========================================================
+
+  const departmentWeeklyTotals = useMemo(() => {
+    const totals = {};
+
+    employeeWeeklyData.forEach(
+      (employee) => {
+        Object.entries(
+          employee.scheduledByDepartment
+        ).forEach(
+          ([department, hours]) => {
+            if (!totals[department]) {
+              totals[department] = {
+                scheduled: 0,
+                actual: 0,
+              };
+            }
+
+            totals[
+              department
+            ].scheduled += hours;
+          }
+        );
+
+        Object.entries(
+          employee.actualByDepartment
+        ).forEach(
+          ([department, hours]) => {
+            if (!totals[department]) {
+              totals[department] = {
+                scheduled: 0,
+                actual: 0,
+              };
+            }
+
+            totals[
+              department
+            ].actual += hours;
+          }
+        );
+      }
+    );
+
+    return Object.entries(totals)
+      .map(
+        ([department, values]) => ({
+          department,
+          scheduled: values.scheduled,
+          actual: values.actual,
+          variance:
+            values.actual -
+            values.scheduled,
+        })
+      )
+      .sort((a, b) => {
+        // Keep Cabin Service clearly separated
+        // and easy to identify.
+        if (
+          a.department ===
+            CABIN_DEPARTMENT &&
+          b.department !==
+            CABIN_DEPARTMENT
+        ) {
+          return 1;
+        }
+
+        if (
+          b.department ===
+            CABIN_DEPARTMENT &&
+          a.department !==
+            CABIN_DEPARTMENT
+        ) {
+          return -1;
+        }
+
+        return a.department.localeCompare(
+          b.department
+        );
+      });
+  }, [employeeWeeklyData]);
+
+  // ==========================================================
+  // CABIN SERVICE TOTALS
+  // ==========================================================
+
+  const cabinWeeklyTotals = useMemo(() => {
+    return employeeWeeklyData.reduce(
+      (totals, employee) => {
+        totals.scheduled +=
+          employee.scheduledByDepartment[
+            CABIN_DEPARTMENT
+          ] || 0;
+
+        totals.actual +=
+          employee.actualByDepartment[
+            CABIN_DEPARTMENT
+          ] || 0;
+
+        return totals;
+      },
+      {
+        scheduled: 0,
+        actual: 0,
+      }
+    );
+  }, [employeeWeeklyData]);
+
+  const cabinVariance =
+    cabinWeeklyTotals.actual -
+    cabinWeeklyTotals.scheduled;
+
+  // ==========================================================
   // STATION TOTALS
   // ==========================================================
 
-  const stationAssignedTotal =
-    useMemo(() => {
-      return employeeWeeklyData.reduce(
+  const stationScheduledTotal = useMemo(
+    () =>
+      employeeWeeklyData.reduce(
         (sum, employee) =>
-          sum +
-          employee.assignedTotal,
+          sum + employee.scheduledTotal,
         0
-      );
-    }, [employeeWeeklyData]);
+      ),
+    [employeeWeeklyData]
+  );
 
-  const stationWorkedTotal =
-    useMemo(() => {
-      return employeeWeeklyData.reduce(
+  const stationActualTotal = useMemo(
+    () =>
+      employeeWeeklyData.reduce(
         (sum, employee) =>
-          sum +
-          employee.workedTotal,
+          sum + employee.actualTotal,
         0
-      );
-    }, [employeeWeeklyData]);
+      ),
+    [employeeWeeklyData]
+  );
 
   const stationVariance =
-    stationWorkedTotal -
-    stationAssignedTotal;
+    stationActualTotal -
+    stationScheduledTotal;
 
   // ==========================================================
-  // EMPLOYEES OVER 40 HOURS
+  // OVERTIME
   // ==========================================================
 
-  const employeesOverForty =
-    useMemo(() => {
-      return employeeWeeklyData.filter(
+  const employeesOverForty = useMemo(
+    () =>
+      employeeWeeklyData.filter(
         (employee) =>
-          employee.assignedTotal >
-            40 ||
-          employee.workedTotal > 40
-      );
-    }, [employeeWeeklyData]);
+          employee.scheduledTotal > 40 ||
+          employee.actualTotal > 40
+      ),
+    [employeeWeeklyData]
+  );
 
   // ==========================================================
-  // DAILY STATION TOTALS
+  // CABIN EMPLOYEES
   // ==========================================================
 
-  const stationDailyTotals =
-    useMemo(() => {
-      return DAY_KEYS.reduce(
-        (accumulator, dayKey) => {
-          accumulator[dayKey] = {
-            assigned:
-              employeeWeeklyData.reduce(
-                (sum, employee) =>
-                  sum +
-                  employee.days[
-                    dayKey
-                  ].assignedTotal,
-                0
-              ),
-
-            worked:
-              employeeWeeklyData.reduce(
-                (sum, employee) =>
-                  sum +
-                  employee.days[
-                    dayKey
-                  ].workedTotal,
-                0
-              ),
-          };
-
-          return accumulator;
-        },
-        {}
-      );
-    }, [employeeWeeklyData]);
-
-  // ==========================================================
-  // DEPARTMENT TOTALS FOR ENTIRE STATION
-  // ==========================================================
-
-  const departmentWeeklyTotals =
-    useMemo(() => {
-      const totals = {};
-
-      employeeWeeklyData.forEach(
-        (employee) => {
-          Object.entries(
-            employee.assignedByDepartment
-          ).forEach(
-            ([department, hours]) => {
-              if (!totals[department]) {
-                totals[department] = {
-                  assigned: 0,
-                  worked: 0,
-                };
-              }
-
-              totals[
-                department
-              ].assigned += hours;
-            }
-          );
-
-          Object.entries(
-            employee.workedByDepartment
-          ).forEach(
-            ([department, hours]) => {
-              if (!totals[department]) {
-                totals[department] = {
-                  assigned: 0,
-                  worked: 0,
-                };
-              }
-
-              totals[
-                department
-              ].worked += hours;
-            }
-          );
-        }
-      );
-
-      return Object.entries(totals)
-        .map(
-          ([
-            department,
-            values,
-          ]) => ({
-            department,
-            assigned:
-              values.assigned,
-            worked:
-              values.worked,
-            variance:
-              values.worked -
-              values.assigned,
-          })
-        )
-        .sort((a, b) =>
-          a.department.localeCompare(
-            b.department
-          )
-        );
-    }, [employeeWeeklyData]);
-
-  // ==========================================================
-  // EXPANDED EMPLOYEE
-  // ==========================================================
-
-  const expandedEmployee =
-    useMemo(() => {
-      if (!expandedEmployeeId) {
-        return null;
-      }
-
-      return (
-        employeeWeeklyData.find(
-          (employee) =>
-            employee.employeeId ===
-            expandedEmployeeId
-        ) || null
-      );
-    }, [
-      expandedEmployeeId,
-      employeeWeeklyData,
-    ]);
-
-  // ==========================================================
-  // EXPANDED EMPLOYEE DEPARTMENT TOTALS
-  // ==========================================================
-
-  const expandedEmployeeDepartments =
-    useMemo(() => {
-      if (!expandedEmployee) {
-        return [];
-      }
-
-      const departments = new Set([
-        ...Object.keys(
-          expandedEmployee
-            .assignedByDepartment
-        ),
-        ...Object.keys(
-          expandedEmployee
-            .workedByDepartment
-        ),
-      ]);
-
-      return Array.from(departments)
-        .map((department) => {
-          const assigned =
-            expandedEmployee
-              .assignedByDepartment[
-              department
-            ] || 0;
-
-          const worked =
-            expandedEmployee
-              .workedByDepartment[
-              department
-            ] || 0;
-
-          return {
-            department,
-            assigned,
-            worked,
-            variance:
-              worked - assigned,
-          };
-        })
-        .sort((a, b) =>
-          a.department.localeCompare(
-            b.department
-          )
-        );
-    }, [expandedEmployee]);
+  const cabinEmployees = useMemo(() => {
+    return employeeWeeklyData.filter(
+      (employee) =>
+        (employee.scheduledByDepartment[
+          CABIN_DEPARTMENT
+        ] || 0) > 0 ||
+        (employee.actualByDepartment[
+          CABIN_DEPARTMENT
+        ] || 0) > 0
+    );
+  }, [employeeWeeklyData]);
 
   // ==========================================================
   // WEEK LABEL
   // ==========================================================
 
   const formatWeekLabel = () => {
-    const sample =
-      selectedWeekSchedules[0];
-
-    if (!sample?.days) {
-      return (
-        selectedWeekTag ||
-        "No week selected"
-      );
+    if (!selectedWeekTag) {
+      return "No week selected";
     }
 
-    return DAY_KEYS.map(
-      (dayKey) => {
-        const label =
-          DAY_LABELS[dayKey];
+    return DAY_KEYS.map((dayKey) => {
+      const label = DAY_LABELS[dayKey];
 
-        const dayNumber =
-          sample.days?.[dayKey];
+      const date = weekDates[dayKey];
 
-        return dayNumber
-          ? `${label} ${dayNumber}`
-          : label;
+      if (!date) {
+        return label;
       }
-    ).join("  |  ");
+
+      const parts = date.split("-");
+
+      const dayNumber =
+        parts.length === 3
+          ? Number(parts[2])
+          : "";
+
+      return dayNumber
+        ? `${label} ${dayNumber}`
+        : label;
+    }).join("  |  ");
   };
+
+  // ==========================================================
+  // STATUS LABEL
+  // ==========================================================
 
   const statusLabel =
     statusFilter === "approved"
@@ -1324,29 +1538,27 @@ export default function WeeklyEmployeesSummaryPage() {
       : "Approved and draft schedules";
 
   // ==========================================================
-  // EMPLOYEE DETAIL TOGGLE
+  // EXPAND / COLLAPSE EMPLOYEE
   // ==========================================================
 
-  const toggleEmployee = (
+  const toggleEmployeeDetails = (
     employeeId
   ) => {
     setExpandedEmployeeId(
       (current) =>
         current === employeeId
-          ? null
+          ? ""
           : employeeId
     );
   };
 
   // ==========================================================
-  // LOADING / ERROR
+  // LOADING
   // ==========================================================
 
   if (loading) {
     return (
-      <PageCard
-        style={{ padding: 22 }}
-      >
+      <PageCard style={{ padding: 22 }}>
         <p
           style={{
             margin: 0,
@@ -1360,11 +1572,13 @@ export default function WeeklyEmployeesSummaryPage() {
     );
   }
 
+  // ==========================================================
+  // ERROR
+  // ==========================================================
+
   if (error) {
     return (
-      <PageCard
-        style={{ padding: 22 }}
-      >
+      <PageCard style={{ padding: 22 }}>
         <p
           style={{
             margin: 0,
@@ -1377,9 +1591,8 @@ export default function WeeklyEmployeesSummaryPage() {
       </PageCard>
     );
   }
-
-  // ==========================================================
-  // RENDER
+    // ==========================================================
+  // MAIN PAGE
   // ==========================================================
 
   return (
@@ -1393,7 +1606,7 @@ export default function WeeklyEmployeesSummaryPage() {
       }}
     >
       {/* ======================================================
-          HERO
+          HEADER
       ====================================================== */}
 
       <div
@@ -1414,7 +1627,7 @@ export default function WeeklyEmployeesSummaryPage() {
             position: "absolute",
             width: 220,
             height: 220,
-            borderRadius: 999,
+            borderRadius: "999px",
             background:
               "rgba(255,255,255,0.08)",
             top: -80,
@@ -1429,7 +1642,7 @@ export default function WeeklyEmployeesSummaryPage() {
             justifyContent:
               "space-between",
             alignItems: "flex-start",
-            gap: 18,
+            gap: 16,
             flexWrap: "wrap",
           }}
         >
@@ -1438,10 +1651,8 @@ export default function WeeklyEmployeesSummaryPage() {
               style={{
                 margin: 0,
                 fontSize: 12,
-                textTransform:
-                  "uppercase",
-                letterSpacing:
-                  "0.22em",
+                textTransform: "uppercase",
+                letterSpacing: "0.22em",
                 color:
                   "rgba(255,255,255,0.78)",
                 fontWeight: 700,
@@ -1452,13 +1663,11 @@ export default function WeeklyEmployeesSummaryPage() {
 
             <h1
               style={{
-                margin:
-                  "10px 0 6px",
+                margin: "10px 0 6px",
                 fontSize: 32,
                 lineHeight: 1.05,
                 fontWeight: 800,
-                letterSpacing:
-                  "-0.04em",
+                letterSpacing: "-0.04em",
               }}
             >
               Weekly Employees Summary
@@ -1467,18 +1676,17 @@ export default function WeeklyEmployeesSummaryPage() {
             <p
               style={{
                 margin: 0,
-                maxWidth: 760,
+                maxWidth: 800,
                 fontSize: 14,
                 color:
                   "rgba(255,255,255,0.88)",
                 lineHeight: 1.6,
               }}
             >
-              Review total assigned and
-              worked hours by employee.
-              Select an employee to view
-              the detailed weekly
-              breakdown.
+              Weekly employee labor summary comparing
+              assigned hours with approved worked hours.
+              Select an employee to review department
+              and daily details.
             </p>
           </div>
 
@@ -1486,8 +1694,7 @@ export default function WeeklyEmployeesSummaryPage() {
             style={{
               display: "grid",
               gap: 10,
-              width:
-                "min(100%, 390px)",
+              width: "min(100%, 390px)",
             }}
           >
             <SelectInput
@@ -1507,23 +1714,20 @@ export default function WeeklyEmployeesSummaryPage() {
               </option>
 
               <option value="both">
-                Approved + Draft
-                schedules
+                Approved + Draft schedules
               </option>
             </SelectInput>
 
             <SelectInput
-              value={
-                selectedWeekTag
-              }
-              onChange={(event) =>
+              value={selectedWeekTag}
+              onChange={(event) => {
                 setSelectedWeekTag(
                   event.target.value
-                )
-              }
-              disabled={
-                !weekTags.length
-              }
+                );
+
+                setExpandedEmployeeId("");
+              }}
+              disabled={!weekTags.length}
             >
               {!weekTags.length && (
                 <option value="">
@@ -1531,16 +1735,14 @@ export default function WeeklyEmployeesSummaryPage() {
                 </option>
               )}
 
-              {weekTags.map(
-                (tag) => (
-                  <option
-                    key={tag}
-                    value={tag}
-                  >
-                    {tag}
-                  </option>
-                )
-              )}
+              {weekTags.map((tag) => (
+                <option
+                  key={tag}
+                  value={tag}
+                >
+                  {tag}
+                </option>
+              ))}
             </SelectInput>
           </div>
         </div>
@@ -1550,28 +1752,26 @@ export default function WeeklyEmployeesSummaryPage() {
           STATION SUMMARY CARDS
       ====================================================== */}
 
-      <PageCard
-        style={{ padding: 20 }}
-      >
+      <PageCard style={{ padding: 20 }}>
         <div
           style={{
             display: "grid",
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(200px, 1fr))",
+              "repeat(auto-fit, minmax(190px, 1fr))",
             gap: 14,
           }}
         >
           <SummaryCard
             label="Assigned Hours"
-            value={stationAssignedTotal.toFixed(
+            value={stationScheduledTotal.toFixed(
               2
             )}
-            subValue={statusLabel}
+            subValue="Total station scheduled labor"
           />
 
           <SummaryCard
             label="Worked Hours"
-            value={stationWorkedTotal.toFixed(
+            value={stationActualTotal.toFixed(
               2
             )}
             subValue={`${approvedTimesheetsForWeek.length} approved timesheet report(s)`}
@@ -1580,27 +1780,24 @@ export default function WeeklyEmployeesSummaryPage() {
           <SummaryCard
             label="Variance"
             value={`${
-              stationVariance >= 0
-                ? "+"
-                : ""
-            }${stationVariance.toFixed(
-              2
-            )}`}
+              stationVariance >= 0 ? "+" : ""
+            }${stationVariance.toFixed(2)}`}
             subValue="Worked minus assigned"
-            alert={
-              stationVariance > 0
-            }
+            alert={stationVariance > 0}
           />
 
           <SummaryCard
             label="Employees"
-            value={
-              employeeWeeklyData.length
-            }
-            subValue={`${employeesOverForty.length} employee(s) over 40 hrs`}
+            value={employeeWeeklyData.length}
+            subValue="Employees with weekly activity"
+          />
+
+          <SummaryCard
+            label="Over 40 Hours"
+            value={employeesOverForty.length}
+            subValue="Assigned or worked hours"
             alert={
-              employeesOverForty.length >
-              0
+              employeesOverForty.length > 0
             }
           />
         </div>
@@ -1610,9 +1807,7 @@ export default function WeeklyEmployeesSummaryPage() {
           WEEK INFORMATION
       ====================================================== */}
 
-      <PageCard
-        style={{ padding: 20 }}
-      >
+      <PageCard style={{ padding: 20 }}>
         <div
           style={{
             display: "flex",
@@ -1632,8 +1827,7 @@ export default function WeeklyEmployeesSummaryPage() {
                 color: "#0f172a",
               }}
             >
-              Week of:{" "}
-              {formatWeekLabel()}
+              Week of: {formatWeekLabel()}
             </h2>
 
             <p
@@ -1644,39 +1838,205 @@ export default function WeeklyEmployeesSummaryPage() {
                 lineHeight: 1.6,
               }}
             >
-              Worked hours include only
-              approved timesheet reports.
-              Click an employee name below
-              to review the full detail.
+              Worked hours include only approved
+              timesheet reports.
             </p>
           </div>
 
           <Badge tone="blue">
-            {
-              employeeWeeklyData.length
-            }{" "}
-            Employees
+            {statusLabel}
           </Badge>
         </div>
       </PageCard>
 
       {/* ======================================================
-          EMPLOYEE SUMMARY REPORT
+          CABIN SERVICE SUMMARY
       ====================================================== */}
 
-      <PageCard
-        style={{
-          padding: 0,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "20px 20px 16px",
-            borderBottom:
-              "1px solid #e2e8f0",
-          }}
-        >
+      {(cabinWeeklyTotals.scheduled > 0 ||
+        cabinWeeklyTotals.actual > 0) && (
+        <PageCard style={{ padding: 20 }}>
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg, #eef8ff 0%, #f8fbff 100%)",
+              border: "1px solid #bfdbfe",
+              borderRadius: 20,
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                alignItems: "center",
+                gap: 14,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: 19,
+                      fontWeight: 900,
+                      color: "#0f4c81",
+                    }}
+                  >
+                    Cabin Service
+                  </h2>
+
+                  <Badge tone="blue">
+                    Separate Department
+                  </Badge>
+                </div>
+
+                <p
+                  style={{
+                    margin: "7px 0 0",
+                    color: "#64748b",
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Assigned hours are calculated from
+                  the Cabin Service weekly schedule
+                  and its assigned schedule slots.
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <Badge tone="blue">
+                  Assigned:{" "}
+                  {cabinWeeklyTotals.scheduled.toFixed(
+                    2
+                  )}{" "}
+                  hrs
+                </Badge>
+
+                <Badge tone="green">
+                  Worked:{" "}
+                  {cabinWeeklyTotals.actual.toFixed(
+                    2
+                  )}{" "}
+                  hrs
+                </Badge>
+
+                <Badge
+                  tone={
+                    cabinVariance > 0
+                      ? "red"
+                      : cabinVariance < 0
+                      ? "amber"
+                      : "gray"
+                  }
+                >
+                  Variance:{" "}
+                  {cabinVariance >= 0 ? "+" : ""}
+                  {cabinVariance.toFixed(2)}
+                </Badge>
+
+                <Badge tone="gray">
+                  Employees:{" "}
+                  {cabinEmployees.length}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </PageCard>
+      )}
+
+      {/* ======================================================
+          OVERTIME ALERT
+      ====================================================== */}
+
+      {employeesOverForty.length > 0 && (
+        <PageCard style={{ padding: 20 }}>
+          <div
+            style={{
+              background: "#fff1f2",
+              border: "1px solid #fecdd3",
+              borderRadius: 18,
+              padding: "16px 18px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 900,
+                color: "#9f1239",
+                marginBottom: 10,
+              }}
+            >
+              Weekly Overtime Alert
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              {employeesOverForty.map(
+                (employee) => (
+                  <div
+                    key={employee.employeeId}
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      alignItems: "center",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      color: "#9f1239",
+                      fontSize: 13,
+                      fontWeight: 800,
+                    }}
+                  >
+                    <span>
+                      {employee.employeeName}
+                    </span>
+
+                    <span>
+                      Assigned{" "}
+                      {employee.scheduledTotal.toFixed(
+                        2
+                      )}{" "}
+                      hrs · Worked{" "}
+                      {employee.actualTotal.toFixed(
+                        2
+                      )}{" "}
+                      hrs
+                    </span>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        </PageCard>
+      )}
+
+      {/* ======================================================
+          MAIN EMPLOYEE SUMMARY
+      ====================================================== */}
+
+      <PageCard style={{ padding: 20 }}>
+        <div style={{ marginBottom: 16 }}>
           <h2
             style={{
               margin: 0,
@@ -1685,7 +2045,7 @@ export default function WeeklyEmployeesSummaryPage() {
               color: "#0f172a",
             }}
           >
-            Employee Summary Report
+            Employee Weekly Summary
           </h2>
 
           <p
@@ -1696,19 +2056,15 @@ export default function WeeklyEmployeesSummaryPage() {
               lineHeight: 1.6,
             }}
           >
-            Weekly totals by employee.
-            Click the employee name to
-            open or close the detailed
-            report.
+            Select an employee name to review the
+            department and daily breakdown.
           </p>
         </div>
 
         {!selectedWeekTag ||
-        employeeWeeklyData.length ===
-          0 ? (
+        employeeWeeklyData.length === 0 ? (
           <div
             style={{
-              margin: 20,
               background: "#f8fbff",
               border:
                 "1px solid #dbeafe",
@@ -1718,35 +2074,31 @@ export default function WeeklyEmployeesSummaryPage() {
               fontWeight: 700,
             }}
           >
-            No employee hours were found
-            for the selected week and
-            filter.
+            No employee hours were found for the
+            selected week.
           </div>
         ) : (
           <div
             style={{
-              width: "100%",
               overflowX: "auto",
-              WebkitOverflowScrolling:
-                "touch",
+              borderRadius: 18,
+              border:
+                "1px solid #e2e8f0",
             }}
           >
             <table
               style={{
                 width: "100%",
-                borderCollapse:
-                  "separate",
+                borderCollapse: "separate",
                 borderSpacing: 0,
-                minWidth: 760,
-                background:
-                  "#ffffff",
+                minWidth: 820,
+                background: "#ffffff",
               }}
             >
               <thead>
                 <tr
                   style={{
-                    background:
-                      "#f8fbff",
+                    background: "#f8fbff",
                   }}
                 >
                   <th
@@ -1759,8 +2111,7 @@ export default function WeeklyEmployeesSummaryPage() {
 
                   <th
                     style={thStyle({
-                      textAlign:
-                        "center",
+                      textAlign: "center",
                     })}
                   >
                     Assigned Hours
@@ -1768,8 +2119,7 @@ export default function WeeklyEmployeesSummaryPage() {
 
                   <th
                     style={thStyle({
-                      textAlign:
-                        "center",
+                      textAlign: "center",
                     })}
                   >
                     Worked Hours
@@ -1777,8 +2127,7 @@ export default function WeeklyEmployeesSummaryPage() {
 
                   <th
                     style={thStyle({
-                      textAlign:
-                        "center",
+                      textAlign: "center",
                     })}
                   >
                     Variance
@@ -1786,8 +2135,15 @@ export default function WeeklyEmployeesSummaryPage() {
 
                   <th
                     style={thStyle({
-                      textAlign:
-                        "center",
+                      textAlign: "center",
+                    })}
+                  >
+                    Days Off
+                  </th>
+
+                  <th
+                    style={thStyle({
+                      textAlign: "center",
                     })}
                   >
                     Status
@@ -1797,23 +2153,53 @@ export default function WeeklyEmployeesSummaryPage() {
 
               <tbody>
                 {employeeWeeklyData.map(
-                  (
-                    employee,
-                    index
-                  ) => {
+                  (employee, index) => {
                     const variance =
-                      employee.workedTotal -
-                      employee.assignedTotal;
+                      employee.actualTotal -
+                      employee.scheduledTotal;
 
                     const overForty =
-                      employee.assignedTotal >
+                      employee.scheduledTotal >
                         40 ||
-                      employee.workedTotal >
-                        40;
+                      employee.actualTotal > 40;
 
                     const isExpanded =
                       expandedEmployeeId ===
                       employee.employeeId;
+
+                    const departments =
+                      Array.from(
+                        new Set([
+                          ...Object.keys(
+                            employee.scheduledByDepartment ||
+                              {}
+                          ),
+                          ...Object.keys(
+                            employee.actualByDepartment ||
+                              {}
+                          ),
+                        ])
+                      ).sort((a, b) => {
+                        if (
+                          a ===
+                            CABIN_DEPARTMENT &&
+                          b !==
+                            CABIN_DEPARTMENT
+                        ) {
+                          return 1;
+                        }
+
+                        if (
+                          b ===
+                            CABIN_DEPARTMENT &&
+                          a !==
+                            CABIN_DEPARTMENT
+                        ) {
+                          return -1;
+                        }
+
+                        return a.localeCompare(b);
+                      });
 
                     return (
                       <React.Fragment
@@ -1821,78 +2207,67 @@ export default function WeeklyEmployeesSummaryPage() {
                           employee.employeeId
                         }
                       >
+                        {/* ==============================
+                            EMPLOYEE SUMMARY ROW
+                        ============================== */}
+
                         <tr
                           style={{
-                            background:
-                              isExpanded
-                                ? "#edf7ff"
-                                : index %
-                                      2 ===
-                                    0
-                                ? "#ffffff"
-                                : "#fbfdff",
+                            background: isExpanded
+                              ? "#edf7ff"
+                              : index % 2 === 0
+                              ? "#ffffff"
+                              : "#fbfdff",
                           }}
                         >
-                          <td
-                            style={
-                              tdStyle
-                            }
-                          >
+                          <td style={tdStyle}>
                             <button
                               type="button"
                               onClick={() =>
-                                toggleEmployee(
+                                toggleEmployeeDetails(
                                   employee.employeeId
                                 )
                               }
                               style={{
-                                border:
-                                  "none",
+                                border: "none",
+                                padding: 0,
                                 background:
                                   "transparent",
-                                padding: 0,
-                                margin: 0,
-                                color:
-                                  "#1769aa",
-                                fontSize:
-                                  14,
-                                fontWeight:
-                                  900,
-                                cursor:
-                                  "pointer",
-                                textAlign:
-                                  "left",
+                                cursor: "pointer",
+                                color: "#1769aa",
+                                fontSize: 14,
+                                fontWeight: 900,
+                                fontFamily:
+                                  "inherit",
                                 display:
                                   "inline-flex",
                                 alignItems:
                                   "center",
                                 gap: 8,
+                                textAlign: "left",
                               }}
                             >
                               <span
                                 style={{
-                                  width: 24,
-                                  height: 24,
-                                  borderRadius:
-                                    8,
-                                  background:
-                                    isExpanded
-                                      ? "#1769aa"
-                                      : "#e8f4ff",
-                                  color:
-                                    isExpanded
-                                      ? "#ffffff"
-                                      : "#1769aa",
                                   display:
                                     "inline-flex",
+                                  width: 24,
+                                  height: 24,
                                   alignItems:
                                     "center",
                                   justifyContent:
                                     "center",
-                                  fontSize:
-                                    13,
-                                  fontWeight:
-                                    900,
+                                  borderRadius: 999,
+                                  background:
+                                    isExpanded
+                                      ? "#1769aa"
+                                      : "#edf7ff",
+                                  color:
+                                    isExpanded
+                                      ? "#ffffff"
+                                      : "#1769aa",
+                                  fontSize: 13,
+                                  fontWeight: 900,
                                 }}
                               >
                                 {isExpanded
@@ -1909,13 +2284,11 @@ export default function WeeklyEmployeesSummaryPage() {
                           <td
                             style={{
                               ...tdStyle,
-                              textAlign:
-                                "center",
-                              fontWeight:
-                                900,
+                              textAlign: "center",
+                              fontWeight: 900,
                             }}
                           >
-                            {employee.assignedTotal.toFixed(
+                            {employee.scheduledTotal.toFixed(
                               2
                             )}
                           </td>
@@ -1923,15 +2296,12 @@ export default function WeeklyEmployeesSummaryPage() {
                           <td
                             style={{
                               ...tdStyle,
-                              textAlign:
-                                "center",
-                              fontWeight:
-                                900,
-                              color:
-                                "#047857",
+                              textAlign: "center",
+                              fontWeight: 900,
+                              color: "#047857",
                             }}
                           >
-                            {employee.workedTotal.toFixed(
+                            {employee.actualTotal.toFixed(
                               2
                             )}
                           </td>
@@ -1939,15 +2309,12 @@ export default function WeeklyEmployeesSummaryPage() {
                           <td
                             style={{
                               ...tdStyle,
-                              textAlign:
-                                "center",
-                              fontWeight:
-                                900,
+                              textAlign: "center",
+                              fontWeight: 900,
                               color:
                                 variance > 0
                                   ? "#be123c"
-                                  : variance <
-                                    0
+                                  : variance < 0
                                   ? "#b45309"
                                   : "#475569",
                             }}
@@ -1955,37 +2322,49 @@ export default function WeeklyEmployeesSummaryPage() {
                             {variance >= 0
                               ? "+"
                               : ""}
-                            {variance.toFixed(
-                              2
-                            )}
+                            {variance.toFixed(2)}
                           </td>
 
                           <td
                             style={{
                               ...tdStyle,
-                              textAlign:
-                                "center",
+                              textAlign: "center",
+                              fontWeight: 800,
+                            }}
+                          >
+                            {employee.daysOff}
+                          </td>
+
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: "center",
                             }}
                           >
                             {overForty ? (
                               <Badge tone="red">
                                 Over 40 hrs
                               </Badge>
+                            ) : variance > 0 ? (
+                              <Badge tone="amber">
+                                Over Assigned
+                              </Badge>
                             ) : (
                               <Badge tone="green">
-                                Regular
+                                OK
                               </Badge>
                             )}
                           </td>
                         </tr>
-                                                {/* =====================================
-                            EXPANDED EMPLOYEE DETAIL
-                        ===================================== */}
+
+                        {/* ==============================
+                            EXPANDED EMPLOYEE DETAILS
+                        ============================== */}
 
                         {isExpanded && (
                           <tr>
                             <td
-                              colSpan={5}
+                              colSpan={6}
                               style={{
                                 padding: 0,
                                 borderBottom:
@@ -1996,534 +2375,209 @@ export default function WeeklyEmployeesSummaryPage() {
                             >
                               <div
                                 style={{
-                                  padding: 20,
-                                  display:
-                                    "grid",
+                                  padding: 18,
+                                  display: "grid",
                                   gap: 18,
                                 }}
                               >
-                                {/* =============================
-                                    EMPLOYEE HEADER
-                                ============================= */}
+                                {/* ======================
+                                    DEPARTMENT SUMMARY
+                                ====================== */}
 
-                                <div
-                                  style={{
-                                    display:
-                                      "flex",
-                                    justifyContent:
-                                      "space-between",
-                                    alignItems:
-                                      "flex-start",
-                                    gap: 14,
-                                    flexWrap:
-                                      "wrap",
-                                  }}
-                                >
-                                  <div>
-                                    <div
-                                      style={{
-                                        fontSize:
-                                          11,
-                                        fontWeight:
-                                          900,
-                                        color:
-                                          "#1769aa",
-                                        textTransform:
-                                          "uppercase",
-                                        letterSpacing:
-                                          "0.1em",
-                                      }}
-                                    >
-                                      Employee
-                                      Detail
-                                    </div>
-
-                                    <h3
-                                      style={{
-                                        margin:
-                                          "5px 0 0",
-                                        fontSize:
-                                          21,
-                                        fontWeight:
-                                          900,
-                                        color:
-                                          "#0f172a",
-                                      }}
-                                    >
-                                      {
-                                        employee.employeeName
-                                      }
-                                    </h3>
-
-                                    {employee.employeeDepartment && (
-                                      <div
-                                        style={{
-                                          marginTop:
-                                            6,
-                                          fontSize:
-                                            13,
-                                          color:
-                                            "#64748b",
-                                          fontWeight:
-                                            700,
-                                        }}
-                                      >
-                                        Employee
-                                        Department:{" "}
-                                        {
-                                          employee.employeeDepartment
-                                        }
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      toggleEmployee(
-                                        employee.employeeId
-                                      )
-                                    }
+                                <div>
+                                  <div
                                     style={{
-                                      border:
-                                        "1px solid #cfe7fb",
-                                      background:
-                                        "#ffffff",
+                                      fontSize: 14,
+                                      fontWeight: 900,
                                       color:
-                                        "#1769aa",
-                                      borderRadius:
-                                        12,
-                                      padding:
-                                        "9px 13px",
-                                      fontSize:
-                                        12,
-                                      fontWeight:
-                                        900,
-                                      cursor:
-                                        "pointer",
+                                        "#0f172a",
+                                      marginBottom: 10,
                                     }}
                                   >
-                                    Close Detail
-                                  </button>
-                                </div>
-
-                                {/* =============================
-                                    EMPLOYEE WEEKLY TOTALS
-                                ============================= */}
-
-                                <div
-                                  style={{
-                                    display:
-                                      "grid",
-                                    gridTemplateColumns:
-                                      "repeat(auto-fit, minmax(150px, 1fr))",
-                                    gap: 10,
-                                  }}
-                                >
-                                  <DetailMetric
-                                    label="Assigned"
-                                    value={`${employee.assignedTotal.toFixed(
-                                      2
-                                    )} hrs`}
-                                  />
-
-                                  <DetailMetric
-                                    label="Worked"
-                                    value={`${employee.workedTotal.toFixed(
-                                      2
-                                    )} hrs`}
-                                    tone="green"
-                                  />
-
-                                  <DetailMetric
-                                    label="Variance"
-                                    value={`${
-                                      variance >=
-                                      0
-                                        ? "+"
-                                        : ""
-                                    }${variance.toFixed(
-                                      2
-                                    )} hrs`}
-                                    tone={
-                                      variance >
-                                      0
-                                        ? "red"
-                                        : variance <
-                                          0
-                                        ? "amber"
-                                        : "gray"
-                                    }
-                                  />
-
-                                  <DetailMetric
-                                    label="Days Off"
-                                    value={
-                                      employee.daysOff
-                                    }
-                                    tone="gray"
-                                  />
-                                </div>
-
-                                {/* =============================
-                                    DEPARTMENT BREAKDOWN
-                                ============================= */}
-
-                                <div
-                                  style={{
-                                    background:
-                                      "#ffffff",
-                                    border:
-                                      "1px solid #dbeafe",
-                                    borderRadius:
-                                      18,
-                                    overflow:
-                                      "hidden",
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      padding:
-                                        "15px 16px",
-                                      borderBottom:
-                                        "1px solid #e2e8f0",
-                                      background:
-                                        "#f8fbff",
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        fontSize:
-                                          15,
-                                        fontWeight:
-                                          900,
-                                        color:
-                                          "#0f172a",
-                                      }}
-                                    >
-                                      Department
-                                      Breakdown
-                                    </div>
-
-                                    <div
-                                      style={{
-                                        marginTop:
-                                          4,
-                                        fontSize:
-                                          12,
-                                        color:
-                                          "#64748b",
-                                      }}
-                                    >
-                                      Weekly
-                                      assigned and
-                                      worked hours
-                                      by operational
-                                      department.
-                                    </div>
+                                    Department Breakdown
                                   </div>
 
                                   <div
                                     style={{
-                                      overflowX:
-                                        "auto",
+                                      display: "grid",
+                                      gridTemplateColumns:
+                                        "repeat(auto-fit, minmax(190px, 1fr))",
+                                      gap: 10,
                                     }}
                                   >
-                                    <table
-                                      style={{
-                                        width:
-                                          "100%",
-                                        minWidth:
-                                          600,
-                                        borderCollapse:
-                                          "separate",
-                                        borderSpacing:
-                                          0,
-                                      }}
-                                    >
-                                      <thead>
-                                        <tr>
-                                          <th
-                                            style={thStyle(
-                                              {
-                                                textAlign:
-                                                  "left",
-                                              }
-                                            )}
-                                          >
-                                            Department
-                                          </th>
+                                    {departments.map(
+                                      (
+                                        department
+                                      ) => {
+                                        const assigned =
+                                          employee
+                                            .scheduledByDepartment[
+                                            department
+                                          ] || 0;
 
-                                          <th
-                                            style={thStyle(
-                                              {
-                                                textAlign:
+                                        const worked =
+                                          employee
+                                            .actualByDepartment[
+                                            department
+                                          ] || 0;
+
+                                        const departmentVariance =
+                                          worked -
+                                          assigned;
+
+                                        const isCabin =
+                                          department ===
+                                          CABIN_DEPARTMENT;
+
+                                        return (
+                                          <div
+                                            key={
+                                              department
+                                            }
+                                            style={{
+                                              background:
+                                                isCabin
+                                                  ? "#eef8ff"
+                                                  : "#ffffff",
+                                              border:
+                                                isCabin
+                                                  ? "1px solid #93c5fd"
+                                                  : "1px solid #dbeafe",
+                                              borderRadius: 14,
+                                              padding:
+                                                "13px 14px",
+                                            }}
+                                          >
+                                            <div
+                                              style={{
+                                                display:
+                                                  "flex",
+                                                justifyContent:
+                                                  "space-between",
+                                                gap: 8,
+                                                alignItems:
                                                   "center",
-                                              }
-                                            )}
-                                          >
-                                            Assigned
-                                          </th>
-
-                                          <th
-                                            style={thStyle(
-                                              {
-                                                textAlign:
-                                                  "center",
-                                              }
-                                            )}
-                                          >
-                                            Worked
-                                          </th>
-
-                                          <th
-                                            style={thStyle(
-                                              {
-                                                textAlign:
-                                                  "center",
-                                              }
-                                            )}
-                                          >
-                                            Variance
-                                          </th>
-                                        </tr>
-                                      </thead>
-
-                                      <tbody>
-                                        {(() => {
-                                          const departments =
-                                            new Set(
-                                              [
-                                                ...Object.keys(
-                                                  employee.assignedByDepartment
-                                                ),
-                                                ...Object.keys(
-                                                  employee.workedByDepartment
-                                                ),
-                                              ]
-                                            );
-
-                                          const rows =
-                                            Array.from(
-                                              departments
-                                            )
-                                              .map(
-                                                (
-                                                  department
-                                                ) => {
-                                                  const assigned =
-                                                    employee
-                                                      .assignedByDepartment[
-                                                      department
-                                                    ] ||
-                                                    0;
-
-                                                  const worked =
-                                                    employee
-                                                      .workedByDepartment[
-                                                      department
-                                                    ] ||
-                                                    0;
-
-                                                  return {
-                                                    department,
-                                                    assigned,
-                                                    worked,
-                                                    variance:
-                                                      worked -
-                                                      assigned,
-                                                  };
-                                                }
-                                              )
-                                              .sort(
-                                                (
-                                                  a,
-                                                  b
-                                                ) =>
-                                                  a.department.localeCompare(
-                                                    b.department
-                                                  )
-                                              );
-
-                                          if (
-                                            rows.length ===
-                                            0
-                                          ) {
-                                            return (
-                                              <tr>
-                                                <td
-                                                  colSpan={
-                                                    4
-                                                  }
-                                                  style={{
-                                                    ...tdStyle,
-                                                    color:
-                                                      "#94a3b8",
-                                                    textAlign:
-                                                      "center",
-                                                    fontWeight:
-                                                      700,
-                                                  }}
-                                                >
-                                                  No
-                                                  department
-                                                  information
-                                                  available.
-                                                </td>
-                                              </tr>
-                                            );
-                                          }
-
-                                          return rows.map(
-                                            (
-                                              row
-                                            ) => (
-                                              <tr
-                                                key={
-                                                  row.department
-                                                }
+                                                flexWrap:
+                                                  "wrap",
+                                              }}
+                                            >
+                                              <div
+                                                style={{
+                                                  fontSize: 13,
+                                                  fontWeight: 900,
+                                                  color:
+                                                    isCabin
+                                                      ? "#0f5c91"
+                                                      : "#334155",
+                                                }}
                                               >
-                                                <td
-                                                  style={{
-                                                    ...tdStyle,
-                                                    fontWeight:
-                                                      900,
-                                                  }}
-                                                >
-                                                  {
-                                                    row.department
-                                                  }
-                                                </td>
+                                                {
+                                                  department
+                                                }
+                                              </div>
 
-                                                <td
-                                                  style={{
-                                                    ...tdStyle,
-                                                    textAlign:
-                                                      "center",
-                                                    fontWeight:
-                                                      800,
-                                                  }}
-                                                >
-                                                  {row.assigned.toFixed(
+                                              {isCabin && (
+                                                <Badge tone="blue">
+                                                  Cabin
+                                                </Badge>
+                                              )}
+                                            </div>
+
+                                            <div
+                                              style={{
+                                                marginTop: 10,
+                                                display:
+                                                  "grid",
+                                                gap: 5,
+                                                fontSize: 12,
+                                                fontWeight: 700,
+                                              }}
+                                            >
+                                              <div
+                                                style={{
+                                                  color:
+                                                    "#334155",
+                                                }}
+                                              >
+                                                Assigned:{" "}
+                                                <b>
+                                                  {assigned.toFixed(
                                                     2
                                                   )}
-                                                </td>
+                                                </b>{" "}
+                                                hrs
+                                              </div>
 
-                                                <td
-                                                  style={{
-                                                    ...tdStyle,
-                                                    textAlign:
-                                                      "center",
-                                                    fontWeight:
-                                                      800,
-                                                    color:
-                                                      "#047857",
-                                                  }}
-                                                >
-                                                  {row.worked.toFixed(
+                                              <div
+                                                style={{
+                                                  color:
+                                                    "#047857",
+                                                }}
+                                              >
+                                                Worked:{" "}
+                                                <b>
+                                                  {worked.toFixed(
                                                     2
                                                   )}
-                                                </td>
+                                                </b>{" "}
+                                                hrs
+                                              </div>
 
-                                                <td
-                                                  style={{
-                                                    ...tdStyle,
-                                                    textAlign:
-                                                      "center",
-                                                    fontWeight:
-                                                      900,
-                                                    color:
-                                                      row.variance >
-                                                      0
-                                                        ? "#be123c"
-                                                        : row.variance <
-                                                          0
-                                                        ? "#b45309"
-                                                        : "#475569",
-                                                  }}
-                                                >
-                                                  {row.variance >=
+                                              <div
+                                                style={{
+                                                  color:
+                                                    departmentVariance >
+                                                    0
+                                                      ? "#be123c"
+                                                      : departmentVariance <
+                                                        0
+                                                      ? "#b45309"
+                                                      : "#64748b",
+                                                }}
+                                              >
+                                                Variance:{" "}
+                                                <b>
+                                                  {departmentVariance >=
                                                   0
                                                     ? "+"
                                                     : ""}
-                                                  {row.variance.toFixed(
+                                                  {departmentVariance.toFixed(
                                                     2
                                                   )}
-                                                </td>
-                                              </tr>
-                                            )
-                                          );
-                                        })()}
-                                      </tbody>
-                                    </table>
+                                                </b>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                    )}
                                   </div>
                                 </div>
 
-                                {/* =============================
-                                    DAILY BREAKDOWN
-                                ============================= */}
+                                {/* ======================
+                                    DAILY DETAILS
+                                ====================== */}
 
-                                <div
-                                  style={{
-                                    background:
-                                      "#ffffff",
-                                    border:
-                                      "1px solid #dbeafe",
-                                    borderRadius:
-                                      18,
-                                    overflow:
-                                      "hidden",
-                                  }}
-                                >
+                                <div>
                                   <div
                                     style={{
-                                      padding:
-                                        "15px 16px",
-                                      background:
-                                        "#f8fbff",
-                                      borderBottom:
-                                        "1px solid #e2e8f0",
+                                      fontSize: 14,
+                                      fontWeight: 900,
+                                      color:
+                                        "#0f172a",
+                                      marginBottom: 10,
                                     }}
                                   >
-                                    <div
-                                      style={{
-                                        fontSize:
-                                          15,
-                                        fontWeight:
-                                          900,
-                                        color:
-                                          "#0f172a",
-                                      }}
-                                    >
-                                      Daily
-                                      Breakdown
-                                    </div>
-
-                                    <div
-                                      style={{
-                                        marginTop:
-                                          4,
-                                        fontSize:
-                                          12,
-                                        color:
-                                          "#64748b",
-                                      }}
-                                    >
-                                      Monday
-                                      through Sunday
-                                      assigned and
-                                      worked hours.
-                                    </div>
+                                    Daily Breakdown
                                   </div>
 
                                   <div
                                     style={{
-                                      width:
-                                        "100%",
                                       overflowX:
                                         "auto",
-                                      WebkitOverflowScrolling:
-                                        "touch",
+                                      borderRadius: 16,
+                                      border:
+                                        "1px solid #dbeafe",
                                     }}
                                   >
                                     <table
@@ -2532,14 +2586,19 @@ export default function WeeklyEmployeesSummaryPage() {
                                           "100%",
                                         borderCollapse:
                                           "separate",
-                                        borderSpacing:
-                                          0,
-                                        minWidth:
-                                          920,
+                                        borderSpacing: 0,
+                                        minWidth: 900,
+                                        background:
+                                          "#ffffff",
                                       }}
                                     >
                                       <thead>
-                                        <tr>
+                                        <tr
+                                          style={{
+                                            background:
+                                              "#f8fbff",
+                                          }}
+                                        >
                                           <th
                                             style={thStyle(
                                               {
@@ -2559,8 +2618,7 @@ export default function WeeklyEmployeesSummaryPage() {
                                               }
                                             )}
                                           >
-                                            Assigned
-                                            Department
+                                            Assigned Department
                                           </th>
 
                                           <th
@@ -2571,8 +2629,7 @@ export default function WeeklyEmployeesSummaryPage() {
                                               }
                                             )}
                                           >
-                                            Worked
-                                            Department
+                                            Worked Department
                                           </th>
 
                                           <th
@@ -2623,16 +2680,13 @@ export default function WeeklyEmployeesSummaryPage() {
                                               ];
 
                                             const dayVariance =
-                                              day.workedTotal -
-                                              day.assignedTotal;
+                                              day.actualTotal -
+                                              day.scheduledTotal;
 
-                                            const isDayOff =
-                                              day.assignedTotal <=
-                                              0;
-
-                                            const assignedDepartments =
+                                            const scheduledAssignments =
                                               Object.entries(
-                                                day.assignedByDepartment
+                                                day.scheduledByDepartment ||
+                                                  {}
                                               ).sort(
                                                 ([
                                                   first,
@@ -2644,9 +2698,10 @@ export default function WeeklyEmployeesSummaryPage() {
                                                   )
                                               );
 
-                                            const workedDepartments =
+                                            const actualAssignments =
                                               Object.entries(
-                                                day.workedByDepartment
+                                                day.actualByDepartment ||
+                                                  {}
                                               ).sort(
                                                 ([
                                                   first,
@@ -2672,8 +2727,6 @@ export default function WeeklyEmployeesSummaryPage() {
                                                       : "#fbfdff",
                                                 }}
                                               >
-                                                {/* DAY */}
-
                                                 <td
                                                   style={
                                                     tdStyle
@@ -2681,8 +2734,7 @@ export default function WeeklyEmployeesSummaryPage() {
                                                 >
                                                   <div
                                                     style={{
-                                                      fontWeight:
-                                                        900,
+                                                      fontWeight: 900,
                                                       color:
                                                         "#0f172a",
                                                     }}
@@ -2696,47 +2748,27 @@ export default function WeeklyEmployeesSummaryPage() {
 
                                                   <div
                                                     style={{
-                                                      marginTop:
-                                                        4,
-                                                      fontSize:
-                                                        12,
+                                                      marginTop: 3,
+                                                      fontSize: 11,
                                                       color:
                                                         "#64748b",
                                                     }}
                                                   >
-                                                    {formatDisplayDate(
-                                                      day.date
-                                                    )}
+                                                    {day.date ||
+                                                      ""}
                                                   </div>
                                                 </td>
-
-                                                {/* ASSIGNED DEPARTMENT */}
 
                                                 <td
                                                   style={
                                                     tdStyle
                                                   }
                                                 >
-                                                  {isDayOff ? (
+                                                  {scheduledAssignments.length ===
+                                                  0 ? (
                                                     <Badge tone="gray">
-                                                      DAY
                                                       OFF
                                                     </Badge>
-                                                  ) : assignedDepartments.length ===
-                                                    0 ? (
-                                                    <span
-                                                      style={{
-                                                        color:
-                                                          "#94a3b8",
-                                                        fontSize:
-                                                          12,
-                                                        fontWeight:
-                                                          700,
-                                                      }}
-                                                    >
-                                                      No
-                                                      assignment
-                                                    </span>
                                                   ) : (
                                                     <div
                                                       style={{
@@ -2745,7 +2777,7 @@ export default function WeeklyEmployeesSummaryPage() {
                                                         gap: 5,
                                                       }}
                                                     >
-                                                      {assignedDepartments.map(
+                                                      {scheduledAssignments.map(
                                                         ([
                                                           department,
                                                           hours,
@@ -2755,12 +2787,13 @@ export default function WeeklyEmployeesSummaryPage() {
                                                               department
                                                             }
                                                             style={{
-                                                              fontSize:
-                                                                12,
+                                                              fontSize: 12,
                                                               color:
-                                                                "#334155",
-                                                              fontWeight:
-                                                                800,
+                                                                department ===
+                                                                CABIN_DEPARTMENT
+                                                                  ? "#1769aa"
+                                                                  : "#334155",
+                                                              fontWeight: 800,
                                                             }}
                                                           >
                                                             {
@@ -2778,28 +2811,23 @@ export default function WeeklyEmployeesSummaryPage() {
                                                   )}
                                                 </td>
 
-                                                {/* WORKED DEPARTMENT */}
-
                                                 <td
                                                   style={
                                                     tdStyle
                                                   }
                                                 >
-                                                  {workedDepartments.length ===
+                                                  {actualAssignments.length ===
                                                   0 ? (
                                                     <span
                                                       style={{
                                                         color:
                                                           "#94a3b8",
-                                                        fontSize:
-                                                          12,
-                                                        fontWeight:
-                                                          700,
+                                                        fontSize: 12,
+                                                        fontWeight: 700,
                                                       }}
                                                     >
-                                                      No
-                                                      approved
-                                                      timesheet
+                                                      No approved
+                                                      hours
                                                     </span>
                                                   ) : (
                                                     <div
@@ -2809,7 +2837,7 @@ export default function WeeklyEmployeesSummaryPage() {
                                                         gap: 5,
                                                       }}
                                                     >
-                                                      {workedDepartments.map(
+                                                      {actualAssignments.map(
                                                         ([
                                                           department,
                                                           hours,
@@ -2819,12 +2847,10 @@ export default function WeeklyEmployeesSummaryPage() {
                                                               department
                                                             }
                                                             style={{
-                                                              fontSize:
-                                                                12,
+                                                              fontSize: 12,
                                                               color:
                                                                 "#047857",
-                                                              fontWeight:
-                                                                800,
+                                                              fontWeight: 800,
                                                             }}
                                                           >
                                                             {
@@ -2842,49 +2868,40 @@ export default function WeeklyEmployeesSummaryPage() {
                                                   )}
                                                 </td>
 
-                                                {/* ASSIGNED HOURS */}
-
                                                 <td
                                                   style={{
                                                     ...tdStyle,
                                                     textAlign:
                                                       "center",
-                                                    fontWeight:
-                                                      900,
+                                                    fontWeight: 900,
                                                   }}
                                                 >
-                                                  {day.assignedTotal.toFixed(
+                                                  {day.scheduledTotal.toFixed(
                                                     2
                                                   )}
                                                 </td>
 
-                                                {/* WORKED HOURS */}
-
                                                 <td
                                                   style={{
                                                     ...tdStyle,
                                                     textAlign:
                                                       "center",
-                                                    fontWeight:
-                                                      900,
+                                                    fontWeight: 900,
                                                     color:
                                                       "#047857",
                                                   }}
                                                 >
-                                                  {day.workedTotal.toFixed(
+                                                  {day.actualTotal.toFixed(
                                                     2
                                                   )}
                                                 </td>
-
-                                                {/* VARIANCE */}
 
                                                 <td
                                                   style={{
                                                     ...tdStyle,
                                                     textAlign:
                                                       "center",
-                                                    fontWeight:
-                                                      900,
+                                                    fontWeight: 900,
                                                     color:
                                                       dayVariance >
                                                       0
@@ -2919,150 +2936,96 @@ export default function WeeklyEmployeesSummaryPage() {
                     );
                   }
                 )}
+
+                {/* ==============================
+                    TOTAL ROW
+                ============================== */}
+
+                <tr
+                  style={{
+                    background: "#edf7ff",
+                  }}
+                >
+                  <td
+                    style={{
+                      ...tdStyle,
+                      fontWeight: 900,
+                      color: "#0f4c81",
+                    }}
+                  >
+                    STATION TOTAL
+                  </td>
+
+                  <td
+                    style={{
+                      ...tdStyle,
+                      textAlign: "center",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {stationScheduledTotal.toFixed(
+                      2
+                    )}
+                  </td>
+
+                  <td
+                    style={{
+                      ...tdStyle,
+                      textAlign: "center",
+                      fontWeight: 900,
+                      color: "#047857",
+                    }}
+                  >
+                    {stationActualTotal.toFixed(
+                      2
+                    )}
+                  </td>
+
+                  <td
+                    style={{
+                      ...tdStyle,
+                      textAlign: "center",
+                      fontWeight: 900,
+                      color:
+                        stationVariance > 0
+                          ? "#be123c"
+                          : stationVariance < 0
+                          ? "#b45309"
+                          : "#475569",
+                    }}
+                  >
+                    {stationVariance >= 0
+                      ? "+"
+                      : ""}
+                    {stationVariance.toFixed(2)}
+                  </td>
+
+                  <td
+                    style={{
+                      ...tdStyle,
+                      textAlign: "center",
+                    }}
+                  >
+                    —
+                  </td>
+
+                  <td
+                    style={{
+                      ...tdStyle,
+                      textAlign: "center",
+                    }}
+                  >
+                    <Badge tone="blue">
+                      {employeeWeeklyData.length}{" "}
+                      Employees
+                    </Badge>
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
         )}
       </PageCard>
-
-      {/* ======================================================
-          OVERTIME ALERT
-      ====================================================== */}
-
-      {employeesOverForty.length >
-        0 && (
-        <PageCard
-          style={{ padding: 20 }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
-              marginBottom: 14,
-            }}
-          >
-            <div>
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: 19,
-                  fontWeight: 900,
-                  color: "#9f1239",
-                }}
-              >
-                Weekly Overtime Alert
-              </h2>
-
-              <p
-                style={{
-                  margin: "5px 0 0",
-                  color: "#64748b",
-                  fontSize: 13,
-                }}
-              >
-                Employees with more
-                than 40 assigned or
-                worked hours.
-              </p>
-            </div>
-
-            <Badge tone="red">
-              {
-                employeesOverForty.length
-              }{" "}
-              Employee(s)
-            </Badge>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gap: 8,
-            }}
-          >
-            {employeesOverForty.map(
-              (employee) => {
-                const variance =
-                  employee.workedTotal -
-                  employee.assignedTotal;
-
-                return (
-                  <button
-                    key={
-                      employee.employeeId
-                    }
-                    type="button"
-                    onClick={() =>
-                      toggleEmployee(
-                        employee.employeeId
-                      )
-                    }
-                    style={{
-                      width: "100%",
-                      border:
-                        "1px solid #fecdd3",
-                      background:
-                        "#fff1f2",
-                      borderRadius: 14,
-                      padding:
-                        "12px 14px",
-                      display: "flex",
-                      justifyContent:
-                        "space-between",
-                      alignItems:
-                        "center",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 900,
-                        color: "#9f1239",
-                      }}
-                    >
-                      {
-                        employee.employeeName
-                      }
-                    </span>
-
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: "#9f1239",
-                      }}
-                    >
-                      Assigned{" "}
-                      {employee.assignedTotal.toFixed(
-                        2
-                      )}{" "}
-                      · Worked{" "}
-                      {employee.workedTotal.toFixed(
-                        2
-                      )}{" "}
-                      · Variance{" "}
-                      {variance >= 0
-                        ? "+"
-                        : ""}
-                      {variance.toFixed(
-                        2
-                      )}
-                    </span>
-                  </button>
-                );
-              }
-            )}
-          </div>
-        </PageCard>
-      )}
             {/* ======================================================
           DAILY STATION TOTALS
       ====================================================== */}
@@ -3088,8 +3051,8 @@ export default function WeeklyEmployeesSummaryPage() {
               lineHeight: 1.6,
             }}
           >
-            Total assigned and approved worked hours for the
-            entire station by day.
+            Total assigned and approved worked hours
+            for the entire station by day.
           </p>
         </div>
 
@@ -3102,13 +3065,14 @@ export default function WeeklyEmployeesSummaryPage() {
           }}
         >
           {DAY_KEYS.map((dayKey) => {
-            const totals = stationDailyTotals[dayKey] || {
-              assigned: 0,
-              worked: 0,
-            };
+            const totals =
+              stationDailyTotals[dayKey] || {
+                scheduled: 0,
+                actual: 0,
+              };
 
             const variance =
-              totals.worked - totals.assigned;
+              totals.actual - totals.scheduled;
 
             return (
               <div
@@ -3132,24 +3096,14 @@ export default function WeeklyEmployeesSummaryPage() {
 
                 <div
                   style={{
-                    marginTop: 4,
-                    fontSize: 11,
-                    color: "#94a3b8",
-                    fontWeight: 700,
-                  }}
-                >
-                  {formatDisplayDate(weekDates[dayKey])}
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 10,
+                    marginTop: 8,
                     fontSize: 13,
                     color: "#334155",
                     fontWeight: 700,
                   }}
                 >
-                  Assigned: {totals.assigned.toFixed(2)}
+                  Assigned:{" "}
+                  {totals.scheduled.toFixed(2)}
                 </div>
 
                 <div
@@ -3160,7 +3114,8 @@ export default function WeeklyEmployeesSummaryPage() {
                     fontWeight: 800,
                   }}
                 >
-                  Worked: {totals.worked.toFixed(2)}
+                  Worked:{" "}
+                  {totals.actual.toFixed(2)}
                 </div>
 
                 <div
@@ -3173,10 +3128,11 @@ export default function WeeklyEmployeesSummaryPage() {
                         : variance < 0
                         ? "#b45309"
                         : "#64748b",
-                    fontWeight: 900,
+                    fontWeight: 800,
                   }}
                 >
-                  Variance: {variance >= 0 ? "+" : ""}
+                  Variance:{" "}
+                  {variance >= 0 ? "+" : ""}
                   {variance.toFixed(2)}
                 </div>
               </div>
@@ -3190,44 +3146,32 @@ export default function WeeklyEmployeesSummaryPage() {
       ====================================================== */}
 
       <PageCard style={{ padding: 20 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 14,
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 900,
-                color: "#0f172a",
-              }}
-            >
-              Weekly Totals by Department
-            </h2>
+        <div style={{ marginBottom: 14 }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 900,
+              color: "#0f172a",
+            }}
+          >
+            Weekly Totals by Department
+          </h2>
 
-            <p
-              style={{
-                margin: "5px 0 0",
-                color: "#64748b",
-                fontSize: 13,
-                lineHeight: 1.6,
-              }}
-            >
-              Total assigned and approved worked hours by
-              operational department for the selected week.
-            </p>
-          </div>
-
-          <Badge tone="blue">
-            {departmentWeeklyTotals.length} Department(s)
-          </Badge>
+          <p
+            style={{
+              margin: "5px 0 0",
+              color: "#64748b",
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            Weekly assigned and approved worked
+            hours separated by operational
+            department. Cabin Service is reported
+            independently from the regular airline
+            schedules.
+          </p>
         </div>
 
         {departmentWeeklyTotals.length === 0 ? (
@@ -3241,13 +3185,13 @@ export default function WeeklyEmployeesSummaryPage() {
               fontWeight: 700,
             }}
           >
-            No department totals found for the selected week.
+            No department totals found for this
+            week.
           </div>
         ) : (
           <div
             style={{
               overflowX: "auto",
-              WebkitOverflowScrolling: "touch",
               borderRadius: 18,
               border: "1px solid #e2e8f0",
             }}
@@ -3298,74 +3242,132 @@ export default function WeeklyEmployeesSummaryPage() {
                   >
                     Variance
                   </th>
+
+                  <th
+                    style={thStyle({
+                      textAlign: "center",
+                    })}
+                  >
+                    Status
+                  </th>
                 </tr>
               </thead>
 
               <tbody>
                 {departmentWeeklyTotals.map(
-                  (row, index) => (
-                    <tr
-                      key={row.department}
-                      style={{
-                        background:
-                          index % 2 === 0
+                  (row, index) => {
+                    const isCabin =
+                      row.department ===
+                      CABIN_DEPARTMENT;
+
+                    return (
+                      <tr
+                        key={row.department}
+                        style={{
+                          background: isCabin
+                            ? "#eef8ff"
+                            : index % 2 === 0
                             ? "#ffffff"
                             : "#fbfdff",
-                      }}
-                    >
-                      <td
-                        style={{
-                          ...tdStyle,
-                          fontWeight: 900,
                         }}
                       >
-                        {row.department}
-                      </td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            fontWeight: 900,
+                            color: isCabin
+                              ? "#0f5c91"
+                              : "#0f172a",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span>
+                              {row.department}
+                            </span>
 
-                      <td
-                        style={{
-                          ...tdStyle,
-                          textAlign: "center",
-                          fontWeight: 800,
-                        }}
-                      >
-                        {row.assigned.toFixed(2)}
-                      </td>
+                            {isCabin && (
+                              <Badge tone="blue">
+                                Cabin Schedule
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
 
-                      <td
-                        style={{
-                          ...tdStyle,
-                          textAlign: "center",
-                          fontWeight: 800,
-                          color: "#047857",
-                        }}
-                      >
-                        {row.worked.toFixed(2)}
-                      </td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: "center",
+                            fontWeight: 900,
+                          }}
+                        >
+                          {row.scheduled.toFixed(2)}
+                        </td>
 
-                      <td
-                        style={{
-                          ...tdStyle,
-                          textAlign: "center",
-                          fontWeight: 900,
-                          color:
-                            row.variance > 0
-                              ? "#be123c"
-                              : row.variance < 0
-                              ? "#b45309"
-                              : "#475569",
-                        }}
-                      >
-                        {row.variance >= 0 ? "+" : ""}
-                        {row.variance.toFixed(2)}
-                      </td>
-                    </tr>
-                  )
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: "center",
+                            fontWeight: 900,
+                            color: "#047857",
+                          }}
+                        >
+                          {row.actual.toFixed(2)}
+                        </td>
+
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: "center",
+                            fontWeight: 900,
+                            color:
+                              row.variance > 0
+                                ? "#be123c"
+                                : row.variance < 0
+                                ? "#b45309"
+                                : "#475569",
+                          }}
+                        >
+                          {row.variance >= 0
+                            ? "+"
+                            : ""}
+                          {row.variance.toFixed(2)}
+                        </td>
+
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: "center",
+                          }}
+                        >
+                          {row.variance > 0 ? (
+                            <Badge tone="amber">
+                              Over Assigned
+                            </Badge>
+                          ) : row.variance < 0 ? (
+                            <Badge tone="gray">
+                              Under Assigned
+                            </Badge>
+                          ) : (
+                            <Badge tone="green">
+                              Balanced
+                            </Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }
                 )}
 
-                {/* =============================================
+                {/* ==============================
                     STATION TOTAL
-                ============================================= */}
+                ============================== */}
 
                 <tr
                   style={{
@@ -3387,10 +3389,11 @@ export default function WeeklyEmployeesSummaryPage() {
                       ...tdStyle,
                       textAlign: "center",
                       fontWeight: 900,
-                      color: "#0f172a",
                     }}
                   >
-                    {stationAssignedTotal.toFixed(2)}
+                    {stationScheduledTotal.toFixed(
+                      2
+                    )}
                   </td>
 
                   <td
@@ -3401,7 +3404,7 @@ export default function WeeklyEmployeesSummaryPage() {
                       color: "#047857",
                     }}
                   >
-                    {stationWorkedTotal.toFixed(2)}
+                    {stationActualTotal.toFixed(2)}
                   </td>
 
                   <td
@@ -3417,8 +3420,21 @@ export default function WeeklyEmployeesSummaryPage() {
                           : "#475569",
                     }}
                   >
-                    {stationVariance >= 0 ? "+" : ""}
+                    {stationVariance >= 0
+                      ? "+"
+                      : ""}
                     {stationVariance.toFixed(2)}
+                  </td>
+
+                  <td
+                    style={{
+                      ...tdStyle,
+                      textAlign: "center",
+                    }}
+                  >
+                    <Badge tone="blue">
+                      Station
+                    </Badge>
                   </td>
                 </tr>
               </tbody>
@@ -3428,172 +3444,146 @@ export default function WeeklyEmployeesSummaryPage() {
       </PageCard>
 
       {/* ======================================================
-          REPORT FOOTER
+          CABIN SERVICE DAILY TOTALS
       ====================================================== */}
 
-      <PageCard
-        style={{
-          padding: 18,
-          background:
-            "linear-gradient(135deg, #f8fbff 0%, #ffffff 100%)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 14,
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
+      {(cabinWeeklyTotals.scheduled > 0 ||
+        cabinWeeklyTotals.actual > 0) && (
+        <PageCard style={{ padding: 20 }}>
+          <div style={{ marginBottom: 14 }}>
             <div
               style={{
-                fontSize: 12,
-                fontWeight: 900,
-                color: "#1769aa",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
-              Weekly Report Summary
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                Cabin Service Daily Totals
+              </h2>
+
+              <Badge tone="blue">
+                Cabin Schedule
+              </Badge>
             </div>
 
-            <div
+            <p
               style={{
-                marginTop: 5,
-                fontSize: 13,
+                margin: "5px 0 0",
                 color: "#64748b",
+                fontSize: 13,
                 lineHeight: 1.6,
               }}
             >
-              {employeeWeeklyData.length} employee(s) included
-              in the selected week.
-            </div>
+              Assigned hours shown below come
+              directly from the Cabin Service
+              schedule slots for the selected week.
+            </p>
           </div>
 
           <div
             style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: 10,
             }}
           >
-            <Badge tone="blue">
-              Assigned: {stationAssignedTotal.toFixed(2)} hrs
-            </Badge>
+            {DAY_KEYS.map((dayKey) => {
+              const cabinDay =
+                cabinDailyTotals[dayKey] || {
+                  scheduled: 0,
+                  actual: 0,
+                };
 
-            <Badge tone="green">
-              Worked: {stationWorkedTotal.toFixed(2)} hrs
-            </Badge>
+              const variance =
+                cabinDay.actual -
+                cabinDay.scheduled;
 
-            <Badge
-              tone={
-                stationVariance > 0
-                  ? "red"
-                  : stationVariance < 0
-                  ? "amber"
-                  : "gray"
-              }
-            >
-              Variance: {stationVariance >= 0 ? "+" : ""}
-              {stationVariance.toFixed(2)} hrs
-            </Badge>
+              return (
+                <div
+                  key={dayKey}
+                  style={{
+                    background: "#eef8ff",
+                    border:
+                      "1px solid #bfdbfe",
+                    borderRadius: 16,
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 900,
+                      color: "#0f5c91",
+                    }}
+                  >
+                    {DAY_FULL[dayKey]}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 13,
+                      color: "#334155",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Assigned:{" "}
+                    {cabinDay.scheduled.toFixed(
+                      2
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 13,
+                      color: "#047857",
+                      fontWeight: 800,
+                    }}
+                  >
+                    Worked:{" "}
+                    {cabinDay.actual.toFixed(2)}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 13,
+                      color:
+                        variance > 0
+                          ? "#be123c"
+                          : variance < 0
+                          ? "#b45309"
+                          : "#64748b",
+                      fontWeight: 800,
+                    }}
+                  >
+                    Variance:{" "}
+                    {variance >= 0 ? "+" : ""}
+                    {variance.toFixed(2)}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-      </PageCard>
+        </PageCard>
+      )}
     </div>
   );
 }
 
 // ============================================================
-// DETAIL METRIC
-// ============================================================
-
-function DetailMetric({
-  label,
-  value,
-  tone = "blue",
-}) {
-  const tones = {
-    blue: {
-      background: "#eff6ff",
-      border: "#bfdbfe",
-      label: "#1d4ed8",
-      value: "#0f172a",
-    },
-
-    green: {
-      background: "#ecfdf5",
-      border: "#a7f3d0",
-      label: "#047857",
-      value: "#065f46",
-    },
-
-    amber: {
-      background: "#fffbeb",
-      border: "#fde68a",
-      label: "#b45309",
-      value: "#92400e",
-    },
-
-    red: {
-      background: "#fff1f2",
-      border: "#fecdd3",
-      label: "#be123c",
-      value: "#9f1239",
-    },
-
-    gray: {
-      background: "#f8fafc",
-      border: "#e2e8f0",
-      label: "#64748b",
-      value: "#334155",
-    },
-  };
-
-  const selectedTone =
-    tones[tone] || tones.blue;
-
-  return (
-    <div
-      style={{
-        background:
-          selectedTone.background,
-        border: `1px solid ${selectedTone.border}`,
-        borderRadius: 14,
-        padding: "13px 14px",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 900,
-          color: selectedTone.label,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
-      >
-        {label}
-      </div>
-
-      <div
-        style={{
-          marginTop: 5,
-          fontSize: 18,
-          fontWeight: 900,
-          color: selectedTone.value,
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// TABLE HEADER STYLE
+// TABLE STYLES
 // ============================================================
 
 function thStyle(extra = {}) {
@@ -3605,20 +3595,14 @@ function thStyle(extra = {}) {
     textTransform: "uppercase",
     letterSpacing: "0.06em",
     whiteSpace: "nowrap",
-    borderBottom:
-      "1px solid #e2e8f0",
+    borderBottom: "1px solid #e2e8f0",
     ...extra,
   };
 }
 
-// ============================================================
-// TABLE CELL STYLE
-// ============================================================
-
 const tdStyle = {
   padding: "14px",
-  borderBottom:
-    "1px solid #eef2f7",
+  borderBottom: "1px solid #eef2f7",
   verticalAlign: "middle",
   fontSize: 14,
   color: "#0f172a",
