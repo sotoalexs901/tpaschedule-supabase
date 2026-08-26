@@ -1,3 +1,5 @@
+// src/main.jsx
+
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -50,6 +52,7 @@ import WCHRScan from "./pages/WCHRScan.jsx";
 import MyWCHRReports from "./pages/MyWCHRReports.jsx";
 import WCHRFlights from "./pages/WCHRFlights.jsx";
 import WCHRMonthlyClose from "./pages/WCHRMonthlyClose.jsx";
+
 import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
 import CabinScheduleViewPage from "./pages/CabinScheduleViewPage.jsx";
@@ -78,6 +81,10 @@ import FuelManagementPage from "./pages/FuelManagementPage.jsx";
 import CierreVuelo from "./pages/CierreVuelo.jsx";
 import CierreVueloManagement from "./pages/CierreVueloManagement.jsx";
 
+// ============================================================
+// PROTECTED ROUTE
+// ============================================================
+
 function ProtectedRoute({
   children,
   roles,
@@ -87,22 +94,32 @@ function ProtectedRoute({
 }) {
   const { user } = useUser();
 
-  if (!user) return <Navigate to="/login" replace />;
-  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
-  const userDepartment = String(user?.department || "").trim().toLowerCase();
-  const username = String(user?.username || "").trim().toLowerCase();
+  if (roles && !roles.includes(user.role)) {
+    return <Navigate to="/" replace />;
+  }
 
-  const normalizedBlockedDepartments = blockedDepartments.map((d) =>
-    String(d || "").trim().toLowerCase()
+  const userDepartment = String(user?.department || "")
+    .trim()
+    .toLowerCase();
+
+  const username = String(user?.username || "")
+    .trim()
+    .toLowerCase();
+
+  const normalizedBlockedDepartments = blockedDepartments.map((department) =>
+    String(department || "").trim().toLowerCase()
   );
 
-  const normalizedAllowedUsernames = allowedUsernames.map((u) =>
-    String(u || "").trim().toLowerCase()
+  const normalizedAllowedUsernames = allowedUsernames.map((allowedUsername) =>
+    String(allowedUsername || "").trim().toLowerCase()
   );
 
-  const normalizedBlockedUsernames = blockedUsernames.map((u) =>
-    String(u || "").trim().toLowerCase()
+  const normalizedBlockedUsernames = blockedUsernames.map((blockedUsername) =>
+    String(blockedUsername || "").trim().toLowerCase()
   );
 
   if (normalizedBlockedDepartments.includes(userDepartment)) {
@@ -123,6 +140,10 @@ function ProtectedRoute({
   return children;
 }
 
+// ============================================================
+// DASHBOARD ENTRY
+// ============================================================
+
 function DashboardEntry() {
   const { user } = useUser();
 
@@ -133,6 +154,10 @@ function DashboardEntry() {
   return <DashboardPage />;
 }
 
+// ============================================================
+// APP UPDATE PROMPT
+// ============================================================
+
 function UpdatePrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
@@ -140,6 +165,7 @@ function UpdatePrompt() {
   useEffect(() => {
     let intervalId = null;
     let cancelled = false;
+
     const STORAGE_KEY = "tpa_app_version";
 
     async function checkVersion() {
@@ -151,7 +177,9 @@ function UpdatePrompt() {
         if (!response.ok) return;
 
         const data = await response.json();
+
         const incomingVersion = String(data?.version || "").trim();
+
         if (!incomingVersion) return;
 
         const savedVersion = localStorage.getItem(STORAGE_KEY);
@@ -173,27 +201,45 @@ function UpdatePrompt() {
     checkVersion();
 
     intervalId = window.setInterval(() => {
-      if (!cancelled) checkVersion();
+      if (!cancelled) {
+        checkVersion();
+      }
     }, 60000);
 
     const onFocus = () => {
-      if (!cancelled) checkVersion();
+      if (!cancelled) {
+        checkVersion();
+      }
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === "visible" && !cancelled) {
+      if (
+        document.visibilityState === "visible" &&
+        !cancelled
+      ) {
         checkVersion();
       }
     };
 
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener(
+      "visibilitychange",
+      onVisibility
+    );
 
     return () => {
       cancelled = true;
-      if (intervalId) window.clearInterval(intervalId);
+
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
+
+      document.removeEventListener(
+        "visibilitychange",
+        onVisibility
+      );
     };
   }, []);
 
@@ -203,20 +249,32 @@ function UpdatePrompt() {
 
   const handleRefresh = async () => {
     try {
-      const response = await fetch(`/version.json?t=${Date.now()}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/version.json?t=${Date.now()}`,
+        {
+          cache: "no-store",
+        }
+      );
 
       if (response.ok) {
         const data = await response.json();
-        const incomingVersion = String(data?.version || "").trim();
+
+        const incomingVersion = String(
+          data?.version || ""
+        ).trim();
 
         if (incomingVersion) {
-          localStorage.setItem("tpa_app_version", incomingVersion);
+          localStorage.setItem(
+            "tpa_app_version",
+            incomingVersion
+          );
         }
       }
     } catch (error) {
-      console.error("Could not refresh saved version before reload:", error);
+      console.error(
+        "Could not refresh saved version before reload:",
+        error
+      );
     }
 
     window.location.reload();
@@ -242,7 +300,8 @@ function UpdatePrompt() {
             fontWeight: 800,
             fontSize: 14,
             cursor: "pointer",
-            boxShadow: "0 16px 30px rgba(23,105,170,0.28)",
+            boxShadow:
+              "0 16px 30px rgba(23,105,170,0.28)",
           }}
         >
           Refresh app
@@ -268,7 +327,8 @@ function UpdatePrompt() {
               maxWidth: 540,
               background: "#ffffff",
               borderRadius: 24,
-              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              boxShadow:
+                "0 24px 60px rgba(15,23,42,0.22)",
               border: "1px solid #e2e8f0",
               overflow: "hidden",
             }}
@@ -301,8 +361,9 @@ function UpdatePrompt() {
                 fontWeight: 700,
               }}
             >
-              A newer version of TPA OPS Platform is available. Refresh the app
-              to load the latest changes without logging out manually.
+              A newer version of TPA OPS Platform is
+              available. Refresh the app to load the latest
+              changes without logging out manually.
             </div>
 
             <div
@@ -344,7 +405,8 @@ function UpdatePrompt() {
                   fontWeight: 800,
                   fontSize: 14,
                   cursor: "pointer",
-                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                  boxShadow:
+                    "0 12px 24px rgba(23,105,170,0.18)",
                 }}
               >
                 Refresh app
@@ -357,6 +419,10 @@ function UpdatePrompt() {
   );
 }
 
+// ============================================================
+// APP ROUTER
+// ============================================================
+
 function AppRouter() {
   return (
     <BrowserRouter>
@@ -367,18 +433,30 @@ function AppRouter() {
             PUBLIC ROUTES
         ===================================================== */}
 
-        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/login"
+          element={<LoginPage />}
+        />
 
+        {/* Must remain public so users can review the policy
+            before completing login acknowledgment. */}
         <Route
           path="/privacy"
           element={<PrivacyPolicyPage />}
         />
 
-        <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
-        <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
+        <Route
+          path="/request-dayoff"
+          element={<TimeOffRequestPage />}
+        />
+
+        <Route
+          path="/dayoff-status"
+          element={<TimeOffStatusPublicPage />}
+        />
 
         {/* =====================================================
-            PROTECTED PLATFORM ROUTES
+            PROTECTED PLATFORM
         ===================================================== */}
 
         <Route
@@ -389,12 +467,34 @@ function AppRouter() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<DashboardEntry />} />
-          <Route path="dashboard" element={<DashboardEntry />} />
+          {/* ===================================================
+              GENERAL
+          =================================================== */}
 
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="messages" element={<MessagesPage />} />
-          <Route path="notifications" element={<NotificationsPage />} />
+          <Route
+            index
+            element={<DashboardEntry />}
+          />
+
+          <Route
+            path="dashboard"
+            element={<DashboardEntry />}
+          />
+
+          <Route
+            path="profile"
+            element={<ProfilePage />}
+          />
+
+          <Route
+            path="messages"
+            element={<MessagesPage />}
+          />
+
+          <Route
+            path="notifications"
+            element={<NotificationsPage />}
+          />
 
           <Route
             path="station-team"
@@ -412,10 +512,16 @@ function AppRouter() {
             }
           />
 
+          {/* ===================================================
+              EMPLOYEE SCHEDULE / TIME OFF
+          =================================================== */}
+
           <Route
             path="my-schedule"
             element={
-              <ProtectedRoute roles={["agent", "supervisor"]}>
+              <ProtectedRoute
+                roles={["agent", "supervisor"]}
+              >
                 <MySchedulePage />
               </ProtectedRoute>
             }
@@ -424,7 +530,9 @@ function AppRouter() {
           <Route
             path="request-dayoff-internal"
             element={
-              <ProtectedRoute roles={["agent", "supervisor"]}>
+              <ProtectedRoute
+                roles={["agent", "supervisor"]}
+              >
                 <EmployeeTimeOffRequestPage />
               </ProtectedRoute>
             }
@@ -433,17 +541,27 @@ function AppRouter() {
           <Route
             path="dayoff-status-internal"
             element={
-              <ProtectedRoute roles={["agent", "supervisor"]}>
+              <ProtectedRoute
+                roles={["agent", "supervisor"]}
+              >
                 <EmployeeTimeOffStatusPage />
               </ProtectedRoute>
             }
           />
 
+          {/* ===================================================
+              TIMESHEETS
+          =================================================== */}
+
           <Route
             path="timesheets/submit"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
               >
                 <SupervisorTimesheetPage />
               </ProtectedRoute>
@@ -454,18 +572,30 @@ function AppRouter() {
             path="timesheets/reports"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
               >
                 <TimesheetAdminPage />
               </ProtectedRoute>
             }
           />
 
+          {/* ===================================================
+              OPERATIONAL REPORTS
+          =================================================== */}
+
           <Route
             path="operational-report/submit"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
               >
                 <SupervisorOperationalReportPage />
               </ProtectedRoute>
@@ -473,10 +603,44 @@ function AppRouter() {
           />
 
           <Route
+            path="operational-report/reports"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
+              >
+                <OperationalReportAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="operational-report/form-builder"
+            element={
+              <ProtectedRoute
+                roles={["station_manager"]}
+              >
+                <OperationalReportFormBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              REGULATED GARBAGE
+          =================================================== */}
+
+          <Route
             path="regulated-garbage/submit"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
               >
                 <SupervisorRegulatedGarbagePage />
               </ProtectedRoute>
@@ -484,15 +648,55 @@ function AppRouter() {
           />
 
           <Route
+            path="regulated-garbage/reports"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "duty_manager",
+                  "station_manager",
+                ]}
+              >
+                <RegulatedGarbageAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              CLEANING & SECURITY
+          =================================================== */}
+
+          <Route
             path="cleaning-security/submit"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
               >
                 <SupervisorCleaningSecurityPage />
               </ProtectedRoute>
             }
           />
+
+          <Route
+            path="cleaning-security/reports"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "duty_manager",
+                  "station_manager",
+                ]}
+              >
+                <CleaningSecurityReportsAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              OPERATIONS REQUESTS
+          =================================================== */}
 
           <Route
             path="operations-requests/submit"
@@ -511,10 +715,32 @@ function AppRouter() {
           />
 
           <Route
+            path="operations-requests/reports"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "duty_manager",
+                  "station_manager",
+                ]}
+              >
+                <OperationsRequestsReportsAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              WCHR POI
+          =================================================== */}
+
+          <Route
             path="wchr-poi/submit"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
               >
                 <SupervisorWchrPoiPage />
               </ProtectedRoute>
@@ -522,15 +748,55 @@ function AppRouter() {
           />
 
           <Route
+            path="wchr-poi/reports"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "duty_manager",
+                  "station_manager",
+                ]}
+              >
+                <WchrPoiReportsAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              EMPLOYEE PERFORMANCE
+          =================================================== */}
+
+          <Route
             path="employee-performance-report"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
               >
                 <MonthlyEmployeePerformanceReportPage />
               </ProtectedRoute>
             }
           />
+
+          <Route
+            path="employee-performance-management"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "duty_manager",
+                  "station_manager",
+                ]}
+              >
+                <EmployeePerformanceManagementPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              GATE CHECKLIST
+          =================================================== */}
 
           <Route
             path="gate-checklist"
@@ -549,6 +815,24 @@ function AppRouter() {
           />
 
           <Route
+            path="gate-checklist-management"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "duty_manager",
+                  "station_manager",
+                ]}
+              >
+                <GateChecklistManagementPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              FUEL
+          =================================================== */}
+
+          <Route
             path="fuel-entry"
             element={
               <ProtectedRoute
@@ -563,6 +847,25 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+
+          <Route
+            path="fuel-management"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
+              >
+                <FuelManagementPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              CIERRE DE VUELO
+          =================================================== */}
 
           <Route
             path="cierre-vuelo"
@@ -581,100 +884,23 @@ function AppRouter() {
           />
 
           <Route
-            path="operational-report/reports"
-            element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
-                <OperationalReportAdminPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="regulated-garbage/reports"
-            element={
-              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
-                <RegulatedGarbageAdminPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="cleaning-security/reports"
-            element={
-              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
-                <CleaningSecurityReportsAdminPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="operations-requests/reports"
-            element={
-              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
-                <OperationsRequestsReportsAdminPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="wchr-poi/reports"
-            element={
-              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
-                <WchrPoiReportsAdminPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="employee-performance-management"
-            element={
-              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
-                <EmployeePerformanceManagementPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="gate-checklist-management"
-            element={
-              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
-                <GateChecklistManagementPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="fuel-management"
-            element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
-                <FuelManagementPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
             path="cierre-vuelo-management"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={[
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
               >
                 <CierreVueloManagement />
               </ProtectedRoute>
             }
           />
 
-          <Route
-            path="operational-report/form-builder"
-            element={
-              <ProtectedRoute roles={["station_manager"]}>
-                <OperationalReportFormBuilderPage />
-              </ProtectedRoute>
-            }
-          />
+          {/* ===================================================
+              WCHR
+          =================================================== */}
 
           <Route
             path="wchr/scan"
@@ -686,7 +912,10 @@ function AppRouter() {
                   "duty_manager",
                   "station_manager",
                 ]}
-                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+                blockedDepartments={[
+                  "DL Cabin Service",
+                  "Cabin Service",
+                ]}
               >
                 <WCHRScan />
               </ProtectedRoute>
@@ -703,7 +932,10 @@ function AppRouter() {
                   "duty_manager",
                   "station_manager",
                 ]}
-                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+                blockedDepartments={[
+                  "DL Cabin Service",
+                  "Cabin Service",
+                ]}
               >
                 <MyWCHRReports />
               </ProtectedRoute>
@@ -714,8 +946,15 @@ function AppRouter() {
             path="wchr/admin/flights"
             element={
               <ProtectedRoute
-                roles={["supervisor", "station_manager", "duty_manager"]}
-                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+                roles={[
+                  "supervisor",
+                  "station_manager",
+                  "duty_manager",
+                ]}
+                blockedDepartments={[
+                  "DL Cabin Service",
+                  "Cabin Service",
+                ]}
               >
                 <WCHRFlights />
               </ProtectedRoute>
@@ -726,18 +965,30 @@ function AppRouter() {
             path="wchr/monthly-close"
             element={
               <ProtectedRoute
-                roles={["station_manager", "duty_manager"]}
-                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+                blockedDepartments={[
+                  "DL Cabin Service",
+                  "Cabin Service",
+                ]}
               >
                 <WCHRMonthlyClose />
               </ProtectedRoute>
             }
           />
 
+          {/* ===================================================
+              MANAGEMENT / ADMIN
+          =================================================== */}
+
           <Route
             path="admin/activity-dashboard"
             element={
-              <ProtectedRoute roles={["station_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager"]}
+              >
                 <AdminActivityDashboard />
               </ProtectedRoute>
             }
@@ -746,7 +997,9 @@ function AppRouter() {
           <Route
             path="employee-announcements"
             element={
-              <ProtectedRoute roles={["station_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager"]}
+              >
                 <CrewAnnouncementsPage />
               </ProtectedRoute>
             }
@@ -755,18 +1008,30 @@ function AppRouter() {
           <Route
             path="dashboard-editor"
             element={
-              <ProtectedRoute roles={["station_manager"]}>
+              <ProtectedRoute
+                roles={["station_manager"]}
+              >
                 <DashboardEditorPage />
               </ProtectedRoute>
             }
           />
 
+          {/* ===================================================
+              SCHEDULES
+          =================================================== */}
+
           <Route
             path="schedule"
             element={
               <ProtectedRoute
-                roles={["station_manager", "duty_manager"]}
-                blockedUsernames={["hhernandez", "hhernadez"]}
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+                blockedUsernames={[
+                  "hhernandez",
+                  "hhernadez",
+                ]}
               >
                 <SchedulePage />
               </ProtectedRoute>
@@ -776,7 +1041,12 @@ function AppRouter() {
           <Route
             path="cabin-service"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+              >
                 <CabinServicePage />
               </ProtectedRoute>
             }
@@ -785,7 +1055,12 @@ function AppRouter() {
           <Route
             path="cabin-saved-schedules"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+              >
                 <CabinSavedSchedulesPage />
               </ProtectedRoute>
             }
@@ -794,7 +1069,12 @@ function AppRouter() {
           <Route
             path="cabin-saved-schedules/:id"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+              >
                 <CabinScheduleViewPage />
               </ProtectedRoute>
             }
@@ -803,7 +1083,12 @@ function AppRouter() {
           <Route
             path="blocked"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+              >
                 <BlockedEmployeesPage />
               </ProtectedRoute>
             }
@@ -812,7 +1097,12 @@ function AppRouter() {
           <Route
             path="employees"
             element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+              <ProtectedRoute
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+              >
                 <EmployeesPage />
               </ProtectedRoute>
             }
@@ -823,7 +1113,10 @@ function AppRouter() {
             element={
               <ProtectedRoute
                 roles={["station_manager"]}
-                blockedUsernames={["hhernandez", "hhernadez"]}
+                blockedUsernames={[
+                  "hhernandez",
+                  "hhernadez",
+                ]}
               >
                 <ApprovalsPage />
               </ProtectedRoute>
@@ -834,8 +1127,14 @@ function AppRouter() {
             path="approved"
             element={
               <ProtectedRoute
-                roles={["station_manager", "duty_manager"]}
-                blockedUsernames={["hhernandez", "hhernadez"]}
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+                blockedUsernames={[
+                  "hhernandez",
+                  "hhernadez",
+                ]}
               >
                 <ApprovedSchedulesPage />
               </ProtectedRoute>
@@ -846,8 +1145,14 @@ function AppRouter() {
             path="approved/:id"
             element={
               <ProtectedRoute
-                roles={["station_manager", "duty_manager"]}
-                blockedUsernames={["hhernandez", "hhernadez"]}
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+                blockedUsernames={[
+                  "hhernandez",
+                  "hhernadez",
+                ]}
               >
                 <ApprovedScheduleView />
               </ProtectedRoute>
@@ -858,67 +1163,16 @@ function AppRouter() {
             path="returned"
             element={
               <ProtectedRoute
-                roles={["station_manager", "duty_manager"]}
-                blockedUsernames={["hhernandez", "hhernadez"]}
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+                blockedUsernames={[
+                  "hhernandez",
+                  "hhernadez",
+                ]}
               >
                 <ReturnedSchedulesPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="timeoff-requests"
-            element={
-              <ProtectedRoute roles={["station_manager"]}>
-                <TimeOffRequestsAdminPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="weekly-summary"
-            element={
-              <ProtectedRoute
-                roles={["station_manager", "duty_manager"]}
-                blockedUsernames={["hhernandez", "hhernadez"]}
-              >
-                <WeeklyEmployeesSummaryPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="budgets"
-            element={
-              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
-                <BudgetsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="monthly-budgets-vs-actual"
-            element={
-              <ProtectedRoute roles={["station_manager"]}>
-                <MonthlyBudgetsVsActualPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="create-user"
-            element={
-              <ProtectedRoute roles={["station_manager"]}>
-                <CreateUserPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="edit-users"
-            element={
-              <ProtectedRoute roles={["station_manager"]}>
-                <EditUsersPage />
               </ProtectedRoute>
             }
           />
@@ -927,24 +1181,148 @@ function AppRouter() {
             path="drafts"
             element={
               <ProtectedRoute
-                roles={["station_manager", "duty_manager"]}
-                blockedUsernames={["hhernandez", "hhernadez"]}
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+                blockedUsernames={[
+                  "hhernandez",
+                  "hhernadez",
+                ]}
               >
                 <DraftSchedulesPage />
               </ProtectedRoute>
             }
           />
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route
+            path="weekly-summary"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+                blockedUsernames={[
+                  "hhernandez",
+                  "hhernadez",
+                ]}
+              >
+                <WeeklyEmployeesSummaryPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              TIME OFF ADMIN
+          =================================================== */}
+
+          <Route
+            path="timeoff-requests"
+            element={
+              <ProtectedRoute
+                roles={["station_manager"]}
+              >
+                <TimeOffRequestsAdminPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              BUDGETS
+          =================================================== */}
+
+          <Route
+            path="budgets"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "station_manager",
+                  "duty_manager",
+                ]}
+              >
+                <BudgetsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="monthly-budgets-vs-actual"
+            element={
+              <ProtectedRoute
+                roles={["station_manager"]}
+              >
+                <MonthlyBudgetsVsActualPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              USER MANAGEMENT
+          =================================================== */}
+
+          <Route
+            path="create-user"
+            element={
+              <ProtectedRoute
+                roles={["station_manager"]}
+              >
+                <CreateUserPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="edit-users"
+            element={
+              <ProtectedRoute
+                roles={["station_manager"]}
+              >
+                <EditUsersPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===================================================
+              UNKNOWN PROTECTED ROUTE
+          =================================================== */}
+
+          <Route
+            path="*"
+            element={
+              <Navigate
+                to="/dashboard"
+                replace
+              />
+            }
+          />
         </Route>
 
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* =====================================================
+            UNKNOWN PUBLIC ROUTE
+        ===================================================== */}
+
+        <Route
+          path="*"
+          element={
+            <Navigate
+              to="/login"
+              replace
+            />
+          }
+        />
       </Routes>
     </BrowserRouter>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(
+// ============================================================
+// APPLICATION ENTRY
+// ============================================================
+
+ReactDOM.createRoot(
+  document.getElementById("root")
+).render(
   <React.StrictMode>
     <UserProvider>
       <AppRouter />
