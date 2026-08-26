@@ -33,9 +33,15 @@ function getVisiblePosition(user) {
 
 function getInitials(name) {
   const clean = String(name || "").trim();
+
   if (!clean) return "U";
+
   const parts = clean.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 1).toUpperCase();
+  }
+
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
@@ -52,11 +58,18 @@ export default function AppLayout() {
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
+
   const profilePhotoURL = user?.profilePhotoURL || "";
+
+  // ============================================================
+  // LOGOUT
+  // ============================================================
 
   const logout = async () => {
     try {
-      if (user?.id) await markUserOffline(user);
+      if (user?.id) {
+        await markUserOffline(user);
+      }
     } catch (err) {
       console.error("Error marking user offline on logout:", err);
     } finally {
@@ -64,6 +77,10 @@ export default function AppLayout() {
       navigate("/login");
     }
   };
+
+  // ============================================================
+  // PENDING TIME OFF
+  // ============================================================
 
   useEffect(() => {
     const qTimeoff = query(
@@ -79,6 +96,10 @@ export default function AppLayout() {
 
     return () => unsub();
   }, []);
+
+  // ============================================================
+  // UNREAD MESSAGES
+  // ============================================================
 
   useEffect(() => {
     if (!user?.id) return;
@@ -98,6 +119,10 @@ export default function AppLayout() {
     return () => unsub();
   }, [user?.id]);
 
+  // ============================================================
+  // UNREAD NOTIFICATIONS
+  // ============================================================
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -116,16 +141,26 @@ export default function AppLayout() {
     return () => unsub();
   }, [user?.id]);
 
+  // ============================================================
+  // CLOSE MENU WHEN NAVIGATING
+  // ============================================================
+
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
+
+  // ============================================================
+  // USER PRESENCE
+  // ============================================================
 
   useEffect(() => {
     if (!user?.id) return;
 
     updateUserPresence(user, {
       currentPage: location.pathname,
-    }).catch((err) => console.error("Error updating user presence:", err));
+    }).catch((err) =>
+      console.error("Error updating user presence:", err)
+    );
   }, [user, location.pathname]);
 
   useEffect(() => {
@@ -154,13 +189,27 @@ export default function AppLayout() {
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
 
     return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(
+        "beforeunload",
+        handleBeforeUnload
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
     };
   }, [user, location.pathname]);
+
+  // ============================================================
+  // USER NORMALIZATION
+  // ============================================================
 
   const normalizedDepartment = String(user?.department || "")
     .trim()
@@ -178,16 +227,30 @@ export default function AppLayout() {
     normalizedDepartment.includes("dl cabin") ||
     normalizedDepartment.includes("cabin service");
 
+  // ============================================================
+  // ROLE HELPERS
+  // ============================================================
+
   const isManager =
-    user?.role === "station_manager" || user?.role === "duty_manager";
+    user?.role === "station_manager" ||
+    user?.role === "duty_manager";
 
   const isAgent = user?.role === "agent";
-  const isAgentOrSupervisor =
-    user?.role === "agent" || user?.role === "supervisor";
 
-  const canAccessRegularManagerSchedules = isManager && !isHhernandez;
+  const isAgentOrSupervisor =
+    user?.role === "agent" ||
+    user?.role === "supervisor";
+
+  // ============================================================
+  // PERMISSIONS
+  // ============================================================
+
+  const canAccessRegularManagerSchedules =
+    isManager && !isHhernandez;
+
   const canAccessCabinServiceOnlyManager =
-    user?.role === "duty_manager" && isHhernandez;
+    user?.role === "duty_manager" &&
+    isHhernandez;
 
   const canAccessTimesheets =
     user?.role === "supervisor" ||
@@ -204,7 +267,8 @@ export default function AppLayout() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
-  const canManageOperationalReportForm = user?.role === "station_manager";
+  const canManageOperationalReportForm =
+    user?.role === "station_manager";
 
   const canSubmitOperationsRequests =
     user?.role === "agent" ||
@@ -213,7 +277,8 @@ export default function AppLayout() {
     user?.role === "station_manager";
 
   const canManageOperationsRequests =
-    user?.role === "duty_manager" || user?.role === "station_manager";
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const canSubmitWchrPoi =
     user?.role === "supervisor" ||
@@ -221,7 +286,8 @@ export default function AppLayout() {
     user?.role === "station_manager";
 
   const canManageWchrPoi =
-    user?.role === "duty_manager" || user?.role === "station_manager";
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const canSubmitRegulatedGarbage =
     user?.role === "supervisor" ||
@@ -229,31 +295,41 @@ export default function AppLayout() {
     user?.role === "station_manager";
 
   const canManageRegulatedGarbage =
-    user?.role === "duty_manager" || user?.role === "station_manager";
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const canAccessWchrTools =
     !isDLCabinService &&
-    (user?.role === "agent" ||
+    (
+      user?.role === "agent" ||
       user?.role === "supervisor" ||
       user?.role === "duty_manager" ||
-      user?.role === "station_manager");
+      user?.role === "station_manager"
+    );
 
   const canAccessWchrFlightReport =
     !isDLCabinService &&
-    (user?.role === "supervisor" ||
+    (
+      user?.role === "supervisor" ||
       user?.role === "duty_manager" ||
-      user?.role === "station_manager");
+      user?.role === "station_manager"
+    );
+
   const canAccessWchrMonthlyClose =
     !isDLCabinService &&
-    (user?.role === "duty_manager" || user?.role === "station_manager");
-  
+    (
+      user?.role === "duty_manager" ||
+      user?.role === "station_manager"
+    );
+
   const canSubmitEmployeePerformance =
     user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
   const canManageEmployeePerformance =
-    user?.role === "duty_manager" || user?.role === "station_manager";
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const canSubmitGateChecklist =
     user?.role === "agent" ||
@@ -262,7 +338,8 @@ export default function AppLayout() {
     user?.role === "station_manager";
 
   const canManageGateChecklist =
-    user?.role === "duty_manager" || user?.role === "station_manager";
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
 
   const canSubmitFuel =
     user?.role === "agent" ||
@@ -285,13 +362,30 @@ export default function AppLayout() {
     user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
-    const navSections = useMemo(() => {
+
+  // ============================================================
+  // NAVIGATION
+  // ============================================================
+
+  const navSections = useMemo(() => {
     const sections = [];
 
     const general = [
-      { to: "/dashboard", label: "Dashboard", icon: "🏠" },
-      { to: "/profile", label: "My Profile", icon: "👤" },
-      { to: "/station-team", label: "Station Team", icon: "🧑‍🤝‍🧑" },
+      {
+        to: "/dashboard",
+        label: "Dashboard",
+        icon: "🏠",
+      },
+      {
+        to: "/profile",
+        label: "My Profile",
+        icon: "👤",
+      },
+      {
+        to: "/station-team",
+        label: "Station Team",
+        icon: "🧑‍🤝‍🧑",
+      },
       {
         to: "/messages",
         label: "Messages",
@@ -313,20 +407,52 @@ export default function AppLayout() {
     const wchr = [];
     const admin = [];
 
+    // ========================================================
+    // MANAGER SCHEDULES
+    // ========================================================
+
     if (canAccessRegularManagerSchedules) {
       schedules.push(
-        { to: "/schedule", label: "Create Schedule", icon: "🗓️" },
-        { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
+        {
+          to: "/schedule",
+          label: "Create Schedule",
+          icon: "🗓️",
+        },
+        {
+          to: "/cabin-service",
+          label: "Cabin Service",
+          icon: "🧳",
+        },
         {
           to: "/cabin-saved-schedules",
           label: "Cabin Service Saved Schedules",
           icon: "📁",
         },
-        { to: "/approvals", label: "Approvals", icon: "✅" },
-        { to: "/drafts", label: "Draft Schedules", icon: "📝" },
-        { to: "/approved", label: "Approved Schedules", icon: "📌" },
-        { to: "/returned", label: "Returned Schedules", icon: "↩️" },
-        { to: "/weekly-summary", label: "Weekly Summary", icon: "📊" }
+        {
+          to: "/approvals",
+          label: "Approvals",
+          icon: "✅",
+        },
+        {
+          to: "/drafts",
+          label: "Draft Schedules",
+          icon: "📝",
+        },
+        {
+          to: "/approved",
+          label: "Approved Schedules",
+          icon: "📌",
+        },
+        {
+          to: "/returned",
+          label: "Returned Schedules",
+          icon: "↩️",
+        },
+        {
+          to: "/weekly-summary",
+          label: "Weekly Summary",
+          icon: "📊",
+        }
       );
 
       timeoff.push(
@@ -336,7 +462,11 @@ export default function AppLayout() {
           icon: "🌴",
           showDot: pendingTimeOff > 0,
         },
-        { to: "/blocked", label: "Blocked Employees", icon: "🚫" }
+        {
+          to: "/blocked",
+          label: "Blocked Employees",
+          icon: "🚫",
+        }
       );
 
       admin.push(
@@ -345,8 +475,16 @@ export default function AppLayout() {
           label: "Crew Announcements",
           icon: "📣",
         },
-        { to: "/dashboard-editor", label: "Dashboard Editor", icon: "🎛️" },
-        { to: "/budgets", label: "Budgets", icon: "💰" },
+        {
+          to: "/dashboard-editor",
+          label: "Dashboard Editor",
+          icon: "🎛️",
+        },
+        {
+          to: "/budgets",
+          label: "Budgets",
+          icon: "💰",
+        },
         {
           to: "/monthly-budgets-vs-actual",
           label: "Monthly Budgets vs Actual",
@@ -355,9 +493,17 @@ export default function AppLayout() {
       );
     }
 
+    // ========================================================
+    // CABIN SERVICE MANAGER
+    // ========================================================
+
     if (canAccessCabinServiceOnlyManager) {
       schedules.push(
-        { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
+        {
+          to: "/cabin-service",
+          label: "Cabin Service",
+          icon: "🧳",
+        },
         {
           to: "/cabin-saved-schedules",
           label: "Cabin Service Saved Schedules",
@@ -366,6 +512,10 @@ export default function AppLayout() {
       );
     }
 
+    // ========================================================
+    // STATION MANAGER ADMIN
+    // ========================================================
+
     if (user?.role === "station_manager") {
       admin.push(
         {
@@ -373,14 +523,39 @@ export default function AppLayout() {
           label: "User Activity",
           icon: "📈",
         },
-        { to: "/create-user", label: "Create User", icon: "➕" },
-        { to: "/edit-users", label: "Manage Users", icon: "⚙️" },
-        { to: "/employees", label: "Employees", icon: "👥" }
+        {
+          to: "/admin/privacy-acknowledgments",
+          label: "Privacy Acknowledgments",
+          icon: "🔐",
+        },
+        {
+          to: "/create-user",
+          label: "Create User",
+          icon: "➕",
+        },
+        {
+          to: "/edit-users",
+          label: "Manage Users",
+          icon: "⚙️",
+        },
+        {
+          to: "/employees",
+          label: "Employees",
+          icon: "👥",
+        }
       );
     }
 
+    // ========================================================
+    // AGENT / SUPERVISOR SCHEDULES
+    // ========================================================
+
     if (isAgentOrSupervisor) {
-      schedules.push({ to: "/my-schedule", label: "My Schedule", icon: "📅" });
+      schedules.push({
+        to: "/my-schedule",
+        label: "My Schedule",
+        icon: "📅",
+      });
 
       timeoff.push(
         {
@@ -395,6 +570,10 @@ export default function AppLayout() {
         }
       );
     }
+
+    // ========================================================
+    // SUBMISSION OF REPORTS
+    // ========================================================
 
     if (canAccessTimesheets) {
       submissionReports.push({
@@ -477,6 +656,10 @@ export default function AppLayout() {
       });
     }
 
+    // ========================================================
+    // MANAGEMENT OF REPORTS
+    // ========================================================
+
     if (canAccessTimesheets) {
       managementReports.push({
         to: "/timesheets/reports",
@@ -504,7 +687,10 @@ export default function AppLayout() {
       });
     }
 
-    if (user?.role === "duty_manager" || user?.role === "station_manager") {
+    if (
+      user?.role === "duty_manager" ||
+      user?.role === "station_manager"
+    ) {
       managementReports.push({
         to: "/cleaning-security/reports",
         label: "Cleaning & Security Reports",
@@ -560,14 +746,26 @@ export default function AppLayout() {
       });
     }
 
+    // ========================================================
+    // WCHR
+    // ========================================================
+
     if (canAccessWchrTools) {
       wchr.push(
-        { to: "/wchr/scan", label: "Scan Boarding Pass", icon: "🎫" },
-        { to: "/wchr/my-reports", label: "My Reports", icon: "📄" }
+        {
+          to: "/wchr/scan",
+          label: "Scan Boarding Pass",
+          icon: "🎫",
+        },
+        {
+          to: "/wchr/my-reports",
+          label: "My Reports",
+          icon: "📄",
+        }
       );
     }
 
-        if (canAccessWchrFlightReport) {
+    if (canAccessWchrFlightReport) {
       wchr.push({
         to: "/wchr/admin/flights",
         label: "WCHR Flight Report",
@@ -583,6 +781,10 @@ export default function AppLayout() {
       });
     }
 
+    // ========================================================
+    // OPERATIONAL REPORT BUILDER
+    // ========================================================
+
     if (canManageOperationalReportForm) {
       admin.push({
         to: "/operational-report/form-builder",
@@ -591,17 +793,58 @@ export default function AppLayout() {
       });
     }
 
-    if (general.length) sections.push({ title: "General", items: general });
-    if (schedules.length) sections.push({ title: "Schedules", items: schedules });
+    // ========================================================
+    // BUILD SECTIONS
+    // ========================================================
+
+    if (general.length) {
+      sections.push({
+        title: "General",
+        items: general,
+      });
+    }
+
+    if (schedules.length) {
+      sections.push({
+        title: "Schedules",
+        items: schedules,
+      });
+    }
+
     if (submissionReports.length) {
-      sections.push({ title: "Submission of Reports", items: submissionReports });
+      sections.push({
+        title: "Submission of Reports",
+        items: submissionReports,
+      });
     }
+
     if (managementReports.length) {
-      sections.push({ title: "Management of Reports", items: managementReports });
+      sections.push({
+        title: "Management of Reports",
+        items: managementReports,
+      });
     }
-    if (timeoff.length) sections.push({ title: "Time Off", items: timeoff });
-    if (wchr.length) sections.push({ title: "WCHR", items: wchr });
-    if (admin.length) sections.push({ title: "Admin", items: admin });
+
+    if (timeoff.length) {
+      sections.push({
+        title: "Time Off",
+        items: timeoff,
+      });
+    }
+
+    if (wchr.length) {
+      sections.push({
+        title: "WCHR",
+        items: wchr,
+      });
+    }
+
+    if (admin.length) {
+      sections.push({
+        title: "Admin",
+        items: admin,
+      });
+    }
 
     return sections;
   }, [
@@ -614,6 +857,7 @@ export default function AppLayout() {
     canManageOperationalReportForm,
     canAccessWchrTools,
     canAccessWchrFlightReport,
+    canAccessWchrMonthlyClose,
     canSubmitOperationsRequests,
     canManageOperationsRequests,
     canSubmitWchrPoi,
@@ -632,23 +876,35 @@ export default function AppLayout() {
     unreadNotifications,
     pendingTimeOff,
     user,
-    user?.role,
     isAgent,
   ]);
 
+  // ============================================================
+  // MENU SEARCH
+  // ============================================================
+
   const filteredNavSections = useMemo(() => {
     const search = navSearch.trim().toLowerCase();
-    if (!search) return navSections;
+
+    if (!search) {
+      return navSections;
+    }
 
     return navSections
       .map((section) => ({
         ...section,
         items: section.items.filter((item) =>
-          `${item.label} ${section.title}`.toLowerCase().includes(search)
+          `${item.label} ${section.title}`
+            .toLowerCase()
+            .includes(search)
         ),
       }))
       .filter((section) => section.items.length > 0);
   }, [navSections, navSearch]);
+
+  // ============================================================
+  // RENDER
+  // ============================================================
 
   return (
     <div
@@ -680,7 +936,15 @@ export default function AppLayout() {
             flexWrap: "wrap",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* USER */}
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
             <div
               style={{
                 width: 46,
@@ -694,14 +958,19 @@ export default function AppLayout() {
                 justifyContent: "center",
                 fontWeight: 900,
                 overflow: "hidden",
-                boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
+                boxShadow:
+                  "0 10px 24px rgba(23,105,170,0.22)",
               }}
             >
               {profilePhotoURL ? (
                 <img
                   src={profilePhotoURL}
                   alt={visibleName}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
                 />
               ) : (
                 getInitials(visibleName)
@@ -720,33 +989,76 @@ export default function AppLayout() {
               >
                 TPA OPS Platform
               </div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>
+
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
                 {visibleName}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
+
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#64748b",
+                }}
+              >
                 {visiblePosition}
               </div>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <StatusPill label="Messages" value={unreadMessages} />
-            <StatusPill label="Notifications" value={unreadNotifications} />
-            <StatusPill label="Day Off" value={pendingTimeOff} />
+          {/* STATUS / ACTIONS */}
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <StatusPill
+              label="Messages"
+              value={unreadMessages}
+            />
+
+            <StatusPill
+              label="Notifications"
+              value={unreadNotifications}
+            />
+
+            <StatusPill
+              label="Day Off"
+              value={pendingTimeOff}
+            />
 
             <button
               type="button"
-              onClick={() => setMenuOpen((v) => !v)}
+              onClick={() =>
+                setMenuOpen((value) => !value)
+              }
               style={topButtonStyle}
             >
               {menuOpen ? "Close Menu" : "Menu"}
             </button>
 
-            <button type="button" onClick={logout} style={logoutButtonStyle}>
+            <button
+              type="button"
+              onClick={logout}
+              style={logoutButtonStyle}
+            >
               Logout
             </button>
           </div>
         </div>
+
+        {/* ====================================================
+            MENU
+        ==================================================== */}
 
         {menuOpen && (
           <div
@@ -760,7 +1072,9 @@ export default function AppLayout() {
           >
             <input
               value={navSearch}
-              onChange={(e) => setNavSearch(e.target.value)}
+              onChange={(e) =>
+                setNavSearch(e.target.value)
+              }
               placeholder="Search menu..."
               style={searchInputStyle}
             />
@@ -791,23 +1105,33 @@ export default function AppLayout() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(220px, 1fr))",
                     gap: 8,
                   }}
                 >
                   {section.items.map((item) => (
-                    <TopNavItem key={item.to} {...item} />
+                    <TopNavItem
+                      key={item.to}
+                      {...item}
+                    />
                   ))}
                 </div>
               </div>
             ))}
 
             {filteredNavSections.length === 0 && (
-              <div style={emptySearchStyle}>No menu items found.</div>
+              <div style={emptySearchStyle}>
+                No menu items found.
+              </div>
             )}
           </div>
         )}
       </header>
+
+      {/* ======================================================
+          PAGE CONTENT
+      ====================================================== */}
 
       <main
         style={{
@@ -823,6 +1147,10 @@ export default function AppLayout() {
     </div>
   );
 }
+
+// ============================================================
+// STATUS PILL
+// ============================================================
 
 function StatusPill({ label, value }) {
   return (
@@ -846,14 +1174,30 @@ function StatusPill({ label, value }) {
       >
         {label}
       </div>
-      <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>
+
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 900,
+          color: "#0f172a",
+        }}
+      >
         {value}
       </div>
     </div>
   );
 }
 
-function TopNavItem({ to, label, showDot, icon }) {
+// ============================================================
+// NAV ITEM
+// ============================================================
+
+function TopNavItem({
+  to,
+  label,
+  showDot,
+  icon,
+}) {
   return (
     <NavLink
       to={to}
@@ -867,14 +1211,24 @@ function TopNavItem({ to, label, showDot, icon }) {
         textDecoration: "none",
         fontSize: 14,
         fontWeight: isActive ? 900 : 700,
-        color: isActive ? "#0f4c81" : "#334155",
+        color: isActive
+          ? "#0f4c81"
+          : "#334155",
         background: isActive
           ? "linear-gradient(135deg, #dff0ff 0%, #eef8ff 100%)"
           : "#ffffff",
-        border: isActive ? "1px solid #bfe0fb" : "1px solid #e2e8f0",
+        border: isActive
+          ? "1px solid #bfe0fb"
+          : "1px solid #e2e8f0",
       })}
     >
-      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
         <span>{icon}</span>
         <span>{label}</span>
       </span>
@@ -893,6 +1247,10 @@ function TopNavItem({ to, label, showDot, icon }) {
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
+
 const topButtonStyle = {
   border: "1px solid #cfe7fb",
   background: "#ffffff",
@@ -905,7 +1263,8 @@ const topButtonStyle = {
 
 const logoutButtonStyle = {
   border: "none",
-  background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+  background:
+    "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
   color: "#fff",
   borderRadius: 14,
   padding: "10px 16px",
