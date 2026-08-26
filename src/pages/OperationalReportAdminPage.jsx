@@ -270,7 +270,6 @@ function getVisibleUserName(user) {
     "Manager"
   );
 }
-
 /* =========================================================
    LOB HELPERS
 ========================================================= */
@@ -282,7 +281,12 @@ function getVisibleUserName(user) {
   41 - 80 bags = 3 hours
   81+ bags     = 4 hours
 
-  Management will be able to edit these ranges.
+  IMPORTANT:
+  Operational Reports have used different LOB field names
+  over time.
+
+  These helpers normalize ALL supported formats so old and
+  new reports can be read without breaking the page.
 */
 
 const DEFAULT_LOB_RULES = [
@@ -317,41 +321,68 @@ function toSafeNumber(value) {
 }
 
 /*
-  IMPORTANT:
+  ---------------------------------------------------------
+  HAS LOBS
+  ---------------------------------------------------------
 
-  The Supervisor Operational Report can save the LOB
-  information in direct Firestore fields and/or inside
-  responses.
+  Supported formats:
 
-  We support BOTH formats here.
+  Top level:
+    hasLobs
 
-  Current response field names:
+  responses:
     had_lobs
-    lob_total_bags
-    lob_agents_used
-    lob_supervisors_used
+    has_lobs
+    hasLobs
+    lobs
 */
 
 function getReportHasLobs(report) {
   return parseBooleanLike(
     report?.hasLobs ??
       report?.responses?.had_lobs ??
-      report?.responses?.hasLobs ??
       report?.responses?.has_lobs ??
+      report?.responses?.hasLobs ??
       report?.responses?.lobs
   );
 }
 
+/*
+  ---------------------------------------------------------
+  LOB BAG COUNT
+  ---------------------------------------------------------
+
+  Supported formats:
+
+  Top level:
+    lobBags
+    lobBagCount
+
+  responses:
+    lob_bags
+    lob_total_bags
+    lobBagCount
+    lob_bag_count
+    lobBags
+*/
+
 function getReportLobBagCount(report) {
   return toSafeNumber(
-    report?.lobBagCount ??
+    report?.lobBags ??
+      report?.lobBagCount ??
+      report?.responses?.lob_bags ??
       report?.responses?.lob_total_bags ??
       report?.responses?.lobBagCount ??
       report?.responses?.lob_bag_count ??
-      report?.responses?.lobBags ??
-      report?.responses?.lob_bags
+      report?.responses?.lobBags
   );
 }
+
+/*
+  ---------------------------------------------------------
+  LOB AGENTS USED
+  ---------------------------------------------------------
+*/
 
 function getReportLobAgentsUsed(report) {
   return toSafeNumber(
@@ -362,6 +393,12 @@ function getReportLobAgentsUsed(report) {
   );
 }
 
+/*
+  ---------------------------------------------------------
+  LOB SUPERVISORS USED
+  ---------------------------------------------------------
+*/
+
 function getReportLobSupervisorsUsed(report) {
   return toSafeNumber(
     report?.lobSupervisorsUsed ??
@@ -371,7 +408,45 @@ function getReportLobSupervisorsUsed(report) {
   );
 }
 
-/* =========================================================
+/*
+  ---------------------------------------------------------
+  NORMALIZED LOB DATA
+  ---------------------------------------------------------
+
+  THIS FUNCTION IS IMPORTANT.
+
+  The page uses getLobData() when:
+
+  - Operational Reports are loaded
+  - A report is edited
+  - The Operational Reports table is rendered
+  - LOB details are displayed
+  - Management summaries are generated
+
+  Previously the page called getLobData(), but the function
+  itself was missing.
+*/
+
+function getLobData(report) {
+  const hasLobs =
+    getReportHasLobs(report);
+
+  const bags =
+    getReportLobBagCount(report);
+
+  const agents =
+    getReportLobAgentsUsed(report);
+
+  const supervisors =
+    getReportLobSupervisorsUsed(report);
+
+  return {
+    hasLobs,
+    bags,
+    agents,
+    supervisors,
+  };
+}/* =========================================================
    LOB TIME CALCULATION
 ========================================================= */
 
