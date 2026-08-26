@@ -1438,9 +1438,60 @@ export default function WeeklyEmployeesSummaryPage() {
     cabinWeeklyTotals.scheduled;
 
   // ==========================================================
-  // STATION TOTALS
+  // CABIN SERVICE DAILY TOTALS
+  // ==========================================================
+  //
+  // These totals are calculated exclusively from the
+  // Cabin Service department data already loaded into
+  // employeeWeeklyData.
+  //
+  // Assigned hours come from:
+  // cabinSchedules + cabinScheduleSlots
+  //
+  // Worked hours come from:
+  // approved timesheet reports
+  //
   // ==========================================================
 
+  const cabinDailyTotals = useMemo(() => {
+    return DAY_KEYS.reduce((totals, dayKey) => {
+      let scheduled = 0;
+      let actual = 0;
+
+      employeeWeeklyData.forEach((employee) => {
+        const dayData = employee?.days?.[dayKey];
+
+        if (!dayData) {
+          return;
+        }
+
+        scheduled +=
+          Number(
+            dayData?.scheduledByDepartment?.[
+              CABIN_DEPARTMENT
+            ] || 0
+          );
+
+        actual +=
+          Number(
+            dayData?.actualByDepartment?.[
+              CABIN_DEPARTMENT
+            ] || 0
+          );
+      });
+
+      totals[dayKey] = {
+        scheduled,
+        actual,
+      };
+
+      return totals;
+    }, {});
+  }, [employeeWeeklyData]);
+
+  // ==========================================================
+  // STATION TOTALS
+  // ==========================================================
   const stationScheduledTotal = useMemo(
     () =>
       employeeWeeklyData.reduce(
