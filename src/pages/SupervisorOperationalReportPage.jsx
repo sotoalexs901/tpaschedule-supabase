@@ -1,3 +1,5 @@
+// src/pages/SupervisorOperationalReportPage.jsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
@@ -72,8 +74,14 @@ function buildInitialResponses(fields) {
 }
 
 function shouldRequireAttentionFromResponses(responses) {
-  const operationStatus = String(responses?.operation_status || "").toLowerCase();
-  const safetyConcern = String(responses?.safety_concern || "").toLowerCase();
+  const operationStatus = String(
+    responses?.operation_status || ""
+  ).toLowerCase();
+
+  const safetyConcern = String(
+    responses?.safety_concern || ""
+  ).toLowerCase();
+
   const delayedFlight =
     String(responses?.delayed_flight || "").toLowerCase() === "yes" ||
     String(responses?.delayed_flight_impact || "").toLowerCase() === "yes" ||
@@ -201,6 +209,7 @@ function ActionButton({
       border: "none",
       boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
     },
+
     secondary: {
       background: "#ffffff",
       color: "#1769aa",
@@ -257,6 +266,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 1,
   },
+
   {
     key: "general_comments",
     label: "General Comments",
@@ -266,6 +276,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 2,
   },
+
   {
     key: "issue_types",
     label: "Issue Types (select all that apply)",
@@ -285,6 +296,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 3,
   },
+
   {
     key: "issue_details",
     label: "Issue Details",
@@ -294,6 +306,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 4,
   },
+
   {
     key: "action_taken",
     label: "Action Taken",
@@ -303,6 +316,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 5,
   },
+
   {
     key: "issue_status",
     label: "Status",
@@ -312,6 +326,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 6,
   },
+
   {
     key: "ohd_bags_managed",
     label: "OHD Bags Managed",
@@ -321,6 +336,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 7,
   },
+
   {
     key: "delayed_file",
     label: "Delayed File",
@@ -330,6 +346,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 8,
   },
+
   {
     key: "damage_file",
     label: "Damage File",
@@ -339,6 +356,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 9,
   },
+
   {
     key: "bdos",
     label: "BDOs",
@@ -348,6 +366,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 10,
   },
+
   {
     key: "total_bags_processed",
     label: "Total Bags Processed",
@@ -357,6 +376,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 11,
   },
+
   {
     key: "ohd_bags_follow_up_actions",
     label: "OHD Bags Follow-up Actions",
@@ -366,6 +386,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 12,
   },
+
   {
     key: "pending_responsible",
     label: "Pending Responsible",
@@ -375,6 +396,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 13,
   },
+
   {
     key: "ramp_scan",
     label: "Ramp Scan",
@@ -384,6 +406,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 14,
   },
+
   {
     key: "pending_target_day",
     label: "Pending Target Day",
@@ -393,15 +416,24 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 15,
   },
+
   {
     key: "exception_type",
     label: "Exception Type",
     type: "checkbox-group",
     required: false,
-    options: ["N/A", "Operational", "Staffing", "Safety", "Baggage", "Other"],
+    options: [
+      "N/A",
+      "Operational",
+      "Staffing",
+      "Safety",
+      "Baggage",
+      "Other",
+    ],
     active: true,
     order: 16,
   },
+
   {
     key: "exception_description",
     label: "Exception Description",
@@ -411,6 +443,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 17,
   },
+
   {
     key: "exception_reason",
     label: "Exception Reason",
@@ -420,6 +453,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 18,
   },
+
   {
     key: "reported_to",
     label: "Reported To",
@@ -429,15 +463,23 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 19,
   },
+
   {
     key: "staffing_status",
     label: "Staffing Status",
     type: "checkbox-group",
     required: false,
-    options: ["Full staffing", "Short staffed", "Overtime needed", "Call out", "Other"],
+    options: [
+      "Full staffing",
+      "Short staffed",
+      "Overtime needed",
+      "Call out",
+      "Other",
+    ],
     active: true,
     order: 20,
   },
+
   {
     key: "staffing_remarks",
     label: "Staffing Remarks",
@@ -447,6 +489,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 21,
   },
+
   {
     key: "employee_breaks",
     label: "Employee Breaks",
@@ -459,6 +502,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 22,
   },
+
   {
     key: "employees_no_break_taken",
     label: "Names of Employees / No Break Taken",
@@ -468,6 +512,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 23,
   },
+
   {
     key: "final_remarks_recommendations",
     label: "Final Remarks / Recommendations",
@@ -477,6 +522,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 24,
   },
+
   {
     key: "safety_concern",
     label: "Safety Concerns",
@@ -486,6 +532,7 @@ const BAGGAGE_FIELDS = [
     active: true,
     order: 25,
   },
+
   {
     key: "additional_comments",
     label: "Additional Comments",
@@ -496,7 +543,6 @@ const BAGGAGE_FIELDS = [
     order: 26,
   },
 ];
-
 const WCHR_FIELDS = [
   {
     key: "operation_status",
@@ -601,7 +647,8 @@ const WCHR_FIELDS = [
   },
   {
     key: "arrivals_picked_up_without_delay",
-    label: "Were arriving passengers picked up from the aircraft without delay?",
+    label:
+      "Were arriving passengers picked up from the aircraft without delay?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
@@ -628,7 +675,8 @@ const WCHR_FIELDS = [
   },
   {
     key: "proper_handoffs_completed",
-    label: "Were proper handoffs completed (gate / aircraft / arrivals area)?",
+    label:
+      "Were proper handoffs completed (gate / aircraft / arrivals area)?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
@@ -685,7 +733,13 @@ const WCHR_FIELDS = [
     label: "Staffing Status",
     type: "checkbox-group",
     required: false,
-    options: ["Fully staffed", "Short staffed", "Overtime required", "Call out(s)", "Other"],
+    options: [
+      "Fully staffed",
+      "Short staffed",
+      "Overtime required",
+      "Call out(s)",
+      "Other",
+    ],
     active: true,
     order: 19,
   },
@@ -854,7 +908,8 @@ const CABIN_SERVICE_FIELDS = [
   },
   {
     key: "seat_checks_completed_all",
-    label: "Were seats, seat pockets, and tray tables checked on all flights serviced?",
+    label:
+      "Were seats, seat pockets, and tray tables checked on all flights serviced?",
     type: "yesno",
     required: false,
     options: ["Yes", "No"],
@@ -947,7 +1002,13 @@ const CABIN_SERVICE_FIELDS = [
     label: "Staffing Status",
     type: "checkbox-group",
     required: false,
-    options: ["Fully staffed", "Short staffed", "Overtime required", "Call out(s)", "Other"],
+    options: [
+      "Fully staffed",
+      "Short staffed",
+      "Overtime required",
+      "Call out(s)",
+      "Other",
+    ],
     active: true,
     order: 17,
   },
@@ -979,7 +1040,6 @@ const CABIN_SERVICE_FIELDS = [
     order: 20,
   },
 ];
-
 const PASSENGER_SERVICE_FIELDS = [
   {
     key: "operation_status",
@@ -1161,7 +1221,13 @@ const PASSENGER_SERVICE_FIELDS = [
     label: "Staffing Status",
     type: "checkbox-group",
     required: false,
-    options: ["Fully staffed", "Short staffed", "Overtime required", "Call out(s)", "Other"],
+    options: [
+      "Fully staffed",
+      "Short staffed",
+      "Overtime required",
+      "Call out(s)",
+      "Other",
+    ],
     active: true,
     order: 20,
   },
@@ -1194,6 +1260,7 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     fields: BAGGAGE_FIELDS,
     hideFlightNumber: false,
   },
+
   wchr: {
     key: "wchr",
     label: "WCHR Service",
@@ -1202,6 +1269,7 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     fields: WCHR_FIELDS,
     hideFlightNumber: false,
   },
+
   cabin_service: {
     key: "cabin_service",
     label: "Cabin Service",
@@ -1210,6 +1278,7 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     fields: CABIN_SERVICE_FIELDS,
     hideFlightNumber: true,
   },
+
   passenger_service: {
     key: "passenger_service",
     label: "Passenger Service",
@@ -1241,22 +1310,48 @@ export default function SupervisorOperationalReportPage() {
 
   const [form, setForm] = useState({
     templateKey: defaultTemplateKey,
+
     airline:
       OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.airlineDefault || "",
+
     reportDate: "",
+
     department:
       OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.department || "",
+
     shift: "",
     flightNumber: "",
     flightsHandled: "",
+
     supervisorReporting: getVisibleName(user),
-    supervisorPosition: user?.position || getDefaultPosition(user?.role),
+
+    supervisorPosition:
+      user?.position || getDefaultPosition(user?.role),
+
     notes: "",
+
     delayedFlight: false,
     delayedTimeMinutes: "",
     delayedReason: "",
     delayedCodeReported: "",
+
+    // =========================================================
+    // LOBS
+    // =========================================================
+    // The supervisor only indicates whether the flight had LOBs.
+    // If Yes is selected, the additional LOB fields will appear.
+    //
+    // Management will later calculate labor hours using the
+    // configurable LOB formula. We intentionally do NOT calculate
+    // labor hours in the supervisor report.
+    // =========================================================
+    hasLobs: false,
+    lobBagCount: "",
+    lobAgentsUsed: "",
+    lobSupervisorsUsed: "",
+
     needsAttention: false,
+
     responses: buildInitialResponses(
       OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.fields || []
     ),
@@ -1276,12 +1371,18 @@ export default function SupervisorOperationalReportPage() {
   useEffect(() => {
     setForm((prev) => ({
       ...prev,
+
       department: activeTemplate.department,
+
       airline:
         prev.templateKey === form.templateKey
           ? prev.airline
           : activeTemplate.airlineDefault || "",
-      flightNumber: activeTemplate.hideFlightNumber ? "" : prev.flightNumber,
+
+      flightNumber: activeTemplate.hideFlightNumber
+        ? ""
+        : prev.flightNumber,
+
       responses: buildInitialResponses(activeTemplate.fields || []),
     }));
   }, [activeTemplate, form.templateKey]);
@@ -1291,7 +1392,10 @@ export default function SupervisorOperationalReportPage() {
   }, [form.responses]);
 
   const finalNeedsAttention = useMemo(() => {
-    return Boolean(form.needsAttention || computedNeedsAttention);
+    return Boolean(
+      form.needsAttention ||
+      computedNeedsAttention
+    );
   }, [form.needsAttention, computedNeedsAttention]);
 
   const handleFormChange = (field, value) => {
@@ -1302,12 +1406,48 @@ export default function SupervisorOperationalReportPage() {
 
       setForm((prev) => ({
         ...prev,
+
         templateKey: nextTemplate.key,
+
         department: nextTemplate.department,
+
         airline: nextTemplate.airlineDefault || "",
-        flightNumber: nextTemplate.hideFlightNumber ? "" : prev.flightNumber,
+
+        flightNumber: nextTemplate.hideFlightNumber
+          ? ""
+          : prev.flightNumber,
+
         responses: buildInitialResponses(nextTemplate.fields || []),
       }));
+
+      return;
+    }
+
+    // =========================================================
+    // LOBS RESET
+    // =========================================================
+    // When the supervisor changes LOBs from Yes to No, remove
+    // any previously entered bag/staffing values so old values
+    // cannot accidentally be submitted.
+    // =========================================================
+    if (field === "hasLobs") {
+      setForm((prev) => ({
+        ...prev,
+        hasLobs: Boolean(value),
+
+        lobBagCount: value
+          ? prev.lobBagCount
+          : "",
+
+        lobAgentsUsed: value
+          ? prev.lobAgentsUsed
+          : "",
+
+        lobSupervisorsUsed: value
+          ? prev.lobSupervisorsUsed
+          : "",
+      }));
+
       return;
     }
 
@@ -1316,6 +1456,7 @@ export default function SupervisorOperationalReportPage() {
         ...prev,
         department: "Cabin Service",
       }));
+
       return;
     }
 
@@ -1328,6 +1469,7 @@ export default function SupervisorOperationalReportPage() {
   const handleResponseChange = (key, value) => {
     setForm((prev) => ({
       ...prev,
+
       responses: {
         ...(prev.responses || {}),
         [key]: value,
@@ -1335,15 +1477,23 @@ export default function SupervisorOperationalReportPage() {
     }));
   };
 
-  const handleCheckboxGroupChange = (key, option, checked) => {
+  const handleCheckboxGroupChange = (
+    key,
+    option,
+    checked
+  ) => {
     setForm((prev) => {
-      const current = Array.isArray(prev.responses?.[key]) ? prev.responses[key] : [];
+      const current = Array.isArray(prev.responses?.[key])
+        ? prev.responses[key]
+        : [];
+
       const next = checked
         ? [...current, option]
         : current.filter((item) => item !== option);
 
       return {
         ...prev,
+
         responses: {
           ...(prev.responses || {}),
           [key]: next,
@@ -1351,8 +1501,7 @@ export default function SupervisorOperationalReportPage() {
       };
     });
   };
-
-  const validateRequiredFields = () => {
+    const validateRequiredFields = () => {
     if (!form.airline) {
       setStatusMessage("Please select the reporting airline.");
       return false;
@@ -1370,31 +1519,101 @@ export default function SupervisorOperationalReportPage() {
 
       if (field.type === "checkbox-group") {
         if (!Array.isArray(value) || value.length === 0) {
-          setStatusMessage(`Please complete the required field: ${field.label}.`);
+          setStatusMessage(
+            `Please complete the required field: ${field.label}.`
+          );
           return false;
         }
+
         continue;
       }
 
       if (String(value ?? "").trim() === "") {
-        setStatusMessage(`Please complete the required field: ${field.label}.`);
+        setStatusMessage(
+          `Please complete the required field: ${field.label}.`
+        );
         return false;
       }
     }
 
+    // =========================================================
+    // LOBS VALIDATION
+    // =========================================================
+    // When LOBs = Yes, the supervisor must provide:
+    // 1. Total LOB bags
+    // 2. Number of agents used
+    // 3. Number of supervisors used
+    // =========================================================
+
+    if (form.hasLobs) {
+      const lobBagCount = Number(form.lobBagCount);
+      const lobAgentsUsed = Number(form.lobAgentsUsed);
+      const lobSupervisorsUsed = Number(form.lobSupervisorsUsed);
+
+      if (
+        String(form.lobBagCount ?? "").trim() === "" ||
+        !Number.isFinite(lobBagCount) ||
+        lobBagCount <= 0
+      ) {
+        setStatusMessage(
+          "Please enter a valid total number of LOB bags."
+        );
+        return false;
+      }
+
+      if (
+        String(form.lobAgentsUsed ?? "").trim() === "" ||
+        !Number.isFinite(lobAgentsUsed) ||
+        lobAgentsUsed < 0
+      ) {
+        setStatusMessage(
+          "Please enter the number of agents used for LOBs."
+        );
+        return false;
+      }
+
+      if (
+        String(form.lobSupervisorsUsed ?? "").trim() === "" ||
+        !Number.isFinite(lobSupervisorsUsed) ||
+        lobSupervisorsUsed < 0
+      ) {
+        setStatusMessage(
+          "Please enter the number of supervisors used for LOBs."
+        );
+        return false;
+      }
+
+      if (lobAgentsUsed === 0 && lobSupervisorsUsed === 0) {
+        setStatusMessage(
+          "Please enter at least one agent or supervisor used for the LOB operation."
+        );
+        return false;
+      }
+    }
+
+    // =========================================================
+    // DELAY VALIDATION
+    // =========================================================
+
     if (form.delayedFlight) {
       if (!String(form.delayedTimeMinutes || "").trim()) {
-        setStatusMessage("Please enter the delayed time in minutes.");
+        setStatusMessage(
+          "Please enter the delayed time in minutes."
+        );
         return false;
       }
 
       if (!String(form.delayedReason || "").trim()) {
-        setStatusMessage("Please enter the delayed reason.");
+        setStatusMessage(
+          "Please enter the delayed reason."
+        );
         return false;
       }
 
       if (!String(form.delayedCodeReported || "").trim()) {
-        setStatusMessage("Please enter the delayed code reported to the airline.");
+        setStatusMessage(
+          "Please enter the delayed code reported to the airline."
+        );
         return false;
       }
     }
@@ -1413,71 +1632,197 @@ export default function SupervisorOperationalReportPage() {
       const payload = {
         templateKey: activeTemplate.key,
         templateLabel: activeTemplate.label,
+
         airline: normalizeAirlineName(form.airline),
+
         reportDate: form.reportDate,
-        department: String(form.department || "").trim(),
-        shift: String(form.shift || "").trim(),
+
+        department: String(
+          form.department || ""
+        ).trim(),
+
+        shift: String(
+          form.shift || ""
+        ).trim(),
+
         flightNumber: activeTemplate.hideFlightNumber
           ? ""
           : String(form.flightNumber || "").trim(),
-        flightsHandled: String(form.flightsHandled || "").trim(),
+
+        flightsHandled: String(
+          form.flightsHandled || ""
+        ).trim(),
+
         supervisorReporting:
-          String(form.supervisorReporting || "").trim() || getVisibleName(user),
+          String(form.supervisorReporting || "").trim() ||
+          getVisibleName(user),
+
         supervisorPosition:
           String(form.supervisorPosition || "").trim() ||
           user?.position ||
           getDefaultPosition(user?.role),
-        notes: String(form.notes || "").trim(),
-        delayedFlight: Boolean(form.delayedFlight),
+
+        notes: String(
+          form.notes || ""
+        ).trim(),
+
+        // =====================================================
+        // DELAY INFORMATION
+        // =====================================================
+
+        delayedFlight: Boolean(
+          form.delayedFlight
+        ),
+
         delayedTimeMinutes: form.delayedFlight
           ? Number(form.delayedTimeMinutes || 0)
           : 0,
+
         delayedReason: form.delayedFlight
           ? String(form.delayedReason || "").trim()
           : "",
+
         delayedCodeReported: form.delayedFlight
           ? String(form.delayedCodeReported || "").trim()
           : "",
+
+        // =====================================================
+        // LOBS INFORMATION
+        // =====================================================
+        //
+        // IMPORTANT:
+        // We save the raw operational information only.
+        //
+        // Labor hours are NOT calculated here.
+        // Operational Report Management will calculate those
+        // hours based on the configurable LOB labor formula.
+        //
+        // Example:
+        //
+        // 80 bags
+        // 4 agents
+        // 1 supervisor
+        //
+        // If Management defines 80 bags = 3 hours:
+        //
+        // Agent Hours = 4 x 3 = 12
+        // Supervisor Hours = 1 x 3 = 3
+        // Total Labor = 15
+        //
+        // =====================================================
+
+        hasLobs: Boolean(form.hasLobs),
+
+        lobBagCount: form.hasLobs
+          ? Number(form.lobBagCount || 0)
+          : 0,
+
+        lobAgentsUsed: form.hasLobs
+          ? Number(form.lobAgentsUsed || 0)
+          : 0,
+
+        lobSupervisorsUsed: form.hasLobs
+          ? Number(form.lobSupervisorsUsed || 0)
+          : 0,
+
         needsAttention: finalNeedsAttention,
+
         responses: form.responses || {},
-        submittedByUserId: user?.id || "",
-        submittedByUsername: user?.username || "",
-        submittedByName: getVisibleName(user),
-        submittedByRole: user?.role || "",
-        createdAt: serverTimestamp(),
+
+        submittedByUserId:
+          user?.id || "",
+
+        submittedByUsername:
+          user?.username || "",
+
+        submittedByName:
+          getVisibleName(user),
+
+        submittedByRole:
+          user?.role || "",
+
+        createdAt:
+          serverTimestamp(),
+
         status: "submitted",
+
         reviewStatus: "submitted",
       };
 
-      await addDoc(collection(db, "operational_reports"), payload);
+      await addDoc(
+        collection(db, "operational_reports"),
+        payload
+      );
 
-      setStatusMessage("Operational report submitted successfully.");
+      setStatusMessage(
+        "Operational report submitted successfully."
+      );
+
+      // =========================================================
+      // RESET FORM AFTER SUCCESSFUL SUBMISSION
+      // =========================================================
 
       setForm({
         templateKey: defaultTemplateKey,
+
         airline:
-          OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.airlineDefault || "",
+          OPERATIONAL_REPORT_TEMPLATES[
+            defaultTemplateKey
+          ]?.airlineDefault || "",
+
         reportDate: "",
+
         department:
-          OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.department || "",
+          OPERATIONAL_REPORT_TEMPLATES[
+            defaultTemplateKey
+          ]?.department || "",
+
         shift: "",
+
         flightNumber: "",
+
         flightsHandled: "",
-        supervisorReporting: getVisibleName(user),
-        supervisorPosition: user?.position || getDefaultPosition(user?.role),
+
+        supervisorReporting:
+          getVisibleName(user),
+
+        supervisorPosition:
+          user?.position ||
+          getDefaultPosition(user?.role),
+
         notes: "",
+
         delayedFlight: false,
+
         delayedTimeMinutes: "",
+
         delayedReason: "",
+
         delayedCodeReported: "",
+
+        // Reset LOB information
+        hasLobs: false,
+        lobBagCount: "",
+        lobAgentsUsed: "",
+        lobSupervisorsUsed: "",
+
         needsAttention: false,
+
         responses: buildInitialResponses(
-          OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.fields || []
+          OPERATIONAL_REPORT_TEMPLATES[
+            defaultTemplateKey
+          ]?.fields || []
         ),
       });
     } catch (err) {
-      console.error("Error saving operational report:", err);
-      setStatusMessage("Could not submit operational report.");
+      console.error(
+        "Error saving operational report:",
+        err
+      );
+
+      setStatusMessage(
+        "Could not submit operational report."
+      );
     } finally {
       setSaving(false);
     }
@@ -1485,7 +1830,14 @@ export default function SupervisorOperationalReportPage() {
 
   if (!canAccess) {
     return (
-      <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+      <div
+        style={{
+          display: "grid",
+          gap: 18,
+          fontFamily:
+            "Poppins, Inter, system-ui, sans-serif",
+        }}
+      >
         <div
           style={{
             background:
@@ -1493,7 +1845,8 @@ export default function SupervisorOperationalReportPage() {
             borderRadius: 28,
             padding: 24,
             color: "#fff",
-            boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+            boxShadow:
+              "0 24px 60px rgba(23,105,170,0.22)",
           }}
         >
           <p
@@ -1502,12 +1855,14 @@ export default function SupervisorOperationalReportPage() {
               fontSize: 12,
               textTransform: "uppercase",
               letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
+              color:
+                "rgba(255,255,255,0.78)",
               fontWeight: 700,
             }}
           >
             TPA OPS · Operational Reports
           </p>
+
           <h1
             style={{
               margin: "10px 0 6px",
@@ -1519,15 +1874,18 @@ export default function SupervisorOperationalReportPage() {
           >
             Access denied
           </h1>
+
           <p
             style={{
               margin: 0,
               maxWidth: 700,
               fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
+              color:
+                "rgba(255,255,255,0.88)",
             }}
           >
-            You do not have permission to submit operational reports.
+            You do not have permission to submit
+            operational reports.
           </p>
         </div>
       </div>
@@ -1535,7 +1893,14 @@ export default function SupervisorOperationalReportPage() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+    <div
+      style={{
+        display: "grid",
+        gap: 18,
+        fontFamily:
+          "Poppins, Inter, system-ui, sans-serif",
+      }}
+    >
       <div
         style={{
           background:
@@ -1543,7 +1908,8 @@ export default function SupervisorOperationalReportPage() {
           borderRadius: 28,
           padding: 24,
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow:
+            "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -1554,7 +1920,8 @@ export default function SupervisorOperationalReportPage() {
             width: 220,
             height: 220,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
+            background:
+              "rgba(255,255,255,0.08)",
             top: -80,
             right: -40,
           }}
@@ -1564,7 +1931,8 @@ export default function SupervisorOperationalReportPage() {
           style={{
             position: "relative",
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             alignItems: "flex-start",
             gap: 16,
             flexWrap: "wrap",
@@ -1575,9 +1943,12 @@ export default function SupervisorOperationalReportPage() {
               style={{
                 margin: 0,
                 fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.78)",
+                textTransform:
+                  "uppercase",
+                letterSpacing:
+                  "0.22em",
+                color:
+                  "rgba(255,255,255,0.78)",
                 fontWeight: 700,
               }}
             >
@@ -1586,11 +1957,13 @@ export default function SupervisorOperationalReportPage() {
 
             <h1
               style={{
-                margin: "10px 0 6px",
+                margin:
+                  "10px 0 6px",
                 fontSize: 32,
                 lineHeight: 1.05,
                 fontWeight: 800,
-                letterSpacing: "-0.04em",
+                letterSpacing:
+                  "-0.04em",
               }}
             >
               Submit Operational Report
@@ -1601,24 +1974,29 @@ export default function SupervisorOperationalReportPage() {
                 margin: 0,
                 maxWidth: 760,
                 fontSize: 14,
-                color: "rgba(255,255,255,0.88)",
+                color:
+                  "rgba(255,255,255,0.88)",
               }}
             >
-              Submit the operational report by department. Questions change automatically based on the selected operational area.
+              Submit the operational report by
+              department. Questions change
+              automatically based on the selected
+              operational area.
             </p>
           </div>
 
           <ActionButton
             type="button"
             variant="secondary"
-            onClick={() => navigate("/dashboard")}
+            onClick={() =>
+              navigate("/dashboard")
+            }
           >
             ← Back to Dashboard
           </ActionButton>
         </div>
       </div>
-
-      {statusMessage && (
+            {statusMessage && (
         <PageCard style={{ padding: 16 }}>
           <div
             style={{
@@ -1636,6 +2014,10 @@ export default function SupervisorOperationalReportPage() {
         </PageCard>
       )}
 
+      {/* ===================================================== */}
+      {/* REPORT HEADER                                         */}
+      {/* ===================================================== */}
+
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
           <h2
@@ -1649,6 +2031,7 @@ export default function SupervisorOperationalReportPage() {
           >
             Report Header
           </h2>
+
           <p
             style={{
               margin: "4px 0 0",
@@ -1663,32 +2046,62 @@ export default function SupervisorOperationalReportPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(240px, 1fr))",
             gap: 14,
           }}
         >
           <div>
             <FieldLabel>Department / Report Type</FieldLabel>
+
             <SelectInput
               value={form.templateKey}
-              onChange={(e) => handleFormChange("templateKey", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "templateKey",
+                  e.target.value
+                )
+              }
             >
-              <option value="baggage">Baggage Handling</option>
-              <option value="wchr">WCHR Service</option>
-              <option value="cabin_service">Cabin Service</option>
-              <option value="passenger_service">Passenger Service</option>
+              <option value="baggage">
+                Baggage Handling
+              </option>
+
+              <option value="wchr">
+                WCHR Service
+              </option>
+
+              <option value="cabin_service">
+                Cabin Service
+              </option>
+
+              <option value="passenger_service">
+                Passenger Service
+              </option>
             </SelectInput>
           </div>
 
           <div>
             <FieldLabel>Reporting Airline</FieldLabel>
+
             <SelectInput
               value={form.airline}
-              onChange={(e) => handleFormChange("airline", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "airline",
+                  e.target.value
+                )
+              }
             >
-              <option value="">Select airline</option>
+              <option value="">
+                Select airline
+              </option>
+
               {AIRLINE_OPTIONS.map((airline) => (
-                <option key={airline.value} value={airline.value}>
+                <option
+                  key={airline.value}
+                  value={airline.value}
+                >
                   {airline.label}
                 </option>
               ))}
@@ -1697,27 +2110,45 @@ export default function SupervisorOperationalReportPage() {
 
           <div>
             <FieldLabel>Date</FieldLabel>
+
             <TextInput
               type="date"
               value={form.reportDate}
-              onChange={(e) => handleFormChange("reportDate", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "reportDate",
+                  e.target.value
+                )
+              }
             />
           </div>
 
           <div>
             <FieldLabel>Department</FieldLabel>
+
             <TextInput
               value={form.department}
-              onChange={(e) => handleFormChange("department", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "department",
+                  e.target.value
+                )
+              }
               disabled
             />
           </div>
 
           <div>
             <FieldLabel>Shift</FieldLabel>
+
             <TextInput
               value={form.shift}
-              onChange={(e) => handleFormChange("shift", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "shift",
+                  e.target.value
+                )
+              }
               placeholder="AM / PM / MID"
             />
           </div>
@@ -1725,10 +2156,16 @@ export default function SupervisorOperationalReportPage() {
           {!activeTemplate.hideFlightNumber && (
             <div>
               <FieldLabel>Flight Number</FieldLabel>
+
               <TextInput
                 value={form.flightNumber}
-                onChange={(e) => handleFormChange("flightNumber", e.target.value)}
-                placeholder="Example: DL1234"
+                onChange={(e) =>
+                  handleFormChange(
+                    "flightNumber",
+                    e.target.value
+                  )
+                }
+                placeholder="Example: WL294"
               />
             </div>
           )}
@@ -1739,24 +2176,313 @@ export default function SupervisorOperationalReportPage() {
                 ? "Flights Serviced"
                 : "Flights Handled"}
             </FieldLabel>
+
             <TextInput
               value={form.flightsHandled}
-              onChange={(e) => handleFormChange("flightsHandled", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "flightsHandled",
+                  e.target.value
+                )
+              }
               placeholder="Example: 4"
             />
           </div>
 
           <div>
             <FieldLabel>Supervisor (Name)</FieldLabel>
+
             <TextInput
               value={form.supervisorReporting}
               onChange={(e) =>
-                handleFormChange("supervisorReporting", e.target.value)
+                handleFormChange(
+                  "supervisorReporting",
+                  e.target.value
+                )
               }
             />
           </div>
         </div>
       </PageCard>
+
+      {/* ===================================================== */}
+      {/* LOBS INFORMATION                                      */}
+      {/* ===================================================== */}
+
+      <PageCard style={{ padding: 22 }}>
+        <div style={{ marginBottom: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              LOBs Information
+            </h2>
+
+            {form.hasLobs && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  borderRadius: 999,
+                  padding: "5px 10px",
+                  background: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                  color: "#c2410c",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: "0.04em",
+                }}
+              >
+                LOBS REPORTED
+              </span>
+            )}
+          </div>
+
+          <p
+            style={{
+              margin: "5px 0 0",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            Report any Left On Board / left-behind baggage
+            requiring additional handling.
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: 14,
+          }}
+        >
+          {/* YES / NO QUESTION */}
+
+          <div>
+            <FieldLabel>
+              Did this flight have LOBs?
+            </FieldLabel>
+
+            <SelectInput
+              value={form.hasLobs ? "Yes" : "No"}
+              onChange={(e) => {
+                const hasLobs =
+                  e.target.value === "Yes";
+
+                setForm((prev) => ({
+                  ...prev,
+                  hasLobs,
+
+                  // If changed back to No,
+                  // remove the previously entered values.
+                  lobBagCount: hasLobs
+                    ? prev.lobBagCount
+                    : "",
+
+                  lobAgentsUsed: hasLobs
+                    ? prev.lobAgentsUsed
+                    : "",
+
+                  lobSupervisorsUsed: hasLobs
+                    ? prev.lobSupervisorsUsed
+                    : "",
+                }));
+              }}
+            >
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </SelectInput>
+          </div>
+
+          {/* ================================================= */}
+          {/* EXTRA FIELDS ONLY APPEAR WHEN LOBS = YES          */}
+          {/* ================================================= */}
+
+          {form.hasLobs && (
+            <>
+              <div>
+                <FieldLabel>
+                  Total LOB Bags *
+                </FieldLabel>
+
+                <TextInput
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={form.lobBagCount}
+                  onChange={(e) =>
+                    handleFormChange(
+                      "lobBagCount",
+                      e.target.value
+                    )
+                  }
+                  placeholder="Example: 80"
+                />
+              </div>
+
+              <div>
+                <FieldLabel>
+                  Agents Used *
+                </FieldLabel>
+
+                <TextInput
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  value={form.lobAgentsUsed}
+                  onChange={(e) =>
+                    handleFormChange(
+                      "lobAgentsUsed",
+                      e.target.value
+                    )
+                  }
+                  placeholder="Example: 4"
+                />
+              </div>
+
+              <div>
+                <FieldLabel>
+                  Supervisors Used *
+                </FieldLabel>
+
+                <TextInput
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  value={form.lobSupervisorsUsed}
+                  onChange={(e) =>
+                    handleFormChange(
+                      "lobSupervisorsUsed",
+                      e.target.value
+                    )
+                  }
+                  placeholder="Example: 1"
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* SUMMARY PREVIEW */}
+
+        {form.hasLobs && (
+          <div
+            style={{
+              marginTop: 18,
+              padding: 16,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                marginBottom: 8,
+              }}
+            >
+              LOB Summary
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 20,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#64748b",
+                  }}
+                >
+                  Bags
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                  }}
+                >
+                  {form.lobBagCount || "0"}
+                </div>
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#64748b",
+                  }}
+                >
+                  Agents
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                  }}
+                >
+                  {form.lobAgentsUsed || "0"}
+                </div>
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#64748b",
+                  }}
+                >
+                  Supervisors
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                  }}
+                >
+                  {form.lobSupervisorsUsed || "0"}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </PageCard>
+
+      {/* ===================================================== */}
+      {/* DELAY INFORMATION                                     */}
+      {/* ===================================================== */}
 
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
@@ -1776,43 +2502,73 @@ export default function SupervisorOperationalReportPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(240px, 1fr))",
             gap: 14,
           }}
         >
           <div>
             <FieldLabel>Delayed Flight</FieldLabel>
+
             <SelectInput
-              value={form.delayedFlight ? "Yes" : "No"}
+              value={
+                form.delayedFlight
+                  ? "Yes"
+                  : "No"
+              }
               onChange={(e) =>
-                handleFormChange("delayedFlight", e.target.value === "Yes")
+                handleFormChange(
+                  "delayedFlight",
+                  e.target.value === "Yes"
+                )
               }
             >
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
+              <option value="No">
+                No
+              </option>
+
+              <option value="Yes">
+                Yes
+              </option>
             </SelectInput>
           </div>
 
           {form.delayedFlight && (
             <>
               <div>
-                <FieldLabel>Delayed Time (minutes)</FieldLabel>
+                <FieldLabel>
+                  Delayed Time (minutes)
+                </FieldLabel>
+
                 <TextInput
                   type="number"
-                  value={form.delayedTimeMinutes}
+                  value={
+                    form.delayedTimeMinutes
+                  }
                   onChange={(e) =>
-                    handleFormChange("delayedTimeMinutes", e.target.value)
+                    handleFormChange(
+                      "delayedTimeMinutes",
+                      e.target.value
+                    )
                   }
                   placeholder="Example: 7"
                 />
               </div>
 
               <div>
-                <FieldLabel>Delayed Code Reported to the Airline</FieldLabel>
+                <FieldLabel>
+                  Delayed Code Reported to the Airline
+                </FieldLabel>
+
                 <TextInput
-                  value={form.delayedCodeReported}
+                  value={
+                    form.delayedCodeReported
+                  }
                   onChange={(e) =>
-                    handleFormChange("delayedCodeReported", e.target.value)
+                    handleFormChange(
+                      "delayedCodeReported",
+                      e.target.value
+                    )
                   }
                   placeholder="Example: MX / WX / OPS"
                 />
@@ -1823,15 +2579,26 @@ export default function SupervisorOperationalReportPage() {
 
         {form.delayedFlight && (
           <div style={{ marginTop: 14 }}>
-            <FieldLabel>Delayed Reason</FieldLabel>
+            <FieldLabel>
+              Delayed Reason
+            </FieldLabel>
+
             <TextArea
               value={form.delayedReason}
-              onChange={(e) => handleFormChange("delayedReason", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "delayedReason",
+                  e.target.value
+                )
+              }
               placeholder="Explain the delayed reason"
             />
           </div>
         )}
       </PageCard>
+            {/* ===================================================== */}
+      {/* DYNAMIC OPERATIONAL QUESTIONS                         */}
+      {/* ===================================================== */}
 
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 16 }}>
@@ -1846,6 +2613,7 @@ export default function SupervisorOperationalReportPage() {
           >
             {activeTemplate.label} Questions
           </h2>
+
           <p
             style={{
               margin: "4px 0 0",
@@ -1861,21 +2629,33 @@ export default function SupervisorOperationalReportPage() {
           {dynamicFields.map((field) => {
             const value = form.responses?.[field.key];
 
+            /* =============================================== */
+            /* TEXTAREA                                        */
+            /* =============================================== */
+
             if (field.type === "textarea") {
               return (
                 <div key={field.key}>
                   <FieldLabel>
                     {field.label} {field.required ? "*" : ""}
                   </FieldLabel>
+
                   <TextArea
                     value={String(value || "")}
                     onChange={(e) =>
-                      handleResponseChange(field.key, e.target.value)
+                      handleResponseChange(
+                        field.key,
+                        e.target.value
+                      )
                     }
                   />
                 </div>
               );
             }
+
+            /* =============================================== */
+            /* SELECT                                          */
+            /* =============================================== */
 
             if (field.type === "select") {
               return (
@@ -1883,22 +2663,38 @@ export default function SupervisorOperationalReportPage() {
                   <FieldLabel>
                     {field.label} {field.required ? "*" : ""}
                   </FieldLabel>
+
                   <SelectInput
                     value={String(value || "")}
                     onChange={(e) =>
-                      handleResponseChange(field.key, e.target.value)
+                      handleResponseChange(
+                        field.key,
+                        e.target.value
+                      )
                     }
                   >
-                    <option value="">Select option</option>
-                    {(field.options || []).map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
+                    <option value="">
+                      Select option
+                    </option>
+
+                    {(field.options || []).map(
+                      (option) => (
+                        <option
+                          key={option}
+                          value={option}
+                        >
+                          {option}
+                        </option>
+                      )
+                    )}
                   </SelectInput>
                 </div>
               );
             }
+
+            /* =============================================== */
+            /* YES / NO                                        */
+            /* =============================================== */
 
             if (field.type === "yesno") {
               return (
@@ -1906,28 +2702,47 @@ export default function SupervisorOperationalReportPage() {
                   <FieldLabel>
                     {field.label} {field.required ? "*" : ""}
                   </FieldLabel>
+
                   <SelectInput
                     value={String(value || "")}
                     onChange={(e) =>
-                      handleResponseChange(field.key, e.target.value)
+                      handleResponseChange(
+                        field.key,
+                        e.target.value
+                      )
                     }
                   >
-                    <option value="">Select option</option>
-                    <option value="Yes">Yes</option>
-                    <option value="No">No</option>
+                    <option value="">
+                      Select option
+                    </option>
+
+                    <option value="Yes">
+                      Yes
+                    </option>
+
+                    <option value="No">
+                      No
+                    </option>
                   </SelectInput>
                 </div>
               );
             }
 
+            /* =============================================== */
+            /* CHECKBOX GROUP                                  */
+            /* =============================================== */
+
             if (field.type === "checkbox-group") {
-              const selected = Array.isArray(value) ? value : [];
+              const selected = Array.isArray(value)
+                ? value
+                : [];
 
               return (
                 <div key={field.key}>
                   <FieldLabel>
                     {field.label} {field.required ? "*" : ""}
                   </FieldLabel>
+
                   <div
                     style={{
                       display: "grid",
@@ -1938,45 +2753,58 @@ export default function SupervisorOperationalReportPage() {
                       padding: 14,
                     }}
                   >
-                    {(field.options || []).map((option) => (
-                      <label
-                        key={option}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          color: "#0f172a",
-                          fontWeight: 600,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(option)}
-                          onChange={(e) =>
-                            handleCheckboxGroupChange(
-                              field.key,
-                              option,
-                              e.target.checked
-                            )
-                          }
-                        />
-                        {option}
-                      </label>
-                    ))}
+                    {(field.options || []).map(
+                      (option) => (
+                        <label
+                          key={option}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            color: "#0f172a",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(
+                              option
+                            )}
+                            onChange={(e) =>
+                              handleCheckboxGroupChange(
+                                field.key,
+                                option,
+                                e.target.checked
+                              )
+                            }
+                          />
+
+                          {option}
+                        </label>
+                      )
+                    )}
                   </div>
                 </div>
               );
             }
+
+            /* =============================================== */
+            /* DEFAULT TEXT FIELD                              */
+            /* =============================================== */
 
             return (
               <div key={field.key}>
                 <FieldLabel>
                   {field.label} {field.required ? "*" : ""}
                 </FieldLabel>
+
                 <TextInput
                   value={String(value || "")}
                   onChange={(e) =>
-                    handleResponseChange(field.key, e.target.value)
+                    handleResponseChange(
+                      field.key,
+                      e.target.value
+                    )
                   }
                 />
               </div>
@@ -1984,6 +2812,10 @@ export default function SupervisorOperationalReportPage() {
           })}
         </div>
       </PageCard>
+
+      {/* ===================================================== */}
+      {/* NOTES AND ATTENTION                                   */}
+      {/* ===================================================== */}
 
       <PageCard style={{ padding: 22 }}>
         <div style={{ marginBottom: 14 }}>
@@ -2001,15 +2833,29 @@ export default function SupervisorOperationalReportPage() {
         </div>
 
         <div>
-          <FieldLabel>Notes</FieldLabel>
+          <FieldLabel>
+            Notes
+          </FieldLabel>
+
           <TextArea
             value={form.notes}
-            onChange={(e) => handleFormChange("notes", e.target.value)}
+            onChange={(e) =>
+              handleFormChange(
+                "notes",
+                e.target.value
+              )
+            }
             placeholder="Additional operational notes"
           />
         </div>
 
-        <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+        <div
+          style={{
+            marginTop: 14,
+            display: "grid",
+            gap: 10,
+          }}
+        >
           <label
             style={{
               display: "inline-flex",
@@ -2022,8 +2868,14 @@ export default function SupervisorOperationalReportPage() {
             <input
               type="checkbox"
               checked={form.needsAttention}
-              onChange={(e) => handleFormChange("needsAttention", e.target.checked)}
+              onChange={(e) =>
+                handleFormChange(
+                  "needsAttention",
+                  e.target.checked
+                )
+              }
             />
+
             Mark report as Needs Attention
           </label>
 
@@ -2039,11 +2891,94 @@ export default function SupervisorOperationalReportPage() {
                 fontSize: 14,
               }}
             >
-              Attention alert: this report will be flagged because the selected responses indicate an issue, delay, safety concern, or incomplete operation.
+              Attention alert: this report will be flagged because the
+              selected responses indicate an issue, delay, safety concern,
+              or incomplete operation.
             </div>
           )}
         </div>
       </PageCard>
+
+      {/* ===================================================== */}
+      {/* LOBS FINAL SUBMISSION REMINDER                        */}
+      {/* ===================================================== */}
+
+      {form.hasLobs && (
+        <PageCard
+          style={{
+            padding: 20,
+            border: "1px solid #fed7aa",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                display: "grid",
+                placeItems: "center",
+                background: "#fff7ed",
+                border: "1px solid #fed7aa",
+                fontSize: 18,
+                flexShrink: 0,
+              }}
+            >
+              🧳
+            </div>
+
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#9a3412",
+                }}
+              >
+                LOBs will be included in this report
+              </div>
+
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 13,
+                  color: "#64748b",
+                  lineHeight: 1.6,
+                }}
+              >
+                Flight{" "}
+                <strong>
+                  {form.flightNumber || "N/A"}
+                </strong>{" "}
+                is being reported with{" "}
+                <strong>
+                  {form.lobBagCount || "0"}
+                </strong>{" "}
+                LOB bags,{" "}
+                <strong>
+                  {form.lobAgentsUsed || "0"}
+                </strong>{" "}
+                agent(s), and{" "}
+                <strong>
+                  {form.lobSupervisorsUsed || "0"}
+                </strong>{" "}
+                supervisor(s).
+              </div>
+            </div>
+          </div>
+        </PageCard>
+      )}
+
+      {/* ===================================================== */}
+      {/* SUBMIT / CANCEL                                       */}
+      {/* ===================================================== */}
 
       <PageCard style={{ padding: 20 }}>
         <div
@@ -2058,12 +2993,17 @@ export default function SupervisorOperationalReportPage() {
             variant="primary"
             disabled={saving}
           >
-            {saving ? "Submitting..." : "Submit Operational Report"}
+            {saving
+              ? "Submitting..."
+              : "Submit Operational Report"}
           </ActionButton>
 
           <ActionButton
-            onClick={() => navigate("/dashboard")}
+            onClick={() =>
+              navigate("/dashboard")
+            }
             variant="secondary"
+            disabled={saving}
           >
             Cancel
           </ActionButton>
