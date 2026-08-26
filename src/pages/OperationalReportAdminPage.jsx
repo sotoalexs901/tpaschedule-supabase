@@ -86,7 +86,7 @@ function tsToDate(value) {
 function formatDateTime(value) {
   const d = tsToDate(value);
 
-  if (!d) return "—";
+  if (!d) return "â";
 
   return d.toLocaleString();
 }
@@ -258,7 +258,7 @@ function formatResponseValue(value) {
     return value ? "Yes" : "No";
   }
 
-  return String(value ?? "—");
+  return String(value ?? "â");
 }
 
 function getVisibleUserName(user) {
@@ -309,6 +309,35 @@ const DEFAULT_LOB_RULES = [
     hours: 4,
   },
 ];
+
+function normalizeLobRules(rules) {
+  const source = Array.isArray(rules) ? rules : [];
+
+  return source
+    .map((rule, index) => {
+      const minBags = Math.max(0, Number(rule?.minBags || 0));
+      const rawMax = rule?.maxBags;
+      const maxBags =
+        rawMax === null || rawMax === "" || typeof rawMax === "undefined"
+          ? null
+          : Math.max(0, Number(rawMax || 0));
+      const hours = Math.max(0, Number(rule?.hours || 0));
+
+      return {
+        id: rule?.id || `lob_${index + 1}`,
+        minBags,
+        maxBags,
+        hours,
+      };
+    })
+    .filter((rule) =>
+      Number.isFinite(rule.minBags) &&
+      Number.isFinite(rule.hours) &&
+      (rule.maxBags === null || Number.isFinite(rule.maxBags)) &&
+      (rule.maxBags === null || rule.maxBags >= rule.minBags)
+    )
+    .sort((a, b) => a.minBags - b.minBags);
+}
 
 function toSafeNumber(value) {
   const number = Number(value);
@@ -938,21 +967,21 @@ function buildPrintableHtml(report, lobRules = DEFAULT_LOB_RULES) {
     <div class="detail-box">
       <div class="detail-label">Manager Notes</div>
       <div class="detail-value">
-        ${escapeHtml(report.managerNotes || "—").replace(/\n/g, "<br/>")}
+        ${escapeHtml(report.managerNotes || "â").replace(/\n/g, "<br/>")}
       </div>
     </div>
 
     <div class="detail-box">
       <div class="detail-label">Follow Up Action</div>
       <div class="detail-value">
-        ${escapeHtml(report.followUpAction || "—").replace(/\n/g, "<br/>")}
+        ${escapeHtml(report.followUpAction || "â").replace(/\n/g, "<br/>")}
       </div>
     </div>
 
     <div class="detail-box">
       <div class="detail-label">Follow Up Details</div>
       <div class="detail-value">
-        ${escapeHtml(report.followUpDetails || "—").replace(/\n/g, "<br/>")}
+        ${escapeHtml(report.followUpDetails || "â").replace(/\n/g, "<br/>")}
       </div>
     </div>
   `;
@@ -1084,10 +1113,10 @@ function buildPrintableHtml(report, lobRules = DEFAULT_LOB_RULES) {
 
           <div class="subtitle">
             ${escapeHtml(getTemplateLabel(report))}
-            ·
-            ${escapeHtml(report.normalizedAirline || "—")}
-            ·
-            ${escapeHtml(report.reportDate || "—")}
+            Â·
+            ${escapeHtml(report.normalizedAirline || "â")}
+            Â·
+            ${escapeHtml(report.reportDate || "â")}
           </div>
         </div>
 
@@ -1095,7 +1124,7 @@ function buildPrintableHtml(report, lobRules = DEFAULT_LOB_RULES) {
           <div class="info-card">
             <div class="info-label">Department</div>
             <div class="info-value">
-              ${escapeHtml(report.department || "—")}
+              ${escapeHtml(report.department || "â")}
             </div>
           </div>
 
@@ -1109,21 +1138,21 @@ function buildPrintableHtml(report, lobRules = DEFAULT_LOB_RULES) {
           <div class="info-card">
             <div class="info-label">Airline</div>
             <div class="info-value">
-              ${escapeHtml(report.normalizedAirline || "—")}
+              ${escapeHtml(report.normalizedAirline || "â")}
             </div>
           </div>
 
           <div class="info-card">
             <div class="info-label">Report Date</div>
             <div class="info-value">
-              ${escapeHtml(report.reportDate || "—")}
+              ${escapeHtml(report.reportDate || "â")}
             </div>
           </div>
 
           <div class="info-card">
             <div class="info-label">Shift</div>
             <div class="info-value">
-              ${escapeHtml(report.shift || "—")}
+              ${escapeHtml(report.shift || "â")}
             </div>
           </div>
 
@@ -1136,21 +1165,21 @@ function buildPrintableHtml(report, lobRules = DEFAULT_LOB_RULES) {
               }
             </div>
             <div class="info-value">
-              ${escapeHtml(report.flightsHandled || "—")}
+              ${escapeHtml(report.flightsHandled || "â")}
             </div>
           </div>
 
           <div class="info-card">
             <div class="info-label">Flight Number</div>
             <div class="info-value">
-              ${escapeHtml(report.flightNumber || "—")}
+              ${escapeHtml(report.flightNumber || "â")}
             </div>
           </div>
 
           <div class="info-card">
             <div class="info-label">Supervisor</div>
             <div class="info-value">
-              ${escapeHtml(report.supervisorReporting || "—")}
+              ${escapeHtml(report.supervisorReporting || "â")}
             </div>
           </div>
 
@@ -1171,7 +1200,7 @@ function buildPrintableHtml(report, lobRules = DEFAULT_LOB_RULES) {
           <div class="info-card">
             <div class="info-label">Delayed Code</div>
             <div class="info-value">
-              ${escapeHtml(report.delayedCodeReported || "—")}
+              ${escapeHtml(report.delayedCodeReported || "â")}
             </div>
           </div>
 
@@ -1192,14 +1221,14 @@ function buildPrintableHtml(report, lobRules = DEFAULT_LOB_RULES) {
         <div class="detail-box">
           <div class="detail-label">Delayed Reason</div>
           <div class="detail-value">
-            ${escapeHtml(report.delayedReason || "—").replace(/\n/g, "<br/>")}
+            ${escapeHtml(report.delayedReason || "â").replace(/\n/g, "<br/>")}
           </div>
         </div>
 
         <div class="detail-box">
           <div class="detail-label">Notes</div>
           <div class="detail-value">
-            ${escapeHtml(report.notes || "—").replace(/\n/g, "<br/>")}
+            ${escapeHtml(report.notes || "â").replace(/\n/g, "<br/>")}
           </div>
         </div>
 
@@ -1224,17 +1253,17 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
         report.approvedBy ||
         report.closedBy ||
         report.archivedBy ||
-        "—";
+        "â";
 
       return `
         <tr>
-          <td>${escapeHtml(report.reportDate || "—")}</td>
+          <td>${escapeHtml(report.reportDate || "â")}</td>
 
-          <td>${escapeHtml(report.department || "—")}</td>
+          <td>${escapeHtml(report.department || "â")}</td>
 
-          <td>${escapeHtml(report.normalizedAirline || "—")}</td>
+          <td>${escapeHtml(report.normalizedAirline || "â")}</td>
 
-          <td>${escapeHtml(report.flightNumber || "—")}</td>
+          <td>${escapeHtml(report.flightNumber || "â")}</td>
 
           <td>
             ${escapeHtml(
@@ -1242,7 +1271,7 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
             )} min
           </td>
 
-          <td>${escapeHtml(report.supervisorReporting || "—")}</td>
+          <td>${escapeHtml(report.supervisorReporting || "â")}</td>
 
           <td>${escapeHtml(dutyManager)}</td>
         </tr>
@@ -1331,7 +1360,7 @@ function buildDelaySummaryPrintableHtml(airline, reports, range) {
 
         <div class="subtitle">
           ${escapeHtml(airline)}
-          ·
+          Â·
           ${escapeHtml(range)}
         </div>
 
@@ -1378,13 +1407,13 @@ function buildLobSummaryPrintableHtml(reports, rules, rangeLabel) {
 
       return `
         <tr>
-          <td>${escapeHtml(report.reportDate || "—")}</td>
+          <td>${escapeHtml(report.reportDate || "â")}</td>
 
-          <td>${escapeHtml(report.normalizedAirline || "—")}</td>
+          <td>${escapeHtml(report.normalizedAirline || "â")}</td>
 
-          <td>${escapeHtml(report.flightNumber || "—")}</td>
+          <td>${escapeHtml(report.flightNumber || "â")}</td>
 
-          <td>${escapeHtml(report.supervisorReporting || "—")}</td>
+          <td>${escapeHtml(report.supervisorReporting || "â")}</td>
 
           <td>${escapeHtml(String(labor.bags))}</td>
 
@@ -1615,7 +1644,7 @@ function buildLobSummaryPrintableHtml(reports, rules, rangeLabel) {
                   ${
                     rule.maxBags === null ||
                     rule.maxBags === ""
-                      ? "∞"
+                      ? "â"
                       : escapeHtml(String(rule.maxBags))
                   }
                   bags
@@ -3571,7 +3600,7 @@ export default function OperationalReportAdminPage() {
               fontWeight: 700,
             }}
           >
-            TPA OPS · Operational
+            TPA OPS Â· Operational
             Reports
           </p>
 
@@ -3644,7 +3673,7 @@ export default function OperationalReportAdminPage() {
             fontWeight: 700,
           }}
         >
-          TPA OPS · Operational Reports
+          TPA OPS Â· Operational Reports
         </p>
 
         <h1
@@ -4175,7 +4204,7 @@ export default function OperationalReportAdminPage() {
                               ? `${rule.minBags || 0}+ bags = ${
                                   rule.hours || 0
                                 } hrs`
-                              : `${rule.minBags || 0}–${
+                              : `${rule.minBags || 0}â${
                                   rule.maxBags
                                 } bags = ${
                                   rule.hours || 0
@@ -4219,8 +4248,8 @@ export default function OperationalReportAdminPage() {
                 <strong>Calculation example:</strong> if 80 LOB bags
                 equal 3 operational hours, and the supervisor reported
                 4 agents plus 1 supervisor, the calculation is{" "}
-                <strong>4 × 3 = 12 Agent Hours</strong> and{" "}
-                <strong>1 × 3 = 3 Supervisor Hours</strong>, for a
+                <strong>4 Ã 3 = 12 Agent Hours</strong> and{" "}
+                <strong>1 Ã 3 = 3 Supervisor Hours</strong>, for a
                 total of <strong>15 Labor Hours</strong>.
               </div>
             </div>
@@ -4449,19 +4478,19 @@ export default function OperationalReportAdminPage() {
                           }}
                         >
                           <td style={tdStyle}>
-                            {report.reportDate || "—"}
+                            {report.reportDate || "â"}
                           </td>
 
                           <td style={tdStyle}>
-                            {report.normalizedAirline || "—"}
+                            {report.normalizedAirline || "â"}
                           </td>
 
                           <td style={tdStyle}>
-                            {report.flightNumber || "—"}
+                            {report.flightNumber || "â"}
                           </td>
 
                           <td style={tdStyle}>
-                            {report.supervisorReporting || "—"}
+                            {report.supervisorReporting || "â"}
                           </td>
 
                           <td style={tdStyle}>
@@ -4784,7 +4813,7 @@ export default function OperationalReportAdminPage() {
                             report.approvedBy ||
                             report.closedBy ||
                             report.archivedBy ||
-                            "—";
+                            "â";
 
                           return (
                             <tr
@@ -4797,19 +4826,19 @@ export default function OperationalReportAdminPage() {
                               }}
                             >
                               <td style={tdStyle}>
-                                {report.reportDate || "—"}
+                                {report.reportDate || "â"}
                               </td>
 
                               <td style={tdStyle}>
-                                {report.department || "—"}
+                                {report.department || "â"}
                               </td>
 
                               <td style={tdStyle}>
-                                {report.normalizedAirline || "—"}
+                                {report.normalizedAirline || "â"}
                               </td>
 
                               <td style={tdStyle}>
-                                {report.flightNumber || "—"}
+                                {report.flightNumber || "â"}
                               </td>
 
                               <td style={tdStyle}>
@@ -4820,7 +4849,7 @@ export default function OperationalReportAdminPage() {
                               </td>
 
                               <td style={tdStyle}>
-                                {report.supervisorReporting || "—"}
+                                {report.supervisorReporting || "â"}
                               </td>
 
                               <td style={tdStyle}>
@@ -4953,7 +4982,7 @@ export default function OperationalReportAdminPage() {
                         }}
                       >
                         <td style={tdStyle}>
-                          {report.department || "—"}
+                          {report.department || "â"}
                         </td>
 
                         <td style={tdStyle}>
@@ -4961,25 +4990,25 @@ export default function OperationalReportAdminPage() {
                         </td>
 
                         <td style={tdStyle}>
-                          {report.normalizedAirline || "—"}
+                          {report.normalizedAirline || "â"}
                         </td>
 
                         <td style={tdStyle}>
-                          {report.reportDate || "—"}
+                          {report.reportDate || "â"}
                         </td>
 
                         <td style={tdStyle}>
                           {isCabinServiceReport(report)
-                            ? "—"
-                            : report.flightNumber || "—"}
+                            ? "â"
+                            : report.flightNumber || "â"}
                         </td>
 
                         <td style={tdStyle}>
-                          {report.flightsHandled || "—"}
+                          {report.flightsHandled || "â"}
                         </td>
 
                         <td style={tdStyle}>
-                          {report.supervisorReporting || "—"}
+                          {report.supervisorReporting || "â"}
                         </td>
 
                         <td style={tdStyle}>
@@ -5005,13 +5034,13 @@ export default function OperationalReportAdminPage() {
                         </td>
 
                         <td style={tdStyle}>
-                          {lob.hasLobs ? lob.bags : "—"}
+                          {lob.hasLobs ? lob.bags : "â"}
                         </td>
 
                         <td style={tdStyle}>
                           {lob.hasLobs
                             ? formatHours(labor.totalLaborHours)
-                            : "—"}
+                            : "â"}
                         </td>
 
                         <td style={tdStyle}>
@@ -5684,9 +5713,9 @@ export default function OperationalReportAdminPage() {
                         color: "#64748b",
                       }}
                     >
-                      {getTemplateLabel(selectedReport)} ·{" "}
-                      {selectedReport.normalizedAirline || "—"} ·{" "}
-                      {selectedReport.reportDate || "—"}
+                      {getTemplateLabel(selectedReport)} Â·{" "}
+                      {selectedReport.normalizedAirline || "â"} Â·{" "}
+                      {selectedReport.reportDate || "â"}
                     </p>
                   </div>
 
@@ -5725,7 +5754,7 @@ export default function OperationalReportAdminPage() {
                 >
                   <InfoCard
                     label="Department"
-                    value={selectedReport.department || "—"}
+                    value={selectedReport.department || "â"}
                   />
 
                   <InfoCard
@@ -5735,17 +5764,17 @@ export default function OperationalReportAdminPage() {
 
                   <InfoCard
                     label="Airline"
-                    value={selectedReport.normalizedAirline || "—"}
+                    value={selectedReport.normalizedAirline || "â"}
                   />
 
                   <InfoCard
                     label="Report Date"
-                    value={selectedReport.reportDate || "—"}
+                    value={selectedReport.reportDate || "â"}
                   />
 
                   <InfoCard
                     label="Shift"
-                    value={selectedReport.shift || "—"}
+                    value={selectedReport.shift || "â"}
                   />
 
                   <InfoCard
@@ -5754,19 +5783,19 @@ export default function OperationalReportAdminPage() {
                         ? "Flights Serviced"
                         : "Flights Handled"
                     }
-                    value={selectedReport.flightsHandled || "—"}
+                    value={selectedReport.flightsHandled || "â"}
                   />
 
                   {!isCabinServiceReport(selectedReport) && (
                     <InfoCard
                       label="Flight Number"
-                      value={selectedReport.flightNumber || "—"}
+                      value={selectedReport.flightNumber || "â"}
                     />
                   )}
 
                   <InfoCard
                     label="Supervisor"
-                    value={selectedReport.supervisorReporting || "—"}
+                    value={selectedReport.supervisorReporting || "â"}
                   />
 
                   <InfoCard
@@ -5786,7 +5815,7 @@ export default function OperationalReportAdminPage() {
                   <InfoCard
                     label="Delayed Code"
                     value={
-                      selectedReport.delayedCodeReported || "—"
+                      selectedReport.delayedCodeReported || "â"
                     }
                   />
 
@@ -5935,12 +5964,12 @@ export default function OperationalReportAdminPage() {
                         }}
                       >
                         <strong>Calculation:</strong>{" "}
-                        {lob.agents} agents ×{" "}
+                        {lob.agents} agents Ã{" "}
                         {formatHours(labor.operationalHours)} ={" "}
                         <strong>
                           {formatHours(labor.agentLaborHours)}
                         </strong>{" "}
-                        agent hours. {lob.supervisors} supervisor(s) ×{" "}
+                        agent hours. {lob.supervisors} supervisor(s) Ã{" "}
                         {formatHours(labor.operationalHours)} ={" "}
                         <strong>
                           {formatHours(
@@ -5955,27 +5984,27 @@ export default function OperationalReportAdminPage() {
 
                 <DetailBox
                   label="Delayed Reason"
-                  value={selectedReport.delayedReason || "—"}
+                  value={selectedReport.delayedReason || "â"}
                 />
 
                 <DetailBox
                   label="Notes"
-                  value={selectedReport.notes || "—"}
+                  value={selectedReport.notes || "â"}
                 />
 
                 <DetailBox
                   label="Manager Notes"
-                  value={selectedReport.managerNotes || "—"}
+                  value={selectedReport.managerNotes || "â"}
                 />
 
                 <DetailBox
                   label="Follow Up Action"
-                  value={selectedReport.followUpAction || "—"}
+                  value={selectedReport.followUpAction || "â"}
                 />
 
                 <DetailBox
                   label="Follow Up Details"
-                  value={selectedReport.followUpDetails || "—"}
+                  value={selectedReport.followUpDetails || "â"}
                 />
 
                 {(selectedReport.readBy ||
@@ -5992,7 +6021,7 @@ export default function OperationalReportAdminPage() {
                   >
                     <InfoCard
                       label="Read By"
-                      value={selectedReport.readBy || "—"}
+                      value={selectedReport.readBy || "â"}
                     />
 
                     <InfoCard
@@ -6002,7 +6031,7 @@ export default function OperationalReportAdminPage() {
 
                     <InfoCard
                       label="Approved By"
-                      value={selectedReport.approvedBy || "—"}
+                      value={selectedReport.approvedBy || "â"}
                     />
 
                     <InfoCard
@@ -6014,7 +6043,7 @@ export default function OperationalReportAdminPage() {
 
                     <InfoCard
                       label="Closed By"
-                      value={selectedReport.closedBy || "—"}
+                      value={selectedReport.closedBy || "â"}
                     />
 
                     <InfoCard
@@ -6024,7 +6053,7 @@ export default function OperationalReportAdminPage() {
 
                     <InfoCard
                       label="Archived By"
-                      value={selectedReport.archivedBy || "—"}
+                      value={selectedReport.archivedBy || "â"}
                     />
 
                     <InfoCard
@@ -6363,7 +6392,7 @@ export default function OperationalReportAdminPage() {
                             >
                               {Array.isArray(value)
                                 ? value.join(", ")
-                                : String(value || "—")}
+                                : String(value || "â")}
                             </div>
                           </div>
                         ))
