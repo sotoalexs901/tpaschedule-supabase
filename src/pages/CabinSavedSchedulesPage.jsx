@@ -1,3 +1,5 @@
+// src/pages/CabinSavedSchedulesPage.jsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -7,10 +9,16 @@ import {
   getDocs,
   orderBy,
   query,
+  serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
 const PAGE_SIZE = 50;
+
+// ============================================================
+// UI COMPONENTS
+// ============================================================
 
 function PageCard({ children, style = {} }) {
   return (
@@ -109,6 +117,7 @@ function TextInput(props) {
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -128,11 +137,16 @@ function SelectInput(props) {
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
   );
 }
+
+// ============================================================
+// STATUS
+// ============================================================
 
 function statusBadge(status) {
   const s = String(status || "draft").toLowerCase();
@@ -183,6 +197,10 @@ function statusBadge(status) {
   };
 }
 
+// ============================================================
+// HELPERS
+// ============================================================
+
 function formatDateTime(value) {
   if (!value) return "-";
 
@@ -190,6 +208,7 @@ function formatDateTime(value) {
     if (typeof value?.toDate === "function") {
       return value.toDate().toLocaleString();
     }
+
     return new Date(value).toLocaleString();
   } catch {
     return "-";
@@ -202,6 +221,7 @@ function normalizeText(value) {
 
 function prettifyCodeName(value) {
   const clean = normalizeText(value);
+
   if (!clean) return "-";
 
   if (
@@ -216,14 +236,22 @@ function prettifyCodeName(value) {
   if (/^[a-z]+\.[a-z]+$/i.test(clean)) {
     return clean
       .split(".")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .map(
+        (part) =>
+          part.charAt(0).toUpperCase() +
+          part.slice(1).toLowerCase()
+      )
       .join(" ");
   }
 
   if (/^[a-z]+_[a-z]+$/i.test(clean)) {
     return clean
       .split("_")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .map(
+        (part) =>
+          part.charAt(0).toUpperCase() +
+          part.slice(1).toLowerCase()
+      )
       .join(" ");
   }
 
@@ -232,8 +260,14 @@ function prettifyCodeName(value) {
     return prettifyCodeName(left);
   }
 
-  if (/^[a-z]+[0-9]*$/i.test(clean) && clean === clean.toLowerCase()) {
-    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  if (
+    /^[a-z]+[0-9]*$/i.test(clean) &&
+    clean === clean.toLowerCase()
+  ) {
+    return (
+      clean.charAt(0).toUpperCase() +
+      clean.slice(1)
+    );
   }
 
   return clean;
@@ -261,6 +295,7 @@ function SummaryBox({ label, value }) {
       >
         {label}
       </div>
+
       <div
         style={{
           margin: "8px 0 0",
@@ -277,19 +312,35 @@ function SummaryBox({ label, value }) {
   );
 }
 
+// ============================================================
+// MAIN PAGE
+// ============================================================
+
 export default function CabinSavedSchedulesPage() {
   const navigate = useNavigate();
 
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState("");
+
+  const [deletingId, setDeletingId] =
+    useState("");
+
+  // Used for Approve / Return to Draft.
+  const [updatingStatusId, setUpdatingStatusId] =
+    useState("");
+
   const [error, setError] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
+  const [statusMessage, setStatusMessage] =
+    useState("");
 
   const [filters, setFilters] = useState({
     search: "",
     status: "all",
   });
+
+  // ==========================================================
+  // LOAD SAVED CABIN SCHEDULES
+  // ==========================================================
 
   useEffect(() => {
     async function loadSchedules() {
@@ -299,7 +350,10 @@ export default function CabinSavedSchedulesPage() {
         setStatusMessage("");
 
         const snap = await getDocs(
-          query(collection(db, "cabinSchedules"), orderBy("createdAt", "desc"))
+          query(
+            collection(db, "cabinSchedules"),
+            orderBy("createdAt", "desc")
+          )
         );
 
         const rows = snap.docs.map((d) => ({
@@ -309,8 +363,14 @@ export default function CabinSavedSchedulesPage() {
 
         setSchedules(rows);
       } catch (err) {
-        console.error("Error loading saved cabin schedules:", err);
-        setError("Could not load saved cabin schedules.");
+        console.error(
+          "Error loading saved cabin schedules:",
+          err
+        );
+
+        setError(
+          "Could not load saved cabin schedules."
+        );
       } finally {
         setLoading(false);
       }
@@ -319,11 +379,20 @@ export default function CabinSavedSchedulesPage() {
     loadSchedules();
   }, []);
 
+  // ==========================================================
+  // FILTERS
+  // ==========================================================
+
   const filteredSchedules = useMemo(() => {
     return schedules.filter((item) => {
-      const status = String(item.status || "draft").toLowerCase();
+      const status = String(
+        item.status || "draft"
+      ).toLowerCase();
 
-      if (filters.status !== "all" && status !== filters.status) {
+      if (
+        filters.status !== "all" &&
+        status !== filters.status
+      ) {
         return false;
       }
 
@@ -337,14 +406,20 @@ export default function CabinSavedSchedulesPage() {
         item.status,
         item.totalFlights,
         item.totalSlots,
-        Array.isArray(item.uploadedDays) ? item.uploadedDays.join(" ") : "",
+        Array.isArray(item.uploadedDays)
+          ? item.uploadedDays.join(" ")
+          : "",
       ]
         .join(" ")
         .toLowerCase();
 
       if (
         filters.search &&
-        !haystack.includes(filters.search.toLowerCase().trim())
+        !haystack.includes(
+          filters.search
+            .toLowerCase()
+            .trim()
+        )
       ) {
         return false;
       }
@@ -354,29 +429,183 @@ export default function CabinSavedSchedulesPage() {
   }, [schedules, filters]);
 
   const visibleSchedules = useMemo(() => {
-    return filteredSchedules.slice(0, PAGE_SIZE);
+    return filteredSchedules.slice(
+      0,
+      PAGE_SIZE
+    );
   }, [filteredSchedules]);
+
+  // ==========================================================
+  // TOTALS
+  // ==========================================================
 
   const totals = useMemo(() => {
     return {
       total: filteredSchedules.length,
+
       approved: filteredSchedules.filter(
-        (item) => String(item.status || "").toLowerCase() === "approved"
+        (item) =>
+          String(
+            item.status || ""
+          ).toLowerCase() === "approved"
       ).length,
+
       pending: filteredSchedules.filter(
-        (item) => String(item.status || "").toLowerCase() === "pending"
+        (item) =>
+          String(
+            item.status || ""
+          ).toLowerCase() === "pending"
       ).length,
+
       draft: filteredSchedules.filter(
         (item) =>
-          !item.status || String(item.status || "").toLowerCase() === "draft"
+          !item.status ||
+          String(
+            item.status || ""
+          ).toLowerCase() === "draft"
       ).length,
     };
   }, [filteredSchedules]);
 
-  async function handleDeleteSchedule(scheduleId) {
+  // ==========================================================
+  // APPROVE SCHEDULE
+  // ==========================================================
+
+  async function handleApproveSchedule(item) {
+    const week =
+      item.weekStartDate ||
+      item.weekStart ||
+      "";
+
+    const confirmed = window.confirm(
+      `Approve the Cabin Service schedule for week ${week}?\n\nOnce approved, its assigned hours will be available to the Weekly Employees Summary under Approved schedules.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setUpdatingStatusId(item.id);
+      setStatusMessage("");
+      setError("");
+
+      await updateDoc(
+        doc(db, "cabinSchedules", item.id),
+        {
+          status: "approved",
+          approvedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }
+      );
+
+      // Immediately update the page without
+      // requiring a refresh.
+      setSchedules((previous) =>
+        previous.map((schedule) =>
+          schedule.id === item.id
+            ? {
+                ...schedule,
+                status: "approved",
+                approvedAt: new Date(),
+                updatedAt: new Date(),
+              }
+            : schedule
+        )
+      );
+
+      setStatusMessage(
+        `Cabin Service schedule for week ${week} has been approved.`
+      );
+    } catch (err) {
+      console.error(
+        "Error approving cabin schedule:",
+        err
+      );
+
+      setError(
+        "Could not approve the Cabin Service schedule."
+      );
+    } finally {
+      setUpdatingStatusId("");
+    }
+  }
+
+  // ==========================================================
+  // RETURN APPROVED SCHEDULE TO DRAFT
+  // ==========================================================
+
+  async function handleReturnToDraft(item) {
+    const week =
+      item.weekStartDate ||
+      item.weekStart ||
+      "";
+
+    const confirmed = window.confirm(
+      `Return the Cabin Service schedule for week ${week} to Draft?\n\nIt will no longer be included when Weekly Employees Summary is filtered to Approved schedules.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setUpdatingStatusId(item.id);
+      setStatusMessage("");
+      setError("");
+
+      await updateDoc(
+        doc(db, "cabinSchedules", item.id),
+        {
+          status: "draft",
+          returnedToDraftAt:
+            serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }
+      );
+
+      setSchedules((previous) =>
+        previous.map((schedule) =>
+          schedule.id === item.id
+            ? {
+                ...schedule,
+                status: "draft",
+                returnedToDraftAt:
+                  new Date(),
+                updatedAt: new Date(),
+              }
+            : schedule
+        )
+      );
+
+      setStatusMessage(
+        `Cabin Service schedule for week ${week} was returned to Draft.`
+      );
+    } catch (err) {
+      console.error(
+        "Error returning cabin schedule to draft:",
+        err
+      );
+
+      setError(
+        "Could not return the Cabin Service schedule to Draft."
+      );
+    } finally {
+      setUpdatingStatusId("");
+    }
+  }
+
+  // ==========================================================
+  // DELETE
+  // ==========================================================
+
+  async function handleDeleteSchedule(
+    scheduleId
+  ) {
     const confirmed = window.confirm(
       "Delete this saved cabin schedule? This cannot be undone."
     );
+
     if (!confirmed) return;
 
     try {
@@ -384,30 +613,65 @@ export default function CabinSavedSchedulesPage() {
       setStatusMessage("");
       setError("");
 
-      await deleteDoc(doc(db, "cabinSchedules", scheduleId));
+      await deleteDoc(
+        doc(
+          db,
+          "cabinSchedules",
+          scheduleId
+        )
+      );
 
-      setSchedules((prev) => prev.filter((item) => item.id !== scheduleId));
-      setStatusMessage("Saved schedule deleted.");
+      setSchedules((prev) =>
+        prev.filter(
+          (item) =>
+            item.id !== scheduleId
+        )
+      );
+
+      setStatusMessage(
+        "Saved schedule deleted."
+      );
     } catch (err) {
-      console.error("Error deleting cabin schedule:", err);
-      setError("Could not delete saved schedule.");
+      console.error(
+        "Error deleting cabin schedule:",
+        err
+      );
+
+      setError(
+        "Could not delete saved schedule."
+      );
     } finally {
       setDeletingId("");
     }
   }
 
+  // ==========================================================
+  // OPEN
+  // ==========================================================
+
   function openSchedule(item) {
-    navigate(`/cabin-saved-schedules/${item.id}`);
+    navigate(
+      `/cabin-saved-schedules/${item.id}`
+    );
   }
+
+  // ==========================================================
+  // PAGE
+  // ==========================================================
 
   return (
     <div
       style={{
         display: "grid",
         gap: 18,
-        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        fontFamily:
+          "Poppins, Inter, system-ui, sans-serif",
       }}
     >
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
+
       <div
         style={{
           background:
@@ -415,7 +679,8 @@ export default function CabinSavedSchedulesPage() {
           borderRadius: 28,
           padding: 24,
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow:
+            "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -426,7 +691,8 @@ export default function CabinSavedSchedulesPage() {
             width: 220,
             height: 220,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
+            background:
+              "rgba(255,255,255,0.08)",
             top: -80,
             right: -40,
           }}
@@ -439,7 +705,8 @@ export default function CabinSavedSchedulesPage() {
               fontSize: 12,
               textTransform: "uppercase",
               letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
+              color:
+                "rgba(255,255,255,0.78)",
               fontWeight: 700,
             }}
           >
@@ -463,24 +730,30 @@ export default function CabinSavedSchedulesPage() {
               margin: 0,
               maxWidth: 780,
               fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
+              color:
+                "rgba(255,255,255,0.88)",
             }}
           >
-            Review all saved weekly cabin schedules, search by week or creator,
-            and open the correct schedule detail page.
+            Review, approve and manage all saved
+            weekly Cabin Service schedules.
           </p>
         </div>
       </div>
+
+      {/* ======================================================
+          STATUS MESSAGE
+      ====================================================== */}
 
       {statusMessage && (
         <PageCard style={{ padding: 16 }}>
           <div
             style={{
-              background: "#edf7ff",
-              border: "1px solid #cfe7fb",
+              background: "#ecfdf5",
+              border:
+                "1px solid #a7f3d0",
               borderRadius: 16,
               padding: "14px 16px",
-              color: "#1769aa",
+              color: "#065f46",
               fontSize: 14,
               fontWeight: 700,
             }}
@@ -490,12 +763,17 @@ export default function CabinSavedSchedulesPage() {
         </PageCard>
       )}
 
+      {/* ======================================================
+          ERROR
+      ====================================================== */}
+
       {error && (
         <PageCard style={{ padding: 16 }}>
           <div
             style={{
               background: "#fff1f2",
-              border: "1px solid #fecdd3",
+              border:
+                "1px solid #fecdd3",
               borderRadius: 16,
               padding: "14px 16px",
               color: "#9f1239",
@@ -508,26 +786,53 @@ export default function CabinSavedSchedulesPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 20 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-          }}
-        >
-          <SummaryBox label="Schedules" value={String(totals.total)} />
-          <SummaryBox label="Approved" value={String(totals.approved)} />
-          <SummaryBox label="Pending" value={String(totals.pending)} />
-          <SummaryBox label="Draft" value={String(totals.draft)} />
-        </div>
-      </PageCard>
+      {/* ======================================================
+          SUMMARY
+      ====================================================== */}
 
       <PageCard style={{ padding: 20 }}>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
+          <SummaryBox
+            label="Schedules"
+            value={String(totals.total)}
+          />
+
+          <SummaryBox
+            label="Approved"
+            value={String(
+              totals.approved
+            )}
+          />
+
+          <SummaryBox
+            label="Pending"
+            value={String(totals.pending)}
+          />
+
+          <SummaryBox
+            label="Draft"
+            value={String(totals.draft)}
+          />
+        </div>
+      </PageCard>
+
+      {/* ======================================================
+          FILTERS
+      ====================================================== */}
+
+      <PageCard style={{ padding: 20 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(240px, 1fr))",
             gap: 14,
           }}
         >
@@ -545,10 +850,15 @@ export default function CabinSavedSchedulesPage() {
             >
               Search
             </div>
+
             <TextInput
               value={filters.search}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, search: e.target.value }))
+                setFilters((prev) => ({
+                  ...prev,
+                  search:
+                    e.target.value,
+                }))
               }
               placeholder="Week, creator, status, uploaded days..."
             />
@@ -568,28 +878,55 @@ export default function CabinSavedSchedulesPage() {
             >
               Status
             </div>
+
             <SelectInput
               value={filters.status}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, status: e.target.value }))
+                setFilters((prev) => ({
+                  ...prev,
+                  status:
+                    e.target.value,
+                }))
               }
             >
-              <option value="all">All</option>
-              <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="returned">Returned</option>
+              <option value="all">
+                All
+              </option>
+
+              <option value="draft">
+                Draft
+              </option>
+
+              <option value="pending">
+                Pending
+              </option>
+
+              <option value="approved">
+                Approved
+              </option>
+
+              <option value="rejected">
+                Rejected
+              </option>
+
+              <option value="returned">
+                Returned
+              </option>
             </SelectInput>
           </div>
         </div>
       </PageCard>
 
+      {/* ======================================================
+          SAVED SCHEDULES
+      ====================================================== */}
+
       <PageCard style={{ padding: 20 }}>
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             gap: 12,
             flexWrap: "wrap",
             alignItems: "center",
@@ -607,6 +944,7 @@ export default function CabinSavedSchedulesPage() {
             >
               Saved Weekly Schedules
             </h2>
+
             <p
               style={{
                 margin: "4px 0 0",
@@ -614,7 +952,9 @@ export default function CabinSavedSchedulesPage() {
                 color: "#64748b",
               }}
             >
-              Open the schedule you want to review or edit.
+              Approve a completed schedule to make
+              its assigned hours available to the
+              Weekly Employees Summary.
             </p>
           </div>
 
@@ -623,12 +963,14 @@ export default function CabinSavedSchedulesPage() {
             style={{
               display: "inline-flex",
               alignItems: "center",
-              justifyContent: "center",
+              justifyContent:
+                "center",
               padding: "10px 14px",
               borderRadius: 12,
               background: "#ffffff",
               color: "#1769aa",
-              border: "1px solid #cfe7fb",
+              border:
+                "1px solid #cfe7fb",
               textDecoration: "none",
               fontSize: 13,
               fontWeight: 800,
@@ -648,7 +990,8 @@ export default function CabinSavedSchedulesPage() {
           >
             Loading saved schedules...
           </div>
-        ) : visibleSchedules.length === 0 ? (
+        ) : visibleSchedules.length ===
+          0 ? (
           <div
             style={{
               fontSize: 14,
@@ -659,117 +1002,279 @@ export default function CabinSavedSchedulesPage() {
             No saved schedules found.
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            {visibleSchedules.map((item) => {
-              const uploadedDays = Array.isArray(item.uploadedDays)
-                ? item.uploadedDays
-                : [];
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+            }}
+          >
+            {visibleSchedules.map(
+              (item) => {
+                const uploadedDays =
+                  Array.isArray(
+                    item.uploadedDays
+                  )
+                    ? item.uploadedDays
+                    : [];
 
-              return (
-                <div
-                  key={item.id}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 18,
-                    padding: 16,
-                    background: "#ffffff",
-                  }}
-                >
+                const currentStatus =
+                  String(
+                    item.status ||
+                      "draft"
+                  )
+                    .trim()
+                    .toLowerCase();
+
+                const isApproved =
+                  currentStatus ===
+                  "approved";
+
+                const isUpdating =
+                  updatingStatusId ===
+                  item.id;
+
+                const isDeleting =
+                  deletingId ===
+                  item.id;
+
+                return (
                   <div
+                    key={item.id}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: 12,
-                      flexWrap: "wrap",
+                      border: isApproved
+                        ? "1px solid #a7f3d0"
+                        : "1px solid #e2e8f0",
+                      borderRadius: 18,
+                      padding: 16,
+                      background:
+                        isApproved
+                          ? "#fbfffd"
+                          : "#ffffff",
                     }}
                   >
-                    <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems:
+                          "flex-start",
+                        gap: 12,
+                        flexWrap:
+                          "wrap",
+                      }}
+                    >
+                      {/* ============================
+                          SCHEDULE INFORMATION
+                      ============================ */}
+
                       <div
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          flexWrap: "wrap",
+                          minWidth: 0,
                         }}
                       >
                         <div
                           style={{
-                            fontSize: 18,
-                            fontWeight: 800,
-                            color: "#0f172a",
+                            display: "flex",
+                            alignItems:
+                              "center",
+                            gap: 10,
+                            flexWrap:
+                              "wrap",
                           }}
                         >
-                          Week of {item.weekStartDate || item.weekStart || "-"}
+                          <div
+                            style={{
+                              fontSize: 18,
+                              fontWeight: 800,
+                              color:
+                                "#0f172a",
+                            }}
+                          >
+                            Week of{" "}
+                            {item.weekStartDate ||
+                              item.weekStart ||
+                              "-"}
+                          </div>
+
+                          <span
+                            style={statusBadge(
+                              item.status
+                            )}
+                          >
+                            {item.status ||
+                              "draft"}
+                          </span>
                         </div>
 
-                        <span style={statusBadge(item.status)}>
-                          {item.status || "draft"}
-                        </span>
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: 14,
+                            color: "#475569",
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          <div>
+                            <b>
+                              Created by:
+                            </b>{" "}
+                            {prettifyCodeName(
+                              item.createdByName ||
+                                item.createdByDisplayName ||
+                                item.createdByFullName ||
+                                item.createdByUsername ||
+                                item.createdBy ||
+                                "-"
+                            )}
+                          </div>
+
+                          <div>
+                            <b>Flights:</b>{" "}
+                            {item.totalFlights ||
+                              0}{" "}
+                            · <b>Slots:</b>{" "}
+                            {item.totalSlots ||
+                              0}
+                          </div>
+
+                          <div>
+                            <b>
+                              Uploaded days:
+                            </b>{" "}
+                            {uploadedDays.length
+                              ? uploadedDays.join(
+                                  ", "
+                                )
+                              : "-"}
+                          </div>
+
+                          <div>
+                            <b>
+                              Created at:
+                            </b>{" "}
+                            {formatDateTime(
+                              item.createdAt
+                            )}
+                          </div>
+
+                          {isApproved && (
+                            <div
+                              style={{
+                                marginTop: 5,
+                                color:
+                                  "#047857",
+                                fontWeight:
+                                  800,
+                              }}
+                            >
+                              ✓ Included in
+                              Approved Weekly
+                              Summary
+                            </div>
+                          )}
+                        </div>
                       </div>
+
+                      {/* ============================
+                          ACTIONS
+                      ============================ */}
 
                       <div
                         style={{
-                          marginTop: 8,
-                          fontSize: 14,
-                          color: "#475569",
-                          lineHeight: 1.6,
+                          display: "flex",
+                          gap: 10,
+                          flexWrap:
+                            "wrap",
                         }}
                       >
-                        <div>
-                          <b>Created by:</b>{" "}
-                          {prettifyCodeName(
-                            item.createdByName ||
-                              item.createdByDisplayName ||
-                              item.createdByFullName ||
-                              item.createdByUsername ||
-                              item.createdBy ||
-                              "-"
-                          )}
-                        </div>
+                        <ActionButton
+                          variant="primary"
+                          onClick={() =>
+                            openSchedule(
+                              item
+                            )
+                          }
+                          disabled={
+                            isUpdating ||
+                            isDeleting
+                          }
+                        >
+                          Open Schedule
+                        </ActionButton>
 
-                        <div>
-                          <b>Flights:</b> {item.totalFlights || 0} · <b>Slots:</b>{" "}
-                          {item.totalSlots || 0}
-                        </div>
+                        {/* ==========================
+                            APPROVE
+                        ========================== */}
 
-                        <div>
-                          <b>Uploaded days:</b>{" "}
-                          {uploadedDays.length ? uploadedDays.join(", ") : "-"}
-                        </div>
+                        {!isApproved && (
+                          <ActionButton
+                            variant="success"
+                            onClick={() =>
+                              handleApproveSchedule(
+                                item
+                              )
+                            }
+                            disabled={
+                              isUpdating ||
+                              isDeleting
+                            }
+                          >
+                            {isUpdating
+                              ? "Approving..."
+                              : "✓ Approve"}
+                          </ActionButton>
+                        )}
 
-                        <div>
-                          <b>Created at:</b> {formatDateTime(item.createdAt)}
-                        </div>
+                        {/* ==========================
+                            RETURN TO DRAFT
+                        ========================== */}
+
+                        {isApproved && (
+                          <ActionButton
+                            variant="warning"
+                            onClick={() =>
+                              handleReturnToDraft(
+                                item
+                              )
+                            }
+                            disabled={
+                              isUpdating ||
+                              isDeleting
+                            }
+                          >
+                            {isUpdating
+                              ? "Updating..."
+                              : "Return to Draft"}
+                          </ActionButton>
+                        )}
+
+                        {/* ==========================
+                            DELETE
+                        ========================== */}
+
+                        <ActionButton
+                          variant="danger"
+                          onClick={() =>
+                            handleDeleteSchedule(
+                              item.id
+                            )
+                          }
+                          disabled={
+                            isDeleting ||
+                            isUpdating
+                          }
+                        >
+                          {isDeleting
+                            ? "Deleting..."
+                            : "Delete"}
+                        </ActionButton>
                       </div>
                     </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <ActionButton
-                        variant="primary"
-                        onClick={() => openSchedule(item)}
-                      >
-                        Open Schedule
-                      </ActionButton>
-
-                      <ActionButton
-                        variant="danger"
-                        onClick={() => handleDeleteSchedule(item.id)}
-                        disabled={deletingId === item.id}
-                      >
-                        {deletingId === item.id ? "Deleting..." : "Delete"}
-                      </ActionButton>
-                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              }
+            )}
           </div>
         )}
       </PageCard>
