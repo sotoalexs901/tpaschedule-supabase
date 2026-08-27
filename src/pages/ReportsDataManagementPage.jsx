@@ -11,6 +11,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -4203,18 +4204,18 @@ export default function ReportsDataManagementPage() {
       return;
     }
 
-    if (
-      !window.confirm(
-        `PERMANENTLY delete ALL ${monthRecords.length} loaded record(s) for ${monthFilter}?\n\nThis cannot be undone.`
-      )
-    ) {
-      return;
-    }
+    const confirmed = window.confirm(
+      `PERMANENTLY delete ALL ${monthRecords.length} record(s) for ${monthFilter}?\n\nThis will remove the documents from Firestore and cannot be undone.`
+    );
 
-    const typed = window.prompt(`Type DELETE ${monthFilter} to confirm:`);
+    if (!confirmed) return;
 
-    if (typed !== `DELETE ${monthFilter}`) {
-      setStatusMessage("Monthly delete cancelled: confirmation text did not match.");
+    const typed = window.prompt(
+      `Type DELETE ${monthFilter} to confirm:`
+    );
+
+    if (safeText(typed).toUpperCase() !== `DELETE ${monthFilter}`) {
+      setStatusMessage("Monthly delete cancelled.");
       setStatusTone("amber");
       return;
     }
@@ -4222,49 +4223,54 @@ export default function ReportsDataManagementPage() {
     try {
       setSaving(true);
 
-      const managerName = getVisibleUserName(user);
-      const managerId = getVisibleUserId(user);
-      const deletedIds = [];
-      const failedIds = [];
+      /*
+        Firestore writeBatch is used instead of many independent
+        deleteDoc() requests. The page loads at most 500 records,
+        which is within Firestore's 500-write batch limit.
+      */
+      const batch = writeBatch(db);
 
-      for (const record of monthRecords) {
-        try {
-          await deleteDoc(
-            doc(db, selectedModule.collectionName, record.id)
-          );
-          deletedIds.push(record.id);
-        } catch (deleteError) {
-          console.error(`Could not delete ${record.id}:`, deleteError);
-          failedIds.push(record.id);
-        }
-      }
+      monthRecords.forEach((record) => {
+        batch.delete(
+          doc(
+            db,
+            selectedModule.collectionName,
+            record.id
+          )
+        );
+      });
 
-      if (deletedIds.length > 0) {
-        try {
-          await setDoc(doc(collection(db, REPORT_AUDIT_COLLECTION)), {
+      await batch.commit();
+
+      const deletedIds = monthRecords.map((record) => record.id);
+      const deletedIdSet = new Set(deletedIds);
+
+      /*
+        Audit is intentionally attempted AFTER the delete commit.
+        Therefore audit permissions cannot prevent the month delete.
+      */
+      try {
+        await setDoc(
+          doc(collection(db, REPORT_AUDIT_COLLECTION)),
+          {
             action: "DELETE_MONTH",
             moduleId: selectedModule.id,
             moduleLabel: selectedModule.label,
             sourceCollection: selectedModule.collectionName,
             month: monthFilter,
-            requestedCount: monthRecords.length,
-            deletedCount: deletedIds.length,
-            failedCount: failedIds.length,
+            recordCount: deletedIds.length,
             sourceDocumentIds: deletedIds,
-            failedDocumentIds: failedIds,
-            performedBy: managerName,
-            performedById: managerId,
+            performedBy: getVisibleUserName(user),
+            performedById: getVisibleUserId(user),
             createdAt: serverTimestamp(),
-          });
-        } catch (auditError) {
-          console.error(
-            "Monthly deletion completed, but audit logging failed:",
-            auditError
-          );
-        }
+          }
+        );
+      } catch (auditError) {
+        console.warn(
+          "Month deleted, but audit record could not be written:",
+          auditError
+        );
       }
-
-      const deletedIdSet = new Set(deletedIds);
 
       setRecords((prev) =>
         prev.filter((record) => !deletedIdSet.has(record.id))
@@ -4274,7 +4280,8 @@ export default function ReportsDataManagementPage() {
         ...prev,
         [selectedModule.id]: Math.max(
           0,
-          Number(prev[selectedModule.id] ?? records.length) - deletedIds.length
+          Number(prev[selectedModule.id] ?? records.length) -
+            deletedIds.length
         ),
       }));
 
@@ -4284,27 +4291,22 @@ export default function ReportsDataManagementPage() {
         setEditValues({});
       }
 
-      if (deletedIds.length === monthRecords.length) {
-        setStatusMessage(
-          `${deletedIds.length} record(s) permanently deleted for ${monthFilter}.`
-        );
-        setStatusTone("green");
-      } else if (deletedIds.length > 0) {
-        setStatusMessage(
-          `${deletedIds.length} record(s) deleted; ${failedIds.length} could not be deleted.`
-        );
-        setStatusTone("amber");
-      } else {
-        setStatusMessage(
-          `No records could be deleted for ${monthFilter}. Check Firestore permissions.`
-        );
-        setStatusTone("red");
-      }
-    } catch (error) {
-      console.error("Error deleting month records:", error);
       setStatusMessage(
-        "Monthly delete did not complete. Check Firestore permissions."
+        `${deletedIds.length} record(s) permanently deleted for ${monthFilter}.`
       );
+      setStatusTone("green");
+    } catch (error) {
+      console.error("MONTH DELETE FIRESTORE ERROR:", error);
+
+      const errorCode = safeText(error?.code);
+      const errorMessage = safeText(error?.message);
+
+      setStatusMessage(
+        errorCode
+          ? `Monthly delete failed: ${errorCode}${errorMessage ? ` · ${errorMessage}` : ""}`
+          : `Monthly delete failed${errorMessage ? `: ${errorMessage}` : "."}`
+      );
+
       setStatusTone("red");
     } finally {
       setSaving(false);
@@ -6249,10 +6251,4 @@ function ReportsManagementGlobalStyles() {
 
         @media (max-width: 1050px) {
           .reports-management-responsive-grid {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}
-    </style>
-  );
-}
+ 
