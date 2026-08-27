@@ -5916,11 +5916,6 @@ export default function ReportsDataManagementPage() {
   );
 }
 
-
-/* =========================================================
-   SECTION HEADER
-   ========================================================= */
-
 function SectionHeader({
   title,
   subtitle = "",
