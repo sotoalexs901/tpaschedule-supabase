@@ -46,12 +46,12 @@ const REPORT_MODULES = [
     status: "pending",
   },
   {
-    id: "regulatedGarbage",
-    label: "Regulated Garbage Reports",
-    icon: "▾",
-    collectionName: null,
-    status: "pending",
-  },
+  id: "regulatedGarbage",
+  label: "Regulated Garbage Reports",
+  icon: "♻",
+  collectionName: "regulated_garbage_reports",
+  status: "connected",
+}, 
   {
     id: "cleaningSecurity",
     label: "Cleaning & Security Reports",
