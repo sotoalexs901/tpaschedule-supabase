@@ -6251,4 +6251,10 @@ function ReportsManagementGlobalStyles() {
 
         @media (max-width: 1050px) {
           .reports-management-responsive-grid {
- 
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}
+    </style>
+  );
+}
