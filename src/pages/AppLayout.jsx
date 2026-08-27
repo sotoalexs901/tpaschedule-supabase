@@ -189,17 +189,10 @@ export default function AppLayout() {
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange
-    );
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      window.removeEventListener(
-        "beforeunload",
-        handleBeforeUnload
-      );
-
+      window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener(
         "visibilitychange",
         handleVisibilityChange
@@ -371,21 +364,9 @@ export default function AppLayout() {
     const sections = [];
 
     const general = [
-      {
-        to: "/dashboard",
-        label: "Dashboard",
-        icon: "🏠",
-      },
-      {
-        to: "/profile",
-        label: "My Profile",
-        icon: "👤",
-      },
-      {
-        to: "/station-team",
-        label: "Station Team",
-        icon: "🧑‍🤝‍🧑",
-      },
+      { to: "/dashboard", label: "Dashboard", icon: "🏠" },
+      { to: "/profile", label: "My Profile", icon: "👤" },
+      { to: "/station-team", label: "Station Team", icon: "🧑‍🤝‍🧑" },
       {
         to: "/messages",
         label: "Messages",
@@ -407,52 +388,22 @@ export default function AppLayout() {
     const wchr = [];
     const admin = [];
 
-    // ========================================================
     // MANAGER SCHEDULES
-    // ========================================================
 
     if (canAccessRegularManagerSchedules) {
       schedules.push(
-        {
-          to: "/schedule",
-          label: "Create Schedule",
-          icon: "🗓️",
-        },
-        {
-          to: "/cabin-service",
-          label: "Cabin Service",
-          icon: "🧳",
-        },
+        { to: "/schedule", label: "Create Schedule", icon: "🗓️" },
+        { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
         {
           to: "/cabin-saved-schedules",
           label: "Cabin Service Saved Schedules",
           icon: "📁",
         },
-        {
-          to: "/approvals",
-          label: "Approvals",
-          icon: "✅",
-        },
-        {
-          to: "/drafts",
-          label: "Draft Schedules",
-          icon: "📝",
-        },
-        {
-          to: "/approved",
-          label: "Approved Schedules",
-          icon: "📌",
-        },
-        {
-          to: "/returned",
-          label: "Returned Schedules",
-          icon: "↩️",
-        },
-        {
-          to: "/weekly-summary",
-          label: "Weekly Summary",
-          icon: "📊",
-        }
+        { to: "/approvals", label: "Approvals", icon: "✅" },
+        { to: "/drafts", label: "Draft Schedules", icon: "📝" },
+        { to: "/approved", label: "Approved Schedules", icon: "📌" },
+        { to: "/returned", label: "Returned Schedules", icon: "↩️" },
+        { to: "/weekly-summary", label: "Weekly Summary", icon: "📊" }
       );
 
       timeoff.push(
@@ -462,11 +413,7 @@ export default function AppLayout() {
           icon: "🌴",
           showDot: pendingTimeOff > 0,
         },
-        {
-          to: "/blocked",
-          label: "Blocked Employees",
-          icon: "🚫",
-        }
+        { to: "/blocked", label: "Blocked Employees", icon: "🚫" }
       );
 
       admin.push(
@@ -480,11 +427,7 @@ export default function AppLayout() {
           label: "Dashboard Editor",
           icon: "🎛️",
         },
-        {
-          to: "/budgets",
-          label: "Budgets",
-          icon: "💰",
-        },
+        { to: "/budgets", label: "Budgets", icon: "💰" },
         {
           to: "/monthly-budgets-vs-actual",
           label: "Monthly Budgets vs Actual",
@@ -493,17 +436,11 @@ export default function AppLayout() {
       );
     }
 
-    // ========================================================
     // CABIN SERVICE MANAGER
-    // ========================================================
 
     if (canAccessCabinServiceOnlyManager) {
       schedules.push(
-        {
-          to: "/cabin-service",
-          label: "Cabin Service",
-          icon: "🧳",
-        },
+        { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
         {
           to: "/cabin-saved-schedules",
           label: "Cabin Service Saved Schedules",
@@ -512,9 +449,7 @@ export default function AppLayout() {
       );
     }
 
-    // ========================================================
     // STATION MANAGER ADMIN
-    // ========================================================
 
     if (user?.role === "station_manager") {
       admin.push(
@@ -528,6 +463,14 @@ export default function AppLayout() {
           label: "Privacy Acknowledgments",
           icon: "🔐",
         },
+
+        // NEW
+        {
+          to: "/admin/reports-data-management",
+          label: "Reports Data Management",
+          icon: "🗃️",
+        },
+
         {
           to: "/create-user",
           label: "Create User",
@@ -546,9 +489,7 @@ export default function AppLayout() {
       );
     }
 
-    // ========================================================
     // AGENT / SUPERVISOR SCHEDULES
-    // ========================================================
 
     if (isAgentOrSupervisor) {
       schedules.push({
@@ -571,9 +512,7 @@ export default function AppLayout() {
       );
     }
 
-    // ========================================================
     // SUBMISSION OF REPORTS
-    // ========================================================
 
     if (canAccessTimesheets) {
       submissionReports.push({
@@ -656,9 +595,7 @@ export default function AppLayout() {
       });
     }
 
-    // ========================================================
     // MANAGEMENT OF REPORTS
-    // ========================================================
 
     if (canAccessTimesheets) {
       managementReports.push({
@@ -746,9 +683,7 @@ export default function AppLayout() {
       });
     }
 
-    // ========================================================
     // WCHR
-    // ========================================================
 
     if (canAccessWchrTools) {
       wchr.push(
@@ -781,9 +716,7 @@ export default function AppLayout() {
       });
     }
 
-    // ========================================================
     // OPERATIONAL REPORT BUILDER
-    // ========================================================
 
     if (canManageOperationalReportForm) {
       admin.push({
@@ -793,22 +726,14 @@ export default function AppLayout() {
       });
     }
 
-    // ========================================================
     // BUILD SECTIONS
-    // ========================================================
 
     if (general.length) {
-      sections.push({
-        title: "General",
-        items: general,
-      });
+      sections.push({ title: "General", items: general });
     }
 
     if (schedules.length) {
-      sections.push({
-        title: "Schedules",
-        items: schedules,
-      });
+      sections.push({ title: "Schedules", items: schedules });
     }
 
     if (submissionReports.length) {
@@ -826,24 +751,15 @@ export default function AppLayout() {
     }
 
     if (timeoff.length) {
-      sections.push({
-        title: "Time Off",
-        items: timeoff,
-      });
+      sections.push({ title: "Time Off", items: timeoff });
     }
 
     if (wchr.length) {
-      sections.push({
-        title: "WCHR",
-        items: wchr,
-      });
+      sections.push({ title: "WCHR", items: wchr });
     }
 
     if (admin.length) {
-      sections.push({
-        title: "Admin",
-        items: admin,
-      });
+      sections.push({ title: "Admin", items: admin });
     }
 
     return sections;
@@ -894,9 +810,7 @@ export default function AppLayout() {
       .map((section) => ({
         ...section,
         items: section.items.filter((item) =>
-          `${item.label} ${section.title}`
-            .toLowerCase()
-            .includes(search)
+          `${item.label} ${section.title}`.toLowerCase().includes(search)
         ),
       }))
       .filter((section) => section.items.length > 0);
@@ -936,8 +850,6 @@ export default function AppLayout() {
             flexWrap: "wrap",
           }}
         >
-          {/* USER */}
-
           <div
             style={{
               display: "flex",
@@ -958,8 +870,7 @@ export default function AppLayout() {
                 justifyContent: "center",
                 fontWeight: 900,
                 overflow: "hidden",
-                boxShadow:
-                  "0 10px 24px rgba(23,105,170,0.22)",
+                boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
               }}
             >
               {profilePhotoURL ? (
@@ -1012,8 +923,6 @@ export default function AppLayout() {
             </div>
           </div>
 
-          {/* STATUS / ACTIONS */}
-
           <div
             style={{
               display: "flex",
@@ -1021,26 +930,13 @@ export default function AppLayout() {
               flexWrap: "wrap",
             }}
           >
-            <StatusPill
-              label="Messages"
-              value={unreadMessages}
-            />
-
-            <StatusPill
-              label="Notifications"
-              value={unreadNotifications}
-            />
-
-            <StatusPill
-              label="Day Off"
-              value={pendingTimeOff}
-            />
+            <StatusPill label="Messages" value={unreadMessages} />
+            <StatusPill label="Notifications" value={unreadNotifications} />
+            <StatusPill label="Day Off" value={pendingTimeOff} />
 
             <button
               type="button"
-              onClick={() =>
-                setMenuOpen((value) => !value)
-              }
+              onClick={() => setMenuOpen((value) => !value)}
               style={topButtonStyle}
             >
               {menuOpen ? "Close Menu" : "Menu"}
@@ -1056,10 +952,6 @@ export default function AppLayout() {
           </div>
         </div>
 
-        {/* ====================================================
-            MENU
-        ==================================================== */}
-
         {menuOpen && (
           <div
             style={{
@@ -1072,9 +964,7 @@ export default function AppLayout() {
           >
             <input
               value={navSearch}
-              onChange={(e) =>
-                setNavSearch(e.target.value)
-              }
+              onChange={(e) => setNavSearch(e.target.value)}
               placeholder="Search menu..."
               style={searchInputStyle}
             />
@@ -1111,10 +1001,7 @@ export default function AppLayout() {
                   }}
                 >
                   {section.items.map((item) => (
-                    <TopNavItem
-                      key={item.to}
-                      {...item}
-                    />
+                    <TopNavItem key={item.to} {...item} />
                   ))}
                 </div>
               </div>
@@ -1128,10 +1015,6 @@ export default function AppLayout() {
           </div>
         )}
       </header>
-
-      {/* ======================================================
-          PAGE CONTENT
-      ====================================================== */}
 
       <main
         style={{
@@ -1192,12 +1075,7 @@ function StatusPill({ label, value }) {
 // NAV ITEM
 // ============================================================
 
-function TopNavItem({
-  to,
-  label,
-  showDot,
-  icon,
-}) {
+function TopNavItem({ to, label, showDot, icon }) {
   return (
     <NavLink
       to={to}
@@ -1211,9 +1089,7 @@ function TopNavItem({
         textDecoration: "none",
         fontSize: 14,
         fontWeight: isActive ? 900 : 700,
-        color: isActive
-          ? "#0f4c81"
-          : "#334155",
+        color: isActive ? "#0f4c81" : "#334155",
         background: isActive
           ? "linear-gradient(135deg, #dff0ff 0%, #eef8ff 100%)"
           : "#ffffff",
