@@ -39,12 +39,12 @@ const REPORT_MODULES = [
   status: "connected",
 },
   {
-    id: "operational",
-    label: "Operational Reports",
-    icon: "▣",
-    collectionName: null,
-    status: "pending",
-  },
+  id: "operational",
+  label: "Operational Reports",
+  icon: "▣",
+  collectionName: "operational_reports",
+  status: "ready",
+},
   {
   id: "regulatedGarbage",
   label: "Regulated Garbage Reports",
