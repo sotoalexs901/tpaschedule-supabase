@@ -5909,3 +5909,346 @@ export default function ReportsDataManagementPage() {
           </PageCard>
         ) : null}
       </div>
+            {/* ===================================================
+          END DATA AREA
+          =================================================== */}
+    </div>
+  );
+}
+
+
+/* =========================================================
+   SECTION HEADER
+   ========================================================= */
+
+function SectionHeader({
+  title,
+  subtitle = "",
+  right = null,
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
+        alignItems: "center",
+        marginBottom: 14,
+      }}
+    >
+      <div>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 19,
+            fontWeight: 900,
+            color: "#0f172a",
+          }}
+        >
+          {title}
+        </h2>
+
+        {subtitle ? (
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 12,
+              color: "#64748b",
+            }}
+          >
+            {subtitle}
+          </div>
+        ) : null}
+      </div>
+
+      {right ? (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          {right}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+
+/* =========================================================
+   FILTER CHIP
+   ========================================================= */
+
+function FilterChip({
+  label,
+  onRemove,
+}) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "6px 9px",
+        borderRadius: 999,
+        background: "#edf7ff",
+        border: "1px solid #cfe7fb",
+        color: "#1769aa",
+        fontSize: 11,
+        fontWeight: 800,
+      }}
+    >
+      <span>{label}</span>
+
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${label} filter`}
+          style={{
+            width: 18,
+            height: 18,
+            padding: 0,
+            border: "none",
+            borderRadius: "50%",
+            background: "rgba(23,105,170,0.10)",
+            color: "#1769aa",
+            cursor: "pointer",
+            fontSize: 12,
+            lineHeight: "18px",
+            fontWeight: 900,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          ×
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
+
+/* =========================================================
+   STORED FIELDS VIEWER
+   ========================================================= */
+
+function StoredFieldsViewer({
+  record,
+}) {
+  if (!record) return null;
+
+  const entries = Object.entries(record)
+    .filter(([key]) => key !== "id")
+    .sort(([keyA], [keyB]) =>
+      keyA.localeCompare(keyB)
+    );
+
+  if (entries.length === 0) {
+    return (
+      <div
+        style={{
+          padding: 12,
+          borderRadius: 12,
+          background: "#f8fafc",
+          color: "#64748b",
+          fontSize: 12,
+        }}
+      >
+        No stored fields found.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        maxHeight: 360,
+        overflowY: "auto",
+        display: "grid",
+        gap: 7,
+        paddingRight: 3,
+      }}
+    >
+      {entries.map(([key, value]) => (
+        <div
+          key={key}
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "minmax(125px,0.7fr) minmax(0,1.3fr)",
+            gap: 10,
+            padding: "9px 10px",
+            borderRadius: 10,
+            background: "#f8fafc",
+            border: "1px solid #f1f5f9",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: "#64748b",
+              wordBreak: "break-word",
+            }}
+          >
+            {key}
+          </div>
+
+          <div
+            style={{
+              fontSize: 11,
+              color: "#334155",
+              wordBreak: "break-word",
+              lineHeight: 1.5,
+            }}
+          >
+            {displayStoredValue(value)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+/* =========================================================
+   DISPLAY STORED VALUE
+   ========================================================= */
+
+function displayStoredValue(value) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "-";
+  }
+
+  /*
+    Firestore Timestamp
+  */
+
+  if (
+    typeof value?.toDate === "function"
+  ) {
+    return formatDateTime(value);
+  }
+
+  /*
+    Native Date
+  */
+
+  if (value instanceof Date) {
+    return formatDateTime(value);
+  }
+
+  /*
+    Arrays
+  */
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "[]";
+    }
+
+    /*
+      Small arrays containing primitive values
+      can safely be displayed.
+    */
+
+    const primitiveOnly = value.every(
+      (item) =>
+        item === null ||
+        ["string", "number", "boolean"].includes(
+          typeof item
+        )
+    );
+
+    if (
+      primitiveOnly &&
+      value.length <= 10
+    ) {
+      return value
+        .map((item) =>
+          item === null
+            ? "-"
+            : String(item)
+        )
+        .join(", ");
+    }
+
+    return `[Array: ${value.length} item(s)]`;
+  }
+
+  /*
+    Objects
+  */
+
+  if (typeof value === "object") {
+    const keys = Object.keys(value);
+
+    if (keys.length === 0) {
+      return "{}";
+    }
+
+    return `[Object: ${keys.length} field(s)]`;
+  }
+
+  /*
+    Boolean
+  */
+
+  if (typeof value === "boolean") {
+    return value ? "True" : "False";
+  }
+
+  /*
+    String / number
+  */
+
+  const text = String(value);
+
+  if (!text.trim()) {
+    return "-";
+  }
+
+  return text;
+}
+
+
+/* =========================================================
+   OPTIONAL PAGE LOADING ANIMATION
+
+   Because the page uses inline styles, this component
+   injects the small spinner keyframe required by the
+   loading indicator.
+   ========================================================= */
+
+function ReportsManagementGlobalStyles() {
+  return (
+    <style>
+      {`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @media (max-width: 1050px) {
+          .reports-management-responsive-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}
+    </style>
+  );
+}
