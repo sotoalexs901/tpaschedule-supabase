@@ -89,13 +89,13 @@ const REPORT_MODULES = [
   collectionName: "gateChecklistReports",
   status: "active",
 }, 
-  {
-    id: "fuel",
-    label: "Fuel Management",
-    icon: "⛽",
-    collectionName: null,
-    status: "pending",
-  },
+ {
+  id: "fuelManagement",
+  label: "Fuel Management",
+  icon: "⛽",
+  collectionName: "fuel_logs",
+  status: "connected",
+},
   {
     id: "flightClosure",
     label: "Cierre de Vuelo Reports",
