@@ -1,4 +1,5 @@
-// src/pages/ReportsDataManagementPage.jsx
+/ src/pages/ReportsDataManagementPage.jsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -5988,4 +5989,5 @@ function ReportsManagementGlobalStyles() {
         }
       `}
     </style>
- 
+  );
+}
