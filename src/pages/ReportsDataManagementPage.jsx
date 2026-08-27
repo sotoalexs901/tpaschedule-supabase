@@ -97,19 +97,17 @@ const REPORT_MODULES = [
   status: "connected",
 },
   {
-    id: "flightClosure",
-    label: "Cierre de Vuelo Reports",
-    icon: "▣",
-    collectionName: [
-
+  id: "cierreVuelo",
+  label: "Cierre de Vuelo Reports",
+  icon: "✈",
+  collectionNames: [
     "cierreVueloFlights",
     "cierreVueloFuel",
     "cierreVueloMonthClosures",
-      status: "connected",
-      },
+  ],
+  status: "connected",
+},
 ];
-
-
 /* =========================================================
    HELPERS
    ========================================================= */
