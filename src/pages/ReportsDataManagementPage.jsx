@@ -4768,3 +4768,1144 @@ export default function ReportsDataManagementPage() {
           </div>
         ) : null}
       </PageCard>
+            {/* ===================================================
+          DATA AREA
+          =================================================== */}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: selectedRecord
+            ? "minmax(520px,1fr) minmax(390px,0.78fr)"
+            : "1fr",
+          gap: 18,
+          alignItems: "start",
+          minWidth: 0,
+        }}
+      >
+
+        {/* =================================================
+            REPORT DATA TABLE
+            ================================================= */}
+
+        <PageCard
+          style={{
+            padding: 20,
+            minWidth: 0,
+          }}
+        >
+          <SectionHeader
+            title="Report Data"
+            subtitle={
+              loading
+                ? "Loading report data..."
+                : `${filteredRecords.length} visible record(s) · ${records.length} loaded`
+            }
+          />
+
+          {!selectedModule.collectionName ? (
+            <div
+              style={{
+                border: "1px dashed #cbd5e1",
+                borderRadius: 18,
+                padding: 28,
+                textAlign: "center",
+                background: "#f8fafc",
+              }}
+            >
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  margin: "0 auto",
+                  borderRadius: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#e2e8f0",
+                  color: "#64748b",
+                  fontSize: 22,
+                  fontWeight: 900,
+                }}
+              >
+                ?
+              </div>
+
+              <div
+                style={{
+                  marginTop: 14,
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                Collection mapping required
+              </div>
+
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: "#64748b",
+                }}
+              >
+                This report module does not have a Firestore
+                collection connected yet.
+              </div>
+            </div>
+          ) : loading ? (
+            <div
+              style={{
+                padding: 40,
+                textAlign: "center",
+              }}
+            >
+              <div
+                style={{
+                  width: 42,
+                  height: 42,
+                  margin: "0 auto",
+                  borderRadius: "50%",
+                  border: "4px solid #dbeafe",
+                  borderTopColor: "#1769aa",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+
+              <div
+                style={{
+                  marginTop: 14,
+                  color: "#64748b",
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                Loading {selectedModule.label}...
+              </div>
+            </div>
+          ) : filteredRecords.length === 0 ? (
+            <div
+              style={{
+                padding: 36,
+                textAlign: "center",
+                border: "1px dashed #cbd5e1",
+                borderRadius: 18,
+                background: "#f8fafc",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 17,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                No records found
+              </div>
+
+              <div
+                style={{
+                  marginTop: 7,
+                  fontSize: 13,
+                  color: "#64748b",
+                }}
+              >
+                Try changing the current filters or search.
+              </div>
+
+              {activeFilterCount > 0 ? (
+                <div
+                  style={{
+                    marginTop: 14,
+                  }}
+                >
+                  <ActionButton
+                    variant="secondary"
+                    onClick={resetFilters}
+                  >
+                    Reset Filters
+                  </ActionButton>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div
+              style={{
+                overflowX: "auto",
+                border: "1px solid #e2e8f0",
+                borderRadius: 16,
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  minWidth: 940,
+                  borderCollapse: "collapse",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background: "#f8fbff",
+                    }}
+                  >
+                    {[
+                      "Record",
+                      "Department",
+                      "Airline / Flight",
+                      "Submitted By",
+                      "Status",
+                      "Created",
+                      "Quality",
+                    ].map((label) => (
+                      <th
+                        key={label}
+                        style={{
+                          textAlign: "left",
+                          padding: "12px 14px",
+                          borderBottom: "1px solid #e2e8f0",
+                          fontSize: 11,
+                          fontWeight: 900,
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredRecords.map((record) => {
+                    const active =
+                      selectedRecordId === record.id;
+
+                    const issues = getDataQualityIssues(
+                      record,
+                      selectedModuleId
+                    );
+
+                    const archived =
+                      record?.archived === true;
+
+                    const airline =
+                      getRecordAirline(record);
+
+                    const flight =
+                      getRecordFlight(record);
+
+                    return (
+                      <tr
+                        key={record.id}
+                        onClick={() =>
+                          handleSelectRecord(record.id)
+                        }
+                        style={{
+                          cursor: "pointer",
+                          background: active
+                            ? "#edf7ff"
+                            : archived
+                            ? "#f8fafc"
+                            : "#ffffff",
+                          opacity: archived ? 0.76 : 1,
+                        }}
+                      >
+                        {/* RECORD */}
+
+                        <td
+                          style={{
+                            padding: "13px 14px",
+                            borderBottom: "1px solid #f1f5f9",
+                            minWidth: 190,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 7,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 900,
+                                color: "#0f172a",
+                              }}
+                            >
+                              {getRecordPrimaryName(record)}
+                            </div>
+
+                            {archived ? (
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  padding: "3px 6px",
+                                  borderRadius: 999,
+                                  background: "#f1f5f9",
+                                  border: "1px solid #cbd5e1",
+                                  color: "#64748b",
+                                  fontSize: 9,
+                                  fontWeight: 900,
+                                }}
+                              >
+                                ARCHIVED
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: 4,
+                              maxWidth: 220,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              fontSize: 10,
+                              color: "#94a3b8",
+                            }}
+                          >
+                            {record.id}
+                          </div>
+                        </td>
+
+                        {/* DEPARTMENT */}
+
+                        <td
+                          style={{
+                            padding: "13px 14px",
+                            borderBottom: "1px solid #f1f5f9",
+                            fontSize: 13,
+                            color: "#334155",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {getRecordDepartment(record)}
+                        </td>
+
+                        {/* AIRLINE / FLIGHT */}
+
+                        <td
+                          style={{
+                            padding: "13px 14px",
+                            borderBottom: "1px solid #f1f5f9",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 800,
+                              color: "#334155",
+                            }}
+                          >
+                            {airline}
+                          </div>
+
+                          {flight !== "-" ? (
+                            <div
+                              style={{
+                                marginTop: 3,
+                                fontSize: 11,
+                                color: "#64748b",
+                              }}
+                            >
+                              Flight {flight}
+                            </div>
+                          ) : null}
+                        </td>
+
+                        {/* SUBMITTED BY */}
+
+                        <td
+                          style={{
+                            padding: "13px 14px",
+                            borderBottom: "1px solid #f1f5f9",
+                            fontSize: 13,
+                            color: "#334155",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {getRecordSubmittedBy(record)}
+                        </td>
+
+                        {/* STATUS */}
+
+                        <td
+                          style={{
+                            padding: "13px 14px",
+                            borderBottom: "1px solid #f1f5f9",
+                          }}
+                        >
+                          <StatusBadge
+                            status={getRecordStatus(record)}
+                          />
+                        </td>
+
+                        {/* CREATED */}
+
+                        <td
+                          style={{
+                            padding: "13px 14px",
+                            borderBottom: "1px solid #f1f5f9",
+                            fontSize: 12,
+                            color: "#64748b",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {formatDateTime(
+                            getRecordCreatedAt(record)
+                          )}
+                        </td>
+
+                        {/* QUALITY */}
+
+                        <td
+                          style={{
+                            padding: "13px 14px",
+                            borderBottom: "1px solid #f1f5f9",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              padding: "5px 9px",
+                              borderRadius: 999,
+                              fontSize: 11,
+                              fontWeight: 800,
+
+                              background:
+                                issues.length > 0
+                                  ? "#fff1f2"
+                                  : "#ecfdf5",
+
+                              border:
+                                issues.length > 0
+                                  ? "1px solid #fecdd3"
+                                  : "1px solid #a7f3d0",
+
+                              color:
+                                issues.length > 0
+                                  ? "#9f1239"
+                                  : "#166534",
+                            }}
+                          >
+                            {issues.length > 0
+                              ? `${issues.length} issue(s)`
+                              : "OK"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </PageCard>
+
+
+        {/* =================================================
+            DATA INSPECTOR
+            ================================================= */}
+
+        {selectedRecord ? (
+          <PageCard
+            style={{
+              padding: 20,
+              position: "sticky",
+              top: 16,
+              minWidth: 0,
+            }}
+          >
+            {/* HEADER */}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: "#1769aa",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  Data Inspector
+                </div>
+
+                <h2
+                  style={{
+                    margin: "5px 0 0",
+                    fontSize: 21,
+                    fontWeight: 900,
+                    color: "#0f172a",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {getRecordPrimaryName(selectedRecord)}
+                </h2>
+
+                {selectedRecord.archived === true ? (
+                  <div
+                    style={{
+                      marginTop: 7,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        padding: "5px 9px",
+                        borderRadius: 999,
+                        background: "#f1f5f9",
+                        border: "1px solid #cbd5e1",
+                        color: "#475569",
+                        fontSize: 10,
+                        fontWeight: 900,
+                      }}
+                    >
+                      ARCHIVED RECORD
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+
+              <ActionButton
+                variant="secondary"
+                onClick={() => {
+                  setSelectedRecordId("");
+                  setEditMode(false);
+                  setEditValues({});
+                }}
+              >
+                Close
+              </ActionButton>
+            </div>
+
+
+            {/* =================================================
+                ADMIN ACTIONS
+                ================================================= */}
+
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
+              {!editMode ? (
+                <ActionButton
+                  variant="primary"
+                  onClick={beginEdit}
+                  disabled={
+                    saving ||
+                    selectedRecord.archived === true
+                  }
+                >
+                  Edit Record
+                </ActionButton>
+              ) : (
+                <>
+                  <ActionButton
+                    variant="success"
+                    onClick={saveEdit}
+                    disabled={saving}
+                  >
+                    {saving
+                      ? "Saving..."
+                      : "Save Changes"}
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="secondary"
+                    onClick={cancelEdit}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </ActionButton>
+                </>
+              )}
+
+              {!editMode &&
+              selectedRecord.archived !== true ? (
+                <ActionButton
+                  variant="warning"
+                  onClick={archiveRecord}
+                  disabled={saving}
+                >
+                  Archive
+                </ActionButton>
+              ) : null}
+
+              {!editMode &&
+              selectedRecord.archived === true ? (
+                <ActionButton
+                  variant="success"
+                  onClick={restoreRecord}
+                  disabled={saving}
+                >
+                  Restore Record
+                </ActionButton>
+              ) : null}
+            </div>
+
+
+            {/* =================================================
+                COLLECTION INFORMATION
+                ================================================= */}
+
+            <div
+              style={{
+                marginTop: 18,
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  border: "1px solid #dbeafe",
+                  borderRadius: 14,
+                  padding: 12,
+                  background: "#f8fbff",
+                }}
+              >
+                <FieldLabel>
+                  Firestore Collection
+                </FieldLabel>
+
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {selectedModule.collectionName}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  border: "1px solid #dbeafe",
+                  borderRadius: 14,
+                  padding: 12,
+                  background: "#f8fbff",
+                }}
+              >
+                <FieldLabel>
+                  Document ID
+                </FieldLabel>
+
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#334155",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {selectedRecord.id}
+                </div>
+              </div>
+            </div>
+
+
+            {/* =================================================
+                BASIC INFORMATION
+                ================================================= */}
+
+            <div
+              style={{
+                marginTop: 16,
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(2,minmax(0,1fr))",
+                gap: 10,
+              }}
+            >
+              <InfoCard
+                label="Status"
+                value={getRecordStatus(selectedRecord)}
+              />
+
+              <InfoCard
+                label="Department"
+                value={getRecordDepartment(selectedRecord)}
+              />
+
+              <InfoCard
+                label="Airline"
+                value={getRecordAirline(selectedRecord)}
+              />
+
+              <InfoCard
+                label="Flight"
+                value={getRecordFlight(selectedRecord)}
+              />
+            </div>
+
+
+            {/* =================================================
+                RECORD METADATA
+                ================================================= */}
+
+            <div
+              style={{
+                marginTop: 16,
+                border: "1px solid #e2e8f0",
+                borderRadius: 16,
+                padding: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                  marginBottom: 10,
+                }}
+              >
+                Record Metadata
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: 9,
+                  fontSize: 13,
+                  color: "#475569",
+                }}
+              >
+                <div>
+                  <strong>Submitted By:</strong>{" "}
+                  {getRecordSubmittedBy(selectedRecord)}
+                </div>
+
+                <div>
+                  <strong>Created:</strong>{" "}
+                  {formatDateTime(
+                    getRecordCreatedAt(selectedRecord)
+                  )}
+                </div>
+
+                <div>
+                  <strong>Last Updated:</strong>{" "}
+                  {formatDateTime(
+                    getRecordUpdatedAt(selectedRecord)
+                  )}
+                </div>
+
+                {selectedRecord.lastManagementEditBy ? (
+                  <div>
+                    <strong>
+                      Last Management Edit:
+                    </strong>{" "}
+                    {selectedRecord.lastManagementEditBy}
+                  </div>
+                ) : null}
+
+                {selectedRecord.archived === true ? (
+                  <>
+                    <div>
+                      <strong>Archived By:</strong>{" "}
+                      {safeText(selectedRecord.archivedBy) ||
+                        "-"}
+                    </div>
+
+                    <div>
+                      <strong>Archived At:</strong>{" "}
+                      {formatDateTime(
+                        selectedRecord.archivedAt
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+
+            {/* =================================================
+                DATA QUALITY
+                ================================================= */}
+
+            <div
+              style={{
+                marginTop: 16,
+                border: "1px solid #e2e8f0",
+                borderRadius: 16,
+                padding: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                  marginBottom: 10,
+                }}
+              >
+                Data Quality Check
+              </div>
+
+              {getDataQualityIssues(
+                selectedRecord,
+                selectedModuleId
+              ).length === 0 ? (
+                <div
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    background: "#ecfdf5",
+                    border: "1px solid #a7f3d0",
+                    color: "#166534",
+                    fontSize: 13,
+                    fontWeight: 800,
+                  }}
+                >
+                  ✓ No data issues detected.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 7,
+                  }}
+                >
+                  {getDataQualityIssues(
+                    selectedRecord,
+                    selectedModuleId
+                  ).map((issue) => (
+                    <div
+                      key={issue}
+                      style={{
+                        padding: 10,
+                        borderRadius: 10,
+                        background: "#fff1f2",
+                        border: "1px solid #fecdd3",
+                        color: "#9f1239",
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      ⚠ {issue}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+
+            {/* =================================================
+                ADMINISTRATIVE EDITOR
+                ================================================= */}
+
+            {editMode ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  border: "1px solid #93c5fd",
+                  borderRadius: 18,
+                  padding: 15,
+                  background:
+                    "linear-gradient(180deg,#f8fbff 0%,#ffffff 100%)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 900,
+                        color: "#1769aa",
+                      }}
+                    >
+                      Administrative Editor
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 11,
+                        color: "#64748b",
+                      }}
+                    >
+                      Only approved fields for this report
+                      type can be modified.
+                    </div>
+                  </div>
+
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      padding: "5px 8px",
+                      borderRadius: 999,
+                      background: "#ecfdf5",
+                      border: "1px solid #a7f3d0",
+                      color: "#166534",
+                      fontSize: 10,
+                      fontWeight: 900,
+                    }}
+                  >
+                    AUDIT ENABLED
+                  </span>
+                </div>
+
+                {getEditableFields(
+                  selectedModuleId,
+                  selectedRecord
+                ).length === 0 ? (
+                  <div
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      background: "#fff7ed",
+                      border: "1px solid #fdba74",
+                      color: "#9a3412",
+                      fontSize: 12,
+                      fontWeight: 800,
+                    }}
+                  >
+                    No editable primitive fields are available
+                    for this record.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 11,
+                    }}
+                  >
+                    {getEditableFields(
+                      selectedModuleId,
+                      selectedRecord
+                    ).map((field) => {
+                      const originalValue =
+                        selectedRecord[field];
+
+                      /*
+                        Objects, arrays and Firestore
+                        timestamps are protected from the
+                        generic editor.
+                      */
+
+                      if (
+                        originalValue !== null &&
+                        typeof originalValue === "object"
+                      ) {
+                        return null;
+                      }
+
+                      const isBoolean =
+                        typeof originalValue === "boolean";
+
+                      const isNumber =
+                        typeof originalValue === "number";
+
+                      return (
+                        <div key={field}>
+                          <FieldLabel>
+                            {field}
+                          </FieldLabel>
+
+                          {isBoolean ? (
+                            <SelectInput
+                              value={
+                                editValues[field] ??
+                                String(originalValue)
+                              }
+                              onChange={(e) =>
+                                handleEditChange(
+                                  field,
+                                  e.target.value
+                                )
+                              }
+                              disabled={saving}
+                            >
+                              <option value="true">
+                                True
+                              </option>
+
+                              <option value="false">
+                                False
+                              </option>
+                            </SelectInput>
+                          ) : (
+                            <TextInput
+                              type={
+                                isNumber
+                                  ? "number"
+                                  : "text"
+                              }
+                              value={
+                                editValues[field] ?? ""
+                              }
+                              onChange={(e) =>
+                                handleEditChange(
+                                  field,
+                                  e.target.value
+                                )
+                              }
+                              disabled={saving}
+                            />
+                          )}
+
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontSize: 10,
+                              color: "#94a3b8",
+                            }}
+                          >
+                            Current:{" "}
+                            {displayStoredValue(
+                              originalValue
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: 11,
+                    borderRadius: 12,
+                    background: "#edf7ff",
+                    border: "1px solid #cfe7fb",
+                    color: "#475569",
+                    fontSize: 11,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Changes are written to the original report
+                  and recorded in the management audit trail
+                  with manager, timestamp, source collection,
+                  document ID and changed values.
+                </div>
+              </div>
+            ) : null}
+
+
+            {/* =================================================
+                STORED FIELDS
+                ================================================= */}
+
+            <div
+              style={{
+                marginTop: 16,
+                border: "1px solid #e2e8f0",
+                borderRadius: 16,
+                padding: 14,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  alignItems: "center",
+                  marginBottom: 10,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 900,
+                    color: "#0f172a",
+                  }}
+                >
+                  Stored Fields
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "#64748b",
+                    fontWeight: 800,
+                  }}
+                >
+                  {
+                    Object.keys(selectedRecord).filter(
+                      (key) => key !== "id"
+                    ).length
+                  }{" "}
+                  FIELD(S)
+                </div>
+              </div>
+
+              <StoredFieldsViewer
+                record={selectedRecord}
+              />
+            </div>
+
+
+            {/* =================================================
+                SAFETY NOTICE
+                ================================================= */}
+
+            <div
+              style={{
+                marginTop: 16,
+                padding: 14,
+                borderRadius: 16,
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: "#334155",
+                }}
+              >
+                Protected Data
+              </div>
+
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 11,
+                  lineHeight: 1.6,
+                  color: "#64748b",
+                }}
+              >
+                Document IDs, creation timestamps, audit
+                information, authentication identifiers and
+                protected system fields cannot be modified
+                through the administrative editor.
+              </div>
+            </div>
+          </PageCard>
+        ) : null}
+      </div>
