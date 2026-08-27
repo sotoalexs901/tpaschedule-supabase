@@ -11,6 +11,7 @@ import LoginPage from "./pages/LoginPage.jsx";
 import AppLayout from "./pages/AppLayout.jsx";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
 import PrivacyAcknowledgmentsPage from "./pages/PrivacyAcknowledgmentsPage.jsx";
+import ReportsDataManagementPage from "./pages/ReportsDataManagementPage.jsx";
 
 import DashboardPage from "./pages/DashboardPage.jsx";
 import DashboardEditorPage from "./pages/DashboardEditorPage.jsx";
@@ -406,21 +407,14 @@ function AppRouter() {
       <UpdatePrompt />
 
       <Routes>
-        {/* =====================================================
-            PUBLIC ROUTES
-        ===================================================== */}
+        {/* PUBLIC ROUTES */}
 
         <Route path="/login" element={<LoginPage />} />
-
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
-
         <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
-
         <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
 
-        {/* =====================================================
-            PROTECTED PLATFORM
-        ===================================================== */}
+        {/* PROTECTED PLATFORM */}
 
         <Route
           path="/"
@@ -430,18 +424,12 @@ function AppRouter() {
             </ProtectedRoute>
           }
         >
-          {/* ===================================================
-              GENERAL
-          =================================================== */}
+          {/* GENERAL */}
 
           <Route index element={<DashboardEntry />} />
-
           <Route path="dashboard" element={<DashboardEntry />} />
-
           <Route path="profile" element={<ProfilePage />} />
-
           <Route path="messages" element={<MessagesPage />} />
-
           <Route path="notifications" element={<NotificationsPage />} />
 
           <Route
@@ -460,9 +448,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              EMPLOYEE SCHEDULE / TIME OFF
-          =================================================== */}
+          {/* EMPLOYEE SCHEDULE / TIME OFF */}
 
           <Route
             path="my-schedule"
@@ -491,9 +477,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              TIMESHEETS
-          =================================================== */}
+          {/* TIMESHEETS */}
 
           <Route
             path="timesheets/submit"
@@ -517,9 +501,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              OPERATIONAL REPORTS
-          =================================================== */}
+          {/* OPERATIONAL REPORTS */}
 
           <Route
             path="operational-report/submit"
@@ -552,9 +534,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              REGULATED GARBAGE
-          =================================================== */}
+          {/* REGULATED GARBAGE */}
 
           <Route
             path="regulated-garbage/submit"
@@ -576,9 +556,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              CLEANING & SECURITY
-          =================================================== */}
+          {/* CLEANING & SECURITY */}
 
           <Route
             path="cleaning-security/submit"
@@ -600,9 +578,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              OPERATIONS REQUESTS
-          =================================================== */}
+          {/* OPERATIONS REQUESTS */}
 
           <Route
             path="operations-requests/submit"
@@ -629,9 +605,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              WCHR POI
-          =================================================== */}
+          {/* WCHR POI */}
 
           <Route
             path="wchr-poi/submit"
@@ -653,9 +627,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              EMPLOYEE PERFORMANCE
-          =================================================== */}
+          {/* EMPLOYEE PERFORMANCE */}
 
           <Route
             path="employee-performance-report"
@@ -677,9 +649,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              GATE CHECKLIST
-          =================================================== */}
+          {/* GATE CHECKLIST */}
 
           <Route
             path="gate-checklist"
@@ -706,9 +676,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              FUEL
-          =================================================== */}
+          {/* FUEL */}
 
           <Route
             path="fuel-entry"
@@ -737,9 +705,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              CIERRE DE VUELO
-          =================================================== */}
+          {/* CIERRE DE VUELO */}
 
           <Route
             path="cierre-vuelo"
@@ -768,9 +734,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              WCHR
-          =================================================== */}
+          {/* WCHR */}
 
           <Route
             path="wchr/scan"
@@ -830,9 +794,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              MANAGEMENT / ADMIN
-          =================================================== */}
+          {/* MANAGEMENT / ADMIN */}
 
           <Route
             path="admin/activity-dashboard"
@@ -848,6 +810,17 @@ function AppRouter() {
             element={
               <ProtectedRoute roles={["station_manager"]}>
                 <PrivacyAcknowledgmentsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* NEW: REPORTS DATA MANAGEMENT */}
+
+          <Route
+            path="admin/reports-data-management"
+            element={
+              <ProtectedRoute roles={["station_manager"]}>
+                <ReportsDataManagementPage />
               </ProtectedRoute>
             }
           />
@@ -870,9 +843,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              SCHEDULES
-          =================================================== */}
+          {/* SCHEDULES */}
 
           <Route
             path="schedule"
@@ -922,7 +893,6 @@ function AppRouter() {
             }
           />
 
-          {/* Employees is Station Manager only, matching AppLayout */}
           <Route
             path="employees"
             element={
@@ -1004,9 +974,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              TIME OFF ADMIN
-          =================================================== */}
+          {/* TIME OFF ADMIN */}
 
           <Route
             path="timeoff-requests"
@@ -1017,9 +985,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              BUDGETS
-          =================================================== */}
+          {/* BUDGETS */}
 
           <Route
             path="budgets"
@@ -1039,9 +1005,7 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              USER MANAGEMENT
-          =================================================== */}
+          {/* USER MANAGEMENT */}
 
           <Route
             path="create-user"
@@ -1061,16 +1025,12 @@ function AppRouter() {
             }
           />
 
-          {/* ===================================================
-              UNKNOWN PROTECTED ROUTE
-          =================================================== */}
+          {/* UNKNOWN PROTECTED ROUTE */}
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
 
-        {/* =====================================================
-            UNKNOWN PUBLIC ROUTE
-        ===================================================== */}
+        {/* UNKNOWN PUBLIC ROUTE */}
 
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
