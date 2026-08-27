@@ -502,6 +502,49 @@ const PROTECTED_FIELDS = new Set([
 ]);
 
 
+const REPORT_AUDIT_COLLECTION = "reports_management_audit";
+
+function getTimestampMilliseconds(value) {
+  if (!value) return 0;
+
+  try {
+    if (typeof value?.toMillis === "function") {
+      return value.toMillis();
+    }
+
+    if (typeof value?.toDate === "function") {
+      return value.toDate().getTime();
+    }
+
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  } catch {
+    return 0;
+  }
+}
+
+function valuesAreEqual(a, b) {
+  if (a === b) return true;
+
+  if (a === null || a === undefined) {
+    return b === null || b === undefined || b === "";
+  }
+
+  if (typeof a === "number") {
+    return a === Number(b);
+  }
+
+  if (typeof a === "boolean") {
+    return a === (b === true || b === "true" || b === "yes" || b === "1");
+  }
+
+  return String(a) === String(b ?? "");
+}
+
 /* =========================================================
    GENERAL HELPERS
    ========================================================= */
@@ -3549,8 +3592,8 @@ export default function ReportsDataManagementPage() {
 
         const convertedValue =
           convertEditedValue(
-            editValues[field],
-            originalValue
+            originalValue,
+            editValues[field]
           );
 
         if (
@@ -4128,6 +4171,7 @@ export default function ReportsDataManagementPage() {
           "Poppins, Inter, system-ui, sans-serif",
       }}
     >
+      <ReportsManagementGlobalStyles />
 
       {/* ===================================================
           HERO
@@ -5947,378 +5991,3 @@ function ReportsManagementGlobalStyles() {
     </style>
   );
 }
-  /* =======================================================
-     RECORD SELECTION
-     ======================================================= */
-
-  function handleSelectRecord(record) {
-    if (!record?.id) return;
-
-    setSelectedRecordId(record.id);
-
-    /*
-      Whenever another record is selected,
-      cancel any edit session that may still be open.
-    */
-
-    setIsEditing(false);
-    setEditValues({});
-  }
-
-
-  /* =======================================================
-     BEGIN ADMINISTRATIVE EDIT
-     ======================================================= */
-
-  function beginEdit() {
-    if (!selectedRecord) return;
-
-    const editableFields =
-      getEditableFieldsForModule(
-        selectedModuleId,
-        selectedRecord
-      );
-
-    const initialValues = {};
-
-    editableFields.forEach((field) => {
-      initialValues[field.key] =
-        selectedRecord[field.key] ?? "";
-    });
-
-    setEditValues(initialValues);
-    setIsEditing(true);
-
-    setStatusMessage(
-      "Administrative editing enabled."
-    );
-    setStatusTone("blue");
-  }
-
-
-  /* =======================================================
-     CANCEL EDIT
-     ======================================================= */
-
-  function cancelEdit() {
-    setIsEditing(false);
-    setEditValues({});
-
-    setStatusMessage(
-      "Changes were cancelled."
-    );
-    setStatusTone("amber");
-  }
-
-
-  /* =======================================================
-     UPDATE LOCAL EDIT VALUE
-     ======================================================= */
-
-  function updateEditValue(
-    field,
-    value
-  ) {
-    setEditValues((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-  }
-
-
-  /* =======================================================
-     SAVE ADMINISTRATIVE EDIT
-     ======================================================= */
-
-  async function saveEdit() {
-    if (
-      !selectedRecord ||
-      !selectedModule?.collectionName
-    ) {
-      return;
-    }
-
-    const editableFields =
-      getEditableFieldsForModule(
-        selectedModuleId,
-        selectedRecord
-      );
-
-    if (editableFields.length === 0) {
-      setStatusMessage(
-        "This report type does not have editable fields configured."
-      );
-      setStatusTone("amber");
-      return;
-    }
-
-    try {
-      setSaving(true);
-
-      const updates = {};
-
-      editableFields.forEach((field) => {
-        let value =
-          editValues[field.key];
-
-        /*
-          Preserve number fields as numbers.
-        */
-
-        if (field.type === "number") {
-          if (
-            value === "" ||
-            value === null ||
-            value === undefined
-          ) {
-            value = null;
-          } else {
-            const parsed =
-              Number(value);
-
-            value = Number.isNaN(parsed)
-              ? null
-              : parsed;
-          }
-        }
-
-        /*
-          Preserve boolean fields as booleans.
-        */
-
-        if (field.type === "boolean") {
-          value =
-            value === true ||
-            value === "true";
-        }
-
-        updates[field.key] = value;
-      });
-
-      updates.updatedAt =
-        serverTimestamp();
-
-      updates.updatedBy =
-        getVisibleUserName(user);
-
-      updates.updatedById =
-        user?.id ||
-        user?.uid ||
-        "";
-
-      updates.managerEdited = true;
-
-      await updateDoc(
-        doc(
-          db,
-          selectedModule.collectionName,
-          selectedRecord.id
-        ),
-        updates
-      );
-
-      /*
-        Update local state immediately so the
-        manager does not need to reload the page.
-      */
-
-      setRecords((previous) =>
-        previous.map((record) =>
-          record.id === selectedRecord.id
-            ? {
-                ...record,
-                ...updates,
-                updatedAt: new Date(),
-              }
-            : record
-        )
-      );
-
-      setIsEditing(false);
-      setEditValues({});
-
-      setStatusMessage(
-        "Record updated successfully."
-      );
-
-      setStatusTone("green");
-    } catch (error) {
-      console.error(
-        "Error updating report record:",
-        error
-      );
-
-      setStatusMessage(
-        "The record could not be updated."
-      );
-
-      setStatusTone("red");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-
-  /* =======================================================
-     ARCHIVE RECORD
-
-     IMPORTANT:
-     We do NOT delete the Firestore document.
-
-     Operational / compliance records should remain
-     recoverable and traceable.
-     ======================================================= */
-
-  async function archiveRecord() {
-    if (
-      !selectedRecord ||
-      !selectedModule?.collectionName
-    ) {
-      return;
-    }
-
-    const confirmed =
-      window.confirm(
-        `Archive this record?\n\n${getRecordPrimaryName(
-          selectedRecord
-        )}\n\nThe record will remain stored in Firestore and can be restored later.`
-      );
-
-    if (!confirmed) return;
-
-    try {
-      setSaving(true);
-
-      const updates = {
-        archived: true,
-        archivedAt:
-          serverTimestamp(),
-        archivedBy:
-          getVisibleUserName(user),
-        archivedById:
-          user?.id ||
-          user?.uid ||
-          "",
-        updatedAt:
-          serverTimestamp(),
-      };
-
-      await updateDoc(
-        doc(
-          db,
-          selectedModule.collectionName,
-          selectedRecord.id
-        ),
-        updates
-      );
-
-      setRecords((previous) =>
-        previous.map((record) =>
-          record.id === selectedRecord.id
-            ? {
-                ...record,
-                ...updates,
-                archivedAt:
-                  new Date(),
-                updatedAt:
-                  new Date(),
-              }
-            : record
-        )
-      );
-
-      setStatusMessage(
-        "Record archived successfully."
-      );
-
-      setStatusTone("green");
-    } catch (error) {
-      console.error(
-        "Error archiving record:",
-        error
-      );
-
-      setStatusMessage(
-        "The record could not be archived."
-      );
-
-      setStatusTone("red");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-
-  /* =======================================================
-     RESTORE RECORD
-     ======================================================= */
-
-  async function restoreRecord() {
-    if (
-      !selectedRecord ||
-      !selectedModule?.collectionName
-    ) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-
-      const updates = {
-        archived: false,
-        restoredAt:
-          serverTimestamp(),
-        restoredBy:
-          getVisibleUserName(user),
-        restoredById:
-          user?.id ||
-          user?.uid ||
-          "",
-        updatedAt:
-          serverTimestamp(),
-      };
-
-      await updateDoc(
-        doc(
-          db,
-          selectedModule.collectionName,
-          selectedRecord.id
-        ),
-        updates
-      );
-
-      setRecords((previous) =>
-        previous.map((record) =>
-          record.id === selectedRecord.id
-            ? {
-                ...record,
-                ...updates,
-                restoredAt:
-                  new Date(),
-                updatedAt:
-                  new Date(),
-              }
-            : record
-        )
-      );
-
-      setStatusMessage(
-        "Record restored successfully."
-      );
-
-      setStatusTone("green");
-    } catch (error) {
-      console.error(
-        "Error restoring record:",
-        error
-      );
-
-      setStatusMessage(
-        "The record could not be restored."
-      );
-
-      setStatusTone("red");
-    } finally {
-      setSaving(false);
-    }
-  }
