@@ -96,17 +96,27 @@ const REPORT_MODULES = [
   collectionName: "fuel_logs",
   status: "connected",
 },
-  {
-  id: "cierreVuelo",
-  label: "Cierre de Vuelo Reports",
+ {
+  id: "cierreVueloFlights",
+  label: "Cierre de Vuelo · Flights",
   icon: "✈",
-  collectionNames: [
-    "cierreVueloFlights",
-    "cierreVueloFuel",
-    "cierreVueloMonthClosures",
-  ],
+  collectionName: "cierreVueloFlights",
   status: "connected",
 },
+{
+  id: "cierreVueloFuel",
+  label: "Cierre de Vuelo · Fuel",
+  icon: "⛽",
+  collectionName: "cierreVueloFuel",
+  status: "connected",
+},
+{
+  id: "cierreVueloMonthClosures",
+  label: "Cierre de Vuelo · Month Closures",
+  icon: "▣",
+  collectionName: "cierreVueloMonthClosures",
+  status: "connected",
+}, 
 ];
 /* =========================================================
    HELPERS
