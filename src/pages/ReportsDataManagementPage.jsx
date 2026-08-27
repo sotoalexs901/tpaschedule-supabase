@@ -1,8 +1,9 @@
-// src/pages/ReportsDataManagementPage.jsx
+ src/pages/ReportsDataManagementPage.jsx
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
+  deleteDoc,
   doc,
   getCountFromServer,
   getDocs,
@@ -2552,6 +2553,76 @@ function StoredFieldsViewer({
     </div>
   );
 }
+
+/* =========================================================
+   MONTH HELPERS
+   ========================================================= */
+
+function normalizeMonthKey(value) {
+  if (value === null || value === undefined || value === "") return "";
+
+  if (typeof value?.toDate === "function") {
+    const date = value.toDate();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  const text = String(value).trim();
+  if (!text) return "";
+
+  const direct = text.match(/^(\d{4})[-/](\d{1,2})(?:\D|$)/);
+  if (direct) return `${direct[1]}-${String(Number(direct[2])).padStart(2, "0")}`;
+
+  const monthYear = text.match(/^(\d{1,2})[-/](\d{4})(?:\D|$)/);
+  if (monthYear) return `${monthYear[2]}-${String(Number(monthYear[1])).padStart(2, "0")}`;
+
+  const named = text.match(/^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})$/i);
+  if (named) {
+    const months = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+    return `${named[2]}-${String(months.indexOf(named[1].toLowerCase()) + 1).padStart(2, "0")}`;
+  }
+
+  const date = new Date(text);
+  if (!Number.isNaN(date.getTime())) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  return "";
+}
+
+function getRecordMonthKey(record) {
+  const candidates = [
+    record?.monthKey,
+    record?.month,
+    record?.date,
+    record?.flightDate,
+    record?.reportDate,
+    record?.serviceDate,
+    record?.createdAt,
+    record?.submittedAt,
+    record?.dateCreated,
+    record?.timestamp,
+  ];
+
+  for (const value of candidates) {
+    const monthKey = normalizeMonthKey(value);
+    if (monthKey) return monthKey;
+  }
+
+  return "";
+}
+
+function formatMonthLabel(monthKey) {
+  const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) return monthKey || "Unknown Month";
+
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
 /* =========================================================
    MAIN PAGE
    ========================================================= */
@@ -2636,6 +2707,16 @@ export default function ReportsDataManagementPage() {
     archiveFilter,
     setArchiveFilter,
   ] = useState("active");
+
+  const [
+    monthFilter,
+    setMonthFilter,
+  ] = useState("all");
+
+  const [
+    deletingMonth,
+    setDeletingMonth,
+  ] = useState(false);
 
   /* =======================================================
      EDITOR STATE
@@ -3091,6 +3172,23 @@ export default function ReportsDataManagementPage() {
     }, [records]);
 
 
+
+  /* =======================================================
+     AVAILABLE MONTHS
+     ======================================================= */
+
+  const monthOptions = useMemo(() => {
+    const values = new Set();
+
+    records.forEach((record) => {
+      const monthKey = getRecordMonthKey(record);
+      if (monthKey) values.add(monthKey);
+    });
+
+    return Array.from(values).sort((a, b) => b.localeCompare(a));
+  }, [records]);
+
+
   /* =======================================================
      FILTERED RECORDS
      ======================================================= */
@@ -3154,6 +3252,15 @@ export default function ReportsDataManagementPage() {
               "all" &&
             airline !==
               airlineFilter
+          ) {
+            return false;
+          }
+
+          /* MONTH */
+
+          if (
+            monthFilter !== "all" &&
+            getRecordMonthKey(record) !== monthFilter
           ) {
             return false;
           }
@@ -3267,6 +3374,7 @@ export default function ReportsDataManagementPage() {
       departmentFilter,
       airlineFilter,
       archiveFilter,
+      monthFilter,
       selectedModuleId,
     ]);
 
@@ -3399,6 +3507,7 @@ export default function ReportsDataManagementPage() {
     setDepartmentFilter("all");
     setAirlineFilter("all");
     setArchiveFilter("active");
+    setMonthFilter("all");
   }
 
 
@@ -4094,6 +4203,124 @@ export default function ReportsDataManagementPage() {
   }
 
 
+
+  /* =======================================================
+     DELETE MONTH DATA
+     ======================================================= */
+
+  async function deleteSelectedMonthData() {
+    if (!selectedModule?.collectionName) return;
+
+    if (monthFilter === "all") {
+      setStatusMessage("Select a specific Month before deleting data.");
+      setStatusTone("amber");
+      return;
+    }
+
+    const monthRecords = records.filter(
+      (record) => getRecordMonthKey(record) === monthFilter
+    );
+
+    if (monthRecords.length === 0) {
+      setStatusMessage(`No records found for ${formatMonthLabel(monthFilter)}.`);
+      setStatusTone("amber");
+      return;
+    }
+
+    const monthLabel = formatMonthLabel(monthFilter);
+    const confirmationText = `DELETE ${monthFilter}`;
+
+    const firstConfirm = window.confirm(
+      `DANGER: You are about to permanently delete ${monthRecords.length} record(s) from ${selectedModule.label} for ${monthLabel}.\n\nA complete snapshot of every record will first be saved to ${REPORT_AUDIT_COLLECTION}.\n\nContinue?`
+    );
+
+    if (!firstConfirm) return;
+
+    const typed = window.prompt(
+      `To confirm, type exactly:\n${confirmationText}`
+    );
+
+    if (typed !== confirmationText) {
+      setStatusMessage("Month deletion cancelled. Confirmation text did not match.");
+      setStatusTone("amber");
+      return;
+    }
+
+    try {
+      setDeletingMonth(true);
+
+      const managerName = getVisibleUserName(user);
+      const managerId = user?.id || user?.uid || "";
+      const deletedIds = [];
+
+      /*
+        We intentionally process each record separately:
+        1. Save a full audit snapshot.
+        2. Only after the snapshot succeeds, delete the source record.
+        This favors recoverability over speed.
+      */
+      for (const record of monthRecords) {
+        const auditRef = doc(collection(db, REPORT_AUDIT_COLLECTION));
+
+        await setDoc(auditRef, {
+          action: "DELETE_MONTH_RECORD",
+          moduleId: selectedModule.id,
+          moduleLabel: selectedModule.label,
+          sourceCollection: selectedModule.collectionName,
+          sourceDocumentId: record.id,
+          recordName: getRecordPrimaryName(record),
+          monthKey: monthFilter,
+          monthLabel,
+          performedBy: managerName,
+          performedById: managerId,
+          deletedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          snapshot: record,
+        });
+
+        await deleteDoc(
+          doc(db, selectedModule.collectionName, record.id)
+        );
+
+        deletedIds.push(record.id);
+      }
+
+      const deletedSet = new Set(deletedIds);
+
+      setRecords((prev) =>
+        prev.filter((record) => !deletedSet.has(record.id))
+      );
+
+      setModuleCounts((prev) => ({
+        ...prev,
+        [selectedModule.id]: Math.max(
+          0,
+          Number(prev[selectedModule.id] ?? records.length) - deletedIds.length
+        ),
+      }));
+
+      if (selectedRecordId && deletedSet.has(selectedRecordId)) {
+        setSelectedRecordId("");
+        setEditMode(false);
+        setEditValues({});
+      }
+
+      setStatusMessage(
+        `${deletedIds.length} record(s) deleted from ${selectedModule.label} for ${monthLabel}. Audit snapshots were saved.`
+      );
+      setStatusTone("green");
+    } catch (error) {
+      console.error("Error deleting month data:", error);
+      setStatusMessage(
+        "Month deletion stopped because an error occurred. Records already deleted have audit snapshots; review the Audit Log before retrying."
+      );
+      setStatusTone("red");
+    } finally {
+      setDeletingMonth(false);
+    }
+  }
+
+
   /* =======================================================
      ACTIVE FILTER CHIPS
      ======================================================= */
@@ -4638,6 +4865,26 @@ export default function ReportsDataManagementPage() {
 
           <div>
             <FieldLabel>
+              Month
+            </FieldLabel>
+
+            <SelectInput
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              disabled={!selectedModule.collectionName || deletingMonth}
+            >
+              <option value="all">All Months</option>
+
+              {monthOptions.map((monthKey) => (
+                <option key={monthKey} value={monthKey}>
+                  {formatMonthLabel(monthKey)}
+                </option>
+              ))}
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>
               Data Quality
             </FieldLabel>
 
@@ -4708,6 +4955,64 @@ export default function ReportsDataManagementPage() {
         </div>
 
 
+
+        <div
+          style={{
+            marginTop: 16,
+            padding: 14,
+            borderRadius: 16,
+            background: monthFilter === "all" ? "#f8fafc" : "#fff1f2",
+            border: monthFilter === "all" ? "1px solid #e2e8f0" : "1px solid #fecdd3",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 900,
+                color: monthFilter === "all" ? "#64748b" : "#9f1239",
+              }}
+            >
+              Monthly Data Removal
+            </div>
+
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: "#64748b",
+              }}
+            >
+              {monthFilter === "all"
+                ? "Select a month to enable bulk deletion for this report module."
+                : `${records.filter((record) => getRecordMonthKey(record) === monthFilter).length} record(s) in ${formatMonthLabel(monthFilter)}. Each record is backed up to the Audit Log before deletion.`}
+            </div>
+          </div>
+
+          <ActionButton
+            variant="danger"
+            onClick={deleteSelectedMonthData}
+            disabled={
+              monthFilter === "all" ||
+              deletingMonth ||
+              !selectedModule.collectionName
+            }
+          >
+            {deletingMonth
+              ? "Deleting..."
+              : monthFilter === "all"
+              ? "Select Month to Delete"
+              : `Delete ${formatMonthLabel(monthFilter)}`}
+          </ActionButton>
+        </div>
+
+
         {/* ACTIVE FILTER CHIPS */}
 
         {activeFilterCount > 0 ? (
@@ -4737,6 +5042,12 @@ export default function ReportsDataManagementPage() {
                 }
               >
                 Search: {searchText}
+              </FilterChip>
+            ) : null}
+
+            {monthFilter !== "all" ? (
+              <FilterChip onRemove={() => setMonthFilter("all")}>
+                Month: {formatMonthLabel(monthFilter)}
               </FilterChip>
             ) : null}
 
