@@ -53,12 +53,12 @@ const REPORT_MODULES = [
   status: "connected",
 }, 
   {
-    id: "cleaningSecurity",
-    label: "Cleaning & Security Reports",
-    icon: "■",
-    collectionName: null,
-    status: "pending",
-  },
+  id: "cleaningSecurity",
+  label: "Cleaning & Security Reports",
+  icon: "🛡",
+  collectionName: "cleaning_security_reports",
+  status: "connected",
+},
   {
     id: "operationsRequests",
     label: "Operations Requests Reports",
