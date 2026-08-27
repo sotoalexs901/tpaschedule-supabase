@@ -70,8 +70,8 @@ const REPORT_MODULES = [
     id: "wchrPoi",
     label: "WCHR POI Reports",
     icon: "♿",
-    collectionName: null,
-    status: "pending",
+    collectionName: "wchr_poi_reports",
+    status: "connected",
   },
 
   // Confirmed from EmployeePerformanceManagementPage.jsx
