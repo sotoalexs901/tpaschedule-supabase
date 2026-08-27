@@ -32,12 +32,12 @@ import { useUser } from "../UserContext.jsx";
 
 const REPORT_MODULES = [
   {
-    id: "timesheet",
-    label: "Timesheet Reports",
-    icon: "▦",
-    collectionName: null,
-    status: "pending",
-  },
+  id: "timesheet",
+  label: "Timesheet Reports",
+  icon: "▦",
+  collectionName: "timesheet_reports",
+  status: "connected",
+},
   {
     id: "operational",
     label: "Operational Reports",
