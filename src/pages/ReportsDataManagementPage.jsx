@@ -100,9 +100,13 @@ const REPORT_MODULES = [
     id: "flightClosure",
     label: "Cierre de Vuelo Reports",
     icon: "▣",
-    collectionName: null,
-    status: "pending",
-  },
+    collectionName: [
+
+    "cierreVueloFlights",
+    "cierreVueloFuel",
+    "cierreVueloMonthClosures",
+      status: "connected",
+      },
 ];
 
 
