@@ -60,12 +60,12 @@ const REPORT_MODULES = [
   status: "connected",
 },
   {
-    id: "operationsRequests",
-    label: "Operations Requests Reports",
-    icon: "⬢",
-    collectionName: null,
-    status: "pending",
-  },
+  id: "operationsRequests",
+  label: "Operations Requests Reports",
+  icon: "📋",
+  collectionName: "supplies_uniform_ot_requests",
+  status: "connected",
+},
   {
     id: "wchrPoi",
     label: "WCHR POI Reports",
