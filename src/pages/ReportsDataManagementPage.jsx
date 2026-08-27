@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -2635,6 +2636,8 @@ export default function ReportsDataManagementPage() {
     setArchiveFilter,
   ] = useState("active");
 
+  const [monthFilter, setMonthFilter] = useState("all");
+
   /* =======================================================
      EDITOR STATE
      ======================================================= */
@@ -3090,6 +3093,20 @@ export default function ReportsDataManagementPage() {
 
 
   /* =======================================================
+     AVAILABLE MONTHS
+     ======================================================= */
+
+  const monthOptions = useMemo(() => {
+    const values = new Set();
+    records.forEach((record) => {
+      const date = getRecordDateValue(record);
+      if (!date) return;
+      values.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
+    });
+    return Array.from(values).sort((a, b) => b.localeCompare(a));
+  }, [records]);
+
+  /* =======================================================
      FILTERED RECORDS
      ======================================================= */
 
@@ -3176,6 +3193,15 @@ export default function ReportsDataManagementPage() {
             !archived
           ) {
             return false;
+          }
+
+          /* MONTH */
+
+          if (monthFilter !== "all") {
+            const recordDate = getRecordDateValue(record);
+            if (!recordDate) return false;
+            const recordMonth = `${recordDate.getFullYear()}-${String(recordDate.getMonth() + 1).padStart(2, "0")}`;
+            if (recordMonth !== monthFilter) return false;
           }
 
           /* QUALITY */
@@ -3265,6 +3291,7 @@ export default function ReportsDataManagementPage() {
       departmentFilter,
       airlineFilter,
       archiveFilter,
+      monthFilter,
       selectedModuleId,
     ]);
 
@@ -3397,6 +3424,7 @@ export default function ReportsDataManagementPage() {
     setDepartmentFilter("all");
     setAirlineFilter("all");
     setArchiveFilter("active");
+    setMonthFilter("all");
   }
 
 
@@ -3417,6 +3445,7 @@ export default function ReportsDataManagementPage() {
     setDepartmentFilter("all");
     setAirlineFilter("all");
     setArchiveFilter("active");
+    setMonthFilter("all");
 
     setSelectedRecordId("");
 
@@ -4093,6 +4122,106 @@ export default function ReportsDataManagementPage() {
 
 
   /* =======================================================
+     PERMANENT DELETE ACTIONS
+     ======================================================= */
+
+  async function deleteSelectedRecord() {
+    if (!selectedRecord || !selectedModule?.collectionName) return;
+    const name = getRecordPrimaryName(selectedRecord);
+    if (!window.confirm(`PERMANENTLY delete "${name}"?\n\nThis cannot be undone.`)) return;
+    if (!window.confirm(`Final confirmation: delete this record from ${selectedModule.collectionName}?`)) return;
+
+    try {
+      setSaving(true);
+      const managerName = getVisibleUserName(user);
+      const managerId = getVisibleUserId(user);
+      await setDoc(doc(collection(db, REPORT_AUDIT_COLLECTION)), {
+        action: "DELETE_RECORD",
+        moduleId: selectedModule.id,
+        moduleLabel: selectedModule.label,
+        sourceCollection: selectedModule.collectionName,
+        sourceDocumentId: selectedRecord.id,
+        recordName: name,
+        performedBy: managerName,
+        performedById: managerId,
+        createdAt: serverTimestamp(),
+      });
+      await deleteDoc(doc(db, selectedModule.collectionName, selectedRecord.id));
+      setRecords((prev) => prev.filter((r) => r.id !== selectedRecord.id));
+      setModuleCounts((prev) => ({ ...prev, [selectedModule.id]: Math.max(0, Number(prev[selectedModule.id] || records.length) - 1) }));
+      setSelectedRecordId("");
+      setEditMode(false);
+      setEditValues({});
+      setStatusMessage("Record permanently deleted.");
+      setStatusTone("green");
+    } catch (error) {
+      console.error("Error deleting record:", error);
+      setStatusMessage("Could not delete the record. Check Firestore permissions.");
+      setStatusTone("red");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteFilteredMonth() {
+    if (monthFilter === "all" || !selectedModule?.collectionName) {
+      setStatusMessage("Select a month before using monthly delete.");
+      setStatusTone("amber");
+      return;
+    }
+
+    const monthRecords = filteredRecords;
+    if (monthRecords.length === 0) {
+      setStatusMessage("No visible records exist for the selected month and filters.");
+      setStatusTone("amber");
+      return;
+    }
+
+    if (!window.confirm(`PERMANENTLY delete ${monthRecords.length} visible record(s) for ${monthFilter}?\n\nCurrent Department, Airline, Status, Quality, Visibility and Search filters are respected.`)) return;
+    const typed = window.prompt(`Type DELETE ${monthFilter} to confirm:`);
+    if (typed !== `DELETE ${monthFilter}`) {
+      setStatusMessage("Monthly delete cancelled: confirmation text did not match.");
+      setStatusTone("amber");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const managerName = getVisibleUserName(user);
+      const managerId = getVisibleUserId(user);
+      const ids = monthRecords.map((r) => r.id);
+      const auditRef = doc(collection(db, REPORT_AUDIT_COLLECTION));
+      await setDoc(auditRef, {
+        action: "DELETE_MONTH",
+        moduleId: selectedModule.id,
+        moduleLabel: selectedModule.label,
+        sourceCollection: selectedModule.collectionName,
+        month: monthFilter,
+        recordCount: ids.length,
+        sourceDocumentIds: ids,
+        filters: { searchText, statusFilter, qualityFilter, departmentFilter, airlineFilter, archiveFilter },
+        performedBy: managerName,
+        performedById: managerId,
+        createdAt: serverTimestamp(),
+      });
+
+      await Promise.all(ids.map((id) => deleteDoc(doc(db, selectedModule.collectionName, id))));
+      const idSet = new Set(ids);
+      setRecords((prev) => prev.filter((r) => !idSet.has(r.id)));
+      setModuleCounts((prev) => ({ ...prev, [selectedModule.id]: Math.max(0, Number(prev[selectedModule.id] || records.length) - ids.length) }));
+      if (idSet.has(selectedRecordId)) setSelectedRecordId("");
+      setStatusMessage(`${ids.length} record(s) permanently deleted for ${monthFilter}.`);
+      setStatusTone("green");
+    } catch (error) {
+      console.error("Error deleting month records:", error);
+      setStatusMessage("Monthly delete did not complete. Check Firestore permissions.");
+      setStatusTone("red");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* =======================================================
      ACTIVE FILTER CHIPS
      ======================================================= */
 
@@ -4116,6 +4245,8 @@ export default function ReportsDataManagementPage() {
 
       archiveFilter !==
         "active",
+
+      monthFilter !== "all",
     ].filter(Boolean).length;
 
 
@@ -4636,6 +4767,23 @@ export default function ReportsDataManagementPage() {
 
           <div>
             <FieldLabel>
+              Month
+            </FieldLabel>
+
+            <SelectInput
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              disabled={!selectedModule.collectionName}
+            >
+              <option value="all">All Months</option>
+              {monthOptions.map((month) => (
+                <option key={month} value={month}>{month}</option>
+              ))}
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>
               Data Quality
             </FieldLabel>
 
@@ -4780,6 +4928,12 @@ export default function ReportsDataManagementPage() {
               </FilterChip>
             ) : null}
 
+            {monthFilter !== "all" ? (
+              <FilterChip onRemove={() => setMonthFilter("all")}>
+                Month: {monthFilter}
+              </FilterChip>
+            ) : null}
+
             {qualityFilter !==
             "all" ? (
               <FilterChip
@@ -4842,6 +4996,18 @@ export default function ReportsDataManagementPage() {
               loading
                 ? "Loading report data..."
                 : `${filteredRecords.length} visible record(s) · ${records.length} loaded`
+            }
+            right={
+              monthFilter !== "all" ? (
+                <ActionButton
+                  variant="danger"
+                  onClick={deleteFilteredMonth}
+                  disabled={saving || loading || filteredRecords.length === 0}
+                  title="Permanently delete all currently visible records for this month"
+                >
+                  {saving ? "Working..." : `Delete Visible Month (${filteredRecords.length})`}
+                </ActionButton>
+              ) : null
             }
           />
 
@@ -5405,6 +5571,17 @@ export default function ReportsDataManagementPage() {
                   disabled={saving}
                 >
                   Restore Record
+                </ActionButton>
+              ) : null}
+
+              {!editMode ? (
+                <ActionButton
+                  variant="danger"
+                  onClick={deleteSelectedRecord}
+                  disabled={saving}
+                  title="Permanently delete this Firestore document"
+                >
+                  Delete Permanently
                 </ActionButton>
               ) : null}
             </div>
