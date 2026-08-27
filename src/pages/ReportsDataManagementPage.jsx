@@ -82,14 +82,13 @@ const REPORT_MODULES = [
     collectionName: "employeePerformanceReports",
     status: "connected",
   },
-
   {
-    id: "gateChecklist",
-    label: "Gate Checklist Management",
-    icon: "▥",
-    collectionName: null,
-    status: "pending",
-  },
+  id: "gateChecklist",
+  label: "Gate Checklist Management",
+  icon: "▥",
+  collectionName: "gateChecklistReports",
+  status: "active",
+}, 
   {
     id: "fuel",
     label: "Fuel Management",
