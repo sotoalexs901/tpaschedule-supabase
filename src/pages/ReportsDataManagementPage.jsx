@@ -11,7 +11,6 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -4199,23 +4198,29 @@ export default function ReportsDataManagementPage() {
     });
 
     if (monthRecords.length === 0) {
-      setStatusMessage(`No loaded records exist for ${monthFilter}.`);
+      setStatusMessage(`No loaded records found for ${monthFilter}.`);
       setStatusTone("amber");
       return;
     }
 
     const confirmed = window.confirm(
-      `PERMANENTLY delete ALL ${monthRecords.length} record(s) for ${monthFilter}?\n\nThis will remove the documents from Firestore and cannot be undone.`
+      `PERMANENTLY DELETE THE ENTIRE MONTH?\n\n` +
+        `Month: ${monthFilter}\n` +
+        `Collection: ${selectedModule.collectionName}\n` +
+        `Records: ${monthRecords.length}\n\n` +
+        `This action cannot be undone.`
     );
 
     if (!confirmed) return;
 
     const typed = window.prompt(
-      `Type DELETE ${monthFilter} to confirm:`
+      `To confirm, type exactly:\n\nDELETE ${monthFilter}`
     );
 
     if (safeText(typed).toUpperCase() !== `DELETE ${monthFilter}`) {
-      setStatusMessage("Monthly delete cancelled.");
+      setStatusMessage(
+        "Monthly delete cancelled. Confirmation text did not match."
+      );
       setStatusTone("amber");
       return;
     }
@@ -4223,31 +4228,49 @@ export default function ReportsDataManagementPage() {
     try {
       setSaving(true);
 
-      /*
-        Firestore writeBatch is used instead of many independent
-        deleteDoc() requests. The page loads at most 500 records,
-        which is within Firestore's 500-write batch limit.
-      */
-      const batch = writeBatch(db);
+      const deletedIds = [];
 
-      monthRecords.forEach((record) => {
-        batch.delete(
+      /*
+        Use the same deleteDoc() operation that already works
+        for individual deletion. Delete sequentially instead
+        of using writeBatch().
+      */
+      for (const record of monthRecords) {
+        await deleteDoc(
           doc(
             db,
             selectedModule.collectionName,
             record.id
           )
         );
-      });
 
-      await batch.commit();
+        deletedIds.push(record.id);
+      }
 
-      const deletedIds = monthRecords.map((record) => record.id);
       const deletedIdSet = new Set(deletedIds);
 
+      setRecords((previous) =>
+        previous.filter((record) => !deletedIdSet.has(record.id))
+      );
+
+      setModuleCounts((previous) => ({
+        ...previous,
+        [selectedModule.id]: Math.max(
+          0,
+          Number(previous[selectedModule.id] ?? records.length) -
+            deletedIds.length
+        ),
+      }));
+
+      if (deletedIdSet.has(selectedRecordId)) {
+        setSelectedRecordId("");
+        setEditMode(false);
+        setEditValues({});
+      }
+
       /*
-        Audit is intentionally attempted AFTER the delete commit.
-        Therefore audit permissions cannot prevent the month delete.
+        Audit AFTER deletion so an audit permission problem
+        cannot block the monthly deletion.
       */
       try {
         await setDoc(
@@ -4267,28 +4290,9 @@ export default function ReportsDataManagementPage() {
         );
       } catch (auditError) {
         console.warn(
-          "Month deleted, but audit record could not be written:",
+          "Month deleted but audit log could not be created:",
           auditError
         );
-      }
-
-      setRecords((prev) =>
-        prev.filter((record) => !deletedIdSet.has(record.id))
-      );
-
-      setModuleCounts((prev) => ({
-        ...prev,
-        [selectedModule.id]: Math.max(
-          0,
-          Number(prev[selectedModule.id] ?? records.length) -
-            deletedIds.length
-        ),
-      }));
-
-      if (deletedIdSet.has(selectedRecordId)) {
-        setSelectedRecordId("");
-        setEditMode(false);
-        setEditValues({});
       }
 
       setStatusMessage(
@@ -4296,17 +4300,16 @@ export default function ReportsDataManagementPage() {
       );
       setStatusTone("green");
     } catch (error) {
-      console.error("MONTH DELETE FIRESTORE ERROR:", error);
+      console.error("MONTH DELETE ERROR:", error);
 
       const errorCode = safeText(error?.code);
       const errorMessage = safeText(error?.message);
 
       setStatusMessage(
-        errorCode
-          ? `Monthly delete failed: ${errorCode}${errorMessage ? ` · ${errorMessage}` : ""}`
-          : `Monthly delete failed${errorMessage ? `: ${errorMessage}` : "."}`
+        `Monthly delete stopped after an error.` +
+          (errorCode ? ` ${errorCode}.` : "") +
+          (errorMessage ? ` ${errorMessage}` : "")
       );
-
       setStatusTone("red");
     } finally {
       setSaving(false);
@@ -5097,7 +5100,7 @@ export default function ReportsDataManagementPage() {
                   disabled={saving || loading || selectedMonthRecordCount === 0}
                   title="Permanently delete all loaded records for the selected month"
                 >
-                  {saving ? "Working..." : `Delete Month (${selectedMonthRecordCount})`}
+                  {saving ? "Deleting Month..." : `Delete Month (${selectedMonthRecordCount})`}
                 </ActionButton>
               ) : null
             }
@@ -6257,4 +6260,3 @@ function ReportsManagementGlobalStyles() {
       `}
     </style>
   );
-}
