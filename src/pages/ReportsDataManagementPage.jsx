@@ -6260,3 +6260,6 @@ function ReportsManagementGlobalStyles() {
       `}
     </style>
   );
+}
+
+// END OF ReportsDataManagementPage.jsx - DO NOT OMIT THE CLOSING BRACE ABOVE
