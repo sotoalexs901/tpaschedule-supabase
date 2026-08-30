@@ -77,6 +77,13 @@ const REPORT_MODULES = [
     status: "connected",
   },
   {
+    id: "wchrFlight",
+    label: "WCHR Flight Report",
+    icon: "♿",
+    collectionName: "wch_reports",
+    status: "connected",
+  },
+  {
     id: "employeePerformance",
     label: "Employee Performance Reports",
     icon: "▰",
@@ -282,6 +289,39 @@ const MODULE_CONFIG = {
       {
         keys: ["flightNumber", "flight"],
         label: "flight",
+      },
+    ],
+  },
+
+  wchrFlight: {
+    editableFields: [
+      "passenger_name",
+      "airline",
+      "flight_number",
+      "pnr",
+      "wch_type",
+      "wheelchair_number",
+      "current_location",
+      "tracking_status",
+      "status",
+    ],
+
+    qualityFields: [
+      {
+        keys: ["submitted_at", "billing_date", "flight_date"],
+        label: "report date",
+      },
+      {
+        keys: ["passenger_name"],
+        label: "passenger",
+      },
+      {
+        keys: ["flight_number"],
+        label: "flight",
+      },
+      {
+        keys: ["wheelchair_number"],
+        label: "wheelchair number",
       },
     ],
   },
@@ -701,7 +741,9 @@ function getRecordFlight(record) {
 function getRecordPrimaryName(record) {
   return (
     record?.employeeName ||
+    record?.passenger_name ||
     record?.flightNumber ||
+    record?.flight_number ||
     record?.flight ||
     record?.reportName ||
     record?.title ||
@@ -864,6 +906,9 @@ function getRecordDateValue(record) {
     record?.date ||
     record?.reportDate ||
     record?.flightDate ||
+    record?.submitted_at ||
+    record?.billing_date ||
+    record?.flight_date ||
     record?.createdAt ||
     record?.submittedAt ||
     null;
@@ -4316,6 +4361,186 @@ export default function ReportsDataManagementPage() {
     }
   }
 
+  function printRecordsBeforeDelete() {
+    const rows =
+      monthFilter !== "all"
+        ? records.filter((record) => {
+            const recordDate = getRecordDateValue(record);
+            if (!recordDate) return false;
+
+            const recordMonth = `${recordDate.getFullYear()}-${String(
+              recordDate.getMonth() + 1
+            ).padStart(2, "0")}`;
+
+            return recordMonth === monthFilter;
+          })
+        : filteredRecords;
+
+    if (!rows.length) {
+      setStatusMessage("There are no records available to print.");
+      setStatusTone("amber");
+      return;
+    }
+
+    const printableValue = (value) => {
+      if (value === null || value === undefined || value === "") return "-";
+
+      if (typeof value?.toDate === "function") {
+        return value.toDate().toLocaleString();
+      }
+
+      if (Array.isArray(value)) {
+        return value
+          .map((item) =>
+            typeof item === "object"
+              ? JSON.stringify(item)
+              : String(item)
+          )
+          .join(", ");
+      }
+
+      if (typeof value === "object") {
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return "[Object]";
+        }
+      }
+
+      return String(value);
+    };
+
+    const escapeHtml = (value) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    const preferredFields = [
+      "report_id",
+      "date",
+      "reportDate",
+      "submitted_at",
+      "billing_date",
+      "flight_date",
+      "passenger_name",
+      "employeeName",
+      "employee_name",
+      "wchr_agent_name",
+      "department",
+      "airline",
+      "flightNumber",
+      "flight_number",
+      "pnr",
+      "wch_type",
+      "wheelchair_number",
+      "current_location",
+      "tracking_status",
+      "status",
+      "notes",
+    ];
+
+    const availableFields = Array.from(
+      new Set(
+        rows.flatMap((record) =>
+          Object.keys(record).filter(
+            (field) =>
+              field !== "id" &&
+              !PROTECTED_FIELDS.has(field)
+          )
+        )
+      )
+    );
+
+    const orderedFields = [
+      ...preferredFields.filter((field) =>
+        availableFields.includes(field)
+      ),
+      ...availableFields.filter(
+        (field) => !preferredFields.includes(field)
+      ),
+    ];
+
+    const printableFields = orderedFields.slice(0, 14);
+
+    const title = selectedModule?.label || "Report";
+    const period =
+      monthFilter !== "all" ? monthFilter : "Current filtered view";
+
+    const popup = window.open("", "_blank");
+
+    if (!popup) {
+      setStatusMessage(
+        "The print window was blocked. Allow pop-ups for this site and try again."
+      );
+      setStatusTone("amber");
+      return;
+    }
+
+    const headerCells = printableFields
+      .map(
+        (field) =>
+          `<th>${escapeHtml(formatFieldLabel(field))}</th>`
+      )
+      .join("");
+
+    const bodyRows = rows
+      .map((record, index) => {
+        const cells = printableFields
+          .map(
+            (field) =>
+              `<td>${escapeHtml(
+                printableValue(record?.[field])
+              )}</td>`
+          )
+          .join("");
+
+        return `<tr><td>${index + 1}</td>${cells}</tr>`;
+      })
+      .join("");
+
+    popup.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)} - ${escapeHtml(period)}</title>
+  <style>
+    @page { size: landscape; margin: 0.45in; }
+    body { font-family: Arial, sans-serif; color: #0f172a; margin: 0; }
+    h1 { margin: 0; font-size: 22px; }
+    .meta { margin: 6px 0 18px; font-size: 12px; color: #475569; }
+    table { width: 100%; border-collapse: collapse; font-size: 9px; }
+    th, td { border: 1px solid #cbd5e1; padding: 5px 6px; text-align: left; vertical-align: top; word-break: break-word; }
+    th { background: #eaf4ff; font-weight: 700; }
+    tr:nth-child(even) td { background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <h1>TPA OPS · ${escapeHtml(title)}</h1>
+  <div class="meta">
+    Period: ${escapeHtml(period)} · Records: ${rows.length} · Printed: ${escapeHtml(
+      new Date().toLocaleString()
+    )}
+  </div>
+  <table>
+    <thead><tr><th>#</th>${headerCells}</tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table>
+  <script>
+    window.onload = function () {
+      window.focus();
+      window.print();
+    };
+  <\/script>
+</body>
+</html>`);
+
+    popup.document.close();
+  }
+
+
   /* =======================================================
      ACTIVE FILTER CHIPS
      ======================================================= */
@@ -5093,16 +5318,52 @@ export default function ReportsDataManagementPage() {
                 : `${filteredRecords.length} visible record(s) · ${records.length} loaded`
             }
             right={
-              monthFilter !== "all" ? (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  justifyContent: "flex-end",
+                }}
+              >
                 <ActionButton
-                  variant="danger"
-                  onClick={deleteFilteredMonth}
-                  disabled={saving || loading || selectedMonthRecordCount === 0}
-                  title="Permanently delete all loaded records for the selected month"
+                  variant="secondary"
+                  onClick={printRecordsBeforeDelete}
+                  disabled={
+                    saving ||
+                    loading ||
+                    (monthFilter !== "all"
+                      ? selectedMonthRecordCount === 0
+                      : filteredRecords.length === 0)
+                  }
+                  title={
+                    monthFilter !== "all"
+                      ? "Print all loaded records for the selected month before deleting"
+                      : "Print all records in the current filtered view"
+                  }
                 >
-                  {saving ? "Deleting Month..." : `Delete Month (${selectedMonthRecordCount})`}
+                  {monthFilter !== "all"
+                    ? `Print Month (${selectedMonthRecordCount})`
+                    : `Print All (${filteredRecords.length})`}
                 </ActionButton>
-              ) : null
+
+                {monthFilter !== "all" ? (
+                  <ActionButton
+                    variant="danger"
+                    onClick={deleteFilteredMonth}
+                    disabled={
+                      saving ||
+                      loading ||
+                      selectedMonthRecordCount === 0
+                    }
+                    title="Permanently delete all loaded records for the selected month"
+                  >
+                    {saving
+                      ? "Deleting Month..."
+                      : `Delete Month (${selectedMonthRecordCount})`}
+                  </ActionButton>
+                ) : null}
+              </div>
             }
           />
 
