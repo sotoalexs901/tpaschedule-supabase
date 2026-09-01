@@ -13,6 +13,12 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import {
+  APP_NAME,
+  APP_SUBTITLE,
+  APP_POWERED_BY,
+  APP_COPYRIGHT,
+} from "../config/appConfig.js";
 import "./LoginPage.css";
 
 // ============================================================
@@ -349,20 +355,20 @@ export default function LoginPage() {
         <div className="login-overlay-content">
 
           <div className="login-overlay-tag">
-            TPA OPS SYSTEM
+            {APP_NAME}
           </div>
 
           <h1 className="login-overlay-title">
-            Smarter scheduling,
+            Smarter operations,
             <br />
-            cleaner operations.
+            better station control.
           </h1>
 
           <p className="login-overlay-text">
             Manage schedules, communications, approvals,
-            employee restrictions, budgets and operational
-            updates from one modern platform built for
-            station teams.
+            operational reports, employee activity and
+            real-time station updates from one modern
+            platform built for aviation operations.
           </p>
 
         </div>
@@ -382,17 +388,26 @@ export default function LoginPage() {
           <div className="login-brand">
 
             <div className="login-brand-icon">
-              ✈️
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
             </div>
 
             <div className="login-brand-text">
 
               <p className="login-brand-title">
-                TPA OPS SYSTEM
+                {APP_NAME}
               </p>
 
               <p className="login-brand-subtitle">
-                Airline operations dashboard
+                {APP_SUBTITLE}
               </p>
 
             </div>
@@ -413,8 +428,8 @@ export default function LoginPage() {
             </h1>
 
             <p className="login-subtitle">
-              Sign in to continue to your scheduling and
-              operations dashboard.
+              Sign in to continue to your operations
+              management platform.
             </p>
 
             {error && !showPrivacyModal && (
@@ -497,7 +512,7 @@ export default function LoginPage() {
 
             <p className="login-footer-note">
               Secure access to schedules, team updates,
-              approvals and daily station operations.
+              approvals, reports and daily station operations.
             </p>
 
             {/* =================================================
@@ -508,12 +523,11 @@ export default function LoginPage() {
             <div className="login-ownership">
 
               <p className="login-ownership-company">
-                TPA OPS Platform
+                {APP_POWERED_BY}
               </p>
 
               <p>
-                © 2026 ANapoles Solutions.
-                All rights reserved.
+                {APP_COPYRIGHT}
               </p>
 
               <p className="login-ownership-managed">
@@ -556,7 +570,7 @@ export default function LoginPage() {
             <div className="privacy-modal-header">
 
               <div className="privacy-modal-icon">
-                🔒
+                ð
               </div>
 
               <div>
@@ -587,7 +601,7 @@ export default function LoginPage() {
               </p>
 
               <p>
-                TPA OPS Platform has implemented its
+                {APP_NAME} has implemented its
                 Privacy, Confidentiality &amp; Ownership
                 Policy. Please review and acknowledge
                 this notice before continuing.
@@ -602,7 +616,7 @@ export default function LoginPage() {
                 </strong>
 
                 <p>
-                  TPA OPS Platform contains employee,
+                  {APP_NAME} contains employee,
                   personal, airline and operational
                   information intended exclusively for
                   authorized business use.
@@ -666,7 +680,7 @@ export default function LoginPage() {
                 className="privacy-read-full"
               >
                 Read Full Privacy, Confidentiality &amp;
-                Ownership Policy →
+                Ownership Policy â
               </Link>
 
               {/* ERROR */}
@@ -700,7 +714,7 @@ export default function LoginPage() {
                   </strong>{" "}
                   and understand my responsibility to
                   protect confidential information
-                  accessed through TPA OPS Platform.
+                  accessed through {APP_NAME}.
                 </span>
 
               </label>
@@ -746,7 +760,7 @@ export default function LoginPage() {
               </span>
 
               <span>
-                TPA OPS Platform © 2026 ANapoles Solutions
+                {APP_NAME} Â© 2026 ANapoles Solutions
               </span>
 
             </div>
