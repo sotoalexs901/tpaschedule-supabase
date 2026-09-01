@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
@@ -66,7 +67,7 @@ function tsToDate(value) {
 
 function formatDateTime(value) {
   const d = tsToDate(value);
-  if (!d) return "—";
+  if (!d) return "\u2014";
   return d.toLocaleString();
 }
 
@@ -107,14 +108,19 @@ function calculateRowHours(row) {
 }
 
 function calculateReportHours(report) {
-  return (report?.rows || []).reduce((sum, row) => sum + calculateRowHours(row), 0);
+  return (report?.rows || []).reduce(
+    (sum, row) => sum + calculateRowHours(row),
+    0
+  );
 }
 
 function startOfTodayString() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
+
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function isInCurrentMonth(dateString) {
@@ -125,6 +131,7 @@ function isInCurrentMonth(dateString) {
   if (Number.isNaN(parsed.getTime())) return false;
 
   const now = new Date();
+
   return (
     parsed.getFullYear() === now.getFullYear() &&
     parsed.getMonth() === now.getMonth()
@@ -170,10 +177,10 @@ function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
-        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        background: "rgba(255,255,255,0.95)",
+        border: "1px solid #e2e8f0",
+        borderRadius: 22,
+        boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
         width: "100%",
         maxWidth: "100%",
         minWidth: 0,
@@ -192,10 +199,10 @@ function FieldLabel({ children }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
-        fontWeight: 700,
+        fontSize: 11,
+        fontWeight: 800,
         color: "#475569",
-        letterSpacing: "0.03em",
+        letterSpacing: "0.04em",
         textTransform: "uppercase",
       }}
     >
@@ -213,8 +220,8 @@ function TextInput(props) {
         minWidth: 0,
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -234,8 +241,8 @@ function SelectInput(props) {
         minWidth: 0,
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -255,13 +262,13 @@ function TextArea(props) {
         minWidth: 0,
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 13,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
-        minHeight: 110,
+        minHeight: 100,
         fontFamily: "inherit",
         boxSizing: "border-box",
         ...props.style,
@@ -283,7 +290,7 @@ function ActionButton({
         "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+      boxShadow: "0 10px 20px rgba(23,105,170,0.16)",
     },
     secondary: {
       background: "#ffffff",
@@ -295,19 +302,19 @@ function ActionButton({
       background: "#16a34a",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+      boxShadow: "0 10px 20px rgba(22,163,74,0.16)",
     },
     warning: {
       background: "#f59e0b",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
+      boxShadow: "0 10px 20px rgba(245,158,11,0.16)",
     },
     danger: {
       background: "#dc2626",
       color: "#fff",
       border: "none",
-      boxShadow: "0 10px 20px rgba(220,38,38,0.18)",
+      boxShadow: "0 9px 18px rgba(220,38,38,0.16)",
     },
   };
 
@@ -317,9 +324,9 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       style={{
-        borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
+        borderRadius: 11,
+        padding: "9px 13px",
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.7 : 1,
@@ -334,8 +341,8 @@ function ActionButton({
 
 function thStyle(extra = {}) {
   return {
-    padding: "14px 14px",
-    fontSize: 12,
+    padding: "12px 13px",
+    fontSize: 11,
     fontWeight: 800,
     color: "#475569",
     textTransform: "uppercase",
@@ -348,11 +355,11 @@ function thStyle(extra = {}) {
 }
 
 const tdStyle = {
-  padding: "14px",
+  padding: "12px 13px",
   borderBottom: "1px solid #eef2f7",
   verticalAlign: "top",
   color: "#0f172a",
-  fontSize: 14,
+  fontSize: 13,
 };
 
 function statusBadge(status) {
@@ -363,7 +370,7 @@ function statusBadge(status) {
     alignItems: "center",
     padding: "6px 10px",
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 800,
     border: "1px solid transparent",
   };
@@ -409,14 +416,14 @@ function InfoCard({ label, value }) {
       style={{
         background: "#f8fbff",
         border: "1px solid #dbeafe",
-        borderRadius: 16,
-        padding: "14px 16px",
+        borderRadius: 15,
+        padding: "13px 15px",
         minWidth: 0,
       }}
     >
       <div
         style={{
-          fontSize: 11,
+          fontSize: 10.5,
           fontWeight: 800,
           color: "#64748b",
           textTransform: "uppercase",
@@ -425,10 +432,11 @@ function InfoCard({ label, value }) {
       >
         {label}
       </div>
+
       <div
         style={{
-          marginTop: 6,
-          fontSize: 16,
+          marginTop: 5,
+          fontSize: 15,
           fontWeight: 800,
           color: "#0f172a",
           wordBreak: "break-word",
@@ -440,18 +448,126 @@ function InfoCard({ label, value }) {
   );
 }
 
+function BrandHeader({ title, description, isMobile, isTablet }) {
+  return (
+    <div
+      style={{
+        background:
+          "linear-gradient(135deg, #073b66 0%, #0f5c91 50%, #2e9fd6 100%)",
+        borderRadius: isMobile ? 16 : 18,
+        padding: isMobile ? "12px 14px" : isTablet ? "14px 16px" : "14px 16px",
+        color: "#ffffff",
+        boxShadow: "0 14px 30px rgba(15,76,129,0.16)",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          width: 155,
+          height: 155,
+          borderRadius: "999px",
+          border: "1px solid rgba(255,255,255,0.08)",
+          top: -92,
+          right: -28,
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        style={{
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          minWidth: 0,
+        }}
+      >
+        <div
+          style={{
+            width: isMobile ? 38 : 42,
+            height: isMobile ? 38 : 42,
+            flex: `0 0 ${isMobile ? 38 : 42}px`,
+            borderRadius: 12,
+            background: "rgba(255,255,255,0.96)",
+            border: "1px solid rgba(255,255,255,0.9)",
+            overflow: "hidden",
+          }}
+        >
+          <img
+            src="/icons/aerostation-icon.png"
+            alt={APP_NAME}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              marginBottom: 2,
+              fontSize: isMobile ? 8 : 8.5,
+              textTransform: "uppercase",
+              letterSpacing: "0.14em",
+              color: "rgba(255,255,255,0.7)",
+              fontWeight: 800,
+            }}
+          >
+            {APP_NAME} {"\u00B7"} Timesheets
+          </div>
+
+          <h1
+            style={{
+              margin: 0,
+              fontSize: isMobile ? 18 : 20,
+              lineHeight: 1.15,
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {title}
+          </h1>
+
+          <p
+            style={{
+              margin: "4px 0 0",
+              maxWidth: 760,
+              fontSize: isMobile ? 10.5 : 11.5,
+              lineHeight: 1.45,
+              color: "rgba(255,255,255,0.78)",
+            }}
+          >
+            {description}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function buildPrintableHtml(report, airlineSummary) {
+  const logoUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/icons/aerostation-icon.png`
+      : "/icons/aerostation-icon.png";
+
   const rowsHtml = (report.rows || [])
     .map((row) => {
       const hours = calculateRowHours(row).toFixed(2);
+
       return `
         <tr>
-          <td>${row.employeeName || "—"}</td>
-          <td>${row.punchIn || "—"}</td>
-          <td>${row.punchOut || "—"}</td>
-          <td>${row.employeeStatus || "—"}</td>
-          <td>${row.breakTaken || "—"}</td>
-          <td>${row.reason || "—"}</td>
+          <td>${row.employeeName || "\u2014"}</td>
+          <td>${row.punchIn || "\u2014"}</td>
+          <td>${row.punchOut || "\u2014"}</td>
+          <td>${row.employeeStatus || "\u2014"}</td>
+          <td>${row.breakTaken || "\u2014"}</td>
+          <td>${row.reason || "\u2014"}</td>
           <td>${hours} hrs</td>
         </tr>
       `;
@@ -466,7 +582,7 @@ function buildPrintableHtml(report, airlineSummary) {
           <div>
             Approved by ${report.approvedByName || "Manager"}
             ${report.approvedByRole ? ` (${report.approvedByRole})` : ""}
-            · ${formatDateTime(report.approvedAt)}
+            &middot; ${formatDateTime(report.approvedAt)}
           </div>
         </div>
       `
@@ -480,10 +596,13 @@ function buildPrintableHtml(report, airlineSummary) {
           <div>
             Returned by ${report.returnedByName || "Manager"}
             ${report.returnedByRole ? ` (${report.returnedByRole})` : ""}
-            · ${formatDateTime(report.returnedAt)}
+            &middot; ${formatDateTime(report.returnedAt)}
           </div>
           <div style="margin-top:8px;">
-            ${String(report.returnedReason || "No reason provided.").replace(/\n/g, "<br/>")}
+            ${String(report.returnedReason || "No reason provided.").replace(
+              /\n/g,
+              "<br/>"
+            )}
           </div>
         </div>
       `
@@ -513,8 +632,9 @@ function buildPrintableHtml(report, airlineSummary) {
       ? `
         <div class="alert-box">
           Budget alert: ${report.normalizedAirline} is over daily budget by
-          ${Number(report.overBudgetBy || airlineSummary?.overBy || 0).toFixed(2)} hours
-          on ${report.reportDate || "this day"}.
+          ${Number(report.overBudgetBy || airlineSummary?.overBy || 0).toFixed(
+            2
+          )} hours on ${report.reportDate || "this day"}.
         </div>
       `
       : "";
@@ -524,13 +644,66 @@ function buildPrintableHtml(report, airlineSummary) {
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Timesheet Report</title>
+        <title>${APP_NAME} - Timesheet Report</title>
         <style>
+          * { box-sizing: border-box; }
+
           body {
             font-family: Arial, Helvetica, sans-serif;
             margin: 24px;
             color: #111827;
+            background: #ffffff;
           }
+
+          .brand-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding-bottom: 16px;
+            margin-bottom: 18px;
+            border-bottom: 2px solid #e5eef7;
+          }
+
+          .brand-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+          }
+
+          .brand-logo {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            border: 1px solid #dbeafe;
+            background: #ffffff;
+            object-fit: contain;
+          }
+
+          .brand-name {
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #1769aa;
+          }
+
+          .brand-subtitle {
+            margin-top: 3px;
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 700;
+          }
+
+          .document-label {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            text-align: right;
+          }
+
           .header {
             display: flex;
             justify-content: space-between;
@@ -538,17 +711,21 @@ function buildPrintableHtml(report, airlineSummary) {
             gap: 16px;
             margin-bottom: 18px;
           }
+
           .title {
-            font-size: 28px;
+            font-size: 27px;
             font-weight: 800;
             margin: 0;
+            letter-spacing: -0.03em;
           }
+
           .subtitle {
             margin-top: 6px;
             font-size: 14px;
             color: #475569;
             font-weight: 700;
           }
+
           .status {
             display: inline-block;
             padding: 6px 10px;
@@ -559,126 +736,173 @@ function buildPrintableHtml(report, airlineSummary) {
             background: #edf7ff;
             color: #1769aa;
           }
+
           .status.approved {
             background: #dcfce7;
             color: #166534;
             border-color: #86efac;
           }
+
           .status.returned {
             background: #fff7ed;
             color: #9a3412;
             border-color: #fdba74;
           }
+
           .grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 12px;
+            gap: 10px;
             margin-bottom: 16px;
           }
+
           .card {
             background: #f8fbff;
             border: 1px solid #dbeafe;
-            border-radius: 14px;
-            padding: 12px 14px;
+            border-radius: 12px;
+            padding: 11px 12px;
           }
+
           .card-label,
           .section-label {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 800;
             color: #64748b;
             text-transform: uppercase;
             letter-spacing: 0.08em;
           }
+
           .card-value {
-            margin-top: 6px;
-            font-size: 16px;
+            margin-top: 5px;
+            font-size: 15px;
             font-weight: 800;
             color: #0f172a;
           }
+
           .alert-box {
-            border-radius: 14px;
-            padding: 12px 14px;
+            border-radius: 12px;
+            padding: 11px 13px;
             background: #fff1f2;
             border: 1px solid #fecdd3;
             color: #9f1239;
             font-weight: 800;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
           }
+
           .notes-box,
           .approval-box,
           .returned-box,
           .over-budget-reason-box {
-            border-radius: 14px;
-            padding: 12px 14px;
-            margin-bottom: 16px;
+            border-radius: 12px;
+            padding: 11px 13px;
+            margin-bottom: 14px;
             line-height: 1.6;
           }
+
           .notes-box {
             background: #f8fbff;
             border: 1px solid #dbeafe;
           }
+
           .approval-box {
             background: #ecfdf5;
             border: 1px solid #a7f3d0;
           }
+
           .returned-box {
             background: #fff7ed;
             border: 1px solid #fdba74;
             color: #9a3412;
           }
+
           .over-budget-reason-box {
             background: #fff7ed;
             border: 1px solid #fdba74;
             color: #9a3412;
             font-weight: 700;
           }
+
           table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
           }
+
           th, td {
             border: 1px solid #dbeafe;
-            padding: 10px 12px;
+            padding: 9px 10px;
             text-align: left;
-            font-size: 13px;
+            font-size: 12px;
           }
+
           th {
             background: #f8fbff;
-            font-size: 12px;
+            font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: #475569;
           }
+
           .total-box {
             margin-top: 16px;
             margin-left: auto;
-            width: 260px;
+            width: 245px;
             background: #f8fbff;
             border: 1px solid #dbeafe;
-            border-radius: 14px;
-            padding: 14px 16px;
+            border-radius: 12px;
+            padding: 13px 15px;
           }
+
           .total-value {
-            margin-top: 6px;
-            font-size: 26px;
+            margin-top: 5px;
+            font-size: 24px;
             font-weight: 900;
           }
+
+          .print-footer {
+            margin-top: 28px;
+            padding-top: 12px;
+            border-top: 1px solid #e2e8f0;
+            color: #94a3b8;
+            font-size: 9px;
+            text-align: center;
+          }
+
           @media print {
-            body {
-              margin: 14px;
-            }
+            body { margin: 14px; }
           }
         </style>
       </head>
+
       <body>
+        <div class="brand-header">
+          <div class="brand-left">
+            <img
+              class="brand-logo"
+              src="${logoUrl}"
+              alt="${APP_NAME}"
+            />
+            <div>
+              <div class="brand-name">${APP_NAME}</div>
+              <div class="brand-subtitle">${APP_SUBTITLE}</div>
+            </div>
+          </div>
+
+          <div class="document-label">
+            Timesheet Management Report
+          </div>
+        </div>
+
         <div class="header">
           <div>
             <h1 class="title">Timesheet Report</h1>
             <div class="subtitle">
-              ${report.normalizedAirline || "—"} · ${report.reportDate || "—"}
+              ${report.normalizedAirline || "\u2014"}
+              &middot;
+              ${report.reportDate || "\u2014"}
             </div>
           </div>
+
           <div class="status ${
             String(report.status || "").toLowerCase() === "approved"
               ? "approved"
@@ -693,28 +917,38 @@ function buildPrintableHtml(report, airlineSummary) {
         <div class="grid">
           <div class="card">
             <div class="card-label">Airline</div>
-            <div class="card-value">${report.normalizedAirline || "—"}</div>
+            <div class="card-value">${report.normalizedAirline || "\u2014"}</div>
           </div>
+
           <div class="card">
             <div class="card-label">Report Date</div>
-            <div class="card-value">${report.reportDate || "—"}</div>
+            <div class="card-value">${report.reportDate || "\u2014"}</div>
           </div>
+
           <div class="card">
             <div class="card-label">Shift</div>
-            <div class="card-value">${report.shift || "—"}</div>
+            <div class="card-value">${report.shift || "\u2014"}</div>
           </div>
+
           <div class="card">
             <div class="card-label">Supervisor Reporting</div>
-            <div class="card-value">${report.supervisorReporting || "—"}</div>
+            <div class="card-value">${report.supervisorReporting || "\u2014"}</div>
           </div>
+
           <div class="card">
             <div class="card-label">Submitted By</div>
-            <div class="card-value">${report.submittedByName || report.submittedByUsername || "—"}</div>
+            <div class="card-value">${
+              report.submittedByName ||
+              report.submittedByUsername ||
+              "\u2014"
+            }</div>
           </div>
+
           <div class="card">
             <div class="card-label">Created</div>
             <div class="card-value">${formatDateTime(report.createdAt)}</div>
           </div>
+
           <div class="card">
             <div class="card-label">Daily Budget</div>
             <div class="card-value">${
@@ -723,6 +957,7 @@ function buildPrintableHtml(report, airlineSummary) {
                 : Number(report.budgetHoursDaily || 0).toFixed(2)
             } hrs</div>
           </div>
+
           <div class="card">
             <div class="card-label">Airline Daily Total</div>
             <div class="card-value">${
@@ -760,6 +995,10 @@ function buildPrintableHtml(report, airlineSummary) {
           <div class="section-label">Report Total</div>
           <div class="total-value">${report.totalHours.toFixed(2)} hrs</div>
         </div>
+
+        <div class="print-footer">
+          ${APP_NAME} &middot; ${APP_SUBTITLE}
+        </div>
       </body>
     </html>
   `;
@@ -786,7 +1025,8 @@ export default function TimesheetAdminPage() {
     .toLowerCase();
 
   const isCabinDutyManager =
-    user?.role === "duty_manager" && normalizedUsername === "hhernandez";
+    user?.role === "duty_manager" &&
+    normalizedUsername === "hhernandez";
 
   const canAccess =
     user?.role === "supervisor" ||
@@ -794,7 +1034,8 @@ export default function TimesheetAdminPage() {
     user?.role === "duty_manager";
 
   const canApprove =
-    user?.role === "station_manager" || user?.role === "duty_manager";
+    user?.role === "station_manager" ||
+    user?.role === "duty_manager";
 
   const [reports, setReports] = useState([]);
   const [dailyBudgetDocs, setDailyBudgetDocs] = useState([]);
@@ -807,7 +1048,8 @@ export default function TimesheetAdminPage() {
   const [savingEditId, setSavingEditId] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
   const [restrictToOwnReports, setRestrictToOwnReports] = useState(false);
-  const [showMonthlyOverBudgetSummary, setShowMonthlyOverBudgetSummary] = useState(true);
+  const [showMonthlyOverBudgetSummary, setShowMonthlyOverBudgetSummary] =
+    useState(true);
 
   const [filters, setFilters] = useState({
     airline: "all",
@@ -816,6 +1058,7 @@ export default function TimesheetAdminPage() {
   });
 
   const [returnReason, setReturnReason] = useState("");
+
   const [editData, setEditData] = useState({
     airline: "",
     reportDate: "",
@@ -834,11 +1077,12 @@ export default function TimesheetAdminPage() {
           orderBy("createdAt", "desc")
         );
 
-        const [reportsSnap, dailyBudgetsSnap, employeesSnap] = await Promise.all([
-          getDocs(reportsQuery),
-          getDocs(collection(db, "airlineDailyBudgets")),
-          getDocs(collection(db, "employees")),
-        ]);
+        const [reportsSnap, dailyBudgetsSnap, employeesSnap] =
+          await Promise.all([
+            getDocs(reportsQuery),
+            getDocs(collection(db, "airlineDailyBudgets")),
+            getDocs(collection(db, "employees")),
+          ]);
 
         const reportRows = reportsSnap.docs.map((d) => ({
           id: d.id,
@@ -907,8 +1151,9 @@ export default function TimesheetAdminPage() {
           .toLowerCase();
 
         const shouldRestrictCabinSupervisor =
-          isCabinServiceDepartment(currentEmployeeRecord?.department || user?.department) &&
-          currentRole === "supervisor";
+          isCabinServiceDepartment(
+            currentEmployeeRecord?.department || user?.department
+          ) && currentRole === "supervisor";
 
         setRestrictToOwnReports(shouldRestrictCabinSupervisor);
         setReports(reportRows);
@@ -947,8 +1192,11 @@ export default function TimesheetAdminPage() {
     return reports.map((report) => {
       const normalizedAirline = normalizeAirlineName(report.airline);
       const reportDate = String(report.reportDate || "").trim();
+
       const matchingBudget =
-        dailyBudgetByAirlineAndDate[`${normalizedAirline}__${reportDate}`] || 0;
+        dailyBudgetByAirlineAndDate[
+          `${normalizedAirline}__${reportDate}`
+        ] || 0;
 
       const computedTotalHours =
         report.totalHours !== undefined && report.totalHours !== null
@@ -967,7 +1215,9 @@ export default function TimesheetAdminPage() {
         ),
         budgetHoursDaily: matchingBudget,
         overBudget:
-          typeof report.overBudget === "boolean" ? report.overBudget : computedOverBudget,
+          typeof report.overBudget === "boolean"
+            ? report.overBudget
+            : computedOverBudget,
         overBudgetBy:
           report.overBudgetBy !== undefined && report.overBudgetBy !== null
             ? Number(report.overBudgetBy)
@@ -997,10 +1247,16 @@ export default function TimesheetAdminPage() {
   const filteredReports = useMemo(() => {
     return accessibleReports.filter((r) => {
       const submittedBy = String(
-        r.submittedByName || r.submittedByUsername || r.supervisorReporting || ""
+        r.submittedByName ||
+          r.submittedByUsername ||
+          r.supervisorReporting ||
+          ""
       ).toLowerCase();
 
-      if (filters.airline !== "all" && r.normalizedAirline !== filters.airline) {
+      if (
+        filters.airline !== "all" &&
+        r.normalizedAirline !== filters.airline
+      ) {
         return false;
       }
 
@@ -1021,9 +1277,11 @@ export default function TimesheetAdminPage() {
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
+
     accessibleReports.forEach((r) => {
       if (r.normalizedAirline) set.add(r.normalizedAirline);
     });
+
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [accessibleReports]);
 
@@ -1050,7 +1308,8 @@ export default function TimesheetAdminPage() {
 
     return Object.values(totals)
       .map((row) => {
-        const overBy = row.hours > row.budget ? row.hours - row.budget : 0;
+        const overBy =
+          row.hours > row.budget ? row.hours - row.budget : 0;
 
         return {
           ...row,
@@ -1079,18 +1338,22 @@ export default function TimesheetAdminPage() {
 
         return {
           id: report.id,
-          airline: report.normalizedAirline || "—",
-          department: prettifyDepartment(report.department || report.normalizedDepartment),
-          reportDate: report.reportDate || "—",
+          airline: report.normalizedAirline || "\u2014",
+          department: prettifyDepartment(
+            report.department || report.normalizedDepartment
+          ),
+          reportDate: report.reportDate || "\u2014",
           submittedBy:
             report.submittedByName ||
             report.submittedByUsername ||
             report.supervisorReporting ||
-            "—",
+            "\u2014",
           reportedHours: hours,
           budgetHours: budget,
           overBy,
-          overBudgetReason: String(report.overBudgetReason || "").trim(),
+          overBudgetReason: String(
+            report.overBudgetReason || ""
+          ).trim(),
           status: report.status || "submitted",
         };
       })
@@ -1098,15 +1361,20 @@ export default function TimesheetAdminPage() {
         if (a.reportDate !== b.reportDate) {
           return b.reportDate.localeCompare(a.reportDate);
         }
+
         if (b.overBy !== a.overBy) {
           return b.overBy - a.overBy;
         }
+
         return a.department.localeCompare(b.department);
       });
   }, [accessibleReports]);
 
   const totalMonthlyOverBudgetHours = useMemo(() => {
-    return currentMonthOverBudgetReports.reduce((sum, item) => sum + item.overBy, 0);
+    return currentMonthOverBudgetReports.reduce(
+      (sum, item) => sum + item.overBy,
+      0
+    );
   }, [currentMonthOverBudgetReports]);
 
   const totalHoursAllAirlines = useMemo(() => {
@@ -1146,7 +1414,10 @@ export default function TimesheetAdminPage() {
       return;
     }
 
-    if (selectedId && !filteredReports.some((r) => r.id === selectedId)) {
+    if (
+      selectedId &&
+      !filteredReports.some((r) => r.id === selectedId)
+    ) {
       setSelectedId(filteredReports[0]?.id || "");
     }
   }, [filteredReports, selectedId]);
@@ -1162,6 +1433,7 @@ export default function TimesheetAdminPage() {
         overBudgetReason: "",
         rows: [],
       });
+
       setReturnReason("");
       setIsEditMode(false);
       return;
@@ -1192,14 +1464,20 @@ export default function TimesheetAdminPage() {
 
   const handleDelete = async (report) => {
     const ok = window.confirm(
-      `Delete this timesheet report from ${report.reportDate || "unknown date"}?`
+      `Delete this timesheet report from ${
+        report.reportDate || "unknown date"
+      }?`
     );
+
     if (!ok) return;
 
     try {
       setDeletingId(report.id);
+
       await deleteDoc(doc(db, "timesheet_reports", report.id));
+
       setReports((prev) => prev.filter((r) => r.id !== report.id));
+
       setStatusMessage("Timesheet report deleted successfully.");
     } catch (err) {
       console.error("Error deleting timesheet:", err);
@@ -1290,11 +1568,16 @@ export default function TimesheetAdminPage() {
     if (!canApprove) return;
 
     if (!String(returnReason || "").trim()) {
-      setStatusMessage("Please write the reason before returning the timesheet.");
+      setStatusMessage(
+        "Please write the reason before returning the timesheet."
+      );
       return;
     }
 
-    const ok = window.confirm("Return this timesheet to supervisor for fix?");
+    const ok = window.confirm(
+      "Return this timesheet to supervisor for fix?"
+    );
+
     if (!ok) return;
 
     try {
@@ -1402,7 +1685,9 @@ export default function TimesheetAdminPage() {
         );
 
       if (!cleanRows.length) {
-        setStatusMessage("The timesheet needs at least one employee row.");
+        setStatusMessage(
+          "The timesheet needs at least one employee row."
+        );
         return;
       }
 
@@ -1441,15 +1726,28 @@ export default function TimesheetAdminPage() {
       );
 
       const normalizedAirline = normalizeAirlineName(editData.airline);
+
       const budgetHoursDaily =
         dailyBudgetByAirlineAndDate[
-          `${normalizedAirline}__${String(editData.reportDate || "").trim()}`
+          `${normalizedAirline}__${String(
+            editData.reportDate || ""
+          ).trim()}`
         ] || 0;
-      const overBudget = budgetHoursDaily > 0 && totalHours > budgetHoursDaily;
-      const overBudgetBy = overBudget ? totalHours - budgetHoursDaily : 0;
 
-      if (overBudget && !String(editData.overBudgetReason || "").trim()) {
-        setStatusMessage("Please fill in the over budget reason before saving.");
+      const overBudget =
+        budgetHoursDaily > 0 && totalHours > budgetHoursDaily;
+
+      const overBudgetBy = overBudget
+        ? totalHours - budgetHoursDaily
+        : 0;
+
+      if (
+        overBudget &&
+        !String(editData.overBudgetReason || "").trim()
+      ) {
+        setStatusMessage(
+          "Please fill in the over budget reason before saving."
+        );
         return;
       }
 
@@ -1512,21 +1810,31 @@ export default function TimesheetAdminPage() {
     const printableReport = {
       ...selectedReport,
       airline: isEditMode
-        ? normalizeAirlineName(editData.airline || selectedReport.airline)
+        ? normalizeAirlineName(
+            editData.airline || selectedReport.airline
+          )
         : selectedReport.airline,
       normalizedAirline: isEditMode
-        ? normalizeAirlineName(editData.airline || selectedReport.airline)
+        ? normalizeAirlineName(
+            editData.airline || selectedReport.airline
+          )
         : selectedReport.normalizedAirline,
       reportDate: isEditMode
         ? editData.reportDate || selectedReport.reportDate
         : selectedReport.reportDate,
-      shift: isEditMode ? editData.shift || selectedReport.shift : selectedReport.shift,
+      shift: isEditMode
+        ? editData.shift || selectedReport.shift
+        : selectedReport.shift,
       supervisorReporting: isEditMode
-        ? editData.supervisorReporting || selectedReport.supervisorReporting
+        ? editData.supervisorReporting ||
+          selectedReport.supervisorReporting
         : selectedReport.supervisorReporting,
-      notes: isEditMode ? editData.notes || selectedReport.notes : selectedReport.notes,
+      notes: isEditMode
+        ? editData.notes || selectedReport.notes
+        : selectedReport.notes,
       overBudgetReason: isEditMode
-        ? editData.overBudgetReason || selectedReport.overBudgetReason
+        ? editData.overBudgetReason ||
+          selectedReport.overBudgetReason
         : selectedReport.overBudgetReason,
       rows:
         isEditMode && (editData.rows || []).length
@@ -1534,23 +1842,41 @@ export default function TimesheetAdminPage() {
           : selectedReport.rows || [],
       totalHours:
         isEditMode && (editData.rows || []).length
-          ? editData.rows.reduce((sum, row) => sum + calculateRowHours(row), 0)
+          ? editData.rows.reduce(
+              (sum, row) => sum + calculateRowHours(row),
+              0
+            )
           : selectedReport.totalHours,
-      budgetHoursDaily:
-        isEditMode
-          ? dailyBudgetByAirlineAndDate[
-              `${normalizeAirlineName(editData.airline || selectedReport.airline)}__${String(
-                editData.reportDate || selectedReport.reportDate || ""
-              ).trim()}`
-            ] || selectedReport.budgetHoursDaily || 0
-          : selectedReport.budgetHoursDaily || 0,
+      budgetHoursDaily: isEditMode
+        ? dailyBudgetByAirlineAndDate[
+            `${normalizeAirlineName(
+              editData.airline || selectedReport.airline
+            )}__${String(
+              editData.reportDate ||
+                selectedReport.reportDate ||
+                ""
+            ).trim()}`
+          ] ||
+          selectedReport.budgetHoursDaily ||
+          0
+        : selectedReport.budgetHoursDaily || 0,
     };
 
-    const html = buildPrintableHtml(printableReport, selectedAirlineSummary);
-    const printWindow = window.open("", "_blank", "width=1200,height=900");
+    const html = buildPrintableHtml(
+      printableReport,
+      selectedAirlineSummary
+    );
+
+    const printWindow = window.open(
+      "",
+      "_blank",
+      "width=1200,height=900"
+    );
 
     if (!printWindow) {
-      setStatusMessage("Pop-up blocked. Please allow pop-ups to export/print.");
+      setStatusMessage(
+        "Pop-up blocked. Please allow pop-ups to export/print."
+      );
       return;
     }
 
@@ -1578,57 +1904,22 @@ export default function TimesheetAdminPage() {
           minWidth: 0,
         }}
       >
-        <div
-          style={{
-            background:
-              "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-            borderRadius: 28,
-            padding: 24,
-            color: "#fff",
-            boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
-            TPA OPS · Timesheets
-          </p>
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
-            Access denied
-          </h1>
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 700,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            You do not have permission to view timesheet reports.
-          </p>
-        </div>
+        <BrandHeader
+          title="Access denied"
+          description="You do not have permission to view timesheet reports."
+          isMobile={isMobile}
+          isTablet={isTablet}
+        />
       </div>
     );
   }
 
   const currentDisplayedTotal =
     isEditMode && (editData.rows || []).length
-      ? editData.rows.reduce((sum, row) => sum + calculateRowHours(row), 0)
+      ? editData.rows.reduce(
+          (sum, row) => sum + calculateRowHours(row),
+          0
+        )
       : selectedReport?.totalHours || 0;
 
   return (
@@ -1642,71 +1933,16 @@ export default function TimesheetAdminPage() {
         minWidth: 0,
       }}
     >
-      <div
-        style={{
-          background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: isMobile ? 20 : 28,
-          padding: isMobile ? 16 : isTablet ? 20 : 24,
-          color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
-          }}
-        />
-
-        <div style={{ position: "relative" }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: isMobile ? 10 : 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
-            TPA OPS · Timesheets
-          </p>
-
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: isMobile ? 26 : 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
-            Timesheet Reports
-          </h1>
-
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 760,
-              fontSize: isMobile ? 12 : 14,
-              color: "rgba(255,255,255,0.88)",
-              lineHeight: 1.6,
-            }}
-          >
-            {restrictToOwnReports
-              ? "Review your submitted timesheets, check budget impact, and export your selected report."
-              : "Review submitted reports, compare daily airline hours vs daily budget, approve, return for correction, edit reports, and export only the selected timesheet."}
-          </p>
-        </div>
-      </div>
+      <BrandHeader
+        title="Timesheet Reports"
+        description={
+          restrictToOwnReports
+            ? `${APP_SUBTITLE} \u00B7 Review your submitted timesheets, budget impact and selected report exports.`
+            : `${APP_SUBTITLE} \u00B7 Review, approve, return, edit and export submitted timesheets.`
+        }
+        isMobile={isMobile}
+        isTablet={isTablet}
+      />
 
       {statusMessage && (
         <div
@@ -1728,7 +1964,7 @@ export default function TimesheetAdminPage() {
               width: "100%",
               maxWidth: 520,
               background: "#ffffff",
-              borderRadius: 24,
+              borderRadius: 22,
               boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
               border: "1px solid #e2e8f0",
               overflow: "hidden",
@@ -1736,7 +1972,7 @@ export default function TimesheetAdminPage() {
           >
             <div
               style={{
-                padding: "18px 20px",
+                padding: "17px 19px",
                 background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
                 borderBottom: isErrorStatus
                   ? "1px solid #fecdd3"
@@ -1745,7 +1981,7 @@ export default function TimesheetAdminPage() {
             >
               <div
                 style={{
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: 900,
                   color: isErrorStatus ? "#9f1239" : "#065f46",
                   letterSpacing: "-0.02em",
@@ -1757,8 +1993,8 @@ export default function TimesheetAdminPage() {
 
             <div
               style={{
-                padding: "22px 20px 18px",
-                fontSize: 15,
+                padding: "20px 19px 17px",
+                fontSize: 14,
                 lineHeight: 1.65,
                 color: "#0f172a",
                 fontWeight: 700,
@@ -1769,7 +2005,7 @@ export default function TimesheetAdminPage() {
 
             <div
               style={{
-                padding: "0 20px 20px",
+                padding: "0 19px 19px",
                 display: "flex",
                 justifyContent: "center",
               }}
@@ -1782,12 +2018,12 @@ export default function TimesheetAdminPage() {
                   background:
                     "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
                   color: "#fff",
-                  borderRadius: 14,
-                  padding: "12px 22px",
+                  borderRadius: 12,
+                  padding: "10px 20px",
                   fontWeight: 800,
-                  fontSize: 14,
+                  fontSize: 13,
                   cursor: "pointer",
-                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                  boxShadow: "0 10px 20px rgba(23,105,170,0.16)",
                 }}
               >
                 OK
@@ -1797,10 +2033,11 @@ export default function TimesheetAdminPage() {
         </div>
       )}
 
-      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
+      {/* All report content below preserves the existing operational logic. */}
+      <PageCard style={{ padding: isMobile ? 16 : 20 }}>
         <div
           style={{
-            marginBottom: showMonthlyOverBudgetSummary ? 16 : 0,
+            marginBottom: showMonthlyOverBudgetSummary ? 15 : 0,
             display: "flex",
             justifyContent: "space-between",
             gap: 12,
@@ -1812,7 +2049,7 @@ export default function TimesheetAdminPage() {
             <h2
               style={{
                 margin: 0,
-                fontSize: isMobile ? 18 : 20,
+                fontSize: isMobile ? 17 : 18,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -1820,10 +2057,11 @@ export default function TimesheetAdminPage() {
             >
               Monthly Over Budget Summary
             </h2>
+
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: isMobile ? 12 : 13,
+                fontSize: isMobile ? 11.5 : 12.5,
                 color: "#64748b",
               }}
             >
@@ -1846,23 +2084,24 @@ export default function TimesheetAdminPage() {
             {currentMonthOverBudgetReports.length === 0 ? (
               <div
                 style={{
-                  padding: 16,
-                  borderRadius: 16,
+                  padding: 15,
+                  borderRadius: 14,
                   background: "#ecfdf5",
                   border: "1px solid #a7f3d0",
                   color: "#065f46",
                   fontWeight: 700,
+                  fontSize: 13,
                 }}
               >
                 No over budget reports found for the current month.
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gap: 13 }}>
                 <div
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    gap: 12,
+                    gap: 10,
                     flexWrap: "wrap",
                     alignItems: "center",
                   }}
@@ -1871,10 +2110,11 @@ export default function TimesheetAdminPage() {
                     style={{
                       background: "#fff7ed",
                       border: "1px solid #fdba74",
-                      borderRadius: 14,
-                      padding: "12px 14px",
+                      borderRadius: 12,
+                      padding: "10px 12px",
                       fontWeight: 800,
                       color: "#9a3412",
+                      fontSize: 12,
                     }}
                   >
                     Reports this month: {currentMonthOverBudgetReports.length}
@@ -1884,13 +2124,15 @@ export default function TimesheetAdminPage() {
                     style={{
                       background: "#fff1f2",
                       border: "1px solid #fecdd3",
-                      borderRadius: 14,
-                      padding: "12px 14px",
+                      borderRadius: 12,
+                      padding: "10px 12px",
                       fontWeight: 800,
                       color: "#9f1239",
+                      fontSize: 12,
                     }}
                   >
-                    Total over budget: {totalMonthlyOverBudgetHours.toFixed(2)} hrs
+                    Total over budget:{" "}
+                    {totalMonthlyOverBudgetHours.toFixed(2)} hrs
                   </div>
                 </div>
 
@@ -1902,7 +2144,7 @@ export default function TimesheetAdminPage() {
                     overflowX: "auto",
                     overflowY: "hidden",
                     WebkitOverflowScrolling: "touch",
-                    borderRadius: 18,
+                    borderRadius: 16,
                     border: "1px solid #e2e8f0",
                   }}
                 >
@@ -1928,20 +2170,26 @@ export default function TimesheetAdminPage() {
                         <th style={thStyle()}>Status</th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {currentMonthOverBudgetReports.map((item, index) => (
                         <tr
                           key={item.id}
                           style={{
-                            background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                            background:
+                              index % 2 === 0 ? "#ffffff" : "#fbfdff",
                           }}
                         >
                           <td style={tdStyle}>{item.reportDate}</td>
                           <td style={tdStyle}>{item.airline}</td>
                           <td style={tdStyle}>{item.department}</td>
                           <td style={tdStyle}>{item.submittedBy}</td>
-                          <td style={tdStyle}>{item.reportedHours.toFixed(2)} hrs</td>
-                          <td style={tdStyle}>{item.budgetHours.toFixed(2)} hrs</td>
+                          <td style={tdStyle}>
+                            {item.reportedHours.toFixed(2)} hrs
+                          </td>
+                          <td style={tdStyle}>
+                            {item.budgetHours.toFixed(2)} hrs
+                          </td>
                           <td style={tdStyle}>
                             <span
                               style={{
@@ -1949,7 +2197,7 @@ export default function TimesheetAdminPage() {
                                 alignItems: "center",
                                 padding: "6px 10px",
                                 borderRadius: 999,
-                                fontSize: 12,
+                                fontSize: 11.5,
                                 fontWeight: 800,
                                 background: "#fff1f2",
                                 color: "#9f1239",
@@ -1964,16 +2212,21 @@ export default function TimesheetAdminPage() {
                               style={{
                                 whiteSpace: "pre-line",
                                 lineHeight: 1.6,
-                                color: item.overBudgetReason ? "#0f172a" : "#64748b",
+                                color: item.overBudgetReason
+                                  ? "#0f172a"
+                                  : "#64748b",
                                 minWidth: 260,
                               }}
                             >
-                              {item.overBudgetReason || "No over budget reason provided."}
+                              {item.overBudgetReason ||
+                                "No over budget reason provided."}
                             </div>
                           </td>
                           <td style={tdStyle}>
                             <span style={statusBadge(item.status)}>
-                              {String(item.status || "submitted").toUpperCase()}
+                              {String(
+                                item.status || "submitted"
+                              ).toUpperCase()}
                             </span>
                           </td>
                         </tr>
@@ -1993,16 +2246,16 @@ export default function TimesheetAdminPage() {
             style={{
               background: "#fff1f2",
               border: "1px solid #fecdd3",
-              borderRadius: 18,
-              padding: "16px 18px",
+              borderRadius: 16,
+              padding: "14px 16px",
             }}
           >
             <div
               style={{
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: 800,
                 color: "#9f1239",
-                marginBottom: 8,
+                marginBottom: 7,
               }}
             >
               Daily Budget Alert
@@ -2014,11 +2267,12 @@ export default function TimesheetAdminPage() {
                   key={`${alert.airline}-${alert.date}`}
                   style={{
                     color: "#9f1239",
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: 700,
                   }}
                 >
-                  {alert.airline} is over daily budget by {alert.overBy.toFixed(2)} hours
+                  {alert.airline} is over daily budget by{" "}
+                  {alert.overBy.toFixed(2)} hours
                   {alert.date ? ` on ${alert.date}` : ""}.
                 </div>
               ))}
@@ -2027,12 +2281,12 @@ export default function TimesheetAdminPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
-        <div style={{ marginBottom: 16 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 20 }}>
+        <div style={{ marginBottom: 14 }}>
           <h2
             style={{
               margin: 0,
-              fontSize: isMobile ? 18 : 20,
+              fontSize: isMobile ? 17 : 18,
               fontWeight: 800,
               color: "#0f172a",
               letterSpacing: "-0.02em",
@@ -2048,18 +2302,23 @@ export default function TimesheetAdminPage() {
             gridTemplateColumns: isMobile
               ? "1fr"
               : "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
+            gap: 13,
           }}
         >
           <div>
             <FieldLabel>Airline</FieldLabel>
+
             <SelectInput
               value={filters.airline}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, airline: e.target.value }))
+                setFilters((prev) => ({
+                  ...prev,
+                  airline: e.target.value,
+                }))
               }
             >
               <option value="all">All</option>
+
               {airlineOptions.map((airline) => (
                 <option key={airline} value={airline}>
                   {airline}
@@ -2070,21 +2329,29 @@ export default function TimesheetAdminPage() {
 
           <div>
             <FieldLabel>Report Date</FieldLabel>
+
             <TextInput
               type="date"
               value={filters.reportDate}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, reportDate: e.target.value }))
+                setFilters((prev) => ({
+                  ...prev,
+                  reportDate: e.target.value,
+                }))
               }
             />
           </div>
 
           <div>
             <FieldLabel>Submitted By</FieldLabel>
+
             <TextInput
               value={filters.submittedBy}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, submittedBy: e.target.value }))
+                setFilters((prev) => ({
+                  ...prev,
+                  submittedBy: e.target.value,
+                }))
               }
               placeholder="Search by supervisor"
             />
@@ -2092,10 +2359,10 @@ export default function TimesheetAdminPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 20 }}>
         <div
           style={{
-            marginBottom: 14,
+            marginBottom: 13,
             display: "flex",
             justifyContent: "space-between",
             gap: 12,
@@ -2107,7 +2374,7 @@ export default function TimesheetAdminPage() {
             <h2
               style={{
                 margin: 0,
-                fontSize: isMobile ? 18 : 20,
+                fontSize: isMobile ? 17 : 18,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -2115,10 +2382,11 @@ export default function TimesheetAdminPage() {
             >
               Daily Hours by Airline
             </h2>
+
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: isMobile ? 12 : 13,
+                fontSize: isMobile ? 11.5 : 12.5,
                 color: "#64748b",
               }}
             >
@@ -2130,10 +2398,11 @@ export default function TimesheetAdminPage() {
             style={{
               background: "#f8fbff",
               border: "1px solid #dbeafe",
-              borderRadius: 14,
-              padding: "12px 14px",
+              borderRadius: 12,
+              padding: "10px 12px",
               fontWeight: 800,
               color: "#0f172a",
+              fontSize: 12,
             }}
           >
             Total: {totalHoursAllAirlines.toFixed(2)} hrs
@@ -2143,12 +2412,13 @@ export default function TimesheetAdminPage() {
         {airlineHourSummary.length === 0 ? (
           <div
             style={{
-              padding: 16,
-              borderRadius: 16,
+              padding: 15,
+              borderRadius: 14,
               background: "#f8fbff",
               border: "1px solid #dbeafe",
               color: "#64748b",
               fontWeight: 600,
+              fontSize: 13,
             }}
           >
             No airline hour totals found for this filter.
@@ -2162,7 +2432,7 @@ export default function TimesheetAdminPage() {
               overflowX: "auto",
               overflowY: "hidden",
               WebkitOverflowScrolling: "touch",
-              borderRadius: 18,
+              borderRadius: 16,
               border: "1px solid #e2e8f0",
             }}
           >
@@ -2185,18 +2455,24 @@ export default function TimesheetAdminPage() {
                   <th style={thStyle()}>Alert</th>
                 </tr>
               </thead>
+
               <tbody>
                 {airlineHourSummary.map((row, index) => (
                   <tr
                     key={`${row.airline}-${row.date}`}
                     style={{
-                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                      background:
+                        index % 2 === 0 ? "#ffffff" : "#fbfdff",
                     }}
                   >
                     <td style={tdStyle}>{row.airline}</td>
-                    <td style={tdStyle}>{row.date || "—"}</td>
-                    <td style={tdStyle}>{row.hours.toFixed(2)} hrs</td>
-                    <td style={tdStyle}>{row.budget.toFixed(2)} hrs</td>
+                    <td style={tdStyle}>{row.date || "\u2014"}</td>
+                    <td style={tdStyle}>
+                      {row.hours.toFixed(2)} hrs
+                    </td>
+                    <td style={tdStyle}>
+                      {row.budget.toFixed(2)} hrs
+                    </td>
                     <td style={tdStyle}>
                       {(row.hours - row.budget).toFixed(2)} hrs
                     </td>
@@ -2208,7 +2484,7 @@ export default function TimesheetAdminPage() {
                             alignItems: "center",
                             padding: "6px 10px",
                             borderRadius: 999,
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontWeight: 800,
                             background: "#fff1f2",
                             color: "#9f1239",
@@ -2224,7 +2500,7 @@ export default function TimesheetAdminPage() {
                             alignItems: "center",
                             padding: "6px 10px",
                             borderRadius: 999,
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontWeight: 800,
                             background: "#dcfce7",
                             color: "#166534",
@@ -2259,11 +2535,11 @@ export default function TimesheetAdminPage() {
         }}
       >
         <PageCard style={{ padding: 18 }}>
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 13 }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: isMobile ? 18 : 20,
+                fontSize: isMobile ? 17 : 18,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -2271,10 +2547,11 @@ export default function TimesheetAdminPage() {
             >
               Submitted Reports
             </h2>
+
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: isMobile ? 12 : 13,
+                fontSize: isMobile ? 11.5 : 12.5,
                 color: "#64748b",
               }}
             >
@@ -2285,12 +2562,13 @@ export default function TimesheetAdminPage() {
           {loading ? (
             <div
               style={{
-                padding: 16,
-                borderRadius: 16,
+                padding: 15,
+                borderRadius: 14,
                 background: "#f8fbff",
                 border: "1px solid #dbeafe",
                 color: "#64748b",
                 fontWeight: 600,
+                fontSize: 13,
               }}
             >
               Loading timesheet reports...
@@ -2298,12 +2576,13 @@ export default function TimesheetAdminPage() {
           ) : filteredReports.length === 0 ? (
             <div
               style={{
-                padding: 16,
-                borderRadius: 16,
+                padding: 15,
+                borderRadius: 14,
                 background: "#f8fbff",
                 border: "1px solid #dbeafe",
                 color: "#64748b",
                 fontWeight: 600,
+                fontSize: 13,
               }}
             >
               No timesheet reports found.
@@ -2317,7 +2596,7 @@ export default function TimesheetAdminPage() {
                 overflowX: "auto",
                 overflowY: "hidden",
                 WebkitOverflowScrolling: "touch",
-                borderRadius: 18,
+                borderRadius: 16,
                 border: "1px solid #e2e8f0",
               }}
             >
@@ -2338,9 +2617,12 @@ export default function TimesheetAdminPage() {
                     <th style={thStyle()}>Hours</th>
                     <th style={thStyle()}>Created</th>
                     <th style={thStyle()}>Status</th>
-                    <th style={thStyle({ textAlign: "center" })}>Actions</th>
+                    <th style={thStyle({ textAlign: "center" })}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {filteredReports.map((report, index) => (
                     <tr
@@ -2354,19 +2636,29 @@ export default function TimesheetAdminPage() {
                             : "#fbfdff",
                       }}
                     >
-                      <td style={tdStyle}>{report.normalizedAirline || "—"}</td>
-                      <td style={tdStyle}>{report.reportDate || "—"}</td>
+                      <td style={tdStyle}>
+                        {report.normalizedAirline || "\u2014"}
+                      </td>
+                      <td style={tdStyle}>
+                        {report.reportDate || "\u2014"}
+                      </td>
                       <td style={tdStyle}>
                         {report.submittedByName ||
                           report.supervisorReporting ||
                           report.submittedByUsername ||
-                          "—"}
+                          "\u2014"}
                       </td>
-                      <td style={tdStyle}>{report.totalHours.toFixed(2)} hrs</td>
-                      <td style={tdStyle}>{formatDateTime(report.createdAt)}</td>
+                      <td style={tdStyle}>
+                        {report.totalHours.toFixed(2)} hrs
+                      </td>
+                      <td style={tdStyle}>
+                        {formatDateTime(report.createdAt)}
+                      </td>
                       <td style={tdStyle}>
                         <span style={statusBadge(report.status)}>
-                          {String(report.status || "submitted").toUpperCase()}
+                          {String(
+                            report.status || "submitted"
+                          ).toUpperCase()}
                         </span>
                       </td>
                       <td style={{ ...tdStyle, textAlign: "center" }}>
@@ -2400,15 +2692,18 @@ export default function TimesheetAdminPage() {
                             </ActionButton>
                           )}
 
-                          {canApprove && report.status !== "approved" && (
-                            <ActionButton
-                              variant="success"
-                              onClick={() => handleApprove(report)}
-                              disabled={approvingId === report.id}
-                            >
-                              {approvingId === report.id ? "Approving..." : "Approve"}
-                            </ActionButton>
-                          )}
+                          {canApprove &&
+                            report.status !== "approved" && (
+                              <ActionButton
+                                variant="success"
+                                onClick={() => handleApprove(report)}
+                                disabled={approvingId === report.id}
+                              >
+                                {approvingId === report.id
+                                  ? "Approving..."
+                                  : "Approve"}
+                              </ActionButton>
+                            )}
 
                           {canApprove && (
                             <ActionButton
@@ -2416,7 +2711,9 @@ export default function TimesheetAdminPage() {
                               onClick={() => handleDelete(report)}
                               disabled={deletingId === report.id}
                             >
-                              {deletingId === report.id ? "Deleting..." : "Delete"}
+                              {deletingId === report.id
+                                ? "Deleting..."
+                                : "Delete"}
                             </ActionButton>
                           )}
                         </div>
@@ -2446,7 +2743,7 @@ export default function TimesheetAdminPage() {
                     <h2
                       style={{
                         margin: 0,
-                        fontSize: isMobile ? 20 : 22,
+                        fontSize: isMobile ? 19 : 21,
                         fontWeight: 800,
                         color: "#0f172a",
                         letterSpacing: "-0.02em",
@@ -2454,19 +2751,27 @@ export default function TimesheetAdminPage() {
                     >
                       Timesheet Detail
                     </h2>
+
                     <p
                       style={{
                         margin: "4px 0 0",
-                        fontSize: isMobile ? 12 : 13,
+                        fontSize: isMobile ? 11.5 : 12.5,
                         color: "#64748b",
                       }}
                     >
-                      {selectedReport.normalizedAirline || "—"} ·{" "}
-                      {selectedReport.reportDate || "—"}
+                      {selectedReport.normalizedAirline || "\u2014"}{" "}
+                      {"\u00B7"}{" "}
+                      {selectedReport.reportDate || "\u2014"}
                     </p>
                   </div>
 
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 9,
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <ActionButton
                       variant="secondary"
                       onClick={handlePrintExport}
@@ -2483,15 +2788,22 @@ export default function TimesheetAdminPage() {
                       </ActionButton>
                     )}
 
-                    {canApprove && selectedReport.status !== "approved" && (
-                      <ActionButton
-                        variant="success"
-                        onClick={() => handleApprove(selectedReport)}
-                        disabled={approvingId === selectedReport.id}
-                      >
-                        {approvingId === selectedReport.id ? "Approving..." : "Approve"}
-                      </ActionButton>
-                    )}
+                    {canApprove &&
+                      selectedReport.status !== "approved" && (
+                        <ActionButton
+                          variant="success"
+                          onClick={() =>
+                            handleApprove(selectedReport)
+                          }
+                          disabled={
+                            approvingId === selectedReport.id
+                          }
+                        >
+                          {approvingId === selectedReport.id
+                            ? "Approving..."
+                            : "Approve"}
+                        </ActionButton>
+                      )}
                   </div>
                 </div>
 
@@ -2500,50 +2812,59 @@ export default function TimesheetAdminPage() {
                     display: "grid",
                     gridTemplateColumns: isMobile
                       ? "1fr"
-                      : "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
+                      : "repeat(auto-fit, minmax(210px, 1fr))",
+                    gap: 11,
                   }}
                 >
                   <InfoCard
                     label="Airline"
-                    value={selectedReport.normalizedAirline || "—"}
+                    value={
+                      selectedReport.normalizedAirline || "\u2014"
+                    }
                   />
                   <InfoCard
                     label="Department"
                     value={prettifyDepartment(
-                      selectedReport.department || selectedReport.normalizedDepartment
+                      selectedReport.department ||
+                        selectedReport.normalizedDepartment
                     )}
                   />
                   <InfoCard
                     label="Report Date"
-                    value={selectedReport.reportDate || "—"}
+                    value={selectedReport.reportDate || "\u2014"}
                   />
                   <InfoCard
                     label="Shift"
-                    value={selectedReport.shift || "—"}
+                    value={selectedReport.shift || "\u2014"}
                   />
                   <InfoCard
                     label="Supervisor Reporting"
-                    value={selectedReport.supervisorReporting || "—"}
+                    value={
+                      selectedReport.supervisorReporting || "\u2014"
+                    }
                   />
                   <InfoCard
                     label="Submitted By"
                     value={
                       selectedReport.submittedByName ||
                       selectedReport.submittedByUsername ||
-                      "—"
+                      "\u2014"
                     }
                   />
                   <InfoCard
                     label="Report Hours"
-                    value={`${selectedReport.totalHours.toFixed(2)} hrs`}
+                    value={`${selectedReport.totalHours.toFixed(
+                      2
+                    )} hrs`}
                   />
                   <InfoCard
                     label="Daily Budget"
                     value={`${
                       selectedAirlineSummary
                         ? selectedAirlineSummary.budget.toFixed(2)
-                        : Number(selectedReport.budgetHoursDaily || 0).toFixed(2)
+                        : Number(
+                            selectedReport.budgetHoursDaily || 0
+                          ).toFixed(2)
                     } hrs`}
                   />
                   <InfoCard
@@ -2556,72 +2877,80 @@ export default function TimesheetAdminPage() {
                   />
                 </div>
 
-                {(selectedAirlineSummary?.overBudget || selectedReport.overBudget) && (
+                {(selectedAirlineSummary?.overBudget ||
+                  selectedReport.overBudget) && (
                   <div
                     style={{
-                      borderRadius: 16,
-                      padding: "14px 16px",
+                      borderRadius: 15,
+                      padding: "13px 15px",
                       background: "#fff1f2",
                       border: "1px solid #fecdd3",
                       color: "#9f1239",
                       fontWeight: 800,
-                      fontSize: 14,
+                      fontSize: 13,
                     }}
                   >
-                    Budget alert: {selectedReport.normalizedAirline} is over daily budget by{" "}
+                    Budget alert: {selectedReport.normalizedAirline} is over
+                    daily budget by{" "}
                     {Number(
-                      selectedReport.overBudgetBy || selectedAirlineSummary?.overBy || 0
-                    ).toFixed(2)} hours on {selectedReport.reportDate || "this day"}.
+                      selectedReport.overBudgetBy ||
+                        selectedAirlineSummary?.overBy ||
+                        0
+                    ).toFixed(2)}{" "}
+                    hours on{" "}
+                    {selectedReport.reportDate || "this day"}.
                   </div>
                 )}
 
-                {selectedReport.overBudget && selectedReport.overBudgetReason && (
-                  <div
-                    style={{
-                      borderRadius: 16,
-                      padding: "14px 16px",
-                      background: "#fff7ed",
-                      border: "1px solid #fdba74",
-                    }}
-                  >
+                {selectedReport.overBudget &&
+                  selectedReport.overBudgetReason && (
                     <div
                       style={{
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: "#9a3412",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                        marginBottom: 6,
+                        borderRadius: 15,
+                        padding: "13px 15px",
+                        background: "#fff7ed",
+                        border: "1px solid #fdba74",
                       }}
                     >
-                      Over Budget Reason
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#9a3412",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          marginBottom: 6,
+                        }}
+                      >
+                        Over Budget Reason
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "#7c2d12",
+                          whiteSpace: "pre-line",
+                          lineHeight: 1.7,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {selectedReport.overBudgetReason}
+                      </div>
                     </div>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        color: "#7c2d12",
-                        whiteSpace: "pre-line",
-                        lineHeight: 1.7,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {selectedReport.overBudgetReason}
-                    </div>
-                  </div>
-                )}
+                  )}
 
                 {selectedReport.notes && (
                   <div
                     style={{
-                      borderRadius: 16,
-                      padding: "14px 16px",
+                      borderRadius: 15,
+                      padding: "13px 15px",
                       background: "#f8fbff",
                       border: "1px solid #dbeafe",
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: 800,
                         color: "#64748b",
                         textTransform: "uppercase",
@@ -2631,9 +2960,10 @@ export default function TimesheetAdminPage() {
                     >
                       Notes
                     </div>
+
                     <div
                       style={{
-                        fontSize: 14,
+                        fontSize: 13,
                         color: "#0f172a",
                         whiteSpace: "pre-line",
                         lineHeight: 1.7,
@@ -2647,15 +2977,15 @@ export default function TimesheetAdminPage() {
                 {selectedReport.status === "returned" && (
                   <div
                     style={{
-                      borderRadius: 16,
-                      padding: "14px 16px",
+                      borderRadius: 15,
+                      padding: "13px 15px",
                       background: "#fff7ed",
                       border: "1px solid #fdba74",
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: 800,
                         color: "#9a3412",
                         textTransform: "uppercase",
@@ -2665,21 +2995,24 @@ export default function TimesheetAdminPage() {
                     >
                       Returned For Fix
                     </div>
+
                     <div
                       style={{
-                        fontSize: 14,
+                        fontSize: 13,
                         color: "#7c2d12",
                         lineHeight: 1.7,
                         fontWeight: 700,
                         whiteSpace: "pre-line",
                       }}
                     >
-                      {selectedReport.returnedReason || "No reason provided."}
+                      {selectedReport.returnedReason ||
+                        "No reason provided."}
                     </div>
+
                     <div
                       style={{
                         marginTop: 8,
-                        fontSize: 13,
+                        fontSize: 12,
                         color: "#9a3412",
                         fontWeight: 700,
                       }}
@@ -2688,7 +3021,7 @@ export default function TimesheetAdminPage() {
                       {selectedReport.returnedByRole
                         ? ` (${selectedReport.returnedByRole})`
                         : ""}
-                      {" · "}
+                      {" \u00B7 "}
                       {formatDateTime(selectedReport.returnedAt)}
                     </div>
                   </div>
@@ -2697,15 +3030,15 @@ export default function TimesheetAdminPage() {
                 {selectedReport.status === "approved" && (
                   <div
                     style={{
-                      borderRadius: 16,
-                      padding: "14px 16px",
+                      borderRadius: 15,
+                      padding: "13px 15px",
                       background: "#ecfdf5",
                       border: "1px solid #a7f3d0",
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: 800,
                         color: "#047857",
                         textTransform: "uppercase",
@@ -2715,19 +3048,21 @@ export default function TimesheetAdminPage() {
                     >
                       Approval
                     </div>
+
                     <div
                       style={{
-                        fontSize: 14,
+                        fontSize: 13,
                         color: "#065f46",
                         lineHeight: 1.7,
                         fontWeight: 700,
                       }}
                     >
-                      Approved by {selectedReport.approvedByName || "Manager"}{" "}
+                      Approved by{" "}
+                      {selectedReport.approvedByName || "Manager"}{" "}
                       {selectedReport.approvedByRole
                         ? `(${selectedReport.approvedByRole})`
                         : ""}
-                      {" · "}
+                      {" \u00B7 "}
                       {formatDateTime(selectedReport.approvedAt)}
                     </div>
                   </div>
@@ -2741,7 +3076,7 @@ export default function TimesheetAdminPage() {
                     overflowX: "auto",
                     overflowY: "hidden",
                     WebkitOverflowScrolling: "touch",
-                    borderRadius: 18,
+                    borderRadius: 16,
                     border: "1px solid #e2e8f0",
                   }}
                 >
@@ -2765,20 +3100,34 @@ export default function TimesheetAdminPage() {
                         <th style={thStyle()}>Hours</th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {(selectedReport.rows || []).map((row, index) => (
                         <tr
                           key={index}
                           style={{
-                            background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                            background:
+                              index % 2 === 0 ? "#ffffff" : "#fbfdff",
                           }}
                         >
-                          <td style={tdStyle}>{row.employeeName || "—"}</td>
-                          <td style={tdStyle}>{row.punchIn || "—"}</td>
-                          <td style={tdStyle}>{row.punchOut || "—"}</td>
-                          <td style={tdStyle}>{row.employeeStatus || "—"}</td>
-                          <td style={tdStyle}>{row.breakTaken || "—"}</td>
-                          <td style={tdStyle}>{row.reason || "—"}</td>
+                          <td style={tdStyle}>
+                            {row.employeeName || "\u2014"}
+                          </td>
+                          <td style={tdStyle}>
+                            {row.punchIn || "\u2014"}
+                          </td>
+                          <td style={tdStyle}>
+                            {row.punchOut || "\u2014"}
+                          </td>
+                          <td style={tdStyle}>
+                            {row.employeeStatus || "\u2014"}
+                          </td>
+                          <td style={tdStyle}>
+                            {row.breakTaken || "\u2014"}
+                          </td>
+                          <td style={tdStyle}>
+                            {row.reason || "\u2014"}
+                          </td>
                           <td style={tdStyle}>
                             {calculateRowHours(row).toFixed(2)} hrs
                           </td>
@@ -2796,17 +3145,17 @@ export default function TimesheetAdminPage() {
                 >
                   <div
                     style={{
-                      minWidth: isMobile ? "100%" : 260,
+                      minWidth: isMobile ? "100%" : 250,
                       background: "#f8fbff",
                       border: "1px solid #dbeafe",
-                      borderRadius: 16,
-                      padding: "16px 18px",
+                      borderRadius: 15,
+                      padding: "14px 16px",
                       boxSizing: "border-box",
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: 800,
                         color: "#64748b",
                         textTransform: "uppercase",
@@ -2815,10 +3164,11 @@ export default function TimesheetAdminPage() {
                     >
                       Report Total
                     </div>
+
                     <div
                       style={{
-                        marginTop: 6,
-                        fontSize: 26,
+                        marginTop: 5,
+                        fontSize: 24,
                         fontWeight: 900,
                         color: "#0f172a",
                       }}
@@ -2843,7 +3193,7 @@ export default function TimesheetAdminPage() {
                     <h2
                       style={{
                         margin: 0,
-                        fontSize: isMobile ? 20 : 22,
+                        fontSize: isMobile ? 19 : 21,
                         fontWeight: 800,
                         color: "#0f172a",
                         letterSpacing: "-0.02em",
@@ -2851,19 +3201,27 @@ export default function TimesheetAdminPage() {
                     >
                       Edit Timesheet
                     </h2>
+
                     <p
                       style={{
                         margin: "4px 0 0",
-                        fontSize: isMobile ? 12 : 13,
+                        fontSize: isMobile ? 11.5 : 12.5,
                         color: "#64748b",
                       }}
                     >
-                      {selectedReport.normalizedAirline || "—"} ·{" "}
-                      {selectedReport.reportDate || "—"}
+                      {selectedReport.normalizedAirline || "\u2014"}{" "}
+                      {"\u00B7"}{" "}
+                      {selectedReport.reportDate || "\u2014"}
                     </p>
                   </div>
 
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 9,
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <ActionButton
                       variant="secondary"
                       onClick={() => setIsEditMode(false)}
@@ -2876,7 +3234,9 @@ export default function TimesheetAdminPage() {
                       onClick={() => handleSaveEdits(selectedReport)}
                       disabled={savingEditId === selectedReport.id}
                     >
-                      {savingEditId === selectedReport.id ? "Saving..." : "Save Edits"}
+                      {savingEditId === selectedReport.id
+                        ? "Saving..."
+                        : "Save Edits"}
                     </ActionButton>
 
                     {selectedReport.status !== "approved" && (
@@ -2885,7 +3245,9 @@ export default function TimesheetAdminPage() {
                         onClick={() => handleApprove(selectedReport)}
                         disabled={approvingId === selectedReport.id}
                       >
-                        {approvingId === selectedReport.id ? "Approving..." : "Approve"}
+                        {approvingId === selectedReport.id
+                          ? "Approving..."
+                          : "Approve"}
                       </ActionButton>
                     )}
                   </div>
@@ -2896,41 +3258,54 @@ export default function TimesheetAdminPage() {
                     display: "grid",
                     gridTemplateColumns: isMobile
                       ? "1fr"
-                      : "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 12,
+                      : "repeat(auto-fit, minmax(210px, 1fr))",
+                    gap: 11,
                   }}
                 >
                   <div>
                     <FieldLabel>Airline</FieldLabel>
+
                     <TextInput
                       value={editData.airline}
-                      onChange={(e) => handleEditField("airline", e.target.value)}
+                      onChange={(e) =>
+                        handleEditField("airline", e.target.value)
+                      }
                     />
                   </div>
 
                   <div>
                     <FieldLabel>Report Date</FieldLabel>
+
                     <TextInput
                       type="date"
                       value={editData.reportDate}
-                      onChange={(e) => handleEditField("reportDate", e.target.value)}
+                      onChange={(e) =>
+                        handleEditField("reportDate", e.target.value)
+                      }
                     />
                   </div>
 
                   <div>
                     <FieldLabel>Shift</FieldLabel>
+
                     <TextInput
                       value={editData.shift}
-                      onChange={(e) => handleEditField("shift", e.target.value)}
+                      onChange={(e) =>
+                        handleEditField("shift", e.target.value)
+                      }
                     />
                   </div>
 
                   <div>
                     <FieldLabel>Supervisor Reporting</FieldLabel>
+
                     <TextInput
                       value={editData.supervisorReporting}
                       onChange={(e) =>
-                        handleEditField("supervisorReporting", e.target.value)
+                        handleEditField(
+                          "supervisorReporting",
+                          e.target.value
+                        )
                       }
                     />
                   </div>
@@ -2938,30 +3313,41 @@ export default function TimesheetAdminPage() {
 
                 <div>
                   <FieldLabel>Notes</FieldLabel>
+
                   <TextArea
                     value={editData.notes}
-                    onChange={(e) => handleEditField("notes", e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Over Budget Reason</FieldLabel>
-                  <TextArea
-                    value={editData.overBudgetReason}
                     onChange={(e) =>
-                      handleEditField("overBudgetReason", e.target.value)
+                      handleEditField("notes", e.target.value)
                     }
                   />
                 </div>
 
                 <div>
-                  <FieldLabel>Reason to return for correction</FieldLabel>
+                  <FieldLabel>Over Budget Reason</FieldLabel>
+
+                  <TextArea
+                    value={editData.overBudgetReason}
+                    onChange={(e) =>
+                      handleEditField(
+                        "overBudgetReason",
+                        e.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>
+                    Reason to return for correction
+                  </FieldLabel>
+
                   <TextArea
                     value={returnReason}
                     onChange={(e) => setReturnReason(e.target.value)}
                     placeholder="Explain what needs to be fixed before resubmitting."
                   />
-                  <div style={{ marginTop: 12 }}>
+
+                  <div style={{ marginTop: 11 }}>
                     <ActionButton
                       variant="warning"
                       onClick={() => handleReturn(selectedReport)}
@@ -2982,7 +3368,7 @@ export default function TimesheetAdminPage() {
                     overflowX: "auto",
                     overflowY: "hidden",
                     WebkitOverflowScrolling: "touch",
-                    borderRadius: 18,
+                    borderRadius: 16,
                     border: "1px solid #e2e8f0",
                   }}
                 >
@@ -3004,56 +3390,86 @@ export default function TimesheetAdminPage() {
                         <th style={thStyle()}>Break Taken</th>
                         <th style={thStyle()}>Reason</th>
                         <th style={thStyle()}>Hours</th>
-                        <th style={thStyle({ textAlign: "center" })}>Remove</th>
+                        <th
+                          style={thStyle({ textAlign: "center" })}
+                        >
+                          Remove
+                        </th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {(editData.rows || []).map((row, index) => (
                         <tr
                           key={index}
                           style={{
-                            background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                            background:
+                              index % 2 === 0 ? "#ffffff" : "#fbfdff",
                           }}
                         >
                           <td style={tdStyle}>
                             <TextInput
                               value={row.employeeName || ""}
                               onChange={(e) =>
-                                handleEditRow(index, "employeeName", e.target.value)
+                                handleEditRow(
+                                  index,
+                                  "employeeName",
+                                  e.target.value
+                                )
                               }
                             />
                           </td>
+
                           <td style={tdStyle}>
                             <TextInput
                               type="time"
                               value={row.punchIn || ""}
                               onChange={(e) =>
-                                handleEditRow(index, "punchIn", e.target.value)
+                                handleEditRow(
+                                  index,
+                                  "punchIn",
+                                  e.target.value
+                                )
                               }
                             />
                           </td>
+
                           <td style={tdStyle}>
                             <TextInput
                               type="time"
                               value={row.punchOut || ""}
                               onChange={(e) =>
-                                handleEditRow(index, "punchOut", e.target.value)
+                                handleEditRow(
+                                  index,
+                                  "punchOut",
+                                  e.target.value
+                                )
                               }
                             />
                           </td>
+
                           <td style={tdStyle}>
                             <TextInput
                               value={row.employeeStatus || ""}
                               onChange={(e) =>
-                                handleEditRow(index, "employeeStatus", e.target.value)
+                                handleEditRow(
+                                  index,
+                                  "employeeStatus",
+                                  e.target.value
+                                )
                               }
                             />
                           </td>
+
                           <td style={tdStyle}>
                             <SelectInput
                               value={row.breakTaken || "No"}
                               onChange={(e) =>
-                                handleEditRow(index, "breakTaken", e.target.value)
+                                handleEditRow(
+                                  index,
+                                  "breakTaken",
+                                  e.target.value
+                                )
                               }
                             >
                               <option value="No">No</option>
@@ -3063,17 +3479,24 @@ export default function TimesheetAdminPage() {
                               <option value="60 min">60 min</option>
                             </SelectInput>
                           </td>
+
                           <td style={tdStyle}>
                             <TextInput
                               value={row.reason || ""}
                               onChange={(e) =>
-                                handleEditRow(index, "reason", e.target.value)
+                                handleEditRow(
+                                  index,
+                                  "reason",
+                                  e.target.value
+                                )
                               }
                             />
                           </td>
+
                           <td style={tdStyle}>
                             {calculateRowHours(row).toFixed(2)} hrs
                           </td>
+
                           <td style={{ ...tdStyle, textAlign: "center" }}>
                             <ActionButton
                               variant="danger"
@@ -3089,8 +3512,17 @@ export default function TimesheetAdminPage() {
                   </table>
                 </div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <ActionButton variant="secondary" onClick={addEditRow}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <ActionButton
+                    variant="secondary"
+                    onClick={addEditRow}
+                  >
                     + Add Row
                   </ActionButton>
                 </div>
@@ -3103,17 +3535,17 @@ export default function TimesheetAdminPage() {
                 >
                   <div
                     style={{
-                      minWidth: isMobile ? "100%" : 260,
+                      minWidth: isMobile ? "100%" : 250,
                       background: "#f8fbff",
                       border: "1px solid #dbeafe",
-                      borderRadius: 16,
-                      padding: "16px 18px",
+                      borderRadius: 15,
+                      padding: "14px 16px",
                       boxSizing: "border-box",
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: 800,
                         color: "#64748b",
                         textTransform: "uppercase",
@@ -3122,10 +3554,11 @@ export default function TimesheetAdminPage() {
                     >
                       Report Total
                     </div>
+
                     <div
                       style={{
-                        marginTop: 6,
-                        fontSize: 26,
+                        marginTop: 5,
+                        fontSize: 24,
                         fontWeight: 900,
                         color: "#0f172a",
                       }}
