@@ -1,7 +1,7 @@
 {
-  "name": "TPA OPS SYSTEM",
-  "short_name": "TPA OPS",
-  "description": "TPA OPS System - Airport Operations Management Platform",
+  "name": "AeroStation Hub",
+  "short_name": "AeroStation",
+  "description": "AeroStation Hub - Operational Management Platform",
   "id": "/",
   "start_url": "/",
   "scope": "/",
@@ -20,13 +20,13 @@
   ],
   "icons": [
     {
-      "src": "/icons/tpa-ops-192.png",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/tpa-ops-512.png",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
