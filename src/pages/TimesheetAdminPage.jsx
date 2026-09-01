@@ -2550,7 +2550,7 @@ export default function TimesheetAdminPage() {
                 color: "#64748b",
               }}
             >
-              Total found: {filteredReports.length}. Select <strong>View</strong> to open a report below.
+              Total found: {filteredReports.length}. Tap any report to open its details below.
             </p>
           </div>
 
@@ -2585,148 +2585,194 @@ export default function TimesheetAdminPage() {
           ) : (
             <div
               style={{
-                width: "100%",
-                maxWidth: "100%",
-                minWidth: 0,
-                overflowX: "auto",
-                overflowY: "hidden",
-                WebkitOverflowScrolling: "touch",
-                borderRadius: 16,
-                border: "1px solid #e2e8f0",
+                display: "grid",
+                gap: 10,
               }}
             >
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "separate",
-                  borderSpacing: 0,
-                  minWidth: 1140,
-                  background: "#fff",
-                }}
-              >
-                <thead>
-                  <tr style={{ background: "#f8fbff" }}>
-                    <th style={thStyle()}>Airline</th>
-                    <th style={thStyle()}>Date</th>
-                    <th style={thStyle()}>Submitted By</th>
-                    <th style={thStyle()}>Hours</th>
-                    <th style={thStyle()}>Created</th>
-                    <th style={thStyle()}>Status</th>
-                    <th style={thStyle({ textAlign: "center" })}>
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
+              {filteredReports.map((report) => {
+                const isSelected = report.id === selectedId;
 
-                <tbody>
-                  {filteredReports.map((report, index) => (
-                    <tr
-                      key={report.id}
+                return (
+                  <button
+                    key={report.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(report.id);
+                      setIsEditMode(false);
+
+                      window.setTimeout(() => {
+                        document
+                          .getElementById("timesheet-detail-panel")
+                          ?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
+                      }, 80);
+                    }}
+                    style={{
+                      width: "100%",
+                      border: isSelected
+                        ? "1px solid #93c5fd"
+                        : "1px solid #e2e8f0",
+                      background: isSelected ? "#edf7ff" : "#ffffff",
+                      borderRadius: 14,
+                      padding: isMobile ? "12px 13px" : "13px 15px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      boxShadow: isSelected
+                        ? "0 8px 20px rgba(23,105,170,0.08)"
+                        : "none",
+                    }}
+                  >
+                    <div
                       style={{
-                        background:
-                          report.id === selectedId
-                            ? "#edf7ff"
-                            : index % 2 === 0
-                            ? "#ffffff"
-                            : "#fbfdff",
-                        cursor: "default",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 12,
+                        flexWrap: "wrap",
                       }}
                     >
-                      <td style={tdStyle}>
-                        {report.normalizedAirline || "\u2014"}
-                      </td>
-                      <td style={tdStyle}>
-                        {report.reportDate || "\u2014"}
-                      </td>
-                      <td style={tdStyle}>
-                        {report.submittedByName ||
-                          report.supervisorReporting ||
-                          report.submittedByUsername ||
-                          "\u2014"}
-                      </td>
-                      <td style={tdStyle}>
-                        {report.totalHours.toFixed(2)} hrs
-                      </td>
-                      <td style={tdStyle}>
-                        {formatDateTime(report.createdAt)}
-                      </td>
-                      <td style={tdStyle}>
-                        <span style={statusBadge(report.status)}>
-                          {String(
-                            report.status || "submitted"
-                          ).toUpperCase()}
-                        </span>
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <div
                           style={{
                             display: "flex",
+                            alignItems: "center",
                             gap: 8,
-                            justifyContent: "center",
                             flexWrap: "wrap",
                           }}
                         >
-                          <ActionButton
-                            variant="secondary"
-                            onClick={() => {
-                              setSelectedId(report.id);
-                              setIsEditMode(false);
-
-                              window.setTimeout(() => {
-                                document
-                                  .getElementById("timesheet-detail-panel")
-                                  ?.scrollIntoView({
-                                    behavior: "smooth",
-                                    block: "start",
-                                  });
-                              }, 80);
+                          <span
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 900,
+                              color: "#0f172a",
                             }}
                           >
-                            View
-                          </ActionButton>
+                            {report.normalizedAirline || "\u2014"}
+                          </span>
 
-                          {canApprove && (
-                            <ActionButton
-                              variant="primary"
-                              onClick={() => {
-                                setSelectedId(report.id);
-                                setIsEditMode(true);
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {report.reportDate || "\u2014"}
+                          </span>
+
+                          <span style={statusBadge(report.status)}>
+                            {String(
+                              report.status || "submitted"
+                            ).toUpperCase()}
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 7,
+                            display: "grid",
+                            gridTemplateColumns: isMobile
+                              ? "1fr"
+                              : "repeat(3, minmax(0, 1fr))",
+                            gap: 8,
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: 800,
+                                color: "#94a3b8",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.06em",
                               }}
                             >
-                              Edit
-                            </ActionButton>
-                          )}
-
-                          {canApprove &&
-                            report.status !== "approved" && (
-                              <ActionButton
-                                variant="success"
-                                onClick={() => handleApprove(report)}
-                                disabled={approvingId === report.id}
-                              >
-                                {approvingId === report.id
-                                  ? "Approving..."
-                                  : "Approve"}
-                              </ActionButton>
-                            )}
-
-                          {canApprove && (
-                            <ActionButton
-                              variant="danger"
-                              onClick={() => handleDelete(report)}
-                              disabled={deletingId === report.id}
+                              Submitted By
+                            </div>
+                            <div
+                              style={{
+                                marginTop: 2,
+                                fontSize: 12.5,
+                                color: "#334155",
+                                fontWeight: 700,
+                              }}
                             >
-                              {deletingId === report.id
-                                ? "Deleting..."
-                                : "Delete"}
-                            </ActionButton>
-                          )}
+                              {report.submittedByName ||
+                                report.supervisorReporting ||
+                                report.submittedByUsername ||
+                                "\u2014"}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: 800,
+                                color: "#94a3b8",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.06em",
+                              }}
+                            >
+                              Hours
+                            </div>
+                            <div
+                              style={{
+                                marginTop: 2,
+                                fontSize: 12.5,
+                                color: "#334155",
+                                fontWeight: 800,
+                              }}
+                            >
+                              {report.totalHours.toFixed(2)} hrs
+                            </div>
+                          </div>
+
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: 800,
+                                color: "#94a3b8",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.06em",
+                              }}
+                            >
+                              Created
+                            </div>
+                            <div
+                              style={{
+                                marginTop: 2,
+                                fontSize: 12.5,
+                                color: "#334155",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {formatDateTime(report.createdAt)}
+                            </div>
+                          </div>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+
+                      <div
+                        style={{
+                          alignSelf: "center",
+                          color: "#1769aa",
+                          fontSize: 18,
+                          fontWeight: 900,
+                          flexShrink: 0,
+                        }}
+                        aria-hidden="true"
+                      >
+                        {"\u203A"}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </PageCard>
