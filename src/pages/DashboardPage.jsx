@@ -10,7 +10,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
-import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import { APP_NAME } from "../config/appConfig.js";
 
 const FIXED_AUTHOR = "AeroStation Hub";
 
@@ -710,44 +710,31 @@ export default function DashboardPage() {
       }}
     >
       {/* ============================================================
-          AEROSTATION HUB - COMPACT WELCOME
+          AEROSTATION HUB - SLIM WELCOME BAR
       ============================================================ */}
 
       <div
         style={{
           background:
-            "linear-gradient(135deg, #073b66 0%, #0f5c91 42%, #2296d2 72%, #65c6e8 100%)",
-          borderRadius: isMobile ? 18 : 22,
-          padding: isMobile ? "16px" : "18px 22px",
+            "linear-gradient(135deg, #073b66 0%, #0f5c91 48%, #2e9fd6 100%)",
+          borderRadius: isMobile ? 16 : 18,
+          padding: isMobile ? "12px 14px" : "12px 16px",
           color: "#ffffff",
-          boxShadow: "0 16px 38px rgba(15,76,129,0.18)",
+          boxShadow: "0 12px 28px rgba(15,76,129,0.16)",
           position: "relative",
           overflow: "hidden",
-          marginBottom: 16,
+          marginBottom: 14,
         }}
       >
         <div
           style={{
             position: "absolute",
-            width: isMobile ? 130 : 180,
-            height: isMobile ? 130 : 180,
+            width: 150,
+            height: 150,
             borderRadius: "999px",
-            border: "1px solid rgba(255,255,255,0.10)",
-            top: isMobile ? -58 : -78,
-            right: isMobile ? -35 : -30,
-            pointerEvents: "none",
-          }}
-        />
-
-        <div
-          style={{
-            position: "absolute",
-            width: isMobile ? 90 : 120,
-            height: isMobile ? 90 : 120,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.05)",
-            bottom: -45,
-            right: isMobile ? 45 : 145,
+            border: "1px solid rgba(255,255,255,0.09)",
+            top: -88,
+            right: -24,
             pointerEvents: "none",
           }}
         />
@@ -756,9 +743,9 @@ export default function DashboardPage() {
           style={{
             position: "relative",
             display: "flex",
-            alignItems: isMobile ? "flex-start" : "center",
+            alignItems: "center",
             justifyContent: "space-between",
-            gap: 16,
+            gap: 12,
             flexWrap: isMobile ? "wrap" : "nowrap",
           }}
         >
@@ -766,24 +753,23 @@ export default function DashboardPage() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: isMobile ? 12 : 15,
+              gap: 11,
               minWidth: 0,
               flex: 1,
             }}
           >
             <div
               style={{
-                width: isMobile ? 46 : 54,
-                height: isMobile ? 46 : 54,
-                flex: `0 0 ${isMobile ? 46 : 54}px`,
-                borderRadius: isMobile ? 14 : 16,
+                width: isMobile ? 38 : 42,
+                height: isMobile ? 38 : 42,
+                flex: `0 0 ${isMobile ? 38 : 42}px`,
+                borderRadius: 12,
                 background: "rgba(255,255,255,0.96)",
-                border: "1px solid rgba(255,255,255,0.9)",
-                boxShadow: "0 10px 24px rgba(3,14,32,0.18)",
+                border: "1px solid rgba(255,255,255,0.88)",
+                overflow: "hidden",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                overflow: "hidden",
               }}
             >
               <img
@@ -801,71 +787,42 @@ export default function DashboardPage() {
             <div style={{ minWidth: 0 }}>
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  flexWrap: "wrap",
-                  marginBottom: 4,
+                  fontSize: isMobile ? 8 : 9,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.14em",
+                  color: "rgba(255,255,255,0.72)",
+                  lineHeight: 1.2,
+                  marginBottom: 3,
                 }}
               >
-                <span
-                  style={{
-                    fontSize: isMobile ? 9 : 10,
-                    fontWeight: 800,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.14em",
-                    color: "rgba(255,255,255,0.78)",
-                  }}
-                >
-                  {APP_NAME}
-                </span>
-
-                <span
-                  style={{
-                    width: 4,
-                    height: 4,
-                    borderRadius: 999,
-                    background: "#79ddff",
-                  }}
-                />
-
-                <span
-                  style={{
-                    fontSize: isMobile ? 9 : 10,
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.12em",
-                    color: "rgba(255,255,255,0.68)",
-                  }}
-                >
-                  Executive Dashboard
-                </span>
+                {APP_NAME} Â· Executive Dashboard
               </div>
 
-              <h1
+              <div
                 style={{
-                  margin: 0,
-                  fontSize: isMobile ? 22 : 27,
-                  lineHeight: 1.1,
-                  fontWeight: 800,
-                  letterSpacing: "-0.035em",
+                  fontSize: isMobile ? 16 : 18,
+                  lineHeight: 1.15,
+                  fontWeight: 750,
+                  letterSpacing: "-0.02em",
+                  whiteSpace: isMobile ? "normal" : "nowrap",
                 }}
               >
                 Welcome back, {user?.username || "Team"} {"\u{1F44B}"}
-              </h1>
+              </div>
 
-              <p
-                style={{
-                  margin: "6px 0 0",
-                  maxWidth: 680,
-                  fontSize: isMobile ? 11.5 : 12.5,
-                  lineHeight: 1.55,
-                  color: "rgba(255,255,255,0.82)",
-                }}
-              >
-                {APP_SUBTITLE} Â· Station activity, operational updates and
-                pending actions at a glance.
-              </p>
+              {!isMobile && (
+                <div
+                  style={{
+                    marginTop: 3,
+                    fontSize: 10.5,
+                    color: "rgba(255,255,255,0.72)",
+                    lineHeight: 1.35,
+                  }}
+                >
+                  Station activity and pending actions at a glance.
+                </div>
+              )}
             </div>
           </div>
 
@@ -873,16 +830,16 @@ export default function DashboardPage() {
             type="button"
             onClick={reloadAll}
             style={{
-              border: "1px solid rgba(255,255,255,0.22)",
-              background: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.20)",
+              background: "rgba(255,255,255,0.10)",
               color: "#ffffff",
-              borderRadius: 13,
-              padding: isMobile ? "10px 13px" : "10px 14px",
-              fontSize: 12,
+              borderRadius: 11,
+              padding: isMobile ? "8px 11px" : "8px 12px",
+              fontSize: 11,
               fontWeight: 700,
               cursor: "pointer",
-              backdropFilter: "blur(10px)",
-              WebkitBackdropFilter: "blur(10px)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
               width: isMobile ? "100%" : "auto",
               whiteSpace: "nowrap",
             }}
@@ -1350,7 +1307,7 @@ export default function DashboardPage() {
                           textDecoration: "none",
                         }}
                       >
-                        View more â
+                        View more {"\u{2192}"}
                       </a>
                     )}
                   </div>
