@@ -15,6 +15,7 @@ import { useUser } from "../UserContext.jsx";
 import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
@@ -50,6 +51,7 @@ const AIRLINE_COLORS = {
 };
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
 const DAY_LABELS = {
   mon: "MON",
   tue: "TUE",
@@ -65,6 +67,7 @@ const loadImage = (src) =>
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
     img.src = src;
   });
 
@@ -79,28 +82,34 @@ const normalizeInterval = (start, end) => {
   const s = toMinutes(start);
   const eRaw = toMinutes(end);
   if (s == null || eRaw == null) return null;
+
   let e = eRaw;
   if (e <= s) e += 24 * 60;
+
   return [s, e];
 };
 
 const intervalsOverlap = (aStart, aEnd, bStart, bEnd) => {
   const a = normalizeInterval(aStart, aEnd);
   const b = normalizeInterval(bStart, bEnd);
+
   if (!a || !b) return false;
+
   const [s1, e1] = a;
   const [s2, e2] = b;
+
   return s1 < e2 && s2 < e1;
 };
 
 const normalizeAirlineName = (value) => {
   const airline = String(value || "").trim();
+  const upper = airline.toUpperCase();
 
   if (
-    airline.toUpperCase() === "WL HAVANA AIR" ||
-    airline.toUpperCase() === "WAL HAVANA AIR" ||
-    airline.toUpperCase() === "WAL HAVANA" ||
-    airline.toUpperCase() === "WESTJET"
+    upper === "WL HAVANA AIR" ||
+    upper === "WAL HAVANA AIR" ||
+    upper === "WAL HAVANA" ||
+    upper === "WESTJET"
   ) {
     return "WestJet";
   }
@@ -109,7 +118,10 @@ const normalizeAirlineName = (value) => {
 };
 
 const normalizeDepartmentName = (value) => {
-  const raw = String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+  const raw = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 
   if (raw === "cabin") return "cabin service";
   if (raw === "cabin service") return "cabin service";
@@ -166,12 +178,17 @@ function normalizeDateString(value) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
 
   const slashWithYear = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
   if (slashWithYear) {
     const [, mm, dd, yyyy] = slashWithYear;
-    return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+    return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(
+      2,
+      "0"
+    )}`;
   }
 
   const parsed = new Date(raw);
+
   if (!Number.isNaN(parsed.getTime())) {
     return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(
       2,
@@ -186,19 +203,29 @@ function weekStartFromDays(days) {
   const mon = days?.mon;
   if (!mon) return "";
 
-  const match = String(mon).trim().match(/^(\d{1,2})\/(\d{1,2})$/);
+  const match = String(mon)
+    .trim()
+    .match(/^(\d{1,2})\/(\d{1,2})$/);
+
   if (!match) return "";
 
   const [, mm, dd] = match;
 
   const today = new Date();
   const thisYear = today.getFullYear();
-  const candidateThisYear = new Date(thisYear, Number(mm) - 1, Number(dd));
+  const candidateThisYear = new Date(
+    thisYear,
+    Number(mm) - 1,
+    Number(dd)
+  );
 
   if (!Number.isNaN(candidateThisYear.getTime())) {
     return `${candidateThisYear.getFullYear()}-${String(
       candidateThisYear.getMonth() + 1
-    ).padStart(2, "0")}-${String(candidateThisYear.getDate()).padStart(2, "0")}`;
+    ).padStart(2, "0")}-${String(candidateThisYear.getDate()).padStart(
+      2,
+      "0"
+    )}`;
   }
 
   return "";
@@ -245,6 +272,7 @@ function buildDayNumbers(weekStart) {
   }
 
   const base = new Date(`${weekStart}T00:00:00`);
+
   if (Number.isNaN(base.getTime())) {
     return {
       mon: "",
@@ -258,9 +286,11 @@ function buildDayNumbers(weekStart) {
   }
 
   const result = {};
+
   DAY_KEYS.forEach((key, index) => {
     const d = new Date(base);
     d.setDate(base.getDate() + index);
+
     result[key] = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(
       d.getDate()
     ).padStart(2, "0")}`;
@@ -276,13 +306,34 @@ function buildWeekTagFromWeekStart(weekStart) {
 function emptyRow() {
   return {
     employeeId: "",
-    mon: [{ start: "", end: "" }, { start: "", end: "" }],
-    tue: [{ start: "", end: "" }, { start: "", end: "" }],
-    wed: [{ start: "", end: "" }, { start: "", end: "" }],
-    thu: [{ start: "", end: "" }, { start: "", end: "" }],
-    fri: [{ start: "", end: "" }, { start: "", end: "" }],
-    sat: [{ start: "", end: "" }, { start: "", end: "" }],
-    sun: [{ start: "", end: "" }, { start: "", end: "" }],
+    mon: [
+      { start: "", end: "" },
+      { start: "", end: "" },
+    ],
+    tue: [
+      { start: "", end: "" },
+      { start: "", end: "" },
+    ],
+    wed: [
+      { start: "", end: "" },
+      { start: "", end: "" },
+    ],
+    thu: [
+      { start: "", end: "" },
+      { start: "", end: "" },
+    ],
+    fri: [
+      { start: "", end: "" },
+      { start: "", end: "" },
+    ],
+    sat: [
+      { start: "", end: "" },
+      { start: "", end: "" },
+    ],
+    sun: [
+      { start: "", end: "" },
+      { start: "", end: "" },
+    ],
   };
 }
 
@@ -290,10 +341,10 @@ function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
-        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        background: "rgba(255,255,255,0.95)",
+        border: "1px solid #e2e8f0",
+        borderRadius: 22,
+        boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
         ...style,
       }}
     >
@@ -308,10 +359,10 @@ function FieldLabel({ children }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
-        fontWeight: 700,
+        fontSize: 11,
+        fontWeight: 800,
         color: "#475569",
-        letterSpacing: "0.03em",
+        letterSpacing: "0.04em",
         textTransform: "uppercase",
       }}
     >
@@ -326,10 +377,11 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -345,10 +397,11 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -370,7 +423,7 @@ function ActionButton({
         "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+      boxShadow: "0 10px 20px rgba(23,105,170,0.16)",
     },
     secondary: {
       background: "#ffffff",
@@ -382,7 +435,7 @@ function ActionButton({
       background: "#16a34a",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
+      boxShadow: "0 10px 20px rgba(22,163,74,0.16)",
     },
   };
 
@@ -391,9 +444,9 @@ function ActionButton({
       type={type}
       onClick={onClick}
       style={{
-        borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
+        borderRadius: 11,
+        padding: "9px 13px",
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: "pointer",
         whiteSpace: "nowrap",
@@ -402,6 +455,43 @@ function ActionButton({
     >
       {children}
     </button>
+  );
+}
+
+function SummaryMetric({ label, value, accent = "#1769aa" }) {
+  return (
+    <div
+      style={{
+        background: "#f8fbff",
+        border: "1px solid #dbeafe",
+        borderRadius: 15,
+        padding: "13px 15px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10.5,
+          fontWeight: 800,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 5,
+          fontSize: 23,
+          fontWeight: 900,
+          color: accent,
+          letterSpacing: "-0.03em",
+        }}
+      >
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -467,8 +557,12 @@ export default function SchedulePage() {
     }
 
     if (resolvedAirline) {
-      setAirlineKey(normalizeAirlineName(incoming.airline || resolvedAirline));
-      setAirlineDisplayName(incoming.airlineDisplayName || resolvedAirline);
+      setAirlineKey(
+        normalizeAirlineName(incoming.airline || resolvedAirline)
+      );
+      setAirlineDisplayName(
+        incoming.airlineDisplayName || resolvedAirline
+      );
     }
 
     if (incoming.department) {
@@ -486,32 +580,40 @@ export default function SchedulePage() {
     }
   }, [location.state]);
 
- useEffect(() => {
-  async function loadEmployees() {
-    const snap = await getDocs(collection(db, "employees"));
+  useEffect(() => {
+    async function loadEmployees() {
+      const snap = await getDocs(collection(db, "employees"));
 
-    const employeeList = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => {
-        const nameA = String(
-          a.name || a.fullName || a.displayName || a.employeeName || ""
-        ).toLowerCase();
+      const employeeList = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const nameA = String(
+            a.name ||
+              a.fullName ||
+              a.displayName ||
+              a.employeeName ||
+              ""
+          ).toLowerCase();
 
-        const nameB = String(
-          b.name || b.fullName || b.displayName || b.employeeName || ""
-        ).toLowerCase();
+          const nameB = String(
+            b.name ||
+              b.fullName ||
+              b.displayName ||
+              b.employeeName ||
+              ""
+          ).toLowerCase();
 
-        return nameA.localeCompare(nameB);
-      });
+          return nameA.localeCompare(nameB);
+        });
 
-    setEmployees(employeeList);
-  }
+      setEmployees(employeeList);
+    }
 
-  loadEmployees().catch((err) => {
-    console.error(err);
-    setStatusMessage("Error loading employees.");
-  });
-}, []);
+    loadEmployees().catch((err) => {
+      console.error(err);
+      setStatusMessage("Error loading employees.");
+    });
+  }, []);
 
   useEffect(() => {
     async function loadBudgets() {
@@ -525,7 +627,10 @@ export default function SchedulePage() {
         const start = String(data.weekStart || "").trim();
 
         if (!airline || !dept || !start) return;
-        map[`${airline}__${dept}__${start}`] = Number(data.budgetHours || 0);
+
+        map[`${airline}__${dept}__${start}`] = Number(
+          data.budgetHours || 0
+        );
       });
 
       setAirlineBudgets(map);
@@ -554,13 +659,22 @@ export default function SchedulePage() {
           const start = new Date(`${startStr}T00:00:00`);
           const end = new Date(`${endStr}T00:00:00`);
 
-          if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+          if (
+            Number.isNaN(start.getTime()) ||
+            Number.isNaN(end.getTime())
+          ) {
+            return;
+          }
 
           let current = new Date(start);
+
           while (current <= end) {
             const dateKey = `${current.getFullYear()}-${String(
               current.getMonth() + 1
-            ).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+            ).padStart(2, "0")}-${String(current.getDate()).padStart(
+              2,
+              "0"
+            )}`;
 
             if (!byEmp[empId]) byEmp[empId] = {};
             byEmp[empId][dateKey] = true;
@@ -588,6 +702,7 @@ export default function SchedulePage() {
     if (!weekStart) return {};
 
     const weekDates = {};
+
     DAY_KEYS.forEach((key, index) => {
       const base = new Date(`${weekStart}T00:00:00`);
       if (Number.isNaN(base.getTime())) return;
@@ -595,13 +710,13 @@ export default function SchedulePage() {
       const d = new Date(base);
       d.setDate(base.getDate() + index);
 
-      weekDates[key] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-        2,
-        "0"
-      )}-${String(d.getDate()).padStart(2, "0")}`;
+      weekDates[key] = `${d.getFullYear()}-${String(
+        d.getMonth() + 1
+      ).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     });
 
     const mapped = {};
+
     Object.keys(blockedByEmployee).forEach((empId) => {
       DAY_KEYS.forEach((dayKey) => {
         const actualDate = weekDates[dayKey];
@@ -619,22 +734,28 @@ export default function SchedulePage() {
 
   const diffHours = (start, end) => {
     if (!start || !end || start === "OFF") return 0;
+
     const s = toMinutes(start);
     const eRaw = toMinutes(end);
+
     if (s == null || eRaw == null) return 0;
+
     let e = eRaw;
     if (e < s) e += 24 * 60;
 
     let hours = (e - s) / 60;
+
     if (hours > 6 + 1 / 60) {
       hours -= 0.5;
     }
+
     return hours;
   };
 
   const calculateTotals = () => {
     let airlineTotal = 0;
     const employeeTotals = {};
+
     const dailyTotals = {
       mon: 0,
       tue: 0,
@@ -663,10 +784,15 @@ export default function SchedulePage() {
       if (r.employeeId) {
         employeeTotals[r.employeeId] = employeeWeekly;
       }
+
       airlineTotal += employeeWeekly;
     });
 
-    return { employeeTotals, airlineTotal, dailyTotals };
+    return {
+      employeeTotals,
+      airlineTotal,
+      dailyTotals,
+    };
   };
 
   const calculateDailyHeadcount = () => {
@@ -703,12 +829,19 @@ export default function SchedulePage() {
     return dailyHeadcount;
   };
 
-  const { employeeTotals, airlineTotal, dailyTotals } = calculateTotals();
-  const dailyHeadcount = useMemo(() => calculateDailyHeadcount(), [rows]);
+  const { employeeTotals, airlineTotal, dailyTotals } =
+    calculateTotals();
 
-  const budgetKey = `${normalizeAirlineName(airlineKey)}__${normalizeDepartmentName(
-    department
-  )}__${String(weekStart || "").trim()}`;
+  const dailyHeadcount = useMemo(
+    () => calculateDailyHeadcount(),
+    [rows]
+  );
+
+  const budgetKey = `${normalizeAirlineName(
+    airlineKey
+  )}__${normalizeDepartmentName(department)}__${String(
+    weekStart || ""
+  ).trim()}`;
 
   const selectedWeeklyBudget = airlineBudgets[budgetKey] || 0;
 
@@ -716,10 +849,17 @@ export default function SchedulePage() {
     const weekTag = buildWeekTagFromWeekStart(weekStart).trim();
 
     if (!weekTag) {
-      return { conflicts: [], weekTag: null };
+      return {
+        conflicts: [],
+        weekTag: null,
+      };
     }
 
-    const q = query(collection(db, "schedules"), where("weekTag", "==", weekTag));
+    const q = query(
+      collection(db, "schedules"),
+      where("weekTag", "==", weekTag)
+    );
+
     const snap = await getDocs(q);
 
     const existingSchedules = snap.docs
@@ -730,12 +870,21 @@ export default function SchedulePage() {
       .filter((sch) => sch.id !== editingScheduleId);
 
     if (!existingSchedules.length) {
-      return { conflicts: [], weekTag };
+      return {
+        conflicts: [],
+        weekTag,
+      };
     }
 
     const empMap = {};
+
     employees.forEach((e) => {
-      empMap[e.id] = e.name;
+      empMap[e.id] =
+        e.name ||
+        e.fullName ||
+        e.displayName ||
+        e.employeeName ||
+        "Unknown";
     });
 
     const conflicts = [];
@@ -744,7 +893,10 @@ export default function SchedulePage() {
       DAY_KEYS.forEach((dayKey) => {
         (sch.grid || []).forEach((oldRow) => {
           (rows || []).forEach((newRow) => {
-            if (!newRow.employeeId || newRow.employeeId !== oldRow.employeeId) {
+            if (
+              !newRow.employeeId ||
+              newRow.employeeId !== oldRow.employeeId
+            ) {
               return;
             }
 
@@ -762,13 +914,22 @@ export default function SchedulePage() {
                   return;
                 }
 
-                if (intervalsOverlap(os.start, os.end, ns.start, ns.end)) {
+                if (
+                  intervalsOverlap(
+                    os.start,
+                    os.end,
+                    ns.start,
+                    ns.end
+                  )
+                ) {
                   conflicts.push({
-                    employeeName: empMap[newRow.employeeId] || "Unknown",
+                    employeeName:
+                      empMap[newRow.employeeId] || "Unknown",
                     dayKey,
                     newShift: ns,
                     existingShift: os,
-                    otherAirline: sch.airlineDisplayName || sch.airline,
+                    otherAirline:
+                      sch.airlineDisplayName || sch.airline,
                     otherDept: sch.department,
                   });
                 }
@@ -779,7 +940,10 @@ export default function SchedulePage() {
       });
     });
 
-    return { conflicts, weekTag };
+    return {
+      conflicts,
+      weekTag,
+    };
   };
 
   const buildSchedulePayload = (status, weekTagToSave) => ({
@@ -803,22 +967,34 @@ export default function SchedulePage() {
 
   const handleSaveDraft = async () => {
     if (!airlineKey || !department || !weekStart) {
-      setStatusMessage("Please select airline, department and week start.");
+      setStatusMessage(
+        "Please select airline, department and week start."
+      );
       return;
     }
 
     try {
       const weekTagToSave = buildWeekTagFromWeekStart(weekStart);
-      const payload = buildSchedulePayload("draft", weekTagToSave);
+      const payload = buildSchedulePayload(
+        "draft",
+        weekTagToSave
+      );
 
       if (editingScheduleId) {
-        await updateDoc(doc(db, "schedules", editingScheduleId), payload);
-        setStatusMessage("Schedule draft updated successfully.");
+        await updateDoc(
+          doc(db, "schedules", editingScheduleId),
+          payload
+        );
+
+        setStatusMessage(
+          "Schedule draft updated successfully."
+        );
       } else {
         const ref = await addDoc(collection(db, "schedules"), {
           ...payload,
           createdAt: serverTimestamp(),
         });
+
         setEditingScheduleId(ref.id);
         setLoadedExistingSchedule(true);
         setStatusMessage("Schedule saved as draft.");
@@ -831,16 +1007,22 @@ export default function SchedulePage() {
 
   const handleSaveSchedule = async () => {
     if (!airlineKey || !department || !weekStart) {
-      setStatusMessage("Please select airline, department and week start.");
+      setStatusMessage(
+        "Please select airline, department and week start."
+      );
       return;
     }
 
-    const { conflicts, weekTag } = await checkConflictsWithOtherAirlines();
+    const { conflicts, weekTag } =
+      await checkConflictsWithOtherAirlines();
 
     if (conflicts.length > 0) {
       const previewLines = conflicts.slice(0, 6).map((c) => {
-        const dayLabel = DAY_LABELS[c.dayKey] || c.dayKey.toUpperCase();
-        return `- ${c.employeeName} | ${dayLabel} | ${c.newShift.start}–${c.newShift.end} (already on ${c.otherAirline} — ${c.otherDept} ${c.existingShift.start}–${c.existingShift.end})`;
+        const dayLabel =
+          DAY_LABELS[c.dayKey] ||
+          c.dayKey.toUpperCase();
+
+        return `- ${c.employeeName} | ${dayLabel} | ${c.newShift.start}\u2013${c.newShift.end} (already on ${c.otherAirline} \u2014 ${c.otherDept} ${c.existingShift.start}\u2013${c.existingShift.end})`;
       });
 
       const extra =
@@ -849,7 +1031,7 @@ export default function SchedulePage() {
           : "";
 
       const proceed = window.confirm(
-        "RED FLAG – Employee double assigned in another airline for the same day / time.\n\n" +
+        "RED FLAG \u2014 Employee double assigned in another airline for the same day / time.\n\n" +
           previewLines.join("\n") +
           extra +
           "\n\nDo you still want to submit this schedule?"
@@ -859,20 +1041,35 @@ export default function SchedulePage() {
     }
 
     try {
-      const weekTagToSave = weekTag || buildWeekTagFromWeekStart(weekStart);
-      const payload = buildSchedulePayload("pending", weekTagToSave);
+      const weekTagToSave =
+        weekTag || buildWeekTagFromWeekStart(weekStart);
+
+      const payload = buildSchedulePayload(
+        "pending",
+        weekTagToSave
+      );
 
       if (editingScheduleId) {
-        await updateDoc(doc(db, "schedules", editingScheduleId), payload);
-        setStatusMessage("Schedule re-submitted for approval.");
+        await updateDoc(
+          doc(db, "schedules", editingScheduleId),
+          payload
+        );
+
+        setStatusMessage(
+          "Schedule re-submitted for approval."
+        );
       } else {
         const ref = await addDoc(collection(db, "schedules"), {
           ...payload,
           createdAt: serverTimestamp(),
         });
+
         setEditingScheduleId(ref.id);
         setLoadedExistingSchedule(true);
-        setStatusMessage("Schedule submitted for approval.");
+
+        setStatusMessage(
+          "Schedule submitted for approval."
+        );
       }
     } catch (err) {
       console.error(err);
@@ -881,18 +1078,26 @@ export default function SchedulePage() {
   };
 
   const exportPDF = async () => {
-    const container = document.getElementById("schedule-print-area");
+    const container = document.getElementById(
+      "schedule-print-area"
+    );
+
     if (!container) {
       alert("Printable area not found.");
       return;
     }
 
-    const logoUrl = getAirlineLogo(airlineKey, airlineDisplayName);
-    let logoImg = null;
+    const airlineLogoUrl = getAirlineLogo(
+      airlineKey,
+      airlineDisplayName
+    );
 
-    if (logoUrl) {
-      logoImg = await loadImage(logoUrl);
-    }
+    const appLogoUrl = `${window.location.origin}/icons/aerostation-icon.png`;
+
+    const [airlineLogoImg, appLogoImg] = await Promise.all([
+      airlineLogoUrl ? loadImage(airlineLogoUrl) : Promise.resolve(null),
+      loadImage(appLogoUrl),
+    ]);
 
     const canvas = await html2canvas(container, {
       scale: 3,
@@ -903,32 +1108,82 @@ export default function SchedulePage() {
     const pdf = new jsPDF("landscape", "pt", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
 
-    if (logoImg) {
-      pdf.addImage(logoImg, "PNG", 20, 20, 150, 70);
+    pdf.setProperties({
+      title: `${APP_NAME} - Weekly Schedule`,
+      subject: `${effectiveAirlineDisplayName || airlineKey || "Airline"} ${
+        department || ""
+      } Weekly Schedule`,
+      creator: APP_NAME,
+    });
+
+    let headerY = 20;
+
+    if (appLogoImg) {
+      pdf.addImage(appLogoImg, "PNG", 20, headerY, 48, 48);
+    }
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(13);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(APP_NAME, 78, 39);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(APP_SUBTITLE, 78, 54);
+
+    if (airlineLogoImg) {
+      pdf.addImage(
+        airlineLogoImg,
+        "PNG",
+        pageWidth - 170,
+        headerY,
+        150,
+        55
+      );
     }
 
     const imgData = canvas.toDataURL("image/png");
-    const yOffset = logoImg ? 110 : 20;
-
+    const yOffset = 88;
     const imgWidth = pageWidth - 40;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgHeight =
+      (canvas.height * imgWidth) / canvas.width;
 
-    pdf.addImage(imgData, "PNG", 20, yOffset, imgWidth, imgHeight);
+    pdf.addImage(
+      imgData,
+      "PNG",
+      20,
+      yOffset,
+      imgWidth,
+      imgHeight
+    );
 
-    const safeAirline = (effectiveAirlineDisplayName || airlineKey || "AIRLINE")
+    const safeAirline = (
+      effectiveAirlineDisplayName ||
+      airlineKey ||
+      "AIRLINE"
+    )
       .replace(/\s+/g, "_")
       .replace(/[^\w-]/g, "");
+
     const safeDept = (department || "DEPT").replace(/\s+/g, "_");
     const safeWeek = (weekStart || "week").replace(/[^\d-]/g, "");
 
-    pdf.save(`Schedule_${safeAirline}_${safeDept}_${safeWeek}.pdf`);
+    pdf.save(
+      `Schedule_${safeAirline}_${safeDept}_${safeWeek}.pdf`
+    );
   };
 
   const employeeNameMap = {};
-employees.forEach((e) => {
-  employeeNameMap[e.id] =
-    e.name || e.fullName || e.displayName || e.employeeName || "Unknown";
-});
+
+  employees.forEach((e) => {
+    employeeNameMap[e.id] =
+      e.name ||
+      e.fullName ||
+      e.displayName ||
+      e.employeeName ||
+      "Unknown";
+  });
 
   const canEditAirlineName =
     normalizeAirlineName(airlineKey) === "WestJet" ||
@@ -945,10 +1200,10 @@ employees.forEach((e) => {
       <div
         style={{
           background: buildHeroGradient(themeColor),
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: 18,
+          padding: "14px 16px",
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow: "0 14px 30px rgba(15,76,129,0.16)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -956,12 +1211,13 @@ employees.forEach((e) => {
         <div
           style={{
             position: "absolute",
-            width: 220,
-            height: 220,
+            width: 155,
+            height: 155,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
+            border: "1px solid rgba(255,255,255,0.08)",
+            top: -92,
+            right: -28,
+            pointerEvents: "none",
           }}
         />
 
@@ -970,49 +1226,141 @@ employees.forEach((e) => {
             position: "relative",
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 16,
+            alignItems: "center",
+            gap: 14,
             flexWrap: "wrap",
           }}
         >
-          <div>
-            <p
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              minWidth: 0,
+              flex: 1,
+            }}
+          >
+            <div
               style={{
-                margin: 0,
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.78)",
-                fontWeight: 700,
+                width: 42,
+                height: 42,
+                flex: "0 0 42px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.96)",
+                border: "1px solid rgba(255,255,255,0.9)",
+                overflow: "hidden",
               }}
             >
-              TPA OPS · Scheduling
-            </p>
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            </div>
 
-            <h1
-              style={{
-                margin: "10px 0 6px",
-                fontSize: 32,
-                lineHeight: 1.05,
-                fontWeight: 800,
-                letterSpacing: "-0.04em",
-              }}
-            >
-              {loadedExistingSchedule ? "Edit Weekly Schedule" : "Create Weekly Schedule"}
-            </h1>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  marginBottom: 2,
+                  fontSize: 8.5,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.14em",
+                  color: "rgba(255,255,255,0.72)",
+                  fontWeight: 800,
+                }}
+              >
+                {APP_NAME} {"\u00B7"} Scheduling
+              </div>
 
-            <p
-              style={{
-                margin: 0,
-                maxWidth: 760,
-                fontSize: 14,
-                color: "rgba(255,255,255,0.88)",
-              }}
-            >
-              {loadedExistingSchedule
-                ? "Continue working on an existing schedule, keep the same structure, then save draft or re-submit it for approval."
-                : "Build a new weekly schedule, save it as draft, submit it for approval, or export it to PDF."}
-            </p>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  lineHeight: 1.15,
+                  fontWeight: 800,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {loadedExistingSchedule
+                  ? "Edit Weekly Schedule"
+                  : "Create Weekly Schedule"}
+              </h1>
+
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  maxWidth: 720,
+                  fontSize: 11.5,
+                  lineHeight: 1.45,
+                  color: "rgba(255,255,255,0.8)",
+                }}
+              >
+                {loadedExistingSchedule
+                  ? `${APP_SUBTITLE} \u00B7 Continue working on the existing schedule, then save or re-submit it for approval.`
+                  : `${APP_SUBTITLE} \u00B7 Build, review, save, submit or export a weekly schedule.`}
+              </p>
+
+              {(effectiveAirlineDisplayName || department || weekStart) && (
+                <div
+                  style={{
+                    marginTop: 7,
+                    display: "flex",
+                    gap: 6,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {effectiveAirlineDisplayName && (
+                    <span
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: "rgba(255,255,255,0.14)",
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {effectiveAirlineDisplayName}
+                    </span>
+                  )}
+
+                  {department && (
+                    <span
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: "rgba(255,255,255,0.14)",
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {department}
+                    </span>
+                  )}
+
+                  {weekStart && (
+                    <span
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: "rgba(255,255,255,0.14)",
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                      }}
+                    >
+                      Week of {weekStart}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <ActionButton
@@ -1020,7 +1368,7 @@ employees.forEach((e) => {
             variant="secondary"
             onClick={() => navigate("/dashboard")}
           >
-            ← Back to Dashboard
+            {"\u2190"} Back to Dashboard
           </ActionButton>
         </div>
       </div>
@@ -1045,7 +1393,7 @@ employees.forEach((e) => {
               width: "100%",
               maxWidth: 520,
               background: "#ffffff",
-              borderRadius: 24,
+              borderRadius: 22,
               boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
               border: "1px solid #e2e8f0",
               overflow: "hidden",
@@ -1053,7 +1401,7 @@ employees.forEach((e) => {
           >
             <div
               style={{
-                padding: "18px 20px",
+                padding: "17px 19px",
                 background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
                 borderBottom: isErrorStatus
                   ? "1px solid #fecdd3"
@@ -1062,7 +1410,7 @@ employees.forEach((e) => {
             >
               <div
                 style={{
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: 900,
                   color: isErrorStatus ? "#9f1239" : "#065f46",
                   letterSpacing: "-0.02em",
@@ -1074,8 +1422,8 @@ employees.forEach((e) => {
 
             <div
               style={{
-                padding: "22px 20px 18px",
-                fontSize: 15,
+                padding: "20px 19px 17px",
+                fontSize: 14,
                 lineHeight: 1.65,
                 color: "#0f172a",
                 fontWeight: 700,
@@ -1086,7 +1434,7 @@ employees.forEach((e) => {
 
             <div
               style={{
-                padding: "0 20px 20px",
+                padding: "0 19px 19px",
                 display: "flex",
                 justifyContent: "center",
               }}
@@ -1099,12 +1447,12 @@ employees.forEach((e) => {
                   background:
                     "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
                   color: "#fff",
-                  borderRadius: 14,
-                  padding: "12px 22px",
+                  borderRadius: 12,
+                  padding: "10px 20px",
                   fontWeight: 800,
-                  fontSize: 14,
+                  fontSize: 13,
                   cursor: "pointer",
-                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                  boxShadow: "0 10px 20px rgba(23,105,170,0.16)",
                 }}
               >
                 OK
@@ -1114,12 +1462,12 @@ employees.forEach((e) => {
         </div>
       )}
 
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
+      <PageCard style={{ padding: 20 }}>
+        <div style={{ marginBottom: 14 }}>
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: 800,
               color: "#0f172a",
               letterSpacing: "-0.02em",
@@ -1127,10 +1475,11 @@ employees.forEach((e) => {
           >
             Schedule Setup
           </h2>
+
           <p
             style={{
               margin: "4px 0 0",
-              fontSize: 13,
+              fontSize: 12.5,
               color: "#64748b",
             }}
           >
@@ -1141,13 +1490,13 @@ employees.forEach((e) => {
         {editingScheduleId && (
           <div
             style={{
-              marginBottom: 16,
+              marginBottom: 14,
               background: "#edf7ff",
               border: "1px solid #cfe7fb",
-              borderRadius: 16,
-              padding: "14px 16px",
+              borderRadius: 14,
+              padding: "12px 14px",
               color: "#1769aa",
-              fontSize: 14,
+              fontSize: 12.5,
               fontWeight: 700,
             }}
           >
@@ -1158,16 +1507,20 @@ employees.forEach((e) => {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+            gap: 13,
           }}
         >
           <div>
             <FieldLabel>Airline</FieldLabel>
+
             <SelectInput
               value={airlineKey}
               onChange={(e) => {
-                const normalizedKey = normalizeAirlineName(e.target.value);
+                const normalizedKey = normalizeAirlineName(
+                  e.target.value
+                );
+
                 setAirlineKey(normalizedKey);
 
                 if (normalizedKey === "OTHER") {
@@ -1189,15 +1542,18 @@ employees.forEach((e) => {
               <option value="OTHER">Other</option>
             </SelectInput>
 
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 11 }}>
               <FieldLabel>
-                Airline display name {canEditAirlineName ? "(editable)" : "(locked)"}
+                Airline display name{" "}
+                {canEditAirlineName ? "(editable)" : "(locked)"}
               </FieldLabel>
+
               <TextInput
                 value={airlineDisplayName}
                 disabled={!canEditAirlineName}
                 onChange={(e) => {
                   const rawValue = e.target.value;
+
                   setAirlineDisplayName(
                     normalizeAirlineName(airlineKey) === "OTHER"
                       ? normalizeCustomOtherAirline(rawValue)
@@ -1225,6 +1581,7 @@ employees.forEach((e) => {
 
           <div>
             <FieldLabel>Department</FieldLabel>
+
             <SelectInput
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
@@ -1241,6 +1598,7 @@ employees.forEach((e) => {
 
           <div>
             <FieldLabel>Week Start</FieldLabel>
+
             <TextInput
               type="date"
               value={weekStart}
@@ -1249,22 +1607,24 @@ employees.forEach((e) => {
           </div>
         </div>
 
-        <div style={{ marginTop: 18 }}>
+        <div style={{ marginTop: 17 }}>
           <FieldLabel>Week Dates</FieldLabel>
+
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(7, minmax(70px, 1fr))",
-              gap: 10,
+              gap: 9,
+              overflowX: "auto",
             }}
           >
             {DAY_KEYS.map((key) => (
-              <div key={key}>
+              <div key={key} style={{ minWidth: 72 }}>
                 <label
                   style={{
                     display: "block",
-                    marginBottom: 6,
-                    fontSize: 11,
+                    marginBottom: 5,
+                    fontSize: 10,
                     fontWeight: 800,
                     color: "#475569",
                     textTransform: "uppercase",
@@ -1273,12 +1633,13 @@ employees.forEach((e) => {
                 >
                   {DAY_LABELS[key]}
                 </label>
+
                 <TextInput
                   value={dayNumbers[key]}
                   disabled
                   style={{
                     textAlign: "center",
-                    padding: "10px 8px",
+                    padding: "9px 7px",
                     background: "#f8fafc",
                     color: "#475569",
                     fontWeight: 700,
@@ -1313,7 +1674,7 @@ employees.forEach((e) => {
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: 800,
               color: "#0f172a",
               letterSpacing: "-0.02em",
@@ -1321,10 +1682,11 @@ employees.forEach((e) => {
           >
             Weekly Summary
           </h2>
+
           <p
             style={{
               margin: "4px 0 0",
-              fontSize: 13,
+              fontSize: 12.5,
               color: "#64748b",
             }}
           >
@@ -1336,83 +1698,28 @@ employees.forEach((e) => {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-            marginBottom: 18,
+            gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+            gap: 11,
+            marginBottom: 17,
           }}
         >
-          <div
-            style={{
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              borderRadius: 16,
-              padding: "16px 18px",
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                fontWeight: 800,
-                color: "#64748b",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Total Hours
-            </p>
-            <p
-              style={{
-                margin: "6px 0 0",
-                fontSize: 28,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.03em",
-              }}
-            >
-              {airlineTotal.toFixed(2)}
-            </p>
-          </div>
+          <SummaryMetric
+            label="Total Hours"
+            value={airlineTotal.toFixed(2)}
+            accent={themeColor}
+          />
 
-          <div
-            style={{
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              borderRadius: 16,
-              padding: "16px 18px",
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                fontWeight: 800,
-                color: "#64748b",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Weekly Budget
-            </p>
-            <p
-              style={{
-                margin: "6px 0 0",
-                fontSize: 28,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.03em",
-              }}
-            >
-              {selectedWeeklyBudget}
-            </p>
-          </div>
+          <SummaryMetric
+            label="Weekly Budget"
+            value={Number(selectedWeeklyBudget || 0).toFixed(2)}
+          />
         </div>
 
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 17 }}>
           <h3
             style={{
-              margin: "0 0 10px",
-              fontSize: 14,
+              margin: "0 0 9px",
+              fontSize: 12,
               fontWeight: 800,
               color: "#0f172a",
               textTransform: "uppercase",
@@ -1425,8 +1732,9 @@ employees.forEach((e) => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-              gap: 10,
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(120px, 1fr))",
+              gap: 9,
             }}
           >
             {DAY_KEYS.map((dKey) => (
@@ -1435,13 +1743,13 @@ employees.forEach((e) => {
                 style={{
                   background: "#f8fbff",
                   border: "1px solid #dbeafe",
-                  borderRadius: 14,
-                  padding: "12px 14px",
+                  borderRadius: 13,
+                  padding: "11px 12px",
                 }}
               >
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: 800,
                     color: "#64748b",
                     textTransform: "uppercase",
@@ -1450,20 +1758,22 @@ employees.forEach((e) => {
                 >
                   {DAY_LABELS[dKey]} {dayNumbers[dKey]}
                 </div>
+
                 <div
                   style={{
-                    marginTop: 6,
-                    fontSize: 16,
+                    marginTop: 5,
+                    fontSize: 15,
                     fontWeight: 800,
                     color: "#0f172a",
                   }}
                 >
                   {dailyTotals[dKey].toFixed(2)} hrs
                 </div>
+
                 <div
                   style={{
-                    marginTop: 4,
-                    fontSize: 13,
+                    marginTop: 3,
+                    fontSize: 12,
                     fontWeight: 700,
                     color: "#1769aa",
                   }}
@@ -1478,8 +1788,8 @@ employees.forEach((e) => {
         <div>
           <h3
             style={{
-              margin: "0 0 10px",
-              fontSize: 14,
+              margin: "0 0 9px",
+              fontSize: 12,
               fontWeight: 800,
               color: "#0f172a",
               textTransform: "uppercase",
@@ -1492,15 +1802,18 @@ employees.forEach((e) => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: 10,
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(250px, 1fr))",
+              gap: 9,
             }}
           >
             {rows.map((r, idx) => {
               if (!r.employeeId) return null;
+
               const total = employeeTotals[r.employeeId] || 0;
               const over = total > 40;
-              const name = employeeNameMap[r.employeeId] || "Unknown";
+              const name =
+                employeeNameMap[r.employeeId] || "Unknown";
 
               return (
                 <div
@@ -1509,22 +1822,27 @@ employees.forEach((e) => {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    borderRadius: 14,
-                    padding: "12px 14px",
+                    borderRadius: 13,
+                    padding: "11px 13px",
                     background: over ? "#fff1f2" : "#f8fbff",
-                    border: `1px solid ${over ? "#fecdd3" : "#dbeafe"}`,
+                    border: `1px solid ${
+                      over ? "#fecdd3" : "#dbeafe"
+                    }`,
                   }}
                 >
                   <span
                     style={{
+                      fontSize: 12.5,
                       fontWeight: 800,
                       color: over ? "#9f1239" : "#0f172a",
                     }}
                   >
                     {name}
                   </span>
+
                   <span
                     style={{
+                      fontSize: 12.5,
                       fontWeight: 800,
                       color: over ? "#9f1239" : "#0f172a",
                     }}
@@ -1538,9 +1856,9 @@ employees.forEach((e) => {
 
           <p
             style={{
-              marginTop: 10,
+              marginTop: 9,
               marginBottom: 0,
-              fontSize: 12,
+              fontSize: 11.5,
               color: "#64748b",
               lineHeight: 1.6,
             }}
@@ -1551,25 +1869,59 @@ employees.forEach((e) => {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard style={{ padding: 18 }}>
         <div
           style={{
             display: "flex",
-            gap: 12,
+            gap: 10,
             flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          <ActionButton onClick={handleSaveDraft} variant="secondary">
-            {editingScheduleId ? "Update Draft" : "Save Draft"}
-          </ActionButton>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "#64748b",
+              lineHeight: 1.5,
+            }}
+          >
+            {loadedExistingSchedule
+              ? "Existing schedule loaded"
+              : "New weekly schedule"}
+            {weekStart ? ` \u00B7 Week of ${weekStart}` : ""}
+          </div>
 
-          <ActionButton onClick={handleSaveSchedule} variant="primary">
-            {editingScheduleId ? "Re-Submit for Approval" : "Submit for Approval"}
-          </ActionButton>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <ActionButton
+              onClick={handleSaveDraft}
+              variant="secondary"
+            >
+              {editingScheduleId ? "Update Draft" : "Save Draft"}
+            </ActionButton>
 
-          <ActionButton onClick={exportPDF} variant="success">
-            Export PDF
-          </ActionButton>
+            <ActionButton
+              onClick={handleSaveSchedule}
+              variant="primary"
+            >
+              {editingScheduleId
+                ? "Re-Submit for Approval"
+                : "Submit for Approval"}
+            </ActionButton>
+
+            <ActionButton
+              onClick={exportPDF}
+              variant="success"
+            >
+              Export PDF
+            </ActionButton>
+          </div>
         </div>
       </PageCard>
     </div>
