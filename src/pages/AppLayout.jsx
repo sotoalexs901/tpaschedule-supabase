@@ -8,6 +8,10 @@ import {
   updateUserPage,
   markUserOffline,
 } from "../services/presenceService";
+import {
+  APP_NAME,
+  APP_SUBTITLE,
+} from "../config/appConfig.js";
 
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
@@ -364,19 +368,19 @@ export default function AppLayout() {
     const sections = [];
 
     const general = [
-      { to: "/dashboard", label: "Dashboard", icon: "🏠" },
-      { to: "/profile", label: "My Profile", icon: "👤" },
-      { to: "/station-team", label: "Station Team", icon: "🧑‍🤝‍🧑" },
+      { to: "/dashboard", label: "Dashboard", icon: "ð " },
+      { to: "/profile", label: "My Profile", icon: "ð¤" },
+      { to: "/station-team", label: "Station Team", icon: "ð§âð¤âð§" },
       {
         to: "/messages",
         label: "Messages",
-        icon: "💬",
+        icon: "ð¬",
         showDot: unreadMessages > 0,
       },
       {
         to: "/notifications",
         label: "Notifications",
-        icon: "🔔",
+        icon: "ð",
         showDot: unreadNotifications > 0,
       },
     ];
@@ -392,46 +396,46 @@ export default function AppLayout() {
 
     if (canAccessRegularManagerSchedules) {
       schedules.push(
-        { to: "/schedule", label: "Create Schedule", icon: "🗓️" },
-        { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
+        { to: "/schedule", label: "Create Schedule", icon: "ðï¸" },
+        { to: "/cabin-service", label: "Cabin Service", icon: "ð§³" },
         {
           to: "/cabin-saved-schedules",
           label: "Cabin Service Saved Schedules",
-          icon: "📁",
+          icon: "ð",
         },
-        { to: "/approvals", label: "Approvals", icon: "✅" },
-        { to: "/drafts", label: "Draft Schedules", icon: "📝" },
-        { to: "/approved", label: "Approved Schedules", icon: "📌" },
-        { to: "/returned", label: "Returned Schedules", icon: "↩️" },
-        { to: "/weekly-summary", label: "Weekly Summary", icon: "📊" }
+        { to: "/approvals", label: "Approvals", icon: "â" },
+        { to: "/drafts", label: "Draft Schedules", icon: "ð" },
+        { to: "/approved", label: "Approved Schedules", icon: "ð" },
+        { to: "/returned", label: "Returned Schedules", icon: "â©ï¸" },
+        { to: "/weekly-summary", label: "Weekly Summary", icon: "ð" }
       );
 
       timeoff.push(
         {
           to: "/timeoff-requests",
           label: "Day Off Requests",
-          icon: "🌴",
+          icon: "ð´",
           showDot: pendingTimeOff > 0,
         },
-        { to: "/blocked", label: "Blocked Employees", icon: "🚫" }
+        { to: "/blocked", label: "Blocked Employees", icon: "ð«" }
       );
 
       admin.push(
         {
           to: "/employee-announcements",
           label: "Crew Announcements",
-          icon: "📣",
+          icon: "ð£",
         },
         {
           to: "/dashboard-editor",
           label: "Dashboard Editor",
-          icon: "🎛️",
+          icon: "ðï¸",
         },
-        { to: "/budgets", label: "Budgets", icon: "💰" },
+        { to: "/budgets", label: "Budgets", icon: "ð°" },
         {
           to: "/monthly-budgets-vs-actual",
           label: "Monthly Budgets vs Actual",
-          icon: "📈",
+          icon: "ð",
         }
       );
     }
@@ -440,11 +444,11 @@ export default function AppLayout() {
 
     if (canAccessCabinServiceOnlyManager) {
       schedules.push(
-        { to: "/cabin-service", label: "Cabin Service", icon: "🧳" },
+        { to: "/cabin-service", label: "Cabin Service", icon: "ð§³" },
         {
           to: "/cabin-saved-schedules",
           label: "Cabin Service Saved Schedules",
-          icon: "📁",
+          icon: "ð",
         }
       );
     }
@@ -456,35 +460,34 @@ export default function AppLayout() {
         {
           to: "/admin/activity-dashboard",
           label: "User Activity",
-          icon: "📈",
+          icon: "ð",
         },
         {
           to: "/admin/privacy-acknowledgments",
           label: "Privacy Acknowledgments",
-          icon: "🔐",
+          icon: "ð",
         },
 
-        // NEW
         {
           to: "/admin/reports-data-management",
           label: "Reports Data Management",
-          icon: "🗃️",
+          icon: "ðï¸",
         },
 
         {
           to: "/create-user",
           label: "Create User",
-          icon: "➕",
+          icon: "â",
         },
         {
           to: "/edit-users",
           label: "Manage Users",
-          icon: "⚙️",
+          icon: "âï¸",
         },
         {
           to: "/employees",
           label: "Employees",
-          icon: "👥",
+          icon: "ð¥",
         }
       );
     }
@@ -495,19 +498,19 @@ export default function AppLayout() {
       schedules.push({
         to: "/my-schedule",
         label: "My Schedule",
-        icon: "📅",
+        icon: "ð",
       });
 
       timeoff.push(
         {
           to: "/request-dayoff-internal",
           label: "Request Day Off",
-          icon: "🛫",
+          icon: "ð«",
         },
         {
           to: "/dayoff-status-internal",
           label: "My Day Off Status",
-          icon: "📍",
+          icon: "ð",
         }
       );
     }
@@ -518,7 +521,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/timesheets/submit",
         label: "Timesheet Submit",
-        icon: "🕒",
+        icon: "ð",
       });
     }
 
@@ -527,12 +530,12 @@ export default function AppLayout() {
         {
           to: "/operational-report/submit",
           label: "Supervisor Report",
-          icon: "📝",
+          icon: "ð",
         },
         {
           to: "/cleaning-security/submit",
           label: "Cleaning & Security Report",
-          icon: "🧼",
+          icon: "ð§¼",
         }
       );
     }
@@ -541,7 +544,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/regulated-garbage/submit",
         label: "Regulated Garbage",
-        icon: "🗑️",
+        icon: "ðï¸",
       });
     }
 
@@ -551,7 +554,7 @@ export default function AppLayout() {
         label: isAgent
           ? "Supplies / Uniform Requests"
           : "Supplies, Uniform & OT Requests",
-        icon: "📦",
+        icon: "ð¦",
       });
     }
 
@@ -559,7 +562,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/wchr-poi/submit",
         label: "WCHR POI",
-        icon: "🦽",
+        icon: "ð¦½",
       });
     }
 
@@ -567,7 +570,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/employee-performance-report",
         label: "Monthly Employee Performance",
-        icon: "⭐",
+        icon: "â­",
       });
     }
 
@@ -575,7 +578,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/gate-checklist",
         label: "Gate Checklist",
-        icon: "🛬",
+        icon: "ð¬",
       });
     }
 
@@ -583,7 +586,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/fuel-entry",
         label: "Fuel Entry",
-        icon: "⛽",
+        icon: "â½",
       });
     }
 
@@ -591,7 +594,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/cierre-vuelo",
         label: "Cierre de Vuelo",
-        icon: "✈️",
+        icon: "âï¸",
       });
     }
 
@@ -601,7 +604,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/timesheets/reports",
         label: "Timesheet Reports",
-        icon: "📋",
+        icon: "ð",
       });
     }
 
@@ -612,7 +615,7 @@ export default function AppLayout() {
           user?.role === "supervisor"
             ? "Supervisor Operational Reports"
             : "Operational Reports",
-        icon: "📑",
+        icon: "ð",
       });
     }
 
@@ -620,7 +623,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/regulated-garbage/reports",
         label: "Regulated Garbage Reports",
-        icon: "🗑️",
+        icon: "ðï¸",
       });
     }
 
@@ -631,7 +634,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/cleaning-security/reports",
         label: "Cleaning & Security Reports",
-        icon: "🗂️",
+        icon: "ðï¸",
       });
     }
 
@@ -639,7 +642,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/operations-requests/reports",
         label: "Operations Requests Reports",
-        icon: "📦",
+        icon: "ð¦",
       });
     }
 
@@ -647,7 +650,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/wchr-poi/reports",
         label: "WCHR POI Reports",
-        icon: "🦽",
+        icon: "ð¦½",
       });
     }
 
@@ -655,7 +658,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/employee-performance-management",
         label: "Employee Performance Reports",
-        icon: "📂",
+        icon: "ð",
       });
     }
 
@@ -663,7 +666,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/gate-checklist-management",
         label: "Gate Checklist Management",
-        icon: "📊",
+        icon: "ð",
       });
     }
 
@@ -671,7 +674,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/fuel-management",
         label: "Fuel Management",
-        icon: "⛽",
+        icon: "â½",
       });
     }
 
@@ -679,7 +682,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/cierre-vuelo-management",
         label: "Cierre de Vuelo Reports",
-        icon: "📘",
+        icon: "ð",
       });
     }
 
@@ -690,12 +693,12 @@ export default function AppLayout() {
         {
           to: "/wchr/scan",
           label: "Scan Boarding Pass",
-          icon: "🎫",
+          icon: "ð«",
         },
         {
           to: "/wchr/my-reports",
           label: "My Reports",
-          icon: "📄",
+          icon: "ð",
         }
       );
     }
@@ -704,7 +707,7 @@ export default function AppLayout() {
       wchr.push({
         to: "/wchr/admin/flights",
         label: "WCHR Flight Report",
-        icon: "♿",
+        icon: "â¿",
       });
     }
 
@@ -712,7 +715,7 @@ export default function AppLayout() {
       wchr.push({
         to: "/wchr/monthly-close",
         label: "WCHR Billing & Monthly Close",
-        icon: "📊",
+        icon: "ð",
       });
     }
 
@@ -722,7 +725,7 @@ export default function AppLayout() {
       admin.push({
         to: "/operational-report/form-builder",
         label: "Operational Report Builder",
-        icon: "🧩",
+        icon: "ð§©",
       });
     }
 
@@ -855,13 +858,88 @@ export default function AppLayout() {
               display: "flex",
               alignItems: "center",
               gap: 12,
+              minWidth: 0,
             }}
           >
+            {/* PRODUCT BRAND */}
             <div
               style={{
                 width: 46,
                 height: 46,
-                borderRadius: 16,
+                flex: "0 0 46px",
+                borderRadius: 15,
+                background: "#ffffff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+                boxShadow: "0 10px 24px rgba(23,105,170,0.16)",
+                border: "1px solid #dbeafe",
+              }}
+            >
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            </div>
+
+            {/* PRODUCT NAME */}
+            <div
+              style={{
+                minWidth: 0,
+                paddingRight: 4,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: "#1769aa",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  lineHeight: 1.2,
+                }}
+              >
+                {APP_NAME}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "#94a3b8",
+                  lineHeight: 1.25,
+                }}
+              >
+                {APP_SUBTITLE}
+              </div>
+            </div>
+
+            {/* DIVIDER */}
+            <div
+              aria-hidden="true"
+              style={{
+                width: 1,
+                height: 40,
+                background: "#e2e8f0",
+                margin: "0 2px",
+              }}
+            />
+
+            {/* USER PROFILE */}
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                flex: "0 0 42px",
+                borderRadius: 14,
                 background:
                   "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
                 color: "#fff",
@@ -870,7 +948,7 @@ export default function AppLayout() {
                 justifyContent: "center",
                 fontWeight: 900,
                 overflow: "hidden",
-                boxShadow: "0 10px 24px rgba(23,105,170,0.22)",
+                boxShadow: "0 8px 18px rgba(23,105,170,0.18)",
               }}
             >
               {profilePhotoURL ? (
@@ -888,24 +966,17 @@ export default function AppLayout() {
               )}
             </div>
 
-            <div>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 900,
-                  color: "#1769aa",
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase",
-                }}
-              >
-                TPA OPS Platform
-              </div>
-
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
               <div
                 style={{
                   fontSize: 14,
                   fontWeight: 800,
                   color: "#0f172a",
+                  lineHeight: 1.25,
                 }}
               >
                 {visibleName}
@@ -913,9 +984,11 @@ export default function AppLayout() {
 
               <div
                 style={{
+                  marginTop: 2,
                   fontSize: 12,
                   fontWeight: 600,
                   color: "#64748b",
+                  lineHeight: 1.25,
                 }}
               >
                 {visiblePosition}
