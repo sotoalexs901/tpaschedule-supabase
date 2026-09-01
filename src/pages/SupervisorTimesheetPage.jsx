@@ -12,6 +12,7 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
 const AIRLINE_OPTIONS = [
   { value: "SY", label: "SY" },
@@ -134,12 +135,16 @@ function calculateRowHours(row) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
+  if (!value) return "\u2014";
+
   try {
-    if (typeof value?.toDate === "function") return value.toDate().toLocaleString();
+    if (typeof value?.toDate === "function") {
+      return value.toDate().toLocaleString();
+    }
+
     return new Date(value).toLocaleString();
   } catch {
-    return "—";
+    return "\u2014";
   }
 }
 
@@ -159,10 +164,10 @@ function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
-        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        background: "rgba(255,255,255,0.95)",
+        border: "1px solid #e2e8f0",
+        borderRadius: 22,
+        boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
         ...style,
       }}
     >
@@ -177,10 +182,10 @@ function FieldLabel({ children }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
-        fontWeight: 700,
+        fontSize: 11,
+        fontWeight: 800,
         color: "#475569",
-        letterSpacing: "0.03em",
+        letterSpacing: "0.04em",
         textTransform: "uppercase",
       }}
     >
@@ -195,10 +200,11 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -214,10 +220,11 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -233,15 +240,16 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 13,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
-        minHeight: 100,
+        minHeight: 92,
         fontFamily: "inherit",
         ...props.style,
       }}
@@ -262,7 +270,7 @@ function ActionButton({
         "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+      boxShadow: "0 10px 20px rgba(23,105,170,0.16)",
     },
     secondary: {
       background: "#ffffff",
@@ -274,7 +282,7 @@ function ActionButton({
       background: "#dc2626",
       color: "#fff",
       border: "none",
-      boxShadow: "0 10px 20px rgba(220,38,38,0.18)",
+      boxShadow: "0 9px 18px rgba(220,38,38,0.16)",
     },
   };
 
@@ -284,9 +292,9 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       style={{
-        borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
+        borderRadius: 11,
+        padding: "9px 13px",
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.7 : 1,
@@ -301,8 +309,8 @@ function ActionButton({
 
 function tableHeaderStyle(extra = {}) {
   return {
-    padding: "14px",
-    fontSize: 12,
+    padding: "12px 13px",
+    fontSize: 11,
     fontWeight: 800,
     color: "#475569",
     textTransform: "uppercase",
@@ -315,10 +323,64 @@ function tableHeaderStyle(extra = {}) {
 }
 
 const tableCellStyle = {
-  padding: "14px",
+  padding: "12px 13px",
   borderBottom: "1px solid #eef2f7",
   verticalAlign: "middle",
 };
+
+function MetricCard({ label, value, tone = "blue" }) {
+  const map = {
+    blue: {
+      bg: "#f8fbff",
+      border: "#dbeafe",
+      label: "#64748b",
+      value: "#0f172a",
+    },
+    red: {
+      bg: "#fff1f2",
+      border: "#fecdd3",
+      label: "#9f1239",
+      value: "#9f1239",
+    },
+  };
+
+  const c = map[tone] || map.blue;
+
+  return (
+    <div
+      style={{
+        background: c.bg,
+        border: `1px solid ${c.border}`,
+        borderRadius: 15,
+        padding: "13px 15px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10.5,
+          fontWeight: 800,
+          color: c.label,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 5,
+          fontSize: 20,
+          lineHeight: 1.1,
+          fontWeight: 900,
+          color: c.value,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
 
 export default function SupervisorTimesheetPage() {
   const { user } = useUser();
@@ -396,7 +458,9 @@ export default function SupervisorTimesheetPage() {
           );
         }
 
-        employeeList = employeeList.sort((a, b) => a.name.localeCompare(b.name));
+        employeeList = employeeList.sort((a, b) =>
+          a.name.localeCompare(b.name)
+        );
 
         const dailyBudgets = dailyBudgetsSnap.docs.map((d) => ({
           id: d.id,
@@ -426,7 +490,9 @@ export default function SupervisorTimesheetPage() {
         setReturnedReports(returned);
       } catch (err) {
         console.error("Error loading supervisor page data:", err);
-        setStatusMessage("Could not load employees, daily budgets or returned timesheets.");
+        setStatusMessage(
+          "Could not load employees, daily budgets or returned timesheets."
+        );
       } finally {
         setLoadingEmployees(false);
       }
@@ -437,9 +503,11 @@ export default function SupervisorTimesheetPage() {
 
   const employeeMap = useMemo(() => {
     const map = {};
+
     employees.forEach((emp) => {
       map[emp.id] = emp;
     });
+
     return map;
   }, [employees]);
 
@@ -472,8 +540,13 @@ export default function SupervisorTimesheetPage() {
     [rows]
   );
 
-  const overBudget = currentBudget > 0 && totalReportedHours > currentBudget;
-  const overBudgetBy = overBudget ? totalReportedHours - currentBudget : 0;
+  const overBudget =
+    currentBudget > 0 && totalReportedHours > currentBudget;
+
+  const overBudgetBy = overBudget
+    ? totalReportedHours - currentBudget
+    : 0;
+
   const isErrorStatus =
     overBudget ||
     statusMessage.toLowerCase().includes("error") ||
@@ -497,6 +570,7 @@ export default function SupervisorTimesheetPage() {
 
         if (field === "employeeId") {
           const selected = employeeMap[value];
+
           return {
             ...row,
             employeeId: value,
@@ -525,11 +599,13 @@ export default function SupervisorTimesheetPage() {
 
   const loadReturnedReport = (report) => {
     setEditingReportId(report.id);
+
     setForm({
       airline: report.airline || (isCabinServiceUser ? "CABIN" : ""),
       reportDate: report.reportDate || "",
       shift: report.shift || "",
-      supervisorReporting: report.supervisorReporting || getVisibleName(user),
+      supervisorReporting:
+        report.supervisorReporting || getVisibleName(user),
       supervisorPosition:
         report.supervisorPosition ||
         user?.position ||
@@ -538,7 +614,9 @@ export default function SupervisorTimesheetPage() {
       overBudgetReason: report.overBudgetReason || "",
       department:
         report.department ||
-        (isCabinServiceUser ? "Cabin Service" : user?.department || ""),
+        (isCabinServiceUser
+          ? "Cabin Service"
+          : user?.department || ""),
     });
 
     setRows(
@@ -560,16 +638,22 @@ export default function SupervisorTimesheetPage() {
 
   const resetForm = () => {
     setEditingReportId("");
+
     setForm({
       airline: isCabinServiceUser ? "CABIN" : "",
       reportDate: "",
       shift: "",
       supervisorReporting: getVisibleName(user),
-      supervisorPosition: user?.position || getDefaultPosition(user?.role),
+      supervisorPosition:
+        user?.position || getDefaultPosition(user?.role),
       notes: "",
       overBudgetReason: "",
-      department: isCabinServiceUser ? "Cabin Service" : user?.department || "",
+      department:
+        isCabinServiceUser
+          ? "Cabin Service"
+          : user?.department || "",
     });
+
     setRows([emptyRow()]);
   };
 
@@ -644,7 +728,10 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
-    if (overBudget && !String(form.overBudgetReason || "").trim()) {
+    if (
+      overBudget &&
+      !String(form.overBudgetReason || "").trim()
+    ) {
       setStatusMessage(
         "Please explain the overbudget reason with more details in order to submit your timesheet."
       );
@@ -660,19 +747,28 @@ export default function SupervisorTimesheetPage() {
           : normalizeAirlineName(form.airline),
         reportDate: form.reportDate,
         shift: form.shift || "",
-        supervisorReporting: form.supervisorReporting || getVisibleName(user),
+        supervisorReporting:
+          form.supervisorReporting || getVisibleName(user),
         supervisorPosition:
-          form.supervisorPosition || user?.position || getDefaultPosition(user?.role),
+          form.supervisorPosition ||
+          user?.position ||
+          getDefaultPosition(user?.role),
         notes: form.notes || "",
         department: isCabinServiceUser
           ? "Cabin Service"
-          : String(form.department || user?.department || "").trim(),
+          : String(
+              form.department ||
+                user?.department ||
+                ""
+            ).trim(),
         rows: cleanRows,
         totalHours: totalReportedHours,
         budgetHoursDaily: currentBudget,
         overBudget,
         overBudgetBy: overBudget ? overBudgetBy : 0,
-        overBudgetReason: overBudget ? form.overBudgetReason : "",
+        overBudgetReason: overBudget
+          ? form.overBudgetReason
+          : "",
         submittedByUserId: user?.id || "",
         submittedByUsername: user?.username || "",
         submittedByName: getVisibleName(user),
@@ -681,16 +777,22 @@ export default function SupervisorTimesheetPage() {
       };
 
       if (editingReportId) {
-        await updateDoc(doc(db, "timesheet_reports", editingReportId), {
-          ...payload,
-          resubmittedAt: serverTimestamp(),
-          returnedAt: null,
-          returnedByName: "",
-          returnedByRole: "",
-          returnedReason: "",
-        });
+        await updateDoc(
+          doc(db, "timesheet_reports", editingReportId),
+          {
+            ...payload,
+            resubmittedAt: serverTimestamp(),
+            returnedAt: null,
+            returnedByName: "",
+            returnedByRole: "",
+            returnedReason: "",
+          }
+        );
 
-        setReturnedReports((prev) => prev.filter((item) => item.id !== editingReportId));
+        setReturnedReports((prev) =>
+          prev.filter((item) => item.id !== editingReportId)
+        );
+
         setStatusMessage(
           "Timesheet corrected and resubmitted for approval successfully."
         );
@@ -700,7 +802,9 @@ export default function SupervisorTimesheetPage() {
           createdAt: serverTimestamp(),
         });
 
-        setStatusMessage("Timesheet submitted for approval successfully.");
+        setStatusMessage(
+          "Timesheet submitted for approval successfully."
+        );
       }
 
       resetForm();
@@ -720,14 +824,18 @@ export default function SupervisorTimesheetPage() {
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
+      {/* ============================================================
+          AEROSTATION HUB - TIMESHEET HEADER
+      ============================================================ */}
+
       <div
         style={{
           background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
-          color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+            "linear-gradient(135deg, #073b66 0%, #0f5c91 50%, #2e9fd6 100%)",
+          borderRadius: 18,
+          padding: "14px 16px",
+          color: "#ffffff",
+          boxShadow: "0 14px 30px rgba(15,76,129,0.16)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -735,12 +843,13 @@ export default function SupervisorTimesheetPage() {
         <div
           style={{
             position: "absolute",
-            width: 220,
-            height: 220,
+            width: 155,
+            height: 155,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
+            border: "1px solid rgba(255,255,255,0.08)",
+            top: -92,
+            right: -28,
+            pointerEvents: "none",
           }}
         />
 
@@ -749,61 +858,109 @@ export default function SupervisorTimesheetPage() {
             position: "relative",
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 16,
+            alignItems: "center",
+            gap: 14,
             flexWrap: "wrap",
           }}
         >
-          <div>
-            <p
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              minWidth: 0,
+              flex: 1,
+            }}
+          >
+            <div
               style={{
-                margin: 0,
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.78)",
-                fontWeight: 700,
+                width: 42,
+                height: 42,
+                flex: "0 0 42px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.96)",
+                border: "1px solid rgba(255,255,255,0.9)",
+                overflow: "hidden",
               }}
             >
-              TPA OPS · Timesheets
-            </p>
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            </div>
 
-            <h1
-              style={{
-                margin: "10px 0 6px",
-                fontSize: 32,
-                lineHeight: 1.05,
-                fontWeight: 800,
-                letterSpacing: "-0.04em",
-              }}
-            >
-              {editingReportId ? "Fix Returned Timesheet" : "Submit Timesheet Report"}
-            </h1>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  marginBottom: 2,
+                  fontSize: 8.5,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.14em",
+                  color: "rgba(255,255,255,0.7)",
+                  fontWeight: 800,
+                }}
+              >
+                {APP_NAME} {"\u00B7"} Timesheets
+              </div>
 
-            <p
-              style={{
-                margin: 0,
-                maxWidth: 760,
-                fontSize: 14,
-                color: "rgba(255,255,255,0.88)",
-              }}
-            >
-              Create, fix and resubmit supervisor timesheets.
-            </p>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  lineHeight: 1.15,
+                  fontWeight: 800,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {editingReportId
+                  ? "Fix Returned Timesheet"
+                  : "Submit Timesheet Report"}
+              </h1>
+
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  maxWidth: 620,
+                  fontSize: 11.5,
+                  lineHeight: 1.45,
+                  color: "rgba(255,255,255,0.78)",
+                }}
+              >
+                {APP_SUBTITLE} {"\u00B7"} Create, review and resubmit
+                supervisor timesheets.
+              </p>
+            </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
             {editingReportId && (
-              <ActionButton type="button" variant="secondary" onClick={resetForm}>
+              <ActionButton
+                type="button"
+                variant="secondary"
+                onClick={resetForm}
+              >
                 Cancel Edit
               </ActionButton>
             )}
+
             <ActionButton
               type="button"
               variant="secondary"
               onClick={() => navigate("/dashboard")}
             >
-              ← Back to Dashboard
+              {"\u2190"} Back to Dashboard
             </ActionButton>
           </div>
         </div>
@@ -829,7 +986,7 @@ export default function SupervisorTimesheetPage() {
               width: "100%",
               maxWidth: 520,
               background: "#ffffff",
-              borderRadius: 24,
+              borderRadius: 22,
               boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
               border: "1px solid #e2e8f0",
               overflow: "hidden",
@@ -837,8 +994,10 @@ export default function SupervisorTimesheetPage() {
           >
             <div
               style={{
-                padding: "18px 20px",
-                background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
+                padding: "17px 19px",
+                background: isErrorStatus
+                  ? "#fff1f2"
+                  : "#ecfdf5",
                 borderBottom: isErrorStatus
                   ? "1px solid #fecdd3"
                   : "1px solid #a7f3d0",
@@ -846,9 +1005,11 @@ export default function SupervisorTimesheetPage() {
             >
               <div
                 style={{
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: 900,
-                  color: isErrorStatus ? "#9f1239" : "#065f46",
+                  color: isErrorStatus
+                    ? "#9f1239"
+                    : "#065f46",
                   letterSpacing: "-0.02em",
                 }}
               >
@@ -858,8 +1019,8 @@ export default function SupervisorTimesheetPage() {
 
             <div
               style={{
-                padding: "22px 20px 18px",
-                fontSize: 15,
+                padding: "20px 19px 17px",
+                fontSize: 14,
                 lineHeight: 1.65,
                 color: "#0f172a",
                 fontWeight: 700,
@@ -870,7 +1031,7 @@ export default function SupervisorTimesheetPage() {
 
             <div
               style={{
-                padding: "0 20px 20px",
+                padding: "0 19px 19px",
                 display: "flex",
                 justifyContent: "center",
               }}
@@ -883,12 +1044,13 @@ export default function SupervisorTimesheetPage() {
                   background:
                     "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
                   color: "#fff",
-                  borderRadius: 14,
-                  padding: "12px 22px",
+                  borderRadius: 12,
+                  padding: "10px 20px",
                   fontWeight: 800,
-                  fontSize: 14,
+                  fontSize: 13,
                   cursor: "pointer",
-                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                  boxShadow:
+                    "0 10px 20px rgba(23,105,170,0.16)",
                 }}
               >
                 OK
@@ -899,12 +1061,12 @@ export default function SupervisorTimesheetPage() {
       )}
 
       {returnedReports.length > 0 && (
-        <PageCard style={{ padding: 22 }}>
-          <div style={{ marginBottom: 16 }}>
+        <PageCard style={{ padding: 20 }}>
+          <div style={{ marginBottom: 14 }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -912,24 +1074,25 @@ export default function SupervisorTimesheetPage() {
             >
               Returned / Rejected Timesheets
             </h2>
+
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: 13,
+                fontSize: 12.5,
                 color: "#64748b",
               }}
             >
-              Review why the manager returned them, fix them, and resubmit.
+              Review the manager's comments, correct the report and resubmit.
             </p>
           </div>
 
-          <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gap: 10 }}>
             {returnedReports.map((report) => (
               <div
                 key={report.id}
                 style={{
-                  borderRadius: 18,
-                  padding: 16,
+                  borderRadius: 16,
+                  padding: 15,
                   background: "#fff1f2",
                   border: "1px solid #fecdd3",
                 }}
@@ -946,28 +1109,35 @@ export default function SupervisorTimesheetPage() {
                   <div>
                     <div
                       style={{
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: 800,
                         color: "#881337",
                       }}
                     >
-                      {report.airline || "—"} · {report.reportDate || "—"}
+                      {report.airline || "\u2014"}{" "}
+                      {"\u00B7"}{" "}
+                      {report.reportDate || "\u2014"}
                     </div>
+
                     <div
                       style={{
-                        marginTop: 6,
-                        fontSize: 13,
+                        marginTop: 5,
+                        fontSize: 12.5,
                         color: "#9f1239",
                         fontWeight: 700,
                       }}
                     >
-                      Returned by {report.returnedByName || "Manager"}{" "}
-                      {report.returnedByRole ? `(${report.returnedByRole})` : ""}
+                      Returned by{" "}
+                      {report.returnedByName || "Manager"}{" "}
+                      {report.returnedByRole
+                        ? `(${report.returnedByRole})`
+                        : ""}
                     </div>
+
                     <div
                       style={{
-                        marginTop: 6,
-                        fontSize: 12,
+                        marginTop: 5,
+                        fontSize: 11.5,
                         color: "#64748b",
                       }}
                     >
@@ -977,7 +1147,9 @@ export default function SupervisorTimesheetPage() {
 
                   <ActionButton
                     variant="secondary"
-                    onClick={() => loadReturnedReport(report)}
+                    onClick={() =>
+                      loadReturnedReport(report)
+                    }
                   >
                     Load to Fix
                   </ActionButton>
@@ -985,34 +1157,36 @@ export default function SupervisorTimesheetPage() {
 
                 <div
                   style={{
-                    marginTop: 12,
+                    marginTop: 11,
                     background: "#ffffff",
                     border: "1px solid #fecdd3",
-                    borderRadius: 14,
-                    padding: "12px 14px",
+                    borderRadius: 13,
+                    padding: "11px 13px",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: 800,
                       color: "#9f1239",
                       textTransform: "uppercase",
                       letterSpacing: "0.05em",
-                      marginBottom: 6,
+                      marginBottom: 5,
                     }}
                   >
                     Return Reason
                   </div>
+
                   <div
                     style={{
-                      fontSize: 14,
+                      fontSize: 13,
                       color: "#0f172a",
                       whiteSpace: "pre-line",
-                      lineHeight: 1.6,
+                      lineHeight: 1.55,
                     }}
                   >
-                    {report.returnedReason || "No reason provided."}
+                    {report.returnedReason ||
+                      "No reason provided."}
                   </div>
                 </div>
               </div>
@@ -1021,12 +1195,12 @@ export default function SupervisorTimesheetPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
+      <PageCard style={{ padding: 20 }}>
+        <div style={{ marginBottom: 14 }}>
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: 800,
               color: "#0f172a",
               letterSpacing: "-0.02em",
@@ -1039,20 +1213,31 @@ export default function SupervisorTimesheetPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 14,
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 13,
           }}
         >
           <div>
             <FieldLabel>Reporting Airline</FieldLabel>
+
             <SelectInput
               value={form.airline}
-              onChange={(e) => handleFormChange("airline", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "airline",
+                  e.target.value
+                )
+              }
               disabled={isCabinServiceUser}
             >
               <option value="">Select airline</option>
+
               {AIRLINE_OPTIONS.map((airline) => (
-                <option key={airline.value} value={airline.value}>
+                <option
+                  key={airline.value}
+                  value={airline.value}
+                >
                   {airline.label}
                 </option>
               ))}
@@ -1061,27 +1246,45 @@ export default function SupervisorTimesheetPage() {
 
           <div>
             <FieldLabel>Report Date</FieldLabel>
+
             <TextInput
               type="date"
               value={form.reportDate}
-              onChange={(e) => handleFormChange("reportDate", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "reportDate",
+                  e.target.value
+                )
+              }
             />
           </div>
 
           <div>
             <FieldLabel>Shift</FieldLabel>
+
             <TextInput
               value={form.shift}
-              onChange={(e) => handleFormChange("shift", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "shift",
+                  e.target.value
+                )
+              }
               placeholder="AM / PM / MID / 05:00-13:30"
             />
           </div>
 
           <div>
             <FieldLabel>Supervisor Reporting</FieldLabel>
+
             <TextInput
               value={form.supervisorReporting}
-              onChange={(e) => handleFormChange("supervisorReporting", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "supervisorReporting",
+                  e.target.value
+                )
+              }
             />
           </div>
         </div>
@@ -1089,92 +1292,42 @@ export default function SupervisorTimesheetPage() {
         {form.airline && (
           <div
             style={{
-              marginTop: 16,
+              marginTop: 15,
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(210px, 1fr))",
+              gap: 11,
             }}
           >
-            <div
-              style={{
-                background: "#f8fbff",
-                border: "1px solid #dbeafe",
-                borderRadius: 16,
-                padding: "14px 16px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "#64748b",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                Daily Budget
-              </div>
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 22,
-                  fontWeight: 900,
-                  color: "#0f172a",
-                }}
-              >
-                {currentBudget.toFixed(2)} hrs
-              </div>
-            </div>
+            <MetricCard
+              label="Daily Budget"
+              value={`${currentBudget.toFixed(2)} hrs`}
+            />
 
-            <div
-              style={{
-                background: overBudget ? "#fff1f2" : "#f8fbff",
-                border: `1px solid ${overBudget ? "#fecdd3" : "#dbeafe"}`,
-                borderRadius: 16,
-                padding: "14px 16px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: overBudget ? "#9f1239" : "#64748b",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                Total Reported
-              </div>
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 22,
-                  fontWeight: 900,
-                  color: overBudget ? "#9f1239" : "#0f172a",
-                }}
-              >
-                {totalReportedHours.toFixed(2)} hrs
-              </div>
-            </div>
+            <MetricCard
+              label="Total Reported"
+              value={`${totalReportedHours.toFixed(2)} hrs`}
+              tone={overBudget ? "red" : "blue"}
+            />
           </div>
         )}
 
         {overBudget && (
           <div
             style={{
-              marginTop: 16,
+              marginTop: 15,
               background: "#fff1f2",
               border: "1px solid #fecdd3",
-              borderRadius: 18,
-              padding: "16px 18px",
+              borderRadius: 16,
+              padding: "15px 17px",
             }}
           >
             <div
               style={{
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: 800,
                 color: "#9f1239",
-                marginBottom: 10,
+                marginBottom: 9,
               }}
             >
               Budget Alert
@@ -1182,38 +1335,58 @@ export default function SupervisorTimesheetPage() {
 
             <div
               style={{
-                fontSize: 14,
+                fontSize: 13,
                 color: "#9f1239",
                 fontWeight: 700,
-                marginBottom: 12,
+                marginBottom: 11,
               }}
             >
-              This timesheet is over budget by {overBudgetBy.toFixed(2)} hours.
+              This timesheet is over budget by{" "}
+              {overBudgetBy.toFixed(2)} hours.
             </div>
 
-            <FieldLabel>Why are you over budget?</FieldLabel>
+            <FieldLabel>
+              Why are you over budget?
+            </FieldLabel>
+
             <TextArea
               value={form.overBudgetReason}
-              onChange={(e) => handleFormChange("overBudgetReason", e.target.value)}
+              onChange={(e) =>
+                handleFormChange(
+                  "overBudgetReason",
+                  e.target.value
+                )
+              }
               placeholder="Explain why this operation exceeded the airline daily budget."
             />
           </div>
         )}
 
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 13 }}>
           <FieldLabel>Notes</FieldLabel>
+
           <TextArea
             value={form.notes}
-            onChange={(e) => handleFormChange("notes", e.target.value)}
+            onChange={(e) =>
+              handleFormChange(
+                "notes",
+                e.target.value
+              )
+            }
             placeholder="Optional station notes"
           />
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 18, overflow: "hidden" }}>
+      <PageCard
+        style={{
+          padding: 18,
+          overflow: "hidden",
+        }}
+      >
         <div
           style={{
-            marginBottom: 14,
+            marginBottom: 13,
             display: "flex",
             justifyContent: "space-between",
             gap: 12,
@@ -1225,7 +1398,7 @@ export default function SupervisorTimesheetPage() {
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -1233,9 +1406,24 @@ export default function SupervisorTimesheetPage() {
             >
               Employee Entries
             </h2>
+
+            <div
+              style={{
+                marginTop: 3,
+                fontSize: 11.5,
+                color: "#64748b",
+              }}
+            >
+              {rows.length}{" "}
+              {rows.length === 1 ? "entry" : "entries"}{" "}
+              {"\u00B7"} {totalReportedHours.toFixed(2)} hrs
+            </div>
           </div>
 
-          <ActionButton onClick={addRow} variant="secondary">
+          <ActionButton
+            onClick={addRow}
+            variant="secondary"
+          >
             + Add Row
           </ActionButton>
         </div>
@@ -1243,12 +1431,13 @@ export default function SupervisorTimesheetPage() {
         {loadingEmployees ? (
           <div
             style={{
-              padding: 16,
-              borderRadius: 16,
+              padding: 15,
+              borderRadius: 14,
               background: "#f8fbff",
               border: "1px solid #dbeafe",
               color: "#64748b",
               fontWeight: 600,
+              fontSize: 13,
             }}
           >
             Loading employees...
@@ -1257,7 +1446,7 @@ export default function SupervisorTimesheetPage() {
           <div
             style={{
               overflowX: "auto",
-              borderRadius: 18,
+              borderRadius: 16,
               border: "1px solid #e2e8f0",
             }}
           >
@@ -1272,14 +1461,41 @@ export default function SupervisorTimesheetPage() {
             >
               <thead>
                 <tr style={{ background: "#f8fbff" }}>
-                  <th style={tableHeaderStyle()}>Employee</th>
-                  <th style={tableHeaderStyle()}>Punch In</th>
-                  <th style={tableHeaderStyle()}>Punch Out</th>
-                  <th style={tableHeaderStyle()}>Employee Status</th>
-                  <th style={tableHeaderStyle()}>Break Taken</th>
-                  <th style={tableHeaderStyle()}>Reason</th>
-                  <th style={tableHeaderStyle()}>Hours</th>
-                  <th style={tableHeaderStyle({ textAlign: "center" })}>Remove</th>
+                  <th style={tableHeaderStyle()}>
+                    Employee
+                  </th>
+
+                  <th style={tableHeaderStyle()}>
+                    Punch In
+                  </th>
+
+                  <th style={tableHeaderStyle()}>
+                    Punch Out
+                  </th>
+
+                  <th style={tableHeaderStyle()}>
+                    Employee Status
+                  </th>
+
+                  <th style={tableHeaderStyle()}>
+                    Break Taken
+                  </th>
+
+                  <th style={tableHeaderStyle()}>
+                    Reason
+                  </th>
+
+                  <th style={tableHeaderStyle()}>
+                    Hours
+                  </th>
+
+                  <th
+                    style={tableHeaderStyle({
+                      textAlign: "center",
+                    })}
+                  >
+                    Remove
+                  </th>
                 </tr>
               </thead>
 
@@ -1288,17 +1504,32 @@ export default function SupervisorTimesheetPage() {
                   <tr
                     key={index}
                     style={{
-                      background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                      background:
+                        index % 2 === 0
+                          ? "#ffffff"
+                          : "#fbfdff",
                     }}
                   >
                     <td style={tableCellStyle}>
                       <SelectInput
                         value={row.employeeId}
-                        onChange={(e) => handleRowChange(index, "employeeId", e.target.value)}
+                        onChange={(e) =>
+                          handleRowChange(
+                            index,
+                            "employeeId",
+                            e.target.value
+                          )
+                        }
                       >
-                        <option value="">Select employee</option>
+                        <option value="">
+                          Select employee
+                        </option>
+
                         {employees.map((emp) => (
-                          <option key={emp.id} value={emp.id}>
+                          <option
+                            key={emp.id}
+                            value={emp.id}
+                          >
                             {emp.name}
                           </option>
                         ))}
@@ -1309,7 +1540,13 @@ export default function SupervisorTimesheetPage() {
                       <TextInput
                         type="time"
                         value={row.punchIn}
-                        onChange={(e) => handleRowChange(index, "punchIn", e.target.value)}
+                        onChange={(e) =>
+                          handleRowChange(
+                            index,
+                            "punchIn",
+                            e.target.value
+                          )
+                        }
                       />
                     </td>
 
@@ -1317,7 +1554,13 @@ export default function SupervisorTimesheetPage() {
                       <TextInput
                         type="time"
                         value={row.punchOut}
-                        onChange={(e) => handleRowChange(index, "punchOut", e.target.value)}
+                        onChange={(e) =>
+                          handleRowChange(
+                            index,
+                            "punchOut",
+                            e.target.value
+                          )
+                        }
                       />
                     </td>
 
@@ -1325,12 +1568,22 @@ export default function SupervisorTimesheetPage() {
                       <SelectInput
                         value={row.employeeStatus}
                         onChange={(e) =>
-                          handleRowChange(index, "employeeStatus", e.target.value)
+                          handleRowChange(
+                            index,
+                            "employeeStatus",
+                            e.target.value
+                          )
                         }
                       >
-                        <option value="">Select status</option>
+                        <option value="">
+                          Select status
+                        </option>
+
                         {STATUS_OPTIONS.map((status) => (
-                          <option key={status} value={status}>
+                          <option
+                            key={status}
+                            value={status}
+                          >
                             {status}
                           </option>
                         ))}
@@ -1341,11 +1594,18 @@ export default function SupervisorTimesheetPage() {
                       <SelectInput
                         value={row.breakTaken}
                         onChange={(e) =>
-                          handleRowChange(index, "breakTaken", e.target.value)
+                          handleRowChange(
+                            index,
+                            "breakTaken",
+                            e.target.value
+                          )
                         }
                       >
                         {BREAK_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
+                          <option
+                            key={option}
+                            value={option}
+                          >
                             {option}
                           </option>
                         ))}
@@ -1355,20 +1615,38 @@ export default function SupervisorTimesheetPage() {
                     <td style={tableCellStyle}>
                       <TextInput
                         value={row.reason}
-                        onChange={(e) => handleRowChange(index, "reason", e.target.value)}
+                        onChange={(e) =>
+                          handleRowChange(
+                            index,
+                            "reason",
+                            e.target.value
+                          )
+                        }
                         placeholder="Reason / note"
                       />
                     </td>
 
                     <td style={tableCellStyle}>
-                      <span style={{ fontWeight: 800 }}>
+                      <span
+                        style={{
+                          fontWeight: 800,
+                          color: "#0f172a",
+                        }}
+                      >
                         {calculateRowHours(row).toFixed(2)} hrs
                       </span>
                     </td>
 
-                    <td style={{ ...tableCellStyle, textAlign: "center" }}>
+                    <td
+                      style={{
+                        ...tableCellStyle,
+                        textAlign: "center",
+                      }}
+                    >
                       <ActionButton
-                        onClick={() => removeRow(index)}
+                        onClick={() =>
+                          removeRow(index)
+                        }
                         variant="danger"
                         disabled={rows.length === 1}
                       >
@@ -1383,19 +1661,55 @@ export default function SupervisorTimesheetPage() {
         )}
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <ActionButton onClick={handleSubmit} variant="primary" disabled={saving}>
-            {saving
-              ? "Submitting..."
-              : editingReportId
-              ? "Resubmit Fixed Timesheet"
-              : "Submit Timesheet"}
-          </ActionButton>
+      <PageCard style={{ padding: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "#64748b",
+              lineHeight: 1.5,
+            }}
+          >
+            Submitted by{" "}
+            <strong style={{ color: "#334155" }}>
+              {getVisibleName(user)}
+            </strong>
+          </div>
 
-          <ActionButton onClick={resetForm} variant="secondary">
-            Clear
-          </ActionButton>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <ActionButton
+              onClick={resetForm}
+              variant="secondary"
+            >
+              Clear
+            </ActionButton>
+
+            <ActionButton
+              onClick={handleSubmit}
+              variant="primary"
+              disabled={saving}
+            >
+              {saving
+                ? "Submitting..."
+                : editingReportId
+                ? "Resubmit Fixed Timesheet"
+                : "Submit Timesheet"}
+            </ActionButton>
+          </div>
         </div>
       </PageCard>
     </div>
