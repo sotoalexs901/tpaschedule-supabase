@@ -10,8 +10,9 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
-const FIXED_AUTHOR = "TPA Eulen Ops";
+const FIXED_AUTHOR = "AeroStation Hub";
 
 function getMillis(value) {
   if (!value) return 0;
@@ -40,7 +41,7 @@ function formatDateLabel(value) {
 }
 
 function formatCreatedAtLabel(value) {
-  if (!value) return "—";
+  if (!value) return "â";
 
   try {
     if (typeof value?.toDate === "function") {
@@ -48,11 +49,11 @@ function formatCreatedAtLabel(value) {
     }
 
     const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return "—";
+    if (Number.isNaN(parsed.getTime())) return "â";
 
     return parsed.toLocaleString();
   } catch {
-    return "—";
+    return "â";
   }
 }
 
@@ -256,6 +257,7 @@ function GlassCard({
     </div>
   );
 }
+
 function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
   const photo = item?.photoURL || item?.profilePhotoURL || "";
   const employeeName = item?.employeeName || "Employee";
@@ -327,7 +329,7 @@ function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
               wordBreak: "break-word",
             }}
           >
-            {item?.position || "—"} · {item?.department || "—"}
+            {item?.position || "â"} Â· {item?.department || "â"}
           </div>
 
           {!!item?.airline && (
@@ -430,7 +432,8 @@ export default function DashboardPage() {
 
   const canTrackTimesheets =
     user?.role === "duty_manager" || user?.role === "station_manager";
-    const fetchMainMessage = async () => {
+
+  const fetchMainMessage = async () => {
     try {
       const ref = doc(db, "dashboard", "main");
       const snap = await getDoc(ref);
@@ -654,28 +657,28 @@ export default function DashboardPage() {
         value: events.length,
         subtitle: "Scheduled items ahead",
         accent: "#1f7cc1",
-        icon: "📅",
+        icon: "\u{1F4C5}",
       },
       {
         title: "Open Notices",
         value: notices.length,
         subtitle: "Latest crew updates",
         accent: "#f59e0b",
-        icon: "📌",
+        icon: "\u{1F4CC}",
       },
       {
         title: "Blocked Employees",
         value: blockedEmployees.length,
         subtitle: "Restrictions active",
         accent: "#ef4444",
-        icon: "🚫",
+        icon: "\u{1F6AB}",
       },
       {
         title: "Pending Schedules",
         value: pendingSchedules.length,
         subtitle: "Waiting for approval",
         accent: "#10b981",
-        icon: "📥",
+        icon: "\u{1F4E5}",
       },
     ];
 
@@ -685,7 +688,7 @@ export default function DashboardPage() {
         value: pendingTimesheets.length,
         subtitle: "Waiting for manager review",
         accent: "#c2410c",
-        icon: "🕒",
+        icon: "\u{1F552}",
       });
     }
 
@@ -706,40 +709,46 @@ export default function DashboardPage() {
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
+      {/* ============================================================
+          AEROSTATION HUB - COMPACT WELCOME
+      ============================================================ */}
+
       <div
         style={{
           background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: isMobile ? 22 : 28,
-          padding: isMobile ? 18 : 24,
-          color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+            "linear-gradient(135deg, #073b66 0%, #0f5c91 42%, #2296d2 72%, #65c6e8 100%)",
+          borderRadius: isMobile ? 18 : 22,
+          padding: isMobile ? "16px" : "18px 22px",
+          color: "#ffffff",
+          boxShadow: "0 16px 38px rgba(15,76,129,0.18)",
           position: "relative",
           overflow: "hidden",
-          marginBottom: 18,
+          marginBottom: 16,
         }}
       >
         <div
           style={{
             position: "absolute",
-            width: isMobile ? 180 : 240,
-            height: isMobile ? 180 : 240,
+            width: isMobile ? 130 : 180,
+            height: isMobile ? 130 : 180,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: isMobile ? -80 : -90,
-            right: isMobile ? -60 : -50,
+            border: "1px solid rgba(255,255,255,0.10)",
+            top: isMobile ? -58 : -78,
+            right: isMobile ? -35 : -30,
+            pointerEvents: "none",
           }}
         />
 
         <div
           style={{
             position: "absolute",
-            width: isMobile ? 120 : 160,
-            height: isMobile ? 120 : 160,
+            width: isMobile ? 90 : 120,
+            height: isMobile ? 90 : 120,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.06)",
-            bottom: -50,
-            right: isMobile ? 60 : 160,
+            background: "rgba(255,255,255,0.05)",
+            bottom: -45,
+            right: isMobile ? 45 : 145,
+            pointerEvents: "none",
           }}
         />
 
@@ -747,49 +756,117 @@ export default function DashboardPage() {
           style={{
             position: "relative",
             display: "flex",
-            alignItems: "flex-start",
+            alignItems: isMobile ? "flex-start" : "center",
             justifyContent: "space-between",
             gap: 16,
-            flexWrap: "wrap",
+            flexWrap: isMobile ? "wrap" : "nowrap",
           }}
         >
-          <div style={{ minWidth: 0 }}>
-            <p
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: isMobile ? 12 : 15,
+              minWidth: 0,
+              flex: 1,
+            }}
+          >
+            <div
               style={{
-                margin: 0,
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.76)",
-                fontWeight: 700,
+                width: isMobile ? 46 : 54,
+                height: isMobile ? 46 : 54,
+                flex: `0 0 ${isMobile ? 46 : 54}px`,
+                borderRadius: isMobile ? 14 : 16,
+                background: "rgba(255,255,255,0.96)",
+                border: "1px solid rgba(255,255,255,0.9)",
+                boxShadow: "0 10px 24px rgba(3,14,32,0.18)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
               }}
             >
-              TPA OPS · Executive Dashboard
-            </p>
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            </div>
 
-            <h1
-              style={{
-                margin: "10px 0 6px",
-                fontSize: isMobile ? 26 : 34,
-                lineHeight: 1.05,
-                fontWeight: 800,
-                letterSpacing: "-0.04em",
-              }}
-            >
-              Welcome back, {user?.username || "Team"} 👋
-            </h1>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  marginBottom: 4,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: isMobile ? 9 : 10,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.14em",
+                    color: "rgba(255,255,255,0.78)",
+                  }}
+                >
+                  {APP_NAME}
+                </span>
 
-            <p
-              style={{
-                margin: 0,
-                maxWidth: 720,
-                fontSize: isMobile ? 13 : 14,
-                color: "rgba(255,255,255,0.86)",
-              }}
-            >
-              Quick overview of station updates, highlights, notices,
-              restrictions, pending schedules and timesheet follow up.
-            </p>
+                <span
+                  style={{
+                    width: 4,
+                    height: 4,
+                    borderRadius: 999,
+                    background: "#79ddff",
+                  }}
+                />
+
+                <span
+                  style={{
+                    fontSize: isMobile ? 9 : 10,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                    color: "rgba(255,255,255,0.68)",
+                  }}
+                >
+                  Executive Dashboard
+                </span>
+              </div>
+
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: isMobile ? 22 : 27,
+                  lineHeight: 1.1,
+                  fontWeight: 800,
+                  letterSpacing: "-0.035em",
+                }}
+              >
+                Welcome back, {user?.username || "Team"} {"\u{1F44B}"}
+              </h1>
+
+              <p
+                style={{
+                  margin: "6px 0 0",
+                  maxWidth: 680,
+                  fontSize: isMobile ? 11.5 : 12.5,
+                  lineHeight: 1.55,
+                  color: "rgba(255,255,255,0.82)",
+                }}
+              >
+                {APP_SUBTITLE} Â· Station activity, operational updates and
+                pending actions at a glance.
+              </p>
+            </div>
           </div>
 
           <button
@@ -797,17 +874,20 @@ export default function DashboardPage() {
             onClick={reloadAll}
             style={{
               border: "1px solid rgba(255,255,255,0.22)",
-              background: "rgba(255,255,255,0.16)",
-              color: "#fff",
-              borderRadius: 16,
-              padding: "13px 16px",
+              background: "rgba(255,255,255,0.12)",
+              color: "#ffffff",
+              borderRadius: 13,
+              padding: isMobile ? "10px 13px" : "10px 14px",
+              fontSize: 12,
               fontWeight: 700,
               cursor: "pointer",
               backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
               width: isMobile ? "100%" : "auto",
+              whiteSpace: "nowrap",
             }}
           >
-            Refresh dashboard
+            Refresh
           </button>
         </div>
       </div>
@@ -839,7 +919,7 @@ export default function DashboardPage() {
         <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
           <GlassCard
             title="Station Manager Message"
-            icon="📢"
+            icon={"\u{1F4E2}"}
             accent="#1f7cc1"
             isMobile={isMobile}
           >
@@ -881,7 +961,7 @@ export default function DashboardPage() {
           {canTrackTimesheets && (
             <GlassCard
               title="WCHR Billing & Monthly Close"
-              icon="📊"
+              icon={"\u{1F4CA}"}
               accent="#16a34a"
               isMobile={isMobile}
               action={
@@ -919,7 +999,7 @@ export default function DashboardPage() {
 
           <GlassCard
             title="Employees of the Month"
-            icon="🏆"
+            icon={"\u{1F3C6}"}
             accent="#f59e0b"
             isMobile={isMobile}
           >
@@ -955,7 +1035,7 @@ export default function DashboardPage() {
 
           <GlassCard
             title="Station Highlights"
-            icon="✈️"
+            icon={"\u{2708}"}
             accent="#5aa9e6"
             isMobile={isMobile}
             action={
@@ -1038,9 +1118,10 @@ export default function DashboardPage() {
               </div>
             )}
           </GlassCard>
-                    <GlassCard
+
+          <GlassCard
             title="Pending Schedules for Approval"
-            icon="📥"
+            icon={"\u{1F4E5}"}
             accent="#10b981"
             isMobile={isMobile}
             action={
@@ -1086,7 +1167,7 @@ export default function DashboardPage() {
                     }}
                   >
                     <p style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
-                      {sch.airlineDisplayName || sch.airline || "Airline"} —{" "}
+                      {sch.airlineDisplayName || sch.airline || "Airline"} â{" "}
                       {sch.department || "Department"}
                     </p>
                     <p style={{ margin: "8px 0 0", fontSize: 13 }}>
@@ -1105,7 +1186,7 @@ export default function DashboardPage() {
           {canTrackTimesheets && (
             <GlassCard
               title="Pending Timesheets Follow Up"
-              icon="🕒"
+              icon={"\u{1F552}"}
               accent="#c2410c"
               isMobile={isMobile}
               action={
@@ -1149,7 +1230,7 @@ export default function DashboardPage() {
                       }}
                     >
                       <p style={{ margin: 0, fontWeight: 800 }}>
-                        {item.airline || "—"} · {item.reportDate || "—"}
+                        {item.airline || "â"} Â· {item.reportDate || "â"}
                       </p>
                       <p style={{ margin: "7px 0 0", fontSize: 13 }}>
                         Submitted by{" "}
@@ -1174,7 +1255,7 @@ export default function DashboardPage() {
         <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
           <GlassCard
             title="Upcoming Events"
-            icon="📅"
+            icon={"\u{1F4C5}"}
             accent="#3b82f6"
             isMobile={isMobile}
           >
@@ -1209,7 +1290,7 @@ export default function DashboardPage() {
                       }}
                     >
                       {formatDateLabel(ev.date)}
-                      {ev.time ? ` • ${ev.time}` : ""}
+                      {ev.time ? ` â¢ ${ev.time}` : ""}
                     </p>
                     {ev.details && (
                       <p style={{ margin: "8px 0 0", fontSize: 13 }}>
@@ -1224,7 +1305,7 @@ export default function DashboardPage() {
 
           <GlassCard
             title="Notices / Invitations"
-            icon="📌"
+            icon={"\u{1F4CC}"}
             accent="#f59e0b"
             isMobile={isMobile}
           >
@@ -1269,7 +1350,7 @@ export default function DashboardPage() {
                           textDecoration: "none",
                         }}
                       >
-                        View more →
+                        View more â
                       </a>
                     )}
                   </div>
@@ -1280,7 +1361,7 @@ export default function DashboardPage() {
 
           <GlassCard
             title="Employees Not Available"
-            icon="🚫"
+            icon={"\u{1F6AB}"}
             accent="#ef4444"
             isMobile={isMobile}
             action={
@@ -1386,7 +1467,7 @@ export default function DashboardPage() {
                         )}
 
                         <p style={{ margin: "7px 0 0", fontSize: 12 }}>
-                          {b.start_date || b.startDate || "N/A"} →{" "}
+                          {b.start_date || b.startDate || "N/A"} â{" "}
                           {b.end_date || b.endDate || "N/A"}
                         </p>
                       </div>
