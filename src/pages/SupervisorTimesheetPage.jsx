@@ -148,6 +148,58 @@ function formatDateTime(value) {
   }
 }
 
+const TIMESHEET_SUBMISSION_LIMIT_HOURS = 24;
+
+function getTimesheetSubmissionTiming(reportDate) {
+  const cleanDate = String(reportDate || "").trim();
+
+  if (!cleanDate) {
+    return {
+      isLate: false,
+      lateHours: 0,
+      reportStart: null,
+      deadline: null,
+    };
+  }
+
+  const reportStart = new Date(`${cleanDate}T00:00:00`);
+
+  if (Number.isNaN(reportStart.getTime())) {
+    return {
+      isLate: false,
+      lateHours: 0,
+      reportStart: null,
+      deadline: null,
+    };
+  }
+
+  const deadline = new Date(
+    reportStart.getTime() +
+      TIMESHEET_SUBMISSION_LIMIT_HOURS * 60 * 60 * 1000
+  );
+
+  const now = new Date();
+  const lateMs = now.getTime() - deadline.getTime();
+
+  return {
+    isLate: lateMs > 0,
+    lateHours: lateMs > 0 ? lateMs / (60 * 60 * 1000) : 0,
+    reportStart,
+    deadline,
+  };
+}
+
+function formatLateDuration(hours) {
+  const totalMinutes = Math.max(0, Math.round(Number(hours || 0) * 60));
+  const wholeHours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (wholeHours <= 0) return `${minutes} min`;
+  if (minutes === 0) return `${wholeHours} hr${wholeHours === 1 ? "" : "s"}`;
+
+  return `${wholeHours} hr${wholeHours === 1 ? "" : "s"} ${minutes} min`;
+}
+
 function emptyRow() {
   return {
     employeeId: "",
@@ -393,6 +445,7 @@ export default function SupervisorTimesheetPage() {
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [editingReportId, setEditingReportId] = useState("");
+  const [lateSubmitPrompt, setLateSubmitPrompt] = useState(null);
 
   const normalizedDepartment = normalizeCabinServiceValue(user?.department);
   const isCabinServiceUser = normalizedDepartment === "cabin_service";
@@ -657,6 +710,186 @@ export default function SupervisorTimesheetPage() {
     setRows([emptyRow()]);
   };
 
+  const createManagementLateAlert = async ({
+    timesheetReportId,
+    lateInfo,
+    airline,
+  }) => {
+    try {
+      await addDoc(collection(db, "operational_alerts"), {
+        alertType: "TIMESHEET_LATE_SUBMISSION",
+        category: "TIMESHEET",
+        severity: "HIGH",
+        priority: "URGENT",
+        status: "OPEN",
+        title: "Late Timesheet Submission",
+        message: `${getVisibleName(user)} submitted a late timesheet for ${
+          airline || "Unknown Airline"
+        } dated ${form.reportDate}. Submission was ${formatLateDuration(
+          lateInfo.lateHours
+        )} past the 24-hour submission limit.`,
+        timesheetReportId,
+        reportDate: form.reportDate,
+        airline: airline || "",
+        department: isCabinServiceUser
+          ? "Cabin Service"
+          : String(form.department || user?.department || "").trim(),
+        submittedByUserId: user?.id || "",
+        submittedByUsername: user?.username || "",
+        submittedByName: getVisibleName(user),
+        submittedByRole: user?.role || "",
+        thresholdHours: TIMESHEET_SUBMISSION_LIMIT_HOURS,
+        lateHours: Number(lateInfo.lateHours || 0),
+        submissionDeadline: lateInfo.deadline || null,
+        targetRoles: ["station_manager", "duty_manager"],
+        requiresManagementAttention: true,
+        source: "SupervisorTimesheetPage",
+        createdAt: serverTimestamp(),
+      });
+
+      return true;
+    } catch (alertErr) {
+      // Never block the operational timesheet submission because an alert write
+      // failed. The report itself is also flagged for management follow-up.
+      console.error("Late timesheet management alert error:", alertErr);
+      return false;
+    }
+  };
+
+  const saveTimesheet = async ({
+    cleanRows,
+    lateInfo,
+    confirmedLateSubmission = false,
+  }) => {
+    try {
+      setSaving(true);
+
+      const normalizedAirline = isCabinServiceUser
+        ? "CABIN"
+        : normalizeAirlineName(form.airline);
+
+      const isLateInitialSubmission =
+        !editingReportId &&
+        Boolean(lateInfo?.isLate) &&
+        confirmedLateSubmission;
+
+      const payload = {
+        airline: normalizedAirline,
+        reportDate: form.reportDate,
+        shift: form.shift || "",
+        supervisorReporting:
+          form.supervisorReporting || getVisibleName(user),
+        supervisorPosition:
+          form.supervisorPosition ||
+          user?.position ||
+          getDefaultPosition(user?.role),
+        notes: form.notes || "",
+        department: isCabinServiceUser
+          ? "Cabin Service"
+          : String(form.department || user?.department || "").trim(),
+        rows: cleanRows,
+        totalHours: totalReportedHours,
+        budgetHoursDaily: currentBudget,
+        overBudget,
+        overBudgetBy: overBudget ? overBudgetBy : 0,
+        overBudgetReason: overBudget ? form.overBudgetReason : "",
+        submittedByUserId: user?.id || "",
+        submittedByUsername: user?.username || "",
+        submittedByName: getVisibleName(user),
+        submittedByRole: user?.role || "",
+        status: "submitted",
+
+        // Late-submission tracking. These fields are intentionally stored
+        // directly on the timesheet so the future Alert Center can surface
+        // the issue even if a separate alert document cannot be written.
+        lateSubmission: isLateInitialSubmission,
+        lateSubmissionHours: isLateInitialSubmission
+          ? Number(lateInfo?.lateHours || 0)
+          : 0,
+        submissionLimitHours: TIMESHEET_SUBMISSION_LIMIT_HOURS,
+        submissionDeadline:
+          isLateInitialSubmission && lateInfo?.deadline
+            ? lateInfo.deadline
+            : null,
+        managementAlertRequired: isLateInitialSubmission,
+        managementAlertSeverity: isLateInitialSubmission ? "HIGH" : "",
+      };
+
+      if (editingReportId) {
+        await updateDoc(
+          doc(db, "timesheet_reports", editingReportId),
+          {
+            ...payload,
+            // A correction/resubmission is not treated as a new "late initial
+            // submission"; it keeps the original workflow intact.
+            lateSubmission: false,
+            lateSubmissionHours: 0,
+            managementAlertRequired: false,
+            managementAlertSeverity: "",
+            resubmittedAt: serverTimestamp(),
+            returnedAt: null,
+            returnedByName: "",
+            returnedByRole: "",
+            returnedReason: "",
+          }
+        );
+
+        setReturnedReports((prev) =>
+          prev.filter((item) => item.id !== editingReportId)
+        );
+
+        setStatusMessage(
+          "Timesheet corrected and resubmitted for approval successfully."
+        );
+      } else {
+        const reportRef = await addDoc(collection(db, "timesheet_reports"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
+
+        if (isLateInitialSubmission) {
+          const alertCreated = await createManagementLateAlert({
+            timesheetReportId: reportRef.id,
+            lateInfo,
+            airline: normalizedAirline,
+          });
+
+          // Record whether the separate alert was created. If it was not,
+          // managementAlertRequired remains true so the upcoming Alert Center
+          // can still discover the report directly.
+          try {
+            await updateDoc(reportRef, {
+              managementAlertCreated: alertCreated,
+              managementAlertCreatedAt: alertCreated
+                ? serverTimestamp()
+                : null,
+            });
+          } catch (flagErr) {
+            console.error("Late timesheet alert flag update error:", flagErr);
+          }
+
+          setStatusMessage(
+            alertCreated
+              ? "Late timesheet submitted. An URGENT management alert was created."
+              : "Late timesheet submitted. It is flagged URGENT for management review."
+          );
+        } else {
+          setStatusMessage(
+            "Timesheet submitted for approval successfully."
+          );
+        }
+      }
+
+      setLateSubmitPrompt(null);
+      resetForm();
+    } catch (err) {
+      console.error("Error saving timesheet:", err);
+      setStatusMessage("Could not submit timesheet.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSubmit = async () => {
     setStatusMessage("");
 
@@ -728,92 +961,30 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
-    if (
-      overBudget &&
-      !String(form.overBudgetReason || "").trim()
-    ) {
+    if (overBudget && !String(form.overBudgetReason || "").trim()) {
       setStatusMessage(
         "Please explain the overbudget reason with more details in order to submit your timesheet."
       );
       return;
     }
 
-    try {
-      setSaving(true);
+    const lateInfo = getTimesheetSubmissionTiming(form.reportDate);
 
-      const payload = {
-        airline: isCabinServiceUser
-          ? "CABIN"
-          : normalizeAirlineName(form.airline),
-        reportDate: form.reportDate,
-        shift: form.shift || "",
-        supervisorReporting:
-          form.supervisorReporting || getVisibleName(user),
-        supervisorPosition:
-          form.supervisorPosition ||
-          user?.position ||
-          getDefaultPosition(user?.role),
-        notes: form.notes || "",
-        department: isCabinServiceUser
-          ? "Cabin Service"
-          : String(
-              form.department ||
-                user?.department ||
-                ""
-            ).trim(),
-        rows: cleanRows,
-        totalHours: totalReportedHours,
-        budgetHoursDaily: currentBudget,
-        overBudget,
-        overBudgetBy: overBudget ? overBudgetBy : 0,
-        overBudgetReason: overBudget
-          ? form.overBudgetReason
-          : "",
-        submittedByUserId: user?.id || "",
-        submittedByUsername: user?.username || "",
-        submittedByName: getVisibleName(user),
-        submittedByRole: user?.role || "",
-        status: "submitted",
-      };
-
-      if (editingReportId) {
-        await updateDoc(
-          doc(db, "timesheet_reports", editingReportId),
-          {
-            ...payload,
-            resubmittedAt: serverTimestamp(),
-            returnedAt: null,
-            returnedByName: "",
-            returnedByRole: "",
-            returnedReason: "",
-          }
-        );
-
-        setReturnedReports((prev) =>
-          prev.filter((item) => item.id !== editingReportId)
-        );
-
-        setStatusMessage(
-          "Timesheet corrected and resubmitted for approval successfully."
-        );
-      } else {
-        await addDoc(collection(db, "timesheet_reports"), {
-          ...payload,
-          createdAt: serverTimestamp(),
-        });
-
-        setStatusMessage(
-          "Timesheet submitted for approval successfully."
-        );
-      }
-
-      resetForm();
-    } catch (err) {
-      console.error("Error saving timesheet:", err);
-      setStatusMessage("Could not submit timesheet.");
-    } finally {
-      setSaving(false);
+    // Returned reports already entered the approval workflow, so the late
+    // initial-submission warning applies only to brand-new submissions.
+    if (!editingReportId && lateInfo.isLate) {
+      setLateSubmitPrompt({
+        cleanRows,
+        lateInfo,
+      });
+      return;
     }
+
+    await saveTimesheet({
+      cleanRows,
+      lateInfo,
+      confirmedLateSubmission: false,
+    });
   };
 
   return (
@@ -965,6 +1136,218 @@ export default function SupervisorTimesheetPage() {
           </div>
         </div>
       </div>
+
+      {lateSubmitPrompt && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: 20,
+          }}
+          onClick={() => {
+            if (!saving) setLateSubmitPrompt(null);
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              background: "#ffffff",
+              borderRadius: 22,
+              boxShadow: "0 28px 70px rgba(15,23,42,0.28)",
+              border: "1px solid #fecaca",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "18px 20px",
+                background:
+                  "linear-gradient(135deg, #991b1b 0%, #dc2626 100%)",
+                color: "#ffffff",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.12em",
+                  fontWeight: 900,
+                  color: "rgba(255,255,255,0.78)",
+                }}
+              >
+                Urgent {"\u00B7"} Late Timesheet
+              </div>
+
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 20,
+                  fontWeight: 900,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                Submission is past the 24-hour limit
+              </div>
+            </div>
+
+            <div style={{ padding: "20px" }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 14,
+                  lineHeight: 1.7,
+                  color: "#334155",
+                  fontWeight: 700,
+                }}
+              >
+                This timesheet for{" "}
+                <strong>{form.reportDate || "\u2014"}</strong> is late by{" "}
+                <strong style={{ color: "#b91c1c" }}>
+                  {formatLateDuration(
+                    lateSubmitPrompt.lateInfo?.lateHours
+                  )}
+                </strong>
+                .
+              </p>
+
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: "13px 14px",
+                  borderRadius: 14,
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  color: "#9f1239",
+                  fontSize: 12.5,
+                  lineHeight: 1.6,
+                  fontWeight: 700,
+                }}
+              >
+                Do you want to submit it anyway? If you continue, the
+                timesheet will be marked as a <strong>late submission</strong>
+                and an <strong>URGENT alert</strong> will be created for the
+                Management Team.
+              </div>
+
+              <div
+                style={{
+                  marginTop: 14,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 10,
+                }}
+              >
+                <div
+                  style={{
+                    padding: "11px 12px",
+                    borderRadius: 12,
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 900,
+                      color: "#94a3b8",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                    }}
+                  >
+                    Report Date
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontSize: 13,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {form.reportDate || "\u2014"}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "11px 12px",
+                    borderRadius: 12,
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 900,
+                      color: "#94a3b8",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                    }}
+                  >
+                    Submission Deadline
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontSize: 13,
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {lateSubmitPrompt.lateInfo?.deadline
+                      ? lateSubmitPrompt.lateInfo.deadline.toLocaleString()
+                      : "\u2014"}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 18,
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <ActionButton
+                  type="button"
+                  variant="secondary"
+                  disabled={saving}
+                  onClick={() => setLateSubmitPrompt(null)}
+                >
+                  No, Go Back
+                </ActionButton>
+
+                <ActionButton
+                  type="button"
+                  variant="danger"
+                  disabled={saving}
+                  onClick={() =>
+                    saveTimesheet({
+                      cleanRows: lateSubmitPrompt.cleanRows,
+                      lateInfo: lateSubmitPrompt.lateInfo,
+                      confirmedLateSubmission: true,
+                    })
+                  }
+                >
+                  {saving
+                    ? "Submitting..."
+                    : "Yes, Submit & Alert Management"}
+                </ActionButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {statusMessage && (
         <div
@@ -1196,18 +1579,43 @@ export default function SupervisorTimesheetPage() {
       )}
 
       <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
+        <div
+          style={{
+            marginBottom: 14,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 18,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Report Header
+            </h2>
+          </div>
+
+          <div
             style={{
-              margin: 0,
-              fontSize: 18,
+              padding: "7px 10px",
+              borderRadius: 999,
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              color: "#1d4ed8",
+              fontSize: 10.5,
               fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
             }}
           >
-            Report Header
-          </h2>
+            Submit within 24 hrs of report date
+          </div>
         </div>
 
         <div
@@ -1694,24 +2102,4 @@ export default function SupervisorTimesheetPage() {
             <ActionButton
               onClick={resetForm}
               variant="secondary"
-            >
-              Clear
-            </ActionButton>
-
-            <ActionButton
-              onClick={handleSubmit}
-              variant="primary"
-              disabled={saving}
-            >
-              {saving
-                ? "Submitting..."
-                : editingReportId
-                ? "Resubmit Fixed Timesheet"
-                : "Submit Timesheet"}
-            </ActionButton>
-          </div>
-        </div>
-      </PageCard>
-    </div>
-  );
-}
+ 
