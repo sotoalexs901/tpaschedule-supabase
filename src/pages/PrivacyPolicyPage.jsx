@@ -1,5 +1,11 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  APP_NAME,
+  APP_SUBTITLE,
+  APP_POWERED_BY,
+  APP_COPYRIGHT,
+} from "../config/appConfig.js";
 import "./PrivacyPolicyPage.css";
 
 const POLICY_VERSION = "2026.08.26";
@@ -20,15 +26,26 @@ export default function PrivacyPolicyPage() {
       <header className="privacy-page-header">
         <div className="privacy-page-header-inner">
           <div className="privacy-page-brand">
-            <div className="privacy-page-logo">✈️</div>
+            <div className="privacy-page-logo">
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            </div>
 
             <div>
               <div className="privacy-page-brand-name">
-                TPA OPS PLATFORM
+                {APP_NAME}
               </div>
 
               <div className="privacy-page-brand-company">
-                ANapoles Solutions
+                {APP_SUBTITLE}
               </div>
             </div>
           </div>
@@ -38,7 +55,7 @@ export default function PrivacyPolicyPage() {
             className="privacy-page-back"
             onClick={handleBack}
           >
-            ← Back
+            {"\u2190"} Back
           </button>
         </div>
       </header>
@@ -46,7 +63,7 @@ export default function PrivacyPolicyPage() {
       <main className="privacy-page-main">
         <section className="privacy-page-hero">
           <div className="privacy-page-badge">
-            PRIVACY • CONFIDENTIALITY • OWNERSHIP
+            PRIVACY {"\u2022"} CONFIDENTIALITY {"\u2022"} OWNERSHIP
           </div>
 
           <h1>
@@ -58,7 +75,7 @@ export default function PrivacyPolicyPage() {
           <p>
             This policy establishes the privacy, confidentiality,
             authorized-use and ownership requirements applicable to the
-            TPA OPS Platform.
+            {` ${APP_NAME}`}.
           </p>
 
           <div className="privacy-page-meta">
@@ -71,19 +88,21 @@ export default function PrivacyPolicyPage() {
             </span>
 
             <span>
-              <strong>Platform:</strong> TPA OPS Platform
+              <strong>Platform:</strong> {APP_NAME}
             </span>
           </div>
         </section>
 
         <section className="privacy-page-important">
-          <div className="privacy-page-important-icon">🔒</div>
+          <div className="privacy-page-important-icon">
+            {"\u{1F512}"}
+          </div>
 
           <div>
             <strong>Confidential System Notice</strong>
 
             <p>
-              TPA OPS Platform contains employee, operational and other
+              {APP_NAME} contains employee, operational and other
               business information intended only for authorized users.
               Information accessed through this system may not be disclosed,
               copied, distributed, published or used for unauthorized purposes.
@@ -94,7 +113,7 @@ export default function PrivacyPolicyPage() {
         <section className="privacy-page-content">
           <PolicySection number="01" title="Purpose">
             <p>
-              TPA OPS Platform is an operational management platform designed
+              {APP_NAME} is an operational management platform designed
               to support aviation-related workforce management, scheduling,
               operational reporting, employee coordination, service tracking,
               compliance documentation and other authorized business
@@ -111,7 +130,7 @@ export default function PrivacyPolicyPage() {
 
           <PolicySection number="02" title="Platform Ownership">
             <p>
-              TPA OPS Platform is created, administered and monitored by{" "}
+              {APP_NAME} is created, administered and monitored by{" "}
               <strong>ANapoles Solutions</strong>.
             </p>
 
@@ -125,7 +144,7 @@ export default function PrivacyPolicyPage() {
             </p>
 
             <div className="privacy-page-highlight">
-              © 2026 ANapoles Solutions. All rights reserved.
+              {APP_COPYRIGHT}
             </div>
           </PolicySection>
 
@@ -134,7 +153,7 @@ export default function PrivacyPolicyPage() {
             title="Information Processed by the Platform"
           >
             <p>
-              TPA OPS Platform may collect, process, store or display
+              {APP_NAME} may collect, process, store or display
               information reasonably necessary for legitimate operational and
               administrative purposes, including, as applicable:
             </p>
@@ -160,7 +179,7 @@ export default function PrivacyPolicyPage() {
 
           <PolicySection number="04" title="Purpose of Information">
             <p>
-              Information processed through TPA OPS Platform may be used for
+              Information processed through {APP_NAME} may be used for
               legitimate purposes including workforce administration,
               scheduling, operational management, reporting, training,
               compliance, safety, security, service documentation, performance
@@ -176,7 +195,7 @@ export default function PrivacyPolicyPage() {
 
           <PolicySection number="05" title="Confidentiality">
             <p>
-              Information accessible through TPA OPS Platform may contain
+              Information accessible through {APP_NAME} may contain
               confidential employee, company, airline, customer, security and
               operational information.
             </p>
@@ -230,7 +249,7 @@ export default function PrivacyPolicyPage() {
 
           <PolicySection number="06" title="Access Control">
             <p>
-              Access to TPA OPS Platform is restricted to authorized users.
+              Access to {APP_NAME} is restricted to authorized users.
               Role-based permissions may determine which modules, reports,
               records and administrative functions an individual user is
               permitted to access.
@@ -255,13 +274,13 @@ export default function PrivacyPolicyPage() {
           >
             <p>
               For operational integrity, security, troubleshooting, compliance
-              and system administration purposes, TPA OPS Platform may maintain
+              and system administration purposes, {APP_NAME} may maintain
               records relating to system access, user activity and platform
               usage.
             </p>
 
             <p>
-              TPA OPS Platform is administered and monitored by{" "}
+              {APP_NAME} is administered and monitored by{" "}
               <strong>ANapoles Solutions</strong> and/or specifically authorized
               administrators.
             </p>
@@ -298,8 +317,8 @@ export default function PrivacyPolicyPage() {
             title="Data Sharing and Disclosure"
           >
             <p>
-              Personal or confidential information contained within TPA OPS
-              Platform must not be sold, publicly distributed or disclosed to
+              Personal or confidential information contained within {APP_NAME}
+              must not be sold, publicly distributed or disclosed to
               unauthorized third parties.
             </p>
 
@@ -329,7 +348,7 @@ export default function PrivacyPolicyPage() {
 
           <PolicySection number="11" title="User Responsibilities">
             <p>
-              By accessing TPA OPS Platform, users are responsible for:
+              By accessing {APP_NAME}, users are responsible for:
             </p>
 
             <ul>
@@ -373,7 +392,7 @@ export default function PrivacyPolicyPage() {
             <p>
               Original software, interface organization, workflows, platform
               architecture, documentation, reports, forms, designs and other
-              original components developed specifically for TPA OPS Platform
+              original components developed specifically for {APP_NAME}
               may constitute intellectual property of their respective owner.
             </p>
 
@@ -403,7 +422,7 @@ export default function PrivacyPolicyPage() {
             title="No Transfer of Ownership Through Access"
           >
             <p>
-              Access to TPA OPS Platform constitutes permission to use the
+              Access to {APP_NAME} constitutes permission to use the
               system for authorized purposes. It does not grant the user any
               ownership interest in the platform, source code, proprietary
               workflows, documentation or other protected materials.
@@ -419,16 +438,16 @@ export default function PrivacyPolicyPage() {
             </p>
 
             <p>
-              When a new policy version requires acknowledgment, TPA OPS
-              Platform may require users to review and accept the updated
-              version before continuing access.
+              When a new policy version requires acknowledgment, {APP_NAME}
+              may require users to review and accept the updated version before
+              continuing access.
             </p>
           </PolicySection>
 
           <PolicySection number="15" title="User Acknowledgment">
             <p>
               Users may be required to acknowledge the current version of this
-              policy before accessing TPA OPS Platform.
+              policy before accessing {APP_NAME}.
             </p>
 
             <p>
@@ -440,8 +459,8 @@ export default function PrivacyPolicyPage() {
             <div className="privacy-page-warning">
               <strong>
                 Unauthorized access, use, reproduction, disclosure or
-                distribution of confidential information contained within TPA
-                OPS Platform is prohibited.
+                distribution of confidential information contained within
+                {` ${APP_NAME}`} is prohibited.
               </strong>
             </div>
           </PolicySection>
@@ -456,27 +475,27 @@ export default function PrivacyPolicyPage() {
             </div>
 
             <p>
-              TPA OPS Platform is created, administered and monitored by
+              {APP_NAME} is created, administered and monitored by
               ANapoles Solutions.
             </p>
 
             <span>
-              © 2026 ANapoles Solutions. All rights reserved.
+              {APP_COPYRIGHT}
             </span>
           </div>
         </section>
       </main>
 
       <footer className="privacy-page-footer">
-        <strong>TPA OPS Platform</strong>
+        <strong>{APP_NAME}</strong>
 
-        <span>•</span>
+        <span>{"\u2022"}</span>
 
         <span>Privacy Policy Version {POLICY_VERSION}</span>
 
-        <span>•</span>
+        <span>{"\u2022"}</span>
 
-        <span>ANapoles Solutions</span>
+        <span>{APP_POWERED_BY}</span>
       </footer>
     </div>
   );
