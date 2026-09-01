@@ -25,11 +25,12 @@
   color: #fff;
 }
 
+/* AeroStation Hub branding on the desktop image panel */
 .login-left::before {
-  content: "TPA OPS SYSTEM";
+  content: "AEROSTATION HUB";
   font-size: 22px;
   font-weight: 900;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
 }
 
 .login-overlay-content {
@@ -103,31 +104,39 @@
   margin-bottom: 28px;
 }
 
+/*
+  The old version of this element was designed for an emoji.
+  It now holds the AeroStation Hub image asset.
+*/
 .login-brand-icon {
-  width: 68px;
-  height: 68px;
+  width: 76px;
+  height: 76px;
   border-radius: 22px;
-  background: linear-gradient(
-    135deg,
-    #0f4c81 0%,
-    #1769aa 55%,
-    #5aa9e6 100%
-  );
+  background: transparent;
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 30px;
-  box-shadow: 0 14px 30px rgba(23, 105, 170, 0.24);
+  overflow: hidden;
+  padding: 0;
+  box-shadow: 0 14px 30px rgba(23, 105, 170, 0.18);
+}
+
+.login-brand-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .login-brand-title {
   margin: 0;
   font-size: 15px;
   font-weight: 900;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #0f172a;
+  white-space: nowrap;
 }
 
 .login-brand-subtitle {
@@ -770,10 +779,14 @@
   }
 
   .login-brand-icon {
-    width: 58px;
-    height: 58px;
+    width: 64px;
+    height: 64px;
+  }
 
-    font-size: 26px;
+  .login-brand-title {
+    font-size: 14px;
+    letter-spacing: 0.09em;
+    white-space: normal;
   }
 
   .login-title {
