@@ -2102,4 +2102,24 @@ export default function SupervisorTimesheetPage() {
             <ActionButton
               onClick={resetForm}
               variant="secondary"
- 
+            >
+              Clear
+            </ActionButton>
+
+            <ActionButton
+              onClick={handleSubmit}
+              variant="primary"
+              disabled={saving}
+            >
+              {saving
+                ? "Submitting..."
+                : editingReportId
+                ? "Resubmit Fixed Timesheet"
+                : "Submit Timesheet"}
+            </ActionButton>
+          </div>
+        </div>
+      </PageCard>
+    </div>
+  );
+}
