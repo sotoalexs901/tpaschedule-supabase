@@ -13,6 +13,10 @@ import {
   APP_SUBTITLE,
 } from "../config/appConfig.js";
 
+// Menu icons intentionally use Unicode escape sequences (for example "\\u{1F3E0}")
+// instead of literal emoji characters. This prevents mojibake/encoding corruption
+// when editing the file from GitHub web, Safari, iPad, or different text encodings.
+
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
   if (role === "duty_manager") return "Duty Manager";
@@ -368,19 +372,19 @@ export default function AppLayout() {
     const sections = [];
 
     const general = [
-      { to: "/dashboard", label: "Dashboard", icon: "ð " },
-      { to: "/profile", label: "My Profile", icon: "ð¤" },
-      { to: "/station-team", label: "Station Team", icon: "ð§âð¤âð§" },
+      { to: "/dashboard", label: "Dashboard", icon: "\u{1F3E0}" },
+      { to: "/profile", label: "My Profile", icon: "\u{1F464}" },
+      { to: "/station-team", label: "Station Team", icon: "\u{1F465}" },
       {
         to: "/messages",
         label: "Messages",
-        icon: "ð¬",
+        icon: "\u{1F4AC}",
         showDot: unreadMessages > 0,
       },
       {
         to: "/notifications",
         label: "Notifications",
-        icon: "ð",
+        icon: "\u{1F514}",
         showDot: unreadNotifications > 0,
       },
     ];
@@ -396,46 +400,46 @@ export default function AppLayout() {
 
     if (canAccessRegularManagerSchedules) {
       schedules.push(
-        { to: "/schedule", label: "Create Schedule", icon: "ðï¸" },
-        { to: "/cabin-service", label: "Cabin Service", icon: "ð§³" },
+        { to: "/schedule", label: "Create Schedule", icon: "\u{1F5D3}" },
+        { to: "/cabin-service", label: "Cabin Service", icon: "\u{1F9F3}" },
         {
           to: "/cabin-saved-schedules",
           label: "Cabin Service Saved Schedules",
-          icon: "ð",
+          icon: "\u{1F4C1}",
         },
-        { to: "/approvals", label: "Approvals", icon: "â" },
-        { to: "/drafts", label: "Draft Schedules", icon: "ð" },
-        { to: "/approved", label: "Approved Schedules", icon: "ð" },
-        { to: "/returned", label: "Returned Schedules", icon: "â©ï¸" },
-        { to: "/weekly-summary", label: "Weekly Summary", icon: "ð" }
+        { to: "/approvals", label: "Approvals", icon: "\u{2705}" },
+        { to: "/drafts", label: "Draft Schedules", icon: "\u{1F4DD}" },
+        { to: "/approved", label: "Approved Schedules", icon: "\u{1F4CC}" },
+        { to: "/returned", label: "Returned Schedules", icon: "\u{21A9}" },
+        { to: "/weekly-summary", label: "Weekly Summary", icon: "\u{1F4CA}" }
       );
 
       timeoff.push(
         {
           to: "/timeoff-requests",
           label: "Day Off Requests",
-          icon: "ð´",
+          icon: "\u{1F334}",
           showDot: pendingTimeOff > 0,
         },
-        { to: "/blocked", label: "Blocked Employees", icon: "ð«" }
+        { to: "/blocked", label: "Blocked Employees", icon: "\u{1F6AB}" }
       );
 
       admin.push(
         {
           to: "/employee-announcements",
           label: "Crew Announcements",
-          icon: "ð£",
+          icon: "\u{1F4E3}",
         },
         {
           to: "/dashboard-editor",
           label: "Dashboard Editor",
-          icon: "ðï¸",
+          icon: "\u{1F39B}",
         },
-        { to: "/budgets", label: "Budgets", icon: "ð°" },
+        { to: "/budgets", label: "Budgets", icon: "\u{1F4B0}" },
         {
           to: "/monthly-budgets-vs-actual",
           label: "Monthly Budgets vs Actual",
-          icon: "ð",
+          icon: "\u{1F4C8}",
         }
       );
     }
@@ -444,11 +448,11 @@ export default function AppLayout() {
 
     if (canAccessCabinServiceOnlyManager) {
       schedules.push(
-        { to: "/cabin-service", label: "Cabin Service", icon: "ð§³" },
+        { to: "/cabin-service", label: "Cabin Service", icon: "\u{1F9F3}" },
         {
           to: "/cabin-saved-schedules",
           label: "Cabin Service Saved Schedules",
-          icon: "ð",
+          icon: "\u{1F4C1}",
         }
       );
     }
@@ -460,34 +464,34 @@ export default function AppLayout() {
         {
           to: "/admin/activity-dashboard",
           label: "User Activity",
-          icon: "ð",
+          icon: "\u{1F4C8}",
         },
         {
           to: "/admin/privacy-acknowledgments",
           label: "Privacy Acknowledgments",
-          icon: "ð",
+          icon: "\u{1F510}",
         },
 
         {
           to: "/admin/reports-data-management",
           label: "Reports Data Management",
-          icon: "ðï¸",
+          icon: "\u{1F5C3}",
         },
 
         {
           to: "/create-user",
           label: "Create User",
-          icon: "â",
+          icon: "\u{2795}",
         },
         {
           to: "/edit-users",
           label: "Manage Users",
-          icon: "âï¸",
+          icon: "\u{2699}",
         },
         {
           to: "/employees",
           label: "Employees",
-          icon: "ð¥",
+          icon: "\u{1F465}",
         }
       );
     }
@@ -498,19 +502,19 @@ export default function AppLayout() {
       schedules.push({
         to: "/my-schedule",
         label: "My Schedule",
-        icon: "ð",
+        icon: "\u{1F4C5}",
       });
 
       timeoff.push(
         {
           to: "/request-dayoff-internal",
           label: "Request Day Off",
-          icon: "ð«",
+          icon: "\u{1F6EB}",
         },
         {
           to: "/dayoff-status-internal",
           label: "My Day Off Status",
-          icon: "ð",
+          icon: "\u{1F4CD}",
         }
       );
     }
@@ -521,7 +525,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/timesheets/submit",
         label: "Timesheet Submit",
-        icon: "ð",
+        icon: "\u{1F552}",
       });
     }
 
@@ -530,12 +534,12 @@ export default function AppLayout() {
         {
           to: "/operational-report/submit",
           label: "Supervisor Report",
-          icon: "ð",
+          icon: "\u{1F4DD}",
         },
         {
           to: "/cleaning-security/submit",
           label: "Cleaning & Security Report",
-          icon: "ð§¼",
+          icon: "\u{1F9FC}",
         }
       );
     }
@@ -544,7 +548,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/regulated-garbage/submit",
         label: "Regulated Garbage",
-        icon: "ðï¸",
+        icon: "\u{1F5D1}",
       });
     }
 
@@ -554,7 +558,7 @@ export default function AppLayout() {
         label: isAgent
           ? "Supplies / Uniform Requests"
           : "Supplies, Uniform & OT Requests",
-        icon: "ð¦",
+        icon: "\u{1F4E6}",
       });
     }
 
@@ -562,7 +566,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/wchr-poi/submit",
         label: "WCHR POI",
-        icon: "ð¦½",
+        icon: "\u{1F9BD}",
       });
     }
 
@@ -570,7 +574,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/employee-performance-report",
         label: "Monthly Employee Performance",
-        icon: "â­",
+        icon: "\u{2B50}",
       });
     }
 
@@ -578,7 +582,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/gate-checklist",
         label: "Gate Checklist",
-        icon: "ð¬",
+        icon: "\u{1F6EC}",
       });
     }
 
@@ -586,7 +590,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/fuel-entry",
         label: "Fuel Entry",
-        icon: "â½",
+        icon: "\u{26FD}",
       });
     }
 
@@ -594,7 +598,7 @@ export default function AppLayout() {
       submissionReports.push({
         to: "/cierre-vuelo",
         label: "Cierre de Vuelo",
-        icon: "âï¸",
+        icon: "\u{2708}",
       });
     }
 
@@ -604,7 +608,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/timesheets/reports",
         label: "Timesheet Reports",
-        icon: "ð",
+        icon: "\u{1F4CB}",
       });
     }
 
@@ -615,7 +619,7 @@ export default function AppLayout() {
           user?.role === "supervisor"
             ? "Supervisor Operational Reports"
             : "Operational Reports",
-        icon: "ð",
+        icon: "\u{1F4D1}",
       });
     }
 
@@ -623,7 +627,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/regulated-garbage/reports",
         label: "Regulated Garbage Reports",
-        icon: "ðï¸",
+        icon: "\u{1F5D1}",
       });
     }
 
@@ -634,7 +638,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/cleaning-security/reports",
         label: "Cleaning & Security Reports",
-        icon: "ðï¸",
+        icon: "\u{1F5C2}",
       });
     }
 
@@ -642,7 +646,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/operations-requests/reports",
         label: "Operations Requests Reports",
-        icon: "ð¦",
+        icon: "\u{1F4E6}",
       });
     }
 
@@ -650,7 +654,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/wchr-poi/reports",
         label: "WCHR POI Reports",
-        icon: "ð¦½",
+        icon: "\u{1F9BD}",
       });
     }
 
@@ -658,7 +662,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/employee-performance-management",
         label: "Employee Performance Reports",
-        icon: "ð",
+        icon: "\u{1F4C2}",
       });
     }
 
@@ -666,7 +670,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/gate-checklist-management",
         label: "Gate Checklist Management",
-        icon: "ð",
+        icon: "\u{1F4CA}",
       });
     }
 
@@ -674,7 +678,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/fuel-management",
         label: "Fuel Management",
-        icon: "â½",
+        icon: "\u{26FD}",
       });
     }
 
@@ -682,7 +686,7 @@ export default function AppLayout() {
       managementReports.push({
         to: "/cierre-vuelo-management",
         label: "Cierre de Vuelo Reports",
-        icon: "ð",
+        icon: "\u{1F4D8}",
       });
     }
 
@@ -693,12 +697,12 @@ export default function AppLayout() {
         {
           to: "/wchr/scan",
           label: "Scan Boarding Pass",
-          icon: "ð«",
+          icon: "\u{1F3AB}",
         },
         {
           to: "/wchr/my-reports",
           label: "My Reports",
-          icon: "ð",
+          icon: "\u{1F4C4}",
         }
       );
     }
@@ -707,7 +711,7 @@ export default function AppLayout() {
       wchr.push({
         to: "/wchr/admin/flights",
         label: "WCHR Flight Report",
-        icon: "â¿",
+        icon: "\u{267F}",
       });
     }
 
@@ -715,7 +719,7 @@ export default function AppLayout() {
       wchr.push({
         to: "/wchr/monthly-close",
         label: "WCHR Billing & Monthly Close",
-        icon: "ð",
+        icon: "\u{1F4CA}",
       });
     }
 
@@ -725,7 +729,7 @@ export default function AppLayout() {
       admin.push({
         to: "/operational-report/form-builder",
         label: "Operational Report Builder",
-        icon: "ð§©",
+        icon: "\u{1F9E9}",
       });
     }
 
