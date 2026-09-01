@@ -1409,16 +1409,15 @@ export default function TimesheetAdminPage() {
     statusMessage.toLowerCase().includes("cannot");
 
   useEffect(() => {
-    if (!selectedId && filteredReports.length) {
-      setSelectedId(filteredReports[0].id);
-      return;
-    }
-
+    // Keep report details closed until the user explicitly clicks View.
+    // If the selected report disappears because of filters/deletion,
+    // close the detail panel instead of automatically opening another one.
     if (
       selectedId &&
       !filteredReports.some((r) => r.id === selectedId)
     ) {
-      setSelectedId(filteredReports[0]?.id || "");
+      setSelectedId("");
+      setIsEditMode(false);
     }
   }, [filteredReports, selectedId]);
 
@@ -2522,11 +2521,7 @@ export default function TimesheetAdminPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: selectedReport
-            ? isMobile
-              ? "1fr"
-              : "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
-            : "1fr",
+          gridTemplateColumns: "1fr",
           gap: 18,
           width: "100%",
           maxWidth: "100%",
@@ -2555,7 +2550,7 @@ export default function TimesheetAdminPage() {
                 color: "#64748b",
               }}
             >
-              Total found: {filteredReports.length}
+              Total found: {filteredReports.length}. Select <strong>View</strong> to open a report below.
             </p>
           </div>
 
@@ -2634,6 +2629,7 @@ export default function TimesheetAdminPage() {
                             : index % 2 === 0
                             ? "#ffffff"
                             : "#fbfdff",
+                        cursor: "default",
                       }}
                     >
                       <td style={tdStyle}>
@@ -2675,6 +2671,15 @@ export default function TimesheetAdminPage() {
                             onClick={() => {
                               setSelectedId(report.id);
                               setIsEditMode(false);
+
+                              window.setTimeout(() => {
+                                document
+                                  .getElementById("timesheet-detail-panel")
+                                  ?.scrollIntoView({
+                                    behavior: "smooth",
+                                    block: "start",
+                                  });
+                              }, 80);
                             }}
                           >
                             View
@@ -2727,7 +2732,8 @@ export default function TimesheetAdminPage() {
         </PageCard>
 
         {selectedReport && (
-          <PageCard style={{ padding: isMobile ? 16 : 20 }}>
+          <div id="timesheet-detail-panel" style={{ scrollMarginTop: 92 }}>
+            <PageCard style={{ padding: isMobile ? 16 : 20 }}>
             {!isEditMode ? (
               <div style={{ display: "grid", gap: 16 }}>
                 <div
@@ -2772,6 +2778,16 @@ export default function TimesheetAdminPage() {
                       flexWrap: "wrap",
                     }}
                   >
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => {
+                        setSelectedId("");
+                        setIsEditMode(false);
+                      }}
+                    >
+                      Close Report
+                    </ActionButton>
+
                     <ActionButton
                       variant="secondary"
                       onClick={handlePrintExport}
@@ -3569,7 +3585,8 @@ export default function TimesheetAdminPage() {
                 </div>
               </div>
             )}
-          </PageCard>
+            </PageCard>
+          </div>
         )}
       </div>
     </div>
