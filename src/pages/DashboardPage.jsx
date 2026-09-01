@@ -12,6 +12,10 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME } from "../config/appConfig.js";
 
+// IMPORTANT:
+// Special punctuation and menu/dashboard symbols use Unicode escape sequences
+// to prevent encoding corruption when editing through GitHub/Safari/iPad.
+
 const FIXED_AUTHOR = "AeroStation Hub";
 
 function getMillis(value) {
@@ -41,7 +45,7 @@ function formatDateLabel(value) {
 }
 
 function formatCreatedAtLabel(value) {
-  if (!value) return "â";
+  if (!value) return "\u2014";
 
   try {
     if (typeof value?.toDate === "function") {
@@ -49,11 +53,11 @@ function formatCreatedAtLabel(value) {
     }
 
     const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return "â";
+    if (Number.isNaN(parsed.getTime())) return "\u2014";
 
     return parsed.toLocaleString();
   } catch {
-    return "â";
+    return "\u2014";
   }
 }
 
@@ -329,7 +333,7 @@ function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
               wordBreak: "break-word",
             }}
           >
-            {item?.position || "â"} Â· {item?.department || "â"}
+            {item?.position || "\u2014"} {"\u00B7"} {item?.department || "\u2014"}
           </div>
 
           {!!item?.airline && (
@@ -796,7 +800,7 @@ export default function DashboardPage() {
                   marginBottom: 3,
                 }}
               >
-                {APP_NAME} Â· Executive Dashboard
+                {APP_NAME} {"\u00B7"} Executive Dashboard
               </div>
 
               <div
@@ -1124,7 +1128,7 @@ export default function DashboardPage() {
                     }}
                   >
                     <p style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
-                      {sch.airlineDisplayName || sch.airline || "Airline"} â{" "}
+                      {sch.airlineDisplayName || sch.airline || "Airline"} {"\u2014"}{" "}
                       {sch.department || "Department"}
                     </p>
                     <p style={{ margin: "8px 0 0", fontSize: 13 }}>
@@ -1187,7 +1191,7 @@ export default function DashboardPage() {
                       }}
                     >
                       <p style={{ margin: 0, fontWeight: 800 }}>
-                        {item.airline || "â"} Â· {item.reportDate || "â"}
+                        {item.airline || "\u2014"} {"\u00B7"} {item.reportDate || "\u2014"}
                       </p>
                       <p style={{ margin: "7px 0 0", fontSize: 13 }}>
                         Submitted by{" "}
@@ -1307,7 +1311,7 @@ export default function DashboardPage() {
                           textDecoration: "none",
                         }}
                       >
-                        View more {"\u{2192}"}
+                        View more {"\u2192"}
                       </a>
                     )}
                   </div>
@@ -1424,7 +1428,7 @@ export default function DashboardPage() {
                         )}
 
                         <p style={{ margin: "7px 0 0", fontSize: 12 }}>
-                          {b.start_date || b.startDate || "N/A"} â{" "}
+                          {b.start_date || b.startDate || "N/A"} {"\u2192"}{" "}
                           {b.end_date || b.endDate || "N/A"}
                         </p>
                       </div>
