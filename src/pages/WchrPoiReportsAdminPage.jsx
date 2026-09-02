@@ -1,16 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
+  deleteDoc,
+  doc,
   getDocs,
   orderBy,
   query,
-  updateDoc,
-  deleteDoc,
-  doc,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
 const INSPECTION_ITEMS = [
   "Check wheelchair frame and structure for cracks, bends, or visible damage.",
@@ -27,14 +28,34 @@ const INSPECTION_ITEMS = [
   "Ensure wheelchair identification number/tag is present and visible.",
 ];
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
-        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        background: "rgba(255,255,255,0.94)",
+        border: "1px solid #e2e8f0",
+        borderRadius: 20,
+        boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -49,8 +70,8 @@ function FieldLabel({ children }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
-        fontWeight: 700,
+        fontSize: 11,
+        fontWeight: 800,
         color: "#475569",
         letterSpacing: "0.03em",
         textTransform: "uppercase",
@@ -67,10 +88,12 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: props.disabled ? "#f8fafc" : "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#fff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -86,15 +109,17 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: props.disabled ? "#f8fafc" : "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#fff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
-        minHeight: 100,
+        minHeight: 92,
         fontFamily: "inherit",
         ...props.style,
       }}
@@ -108,10 +133,12 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: props.disabled ? "#f8fafc" : "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#fff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -134,31 +161,26 @@ function ActionButton({
         "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
     },
     secondary: {
-      background: "#ffffff",
+      background: "#fff",
       color: "#1769aa",
       border: "1px solid #cfe7fb",
-      boxShadow: "none",
     },
     success: {
       background: "#16a34a",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(22,163,74,0.18)",
     },
     warning: {
       background: "#f59e0b",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(245,158,11,0.18)",
     },
     danger: {
       background: "#dc2626",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(220,38,38,0.18)",
     },
   };
 
@@ -168,9 +190,9 @@ function ActionButton({
       disabled={disabled}
       onClick={onClick}
       style={{
-        borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
+        borderRadius: 11,
+        padding: "9px 13px",
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.7 : 1,
@@ -183,13 +205,23 @@ function ActionButton({
   );
 }
 
+function getVisibleName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    "Manager"
+  );
+}
+
 function safeValue(value) {
-  if (value === null || value === undefined || value === "") return "—";
+  if (value === null || value === undefined || value === "") return "\u2014";
   if (typeof value === "object") {
     try {
       return JSON.stringify(value, null, 2);
     } catch {
-      return "—";
+      return "\u2014";
     }
   }
   return String(value);
@@ -203,63 +235,165 @@ function normalizeUnitList(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
+  if (!value) return "\u2014";
   try {
-    if (typeof value?.toDate === "function") return value.toDate().toLocaleString();
+    if (typeof value?.toDate === "function") {
+      return value.toDate().toLocaleString();
+    }
     return new Date(value).toLocaleString();
   } catch {
-    return "—";
+    return "\u2014";
   }
 }
 
 function formatMoney(value) {
-  if (value === null || value === undefined || value === "") return "—";
+  if (value === null || value === undefined || value === "") return "\u2014";
   const num = Number(value);
   if (Number.isNaN(num)) return String(value);
   return `$${num.toFixed(2)}`;
 }
 
+function getMonthKey(dateValue) {
+  const value = String(dateValue || "");
+  return /^\d{4}-\d{2}/.test(value) ? value.slice(0, 7) : "unknown";
+}
+
+function formatMonthLabel(monthKey) {
+  if (monthKey === "unknown") return "Unknown Date";
+  const [year, month] = monthKey.split("-");
+  const d = new Date(Number(year), Number(month) - 1, 1);
+  return d.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function isAlertReport(report) {
   const anyInop = String(report?.anyInopWchr || "").toLowerCase() === "yes";
-  const hasOutOfServiceUnits = normalizeUnitList(report?.outOfServiceUnits).length > 0;
-
+  const hasOutOfService =
+    normalizeUnitList(report?.outOfServiceUnits).length > 0;
   const inspectionResults = Array.isArray(report?.inspectionResults)
     ? report.inspectionResults
     : [];
-
   const hasFailedChecks = inspectionResults.some(
     (item) => String(item?.result || "").toLowerCase() === "no"
   );
 
-  return anyInop || hasOutOfServiceUnits || hasFailedChecks;
+  return anyInop || hasOutOfService || hasFailedChecks;
 }
 
-function buildUnitCasesFromReport(report) {
-  const units = normalizeUnitList(report?.outOfServiceUnits);
-  return units.map((unit) => ({
-    unitNumber: unit,
-    reportId: report.id,
-    reportDate: report.date || "",
-    reportTime: report.time || "",
-    location: report.location || "",
-    inspectorName: report.inspectorName || "",
-    damageDetails: report.damageDetails || "",
-    photoNotes: report.photoNotes || "",
-    takenBy: report?.maintenanceCase?.[unit]?.takenBy || "",
-    caseStatus: report?.maintenanceCase?.[unit]?.caseStatus || "open",
-    backOnService: report?.maintenanceCase?.[unit]?.backOnService || "no",
-    returnDate: report?.maintenanceCase?.[unit]?.returnDate || "",
-    workPerformed: report?.maintenanceCase?.[unit]?.workPerformed || "",
-    partsChanged: report?.maintenanceCase?.[unit]?.partsChanged || "",
-    maintenanceCost: report?.maintenanceCase?.[unit]?.maintenanceCost || "",
-    notes: report?.maintenanceCase?.[unit]?.notes || "",
-    closedBy: report?.maintenanceCase?.[unit]?.closedBy || "",
-    closedAt: report?.maintenanceCase?.[unit]?.closedAt || "",
-  }));
+function getMaintenanceState(report, unitNumber) {
+  const state = report?.maintenanceCase?.[unitNumber];
+  return state && typeof state === "object" ? state : {};
+}
+
+function buildGroupedUnitCases(reports) {
+  const grouped = new Map();
+
+  for (const report of reports) {
+    const units = normalizeUnitList(report?.outOfServiceUnits);
+
+    for (const unitNumber of units) {
+      const occurrence = {
+        reportId: report.id,
+        reportDate: report.date || "",
+        reportTime: report.time || "",
+        location: report.location || "",
+        inspectorName: report.inspectorName || "",
+        damageDetails: report.damageDetails || "",
+        photoNotes: report.photoNotes || "",
+        createdAt: report.createdAt || null,
+      };
+
+      const maintenance = getMaintenanceState(report, unitNumber);
+
+      if (!grouped.has(unitNumber)) {
+        grouped.set(unitNumber, {
+          unitNumber,
+          occurrences: [],
+          reportIds: [],
+          latestReportId: report.id,
+          latestReportDate: report.date || "",
+          latestReportTime: report.time || "",
+          latestLocation: report.location || "",
+          latestInspectorName: report.inspectorName || "",
+          latestDamageDetails: report.damageDetails || "",
+          latestPhotoNotes: report.photoNotes || "",
+          takenBy: maintenance.takenBy || "",
+          caseStatus: maintenance.caseStatus || "open",
+          backOnService: maintenance.backOnService || "no",
+          returnDate: maintenance.returnDate || "",
+          workPerformed: maintenance.workPerformed || "",
+          partsChanged: maintenance.partsChanged || "",
+          maintenanceCost: maintenance.maintenanceCost || "",
+          notes: maintenance.notes || "",
+          closedBy: maintenance.closedBy || "",
+          closedAt: maintenance.closedAt || "",
+        });
+      }
+
+      const item = grouped.get(unitNumber);
+      item.occurrences.push(occurrence);
+      item.reportIds.push(report.id);
+
+      const currentDate = `${item.latestReportDate} ${item.latestReportTime}`;
+      const candidateDate = `${report.date || ""} ${report.time || ""}`;
+
+      if (candidateDate > currentDate) {
+        item.latestReportId = report.id;
+        item.latestReportDate = report.date || "";
+        item.latestReportTime = report.time || "";
+        item.latestLocation = report.location || "";
+        item.latestInspectorName = report.inspectorName || "";
+        item.latestDamageDetails = report.damageDetails || "";
+        item.latestPhotoNotes = report.photoNotes || "";
+      }
+
+      const maintenanceHasData =
+        maintenance.takenBy ||
+        maintenance.caseStatus === "closed" ||
+        maintenance.backOnService === "yes" ||
+        maintenance.returnDate ||
+        maintenance.workPerformed ||
+        maintenance.maintenanceCost;
+
+      if (maintenanceHasData) {
+        item.takenBy = maintenance.takenBy || item.takenBy;
+        item.caseStatus = maintenance.caseStatus || item.caseStatus;
+        item.backOnService = maintenance.backOnService || item.backOnService;
+        item.returnDate = maintenance.returnDate || item.returnDate;
+        item.workPerformed = maintenance.workPerformed || item.workPerformed;
+        item.partsChanged = maintenance.partsChanged || item.partsChanged;
+        item.maintenanceCost =
+          maintenance.maintenanceCost || item.maintenanceCost;
+        item.notes = maintenance.notes || item.notes;
+        item.closedBy = maintenance.closedBy || item.closedBy;
+        item.closedAt = maintenance.closedAt || item.closedAt;
+      }
+    }
+  }
+
+  return Array.from(grouped.values())
+    .map((item) => ({
+      ...item,
+      occurrenceCount: item.occurrences.length,
+      reportIds: Array.from(new Set(item.reportIds)),
+      occurrences: [...item.occurrences].sort((a, b) =>
+        `${b.reportDate} ${b.reportTime}`.localeCompare(
+          `${a.reportDate} ${a.reportTime}`
+        )
+      ),
+    }))
+    .sort((a, b) =>
+      `${b.latestReportDate} ${b.latestReportTime}`.localeCompare(
+        `${a.latestReportDate} ${a.latestReportTime}`
+      )
+    );
 }
 
 export default function WchrPoiReportsAdminPage() {
   const { user } = useUser();
+  const { isMobile, isTablet } = useViewport();
 
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -273,6 +407,9 @@ export default function WchrPoiReportsAdminPage() {
 
   const [selectedUnitCase, setSelectedUnitCase] = useState(null);
   const [savingUnitCase, setSavingUnitCase] = useState(false);
+
+  const [expandedMonths, setExpandedMonths] = useState({});
+  const [deletingMonth, setDeletingMonth] = useState("");
 
   const [filters, setFilters] = useState({
     dateFrom: "",
@@ -325,8 +462,13 @@ export default function WchrPoiReportsAdminPage() {
     else setLoading(false);
   }, [canAccess]);
 
+  const activeReports = useMemo(
+    () => reports.filter((item) => !item.archived),
+    [reports]
+  );
+
   const visibleReports = useMemo(() => {
-    return reports.filter((item) => !item.archived).filter((item) => {
+    return activeReports.filter((item) => {
       if (filters.dateFrom && String(item.date || "") < filters.dateFrom) {
         return false;
       }
@@ -368,20 +510,15 @@ export default function WchrPoiReportsAdminPage() {
 
       return true;
     });
-  }, [reports, filters]);
+  }, [activeReports, filters]);
 
-  const alertReports = useMemo(() => {
-    return visibleReports.filter((item) => isAlertReport(item));
-  }, [visibleReports]);
+  const groupedUnitCases = useMemo(
+    () => buildGroupedUnitCases(activeReports.filter(isAlertReport)),
+    [activeReports]
+  );
 
-  const normalReports = useMemo(() => {
-    return visibleReports.filter((item) => !isAlertReport(item));
-  }, [visibleReports]);
-
-  const unitCases = useMemo(() => {
-    const all = alertReports.flatMap(buildUnitCasesFromReport);
-
-    return all.filter((item) => {
+  const filteredUnitCases = useMemo(() => {
+    return groupedUnitCases.filter((item) => {
       const caseStatus = String(item.caseStatus || "").toLowerCase();
       const backOnService = String(item.backOnService || "").toLowerCase();
 
@@ -397,36 +534,65 @@ export default function WchrPoiReportsAdminPage() {
       }
       return true;
     });
-  }, [alertReports, filters.maintenanceStatus]);
+  }, [groupedUnitCases, filters.maintenanceStatus]);
 
-  const openUnitCases = useMemo(() => {
-    return unitCases.filter((item) => {
-      const caseStatus = String(item.caseStatus || "").toLowerCase();
-      const backOnService = String(item.backOnService || "").toLowerCase();
-      return !(caseStatus === "closed" && backOnService === "yes");
-    });
-  }, [unitCases]);
+  const openUnitCases = useMemo(
+    () =>
+      filteredUnitCases.filter((item) => {
+        const caseStatus = String(item.caseStatus || "").toLowerCase();
+        const backOnService = String(item.backOnService || "").toLowerCase();
+        return !(caseStatus === "closed" && backOnService === "yes");
+      }),
+    [filteredUnitCases]
+  );
 
-  const resolvedUnitCases = useMemo(() => {
-    return unitCases.filter((item) => {
-      const caseStatus = String(item.caseStatus || "").toLowerCase();
-      const backOnService = String(item.backOnService || "").toLowerCase();
-      return caseStatus === "closed" && backOnService === "yes";
-    });
-  }, [unitCases]);
+  const resolvedUnitCases = useMemo(
+    () =>
+      filteredUnitCases.filter((item) => {
+        const caseStatus = String(item.caseStatus || "").toLowerCase();
+        const backOnService = String(item.backOnService || "").toLowerCase();
+        return caseStatus === "closed" && backOnService === "yes";
+      }),
+    [filteredUnitCases]
+  );
 
-  const selectedReport = useMemo(() => {
-    return visibleReports.find((item) => item.id === selectedId) || null;
-  }, [visibleReports, selectedId]);
+  const normalReports = useMemo(
+    () => visibleReports.filter((item) => !isAlertReport(item)),
+    [visibleReports]
+  );
 
-  useEffect(() => {
-    if (!selectedId && visibleReports.length) {
-      setSelectedId(visibleReports[0].id);
-      return;
+  const monthlyGroups = useMemo(() => {
+    const map = new Map();
+
+    for (const report of visibleReports) {
+      const key = getMonthKey(report.date);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(report);
     }
 
+    return Array.from(map.entries())
+      .map(([monthKey, items]) => ({
+        monthKey,
+        label: formatMonthLabel(monthKey),
+        reports: [...items].sort((a, b) =>
+          `${b.date || ""} ${b.time || ""}`.localeCompare(
+            `${a.date || ""} ${a.time || ""}`
+          )
+        ),
+        alertCount: items.filter(isAlertReport).length,
+        normalCount: items.filter((x) => !isAlertReport(x)).length,
+      }))
+      .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  }, [visibleReports]);
+
+  const selectedReport = useMemo(
+    () => visibleReports.find((item) => item.id === selectedId) || null,
+    [visibleReports, selectedId]
+  );
+
+  useEffect(() => {
     if (selectedId && !visibleReports.some((item) => item.id === selectedId)) {
-      setSelectedId(visibleReports[0]?.id || "");
+      setSelectedId("");
     }
   }, [selectedId, visibleReports]);
 
@@ -479,23 +645,14 @@ export default function WchrPoiReportsAdminPage() {
   }, [selectedReport]);
 
   const handleEditField = (field, value) => {
-    setEditData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setEditData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleInspectionResultChange = (index, value) => {
     setEditData((prev) => {
       const next = [...prev.inspectionResults];
-      next[index] = {
-        ...next[index],
-        result: value,
-      };
-      return {
-        ...prev,
-        inspectionResults: next,
-      };
+      next[index] = { ...next[index], result: value };
+      return { ...prev, inspectionResults: next };
     });
   };
 
@@ -508,12 +665,7 @@ export default function WchrPoiReportsAdminPage() {
       await updateDoc(doc(db, "wchr_poi_reports", selectedReport.id), {
         archived: true,
         archivedAt: serverTimestamp(),
-        archivedByName:
-          user?.displayName ||
-          user?.fullName ||
-          user?.name ||
-          user?.username ||
-          "Manager",
+        archivedByName: getVisibleName(user),
       });
 
       setReports((prev) =>
@@ -522,6 +674,7 @@ export default function WchrPoiReportsAdminPage() {
         )
       );
 
+      setSelectedId("");
       setStatusMessage("WCHR POI archived.");
     } catch (err) {
       console.error(err);
@@ -539,16 +692,43 @@ export default function WchrPoiReportsAdminPage() {
 
     try {
       setDeletingId(selectedReport.id);
-
       await deleteDoc(doc(db, "wchr_poi_reports", selectedReport.id));
 
-      setReports((prev) => prev.filter((item) => item.id !== selectedReport.id));
+      setReports((prev) =>
+        prev.filter((item) => item.id !== selectedReport.id)
+      );
+      setSelectedId("");
       setStatusMessage("WCHR POI deleted.");
     } catch (err) {
       console.error(err);
       setStatusMessage("Could not delete WCHR POI.");
     } finally {
       setDeletingId("");
+    }
+  };
+
+  const handleDeleteMonth = async (group) => {
+    const ok = window.confirm(
+      `Delete all ${group.reports.length} WCHR POI reports from ${group.label}? This cannot be undone.`
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingMonth(group.monthKey);
+
+      for (const report of group.reports) {
+        await deleteDoc(doc(db, "wchr_poi_reports", report.id));
+      }
+
+      const ids = new Set(group.reports.map((x) => x.id));
+      setReports((prev) => prev.filter((item) => !ids.has(item.id)));
+      setSelectedId("");
+      setStatusMessage(`${group.label} POI reports deleted.`);
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Could not delete the monthly POI file.");
+    } finally {
+      setDeletingMonth("");
     }
   };
 
@@ -564,22 +744,13 @@ export default function WchrPoiReportsAdminPage() {
         ...editData,
         unitNumbersList,
         updatedAt: serverTimestamp(),
-        updatedByName:
-          user?.displayName ||
-          user?.fullName ||
-          user?.name ||
-          user?.username ||
-          "Manager",
+        updatedByName: getVisibleName(user),
       });
 
       setReports((prev) =>
         prev.map((item) =>
           item.id === selectedReport.id
-            ? {
-                ...item,
-                ...editData,
-                unitNumbersList,
-              }
+            ? { ...item, ...editData, unitNumbersList }
             : item
         )
       );
@@ -599,10 +770,7 @@ export default function WchrPoiReportsAdminPage() {
   };
 
   const handleUnitCaseField = (field, value) => {
-    setSelectedUnitCase((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setSelectedUnitCase((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSaveUnitCase = async () => {
@@ -628,8 +796,15 @@ export default function WchrPoiReportsAdminPage() {
         return;
       }
 
-      if (!String(selectedUnitCase.maintenanceCost || "").trim()) {
-        setStatusMessage("Please enter maintenance cost before closing the case.");
+      const cost = Number(selectedUnitCase.maintenanceCost);
+      if (
+        String(selectedUnitCase.maintenanceCost || "").trim() === "" ||
+        !Number.isFinite(cost) ||
+        cost < 0
+      ) {
+        setStatusMessage(
+          "Please enter a valid maintenance cost before closing the case."
+        );
         return;
       }
     }
@@ -637,61 +812,59 @@ export default function WchrPoiReportsAdminPage() {
     try {
       setSavingUnitCase(true);
 
-      const reportRef = doc(db, "wchr_poi_reports", selectedUnitCase.reportId);
-      const report = reports.find((r) => r.id === selectedUnitCase.reportId);
-      const currentMaintenanceCase = report?.maintenanceCase || {};
-      const unitKey = selectedUnitCase.unitNumber;
-
-      const nextMaintenanceCase = {
-        ...currentMaintenanceCase,
-        [unitKey]: {
-          takenBy: selectedUnitCase.takenBy || "",
-          caseStatus: selectedUnitCase.caseStatus || "open",
-          backOnService: selectedUnitCase.backOnService || "no",
-          returnDate: selectedUnitCase.returnDate || "",
-          workPerformed: selectedUnitCase.workPerformed || "",
-          partsChanged: selectedUnitCase.partsChanged || "",
-          maintenanceCost: selectedUnitCase.maintenanceCost || "",
-          notes: selectedUnitCase.notes || "",
-          closedBy:
-            selectedUnitCase.caseStatus === "closed"
-              ? user?.displayName ||
-                user?.fullName ||
-                user?.name ||
-                user?.username ||
-                "Duty Manager"
-              : "",
-          closedAt:
-            selectedUnitCase.caseStatus === "closed"
-              ? new Date().toISOString()
-              : "",
-          updatedAt: new Date().toISOString(),
-          updatedBy:
-            user?.displayName ||
-            user?.fullName ||
-            user?.name ||
-            user?.username ||
-            "Duty Manager",
-        },
+      const nextState = {
+        takenBy: selectedUnitCase.takenBy || "",
+        caseStatus: selectedUnitCase.caseStatus || "open",
+        backOnService: selectedUnitCase.backOnService || "no",
+        returnDate: selectedUnitCase.returnDate || "",
+        workPerformed: selectedUnitCase.workPerformed || "",
+        partsChanged: selectedUnitCase.partsChanged || "",
+        maintenanceCost: selectedUnitCase.maintenanceCost || "",
+        notes: selectedUnitCase.notes || "",
+        closedBy:
+          selectedUnitCase.caseStatus === "closed"
+            ? getVisibleName(user)
+            : "",
+        closedAt:
+          selectedUnitCase.caseStatus === "closed"
+            ? new Date().toISOString()
+            : "",
+        updatedAt: new Date().toISOString(),
+        updatedBy: getVisibleName(user),
       };
 
-      await updateDoc(reportRef, {
-        maintenanceCase: nextMaintenanceCase,
-        updatedAt: serverTimestamp(),
-      });
+      const affectedIds = selectedUnitCase.reportIds || [];
+
+      for (const reportId of affectedIds) {
+        const report = reports.find((r) => r.id === reportId);
+        const currentMaintenanceCase = report?.maintenanceCase || {};
+
+        await updateDoc(doc(db, "wchr_poi_reports", reportId), {
+          maintenanceCase: {
+            ...currentMaintenanceCase,
+            [selectedUnitCase.unitNumber]: nextState,
+          },
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       setReports((prev) =>
-        prev.map((item) =>
-          item.id === selectedUnitCase.reportId
-            ? {
-                ...item,
-                maintenanceCase: nextMaintenanceCase,
-              }
-            : item
-        )
+        prev.map((item) => {
+          if (!affectedIds.includes(item.id)) return item;
+
+          return {
+            ...item,
+            maintenanceCase: {
+              ...(item.maintenanceCase || {}),
+              [selectedUnitCase.unitNumber]: nextState,
+            },
+          };
+        })
       );
 
-      setStatusMessage(`Case for ${selectedUnitCase.unitNumber} updated.`);
+      setStatusMessage(
+        `Case for ${selectedUnitCase.unitNumber} updated across ${affectedIds.length} report(s).`
+      );
       setSelectedUnitCase(null);
     } catch (err) {
       console.error(err);
@@ -701,175 +874,197 @@ export default function WchrPoiReportsAdminPage() {
     }
   };
 
-  const handleExportPdf = () => {
-    if (!selectedReport) return;
-
-    const printableWindow = window.open("", "_blank", "width=1000,height=900");
+  const printHtml = (title, subtitle, body) => {
+    const printableWindow = window.open("", "_blank", "width=1100,height=900");
     if (!printableWindow) {
-      setStatusMessage("Pop-up blocked. Please allow pop-ups to export PDF.");
+      setStatusMessage("Pop-up blocked. Please allow pop-ups to print.");
       return;
     }
 
-    const html = `
+    printableWindow.document.open();
+    printableWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>WCHR POI</title>
+          <title>${title}</title>
           <style>
-            body {
-              font-family: Arial, Helvetica, sans-serif;
-              padding: 24px;
-              color: #0f172a;
-            }
-            h1 {
-              margin: 0 0 8px;
-              font-size: 28px;
-            }
-            .subtitle {
-              color: #475569;
-              font-size: 14px;
-              margin-bottom: 24px;
-            }
-            .grid {
-              display: grid;
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-              gap: 12px;
-            }
-            .card {
-              border: 1px solid #dbeafe;
-              border-radius: 14px;
-              padding: 12px 14px;
-              background: #f8fbff;
-            }
-            .label {
-              font-size: 11px;
-              font-weight: 800;
-              color: #64748b;
-              text-transform: uppercase;
-              letter-spacing: 0.08em;
-            }
-            .value {
-              margin-top: 6px;
-              font-size: 14px;
-              font-weight: 700;
-              white-space: pre-wrap;
-              word-break: break-word;
-            }
-            .alert {
-              background: #fff1f2;
-              border: 1px solid #fecdd3;
-            }
+            body { font-family: Arial, Helvetica, sans-serif; padding: 24px; color: #0f172a; }
+            h1 { margin: 0 0 6px; font-size: 26px; }
+            .brand { font-size: 12px; font-weight: 800; color: #1769aa; text-transform: uppercase; letter-spacing: .08em; }
+            .subtitle { color: #475569; font-size: 13px; margin: 6px 0 20px; }
+            .summary { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+            .card { border:1px solid #dbeafe; border-radius:12px; padding:10px 12px; background:#f8fbff; break-inside:avoid; }
+            .alert { background:#fff1f2; border-color:#fecdd3; }
+            .label { font-size:10px; font-weight:800; color:#64748b; text-transform:uppercase; }
+            .value { margin-top:4px; font-size:13px; font-weight:700; white-space:pre-wrap; word-break:break-word; }
+            .report { margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid #e2e8f0; break-inside:avoid; }
+            .report-title { font-size:15px; font-weight:800; margin-bottom:8px; }
+            @media print { button { display:none !important; } }
           </style>
         </head>
         <body>
-          <h1>Wheelchairs Pre Operating Inspection (POI)</h1>
-          <div class="subtitle">
-            ${selectedReport.date || "—"} · ${selectedReport.time || "—"} · ${
-      selectedReport.location || "—"
-    }
-          </div>
-
-          <div class="grid">
-            <div class="card"><div class="label">Inspector Name</div><div class="value">${safeValue(
-              selectedReport.inspectorName
-            )}</div></div>
-            <div class="card"><div class="label">Total Inventory</div><div class="value">${safeValue(
-              selectedReport.totalInventory
-            )}</div></div>
-            <div class="card"><div class="label">Unit Numbers Inspected</div><div class="value">${safeValue(
-              selectedReport.unitNumbersInspected
-            )}</div></div>
-            <div class="card"><div class="label">Total WCHRs Inspected</div><div class="value">${safeValue(
-              selectedReport.totalWchrsInspected
-            )}</div></div>
-            <div class="card"><div class="label">Total WCHRs Available</div><div class="value">${safeValue(
-              selectedReport.totalWchrsAvailable
-            )}</div></div>
-            <div class="card ${
-              isAlertReport(selectedReport) ? "alert" : ""
-            }"><div class="label">Any INOP WCHR</div><div class="value">${safeValue(
-      selectedReport.anyInopWchr
-    )}</div></div>
-            <div class="card ${
-              normalizeUnitList(selectedReport.outOfServiceUnits).length
-                ? "alert"
-                : ""
-            }"><div class="label">Out Of Service Units</div><div class="value">${safeValue(
-      selectedReport.outOfServiceUnits
-    )}</div></div>
-            <div class="card ${
-              selectedReport.damageDetails ? "alert" : ""
-            }"><div class="label">Damage Details</div><div class="value">${safeValue(
-      selectedReport.damageDetails
-    )}</div></div>
-            <div class="card"><div class="label">Photo Notes</div><div class="value">${safeValue(
-              selectedReport.photoNotes
-            )}</div></div>
-            <div class="card"><div class="label">Inspector Signature</div><div class="value">${safeValue(
-              selectedReport.inspectorSignature
-            )}</div></div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              window.print();
-            };
-          </script>
+          <div class="brand">${APP_NAME}</div>
+          <h1>${title}</h1>
+          <div class="subtitle">${subtitle}</div>
+          ${body}
+          <script>window.onload=function(){window.print();};</script>
         </body>
       </html>
-    `;
-
-    printableWindow.document.open();
-    printableWindow.document.write(html);
+    `);
     printableWindow.document.close();
+  };
+
+  const handlePrintReport = (report) => {
+    if (!report) return;
+
+    const rows = [
+      ["Inspector Name", report.inspectorName],
+      ["Date", report.date],
+      ["Time", report.time],
+      ["Location", report.location],
+      ["Total Inventory", report.totalInventory],
+      ["Unit Numbers Inspected", report.unitNumbersInspected],
+      ["Total WCHRs Inspected", report.totalWchrsInspected],
+      ["Total WCHRs Available", report.totalWchrsAvailable],
+      ["Any INOP WCHR", report.anyInopWchr],
+      ["Out Of Service Units", report.outOfServiceUnits],
+      ["Damage Details", report.damageDetails],
+      ["Photo Notes", report.photoNotes],
+      ["Inspector Signature", report.inspectorSignature],
+    ]
+      .map(
+        ([label, value]) => `
+          <div class="card ${
+            label === "Out Of Service Units" &&
+            normalizeUnitList(value).length
+              ? "alert"
+              : ""
+          }">
+            <div class="label">${label}</div>
+            <div class="value">${safeValue(value)}</div>
+          </div>
+        `
+      )
+      .join("");
+
+    printHtml(
+      "Wheelchair Pre-Operating Inspection (POI)",
+      `${report.date || "\u2014"} \u00B7 ${report.time || "\u2014"} \u00B7 ${
+        report.location || "\u2014"
+      }`,
+      `<div class="summary">${rows}</div>`
+    );
+  };
+
+  const handlePrintMonth = (group) => {
+    const body = group.reports
+      .map(
+        (report) => `
+          <div class="report">
+            <div class="report-title">
+              ${report.date || "\u2014"} \u00B7 ${report.time || "\u2014"} \u00B7 ${
+          report.location || "\u2014"
+        }
+              ${isAlertReport(report) ? " \u2014 ALERT" : ""}
+            </div>
+            <div class="summary">
+              <div class="card"><div class="label">Inspector</div><div class="value">${safeValue(
+                report.inspectorName
+              )}</div></div>
+              <div class="card"><div class="label">Units Inspected</div><div class="value">${safeValue(
+                report.unitNumbersInspected
+              )}</div></div>
+              <div class="card ${
+                isAlertReport(report) ? "alert" : ""
+              }"><div class="label">Out Of Service</div><div class="value">${safeValue(
+          report.outOfServiceUnits
+        )}</div></div>
+            </div>
+          </div>
+        `
+      )
+      .join("");
+
+    printHtml(
+      `WCHR POI Monthly Report \u2014 ${group.label}`,
+      `${group.reports.length} report(s) \u00B7 ${group.alertCount} issue report(s) \u00B7 ${group.normalCount} normal report(s)`,
+      body
+    );
   };
 
   if (!canAccess) {
     return (
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: 18 }}>
         Only Duty Managers and Station Managers can view this page.
       </PageCard>
     );
   }
 
+  const gridStyle = {
+    display: "grid",
+    gridTemplateColumns: isMobile
+      ? "1fr"
+      : isTablet
+      ? "repeat(2, minmax(0,1fr))"
+      : "repeat(auto-fit, minmax(220px,1fr))",
+    gap: isMobile ? 10 : 14,
+  };
+
   return (
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 12 : 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        minWidth: 0,
+        overflowX: "hidden",
       }}
     >
       <div
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 18 : 22,
+          padding: isMobile ? "14px" : "18px 20px",
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow: "0 18px 42px rgba(23,105,170,0.18)",
         }}
       >
-        <p
-          style={{
-            margin: 0,
-            fontSize: 12,
-            textTransform: "uppercase",
-            letterSpacing: "0.22em",
-            color: "rgba(255,255,255,0.78)",
-            fontWeight: 700,
-          }}
-        >
-          TPA OPS · WCHR Admin
-        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <img
+            src="/icons/aerostation-icon.png"
+            alt={APP_NAME}
+            style={{
+              width: isMobile ? 34 : 40,
+              height: isMobile ? 34 : 40,
+              borderRadius: 10,
+              background: "#fff",
+              objectFit: "contain",
+            }}
+          />
+
+          <p
+            style={{
+              margin: 0,
+              fontSize: isMobile ? 9 : 10,
+              textTransform: "uppercase",
+              letterSpacing: isMobile ? "0.12em" : "0.16em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 800,
+            }}
+          >
+            {APP_NAME} {"\u00B7"} WCHR Management
+          </p>
+        </div>
 
         <h1
           style={{
-            margin: "10px 0 6px",
-            fontSize: 32,
-            lineHeight: 1.05,
+            margin: "6px 0 4px",
+            fontSize: isMobile ? 20 : 25,
+            lineHeight: 1.08,
             fontWeight: 800,
-            letterSpacing: "-0.04em",
+            letterSpacing: "-0.035em",
           }}
         >
           WCHR POI Reports
@@ -879,26 +1074,38 @@ export default function WchrPoiReportsAdminPage() {
           style={{
             margin: 0,
             maxWidth: 900,
-            fontSize: 14,
+            fontSize: isMobile ? 11.5 : 12.5,
+            lineHeight: 1.45,
             color: "rgba(255,255,255,0.88)",
           }}
         >
-          Review wheelchair inspections, track out of service units, assign duty
-          manager follow-up, return units to service, and close cases.
+          Monthly POI files, wheelchair maintenance tracking, printing and
+          management follow-up.
+        </p>
+
+        <p
+          style={{
+            margin: "4px 0 0",
+            fontSize: isMobile ? 9.5 : 10.5,
+            color: "rgba(255,255,255,0.72)",
+            fontWeight: 700,
+          }}
+        >
+          {APP_SUBTITLE}
         </p>
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
+        <PageCard style={{ padding: isMobile ? 12 : 16 }}>
           <div
             style={{
               background: "#edf7ff",
               border: "1px solid #cfe7fb",
-              borderRadius: 16,
-              padding: "14px 16px",
+              borderRadius: 14,
+              padding: "12px 14px",
               color: "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
+              fontSize: 13,
+              fontWeight: 800,
             }}
           >
             {statusMessage}
@@ -906,14 +1113,8 @@ export default function WchrPoiReportsAdminPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-          }}
-        >
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div style={gridStyle}>
           <div>
             <FieldLabel>Date From</FieldLabel>
             <TextInput
@@ -958,7 +1159,10 @@ export default function WchrPoiReportsAdminPage() {
             <SelectInput
               value={filters.alertsOnly}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, alertsOnly: e.target.value }))
+                setFilters((prev) => ({
+                  ...prev,
+                  alertsOnly: e.target.value,
+                }))
               }
             >
               <option value="all">All Reports</option>
@@ -990,285 +1194,128 @@ export default function WchrPoiReportsAdminPage() {
             <TextInput
               value={filters.search}
               onChange={(e) =>
-                setFilters((prev) => ({ ...prev, search: e.target.value }))
+                setFilters((prev) => ({
+                  ...prev,
+                  search: e.target.value,
+                }))
               }
-              placeholder="Inspector, unit number, damage..."
+              placeholder="Inspector, unit, damage..."
             />
           </div>
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-          }}
-        >
-          <div
-            style={{
-              background: "#fff1f2",
-              border: "1px solid #fecdd3",
-              borderRadius: 16,
-              padding: "16px 18px",
-            }}
-          >
-            <p
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div style={gridStyle}>
+          {[
+            ["Open Unique WCHR Cases", openUnitCases.length, "#fff1f2", "#9f1239"],
+            ["Back On Service", resolvedUnitCases.length, "#ecfdf5", "#065f46"],
+            ["Normal POI Reports", normalReports.length, "#f8fbff", "#0f172a"],
+          ].map(([label, value, bg, color]) => (
+            <div
+              key={label}
               style={{
-                margin: 0,
-                fontSize: 11,
-                fontWeight: 800,
-                color: "#9f1239",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
+                background: bg,
+                border: "1px solid #dbeafe",
+                borderRadius: 14,
+                padding: "14px 16px",
               }}
             >
-              Out of Service Reported
-            </p>
-            <p
-              style={{
-                margin: "6px 0 0",
-                fontSize: 28,
-                fontWeight: 800,
-                color: "#881337",
-              }}
-            >
-              {openUnitCases.length}
-            </p>
-          </div>
-
-          <div
-            style={{
-              background: "#ecfdf5",
-              border: "1px solid #a7f3d0",
-              borderRadius: 16,
-              padding: "16px 18px",
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                fontWeight: 800,
-                color: "#065f46",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Back On Service
-            </p>
-            <p
-              style={{
-                margin: "6px 0 0",
-                fontSize: 28,
-                fontWeight: 800,
-                color: "#065f46",
-              }}
-            >
-              {resolvedUnitCases.length}
-            </p>
-          </div>
-
-          <div
-            style={{
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              borderRadius: 16,
-              padding: "16px 18px",
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                fontWeight: 800,
-                color: "#64748b",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Normal Reports
-            </p>
-            <p
-              style={{
-                margin: "6px 0 0",
-                fontSize: 28,
-                fontWeight: 800,
-                color: "#0f172a",
-              }}
-            >
-              {normalReports.length}
-            </p>
-          </div>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  color,
+                  textTransform: "uppercase",
+                }}
+              >
+                {label}
+              </div>
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 26,
+                  fontWeight: 900,
+                  color,
+                }}
+              >
+                {value}
+              </div>
+            </div>
+          ))}
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
         <h2
           style={{
-            marginTop: 0,
-            marginBottom: 14,
-            fontSize: 20,
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
             fontWeight: 800,
-            color: "#0f172a",
           }}
         >
-          Out of Service Reported
+          Open WCHR Maintenance Cases
         </h2>
 
         {loading ? (
           <div>Loading...</div>
         ) : openUnitCases.length === 0 ? (
-          <div>No open out of service cases found.</div>
+          <div>No open WCHR cases.</div>
         ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {openUnitCases.map((item, index) => {
-              const backOnService =
-                String(item.backOnService || "").toLowerCase() === "yes";
-
-              return (
-                <div
-                  key={`${item.reportId}-${item.unitNumber}-${index}`}
-                  style={{
-                    border: "1px solid #fecdd3",
-                    background: "#fff1f2",
-                    borderRadius: 18,
-                    padding: 16,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
-                  <div style={{ minWidth: 220 }}>
-                    <div
-                      style={{
-                        fontSize: 18,
-                        fontWeight: 900,
-                        color: "#9f1239",
-                      }}
-                    >
-                      {item.unitNumber}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontSize: 13,
-                        color: "#881337",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {item.reportDate || "—"} · {item.location || "—"} ·{" "}
-                      {item.inspectorName || "—"}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: 13,
-                        color: "#334155",
-                      }}
-                    >
-                      Taken by: <b>{item.takenBy || "Unassigned"}</b>
-                      {" · "}
-                      Status: <b>{item.caseStatus || "open"}</b>
-                      {" · "}
-                      Back on service: <b>{backOnService ? "Yes" : "No"}</b>
-                    </div>
-                  </div>
-
-                  <ActionButton
-                    variant="warning"
-                    onClick={() => handleOpenUnitCase(item)}
-                  >
-                    Open case
-                  </ActionButton>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </PageCard>
-
-      <PageCard style={{ padding: 22 }}>
-        <h2
-          style={{
-            marginTop: 0,
-            marginBottom: 14,
-            fontSize: 20,
-            fontWeight: 800,
-            color: "#0f172a",
-          }}
-        >
-          Resolved / Returned to Service
-        </h2>
-
-        {loading ? (
-          <div>Loading...</div>
-        ) : resolvedUnitCases.length === 0 ? (
-          <div>No resolved cases yet.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {resolvedUnitCases.map((item, index) => (
+          <div style={{ display: "grid", gap: 9 }}>
+            {openUnitCases.map((item) => (
               <div
-                key={`${item.reportId}-${item.unitNumber}-resolved-${index}`}
+                key={item.unitNumber}
                 style={{
-                  border: "1px solid #bbf7d0",
-                  background: "#f0fdf4",
-                  borderRadius: 18,
-                  padding: 16,
+                  border: "1px solid #fecdd3",
+                  background: "#fff1f2",
+                  borderRadius: 14,
+                  padding: isMobile ? 12 : 14,
                   display: "flex",
+                  flexDirection: isMobile ? "column" : "row",
                   justifyContent: "space-between",
-                  gap: 12,
-                  flexWrap: "wrap",
-                  alignItems: "center",
+                  gap: 10,
+                  alignItems: isMobile ? "stretch" : "center",
                 }}
               >
-                <div style={{ minWidth: 220 }}>
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: 18,
+                      fontSize: 17,
                       fontWeight: 900,
-                      color: "#166534",
+                      color: "#9f1239",
                     }}
                   >
                     {item.unitNumber}
                   </div>
-
                   <div
                     style={{
-                      marginTop: 4,
-                      fontSize: 13,
-                      color: "#166534",
+                      marginTop: 3,
+                      fontSize: 12.5,
+                      color: "#881337",
                       fontWeight: 700,
                     }}
                   >
-                    Return date: {item.returnDate || "—"}
+                    Latest: {item.latestReportDate || "\u2014"} {"\u00B7"}{" "}
+                    {item.latestLocation || "\u2014"}
                   </div>
-
                   <div
                     style={{
-                      marginTop: 6,
-                      fontSize: 13,
-                      color: "#334155",
+                      marginTop: 4,
+                      fontSize: 12,
+                      color: "#475569",
                     }}
                   >
-                    Taken by: <b>{item.takenBy || "Unassigned"}</b>
-                    {" · "}
-                    Closed by: <b>{item.closedBy || "—"}</b>
-                    {" · "}
-                    Cost: <b>{formatMoney(item.maintenanceCost)}</b>
+                    Reported {item.occurrenceCount} time(s). One active case is
+                    maintained for this wheelchair.
                   </div>
                 </div>
 
                 <ActionButton
-                  variant="success"
+                  variant="warning"
                   onClick={() => handleOpenUnitCase(item)}
                 >
-                  View case
+                  Open case
                 </ActionButton>
               </div>
             ))}
@@ -1276,445 +1323,540 @@ export default function WchrPoiReportsAdminPage() {
         )}
       </PageCard>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: selectedReport
-            ? "minmax(340px, 0.95fr) minmax(540px, 1.25fr)"
-            : "1fr",
-          gap: 18,
-        }}
-      >
-        <PageCard style={{ padding: 18 }}>
-          <h2
-            style={{
-              marginTop: 0,
-              marginBottom: 14,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
-            Reports
-          </h2>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <h2
+          style={{
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
+            fontWeight: 800,
+          }}
+        >
+          Monthly POI Files
+        </h2>
 
-          {loading ? (
-            <div>Loading...</div>
-          ) : visibleReports.length === 0 ? (
-            <div>No reports found.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {visibleReports.map((item) => (
+        {monthlyGroups.length === 0 ? (
+          <div>No reports found.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {monthlyGroups.map((group) => {
+              const expanded = Boolean(expandedMonths[group.monthKey]);
+
+              return (
                 <div
-                  key={item.id}
-                  onClick={() => {
-                    setSelectedId(item.id);
-                    setIsEditMode(false);
-                  }}
+                  key={group.monthKey}
                   style={{
-                    cursor: "pointer",
-                    border:
-                      item.id === selectedId
-                        ? "1px solid #bfe0fb"
-                        : "1px solid #e2e8f0",
-                    background: item.id === selectedId ? "#edf7ff" : "#fff",
-                    borderRadius: 16,
-                    padding: 14,
+                    border: "1px solid #dbeafe",
+                    borderRadius: 15,
+                    overflow: "hidden",
+                    background: "#fff",
                   }}
                 >
-                  <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                    {item.date || "—"} · {item.location || "—"}
-                  </div>
-
                   <div
                     style={{
-                      fontSize: 13,
+                      padding: isMobile ? 12 : 14,
+                      display: "flex",
+                      flexDirection: isMobile ? "column" : "row",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      alignItems: isMobile ? "stretch" : "center",
+                      background: "#f8fbff",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 900,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {group.label}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 3,
+                          fontSize: 12,
+                          color: "#64748b",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {group.reports.length} report(s) {"\u00B7"}{" "}
+                        {group.alertCount} issue report(s)
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <ActionButton
+                        variant="secondary"
+                        onClick={() =>
+                          setExpandedMonths((prev) => ({
+                            ...prev,
+                            [group.monthKey]: !expanded,
+                          }))
+                        }
+                      >
+                        {expanded ? "Hide" : "Open Month"}
+                      </ActionButton>
+
+                      <ActionButton
+                        variant="primary"
+                        onClick={() => handlePrintMonth(group)}
+                      >
+                        Print Month
+                      </ActionButton>
+
+                      <ActionButton
+                        variant="danger"
+                        disabled={deletingMonth === group.monthKey}
+                        onClick={() => handleDeleteMonth(group)}
+                      >
+                        {deletingMonth === group.monthKey
+                          ? "Deleting..."
+                          : "Delete Month"}
+                      </ActionButton>
+                    </div>
+                  </div>
+
+                  {expanded && (
+                    <div
+                      style={{
+                        padding: isMobile ? 10 : 12,
+                        display: "grid",
+                        gap: 8,
+                      }}
+                    >
+                      {group.reports.map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            setSelectedId(item.id);
+                            setIsEditMode(false);
+                          }}
+                          style={{
+                            cursor: "pointer",
+                            border:
+                              item.id === selectedId
+                                ? "1px solid #60a5fa"
+                                : "1px solid #e2e8f0",
+                            background:
+                              item.id === selectedId ? "#edf7ff" : "#fff",
+                            borderRadius: 12,
+                            padding: 11,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 800,
+                              fontSize: 13,
+                              color: "#0f172a",
+                            }}
+                          >
+                            {item.date || "\u2014"} {"\u00B7"}{" "}
+                            {item.location || "\u2014"}
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 3,
+                              fontSize: 12,
+                              color: isAlertReport(item)
+                                ? "#9f1239"
+                                : "#64748b",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {isAlertReport(item)
+                              ? `Issue: ${
+                                  normalizeUnitList(
+                                    item.outOfServiceUnits
+                                  ).join(", ") || "Failed inspection"
+                                }`
+                              : `Inspector: ${
+                                  item.inspectorName || "\u2014"
+                                }`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </PageCard>
+
+      {selectedReport && (
+        <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+          {!isEditMode ? (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: isMobile ? "column" : "row",
+                  justifyContent: "space-between",
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: isMobile ? 18 : 21,
+                      fontWeight: 900,
+                    }}
+                  >
+                    WCHR POI Detail
+                  </h2>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
                       color: "#64748b",
-                      marginTop: 4,
                     }}
                   >
-                    Inspector: {item.inspectorName || "—"}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: isAlertReport(item) ? "#9f1239" : "#1769aa",
-                      marginTop: 4,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {isAlertReport(item)
-                      ? `Alert: ${normalizeUnitList(item.outOfServiceUnits).join(", ") || "Issue reported"}`
-                      : `Units: ${item.unitNumbersInspected || "—"}`}
+                    {selectedReport.date || "\u2014"} {"\u00B7"}{" "}
+                    {selectedReport.time || "\u2014"} {"\u00B7"}{" "}
+                    {selectedReport.location || "\u2014"}
                   </div>
                 </div>
-              ))}
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <ActionButton
+                    variant="secondary"
+                    onClick={() => handlePrintReport(selectedReport)}
+                  >
+                    Print Report
+                  </ActionButton>
+                  <ActionButton
+                    variant="primary"
+                    onClick={() => setIsEditMode(true)}
+                  >
+                    Edit
+                  </ActionButton>
+                </div>
+              </div>
+
+              <div style={gridStyle}>
+                {[
+                  ["Inspector Name", selectedReport.inspectorName],
+                  ["Date", selectedReport.date],
+                  ["Time", selectedReport.time],
+                  ["Location", selectedReport.location],
+                  ["Total Inventory", selectedReport.totalInventory],
+                  ["Unit Numbers Inspected", selectedReport.unitNumbersInspected],
+                  ["Total WCHRs Inspected", selectedReport.totalWchrsInspected],
+                  ["Total WCHRs Available", selectedReport.totalWchrsAvailable],
+                  ["Any INOP WCHR", selectedReport.anyInopWchr],
+                  ["Out Of Service Units", selectedReport.outOfServiceUnits],
+                  ["Damage Details", selectedReport.damageDetails],
+                  ["Photo Notes", selectedReport.photoNotes],
+                  ["Inspector Signature", selectedReport.inspectorSignature],
+                  ["Created At", formatDateTime(selectedReport.createdAt)],
+                  ["Updated At", formatDateTime(selectedReport.updatedAt)],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    style={{
+                      border: "1px solid #dbeafe",
+                      borderRadius: 12,
+                      padding: "10px 12px",
+                      background:
+                        label === "Out Of Service Units" &&
+                        normalizeUnitList(value).length
+                          ? "#fff1f2"
+                          : "#f8fbff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {label}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {safeValue(value)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <ActionButton
+                  variant="warning"
+                  onClick={handleArchive}
+                  disabled={archivingId === selectedReport.id}
+                >
+                  {archivingId === selectedReport.id
+                    ? "Archiving..."
+                    : "Archive"}
+                </ActionButton>
+
+                <ActionButton
+                  variant="danger"
+                  onClick={handleDelete}
+                  disabled={deletingId === selectedReport.id}
+                >
+                  {deletingId === selectedReport.id
+                    ? "Deleting..."
+                    : "Delete"}
+                </ActionButton>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: isMobile ? "column" : "row",
+                  justifyContent: "space-between",
+                  gap: 10,
+                }}
+              >
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: isMobile ? 18 : 21,
+                    fontWeight: 900,
+                  }}
+                >
+                  Edit WCHR POI
+                </h2>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <ActionButton
+                    variant="secondary"
+                    onClick={() => setIsEditMode(false)}
+                  >
+                    Cancel
+                  </ActionButton>
+                  <ActionButton
+                    variant="success"
+                    onClick={handleSaveEdits}
+                    disabled={savingEditId === selectedReport.id}
+                  >
+                    {savingEditId === selectedReport.id
+                      ? "Saving..."
+                      : "Save Edits"}
+                  </ActionButton>
+                </div>
+              </div>
+
+              <div style={gridStyle}>
+                <div>
+                  <FieldLabel>Inspector Name</FieldLabel>
+                  <TextInput
+                    value={editData.inspectorName}
+                    onChange={(e) =>
+                      handleEditField("inspectorName", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Date</FieldLabel>
+                  <TextInput
+                    type="date"
+                    value={editData.date}
+                    onChange={(e) =>
+                      handleEditField("date", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Time</FieldLabel>
+                  <TextInput
+                    type="time"
+                    value={editData.time}
+                    onChange={(e) =>
+                      handleEditField("time", e.target.value)
+                    }
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Location</FieldLabel>
+                  <SelectInput
+                    value={editData.location}
+                    onChange={(e) =>
+                      handleEditField("location", e.target.value)
+                    }
+                  >
+                    <option value="">Select location</option>
+                    <option value="Gate">Gate</option>
+                    <option value="Ticket Counter">Ticket Counter</option>
+                    <option value="Baggage Claim">Baggage Claim</option>
+                    <option value="Curbside">Curbside</option>
+                    <option value="Other">Other</option>
+                  </SelectInput>
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>Unit Numbers Inspected</FieldLabel>
+                <TextArea
+                  value={editData.unitNumbersInspected}
+                  onChange={(e) =>
+                    handleEditField(
+                      "unitNumbersInspected",
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Out Of Service Units</FieldLabel>
+                <TextArea
+                  value={editData.outOfServiceUnits}
+                  onChange={(e) =>
+                    handleEditField("outOfServiceUnits", e.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Damage Details</FieldLabel>
+                <TextArea
+                  value={editData.damageDetails}
+                  onChange={(e) =>
+                    handleEditField("damageDetails", e.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Photo Notes</FieldLabel>
+                <TextArea
+                  value={editData.photoNotes}
+                  onChange={(e) =>
+                    handleEditField("photoNotes", e.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Inspector Signature</FieldLabel>
+                <TextInput
+                  value={editData.inspectorSignature}
+                  onChange={(e) =>
+                    handleEditField(
+                      "inspectorSignature",
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
+
+              <div style={{ display: "grid", gap: 9 }}>
+                <h3
+                  style={{
+                    margin: "4px 0",
+                    fontSize: 15,
+                    fontWeight: 900,
+                  }}
+                >
+                  Inspection Results
+                </h3>
+
+                {editData.inspectionResults.map((item, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      border:
+                        String(item?.result || "").toLowerCase() === "no"
+                          ? "1px solid #fda4af"
+                          : "1px solid #dbeafe",
+                      background:
+                        String(item?.result || "").toLowerCase() === "no"
+                          ? "#fff1f2"
+                          : "#f8fbff",
+                      borderRadius: 12,
+                      padding: 11,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {item?.itemNumber || index + 1}. {item?.label}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 8,
+                        display: "flex",
+                        gap: 18,
+                      }}
+                    >
+                      <label style={{ fontWeight: 800, color: "#065f46" }}>
+                        <input
+                          type="radio"
+                          name={`edit_item_${index}`}
+                          checked={
+                            String(item?.result || "").toLowerCase() === "yes"
+                          }
+                          onChange={() =>
+                            handleInspectionResultChange(index, "yes")
+                          }
+                        />{" "}
+                        Yes
+                      </label>
+
+                      <label style={{ fontWeight: 800, color: "#9f1239" }}>
+                        <input
+                          type="radio"
+                          name={`edit_item_${index}`}
+                          checked={
+                            String(item?.result || "").toLowerCase() === "no"
+                          }
+                          onChange={() =>
+                            handleInspectionResultChange(index, "no")
+                          }
+                        />{" "}
+                        No
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </PageCard>
-
-        {selectedReport && (
-          <PageCard style={{ padding: 20 }}>
-            {!isEditMode ? (
-              <div style={{ display: "grid", gap: 16 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    alignItems: "flex-start",
-                  }}
-                >
-                  <div>
-                    <h2
-                      style={{
-                        margin: 0,
-                        fontSize: 22,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                      }}
-                    >
-                      WCHR POI Detail
-                    </h2>
-
-                    <p
-                      style={{
-                        margin: "4px 0 0",
-                        fontSize: 13,
-                        color: "#64748b",
-                      }}
-                    >
-                      {selectedReport.date || "—"} · {selectedReport.time || "—"} ·{" "}
-                      {selectedReport.location || "—"}
-                    </p>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <ActionButton variant="secondary" onClick={handleExportPdf}>
-                      Export PDF
-                    </ActionButton>
-
-                    <ActionButton
-                      variant="primary"
-                      onClick={() => setIsEditMode(true)}
-                    >
-                      Edit
-                    </ActionButton>
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  {[
-                    ["Inspector Name", selectedReport.inspectorName],
-                    ["Date", selectedReport.date],
-                    ["Time", selectedReport.time],
-                    ["Location", selectedReport.location],
-                    ["Total Inventory", selectedReport.totalInventory],
-                    ["Unit Numbers Inspected", selectedReport.unitNumbersInspected],
-                    ["Total WCHRs Inspected", selectedReport.totalWchrsInspected],
-                    ["Total WCHRs Available", selectedReport.totalWchrsAvailable],
-                    ["Any INOP WCHR", selectedReport.anyInopWchr],
-                    ["Out Of Service Units", selectedReport.outOfServiceUnits],
-                    ["Damage Details", selectedReport.damageDetails],
-                    ["Photo Notes", selectedReport.photoNotes],
-                    ["Inspector Signature", selectedReport.inspectorSignature],
-                    ["Created At", formatDateTime(selectedReport.createdAt)],
-                    ["Updated At", formatDateTime(selectedReport.updatedAt)],
-                  ].map(([label, value]) => (
-                    <div
-                      key={label}
-                      style={{
-                        border: "1px solid #dbeafe",
-                        borderRadius: 14,
-                        padding: "10px 12px",
-                        background:
-                          label === "Out Of Service Units" && normalizeUnitList(value).length
-                            ? "#fff1f2"
-                            : "#f8fbff",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 800,
-                          color: "#64748b",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {label}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 4,
-                          fontWeight: 700,
-                          color: "#0f172a",
-                          whiteSpace: "pre-wrap",
-                        }}
-                      >
-                        {safeValue(value)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    marginTop: 6,
-                  }}
-                >
-                  <ActionButton
-                    variant="warning"
-                    onClick={handleArchive}
-                    disabled={archivingId === selectedReport.id}
-                  >
-                    {archivingId === selectedReport.id ? "Archiving..." : "Archive"}
-                  </ActionButton>
-
-                  <ActionButton
-                    variant="danger"
-                    onClick={handleDelete}
-                    disabled={deletingId === selectedReport.id}
-                  >
-                    {deletingId === selectedReport.id ? "Deleting..." : "Delete"}
-                  </ActionButton>
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 16 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    alignItems: "flex-start",
-                  }}
-                >
-                  <div>
-                    <h2
-                      style={{
-                        margin: 0,
-                        fontSize: 22,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                      }}
-                    >
-                      Edit WCHR POI
-                    </h2>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <ActionButton
-                      variant="secondary"
-                      onClick={() => setIsEditMode(false)}
-                    >
-                      Cancel
-                    </ActionButton>
-
-                    <ActionButton
-                      variant="success"
-                      onClick={handleSaveEdits}
-                      disabled={savingEditId === selectedReport.id}
-                    >
-                      {savingEditId === selectedReport.id ? "Saving..." : "Save Edits"}
-                    </ActionButton>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 14,
-                  }}
-                >
-                  <div>
-                    <FieldLabel>Inspector Name</FieldLabel>
-                    <TextInput
-                      value={editData.inspectorName}
-                      onChange={(e) =>
-                        handleEditField("inspectorName", e.target.value)
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Date</FieldLabel>
-                    <TextInput
-                      type="date"
-                      value={editData.date}
-                      onChange={(e) => handleEditField("date", e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Time</FieldLabel>
-                    <TextInput
-                      type="time"
-                      value={editData.time}
-                      onChange={(e) => handleEditField("time", e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel>Location</FieldLabel>
-                    <SelectInput
-                      value={editData.location}
-                      onChange={(e) => handleEditField("location", e.target.value)}
-                    >
-                      <option value="">Select location</option>
-                      <option value="Gate">Gate</option>
-                      <option value="Ticket Counter">Ticket Counter</option>
-                      <option value="Baggage Claim">Baggage Claim</option>
-                      <option value="Curbside">Curbside</option>
-                      <option value="Other">Other</option>
-                    </SelectInput>
-                  </div>
-                </div>
-
-                <div>
-                  <FieldLabel>Unit Numbers Inspected</FieldLabel>
-                  <TextArea
-                    value={editData.unitNumbersInspected}
-                    onChange={(e) =>
-                      handleEditField("unitNumbersInspected", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Out Of Service Units</FieldLabel>
-                  <TextArea
-                    value={editData.outOfServiceUnits}
-                    onChange={(e) =>
-                      handleEditField("outOfServiceUnits", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Damage Details</FieldLabel>
-                  <TextArea
-                    value={editData.damageDetails}
-                    onChange={(e) =>
-                      handleEditField("damageDetails", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Photo Notes</FieldLabel>
-                  <TextArea
-                    value={editData.photoNotes}
-                    onChange={(e) =>
-                      handleEditField("photoNotes", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>Inspector Signature</FieldLabel>
-                  <TextInput
-                    value={editData.inspectorSignature}
-                    onChange={(e) =>
-                      handleEditField("inspectorSignature", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div>
-                  <h3
-                    style={{
-                      margin: "8px 0 10px",
-                      fontSize: 16,
-                      fontWeight: 800,
-                      color: "#0f172a",
-                    }}
-                  >
-                    Inspection Results
-                  </h3>
-
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {editData.inspectionResults.map((item, index) => (
-                      <div
-                        key={index}
-                        style={{
-                          border: "1px solid #dbeafe",
-                          borderRadius: 14,
-                          padding: "12px 14px",
-                          background: "#f8fbff",
-                          display: "grid",
-                          gap: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: "#0f172a",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {item?.itemNumber || index + 1}. {item?.label}
-                        </div>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 18,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <label
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 8,
-                              fontWeight: 700,
-                              color: "#065f46",
-                            }}
-                          >
-                            <input
-                              type="radio"
-                              name={`edit_item_${index}`}
-                              checked={String(item?.result || "").toLowerCase() === "yes"}
-                              onChange={() => handleInspectionResultChange(index, "yes")}
-                            />
-                            Yes
-                          </label>
-
-                          <label
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 8,
-                              fontWeight: 700,
-                              color: "#9f1239",
-                            }}
-                          >
-                            <input
-                              type="radio"
-                              name={`edit_item_${index}`}
-                              checked={String(item?.result || "").toLowerCase() === "no"}
-                              onChange={() => handleInspectionResultChange(index, "no")}
-                            />
-                            No
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </PageCard>
-        )}
-      </div>
+      )}
 
       {selectedUnitCase && (
         <div
@@ -1726,7 +1868,7 @@ export default function WchrPoiReportsAdminPage() {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 9999,
-            padding: 20,
+            padding: 16,
           }}
           onClick={() => setSelectedUnitCase(null)}
         >
@@ -1737,97 +1879,94 @@ export default function WchrPoiReportsAdminPage() {
               maxWidth: 760,
               maxHeight: "90vh",
               overflowY: "auto",
-              background: "#ffffff",
-              borderRadius: 24,
-              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              background: "#fff",
+              borderRadius: 20,
               border: "1px solid #e2e8f0",
               overflowX: "hidden",
             }}
           >
             <div
               style={{
-                padding: "18px 20px",
+                padding: "16px 18px",
                 background:
-                  String(selectedUnitCase.caseStatus || "").toLowerCase() === "closed"
+                  String(selectedUnitCase.caseStatus || "").toLowerCase() ===
+                  "closed"
                     ? "#ecfdf5"
                     : "#fff1f2",
-                borderBottom:
-                  String(selectedUnitCase.caseStatus || "").toLowerCase() === "closed"
-                    ? "1px solid #a7f3d0"
-                    : "1px solid #fecdd3",
               }}
             >
               <div
                 style={{
-                  fontSize: 22,
+                  fontSize: isMobile ? 18 : 21,
                   fontWeight: 900,
                   color:
-                    String(selectedUnitCase.caseStatus || "").toLowerCase() === "closed"
+                    String(selectedUnitCase.caseStatus || "").toLowerCase() ===
+                    "closed"
                       ? "#065f46"
                       : "#9f1239",
                 }}
               >
-                Out of Service Reported · {selectedUnitCase.unitNumber}
+                WCHR Case {"\u00B7"} {selectedUnitCase.unitNumber}
               </div>
 
               <div
                 style={{
-                  marginTop: 6,
-                  fontSize: 13,
-                  fontWeight: 700,
+                  marginTop: 5,
+                  fontSize: 12,
                   color: "#475569",
+                  fontWeight: 700,
                 }}
               >
-                {selectedUnitCase.reportDate || "—"} · {selectedUnitCase.reportTime || "—"} ·{" "}
-                {selectedUnitCase.location || "—"}
+                Reported {selectedUnitCase.occurrenceCount} time(s). Latest:{" "}
+                {selectedUnitCase.latestReportDate || "\u2014"}
               </div>
             </div>
 
-            <div style={{ padding: 20, display: "grid", gap: 16 }}>
+            <div
+              style={{
+                padding: isMobile ? 14 : 18,
+                display: "grid",
+                gap: 14,
+              }}
+            >
               <div
                 style={{
-                  background: "#fff7ed",
                   border: "1px solid #fed7aa",
-                  borderRadius: 16,
-                  padding: "14px 16px",
+                  background: "#fff7ed",
+                  borderRadius: 13,
+                  padding: 12,
                 }}
               >
                 <div
                   style={{
-                    fontSize: 12,
-                    fontWeight: 800,
+                    fontSize: 10.5,
+                    fontWeight: 900,
                     color: "#9a3412",
                     textTransform: "uppercase",
                   }}
                 >
-                  Damage reported
+                  Latest damage reported
                 </div>
                 <div
                   style={{
-                    marginTop: 6,
-                    fontSize: 14,
+                    marginTop: 5,
+                    fontSize: 13,
                     fontWeight: 700,
-                    color: "#7c2d12",
                     whiteSpace: "pre-wrap",
                   }}
                 >
-                  {safeValue(selectedUnitCase.damageDetails)}
+                  {safeValue(selectedUnitCase.latestDamageDetails)}
                 </div>
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 14,
-                }}
-              >
+              <div style={gridStyle}>
                 <div>
                   <FieldLabel>Duty Manager Taking Case</FieldLabel>
                   <TextInput
                     value={selectedUnitCase.takenBy}
-                    onChange={(e) => handleUnitCaseField("takenBy", e.target.value)}
-                    placeholder="Who is taking this case?"
+                    onChange={(e) =>
+                      handleUnitCaseField("takenBy", e.target.value)
+                    }
                   />
                 </div>
 
@@ -1873,12 +2012,16 @@ export default function WchrPoiReportsAdminPage() {
                   <FieldLabel>Maintenance Cost</FieldLabel>
                   <TextInput
                     type="number"
+                    min="0"
                     step="0.01"
+                    inputMode="decimal"
                     value={selectedUnitCase.maintenanceCost}
                     onChange={(e) =>
-                      handleUnitCaseField("maintenanceCost", e.target.value)
+                      handleUnitCaseField(
+                        "maintenanceCost",
+                        e.target.value
+                      )
                     }
-                    placeholder="0.00"
                   />
                 </div>
               </div>
@@ -1890,18 +2033,16 @@ export default function WchrPoiReportsAdminPage() {
                   onChange={(e) =>
                     handleUnitCaseField("workPerformed", e.target.value)
                   }
-                  placeholder="Explain what was repaired or serviced"
                 />
               </div>
 
               <div>
-                <FieldLabel>What Was Changed</FieldLabel>
+                <FieldLabel>Parts / Changes</FieldLabel>
                 <TextArea
                   value={selectedUnitCase.partsChanged}
                   onChange={(e) =>
                     handleUnitCaseField("partsChanged", e.target.value)
                   }
-                  placeholder="Parts replaced, adjusted, or removed"
                 />
               </div>
 
@@ -1912,142 +2053,44 @@ export default function WchrPoiReportsAdminPage() {
                   onChange={(e) =>
                     handleUnitCaseField("notes", e.target.value)
                   }
-                  placeholder="Additional follow-up notes"
                 />
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 14,
-                }}
-              >
-                <div
-                  style={{
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                    borderRadius: 14,
-                    padding: "12px 14px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Reported By
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#0f172a",
-                    }}
-                  >
-                    {safeValue(selectedUnitCase.inspectorName)}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                    borderRadius: 14,
-                    padding: "12px 14px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Closed By
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#0f172a",
-                    }}
-                  >
-                    {safeValue(selectedUnitCase.closedBy)}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                    borderRadius: 14,
-                    padding: "12px 14px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Closed At
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#0f172a",
-                    }}
-                  >
-                    {safeValue(selectedUnitCase.closedAt)}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: "#f8fbff",
-                    border: "1px solid #dbeafe",
-                    borderRadius: 14,
-                    padding: "12px 14px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Maintenance Cost
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#0f172a",
-                    }}
-                  >
-                    {formatMoney(selectedUnitCase.maintenanceCost)}
-                  </div>
+              <div>
+                <FieldLabel>POI History for This WCHR</FieldLabel>
+                <div style={{ display: "grid", gap: 7 }}>
+                  {selectedUnitCase.occurrences.map((occurrence) => (
+                    <div
+                      key={occurrence.reportId}
+                      style={{
+                        border: "1px solid #dbeafe",
+                        borderRadius: 11,
+                        padding: 10,
+                        background: "#f8fbff",
+                        fontSize: 12,
+                      }}
+                    >
+                      <strong>{occurrence.reportDate || "\u2014"}</strong>{" "}
+                      {"\u00B7"} {occurrence.location || "\u2014"} {"\u00B7"}{" "}
+                      {occurrence.inspectorName || "\u2014"}
+                      <div
+                        style={{
+                          marginTop: 4,
+                          color: "#475569",
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {safeValue(occurrence.damageDetails)}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
               <div
                 style={{
                   display: "flex",
-                  gap: 12,
+                  gap: 8,
                   flexWrap: "wrap",
                   justifyContent: "center",
                 }}
