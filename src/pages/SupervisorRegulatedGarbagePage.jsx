@@ -1416,34 +1416,6 @@ export default function SupervisorRegulatedGarbagePage() {
           }}
         >
           <div style={{ maxWidth: 760 }}>
-            <div
-              style={{
-                width: 90,
-                height: 90,
-                borderRadius: 20,
-                overflow: "hidden",
-                background: "rgba(255,255,255,0.16)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 14,
-                border: "1px solid rgba(255,255,255,0.18)",
-              }}
-            >
-              <img
-                src="/regulated-garbage-logo.png"
-                alt="Regulated Garbage"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                  background: "#fff",
-                }}
-                onError={(e) => {
-                  e.currentTarget.style.display = "none";
-                }}
-              />
-            </div>
 
             <p
               style={{
@@ -2181,5 +2153,4 @@ export default function SupervisorRegulatedGarbagePage() {
         </>
       )}
     </div>
-  );
-}
+ 
