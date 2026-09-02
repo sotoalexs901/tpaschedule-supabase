@@ -13,6 +13,7 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import { createOperationalAlert } from "../utils/operationalAlerts.js";
 
 const AIRLINE_OPTIONS = [
   { value: "SY", label: "SY" },
@@ -716,41 +717,47 @@ export default function SupervisorTimesheetPage() {
     airline,
   }) => {
     try {
-      await addDoc(collection(db, "operational_alerts"), {
+      const department = isCabinServiceUser
+        ? "Cabin Service"
+        : String(form.department || user?.department || "").trim();
+
+      await createOperationalAlert({
         alertType: "TIMESHEET_LATE_SUBMISSION",
         category: "TIMESHEET",
         severity: "HIGH",
         priority: "URGENT",
-        status: "OPEN",
         title: "Late Timesheet Submission",
         message: `${getVisibleName(user)} submitted a late timesheet for ${
           airline || "Unknown Airline"
         } dated ${form.reportDate}. Submission was ${formatLateDuration(
           lateInfo.lateHours
         )} past the 24-hour submission limit.`,
-        timesheetReportId,
-        reportDate: form.reportDate,
-        airline: airline || "",
-        department: isCabinServiceUser
-          ? "Cabin Service"
-          : String(form.department || user?.department || "").trim(),
-        submittedByUserId: user?.id || "",
-        submittedByUsername: user?.username || "",
-        submittedByName: getVisibleName(user),
-        submittedByRole: user?.role || "",
-        thresholdHours: TIMESHEET_SUBMISSION_LIMIT_HOURS,
-        lateHours: Number(lateInfo.lateHours || 0),
-        submissionDeadline: lateInfo.deadline || null,
-        targetRoles: ["station_manager", "duty_manager"],
-        requiresManagementAttention: true,
         source: "SupervisorTimesheetPage",
-        createdAt: serverTimestamp(),
+        sourceId: timesheetReportId,
+        sourcePath: "/timesheets/reports",
+        airline: airline || "",
+        department,
+        reportDate: form.reportDate,
+        targetRoles: ["station_manager", "duty_manager"],
+        createdByUserId: user?.id || "",
+        createdByUsername: user?.username || "",
+        createdByName: getVisibleName(user),
+        createdByRole: user?.role || "",
+        metadata: {
+          timesheetReportId,
+          thresholdHours: TIMESHEET_SUBMISSION_LIMIT_HOURS,
+          lateHours: Number(lateInfo.lateHours || 0),
+          submissionDeadline: lateInfo.deadline
+            ? lateInfo.deadline.toISOString()
+            : "",
+          requiresManagementAttention: true,
+        },
       });
 
       return true;
     } catch (alertErr) {
       // Never block the operational timesheet submission because an alert write
-      // failed. The report itself is also flagged for management follow-up.
+      // failed. The report itself remains flagged for management follow-up.
       console.error("Late timesheet management alert error:", alertErr);
       return false;
     }
@@ -863,6 +870,8 @@ export default function SupervisorTimesheetPage() {
               managementAlertCreatedAt: alertCreated
                 ? serverTimestamp()
                 : null,
+              managementAlertSource: "operational_alerts",
+              managementAlertType: "TIMESHEET_LATE_SUBMISSION",
             });
           } catch (flagErr) {
             console.error("Late timesheet alert flag update error:", flagErr);
