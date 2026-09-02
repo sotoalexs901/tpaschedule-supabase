@@ -5,15 +5,18 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import { createOperationalAlert } from "../utils/operationalAlerts.js";
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
+  const upper = airline.toUpperCase();
 
   if (
-    airline.toUpperCase() === "WL HAVANA AIR" ||
-    airline.toUpperCase() === "WAL HAVANA AIR" ||
-    airline.toUpperCase() === "WAL HAVANA" ||
-    airline.toUpperCase() === "WESTJET"
+    upper === "WL HAVANA AIR" ||
+    upper === "WAL HAVANA AIR" ||
+    upper === "WAL HAVANA" ||
+    upper === "WESTJET"
   ) {
     return "WestJet";
   }
@@ -100,14 +103,46 @@ function shouldRequireAttentionFromResponses(responses) {
   return false;
 }
 
+function hasOvertimeReported(responses) {
+  const staffing = Array.isArray(responses?.staffing_status)
+    ? responses.staffing_status
+    : [];
+
+  return staffing.some((item) =>
+    String(item || "").toLowerCase().includes("overtime")
+  );
+}
+
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
-        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        background: "rgba(255,255,255,0.94)",
+        border: "1px solid #e2e8f0",
+        borderRadius: 20,
+        boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -122,8 +157,8 @@ function FieldLabel({ children }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
-        fontWeight: 700,
+        fontSize: 11,
+        fontWeight: 800,
         color: "#475569",
         letterSpacing: "0.03em",
         textTransform: "uppercase",
@@ -140,10 +175,12 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -159,10 +196,12 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -178,15 +217,17 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
-        minHeight: 100,
+        minHeight: 92,
         fontFamily: "inherit",
         ...props.style,
       }}
@@ -207,9 +248,8 @@ function ActionButton({
         "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+      boxShadow: "0 10px 20px rgba(23,105,170,0.16)",
     },
-
     secondary: {
       background: "#ffffff",
       color: "#1769aa",
@@ -224,9 +264,9 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       style={{
-        borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
+        borderRadius: 11,
+        padding: "9px 13px",
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.7 : 1,
@@ -263,25 +303,16 @@ const BAGGAGE_FIELDS = [
       "Operation completed with remarks",
       "Operation not completed as planned",
     ],
-    active: true,
-    order: 1,
   },
-
   {
     key: "general_comments",
     label: "General Comments",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 2,
   },
-
   {
     key: "issue_types",
     label: "Issue Types (select all that apply)",
     type: "checkbox-group",
-    required: false,
     options: [
       "N/A",
       "Delays",
@@ -293,182 +324,49 @@ const BAGGAGE_FIELDS = [
       "Safety",
       "Other",
     ],
-    active: true,
-    order: 3,
   },
-
-  {
-    key: "issue_details",
-    label: "Issue Details",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 4,
-  },
-
-  {
-    key: "action_taken",
-    label: "Action Taken",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 5,
-  },
-
+  { key: "issue_details", label: "Issue Details", type: "textarea" },
+  { key: "action_taken", label: "Action Taken", type: "textarea" },
   {
     key: "issue_status",
     label: "Status",
     type: "select",
-    required: false,
     options: ["N/A", "Resolved", "Pending", "Escalated"],
-    active: true,
-    order: 6,
   },
-
-  {
-    key: "ohd_bags_managed",
-    label: "OHD Bags Managed",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 7,
-  },
-
-  {
-    key: "delayed_file",
-    label: "Delayed File",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 8,
-  },
-
-  {
-    key: "damage_file",
-    label: "Damage File",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 9,
-  },
-
-  {
-    key: "bdos",
-    label: "BDOs",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 10,
-  },
-
-  {
-    key: "total_bags_processed",
-    label: "Total Bags Processed",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 11,
-  },
-
+  { key: "ohd_bags_managed", label: "OHD Bags Managed", type: "text" },
+  { key: "delayed_file", label: "Delayed File", type: "text" },
+  { key: "damage_file", label: "Damage File", type: "text" },
+  { key: "bdos", label: "BDOs", type: "text" },
+  { key: "total_bags_processed", label: "Total Bags Processed", type: "text" },
   {
     key: "ohd_bags_follow_up_actions",
     label: "OHD Bags Follow-up Actions",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 12,
   },
-
-  {
-    key: "pending_responsible",
-    label: "Pending Responsible",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 13,
-  },
-
-  {
-    key: "ramp_scan",
-    label: "Ramp Scan",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 14,
-  },
-
-  {
-    key: "pending_target_day",
-    label: "Pending Target Day",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 15,
-  },
-
+  { key: "pending_responsible", label: "Pending Responsible", type: "text" },
+  { key: "ramp_scan", label: "Ramp Scan", type: "text" },
+  { key: "pending_target_day", label: "Pending Target Day", type: "text" },
   {
     key: "exception_type",
     label: "Exception Type",
     type: "checkbox-group",
-    required: false,
-    options: [
-      "N/A",
-      "Operational",
-      "Staffing",
-      "Safety",
-      "Baggage",
-      "Other",
-    ],
-    active: true,
-    order: 16,
+    options: ["N/A", "Operational", "Staffing", "Safety", "Baggage", "Other"],
   },
-
   {
     key: "exception_description",
     label: "Exception Description",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 17,
   },
-
   {
     key: "exception_reason",
     label: "Exception Reason",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 18,
   },
-
-  {
-    key: "reported_to",
-    label: "Reported To",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 19,
-  },
-
+  { key: "reported_to", label: "Reported To", type: "text" },
   {
     key: "staffing_status",
     label: "Staffing Status",
     type: "checkbox-group",
-    required: false,
     options: [
       "Full staffing",
       "Short staffed",
@@ -476,73 +374,44 @@ const BAGGAGE_FIELDS = [
       "Call out",
       "Other",
     ],
-    active: true,
-    order: 20,
   },
-
   {
     key: "staffing_remarks",
     label: "Staffing Remarks",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 21,
   },
-
   {
     key: "employee_breaks",
     label: "Employee Breaks",
     type: "select",
-    required: false,
     options: [
       "All agents have taken their scheduled break",
       "Not all agents have taken their scheduled break",
     ],
-    active: true,
-    order: 22,
   },
-
   {
     key: "employees_no_break_taken",
     label: "Names of Employees / No Break Taken",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 23,
   },
-
   {
     key: "final_remarks_recommendations",
     label: "Final Remarks / Recommendations",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 24,
   },
-
   {
     key: "safety_concern",
     label: "Safety Concerns",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 25,
   },
-
   {
     key: "additional_comments",
     label: "Additional Comments",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 26,
   },
 ];
+
 const WCHR_FIELDS = [
   {
     key: "operation_status",
@@ -554,59 +423,26 @@ const WCHR_FIELDS = [
       "Operation completed with remarks",
       "Operation not completed as planned",
     ],
-    active: true,
-    order: 1,
   },
-  {
-    key: "total_wheelchair_requests",
-    label: "Total Wheelchair Requests",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 2,
-  },
-  {
-    key: "departing_passengers_assisted",
-    label: "Departing Passengers Assisted",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 3,
-  },
-  {
-    key: "arriving_passengers_assisted",
-    label: "Arriving Passengers Assisted",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 4,
-  },
+  { key: "total_wheelchair_requests", label: "Total Wheelchair Requests", type: "text" },
+  { key: "departing_passengers_assisted", label: "Departing Passengers Assisted", type: "text" },
+  { key: "arriving_passengers_assisted", label: "Arriving Passengers Assisted", type: "text" },
   {
     key: "service_type",
     label: "Service Type (select all that apply)",
     type: "checkbox-group",
-    required: false,
     options: ["WCHR", "WCHS", "WCHC", "WCBD", "WCMP"],
-    active: true,
-    order: 5,
   },
   {
     key: "service_delays",
     label: "Any Service Delays?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 6,
   },
   {
     key: "delay_reasons",
     label: "If Yes, select reason(s)",
     type: "checkbox-group",
-    required: false,
     options: [
       "High passenger volume",
       "Staffing shortage",
@@ -615,79 +451,48 @@ const WCHR_FIELDS = [
       "TSA delays",
       "Other",
     ],
-    active: true,
-    order: 7,
   },
-  {
-    key: "delay_details",
-    label: "Delay Details",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 8,
-  },
+  { key: "delay_details", label: "Delay Details", type: "textarea" },
   {
     key: "fulfilled_all_requests",
     label: "Were all wheelchair requests fulfilled?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 9,
   },
   {
     key: "assisted_on_time",
     label: "Were passengers assisted on time from check-in to gate?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 10,
   },
   {
     key: "arrivals_picked_up_without_delay",
-    label:
-      "Were arriving passengers picked up from the aircraft without delay?",
+    label: "Were arriving passengers picked up from the aircraft without delay?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 11,
   },
   {
     key: "tsa_coordination_effective",
     label: "Was coordination with TSA handled effectively?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 12,
   },
   {
     key: "passenger_information_handled_correctly",
     label: "Was passenger information correctly handled and recorded?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 13,
   },
   {
     key: "proper_handoffs_completed",
-    label:
-      "Were proper handoffs completed (gate / aircraft / arrivals area)?",
+    label: "Were proper handoffs completed (gate / aircraft / arrivals area)?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 14,
   },
   {
     key: "issue_types",
     label: "Issue Types (select all that apply)",
     type: "checkbox-group",
-    required: false,
     options: [
       "N/A",
       "Delays",
@@ -698,41 +503,19 @@ const WCHR_FIELDS = [
       "Safety",
       "Other",
     ],
-    active: true,
-    order: 15,
   },
-  {
-    key: "issue_details",
-    label: "Issue Details",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 16,
-  },
-  {
-    key: "action_taken",
-    label: "Action Taken",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 17,
-  },
+  { key: "issue_details", label: "Issue Details", type: "textarea" },
+  { key: "action_taken", label: "Action Taken", type: "textarea" },
   {
     key: "issue_status",
     label: "Status",
     type: "select",
-    required: false,
     options: ["Resolved", "Pending", "Escalated"],
-    active: true,
-    order: 18,
   },
   {
     key: "staffing_status",
     label: "Staffing Status",
     type: "checkbox-group",
-    required: false,
     options: [
       "Fully staffed",
       "Short staffed",
@@ -740,110 +523,60 @@ const WCHR_FIELDS = [
       "Call out(s)",
       "Other",
     ],
-    active: true,
-    order: 19,
   },
-  {
-    key: "staffing_remarks",
-    label: "Staffing Remarks",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 20,
-  },
-  {
-    key: "wheelchairs_available",
-    label: "Wheelchairs Available",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 21,
-  },
+  { key: "staffing_remarks", label: "Staffing Remarks", type: "textarea" },
+  { key: "wheelchairs_available", label: "Wheelchairs Available", type: "text" },
   {
     key: "equipment_issues",
     label: "Any Equipment Issues?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 22,
   },
   {
     key: "equipment_issue_details",
     label: "If Yes, explain",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 23,
   },
   {
     key: "passenger_service_issues",
     label: "Any customer complaints or service issues?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 24,
   },
   {
     key: "passenger_service_issue_details",
     label: "Complaint / Service Issue Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 25,
   },
   {
     key: "employee_breaks",
     label: "Employees Breaks",
     type: "select",
-    required: false,
     options: [
       "All agents took scheduled breaks",
       "Not all agents took scheduled breaks",
     ],
-    active: true,
-    order: 26,
   },
   {
     key: "employee_breaks_details",
     label: "Names / Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 27,
   },
   {
     key: "safety_concern",
     label: "Any safety concerns during operation?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 28,
   },
   {
     key: "safety_concern_details",
     label: "Safety Concern Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 29,
   },
   {
     key: "final_remarks_recommendations",
     label: "Final Remarks / Recommendations",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 30,
   },
 ];
 
@@ -858,150 +591,88 @@ const CABIN_SERVICE_FIELDS = [
       "Operation completed with remarks",
       "Operation not completed as planned",
     ],
-    active: true,
-    order: 1,
   },
   {
     key: "flights_serviced_confirmation",
     label: "Were all flights serviced based on the total flights entered?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 2,
   },
   {
     key: "cabin_cleaning_completed_all",
     label: "Was cabin cleaning completed for all flights serviced?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 3,
   },
   {
     key: "lavatories_completed_all",
     label: "Were lavatories serviced correctly for all flights serviced?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 4,
   },
   {
     key: "galleys_completed_all",
     label: "Were galleys cleaned and checked for all flights serviced?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 5,
   },
   {
     key: "trash_removed_all",
     label: "Was trash removed correctly from all flights serviced?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 6,
   },
   {
     key: "seat_checks_completed_all",
-    label:
-      "Were seats, seat pockets, and tray tables checked on all flights serviced?",
+    label: "Were seats, seat pockets, and tray tables checked on all flights serviced?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 7,
   },
   {
     key: "special_cleaning_required",
     label: "Was special cleaning required during the shift?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 8,
   },
   {
     key: "special_cleaning_details",
     label: "Special Cleaning Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 9,
   },
   {
     key: "equipment_or_supply_issues",
     label: "Were there equipment or supply issues affecting any flights serviced?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 10,
   },
   {
     key: "equipment_or_supply_issue_details",
     label: "Equipment / Supply Issue Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 11,
   },
   {
     key: "delayed_flight_impact",
     label: "Did any delay impact cabin service during the shift?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 12,
   },
-  {
-    key: "delay_reason",
-    label: "Delay Reason",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 13,
-  },
-  {
-    key: "delay_minutes",
-    label: "Delay Minutes",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 14,
-  },
+  { key: "delay_reason", label: "Delay Reason", type: "textarea" },
+  { key: "delay_minutes", label: "Delay Minutes", type: "text" },
   {
     key: "safety_concern",
     label: "Any Safety Concern?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 15,
   },
   {
     key: "safety_concern_details",
     label: "Safety Concern Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 16,
   },
   {
     key: "staffing_status",
     label: "Staffing Status",
     type: "checkbox-group",
-    required: false,
     options: [
       "Fully staffed",
       "Short staffed",
@@ -1009,37 +680,21 @@ const CABIN_SERVICE_FIELDS = [
       "Call out(s)",
       "Other",
     ],
-    active: true,
-    order: 17,
   },
-  {
-    key: "staffing_remarks",
-    label: "Staffing Remarks",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 18,
-  },
+  { key: "staffing_remarks", label: "Staffing Remarks", type: "textarea" },
   {
     key: "quality_consistency",
     label: "Was service quality consistent across all flights serviced?",
     type: "select",
-    required: false,
     options: ["Yes", "Mostly Yes", "Needs Improvement"],
-    active: true,
-    order: 19,
   },
   {
     key: "final_remarks_recommendations",
     label: "Final Remarks / Recommendations",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 20,
   },
 ];
+
 const PASSENGER_SERVICE_FIELDS = [
   {
     key: "operation_status",
@@ -1051,176 +706,99 @@ const PASSENGER_SERVICE_FIELDS = [
       "Operation completed with remarks",
       "Operation not completed as planned",
     ],
-    active: true,
-    order: 1,
   },
-  {
-    key: "flights_handled",
-    label: "Flights Handled",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 2,
-  },
+  { key: "flights_handled", label: "Flights Handled", type: "text" },
   {
     key: "checkin_completed",
     label: "Check-in Operation Completed?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 3,
   },
   {
     key: "boarding_completed",
     label: "Boarding Operation Completed?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 4,
   },
   {
     key: "document_checks_completed",
     label: "Passenger Document Checks Completed?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 5,
   },
   {
     key: "special_assistance_handled",
     label: "Special Assistance Requests Handled Properly?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 6,
   },
   {
     key: "oversize_or_special_bag_issues",
     label: "Oversize / Special Bag Issues?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 7,
   },
   {
     key: "oversize_or_special_bag_details",
     label: "Oversize / Special Bag Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 8,
   },
   {
     key: "boarding_gate_change",
     label: "Any Gate Change?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 9,
   },
-  {
-    key: "gate_change_details",
-    label: "Gate Change Details",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 10,
-  },
+  { key: "gate_change_details", label: "Gate Change Details", type: "textarea" },
   {
     key: "standby_upgrade_irregularities",
     label: "Standby / Upgrade / Seating Irregularities?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 11,
   },
   {
     key: "standby_upgrade_details",
     label: "Standby / Upgrade Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 12,
   },
   {
     key: "customer_service_issues",
     label: "Customer Service Issues?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 13,
   },
   {
     key: "customer_service_issue_details",
     label: "Customer Service Issue Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 14,
   },
   {
     key: "delayed_flight",
     label: "Any Delayed Flight?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 15,
   },
-  {
-    key: "delayed_flight_minutes",
-    label: "Delayed Minutes",
-    type: "text",
-    required: false,
-    options: [],
-    active: true,
-    order: 16,
-  },
+  { key: "delayed_flight_minutes", label: "Delayed Minutes", type: "text" },
   {
     key: "delayed_flight_reason",
     label: "Delayed Flight Reason",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 17,
   },
   {
     key: "safety_concern",
     label: "Any Safety Concern?",
     type: "yesno",
-    required: false,
     options: ["Yes", "No"],
-    active: true,
-    order: 18,
   },
   {
     key: "safety_concern_details",
     label: "Safety Concern Details",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 19,
   },
   {
     key: "staffing_status",
     label: "Staffing Status",
     type: "checkbox-group",
-    required: false,
     options: [
       "Fully staffed",
       "Short staffed",
@@ -1228,26 +806,12 @@ const PASSENGER_SERVICE_FIELDS = [
       "Call out(s)",
       "Other",
     ],
-    active: true,
-    order: 20,
   },
-  {
-    key: "staffing_remarks",
-    label: "Staffing Remarks",
-    type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 21,
-  },
+  { key: "staffing_remarks", label: "Staffing Remarks", type: "textarea" },
   {
     key: "final_remarks_recommendations",
     label: "Final Remarks / Recommendations",
     type: "textarea",
-    required: false,
-    options: [],
-    active: true,
-    order: 22,
   },
 ];
 
@@ -1260,7 +824,6 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     fields: BAGGAGE_FIELDS,
     hideFlightNumber: false,
   },
-
   wchr: {
     key: "wchr",
     label: "WCHR Service",
@@ -1269,7 +832,6 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     fields: WCHR_FIELDS,
     hideFlightNumber: false,
   },
-
   cabin_service: {
     key: "cabin_service",
     label: "Cabin Service",
@@ -1278,7 +840,6 @@ const OPERATIONAL_REPORT_TEMPLATES = {
     fields: CABIN_SERVICE_FIELDS,
     hideFlightNumber: true,
   },
-
   passenger_service: {
     key: "passenger_service",
     label: "Passenger Service",
@@ -1292,6 +853,7 @@ const OPERATIONAL_REPORT_TEMPLATES = {
 export default function SupervisorOperationalReportPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const { isMobile, isTablet } = useViewport();
 
   const canAccess =
     user?.role === "supervisor" ||
@@ -1310,48 +872,27 @@ export default function SupervisorOperationalReportPage() {
 
   const [form, setForm] = useState({
     templateKey: defaultTemplateKey,
-
     airline:
       OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.airlineDefault || "",
-
     reportDate: "",
-
     department:
       OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.department || "",
-
     shift: "",
     flightNumber: "",
     flightsHandled: "",
-
     supervisorReporting: getVisibleName(user),
-
     supervisorPosition:
       user?.position || getDefaultPosition(user?.role),
-
     notes: "",
-
     delayedFlight: false,
     delayedTimeMinutes: "",
     delayedReason: "",
     delayedCodeReported: "",
-
-    // =========================================================
-    // LOBS
-    // =========================================================
-    // The supervisor only indicates whether the flight had LOBs.
-    // If Yes is selected, the additional LOB fields will appear.
-    //
-    // Management will later calculate labor hours using the
-    // configurable LOB formula. We intentionally do NOT calculate
-    // labor hours in the supervisor report.
-    // =========================================================
     hasLobs: false,
     lobBagCount: "",
     lobAgentsUsed: "",
     lobSupervisorsUsed: "",
-
     needsAttention: false,
-
     responses: buildInitialResponses(
       OPERATIONAL_REPORT_TEMPLATES[defaultTemplateKey]?.fields || []
     ),
@@ -1371,32 +912,25 @@ export default function SupervisorOperationalReportPage() {
   useEffect(() => {
     setForm((prev) => ({
       ...prev,
-
       department: activeTemplate.department,
-
-      airline:
-        prev.templateKey === form.templateKey
-          ? prev.airline
-          : activeTemplate.airlineDefault || "",
-
       flightNumber: activeTemplate.hideFlightNumber
         ? ""
         : prev.flightNumber,
-
       responses: buildInitialResponses(activeTemplate.fields || []),
     }));
-  }, [activeTemplate, form.templateKey]);
+  }, [activeTemplate]);
 
   const computedNeedsAttention = useMemo(() => {
     return shouldRequireAttentionFromResponses(form.responses);
   }, [form.responses]);
 
   const finalNeedsAttention = useMemo(() => {
-    return Boolean(
-      form.needsAttention ||
-      computedNeedsAttention
-    );
+    return Boolean(form.needsAttention || computedNeedsAttention);
   }, [form.needsAttention, computedNeedsAttention]);
+
+  const overtimeReported = useMemo(() => {
+    return hasOvertimeReported(form.responses);
+  }, [form.responses]);
 
   const handleFormChange = (field, value) => {
     if (field === "templateKey") {
@@ -1406,48 +940,26 @@ export default function SupervisorOperationalReportPage() {
 
       setForm((prev) => ({
         ...prev,
-
         templateKey: nextTemplate.key,
-
         department: nextTemplate.department,
-
         airline: nextTemplate.airlineDefault || "",
-
         flightNumber: nextTemplate.hideFlightNumber
           ? ""
           : prev.flightNumber,
-
         responses: buildInitialResponses(nextTemplate.fields || []),
       }));
 
       return;
     }
 
-    // =========================================================
-    // LOBS RESET
-    // =========================================================
-    // When the supervisor changes LOBs from Yes to No, remove
-    // any previously entered bag/staffing values so old values
-    // cannot accidentally be submitted.
-    // =========================================================
     if (field === "hasLobs") {
       setForm((prev) => ({
         ...prev,
         hasLobs: Boolean(value),
-
-        lobBagCount: value
-          ? prev.lobBagCount
-          : "",
-
-        lobAgentsUsed: value
-          ? prev.lobAgentsUsed
-          : "",
-
-        lobSupervisorsUsed: value
-          ? prev.lobSupervisorsUsed
-          : "",
+        lobBagCount: value ? prev.lobBagCount : "",
+        lobAgentsUsed: value ? prev.lobAgentsUsed : "",
+        lobSupervisorsUsed: value ? prev.lobSupervisorsUsed : "",
       }));
-
       return;
     }
 
@@ -1456,7 +968,6 @@ export default function SupervisorOperationalReportPage() {
         ...prev,
         department: "Cabin Service",
       }));
-
       return;
     }
 
@@ -1469,7 +980,6 @@ export default function SupervisorOperationalReportPage() {
   const handleResponseChange = (key, value) => {
     setForm((prev) => ({
       ...prev,
-
       responses: {
         ...(prev.responses || {}),
         [key]: value,
@@ -1477,23 +987,22 @@ export default function SupervisorOperationalReportPage() {
     }));
   };
 
-  const handleCheckboxGroupChange = (
-    key,
-    option,
-    checked
-  ) => {
+  const handleCheckboxGroupChange = (key, option, checked) => {
     setForm((prev) => {
       const current = Array.isArray(prev.responses?.[key])
         ? prev.responses[key]
         : [];
 
-      const next = checked
-        ? [...current, option]
-        : current.filter((item) => item !== option);
+      let next;
+
+      if (checked) {
+        next = [...current, option];
+      } else {
+        next = current.filter((item) => item !== option);
+      }
 
       return {
         ...prev,
-
         responses: {
           ...(prev.responses || {}),
           [key]: next,
@@ -1501,7 +1010,8 @@ export default function SupervisorOperationalReportPage() {
       };
     });
   };
-    const validateRequiredFields = () => {
+
+  const validateRequiredFields = () => {
     if (!form.airline) {
       setStatusMessage("Please select the reporting airline.");
       return false;
@@ -1524,7 +1034,6 @@ export default function SupervisorOperationalReportPage() {
           );
           return false;
         }
-
         continue;
       }
 
@@ -1536,15 +1045,6 @@ export default function SupervisorOperationalReportPage() {
       }
     }
 
-    // =========================================================
-    // LOBS VALIDATION
-    // =========================================================
-    // When LOBs = Yes, the supervisor must provide:
-    // 1. Total LOB bags
-    // 2. Number of agents used
-    // 3. Number of supervisors used
-    // =========================================================
-
     if (form.hasLobs) {
       const lobBagCount = Number(form.lobBagCount);
       const lobAgentsUsed = Number(form.lobAgentsUsed);
@@ -1555,9 +1055,7 @@ export default function SupervisorOperationalReportPage() {
         !Number.isFinite(lobBagCount) ||
         lobBagCount <= 0
       ) {
-        setStatusMessage(
-          "Please enter a valid total number of LOB bags."
-        );
+        setStatusMessage("Please enter a valid total number of LOB bags.");
         return false;
       }
 
@@ -1566,9 +1064,7 @@ export default function SupervisorOperationalReportPage() {
         !Number.isFinite(lobAgentsUsed) ||
         lobAgentsUsed < 0
       ) {
-        setStatusMessage(
-          "Please enter the number of agents used for LOBs."
-        );
+        setStatusMessage("Please enter the number of agents used for LOBs.");
         return false;
       }
 
@@ -1591,22 +1087,14 @@ export default function SupervisorOperationalReportPage() {
       }
     }
 
-    // =========================================================
-    // DELAY VALIDATION
-    // =========================================================
-
     if (form.delayedFlight) {
       if (!String(form.delayedTimeMinutes || "").trim()) {
-        setStatusMessage(
-          "Please enter the delayed time in minutes."
-        );
+        setStatusMessage("Please enter the delayed time in minutes.");
         return false;
       }
 
       if (!String(form.delayedReason || "").trim()) {
-        setStatusMessage(
-          "Please enter the delayed reason."
-        );
+        setStatusMessage("Please enter the delayed reason.");
         return false;
       }
 
@@ -1632,182 +1120,206 @@ export default function SupervisorOperationalReportPage() {
       const payload = {
         templateKey: activeTemplate.key,
         templateLabel: activeTemplate.label,
-
         airline: normalizeAirlineName(form.airline),
-
         reportDate: form.reportDate,
-
-        department: String(
-          form.department || ""
-        ).trim(),
-
-        shift: String(
-          form.shift || ""
-        ).trim(),
-
+        department: String(form.department || "").trim(),
+        shift: String(form.shift || "").trim(),
         flightNumber: activeTemplate.hideFlightNumber
           ? ""
           : String(form.flightNumber || "").trim(),
-
-        flightsHandled: String(
-          form.flightsHandled || ""
-        ).trim(),
-
+        flightsHandled: String(form.flightsHandled || "").trim(),
         supervisorReporting:
           String(form.supervisorReporting || "").trim() ||
           getVisibleName(user),
-
         supervisorPosition:
           String(form.supervisorPosition || "").trim() ||
           user?.position ||
           getDefaultPosition(user?.role),
-
-        notes: String(
-          form.notes || ""
-        ).trim(),
-
-        // =====================================================
-        // DELAY INFORMATION
-        // =====================================================
-
-        delayedFlight: Boolean(
-          form.delayedFlight
-        ),
-
+        notes: String(form.notes || "").trim(),
+        delayedFlight: Boolean(form.delayedFlight),
         delayedTimeMinutes: form.delayedFlight
           ? Number(form.delayedTimeMinutes || 0)
           : 0,
-
         delayedReason: form.delayedFlight
           ? String(form.delayedReason || "").trim()
           : "",
-
         delayedCodeReported: form.delayedFlight
           ? String(form.delayedCodeReported || "").trim()
           : "",
-
-        // =====================================================
-        // LOBS INFORMATION
-        // =====================================================
-        //
-        // IMPORTANT:
-        // We save the raw operational information only.
-        //
-        // Labor hours are NOT calculated here.
-        // Operational Report Management will calculate those
-        // hours based on the configurable LOB labor formula.
-        //
-        // Example:
-        //
-        // 80 bags
-        // 4 agents
-        // 1 supervisor
-        //
-        // If Management defines 80 bags = 3 hours:
-        //
-        // Agent Hours = 4 x 3 = 12
-        // Supervisor Hours = 1 x 3 = 3
-        // Total Labor = 15
-        //
-        // =====================================================
-
         hasLobs: Boolean(form.hasLobs),
-
         lobBagCount: form.hasLobs
           ? Number(form.lobBagCount || 0)
           : 0,
-
         lobAgentsUsed: form.hasLobs
           ? Number(form.lobAgentsUsed || 0)
           : 0,
-
         lobSupervisorsUsed: form.hasLobs
           ? Number(form.lobSupervisorsUsed || 0)
           : 0,
-
+        overtimeReported: Boolean(overtimeReported),
         needsAttention: finalNeedsAttention,
-
         responses: form.responses || {},
-
-        submittedByUserId:
-          user?.id || "",
-
-        submittedByUsername:
-          user?.username || "",
-
-        submittedByName:
-          getVisibleName(user),
-
-        submittedByRole:
-          user?.role || "",
-
-        createdAt:
-          serverTimestamp(),
-
+        submittedByUserId: user?.id || "",
+        submittedByUsername: user?.username || "",
+        submittedByName: getVisibleName(user),
+        submittedByRole: user?.role || "",
+        createdAt: serverTimestamp(),
         status: "submitted",
-
         reviewStatus: "submitted",
       };
 
-      await addDoc(
+      const reportRef = await addDoc(
         collection(db, "operational_reports"),
         payload
       );
+
+      if (form.hasLobs || overtimeReported) {
+        try {
+          const alertReasons = [];
+
+          if (overtimeReported) {
+            alertReasons.push("OVERTIME");
+          }
+
+          if (form.hasLobs) {
+            alertReasons.push("LOBS");
+          }
+
+          const staffingRemarks = String(
+            form.responses?.staffing_remarks || ""
+          ).trim();
+
+          const lobsText = form.hasLobs
+            ? `LOBs: ${Number(form.lobBagCount || 0)} bag(s), ${Number(
+                form.lobAgentsUsed || 0
+              )} agent(s), ${Number(
+                form.lobSupervisorsUsed || 0
+              )} supervisor(s).`
+            : "";
+
+          const overtimeText = overtimeReported
+            ? staffingRemarks
+              ? `Overtime reported. Staffing remarks: ${staffingRemarks}`
+              : "Overtime was reported in Staffing Status."
+            : "";
+
+          const title =
+            form.hasLobs && overtimeReported
+              ? "Operational Report: Overtime & LOBs"
+              : form.hasLobs
+              ? "Operational Report: LOBs Reported"
+              : "Operational Report: Overtime Reported";
+
+          const message = [
+            `${activeTemplate.label} report requires management awareness.`,
+            overtimeText,
+            lobsText,
+            `Airline: ${normalizeAirlineName(form.airline)}.`,
+            activeTemplate.hideFlightNumber
+              ? ""
+              : `Flight: ${String(form.flightNumber || "N/A").trim()}.`,
+            `Reported by: ${String(
+              form.supervisorReporting || getVisibleName(user)
+            ).trim()}.`,
+          ]
+            .filter(Boolean)
+            .join(" ");
+
+          await createOperationalAlert({
+            alertType:
+              form.hasLobs && overtimeReported
+                ? "OPERATIONAL_REPORT_OVERTIME_AND_LOBS"
+                : form.hasLobs
+                ? "OPERATIONAL_REPORT_LOBS"
+                : "OPERATIONAL_REPORT_OVERTIME",
+            category: "OPERATIONAL_REPORT",
+            severity: "HIGH",
+            priority: "URGENT",
+            title,
+            message,
+            source: "SupervisorOperationalReportPage",
+            sourceId: reportRef.id,
+            airline: normalizeAirlineName(form.airline),
+            department: String(form.department || "").trim(),
+            reportDate: form.reportDate,
+            targetRoles: ["station_manager", "duty_manager"],
+            createdByUserId: user?.id || "",
+            createdByUsername: user?.username || "",
+            createdByName: getVisibleName(user),
+            createdByRole: user?.role || "",
+            metadata: {
+              operationalReportId: reportRef.id,
+              templateKey: activeTemplate.key,
+              templateLabel: activeTemplate.label,
+              airline: normalizeAirlineName(form.airline),
+              department: String(form.department || "").trim(),
+              reportDate: form.reportDate,
+              shift: String(form.shift || "").trim(),
+              flightNumber: activeTemplate.hideFlightNumber
+                ? ""
+                : String(form.flightNumber || "").trim(),
+              alertReasons,
+              overtimeReported: Boolean(overtimeReported),
+              staffingStatus: Array.isArray(
+                form.responses?.staffing_status
+              )
+                ? form.responses.staffing_status
+                : [],
+              staffingRemarks,
+              hasLobs: Boolean(form.hasLobs),
+              lobBagCount: form.hasLobs
+                ? Number(form.lobBagCount || 0)
+                : 0,
+              lobAgentsUsed: form.hasLobs
+                ? Number(form.lobAgentsUsed || 0)
+                : 0,
+              lobSupervisorsUsed: form.hasLobs
+                ? Number(form.lobSupervisorsUsed || 0)
+                : 0,
+              supervisorReporting:
+                String(form.supervisorReporting || "").trim() ||
+                getVisibleName(user),
+            },
+          });
+        } catch (alertErr) {
+          console.error(
+            "Operational Report alert error:",
+            alertErr
+          );
+        }
+      }
 
       setStatusMessage(
         "Operational report submitted successfully."
       );
 
-      // =========================================================
-      // RESET FORM AFTER SUCCESSFUL SUBMISSION
-      // =========================================================
-
       setForm({
         templateKey: defaultTemplateKey,
-
         airline:
           OPERATIONAL_REPORT_TEMPLATES[
             defaultTemplateKey
           ]?.airlineDefault || "",
-
         reportDate: "",
-
         department:
           OPERATIONAL_REPORT_TEMPLATES[
             defaultTemplateKey
           ]?.department || "",
-
         shift: "",
-
         flightNumber: "",
-
         flightsHandled: "",
-
-        supervisorReporting:
-          getVisibleName(user),
-
+        supervisorReporting: getVisibleName(user),
         supervisorPosition:
-          user?.position ||
-          getDefaultPosition(user?.role),
-
+          user?.position || getDefaultPosition(user?.role),
         notes: "",
-
         delayedFlight: false,
-
         delayedTimeMinutes: "",
-
         delayedReason: "",
-
         delayedCodeReported: "",
-
-        // Reset LOB information
         hasLobs: false,
         lobBagCount: "",
         lobAgentsUsed: "",
         lobSupervisorsUsed: "",
-
         needsAttention: false,
-
         responses: buildInitialResponses(
           OPERATIONAL_REPORT_TEMPLATES[
             defaultTemplateKey
@@ -1815,14 +1327,8 @@ export default function SupervisorOperationalReportPage() {
         ),
       });
     } catch (err) {
-      console.error(
-        "Error saving operational report:",
-        err
-      );
-
-      setStatusMessage(
-        "Could not submit operational report."
-      );
+      console.error("Error saving operational report:", err);
+      setStatusMessage("Could not submit operational report.");
     } finally {
       setSaving(false);
     }
@@ -1833,43 +1339,43 @@ export default function SupervisorOperationalReportPage() {
       <div
         style={{
           display: "grid",
-          gap: 18,
-          fontFamily:
-            "Poppins, Inter, system-ui, sans-serif",
+          gap: isMobile ? 12 : 18,
+          fontFamily: "Poppins, Inter, system-ui, sans-serif",
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
         }}
       >
         <div
           style={{
             background:
               "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-            borderRadius: 28,
-            padding: 24,
+            borderRadius: isMobile ? 18 : 22,
+            padding: isMobile ? "14px" : "18px 20px",
             color: "#fff",
-            boxShadow:
-              "0 24px 60px rgba(23,105,170,0.22)",
+            boxShadow: "0 18px 42px rgba(23,105,170,0.18)",
           }}
         >
           <p
             style={{
               margin: 0,
-              fontSize: 12,
+              fontSize: isMobile ? 9 : 10,
               textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color:
-                "rgba(255,255,255,0.78)",
-              fontWeight: 700,
+              letterSpacing: isMobile ? "0.12em" : "0.16em",
+              color: "rgba(255,255,255,0.78)",
+              fontWeight: 800,
             }}
           >
-            TPA OPS · Operational Reports
+            {APP_NAME} {"\u00B7"} Operational Reports
           </p>
 
           <h1
             style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
+              margin: isMobile ? "6px 0 4px" : "8px 0 5px",
+              fontSize: isMobile ? 21 : 25,
+              lineHeight: 1.08,
               fontWeight: 800,
-              letterSpacing: "-0.04em",
+              letterSpacing: "-0.035em",
             }}
           >
             Access denied
@@ -1878,38 +1384,51 @@ export default function SupervisorOperationalReportPage() {
           <p
             style={{
               margin: 0,
-              maxWidth: 700,
-              fontSize: 14,
-              color:
-                "rgba(255,255,255,0.88)",
+              fontSize: isMobile ? 11.5 : 12.5,
+              color: "rgba(255,255,255,0.88)",
             }}
           >
-            You do not have permission to submit
-            operational reports.
+            You do not have permission to submit operational reports.
           </p>
         </div>
       </div>
     );
   }
 
+  const gridStyle = {
+    display: "grid",
+    gridTemplateColumns: isMobile
+      ? "1fr"
+      : isTablet
+      ? "repeat(2, minmax(0, 1fr))"
+      : "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: isMobile ? 10 : 14,
+  };
+
   return (
     <div
       style={{
         display: "grid",
-        gap: 18,
-        fontFamily:
-          "Poppins, Inter, system-ui, sans-serif",
+        gap: isMobile ? 12 : 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflowX: "hidden",
       }}
     >
       <div
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 18 : 22,
+          padding: isMobile
+            ? "14px"
+            : isTablet
+            ? "16px 18px"
+            : "18px 20px",
           color: "#fff",
-          boxShadow:
-            "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow: "0 18px 42px rgba(23,105,170,0.18)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -1917,13 +1436,12 @@ export default function SupervisorOperationalReportPage() {
         <div
           style={{
             position: "absolute",
-            width: 220,
-            height: 220,
+            width: 180,
+            height: 180,
             borderRadius: "999px",
-            background:
-              "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
+            background: "rgba(255,255,255,0.07)",
+            top: -92,
+            right: -28,
           }}
         />
 
@@ -1931,39 +1449,56 @@ export default function SupervisorOperationalReportPage() {
           style={{
             position: "relative",
             display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems: "flex-start",
-            gap: 16,
+            flexDirection: isMobile ? "column" : "row",
+            justifyContent: "space-between",
+            alignItems: isMobile ? "stretch" : "flex-start",
+            gap: isMobile ? 10 : 14,
             flexWrap: "wrap",
           }}
         >
-          <div>
-            <p
+          <div style={{ minWidth: 0 }}>
+            <div
               style={{
-                margin: 0,
-                fontSize: 12,
-                textTransform:
-                  "uppercase",
-                letterSpacing:
-                  "0.22em",
-                color:
-                  "rgba(255,255,255,0.78)",
-                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                marginBottom: isMobile ? 5 : 7,
               }}
             >
-              TPA OPS · Operational Reports
-            </p>
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{
+                  width: isMobile ? 34 : 40,
+                  height: isMobile ? 34 : 40,
+                  borderRadius: 10,
+                  objectFit: "contain",
+                  background: "#ffffff",
+                  flexShrink: 0,
+                }}
+              />
+
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: isMobile ? 9 : 10,
+                  textTransform: "uppercase",
+                  letterSpacing: isMobile ? "0.12em" : "0.16em",
+                  color: "rgba(255,255,255,0.78)",
+                  fontWeight: 800,
+                }}
+              >
+                {APP_NAME} {"\u00B7"} Operational Reports
+              </p>
+            </div>
 
             <h1
               style={{
-                margin:
-                  "10px 0 6px",
-                fontSize: 32,
-                lineHeight: 1.05,
+                margin: "0 0 4px",
+                fontSize: isMobile ? 20 : isTablet ? 23 : 25,
+                lineHeight: 1.08,
                 fontWeight: 800,
-                letterSpacing:
-                  "-0.04em",
+                letterSpacing: "-0.035em",
               }}
             >
               Submit Operational Report
@@ -1973,40 +1508,65 @@ export default function SupervisorOperationalReportPage() {
               style={{
                 margin: 0,
                 maxWidth: 760,
-                fontSize: 14,
-                color:
-                  "rgba(255,255,255,0.88)",
+                fontSize: isMobile ? 11.5 : 12.5,
+                lineHeight: 1.45,
+                color: "rgba(255,255,255,0.88)",
               }}
             >
-              Submit the operational report by
-              department. Questions change
-              automatically based on the selected
-              operational area.
+              Department-based operational reporting with automatic management
+              alerts for overtime and LOBs.
+            </p>
+
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: isMobile ? 9.5 : 10.5,
+                color: "rgba(255,255,255,0.72)",
+                fontWeight: 700,
+              }}
+            >
+              {APP_SUBTITLE}
             </p>
           </div>
 
-          <ActionButton
-            type="button"
-            variant="secondary"
-            onClick={() =>
-              navigate("/dashboard")
-            }
-          >
-            ← Back to Dashboard
-          </ActionButton>
-        </div>
-      </div>
-            {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
           <div
             style={{
-              background: "#edf7ff",
-              border: "1px solid #cfe7fb",
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
+              width: isMobile ? "100%" : "auto",
+              display: "flex",
+              justifyContent: isMobile ? "flex-start" : "flex-end",
+            }}
+          >
+            <ActionButton
+              type="button"
+              variant="secondary"
+              onClick={() => navigate("/dashboard")}
+            >
+              {"\u2190"} Back to Dashboard
+            </ActionButton>
+          </div>
+        </div>
+      </div>
+
+      {statusMessage && (
+        <PageCard style={{ padding: isMobile ? 12 : 16 }}>
+          <div
+            style={{
+              background: statusMessage.toLowerCase().includes("could not") ||
+                statusMessage.toLowerCase().includes("please")
+                ? "#fff1f2"
+                : "#ecfdf5",
+              border: statusMessage.toLowerCase().includes("could not") ||
+                statusMessage.toLowerCase().includes("please")
+                ? "1px solid #fecdd3"
+                : "1px solid #a7f3d0",
+              borderRadius: 14,
+              padding: "12px 14px",
+              color: statusMessage.toLowerCase().includes("could not") ||
+                statusMessage.toLowerCase().includes("please")
+                ? "#9f1239"
+                : "#065f46",
+              fontSize: 13,
+              fontWeight: 800,
             }}
           >
             {statusMessage}
@@ -2014,94 +1574,47 @@ export default function SupervisorOperationalReportPage() {
         </PageCard>
       )}
 
-      {/* ===================================================== */}
-      {/* REPORT HEADER                                         */}
-      {/* ===================================================== */}
-
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div style={{ marginBottom: 14 }}>
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: isMobile ? 17 : 19,
               fontWeight: 800,
               color: "#0f172a",
-              letterSpacing: "-0.02em",
             }}
           >
             Report Header
           </h2>
-
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Complete the main report information first.
-          </p>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 14,
-          }}
-        >
+        <div style={gridStyle}>
           <div>
             <FieldLabel>Department / Report Type</FieldLabel>
-
             <SelectInput
               value={form.templateKey}
               onChange={(e) =>
-                handleFormChange(
-                  "templateKey",
-                  e.target.value
-                )
+                handleFormChange("templateKey", e.target.value)
               }
             >
-              <option value="baggage">
-                Baggage Handling
-              </option>
-
-              <option value="wchr">
-                WCHR Service
-              </option>
-
-              <option value="cabin_service">
-                Cabin Service
-              </option>
-
-              <option value="passenger_service">
-                Passenger Service
-              </option>
+              <option value="baggage">Baggage Handling</option>
+              <option value="wchr">WCHR Service</option>
+              <option value="cabin_service">Cabin Service</option>
+              <option value="passenger_service">Passenger Service</option>
             </SelectInput>
           </div>
 
           <div>
             <FieldLabel>Reporting Airline</FieldLabel>
-
             <SelectInput
               value={form.airline}
               onChange={(e) =>
-                handleFormChange(
-                  "airline",
-                  e.target.value
-                )
+                handleFormChange("airline", e.target.value)
               }
             >
-              <option value="">
-                Select airline
-              </option>
-
+              <option value="">Select airline</option>
               {AIRLINE_OPTIONS.map((airline) => (
-                <option
-                  key={airline.value}
-                  value={airline.value}
-                >
+                <option key={airline.value} value={airline.value}>
                   {airline.label}
                 </option>
               ))}
@@ -2110,29 +1623,21 @@ export default function SupervisorOperationalReportPage() {
 
           <div>
             <FieldLabel>Date</FieldLabel>
-
             <TextInput
               type="date"
               value={form.reportDate}
               onChange={(e) =>
-                handleFormChange(
-                  "reportDate",
-                  e.target.value
-                )
+                handleFormChange("reportDate", e.target.value)
               }
             />
           </div>
 
           <div>
             <FieldLabel>Department</FieldLabel>
-
             <TextInput
               value={form.department}
               onChange={(e) =>
-                handleFormChange(
-                  "department",
-                  e.target.value
-                )
+                handleFormChange("department", e.target.value)
               }
               disabled
             />
@@ -2140,14 +1645,10 @@ export default function SupervisorOperationalReportPage() {
 
           <div>
             <FieldLabel>Shift</FieldLabel>
-
             <TextInput
               value={form.shift}
               onChange={(e) =>
-                handleFormChange(
-                  "shift",
-                  e.target.value
-                )
+                handleFormChange("shift", e.target.value)
               }
               placeholder="AM / PM / MID"
             />
@@ -2156,14 +1657,10 @@ export default function SupervisorOperationalReportPage() {
           {!activeTemplate.hideFlightNumber && (
             <div>
               <FieldLabel>Flight Number</FieldLabel>
-
               <TextInput
                 value={form.flightNumber}
                 onChange={(e) =>
-                  handleFormChange(
-                    "flightNumber",
-                    e.target.value
-                  )
+                  handleFormChange("flightNumber", e.target.value)
                 }
                 placeholder="Example: WL294"
               />
@@ -2176,14 +1673,10 @@ export default function SupervisorOperationalReportPage() {
                 ? "Flights Serviced"
                 : "Flights Handled"}
             </FieldLabel>
-
             <TextInput
               value={form.flightsHandled}
               onChange={(e) =>
-                handleFormChange(
-                  "flightsHandled",
-                  e.target.value
-                )
+                handleFormChange("flightsHandled", e.target.value)
               }
               placeholder="Example: 4"
             />
@@ -2191,41 +1684,39 @@ export default function SupervisorOperationalReportPage() {
 
           <div>
             <FieldLabel>Supervisor (Name)</FieldLabel>
-
             <TextInput
               value={form.supervisorReporting}
               onChange={(e) =>
-                handleFormChange(
-                  "supervisorReporting",
-                  e.target.value
-                )
+                handleFormChange("supervisorReporting", e.target.value)
               }
             />
           </div>
         </div>
       </PageCard>
 
-      {/* ===================================================== */}
-      {/* LOBS INFORMATION                                      */}
-      {/* ===================================================== */}
-
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
+      <PageCard
+        style={{
+          padding: isMobile ? 14 : 20,
+          border: form.hasLobs
+            ? "1px solid #fdba74"
+            : "1px solid #e2e8f0",
+        }}
+      >
+        <div style={{ marginBottom: 14 }}>
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              gap: 8,
               flexWrap: "wrap",
             }}
           >
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: isMobile ? 17 : 19,
                 fontWeight: 800,
                 color: "#0f172a",
-                letterSpacing: "-0.02em",
               }}
             >
               LOBs Information
@@ -2237,13 +1728,12 @@ export default function SupervisorOperationalReportPage() {
                   display: "inline-flex",
                   alignItems: "center",
                   borderRadius: 999,
-                  padding: "5px 10px",
+                  padding: "5px 9px",
                   background: "#fff7ed",
                   border: "1px solid #fed7aa",
                   color: "#c2410c",
-                  fontSize: 11,
-                  fontWeight: 800,
-                  letterSpacing: "0.04em",
+                  fontSize: 10.5,
+                  fontWeight: 900,
                 }}
               >
                 LOBS REPORTED
@@ -2253,73 +1743,36 @@ export default function SupervisorOperationalReportPage() {
 
           <p
             style={{
-              margin: "5px 0 0",
-              fontSize: 13,
+              margin: "4px 0 0",
+              fontSize: 12,
               color: "#64748b",
             }}
           >
-            Report any Left On Board / left-behind baggage
-            requiring additional handling.
+            Reporting LOBs will automatically create an urgent management alert.
           </p>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 14,
-          }}
-        >
-          {/* YES / NO QUESTION */}
-
+        <div style={gridStyle}>
           <div>
-            <FieldLabel>
-              Did this flight have LOBs?
-            </FieldLabel>
-
+            <FieldLabel>Did this flight have LOBs?</FieldLabel>
             <SelectInput
               value={form.hasLobs ? "Yes" : "No"}
-              onChange={(e) => {
-                const hasLobs =
-                  e.target.value === "Yes";
-
-                setForm((prev) => ({
-                  ...prev,
-                  hasLobs,
-
-                  // If changed back to No,
-                  // remove the previously entered values.
-                  lobBagCount: hasLobs
-                    ? prev.lobBagCount
-                    : "",
-
-                  lobAgentsUsed: hasLobs
-                    ? prev.lobAgentsUsed
-                    : "",
-
-                  lobSupervisorsUsed: hasLobs
-                    ? prev.lobSupervisorsUsed
-                    : "",
-                }));
-              }}
+              onChange={(e) =>
+                handleFormChange(
+                  "hasLobs",
+                  e.target.value === "Yes"
+                )
+              }
             >
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </SelectInput>
           </div>
 
-          {/* ================================================= */}
-          {/* EXTRA FIELDS ONLY APPEAR WHEN LOBS = YES          */}
-          {/* ================================================= */}
-
           {form.hasLobs && (
             <>
               <div>
-                <FieldLabel>
-                  Total LOB Bags *
-                </FieldLabel>
-
+                <FieldLabel>Total LOB Bags *</FieldLabel>
                 <TextInput
                   type="number"
                   min="1"
@@ -2327,20 +1780,14 @@ export default function SupervisorOperationalReportPage() {
                   inputMode="numeric"
                   value={form.lobBagCount}
                   onChange={(e) =>
-                    handleFormChange(
-                      "lobBagCount",
-                      e.target.value
-                    )
+                    handleFormChange("lobBagCount", e.target.value)
                   }
                   placeholder="Example: 80"
                 />
               </div>
 
               <div>
-                <FieldLabel>
-                  Agents Used *
-                </FieldLabel>
-
+                <FieldLabel>Agents Used *</FieldLabel>
                 <TextInput
                   type="number"
                   min="0"
@@ -2348,20 +1795,14 @@ export default function SupervisorOperationalReportPage() {
                   inputMode="numeric"
                   value={form.lobAgentsUsed}
                   onChange={(e) =>
-                    handleFormChange(
-                      "lobAgentsUsed",
-                      e.target.value
-                    )
+                    handleFormChange("lobAgentsUsed", e.target.value)
                   }
                   placeholder="Example: 4"
                 />
               </div>
 
               <div>
-                <FieldLabel>
-                  Supervisors Used *
-                </FieldLabel>
-
+                <FieldLabel>Supervisors Used *</FieldLabel>
                 <TextInput
                   type="number"
                   min="0"
@@ -2381,141 +1822,60 @@ export default function SupervisorOperationalReportPage() {
           )}
         </div>
 
-        {/* SUMMARY PREVIEW */}
-
         {form.hasLobs && (
           <div
             style={{
-              marginTop: 18,
-              padding: 16,
-              borderRadius: 16,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
+              marginTop: 14,
+              padding: 13,
+              borderRadius: 14,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
             }}
           >
             <div
               style={{
                 fontSize: 11,
-                fontWeight: 800,
-                color: "#64748b",
+                fontWeight: 900,
+                color: "#9a3412",
                 textTransform: "uppercase",
-                letterSpacing: "0.08em",
-                marginBottom: 8,
               }}
             >
               LOB Summary
             </div>
-
             <div
               style={{
-                display: "flex",
-                gap: 20,
-                flexWrap: "wrap",
+                marginTop: 5,
+                fontSize: 13,
+                color: "#7c2d12",
+                fontWeight: 700,
+                lineHeight: 1.55,
               }}
             >
-              <div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#64748b",
-                  }}
-                >
-                  Bags
-                </div>
-
-                <div
-                  style={{
-                    fontSize: 20,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  {form.lobBagCount || "0"}
-                </div>
-              </div>
-
-              <div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#64748b",
-                  }}
-                >
-                  Agents
-                </div>
-
-                <div
-                  style={{
-                    fontSize: 20,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  {form.lobAgentsUsed || "0"}
-                </div>
-              </div>
-
-              <div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#64748b",
-                  }}
-                >
-                  Supervisors
-                </div>
-
-                <div
-                  style={{
-                    fontSize: 20,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                  }}
-                >
-                  {form.lobSupervisorsUsed || "0"}
-                </div>
-              </div>
+              {form.lobBagCount || "0"} bag(s) {"\u00B7"}{" "}
+              {form.lobAgentsUsed || "0"} agent(s) {"\u00B7"}{" "}
+              {form.lobSupervisorsUsed || "0"} supervisor(s)
             </div>
           </div>
         )}
       </PageCard>
 
-      {/* ===================================================== */}
-      {/* DELAY INFORMATION                                     */}
-      {/* ===================================================== */}
-
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Delay Information
-          </h2>
-        </div>
-
-        <div
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <h2
           style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 14,
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
+            fontWeight: 800,
+            color: "#0f172a",
           }}
         >
+          Delay Information
+        </h2>
+
+        <div style={gridStyle}>
           <div>
             <FieldLabel>Delayed Flight</FieldLabel>
-
             <SelectInput
-              value={
-                form.delayedFlight
-                  ? "Yes"
-                  : "No"
-              }
+              value={form.delayedFlight ? "Yes" : "No"}
               onChange={(e) =>
                 handleFormChange(
                   "delayedFlight",
@@ -2523,28 +1883,18 @@ export default function SupervisorOperationalReportPage() {
                 )
               }
             >
-              <option value="No">
-                No
-              </option>
-
-              <option value="Yes">
-                Yes
-              </option>
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
             </SelectInput>
           </div>
 
           {form.delayedFlight && (
             <>
               <div>
-                <FieldLabel>
-                  Delayed Time (minutes)
-                </FieldLabel>
-
+                <FieldLabel>Delayed Time (minutes)</FieldLabel>
                 <TextInput
                   type="number"
-                  value={
-                    form.delayedTimeMinutes
-                  }
+                  value={form.delayedTimeMinutes}
                   onChange={(e) =>
                     handleFormChange(
                       "delayedTimeMinutes",
@@ -2556,14 +1906,9 @@ export default function SupervisorOperationalReportPage() {
               </div>
 
               <div>
-                <FieldLabel>
-                  Delayed Code Reported to the Airline
-                </FieldLabel>
-
+                <FieldLabel>Delayed Code Reported to the Airline</FieldLabel>
                 <TextInput
-                  value={
-                    form.delayedCodeReported
-                  }
+                  value={form.delayedCodeReported}
                   onChange={(e) =>
                     handleFormChange(
                       "delayedCodeReported",
@@ -2578,60 +1923,36 @@ export default function SupervisorOperationalReportPage() {
         </div>
 
         {form.delayedFlight && (
-          <div style={{ marginTop: 14 }}>
-            <FieldLabel>
-              Delayed Reason
-            </FieldLabel>
-
+          <div style={{ marginTop: 12 }}>
+            <FieldLabel>Delayed Reason</FieldLabel>
             <TextArea
               value={form.delayedReason}
               onChange={(e) =>
-                handleFormChange(
-                  "delayedReason",
-                  e.target.value
-                )
+                handleFormChange("delayedReason", e.target.value)
               }
               placeholder="Explain the delayed reason"
             />
           </div>
         )}
       </PageCard>
-            {/* ===================================================== */}
-      {/* DYNAMIC OPERATIONAL QUESTIONS                         */}
-      {/* ===================================================== */}
 
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div style={{ marginBottom: 14 }}>
           <h2
             style={{
               margin: 0,
-              fontSize: 20,
+              fontSize: isMobile ? 17 : 19,
               fontWeight: 800,
               color: "#0f172a",
-              letterSpacing: "-0.02em",
             }}
           >
             {activeTemplate.label} Questions
           </h2>
-
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            These questions are shown according to the selected department.
-          </p>
         </div>
 
-        <div style={{ display: "grid", gap: 18 }}>
+        <div style={{ display: "grid", gap: isMobile ? 12 : 16 }}>
           {dynamicFields.map((field) => {
             const value = form.responses?.[field.key];
-
-            /* =============================================== */
-            /* TEXTAREA                                        */
-            /* =============================================== */
 
             if (field.type === "textarea") {
               return (
@@ -2639,23 +1960,15 @@ export default function SupervisorOperationalReportPage() {
                   <FieldLabel>
                     {field.label} {field.required ? "*" : ""}
                   </FieldLabel>
-
                   <TextArea
                     value={String(value || "")}
                     onChange={(e) =>
-                      handleResponseChange(
-                        field.key,
-                        e.target.value
-                      )
+                      handleResponseChange(field.key, e.target.value)
                     }
                   />
                 </div>
               );
             }
-
-            /* =============================================== */
-            /* SELECT                                          */
-            /* =============================================== */
 
             if (field.type === "select") {
               return (
@@ -2663,38 +1976,22 @@ export default function SupervisorOperationalReportPage() {
                   <FieldLabel>
                     {field.label} {field.required ? "*" : ""}
                   </FieldLabel>
-
                   <SelectInput
                     value={String(value || "")}
                     onChange={(e) =>
-                      handleResponseChange(
-                        field.key,
-                        e.target.value
-                      )
+                      handleResponseChange(field.key, e.target.value)
                     }
                   >
-                    <option value="">
-                      Select option
-                    </option>
-
-                    {(field.options || []).map(
-                      (option) => (
-                        <option
-                          key={option}
-                          value={option}
-                        >
-                          {option}
-                        </option>
-                      )
-                    )}
+                    <option value="">Select option</option>
+                    {(field.options || []).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
                   </SelectInput>
                 </div>
               );
             }
-
-            /* =============================================== */
-            /* YES / NO                                        */
-            /* =============================================== */
 
             if (field.type === "yesno") {
               return (
@@ -2702,35 +1999,19 @@ export default function SupervisorOperationalReportPage() {
                   <FieldLabel>
                     {field.label} {field.required ? "*" : ""}
                   </FieldLabel>
-
                   <SelectInput
                     value={String(value || "")}
                     onChange={(e) =>
-                      handleResponseChange(
-                        field.key,
-                        e.target.value
-                      )
+                      handleResponseChange(field.key, e.target.value)
                     }
                   >
-                    <option value="">
-                      Select option
-                    </option>
-
-                    <option value="Yes">
-                      Yes
-                    </option>
-
-                    <option value="No">
-                      No
-                    </option>
+                    <option value="">Select option</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
                   </SelectInput>
                 </div>
               );
             }
-
-            /* =============================================== */
-            /* CHECKBOX GROUP                                  */
-            /* =============================================== */
 
             if (field.type === "checkbox-group") {
               const selected = Array.isArray(value)
@@ -2746,65 +2027,81 @@ export default function SupervisorOperationalReportPage() {
                   <div
                     style={{
                       display: "grid",
-                      gap: 10,
-                      background: "#f8fbff",
-                      border: "1px solid #dbeafe",
-                      borderRadius: 16,
-                      padding: 14,
+                      gridTemplateColumns: isMobile
+                        ? "1fr"
+                        : "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: 8,
+                      background: field.key === "staffing_status" &&
+                        overtimeReported
+                        ? "#fff7ed"
+                        : "#f8fbff",
+                      border: field.key === "staffing_status" &&
+                        overtimeReported
+                        ? "1px solid #fdba74"
+                        : "1px solid #dbeafe",
+                      borderRadius: 14,
+                      padding: 12,
                     }}
                   >
-                    {(field.options || []).map(
-                      (option) => (
-                        <label
-                          key={option}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            color: "#0f172a",
-                            fontWeight: 600,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selected.includes(
-                              option
-                            )}
-                            onChange={(e) =>
-                              handleCheckboxGroupChange(
-                                field.key,
-                                option,
-                                e.target.checked
-                              )
-                            }
-                          />
-
-                          {option}
-                        </label>
-                      )
-                    )}
+                    {(field.options || []).map((option) => (
+                      <label
+                        key={option}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          color: "#0f172a",
+                          fontWeight: 600,
+                          fontSize: 13,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(option)}
+                          onChange={(e) =>
+                            handleCheckboxGroupChange(
+                              field.key,
+                              option,
+                              e.target.checked
+                            )
+                          }
+                        />
+                        {option}
+                      </label>
+                    ))}
                   </div>
+
+                  {field.key === "staffing_status" &&
+                    overtimeReported && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          borderRadius: 12,
+                          padding: "10px 12px",
+                          background: "#fff7ed",
+                          border: "1px solid #fed7aa",
+                          color: "#9a3412",
+                          fontSize: 12,
+                          fontWeight: 800,
+                        }}
+                      >
+                        Overtime selected. An urgent management alert will be
+                        created when this report is submitted.
+                      </div>
+                    )}
                 </div>
               );
             }
-
-            /* =============================================== */
-            /* DEFAULT TEXT FIELD                              */
-            /* =============================================== */
 
             return (
               <div key={field.key}>
                 <FieldLabel>
                   {field.label} {field.required ? "*" : ""}
                 </FieldLabel>
-
                 <TextInput
                   value={String(value || "")}
                   onChange={(e) =>
-                    handleResponseChange(
-                      field.key,
-                      e.target.value
-                    )
+                    handleResponseChange(field.key, e.target.value)
                   }
                 />
               </div>
@@ -2813,37 +2110,24 @@ export default function SupervisorOperationalReportPage() {
         </div>
       </PageCard>
 
-      {/* ===================================================== */}
-      {/* NOTES AND ATTENTION                                   */}
-      {/* ===================================================== */}
-
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Notes and Attention
-          </h2>
-        </div>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <h2
+          style={{
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Notes and Attention
+        </h2>
 
         <div>
-          <FieldLabel>
-            Notes
-          </FieldLabel>
-
+          <FieldLabel>Notes</FieldLabel>
           <TextArea
             value={form.notes}
             onChange={(e) =>
-              handleFormChange(
-                "notes",
-                e.target.value
-              )
+              handleFormChange("notes", e.target.value)
             }
             placeholder="Additional operational notes"
           />
@@ -2851,7 +2135,7 @@ export default function SupervisorOperationalReportPage() {
 
         <div
           style={{
-            marginTop: 14,
+            marginTop: 12,
             display: "grid",
             gap: 10,
           }}
@@ -2863,6 +2147,7 @@ export default function SupervisorOperationalReportPage() {
               gap: 8,
               fontWeight: 700,
               color: "#0f172a",
+              fontSize: 13,
             }}
           >
             <input
@@ -2875,116 +2160,70 @@ export default function SupervisorOperationalReportPage() {
                 )
               }
             />
-
             Mark report as Needs Attention
           </label>
 
           {computedNeedsAttention && (
             <div
               style={{
-                borderRadius: 16,
-                padding: "14px 16px",
+                borderRadius: 14,
+                padding: "12px 14px",
                 background: "#fff1f2",
                 border: "1px solid #fecdd3",
                 color: "#9f1239",
                 fontWeight: 800,
-                fontSize: 14,
+                fontSize: 12.5,
               }}
             >
-              Attention alert: this report will be flagged because the
-              selected responses indicate an issue, delay, safety concern,
-              or incomplete operation.
+              This report will be flagged because the selected responses indicate
+              an issue, delay, safety concern, or incomplete operation.
             </div>
           )}
         </div>
       </PageCard>
 
-      {/* ===================================================== */}
-      {/* LOBS FINAL SUBMISSION REMINDER                        */}
-      {/* ===================================================== */}
-
-      {form.hasLobs && (
+      {(form.hasLobs || overtimeReported) && (
         <PageCard
           style={{
-            padding: 20,
-            border: "1px solid #fed7aa",
+            padding: isMobile ? 14 : 18,
+            border: "1px solid #fdba74",
           }}
         >
           <div
             style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 12,
-              flexWrap: "wrap",
+              fontSize: 13,
+              fontWeight: 900,
+              color: "#9a3412",
             }}
           >
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 12,
-                display: "grid",
-                placeItems: "center",
-                background: "#fff7ed",
-                border: "1px solid #fed7aa",
-                fontSize: 18,
-                flexShrink: 0,
-              }}
-            >
-              🧳
-            </div>
+            Management Alert Will Be Created
+          </div>
 
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 800,
-                  color: "#9a3412",
-                }}
-              >
-                LOBs will be included in this report
-              </div>
-
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 13,
-                  color: "#64748b",
-                  lineHeight: 1.6,
-                }}
-              >
-                Flight{" "}
-                <strong>
-                  {form.flightNumber || "N/A"}
-                </strong>{" "}
-                is being reported with{" "}
-                <strong>
-                  {form.lobBagCount || "0"}
-                </strong>{" "}
-                LOB bags,{" "}
-                <strong>
-                  {form.lobAgentsUsed || "0"}
-                </strong>{" "}
-                agent(s), and{" "}
-                <strong>
-                  {form.lobSupervisorsUsed || "0"}
-                </strong>{" "}
-                supervisor(s).
-              </div>
-            </div>
+          <div
+            style={{
+              marginTop: 5,
+              fontSize: 12.5,
+              color: "#7c2d12",
+              lineHeight: 1.6,
+              fontWeight: 700,
+            }}
+          >
+            {overtimeReported && "Overtime reported. "}
+            {form.hasLobs &&
+              `${form.lobBagCount || "0"} LOB bag(s), ${
+                form.lobAgentsUsed || "0"
+              } agent(s), and ${
+                form.lobSupervisorsUsed || "0"
+              } supervisor(s) reported.`}
           </div>
         </PageCard>
       )}
 
-      {/* ===================================================== */}
-      {/* SUBMIT / CANCEL                                       */}
-      {/* ===================================================== */}
-
-      <PageCard style={{ padding: 20 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 18 }}>
         <div
           style={{
             display: "flex",
-            gap: 12,
+            gap: 10,
             flexWrap: "wrap",
           }}
         >
@@ -2999,9 +2238,7 @@ export default function SupervisorOperationalReportPage() {
           </ActionButton>
 
           <ActionButton
-            onClick={() =>
-              navigate("/dashboard")
-            }
+            onClick={() => navigate("/dashboard")}
             variant="secondary"
             disabled={saving}
           >
