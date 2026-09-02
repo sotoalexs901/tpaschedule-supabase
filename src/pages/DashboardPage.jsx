@@ -12,7 +12,6 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME } from "../config/appConfig.js";
 import OperationalAlertsPanel from "../components/OperationalAlertsPanel.jsx";
-import { createOperationalAlert } from "../utils/operationalAlerts.js";
 
 // IMPORTANT:
 // Special punctuation and menu/dashboard symbols use Unicode escape sequences
@@ -435,7 +434,6 @@ export default function DashboardPage() {
 
   const [employeesOfMonth, setEmployeesOfMonth] = useState([]);
   const [loadingEmployeeOfMonth, setLoadingEmployeeOfMonth] = useState(false);
-  const [creatingTestAlert, setCreatingTestAlert] = useState(false);
 
   const canTrackTimesheets =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -640,44 +638,6 @@ export default function DashboardPage() {
         prefilledMessage: messageText,
       },
     });
-  };
-
-  const handleCreateTestAlert = async () => {
-    if (user?.role !== "station_manager") return;
-
-    try {
-      setCreatingTestAlert(true);
-
-      await createOperationalAlert({
-        alertType: "SYSTEM_TEST",
-        category: "SYSTEM",
-        severity: "HIGH",
-        priority: "URGENT",
-        title: "Operational Alert Test",
-        message:
-          "This is a temporary test alert to verify Dashboard visibility, the global alert bell, and Read cleanup.",
-        source: "DashboardPage",
-        sourcePath: "/dashboard",
-        targetRoles: ["station_manager", "duty_manager"],
-        createdByUserId: user?.id || "",
-        createdByUsername: user?.username || "",
-        createdByName:
-          user?.displayName ||
-          user?.fullName ||
-          user?.name ||
-          user?.username ||
-          "",
-        createdByRole: user?.role || "",
-        metadata: {
-          testAlert: true,
-        },
-      });
-    } catch (err) {
-      console.error("Error creating test operational alert:", err);
-      window.alert("Could not create the test alert.");
-    } finally {
-      setCreatingTestAlert(false);
-    }
   };
 
   const reloadAll = () => {
@@ -895,38 +855,7 @@ export default function DashboardPage() {
       </div>
 
       {canTrackTimesheets && (
-        <div style={{ marginBottom: 18, display: "grid", gap: 10 }}>
-          {user?.role === "station_manager" && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: isMobile ? "stretch" : "flex-end",
-              }}
-            >
-              <button
-                type="button"
-                onClick={handleCreateTestAlert}
-                disabled={creatingTestAlert}
-                style={{
-                  width: isMobile ? "100%" : "auto",
-                  border: "1px solid #fecaca",
-                  background: "#fff1f2",
-                  color: "#b91c1c",
-                  borderRadius: 12,
-                  padding: "9px 13px",
-                  fontSize: 11.5,
-                  fontWeight: 900,
-                  cursor: creatingTestAlert ? "not-allowed" : "pointer",
-                  opacity: creatingTestAlert ? 0.65 : 1,
-                }}
-              >
-                {creatingTestAlert
-                  ? "Creating Test Alert..."
-                  : "Create Test Alert"}
-              </button>
-            </div>
-          )}
-
+        <div style={{ marginBottom: 18 }}>
           <OperationalAlertsPanel
             compact={isMobile}
             maxItems={6}
