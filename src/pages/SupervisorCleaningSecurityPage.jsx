@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
 const AIRLINE_OPTIONS = [
   "Aeromexico",
@@ -33,14 +34,36 @@ function getVisibleName(user) {
   );
 }
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const handleResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
         background: "rgba(255,255,255,0.92)",
         border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
-        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        borderRadius: 20,
+        boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -55,7 +78,7 @@ function FieldLabel({ children }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 700,
         color: "#475569",
         letterSpacing: "0.03em",
@@ -73,10 +96,12 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -92,15 +117,17 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
-        minHeight: 100,
+        minHeight: 90,
         fontFamily: "inherit",
         ...props.style,
       }}
@@ -114,10 +141,12 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -140,7 +169,7 @@ function ActionButton({
         "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
       color: "#fff",
       border: "none",
-      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+      boxShadow: "0 10px 20px rgba(23,105,170,0.16)",
     },
     secondary: {
       background: "#ffffff",
@@ -156,9 +185,9 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       style={{
-        borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
+        borderRadius: 11,
+        padding: "9px 13px",
+        fontSize: 12.5,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.7 : 1,
@@ -199,9 +228,9 @@ function SignatureBox({
         placeholder={placeholder}
         style={{
           fontFamily: "cursive",
-          fontSize: 18,
+          fontSize: 17,
           fontWeight: 700,
-          minHeight: 50,
+          minHeight: 46,
         }}
       />
     </div>
@@ -257,6 +286,7 @@ function initialFinalConfirmation() {
 export default function SupervisorCleaningSecurityPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const { isMobile, isTablet } = useViewport();
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(
@@ -506,37 +536,40 @@ export default function SupervisorCleaningSecurityPage() {
       <div
         style={{
           display: "grid",
-          gap: 18,
+          gap: isMobile ? 12 : 18,
           fontFamily: "Poppins, Inter, system-ui, sans-serif",
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
         }}
       >
         <div
           style={{
             background:
               "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-            borderRadius: 28,
-            padding: 24,
+            borderRadius: isMobile ? 18 : 22,
+            padding: isMobile ? "14px 14px" : "18px 20px",
             color: "#fff",
-            boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+            boxShadow: "0 18px 42px rgba(23,105,170,0.18)",
           }}
         >
           <p
             style={{
               margin: 0,
-              fontSize: 12,
+              fontSize: isMobile ? 9 : 10,
               textTransform: "uppercase",
-              letterSpacing: "0.22em",
+              letterSpacing: isMobile ? "0.12em" : "0.16em",
               color: "rgba(255,255,255,0.78)",
               fontWeight: 700,
             }}
           >
-            TPA OPS · Reports
+            {APP_NAME} {"\u00B7"} Reports
           </p>
           <h1
             style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
+              margin: isMobile ? "6px 0 4px" : "8px 0 5px",
+              fontSize: isMobile ? 21 : 25,
+              lineHeight: 1.08,
               fontWeight: 800,
               letterSpacing: "-0.04em",
             }}
@@ -547,7 +580,7 @@ export default function SupervisorCleaningSecurityPage() {
             style={{
               margin: 0,
               maxWidth: 700,
-              fontSize: 14,
+              fontSize: isMobile ? 11.5 : 12.5,
               color: "rgba(255,255,255,0.88)",
             }}
           >
@@ -558,22 +591,36 @@ export default function SupervisorCleaningSecurityPage() {
     );
   }
 
+  const gridStyle = {
+    display: "grid",
+    gridTemplateColumns: isMobile
+      ? "1fr"
+      : isTablet
+      ? "repeat(2, minmax(0, 1fr))"
+      : "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: isMobile ? 10 : 14,
+  };
+
   return (
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 12 : 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflowX: "hidden",
       }}
     >
       <div
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 18 : 22,
+          padding: isMobile ? "14px 14px" : isTablet ? "16px 18px" : "18px 20px",
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow: "0 18px 42px rgba(23,105,170,0.18)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -581,12 +628,12 @@ export default function SupervisorCleaningSecurityPage() {
         <div
           style={{
             position: "absolute",
-            width: 220,
-            height: 220,
+            width: 180,
+            height: 180,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
+            background: "rgba(255,255,255,0.07)",
+            top: -92,
+            right: -28,
           }}
         />
 
@@ -594,33 +641,34 @@ export default function SupervisorCleaningSecurityPage() {
           style={{
             position: "relative",
             display: "flex",
+            flexDirection: isMobile ? "column" : "row",
             justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 16,
+            alignItems: isMobile ? "stretch" : "flex-start",
+            gap: isMobile ? 10 : 14,
             flexWrap: "wrap",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p
               style={{
                 margin: 0,
-                fontSize: 12,
+                fontSize: isMobile ? 9 : 10,
                 textTransform: "uppercase",
-                letterSpacing: "0.22em",
+                letterSpacing: isMobile ? "0.12em" : "0.16em",
                 color: "rgba(255,255,255,0.78)",
                 fontWeight: 700,
               }}
             >
-              TPA OPS · Supervisor Report
+              {APP_NAME} {"\u00B7"} Cleaning & Security
             </p>
 
             <h1
               style={{
-                margin: "10px 0 6px",
-                fontSize: 32,
-                lineHeight: 1.05,
+                margin: isMobile ? "6px 0 4px" : "8px 0 5px",
+                fontSize: isMobile ? 20 : isTablet ? 23 : 25,
+                lineHeight: 1.08,
                 fontWeight: 800,
-                letterSpacing: "-0.04em",
+                letterSpacing: "-0.035em",
               }}
             >
               Cleaning and Security Search Report
@@ -630,22 +678,42 @@ export default function SupervisorCleaningSecurityPage() {
               style={{
                 margin: 0,
                 maxWidth: 760,
-                fontSize: 14,
+                fontSize: isMobile ? 11.5 : 12.5,
+                lineHeight: 1.45,
                 color: "rgba(255,255,255,0.88)",
               }}
             >
               Supervisor form for cleaning distribution, security search, photos
               and airline representative sign-off.
             </p>
+
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: isMobile ? 9.5 : 10.5,
+                color: "rgba(255,255,255,0.72)",
+                fontWeight: 700,
+              }}
+            >
+              {APP_SUBTITLE}
+            </p>
           </div>
 
-          <ActionButton
-            type="button"
-            variant="secondary"
-            onClick={() => navigate("/dashboard")}
+          <div
+            style={{
+              width: isMobile ? "100%" : "auto",
+              display: "flex",
+              justifyContent: isMobile ? "flex-start" : "flex-end",
+            }}
           >
-            ← Back to Dashboard
-          </ActionButton>
+            <ActionButton
+              type="button"
+              variant="secondary"
+              onClick={() => navigate("/dashboard")}
+            >
+              {"\u2190"} Back to Dashboard
+            </ActionButton>
+          </div>
         </div>
       </div>
 
@@ -668,16 +736,18 @@ export default function SupervisorCleaningSecurityPage() {
             style={{
               width: "100%",
               maxWidth: 520,
+              maxHeight: "90vh",
+              overflowY: "auto",
               background: "#ffffff",
-              borderRadius: 24,
+              borderRadius: 20,
               boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
               border: "1px solid #e2e8f0",
-              overflow: "hidden",
+              overflowX: "hidden",
             }}
           >
             <div
               style={{
-                padding: "18px 20px",
+                padding: "16px 18px",
                 background: isErrorStatus ? "#fff1f2" : "#ecfdf5",
                 borderBottom: isErrorStatus
                   ? "1px solid #fecdd3"
@@ -686,7 +756,7 @@ export default function SupervisorCleaningSecurityPage() {
             >
               <div
                 style={{
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: 900,
                   color: isErrorStatus ? "#9f1239" : "#065f46",
                   letterSpacing: "-0.02em",
@@ -698,8 +768,8 @@ export default function SupervisorCleaningSecurityPage() {
 
             <div
               style={{
-                padding: "22px 20px 18px",
-                fontSize: 15,
+                padding: "18px 18px 16px",
+                fontSize: 14,
                 lineHeight: 1.65,
                 color: "#0f172a",
                 fontWeight: 700,
@@ -710,7 +780,7 @@ export default function SupervisorCleaningSecurityPage() {
 
             <div
               style={{
-                padding: "0 20px 20px",
+                padding: "0 18px 18px",
                 display: "flex",
                 justifyContent: "center",
               }}
@@ -723,12 +793,12 @@ export default function SupervisorCleaningSecurityPage() {
                   background:
                     "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
                   color: "#fff",
-                  borderRadius: 14,
-                  padding: "12px 22px",
+                  borderRadius: 12,
+                  padding: "10px 20px",
                   fontWeight: 800,
-                  fontSize: 14,
+                  fontSize: 13,
                   cursor: "pointer",
-                  boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
+                  boxShadow: "0 10px 20px rgba(23,105,170,0.16)",
                 }}
               >
                 OK
@@ -738,14 +808,8 @@ export default function SupervisorCleaningSecurityPage() {
         </div>
       )}
 
-      <PageCard style={{ padding: 22 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-          }}
-        >
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div style={gridStyle}>
           <div>
             <FieldLabel>Date</FieldLabel>
             <TextInput
@@ -765,7 +829,7 @@ export default function SupervisorCleaningSecurityPage() {
           </div>
 
           <div>
-            <FieldLabel>Hora de Terminación</FieldLabel>
+            <FieldLabel>Hora de Terminacion</FieldLabel>
             <TextInput
               type="time"
               value={form.horaTerminacion}
@@ -849,11 +913,11 @@ export default function SupervisorCleaningSecurityPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
         <h2
           style={{
-            margin: "0 0 14px",
-            fontSize: 20,
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
             fontWeight: 800,
             color: "#0f172a",
           }}
@@ -861,13 +925,7 @@ export default function SupervisorCleaningSecurityPage() {
           Work Distribution
         </h2>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-          }}
-        >
+        <div style={gridStyle}>
           <div>
             <FieldLabel>Galley & Lav</FieldLabel>
             <TextInput
@@ -950,11 +1008,11 @@ export default function SupervisorCleaningSecurityPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
         <h2
           style={{
-            margin: "0 0 14px",
-            fontSize: 20,
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
             fontWeight: 800,
             color: "#0f172a",
           }}
@@ -962,13 +1020,7 @@ export default function SupervisorCleaningSecurityPage() {
           Cleaning Checklist
         </h2>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-          }}
-        >
+        <div style={gridStyle}>
           <YesNoField
             label="Trash removed from seats and bins"
             value={form.limpieza.basuraRemovida}
@@ -1020,7 +1072,7 @@ export default function SupervisorCleaningSecurityPage() {
           />
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 12 }}>
           <FieldLabel>Cleaning observations / comments</FieldLabel>
           <TextArea
             value={form.limpiezaObservaciones}
@@ -1029,11 +1081,11 @@ export default function SupervisorCleaningSecurityPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
         <h2
           style={{
-            margin: "0 0 14px",
-            fontSize: 20,
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
             fontWeight: 800,
             color: "#0f172a",
           }}
@@ -1041,13 +1093,7 @@ export default function SupervisorCleaningSecurityPage() {
           Security Search Checklist
         </h2>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-          }}
-        >
+        <div style={gridStyle}>
           <YesNoField
             label="Under all seats checked"
             value={form.security.debajoAsientos}
@@ -1114,7 +1160,7 @@ export default function SupervisorCleaningSecurityPage() {
           />
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 12 }}>
           <FieldLabel>Security observations</FieldLabel>
           <TextArea
             value={form.securityObservaciones}
@@ -1123,11 +1169,11 @@ export default function SupervisorCleaningSecurityPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
         <h2
           style={{
-            margin: "0 0 14px",
-            fontSize: 20,
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
             fontWeight: 800,
             color: "#0f172a",
           }}
@@ -1135,13 +1181,7 @@ export default function SupervisorCleaningSecurityPage() {
           Final Confirmation
         </h2>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
-          }}
-        >
+        <div style={gridStyle}>
           <YesNoField
             label="Cleaning completed"
             value={form.finalConfirmation.limpiezaCompletada}
@@ -1178,7 +1218,7 @@ export default function SupervisorCleaningSecurityPage() {
         </div>
 
         {form.finalConfirmation.articuloSospechoso === "Yes" && (
-          <div style={{ marginTop: 14 }}>
+          <div style={{ marginTop: 12 }}>
             <FieldLabel>Suspicious item details</FieldLabel>
             <TextArea
               value={form.suspiciousItemDetails}
@@ -1191,11 +1231,11 @@ export default function SupervisorCleaningSecurityPage() {
         )}
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
         <h2
           style={{
-            margin: "0 0 14px",
-            fontSize: 20,
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
             fontWeight: 800,
             color: "#0f172a",
           }}
@@ -1206,8 +1246,10 @@ export default function SupervisorCleaningSecurityPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: isMobile ? 10 : 14,
           }}
         >
           <div>
@@ -1239,7 +1281,7 @@ export default function SupervisorCleaningSecurityPage() {
           />
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 12 }}>
           <FieldLabel>Attachment notes</FieldLabel>
           <TextArea
             value={form.attachmentsNotes}
@@ -1249,8 +1291,14 @@ export default function SupervisorCleaningSecurityPage() {
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      <PageCard style={{ padding: isMobile ? 14 : 18 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
           <ActionButton
             onClick={handleSubmit}
             variant="primary"
