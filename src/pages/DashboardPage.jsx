@@ -11,6 +11,7 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME } from "../config/appConfig.js";
+import OperationalAlertsPanel from "../components/OperationalAlertsPanel.jsx";
 
 // IMPORTANT:
 // Special punctuation and menu/dashboard symbols use Unicode escape sequences
@@ -852,6 +853,27 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {canTrackTimesheets && (
+        <div style={{ marginBottom: 18 }}>
+          <OperationalAlertsPanel
+            compact={isMobile}
+            maxItems={6}
+            onOpenSource={(alert) => {
+              const target = String(alert?.sourcePath || "").trim();
+
+              if (target) {
+                navigate(target, {
+                  state: {
+                    operationalAlertId: alert?.id || "",
+                    operationalAlertSourceId: alert?.sourceId || "",
+                  },
+                });
+              }
+            }}
+          />
+        </div>
+      )}
 
       <div
         style={{
