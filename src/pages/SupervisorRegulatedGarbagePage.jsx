@@ -10,6 +10,7 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
+import { createOperationalAlert } from "../utils/operationalAlerts.js";
 
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
@@ -35,14 +36,14 @@ function safeNumber(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
+  if (!value) return "\u2014";
   try {
     if (typeof value?.toDate === "function") {
       return value.toDate().toLocaleString();
     }
     return new Date(value).toLocaleString();
   } catch {
-    return "—";
+    return "\u2014";
   }
 }
 
@@ -622,7 +623,7 @@ export default function SupervisorRegulatedGarbagePage() {
 
     const orangeQty = safeNumber(orangeQtyRaw);
 
-    if (orangeQty < 10) {
+    if (orangeQty < 5) {
       if (!String(form.items.orange_bags_quantity?.replacementDate || "").trim()) {
         setStatusMessage("Please add replacement date for Orange Bags.");
         return false;
@@ -674,7 +675,7 @@ export default function SupervisorRegulatedGarbagePage() {
           productLabel: item.label,
           alertType: "missing_item",
           cartType: form.internationalCart,
-          airline: currentAirlineLabel || "—",
+          airline: currentAirlineLabel || "\u2014",
           reportDate: form.reportDate,
           reportId: "",
           status: "open",
@@ -708,7 +709,7 @@ export default function SupervisorRegulatedGarbagePage() {
         productLabel: "Orange Bags",
         alertType: "low_stock",
         cartType: form.internationalCart,
-        airline: currentAirlineLabel || "—",
+        airline: currentAirlineLabel || "\u2014",
         reportDate: form.reportDate,
         reportId: "",
         status: "open",
@@ -907,6 +908,115 @@ export default function SupervisorRegulatedGarbagePage() {
         );
       }
 
+      // Central Alert Center notification.
+      // Creates one consolidated management alert for all checklist
+      // products reported as "No". Orange Bags are intentionally excluded.
+      const missingProducts = CHECKLIST_ITEMS
+        .filter((item) => form.items[item.key]?.available === "No")
+        .map((item) => {
+          const current = form.items[item.key] || {};
+
+          return {
+            key: item.inventoryKey,
+            label: item.label,
+            alertReason: "NOT_AVAILABLE",
+            officeStock: safeNumber(
+              inventory[item.inventoryKey]?.stockQty
+            ),
+            replacementDate: current.replacementDate || "",
+            estimatedRestockDate:
+              current.estimatedRestockDate || "",
+            cannotReplaceReason:
+              current.cannotReplaceReason || "",
+            additionalNotes:
+              current.additionalNotes || "",
+            collectedFromOffice:
+              Boolean(current.collectedFromOffice),
+          };
+        });
+
+      const orangeBagQty = safeNumber(
+        form.items.orange_bags_quantity?.quantityOnCart
+      );
+
+      if (orangeBagQty < 5) {
+        missingProducts.push({
+          key: "orange_bags",
+          label: "Orange Bags",
+          alertReason: "BELOW_MINIMUM_5",
+          quantityOnCart: orangeBagQty,
+          minimumRequired: 5,
+          officeStock: safeNumber(
+            inventory.orange_bags?.stockQty
+          ),
+          replacementDate:
+            form.items.orange_bags_quantity?.replacementDate || "",
+          estimatedRestockDate:
+            form.items.orange_bags_quantity?.estimatedRestockDate || "",
+          cannotReplaceReason:
+            form.items.orange_bags_quantity?.cannotReplaceReason || "",
+          additionalNotes:
+            form.items.orange_bags_quantity?.lowStockReason || "",
+          collectedFromOffice:
+            Boolean(
+              form.items.orange_bags_quantity?.collectedFromOffice
+            ),
+        });
+      }
+
+      if (missingProducts.length > 0) {
+        try {
+          const productNames = missingProducts
+            .map((item) => item.label)
+            .join(", ");
+
+          await createOperationalAlert({
+            alertType: "REGULATED_GARBAGE_SUPPLY_DEFICIENCY",
+            category: "REGULATED_GARBAGE",
+            severity: "HIGH",
+            priority: "URGENT",
+            title:
+              missingProducts.length === 1
+                ? "Regulated Garbage Supply Alert"
+                : "Regulated Garbage Supply Alerts",
+            message:
+              missingProducts.length === 1
+                ? missingProducts[0].key === "orange_bags"
+                  ? `Orange Bags quantity was reported below the minimum of 5. Current cart quantity: ${missingProducts[0].quantityOnCart}. Cart: ${form.internationalCart}. Airline: ${currentAirlineLabel || "Unknown Airline"}.`
+                  : `${missingProducts[0].label} was reported as NOT AVAILABLE on the ${form.internationalCart} regulated garbage cart for ${currentAirlineLabel || "Unknown Airline"}.`
+                : `${missingProducts.length} Regulated Garbage supply issues were reported: ${productNames}. Cart: ${form.internationalCart}. Airline: ${currentAirlineLabel || "Unknown Airline"}.`,
+            source: "SupervisorRegulatedGarbagePage",
+            sourceId: reportRef.id,
+            airline: currentAirlineLabel || "",
+            department: "Regulated Garbage",
+            reportDate: form.reportDate,
+            targetRoles: ["station_manager", "duty_manager"],
+            createdByUserId: user?.id || "",
+            createdByUsername: user?.username || "",
+            createdByName: getVisibleName(user),
+            createdByRole: user?.role || "",
+            metadata: {
+              regulatedGarbageReportId: reportRef.id,
+              internationalCart: form.internationalCart,
+              supplyIssueCount: missingProducts.length,
+              missingProductCount: missingProducts.length,
+              supplyIssues: missingProducts,
+              missingProducts,
+              supervisorName: form.supervisorName,
+              supervisorPosition: form.supervisorPosition || "",
+              shift: form.shift || "",
+            },
+          });
+        } catch (alertErr) {
+          // Never block the Regulated Garbage report because
+          // an Alert Center notification could not be created.
+          console.error(
+            "Regulated Garbage operational alert error:",
+            alertErr
+          );
+        }
+      }
+
       resetForm();
       setActiveTab("my_reports");
 
@@ -971,7 +1081,7 @@ export default function SupervisorRegulatedGarbagePage() {
               fontWeight: 700,
             }}
           >
-            TPA OPS · Regulated Garbage
+            TPA OPS {"\u00B7"} Regulated Garbage
           </p>
           <h1
             style={{
@@ -1300,7 +1410,7 @@ export default function SupervisorRegulatedGarbagePage() {
                 fontWeight: 700,
               }}
             >
-              TPA OPS · Regulated Garbage
+              TPA OPS {"\u00B7"} Regulated Garbage
             </p>
 
             <h1
@@ -1340,7 +1450,7 @@ export default function SupervisorRegulatedGarbagePage() {
               variant="secondary"
               onClick={() => navigate("/dashboard")}
             >
-              ← Back to Dashboard
+              {"\u2190"} Back to Dashboard
             </ActionButton>
           </div>
         </div>
@@ -1445,7 +1555,7 @@ export default function SupervisorRegulatedGarbagePage() {
                           color: "#0f172a",
                         }}
                       >
-                        {report.airline || "—"} · {report.internationalCart || "—"}
+                        {report.airline || "\u2014"} {"\u00B7"} {report.internationalCart || "\u2014"}
                       </div>
                       <div
                         style={{
@@ -1455,7 +1565,7 @@ export default function SupervisorRegulatedGarbagePage() {
                           fontWeight: 700,
                         }}
                       >
-                        {report.reportDate || "—"} · Submitted{" "}
+                        {report.reportDate || "\u2014"} {"\u00B7"} Submitted{" "}
                         {formatDateTime(report.createdAt)}
                       </div>
                     </div>
@@ -1542,7 +1652,7 @@ export default function SupervisorRegulatedGarbagePage() {
                           color: "#0f172a",
                         }}
                       >
-                        {report.reviewedBy || report.closedBy || "—"}
+                        {report.reviewedBy || report.closedBy || "\u2014"}
                       </div>
                     </div>
 
