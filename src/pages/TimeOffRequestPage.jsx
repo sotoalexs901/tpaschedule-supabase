@@ -1,14 +1,37 @@
 // src/pages/TimeOffRequestPage.jsx
-import React, { useEffect, useState } from "react";
+
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  collection,
   addDoc,
-  serverTimestamp,
+  collection,
   getDocs,
   query,
+  serverTimestamp,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import { createOperationalAlert } from "../utils/operationalAlerts.js";
+
+const MONTHLY_WARNING_THRESHOLD = 4;
+const MONTHLY_MAX_REQUESTS = 5;
+
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
 
 function PageCard({ children, style = {} }) {
   return (
@@ -16,8 +39,11 @@ function PageCard({ children, style = {} }) {
       style={{
         background: "rgba(255,255,255,0.96)",
         border: "1px solid rgba(255,255,255,0.98)",
-        borderRadius: 28,
-        boxShadow: "0 24px 60px rgba(15,23,42,0.18)",
+        borderRadius: 20,
+        boxShadow: "0 18px 44px rgba(15,23,42,0.14)",
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -32,8 +58,8 @@ function FieldLabel({ children }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
-        fontWeight: 700,
+        fontSize: 11,
+        fontWeight: 800,
         color: "#475569",
         letterSpacing: "0.03em",
         textTransform: "uppercase",
@@ -50,10 +76,12 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -69,10 +97,12 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
@@ -88,46 +118,159 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
+        background: props.disabled ? "#f8fafc" : "#ffffff",
+        borderRadius: 12,
+        padding: "11px 13px",
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
+        fontFamily: "inherit",
         ...props.style,
       }}
     />
   );
 }
 
+function getMonthKey(value) {
+  const v = String(value || "").trim();
+  return /^\d{4}-\d{2}/.test(v) ? v.slice(0, 7) : "";
+}
+
+function formatMonthLabel(monthKey) {
+  if (!monthKey) return "this month";
+  const [year, month] = monthKey.split("-");
+  return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString(
+    undefined,
+    { month: "long", year: "numeric" }
+  );
+}
+
+function getEmployeeName(employee) {
+  return (
+    employee?.name ||
+    employee?.fullName ||
+    employee?.displayName ||
+    employee?.username ||
+    "Employee"
+  );
+}
+
 export default function TimeOffRequestPage() {
+  const { isMobile, isTablet } = useViewport();
+
   const [employees, setEmployees] = useState([]);
+  const [employeesLoading, setEmployeesLoading] = useState(true);
+
   const [employeeId, setEmployeeId] = useState("");
   const [reasonType, setReasonType] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [pin, setPin] = useState("");
   const [notes, setNotes] = useState("");
+
   const [submitting, setSubmitting] = useState(false);
+  const [checkingMonthlyLimit, setCheckingMonthlyLimit] = useState(false);
+  const [monthlyRequestCount, setMonthlyRequestCount] = useState(0);
+  const [monthlyRequestDates, setMonthlyRequestDates] = useState([]);
+  const [monthlyLimitChecked, setMonthlyLimitChecked] = useState(false);
+
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function loadEmployees() {
       try {
+        setEmployeesLoading(true);
         const snap = await getDocs(collection(db, "employees"));
+
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+          .filter((employee) => String(getEmployeeName(employee)).trim())
+          .sort((a, b) =>
+            getEmployeeName(a).localeCompare(getEmployeeName(b))
+          );
+
         setEmployees(list);
       } catch (err) {
         console.error("Error loading employees for time off form:", err);
+        setError("Could not load the employee list. Please try again.");
+      } finally {
+        setEmployeesLoading(false);
       }
     }
+
     loadEmployees().catch(console.error);
   }, []);
+
+  const selectedEmployee = useMemo(
+    () => employees.find((employee) => employee.id === employeeId) || null,
+    [employees, employeeId]
+  );
+
+  const selectedMonthKey = useMemo(() => getMonthKey(startDate), [startDate]);
+
+  const selectedMonthLabel = useMemo(
+    () => formatMonthLabel(selectedMonthKey),
+    [selectedMonthKey]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkMonthlyFrequency() {
+      if (!employeeId || !selectedMonthKey) {
+        setMonthlyRequestCount(0);
+        setMonthlyRequestDates([]);
+        setMonthlyLimitChecked(false);
+        return;
+      }
+
+      try {
+        setCheckingMonthlyLimit(true);
+        setMonthlyLimitChecked(false);
+
+        const qRef = query(
+          collection(db, "timeOffRequests"),
+          where("employeeId", "==", employeeId)
+        );
+
+        const snap = await getDocs(qRef);
+        if (cancelled) return;
+
+        const monthlyRequests = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((req) => getMonthKey(req.startDate) === selectedMonthKey);
+
+        setMonthlyRequestCount(monthlyRequests.length);
+        setMonthlyRequestDates(
+          monthlyRequests
+            .map((req) => req.startDate)
+            .filter(Boolean)
+            .sort()
+        );
+        setMonthlyLimitChecked(true);
+      } catch (err) {
+        console.error("Error checking monthly request frequency:", err);
+        if (!cancelled) {
+          setMonthlyRequestCount(0);
+          setMonthlyRequestDates([]);
+          setMonthlyLimitChecked(false);
+        }
+      } finally {
+        if (!cancelled) setCheckingMonthlyLimit(false);
+      }
+    }
+
+    checkMonthlyFrequency();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [employeeId, selectedMonthKey]);
 
   const normalizeRange = () => {
     if (!startDate) return null;
@@ -139,7 +282,7 @@ export default function TimeOffRequestPage() {
 
   const toDateSafe = (value) => {
     if (!value) return null;
-    if (typeof value === "string") return new Date(value);
+    if (typeof value === "string") return new Date(`${value}T00:00:00`);
     if (value.toDate) return value.toDate();
     return new Date(value);
   };
@@ -149,6 +292,77 @@ export default function TimeOffRequestPage() {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
     return d;
+  };
+
+  const sendMonthlyFrequencyAlert = async ({
+    employee,
+    employeeName,
+    requestId,
+    newCount,
+    monthKey,
+    previousDates,
+    newRequestDate,
+  }) => {
+    try {
+      const sourceId = `TIME_OFF_FREQ_${employee?.id || employeeName}_${monthKey}`;
+
+      const activeSnap = await getDocs(
+        query(
+          collection(db, "operational_alerts"),
+          where("sourceId", "==", sourceId)
+        )
+      );
+
+      if (!activeSnap.empty) return;
+
+      const historySnap = await getDocs(
+        query(
+          collection(db, "operational_alert_history"),
+          where("sourceId", "==", sourceId)
+        )
+      );
+
+      if (!historySnap.empty) return;
+
+      const allDates = [...previousDates, newRequestDate]
+        .filter(Boolean)
+        .sort();
+
+      await createOperationalAlert({
+        alertType: "TIME_OFF_MONTHLY_FREQUENCY",
+        category: "TIME_OFF",
+        severity: "LOW",
+        priority: "LOW",
+        title: "Frequent Day Off / PTO Requests",
+        message: `${employeeName} has submitted ${newCount} Day Off / PTO request(s) for ${formatMonthLabel(
+          monthKey
+        )}. Requested dates: ${allDates.join(
+          ", "
+        )}. Review monthly request frequency.`,
+        source: "TimeOffRequestPage",
+        sourceId,
+        department: employee?.department || "",
+        reportDate: newRequestDate || "",
+        targetRoles: ["station_manager", "duty_manager"],
+        createdByUserId: "",
+        createdByUsername: "",
+        createdByName: employeeName,
+        createdByRole: "employee",
+        metadata: {
+          timeOffRequestId: requestId,
+          employeeId: employee?.id || "",
+          employeeName,
+          monthKey,
+          monthLabel: formatMonthLabel(monthKey),
+          requestCount: newCount,
+          requestedDates: allDates,
+          warningThreshold: MONTHLY_WARNING_THRESHOLD,
+          monthlyMaximum: MONTHLY_MAX_REQUESTS,
+        },
+      });
+    } catch (alertErr) {
+      console.error("Monthly time off frequency alert error:", alertErr);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -172,11 +386,12 @@ export default function TimeOffRequestPage() {
       return;
     }
 
-    const emp = employees.find((e) => e.id === employeeId);
-    const employeeName = emp?.name || "";
+    const employee = employees.find((item) => item.id === employeeId);
+    const employeeName = getEmployeeName(employee);
 
     const newStartDate = normalizeMidnight(toDateSafe(range.start));
     const newEndDate = normalizeMidnight(toDateSafe(range.end));
+    const monthKey = getMonthKey(range.start);
 
     try {
       setSubmitting(true);
@@ -185,8 +400,32 @@ export default function TimeOffRequestPage() {
         collection(db, "timeOffRequests"),
         where("employeeId", "==", employeeId)
       );
+
       const snap = await getDocs(qRef);
       const existing = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const monthlyRequests = existing.filter(
+        (req) => getMonthKey(req.startDate) === monthKey
+      );
+
+      const monthlyCount = monthlyRequests.length;
+      const monthlyDates = monthlyRequests
+        .map((req) => req.startDate)
+        .filter(Boolean)
+        .sort();
+
+      setMonthlyRequestCount(monthlyCount);
+      setMonthlyRequestDates(monthlyDates);
+      setMonthlyLimitChecked(true);
+
+      if (monthlyCount >= MONTHLY_MAX_REQUESTS) {
+        setError(
+          `You have reached the maximum of ${MONTHLY_MAX_REQUESTS} Day Off / PTO requests for ${formatMonthLabel(
+            monthKey
+          )}. No additional request can be submitted for this month. Please contact Management if you need assistance.`
+        );
+        return;
+      }
 
       const blockingStatuses = ["pending", "approved"];
       const conflicts = [];
@@ -212,7 +451,7 @@ export default function TimeOffRequestPage() {
         ) {
           const format = (d) => d.toISOString().slice(0, 10);
           conflicts.push(
-            `${format(existingStartDate)} → ${format(existingEndDate)}`
+            `${format(existingStartDate)} \u2192 ${format(existingEndDate)}`
           );
         }
       }
@@ -223,16 +462,16 @@ export default function TimeOffRequestPage() {
             " | "
           )}\nPlease adjust your dates or contact your manager.`
         );
-        setSubmitting(false);
         return;
       }
 
-      await addDoc(collection(db, "timeOffRequests"), {
+      const requestRef = await addDoc(collection(db, "timeOffRequests"), {
         employeeId,
         employeeName,
         reasonType,
         startDate: range.start,
         endDate: range.end,
+        requestMonth: monthKey,
         pin,
         notes: notes || "",
         status: "pending",
@@ -240,8 +479,43 @@ export default function TimeOffRequestPage() {
         createdVia: "public_form",
       });
 
-      setMessage("Your request has been submitted successfully.");
-      setEmployeeId("");
+      const newMonthlyCount = monthlyCount + 1;
+      const newMonthlyDates = [...monthlyDates, range.start].sort();
+
+      setMonthlyRequestCount(newMonthlyCount);
+      setMonthlyRequestDates(newMonthlyDates);
+      setMonthlyLimitChecked(true);
+
+      if (newMonthlyCount >= MONTHLY_WARNING_THRESHOLD) {
+        await sendMonthlyFrequencyAlert({
+          employee: { ...employee, id: employeeId },
+          employeeName,
+          requestId: requestRef.id,
+          newCount: newMonthlyCount,
+          monthKey,
+          previousDates: monthlyDates,
+          newRequestDate: range.start,
+        });
+      }
+
+      if (newMonthlyCount >= MONTHLY_MAX_REQUESTS) {
+        setMessage(
+          `Your request was submitted successfully. You have now reached the monthly maximum of ${MONTHLY_MAX_REQUESTS} requests for ${formatMonthLabel(
+            monthKey
+          )}. No additional requests can be submitted for this month.`
+        );
+      } else if (newMonthlyCount >= MONTHLY_WARNING_THRESHOLD) {
+        const remaining = MONTHLY_MAX_REQUESTS - newMonthlyCount;
+
+        setMessage(
+          `Your request was submitted successfully. You now have ${newMonthlyCount} requests for ${formatMonthLabel(
+            monthKey
+          )}. ${remaining} request${remaining === 1 ? "" : "s"} remaining this month.`
+        );
+      } else {
+        setMessage("Your request has been submitted successfully.");
+      }
+
       setReasonType("");
       setStartDate("");
       setEndDate("");
@@ -257,6 +531,22 @@ export default function TimeOffRequestPage() {
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  const monthlyLimitReached =
+    Boolean(employeeId && startDate) &&
+    monthlyLimitChecked &&
+    monthlyRequestCount >= MONTHLY_MAX_REQUESTS;
+
+  const monthlyWarning =
+    Boolean(employeeId && startDate) &&
+    monthlyLimitChecked &&
+    monthlyRequestCount >= MONTHLY_WARNING_THRESHOLD &&
+    monthlyRequestCount < MONTHLY_MAX_REQUESTS;
+
+  const remainingRequests = Math.max(
+    0,
+    MONTHLY_MAX_REQUESTS - monthlyRequestCount
+  );
+
   return (
     <div
       style={{
@@ -266,46 +556,63 @@ export default function TimeOffRequestPage() {
         backgroundSize: "cover",
         backgroundPosition: "center",
         display: "flex",
-        alignItems: "center",
+        alignItems: isMobile ? "flex-start" : "center",
         justifyContent: "center",
-        padding: "28px 16px",
+        padding: isMobile ? "18px 12px 28px" : "24px 16px",
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        boxSizing: "border-box",
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth: 760,
+          maxWidth: isTablet ? 720 : 760,
           display: "grid",
-          gap: 18,
+          gap: isMobile ? 12 : 16,
+          minWidth: 0,
         }}
       >
         <div
           style={{
             color: "#fff",
             textAlign: "center",
+            padding: isMobile ? "4px 8px 0" : "0 8px",
           }}
         >
+          <img
+            src="/icons/aerostation-icon.png"
+            alt={APP_NAME}
+            style={{
+              width: isMobile ? 42 : 50,
+              height: isMobile ? 42 : 50,
+              borderRadius: 12,
+              background: "#fff",
+              objectFit: "contain",
+              boxShadow: "0 10px 25px rgba(15,23,42,0.16)",
+              marginBottom: isMobile ? 7 : 9,
+            }}
+          />
+
           <p
             style={{
               margin: 0,
-              fontSize: 12,
+              fontSize: isMobile ? 9 : 10,
               textTransform: "uppercase",
-              letterSpacing: "0.22em",
+              letterSpacing: isMobile ? "0.12em" : "0.16em",
               color: "rgba(255,255,255,0.82)",
-              fontWeight: 700,
+              fontWeight: 800,
             }}
           >
-            TPA OPS · Time Off
+            {APP_NAME} {"\u00B7"} Time Off
           </p>
 
           <h1
             style={{
-              margin: "10px 0 8px",
-              fontSize: 34,
-              lineHeight: 1.05,
+              margin: isMobile ? "6px 0 5px" : "8px 0 6px",
+              fontSize: isMobile ? 23 : 29,
+              lineHeight: 1.08,
               fontWeight: 800,
-              letterSpacing: "-0.04em",
+              letterSpacing: "-0.035em",
             }}
           >
             Day Off Request
@@ -314,23 +621,35 @@ export default function TimeOffRequestPage() {
           <p
             style={{
               margin: 0,
-              fontSize: 14,
+              fontSize: isMobile ? 11.5 : 13,
+              lineHeight: 1.5,
               color: "rgba(255,255,255,0.90)",
               maxWidth: 620,
               marginInline: "auto",
             }}
           >
             Submit PTO, Sick, Personal or other time off requests for review by
-            HR and Management.
+            Management.
+          </p>
+
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: isMobile ? 9.5 : 10.5,
+              color: "rgba(255,255,255,0.72)",
+              fontWeight: 700,
+            }}
+          >
+            {APP_SUBTITLE}
           </p>
         </div>
 
-        <PageCard style={{ padding: 26 }}>
-          <div style={{ marginBottom: 16 }}>
+        <PageCard style={{ padding: isMobile ? 16 : 22 }}>
+          <div style={{ marginBottom: isMobile ? 12 : 14 }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: isMobile ? 17 : 19,
                 fontWeight: 800,
                 color: "#0f172a",
                 letterSpacing: "-0.02em",
@@ -338,34 +657,44 @@ export default function TimeOffRequestPage() {
             >
               Request Details
             </h2>
+
             <p
               style={{
                 margin: "4px 0 0",
-                fontSize: 13,
+                fontSize: isMobile ? 11.5 : 12.5,
                 color: "#64748b",
               }}
             >
-              Complete the form below to submit your request.
+              Maximum {MONTHLY_MAX_REQUESTS} Day Off / PTO requests per employee
+              per month.
             </p>
           </div>
 
           <form
             onSubmit={handleSubmit}
-            style={{
-              display: "grid",
-              gap: 14,
-            }}
+            style={{ display: "grid", gap: isMobile ? 11 : 13 }}
           >
             <div>
               <FieldLabel>Employee Name</FieldLabel>
+
               <SelectInput
                 value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
+                disabled={employeesLoading || submitting}
+                onChange={(e) => {
+                  setEmployeeId(e.target.value);
+                  setError("");
+                  setMessage("");
+                }}
               >
-                <option value="">Select your name</option>
+                <option value="">
+                  {employeesLoading
+                    ? "Loading employees..."
+                    : "Select your name"}
+                </option>
+
                 {employees.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {emp.name}
+                    {getEmployeeName(emp)}
                   </option>
                 ))}
               </SelectInput>
@@ -373,8 +702,10 @@ export default function TimeOffRequestPage() {
 
             <div>
               <FieldLabel>Reason Type</FieldLabel>
+
               <SelectInput
                 value={reasonType}
+                disabled={submitting}
                 onChange={(e) => setReasonType(e.target.value)}
               >
                 <option value="">Select reason</option>
@@ -388,8 +719,10 @@ export default function TimeOffRequestPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: 14,
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(2, minmax(0, 1fr))",
+                gap: isMobile ? 10 : 13,
               }}
             >
               <div>
@@ -397,8 +730,12 @@ export default function TimeOffRequestPage() {
                 <TextInput
                   type="date"
                   value={startDate}
+                  disabled={submitting}
                   onChange={(e) => {
                     setStartDate(e.target.value);
+                    setError("");
+                    setMessage("");
+
                     if (!endDate || e.target.value > endDate) {
                       setEndDate(e.target.value);
                     }
@@ -412,32 +749,128 @@ export default function TimeOffRequestPage() {
                 <TextInput
                   type="date"
                   value={endDate}
+                  disabled={submitting}
                   onChange={(e) => setEndDate(e.target.value)}
                   min={startDate || todayStr}
                 />
               </div>
             </div>
 
+            {employeeId && startDate && (
+              <div
+                style={{
+                  borderRadius: 14,
+                  padding: "11px 12px",
+                  background: checkingMonthlyLimit
+                    ? "#f8fafc"
+                    : monthlyLimitReached
+                    ? "#fff1f2"
+                    : monthlyWarning
+                    ? "#fff7ed"
+                    : "#f0fdf4",
+                  border: checkingMonthlyLimit
+                    ? "1px solid #e2e8f0"
+                    : monthlyLimitReached
+                    ? "1px solid #fecdd3"
+                    : monthlyWarning
+                    ? "1px solid #fed7aa"
+                    : "1px solid #bbf7d0",
+                  color: checkingMonthlyLimit
+                    ? "#475569"
+                    : monthlyLimitReached
+                    ? "#9f1239"
+                    : monthlyWarning
+                    ? "#9a3412"
+                    : "#166534",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 900,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {checkingMonthlyLimit
+                    ? "Checking monthly request history..."
+                    : monthlyLimitReached
+                    ? `Monthly maximum reached: ${monthlyRequestCount} of ${MONTHLY_MAX_REQUESTS} requests for ${selectedMonthLabel}.`
+                    : monthlyWarning
+                    ? `Monthly request warning: ${monthlyRequestCount} of ${MONTHLY_MAX_REQUESTS} requests already submitted for ${selectedMonthLabel}.`
+                    : `${monthlyRequestCount} of ${MONTHLY_MAX_REQUESTS} requests used for ${selectedMonthLabel}.`}
+                </div>
+
+                {!checkingMonthlyLimit && monthlyRequestDates.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: 5,
+                      fontSize: 11.5,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Previous requested dates: {monthlyRequestDates.join(", ")}
+                  </div>
+                )}
+
+                {!checkingMonthlyLimit && !monthlyLimitReached && (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {remainingRequests} request
+                    {remainingRequests === 1 ? "" : "s"} remaining before the
+                    monthly limit is reached.
+                  </div>
+                )}
+
+                {monthlyLimitReached && (
+                  <div
+                    style={{
+                      marginTop: 5,
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    You have reached the maximum of 5 requests for this month.
+                    No additional Day Off / PTO request can be submitted.
+                    Please contact Management if assistance is needed.
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <FieldLabel>4-digit PIN</FieldLabel>
+
               <TextInput
                 type="password"
                 maxLength={4}
                 inputMode="numeric"
+                autoComplete="one-time-code"
+                disabled={submitting || monthlyLimitReached}
                 value={pin}
                 onChange={(e) =>
                   setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
                 }
-                style={{ letterSpacing: "0.25em" }}
+                style={{
+                  letterSpacing: "0.22em",
+                  fontSize: 16,
+                  textAlign: "center",
+                }}
                 placeholder="Enter 4-digit PIN"
               />
+
               <p
                 style={{
-                  marginTop: 8,
+                  marginTop: 7,
                   marginBottom: 0,
-                  fontSize: 12,
+                  fontSize: 11.5,
                   color: "#64748b",
-                  lineHeight: 1.6,
+                  lineHeight: 1.55,
                 }}
               >
                 This PIN is used to check the status of your request later.
@@ -446,8 +879,10 @@ export default function TimeOffRequestPage() {
 
             <div>
               <FieldLabel>Notes (optional)</FieldLabel>
+
               <TextArea
                 rows={4}
+                disabled={submitting || monthlyLimitReached}
                 placeholder="Additional details (flight, doctor appointment, etc.)"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -458,15 +893,15 @@ export default function TimeOffRequestPage() {
               style={{
                 background: "#f8fbff",
                 border: "1px solid #dbeafe",
-                borderRadius: 16,
-                padding: "14px 16px",
-                fontSize: 13,
+                borderRadius: 14,
+                padding: "11px 12px",
+                fontSize: 11.5,
                 color: "#334155",
-                lineHeight: 1.7,
+                lineHeight: 1.6,
               }}
             >
-              HR and Management may take up to <b>72 hours</b> to approve or
-              reject your request.
+              Management may take up to <b>72 hours</b> to approve, reject, or
+              request additional information.
             </div>
 
             {error && (
@@ -475,10 +910,10 @@ export default function TimeOffRequestPage() {
                   whiteSpace: "pre-line",
                   background: "#fff1f2",
                   border: "1px solid #fecdd3",
-                  borderRadius: 16,
-                  padding: "14px 16px",
+                  borderRadius: 14,
+                  padding: "11px 12px",
                   color: "#9f1239",
-                  fontSize: 13,
+                  fontSize: 12.5,
                   fontWeight: 700,
                   textAlign: "center",
                 }}
@@ -492,10 +927,10 @@ export default function TimeOffRequestPage() {
                 style={{
                   background: "#ecfdf5",
                   border: "1px solid #a7f3d0",
-                  borderRadius: 16,
-                  padding: "14px 16px",
+                  borderRadius: 14,
+                  padding: "11px 12px",
                   color: "#065f46",
-                  fontSize: 13,
+                  fontSize: 12.5,
                   fontWeight: 700,
                   textAlign: "center",
                 }}
@@ -506,26 +941,51 @@ export default function TimeOffRequestPage() {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={
+                submitting ||
+                employeesLoading ||
+                checkingMonthlyLimit ||
+                monthlyLimitReached
+              }
               style={{
-                marginTop: 4,
+                marginTop: 2,
                 width: "100%",
-                background: submitting
-                  ? "#94a3b8"
-                  : "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-                borderRadius: 14,
+                background:
+                  submitting ||
+                  employeesLoading ||
+                  checkingMonthlyLimit ||
+                  monthlyLimitReached
+                    ? "#94a3b8"
+                    : "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                borderRadius: 12,
                 border: "none",
-                padding: "13px 16px",
+                padding: "12px 15px",
                 color: "#ffffff",
-                fontSize: 14,
+                fontSize: 13.5,
                 fontWeight: 800,
-                cursor: submitting ? "not-allowed" : "pointer",
-                boxShadow: submitting
-                  ? "none"
-                  : "0 12px 25px rgba(23,105,170,0.28)",
+                cursor:
+                  submitting ||
+                  employeesLoading ||
+                  checkingMonthlyLimit ||
+                  monthlyLimitReached
+                    ? "not-allowed"
+                    : "pointer",
+                boxShadow:
+                  submitting ||
+                  employeesLoading ||
+                  checkingMonthlyLimit ||
+                  monthlyLimitReached
+                    ? "none"
+                    : "0 10px 22px rgba(23,105,170,0.24)",
               }}
             >
-              {submitting ? "Submitting..." : "Submit Request"}
+              {submitting
+                ? "Submitting..."
+                : checkingMonthlyLimit
+                ? "Checking Monthly Limit..."
+                : monthlyLimitReached
+                ? "Maximum 5 Requests Reached"
+                : "Submit Request"}
             </button>
           </form>
         </PageCard>
