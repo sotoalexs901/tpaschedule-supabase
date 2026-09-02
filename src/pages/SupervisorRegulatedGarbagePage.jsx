@@ -2153,4 +2153,5 @@ export default function SupervisorRegulatedGarbagePage() {
         </>
       )}
     </div>
- 
+  );
+}
