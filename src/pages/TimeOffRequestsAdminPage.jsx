@@ -10,11 +10,15 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 import { createOperationalAlert } from "../utils/operationalAlerts.js";
+
+const MONTHLY_WARNING_THRESHOLD = 4;
+const MONTHLY_MAX_REQUESTS = 5;
 
 function useViewport() {
   const [width, setWidth] = useState(() =>
@@ -167,6 +171,67 @@ function getVisibleName(user) {
   );
 }
 
+function getMonthKey(dateValue) {
+  const value = String(dateValue || "").trim();
+  return /^\d{4}-\d{2}/.test(value) ? value.slice(0, 7) : "";
+}
+
+function formatMonthLabel(monthKey) {
+  if (!monthKey) return "Unknown month";
+
+  const [year, month] = monthKey.split("-");
+  const date = new Date(Number(year), Number(month) - 1, 1);
+
+  return date.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function buildMonthlyRequestSummary(requests) {
+  const map = new Map();
+
+  for (const req of requests) {
+    const employeeKey =
+      String(req.employeeId || "").trim() ||
+      String(req.employeeName || "").trim().toLowerCase();
+
+    const monthKey = getMonthKey(req.startDate);
+
+    if (!employeeKey || !monthKey) continue;
+
+    const key = `${employeeKey}__${monthKey}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        employeeId: req.employeeId || "",
+        employeeName: req.employeeName || "Unknown employee",
+        monthKey,
+        monthLabel: formatMonthLabel(monthKey),
+        requests: [],
+      });
+    }
+
+    map.get(key).requests.push(req);
+  }
+
+  return Array.from(map.values())
+    .map((item) => ({
+      ...item,
+      count: item.requests.length,
+      dates: item.requests
+        .map((req) => req.startDate)
+        .filter(Boolean)
+        .sort(),
+    }))
+    .filter((item) => item.count >= MONTHLY_WARNING_THRESHOLD)
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.monthKey.localeCompare(a.monthKey);
+    });
+}
+
 export default function TimeOffRequestsAdminPage() {
   const { user } = useUser();
   const { isMobile, isTablet } = useViewport();
@@ -177,6 +242,7 @@ export default function TimeOffRequestsAdminPage() {
   const [notesById, setNotesById] = useState({});
   const [statusMessage, setStatusMessage] = useState("");
   const [busyRequestId, setBusyRequestId] = useState("");
+  const [syncingFrequencyAlerts, setSyncingFrequencyAlerts] = useState(false);
 
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -226,6 +292,111 @@ export default function TimeOffRequestsAdminPage() {
     () => requests.filter((r) => r.status === "pending").length,
     [requests]
   );
+
+  const monthlyFrequencySummary = useMemo(
+    () => buildMonthlyRequestSummary(requests),
+    [requests]
+  );
+
+  const overLimitSummary = useMemo(
+    () =>
+      monthlyFrequencySummary.filter(
+        (item) => item.count >= MONTHLY_MAX_REQUESTS
+      ),
+    [monthlyFrequencySummary]
+  );
+
+  useEffect(() => {
+    if (
+      !canAccess ||
+      loading ||
+      syncingFrequencyAlerts ||
+      monthlyFrequencySummary.length === 0
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function syncFrequencyAlerts() {
+      try {
+        setSyncingFrequencyAlerts(true);
+
+        for (const item of monthlyFrequencySummary) {
+          if (cancelled) return;
+
+          const sourceId = `TIME_OFF_FREQ_${item.employeeId || item.employeeName}_${item.monthKey}`;
+
+          const activeSnap = await getDocs(
+            query(
+              collection(db, "operational_alerts"),
+              where("sourceId", "==", sourceId)
+            )
+          );
+
+          if (!activeSnap.empty) continue;
+
+          const historySnap = await getDocs(
+            query(
+              collection(db, "operational_alert_history"),
+              where("sourceId", "==", sourceId)
+            )
+          );
+
+          if (!historySnap.empty) continue;
+
+          await createOperationalAlert({
+            alertType: "TIME_OFF_MONTHLY_FREQUENCY",
+            category: "TIME_OFF",
+            severity: "LOW",
+            priority: "LOW",
+            title: "Frequent Day Off / PTO Requests",
+            message: `${item.employeeName} has submitted ${item.count} day off / PTO request(s) for ${item.monthLabel}. Requested dates: ${item.dates.join(
+              ", "
+            )}. Review monthly request frequency.`,
+            source: "TimeOffRequestsAdminPage",
+            sourceId,
+            department: "",
+            reportDate: item.requests[0]?.startDate || "",
+            targetRoles: ["station_manager", "duty_manager"],
+            createdByUserId: user?.id || "",
+            createdByUsername: user?.username || "",
+            createdByName: getVisibleName(user),
+            createdByRole: user?.role || "",
+            metadata: {
+              employeeId: item.employeeId || "",
+              employeeName: item.employeeName,
+              monthKey: item.monthKey,
+              monthLabel: item.monthLabel,
+              requestCount: item.count,
+              requestedDates: item.dates,
+              warningThreshold: MONTHLY_WARNING_THRESHOLD,
+              monthlyMaximum: MONTHLY_MAX_REQUESTS,
+              requestIds: item.requests.map((req) => req.id),
+            },
+          });
+        }
+      } catch (err) {
+        console.error("Time Off monthly frequency alert error:", err);
+      } finally {
+        if (!cancelled) {
+          setSyncingFrequencyAlerts(false);
+        }
+      }
+    }
+
+    syncFrequencyAlerts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canAccess,
+    loading,
+    monthlyFrequencySummary,
+    syncingFrequencyAlerts,
+    user,
+  ]);
 
   const updateLocalRequest = (id, patch) => {
     setRequests((prev) =>
@@ -679,8 +850,8 @@ export default function TimeOffRequestsAdminPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Review, approve, reject, print and manage employee time off
-              requests.
+              Review requests and monitor monthly Day Off / PTO frequency by
+              employee.
             </p>
 
             <p
@@ -697,39 +868,152 @@ export default function TimeOffRequestsAdminPage() {
 
           <div
             style={{
-              background: "rgba(255,255,255,0.16)",
-              border: "1px solid rgba(255,255,255,0.18)",
-              borderRadius: 14,
-              padding: isMobile ? "9px 11px" : "10px 12px",
-              minWidth: isMobile ? 0 : 118,
-              width: isMobile ? "fit-content" : "auto",
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
             }}
           >
             <div
               style={{
-                fontSize: 10,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "rgba(255,255,255,0.78)",
-                fontWeight: 800,
+                background: "rgba(255,255,255,0.16)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                borderRadius: 14,
+                padding: isMobile ? "9px 11px" : "10px 12px",
               }}
             >
-              Pending
+              <div
+                style={{
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "rgba(255,255,255,0.78)",
+                  fontWeight: 800,
+                }}
+              >
+                Pending
+              </div>
+
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: isMobile ? 22 : 26,
+                  fontWeight: 900,
+                  lineHeight: 1,
+                }}
+              >
+                {pendingCount}
+              </div>
             </div>
 
             <div
               style={{
-                marginTop: 3,
-                fontSize: isMobile ? 22 : 26,
-                fontWeight: 900,
-                lineHeight: 1,
+                background: "rgba(255,255,255,0.16)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                borderRadius: 14,
+                padding: isMobile ? "9px 11px" : "10px 12px",
               }}
             >
-              {pendingCount}
+              <div
+                style={{
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "rgba(255,255,255,0.78)",
+                  fontWeight: 800,
+                }}
+              >
+                Frequent
+              </div>
+
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: isMobile ? 22 : 26,
+                  fontWeight: 900,
+                  lineHeight: 1,
+                }}
+              >
+                {monthlyFrequencySummary.length}
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {monthlyFrequencySummary.length > 0 && (
+        <PageCard
+          style={{
+            padding: isMobile ? 12 : 16,
+            border: "1px solid #fed7aa",
+          }}
+        >
+          <div
+            style={{
+              fontSize: isMobile ? 16 : 18,
+              fontWeight: 900,
+              color: "#9a3412",
+              marginBottom: 10,
+            }}
+          >
+            Monthly Request Frequency Review
+          </div>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            {monthlyFrequencySummary.map((item) => {
+              const atLimit = item.count >= MONTHLY_MAX_REQUESTS;
+
+              return (
+                <div
+                  key={item.key}
+                  style={{
+                    border: atLimit
+                      ? "1px solid #fecdd3"
+                      : "1px solid #fed7aa",
+                    background: atLimit ? "#fff1f2" : "#fff7ed",
+                    borderRadius: 12,
+                    padding: 11,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 900,
+                      color: atLimit ? "#9f1239" : "#9a3412",
+                    }}
+                  >
+                    {item.employeeName} {"\u00B7"} {item.monthLabel} {"\u00B7"}{" "}
+                    {item.count} request(s)
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: "#475569",
+                    }}
+                  >
+                    Requested dates: {item.dates.join(", ")}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      color: atLimit ? "#9f1239" : "#9a3412",
+                    }}
+                  >
+                    {atLimit
+                      ? `Monthly maximum reached (${MONTHLY_MAX_REQUESTS}).`
+                      : `Frequency warning begins at ${MONTHLY_WARNING_THRESHOLD} requests.`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </PageCard>
+      )}
 
       {statusMessage && (
         <PageCard style={{ padding: isMobile ? 12 : 16 }}>
@@ -777,27 +1061,13 @@ export default function TimeOffRequestsAdminPage() {
 
       {loading ? (
         <PageCard style={{ padding: isMobile ? 14 : 20 }}>
-          <p
-            style={{
-              margin: 0,
-              color: "#64748b",
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-          >
+          <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
             Loading requests...
           </p>
         </PageCard>
       ) : filteredRequests.length === 0 ? (
         <PageCard style={{ padding: isMobile ? 14 : 20 }}>
-          <p
-            style={{
-              margin: 0,
-              color: "#64748b",
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-          >
+          <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
             No requests for this filter.
           </p>
         </PageCard>
@@ -808,6 +1078,19 @@ export default function TimeOffRequestsAdminPage() {
             const busy = busyRequestId === req.id;
             const canProcess =
               currentStatus === "pending" || currentStatus === "needs_info";
+
+            const monthKey = getMonthKey(req.startDate);
+
+            const monthlyInfo = monthlyFrequencySummary.find((item) => {
+              const sameEmployee =
+                (req.employeeId &&
+                  item.employeeId &&
+                  req.employeeId === item.employeeId) ||
+                String(item.employeeName || "").toLowerCase() ===
+                  String(req.employeeName || "").toLowerCase();
+
+              return sameEmployee && item.monthKey === monthKey;
+            });
 
             return (
               <PageCard
@@ -820,7 +1103,6 @@ export default function TimeOffRequestsAdminPage() {
                       display: "flex",
                       flexDirection: isMobile ? "column" : "row",
                       justifyContent: "space-between",
-                      alignItems: isMobile ? "stretch" : "flex-start",
                       gap: 12,
                     }}
                   >
@@ -831,8 +1113,6 @@ export default function TimeOffRequestsAdminPage() {
                           fontSize: isMobile ? 16 : 18,
                           fontWeight: 800,
                           color: "#0f172a",
-                          letterSpacing: "-0.02em",
-                          wordBreak: "break-word",
                         }}
                       >
                         {req.employeeName || "Unknown employee"}
@@ -844,7 +1124,6 @@ export default function TimeOffRequestsAdminPage() {
                           fontSize: isMobile ? 12 : 13,
                           color: "#64748b",
                           lineHeight: 1.5,
-                          wordBreak: "break-word",
                         }}
                       >
                         {req.reasonType || "Reason"} {"\u00B7"}{" "}
@@ -858,6 +1137,34 @@ export default function TimeOffRequestsAdminPage() {
                         </span>
                       </div>
 
+                      {monthlyInfo && (
+                        <div
+                          style={{
+                            marginTop: 9,
+                            border:
+                              monthlyInfo.count >= MONTHLY_MAX_REQUESTS
+                                ? "1px solid #fecdd3"
+                                : "1px solid #fed7aa",
+                            background:
+                              monthlyInfo.count >= MONTHLY_MAX_REQUESTS
+                                ? "#fff1f2"
+                                : "#fff7ed",
+                            borderRadius: 11,
+                            padding: "9px 10px",
+                            fontSize: 11.5,
+                            fontWeight: 800,
+                            color:
+                              monthlyInfo.count >= MONTHLY_MAX_REQUESTS
+                                ? "#9f1239"
+                                : "#9a3412",
+                          }}
+                        >
+                          Monthly frequency: {monthlyInfo.count} request(s) in{" "}
+                          {monthlyInfo.monthLabel}. Dates:{" "}
+                          {monthlyInfo.dates.join(", ")}
+                        </div>
+                      )}
+
                       {req.notes && (
                         <div
                           style={{
@@ -869,8 +1176,6 @@ export default function TimeOffRequestsAdminPage() {
                             fontSize: 12.5,
                             color: "#334155",
                             lineHeight: 1.55,
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
                           }}
                         >
                           <strong>Employee note: </strong>
@@ -895,7 +1200,6 @@ export default function TimeOffRequestsAdminPage() {
                               fontWeight: 800,
                               color: "#1769aa",
                               textTransform: "uppercase",
-                              letterSpacing: "0.05em",
                             }}
                           >
                             Message from Management
@@ -907,8 +1211,6 @@ export default function TimeOffRequestsAdminPage() {
                               fontSize: 12.5,
                               color: "#334155",
                               lineHeight: 1.55,
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
                             }}
                           >
                             {req.managerNote}
@@ -922,7 +1224,6 @@ export default function TimeOffRequestsAdminPage() {
                         display: "flex",
                         gap: 7,
                         flexWrap: "wrap",
-                        justifyContent: isMobile ? "flex-start" : "flex-end",
                       }}
                     >
                       {canProcess && (
@@ -979,7 +1280,6 @@ export default function TimeOffRequestsAdminPage() {
                         fontSize: 11,
                         fontWeight: 800,
                         color: "#475569",
-                        letterSpacing: "0.03em",
                         textTransform: "uppercase",
                       }}
                     >
