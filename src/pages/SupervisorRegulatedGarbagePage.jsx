@@ -11,6 +11,7 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { createOperationalAlert } from "../utils/operationalAlerts.js";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
@@ -54,6 +55,25 @@ function todayString() {
   ).padStart(2, "0")}`;
 }
 
+
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -94,6 +114,8 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
@@ -113,6 +135,8 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
@@ -132,6 +156,8 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         borderRadius: 14,
@@ -216,8 +242,10 @@ function CenterModal({ title, children, onClose, hideClose = false }) {
         style={{
           width: "100%",
           maxWidth: 780,
+          maxHeight: "90vh",
+          overflowY: "auto",
           background: "#ffffff",
-          borderRadius: 28,
+          borderRadius: 20,
           boxShadow: "0 30px 70px rgba(15,23,42,0.24)",
           border: "1px solid #e2e8f0",
           overflow: "hidden",
@@ -225,7 +253,7 @@ function CenterModal({ title, children, onClose, hideClose = false }) {
       >
         <div
           style={{
-            padding: "20px 24px",
+            padding: "16px 18px",
             background: "#fff7ed",
             borderBottom: "1px solid #fdba74",
             display: "flex",
@@ -264,7 +292,7 @@ function CenterModal({ title, children, onClose, hideClose = false }) {
           )}
         </div>
 
-        <div style={{ padding: 24 }}>{children}</div>
+        <div style={{ padding: 18 }}>{children}</div>
       </div>
     </div>
   );
@@ -346,6 +374,7 @@ function buildInitialItems() {
 export default function SupervisorRegulatedGarbagePage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const { isMobile, isTablet } = useViewport();
 
   const canAccess =
     user?.role === "supervisor" ||
@@ -1081,7 +1110,7 @@ export default function SupervisorRegulatedGarbagePage() {
               fontWeight: 700,
             }}
           >
-            TPA OPS {"\u00B7"} Regulated Garbage
+            {APP_NAME} {"\u00B7"} Regulated Garbage
           </p>
           <h1
             style={{
@@ -1103,6 +1132,17 @@ export default function SupervisorRegulatedGarbagePage() {
             }}
           >
             You do not have permission to submit regulated garbage checklists.
+          </p>
+
+          <p
+            style={{
+              margin: "6px 0 0",
+              fontSize: 11.5,
+              color: "rgba(255,255,255,0.72)",
+              fontWeight: 700,
+            }}
+          >
+            {APP_SUBTITLE}
           </p>
         </div>
       </div>
@@ -1133,8 +1173,12 @@ export default function SupervisorRegulatedGarbagePage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 12 : 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflowX: "hidden",
       }}
     >
       {requiredModal.open && modalItem && (
@@ -1174,7 +1218,7 @@ export default function SupervisorRegulatedGarbagePage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
                 gap: 14,
               }}
             >
@@ -1340,10 +1384,10 @@ export default function SupervisorRegulatedGarbagePage() {
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 18 : 22,
+          padding: isMobile ? "14px 14px" : isTablet ? "16px 18px" : "18px 20px",
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow: "0 18px 42px rgba(23,105,170,0.18)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -1364,9 +1408,10 @@ export default function SupervisorRegulatedGarbagePage() {
           style={{
             position: "relative",
             display: "flex",
+            flexDirection: isMobile ? "column" : "row",
             justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 16,
+            alignItems: isMobile ? "stretch" : "flex-start",
+            gap: isMobile ? 12 : 16,
             flexWrap: "wrap",
           }}
         >
@@ -1403,21 +1448,21 @@ export default function SupervisorRegulatedGarbagePage() {
             <p
               style={{
                 margin: 0,
-                fontSize: 12,
+                fontSize: isMobile ? 9 : 10,
                 textTransform: "uppercase",
-                letterSpacing: "0.22em",
+                letterSpacing: isMobile ? "0.12em" : "0.16em",
                 color: "rgba(255,255,255,0.78)",
                 fontWeight: 700,
               }}
             >
-              TPA OPS {"\u00B7"} Regulated Garbage
+              {APP_NAME} {"\u00B7"} Regulated Garbage
             </p>
 
             <h1
               style={{
-                margin: "10px 0 6px",
-                fontSize: 32,
-                lineHeight: 1.05,
+                margin: isMobile ? "6px 0 4px" : "8px 0 5px",
+                fontSize: isMobile ? 21 : isTablet ? 24 : 26,
+                lineHeight: 1.08,
                 fontWeight: 800,
                 letterSpacing: "-0.04em",
               }}
@@ -1428,15 +1473,34 @@ export default function SupervisorRegulatedGarbagePage() {
             <p
               style={{
                 margin: 0,
-                fontSize: 14,
+                fontSize: isMobile ? 11.5 : 12.5,
+                lineHeight: 1.45,
                 color: "rgba(255,255,255,0.88)",
               }}
             >
               Submit cart readiness, shortages, replacement dates, and stock alerts.
             </p>
+
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: isMobile ? 9.5 : 10.5,
+                color: "rgba(255,255,255,0.72)",
+                fontWeight: 700,
+              }}
+            >
+              {APP_SUBTITLE}
+            </p>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
             <ActionButton variant="secondary" onClick={() => setActiveTab("submit")}>
               Submit Form
             </ActionButton>
@@ -1457,7 +1521,7 @@ export default function SupervisorRegulatedGarbagePage() {
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
+        <PageCard style={{ padding: isMobile ? 12 : 16 }}>
           <div
             style={{
               background: "#edf7ff",
@@ -1475,7 +1539,7 @@ export default function SupervisorRegulatedGarbagePage() {
       )}
 
       {activeTab === "my_reports" ? (
-        <PageCard style={{ padding: 22 }}>
+        <PageCard style={{ padding: isMobile ? 14 : 22 }}>
           <div style={{ marginBottom: 16 }}>
             <h2
               style={{
@@ -1592,7 +1656,7 @@ export default function SupervisorRegulatedGarbagePage() {
                     style={{
                       marginTop: 14,
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1797,7 +1861,7 @@ export default function SupervisorRegulatedGarbagePage() {
         </PageCard>
       ) : (
         <>
-          <PageCard style={{ padding: 22 }}>
+          <PageCard style={{ padding: isMobile ? 14 : 22 }}>
             <div style={{ marginBottom: 16 }}>
               <h2
                 style={{
@@ -1815,7 +1879,7 @@ export default function SupervisorRegulatedGarbagePage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
                 gap: 14,
               }}
             >
@@ -1922,7 +1986,7 @@ export default function SupervisorRegulatedGarbagePage() {
           </PageCard>
 
           {officeAlerts.length > 0 && (
-            <PageCard style={{ padding: 18 }}>
+            <PageCard style={{ padding: isMobile ? 12 : 18 }}>
               <div
                 style={{
                   background: "#fff7ed",
@@ -1960,7 +2024,7 @@ export default function SupervisorRegulatedGarbagePage() {
             </PageCard>
           )}
 
-          <PageCard style={{ padding: 18 }}>
+          <PageCard style={{ padding: isMobile ? 12 : 18 }}>
             <div style={{ marginBottom: 14 }}>
               <h2
                 style={{
@@ -1996,7 +2060,7 @@ export default function SupervisorRegulatedGarbagePage() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
                         gap: 14,
                       }}
                     >
@@ -2052,7 +2116,7 @@ export default function SupervisorRegulatedGarbagePage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))",
                     gap: 14,
                   }}
                 >
@@ -2099,7 +2163,7 @@ export default function SupervisorRegulatedGarbagePage() {
             </div>
           </PageCard>
 
-          <PageCard style={{ padding: 20 }}>
+          <PageCard style={{ padding: isMobile ? 14 : 20 }}>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <ActionButton
                 onClick={handleSubmit}
