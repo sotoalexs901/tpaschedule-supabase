@@ -592,4 +592,5 @@ export default function TimeOffStatusPublicPage() {
         </PageCard>
       </div>
     </div>
-  
+  );
+}
