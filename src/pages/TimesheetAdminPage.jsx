@@ -8,10 +8,12 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import { createOperationalAlert } from "../utils/operationalAlerts.js";
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
@@ -101,6 +103,25 @@ function isReportOverdue(report) {
   if (!deadline) return false;
 
   return Date.now() > deadline.getTime();
+}
+
+function getOverdueHours(report) {
+  const deadline = getApprovalDeadline(report);
+  if (!deadline) return 0;
+
+  const diffMs = Date.now() - deadline.getTime();
+  return diffMs > 0 ? diffMs / (60 * 60 * 1000) : 0;
+}
+
+function formatDurationHours(hours) {
+  const totalMinutes = Math.max(0, Math.round(Number(hours || 0) * 60));
+  const wholeHours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (wholeHours <= 0) return `${minutes} min`;
+  if (minutes === 0) return `${wholeHours} hr${wholeHours === 1 ? "" : "s"}`;
+
+  return `${wholeHours} hr${wholeHours === 1 ? "" : "s"} ${minutes} min`;
 }
 
 function getReportVisualState(report) {
@@ -1126,6 +1147,7 @@ export default function TimesheetAdminPage() {
   const [approvingId, setApprovingId] = useState("");
   const [returningId, setReturningId] = useState("");
   const [savingEditId, setSavingEditId] = useState("");
+  const [syncingOverdueAlerts, setSyncingOverdueAlerts] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [restrictToOwnReports, setRestrictToOwnReports] = useState(false);
   const [showMonthlyOverBudgetSummary, setShowMonthlyOverBudgetSummary] =
@@ -1541,6 +1563,154 @@ export default function TimesheetAdminPage() {
     setReturnReason(selectedReport.returnedReason || "");
   }, [selectedReport]);
 
+  const removeActiveTimesheetAlerts = async (reportId) => {
+    if (!reportId) return;
+
+    try {
+      const alertsQuery = query(
+        collection(db, "operational_alerts"),
+        where("sourceId", "==", reportId)
+      );
+
+      const alertsSnap = await getDocs(alertsQuery);
+
+      await Promise.all(
+        alertsSnap.docs.map((alertDoc) =>
+          deleteDoc(doc(db, "operational_alerts", alertDoc.id))
+        )
+      );
+    } catch (err) {
+      // Never block a management action because alert cleanup failed.
+      console.error("Error clearing active timesheet alerts:", err);
+    }
+  };
+
+
+  useEffect(() => {
+    if (!canApprove || loading || syncingOverdueAlerts) return;
+
+    const overdueWithoutAlert = reportsWithHours.filter((report) => {
+      const status = String(report?.status || "submitted")
+        .trim()
+        .toLowerCase();
+
+      return (
+        status === "submitted" &&
+        isReportOverdue(report) &&
+        !report.approvalOverdueAlertCreated
+      );
+    });
+
+    if (!overdueWithoutAlert.length) return;
+
+    let cancelled = false;
+
+    async function syncOverdueAlerts() {
+      setSyncingOverdueAlerts(true);
+
+      try {
+        for (const report of overdueWithoutAlert) {
+          if (cancelled) break;
+
+          const deadline = getApprovalDeadline(report);
+          const overdueHours = getOverdueHours(report);
+
+          try {
+            const alertRef = await createOperationalAlert({
+              alertType: "TIMESHEET_APPROVAL_OVERDUE",
+              category: "TIMESHEET",
+              severity: "HIGH",
+              priority: "URGENT",
+              title: "Timesheet Approval Overdue",
+              message: `${
+                report.normalizedAirline || report.airline || "Unknown Airline"
+              } timesheet dated ${
+                report.reportDate || "\u2014"
+              } has been waiting for management action for more than ${
+                APPROVAL_DEADLINE_HOURS
+              } hours. It is currently ${formatDurationHours(
+                overdueHours
+              )} past the approval deadline.`,
+              source: "TimesheetAdminPage",
+              sourceId: report.id,
+              sourcePath: "/timesheets/reports",
+              airline:
+                report.normalizedAirline || report.airline || "",
+              department: prettifyDepartment(
+                report.department || report.normalizedDepartment
+              ),
+              reportDate: report.reportDate || "",
+              targetRoles: ["station_manager", "duty_manager"],
+              createdByUserId: user?.id || "",
+              createdByUsername: user?.username || "",
+              createdByName:
+                user?.displayName ||
+                user?.fullName ||
+                user?.name ||
+                user?.username ||
+                "",
+              createdByRole: user?.role || "",
+              metadata: {
+                timesheetReportId: report.id,
+                approvalDeadlineHours: APPROVAL_DEADLINE_HOURS,
+                overdueHours: Number(overdueHours || 0),
+                approvalDeadline: deadline
+                  ? deadline.toISOString()
+                  : "",
+                submittedAt:
+                  getSubmissionReferenceDate(report)?.toISOString?.() || "",
+              },
+            });
+
+            await updateDoc(doc(db, "timesheet_reports", report.id), {
+              approvalOverdueAlertCreated: true,
+              approvalOverdueAlertCreatedAt: serverTimestamp(),
+              approvalOverdueAlertId: alertRef?.id || "",
+              approvalOverdueAlertType: "TIMESHEET_APPROVAL_OVERDUE",
+            });
+
+            if (!cancelled) {
+              setReports((prev) =>
+                prev.map((item) =>
+                  item.id === report.id
+                    ? {
+                        ...item,
+                        approvalOverdueAlertCreated: true,
+                        approvalOverdueAlertId: alertRef?.id || "",
+                        approvalOverdueAlertType:
+                          "TIMESHEET_APPROVAL_OVERDUE",
+                      }
+                    : item
+                )
+              );
+            }
+          } catch (alertErr) {
+            console.error(
+              "Error creating overdue timesheet alert:",
+              alertErr
+            );
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setSyncingOverdueAlerts(false);
+        }
+      }
+    }
+
+    syncOverdueAlerts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canApprove,
+    loading,
+    syncingOverdueAlerts,
+    reportsWithHours,
+    user,
+  ]);
+
   const handleDelete = async (report) => {
     const ok = window.confirm(
       `Delete this timesheet report from ${
@@ -1554,6 +1724,7 @@ export default function TimesheetAdminPage() {
       setDeletingId(report.id);
 
       await deleteDoc(doc(db, "timesheet_reports", report.id));
+      await removeActiveTimesheetAlerts(report.id);
 
       setReports((prev) => prev.filter((r) => r.id !== report.id));
 
@@ -1605,6 +1776,8 @@ export default function TimesheetAdminPage() {
         approvedByRole: user?.role || "",
         returnedReason: "",
       });
+
+      await removeActiveTimesheetAlerts(report.id);
 
       setReports((prev) =>
         prev.map((item) =>
@@ -1674,6 +1847,8 @@ export default function TimesheetAdminPage() {
         returnedByRole: user?.role || "",
         returnedReason: returnReason,
       });
+
+      await removeActiveTimesheetAlerts(report.id);
 
       setReports((prev) =>
         prev.map((item) =>
@@ -2630,7 +2805,7 @@ export default function TimesheetAdminPage() {
                 color: "#64748b",
               }}
             >
-              Total found: {filteredReports.length}. Tap any report to open it. Submitted reports must be resolved within 24 hours.
+              Total found: {filteredReports.length}. Tap any report to open it. Submitted reports must be resolved within 24 hours. Overdue reports automatically generate an URGENT management alert.
             </p>
           </div>
 
