@@ -61,6 +61,7 @@ export default function AppLayout() {
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [operationalAlerts, setOperationalAlerts] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
 
@@ -148,6 +149,43 @@ export default function AppLayout() {
 
     return () => unsub();
   }, [user?.id]);
+
+  // ============================================================
+  // ACTIVE OPERATIONAL ALERTS - DUTY / STATION MANAGEMENT
+  // ============================================================
+
+  useEffect(() => {
+    const role = String(user?.role || "").trim().toLowerCase();
+
+    if (role !== "station_manager" && role !== "duty_manager") {
+      setOperationalAlerts(0);
+      return undefined;
+    }
+
+    const unsub = onSnapshot(
+      collection(db, "operational_alerts"),
+      (snap) => {
+        const count = snap.docs.filter((item) => {
+          const data = item.data();
+          const targets = Array.isArray(data.targetRoles)
+            ? data.targetRoles.map((value) =>
+                String(value || "").trim().toLowerCase()
+              )
+            : [];
+
+          return !targets.length || targets.includes(role);
+        }).length;
+
+        setOperationalAlerts(count);
+      },
+      (err) => {
+        console.error("Error listening operational alerts:", err);
+        setOperationalAlerts(0);
+      }
+    );
+
+    return () => unsub();
+  }, [user?.role]);
 
   // ============================================================
   // CLOSE MENU WHEN NAVIGATING
@@ -1007,6 +1045,14 @@ export default function AppLayout() {
               flexWrap: "wrap",
             }}
           >
+            {(user?.role === "station_manager" ||
+              user?.role === "duty_manager") && (
+              <OperationalAlertBell
+                value={operationalAlerts}
+                onClick={() => navigate("/dashboard")}
+              />
+            )}
+
             <StatusPill label="Messages" value={unreadMessages} />
             <StatusPill label="Notifications" value={unreadNotifications} />
             <StatusPill label="Day Off" value={pendingTimeOff} />
@@ -1105,6 +1151,76 @@ export default function AppLayout() {
         <Outlet />
       </main>
     </div>
+  );
+}
+
+// ============================================================
+// OPERATIONAL ALERT BELL
+// ============================================================
+
+function OperationalAlertBell({ value, onClick }) {
+  const hasAlerts = Number(value || 0) > 0;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={
+        hasAlerts
+          ? `${value} active operational alert${value === 1 ? "" : "s"}`
+          : "No active operational alerts"
+      }
+      style={{
+        position: "relative",
+        minWidth: 58,
+        minHeight: 48,
+        border: hasAlerts
+          ? "1px solid #fecaca"
+          : "1px solid #d7e9fb",
+        background: hasAlerts ? "#fff1f2" : "#f8fbff",
+        color: hasAlerts ? "#b91c1c" : "#1769aa",
+        borderRadius: 14,
+        padding: "8px 12px",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 7,
+        boxSizing: "border-box",
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          fontSize: 20,
+          lineHeight: 1,
+        }}
+      >
+        {"\u{1F6A8}"}
+      </span>
+
+      {hasAlerts && (
+        <span
+          style={{
+            minWidth: 22,
+            height: 22,
+            padding: "0 6px",
+            borderRadius: 999,
+            background: "#dc2626",
+            color: "#ffffff",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 11,
+            fontWeight: 900,
+            lineHeight: 1,
+            boxShadow: "0 4px 10px rgba(220,38,38,0.24)",
+          }}
+        >
+          {value > 99 ? "99+" : value}
+        </span>
+      )}
+    </button>
   );
 }
 
