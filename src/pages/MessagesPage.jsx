@@ -1,124 +1,79 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+// src/pages/MessagesPage.jsx
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
-  collection,
-  getDocs,
   addDoc,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
-  serverTimestamp,
+  arrayRemove,
+  arrayUnion,
+  collection,
   deleteDoc,
   doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
   updateDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import {
+  APP_NAME,
+  APP_SUBTITLE,
+} from "../config/appConfig.js";
 
-function PageCard({ children, style = {} }) {
-  return (
-    <div
-      style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
-        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
+// ============================================================
+// AEROSTATION HUB - MESSAGES V2
+// ============================================================
+//
+// Firestore structure:
+//
+// conversations/{conversationId}
+//   participants: [userA, userB]
+//   lastMessage
+//   lastMessageAt
+//   lastSenderId
+//   unreadUserIds: [userId]
+//   typingUserIds: [userId]
+//   createdAt
+//   updatedAt
+//
+// conversations/{conversationId}/messages/{messageId}
+//   senderId
+//   receiverId
+//   text
+//   createdAt
+//   read
+//   readAt
+//
+// conversationId is deterministic:
+// [userA, userB].sort().join("__")
+//
+// The legacy /messages collection is intentionally NOT deleted.
+
+const TYPING_TIMEOUT_MS = 1800;
+
+function normalizeText(value) {
+  return String(value || "").trim();
 }
 
-function SelectInput(props) {
-  return (
-    <select
-      {...props}
-      style={{
-        width: "100%",
-        border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
-        fontSize: 14,
-        color: "#0f172a",
-        outline: "none",
-        ...props.style,
-      }}
-    />
-  );
+function normalizeLower(value) {
+  return normalizeText(value).toLowerCase();
 }
 
-function ActionButton({
-  children,
-  onClick,
-  variant = "secondary",
-  type = "button",
-  disabled = false,
-}) {
-  const styles = {
-    primary: {
-      background:
-        "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-      color: "#fff",
-      border: "none",
-      boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
-    },
-    secondary: {
-      background: "#ffffff",
-      color: "#1769aa",
-      border: "1px solid #cfe7fb",
-      boxShadow: "none",
-    },
-    danger: {
-      background: "#fff1f2",
-      color: "#b91c1c",
-      border: "1px solid #fecdd3",
-      boxShadow: "none",
-    },
-  };
-
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        borderRadius: 12,
-        padding: "10px 14px",
-        fontSize: 13,
-        fontWeight: 800,
-        cursor: disabled ? "not-allowed" : "pointer",
-        whiteSpace: "nowrap",
-        opacity: disabled ? 0.65 : 1,
-        ...styles[variant],
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function TextArea(props) {
-  return (
-    <textarea
-      {...props}
-      style={{
-        width: "100%",
-        border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
-        fontSize: 14,
-        color: "#0f172a",
-        outline: "none",
-        resize: "none",
-        ...props.style,
-      }}
-    />
-  );
+function getConversationId(a, b) {
+  return [String(a || ""), String(b || "")]
+    .sort()
+    .join("__");
 }
 
 function getUserLabel(u) {
@@ -132,244 +87,345 @@ function getUserLabel(u) {
   );
 }
 
+function getUserPhoto(u) {
+  return (
+    u?.profilePhotoURL ||
+    u?.photoURL ||
+    u?.photoUrl ||
+    ""
+  );
+}
+
+function getInitials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+
+  if (!parts.length) return "U";
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+}
+
+function toDateSafe(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value.toDate();
+
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatMessageTime(value) {
+  const d = toDateSafe(value);
+  if (!d) return "";
+
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+
+  if (sameDay) {
+    return d.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  return d.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatLastSeen(value) {
+  const d = toDateSafe(value);
+  if (!d) return "Offline";
+
+  const diff = Math.max(0, Date.now() - d.getTime());
+  const mins = Math.floor(diff / 60000);
+
+  if (mins < 1) return "Active just now";
+  if (mins < 60) return `Active ${mins}m ago`;
+
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Active ${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  return `Active ${days}d ago`;
+}
+
+function useIsMobile(breakpoint = 760) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
+function Avatar({ user, size = 44 }) {
+  const name = getUserLabel(user);
+  const photo = getUserPhoto(user);
+
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.max(12, Math.round(size * 0.3)),
+        overflow: "hidden",
+        background: "#e0f2fe",
+        border: "1px solid #bae6fd",
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#0f4c81",
+        fontWeight: 850,
+        fontSize: Math.max(12, Math.round(size * 0.34)),
+      }}
+    >
+      {photo ? (
+        <img
+          src={photo}
+          alt={name}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+        />
+      ) : (
+        getInitials(name)
+      )}
+    </div>
+  );
+}
+
 export default function MessagesPage() {
   const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile(760);
+
+  const myId = user?.id || "";
 
   const [allUsers, setAllUsers] = useState([]);
+  const [presence, setPresence] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
-  const [selectedUser, setSelectedUser] = useState(null);
-
+  const [selectedConversationId, setSelectedConversationId] = useState("");
   const [messages, setMessages] = useState([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(false);
+
+  const [userSearch, setUserSearch] = useState("");
+  const [conversationSearch, setConversationSearch] = useState("");
+  const [showNewChat, setShowNewChat] = useState(false);
+
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+  const typingTimerRef = useRef(null);
   const prefillAppliedRef = useRef(false);
 
-  const myId = user?.id;
-
   const isManager =
-    user?.role === "station_manager" || user?.role === "duty_manager";
+    user?.role === "station_manager" ||
+    user?.role === "duty_manager";
+
+  // ============================================================
+  // USERS
+  // ============================================================
 
   useEffect(() => {
-    async function loadUsers() {
-      if (!user) return;
-      try {
-        const snap = await getDocs(collection(db, "users"));
-        const list = snap.docs
+    if (!myId) return undefined;
+
+    const unsub = onSnapshot(
+      collection(db, "users"),
+      (snap) => {
+        const rows = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((u) => u.id !== user.id);
+          .filter((u) => u.id !== myId)
+          .sort((a, b) =>
+            getUserLabel(a).localeCompare(getUserLabel(b))
+          );
 
-        list.sort((a, b) =>
-          getUserLabel(a).toLowerCase().localeCompare(getUserLabel(b).toLowerCase())
-        );
-
-        setAllUsers(list);
-      } catch (err) {
-        console.error("Error loading users for messages:", err);
+        setAllUsers(rows);
+        setLoadingUsers(false);
+      },
+      (err) => {
+        console.error("Error loading users for chat:", err);
         setStatusMessage("Could not load users.");
-      } finally {
         setLoadingUsers(false);
       }
-    }
+    );
 
-    loadUsers();
-  }, [user]);
-
-  const loadConversations = useCallback(async () => {
-    if (!myId) return;
-
-    try {
-      const baseRef = collection(db, "messages");
-      const [sentSnap, receivedSnap] = await Promise.all([
-        getDocs(query(baseRef, where("fromUserId", "==", myId))),
-        getDocs(query(baseRef, where("toUserId", "==", myId))),
-      ]);
-
-      const map = {};
-
-      const handleDoc = (d) => {
-        const m = d.data();
-        const otherId = m.fromUserId === myId ? m.toUserId : m.fromUserId;
-        if (!otherId) return;
-
-        const createdAtMs = m.createdAt?.toMillis?.() || 0;
-        const existing = map[otherId];
-
-        if (!existing || createdAtMs > existing.lastTime) {
-          map[otherId] = {
-            otherUserId: otherId,
-            lastText: m.text || "",
-            lastFromMe: m.fromUserId === myId,
-            lastTime: createdAtMs,
-          };
-        }
-      };
-
-      sentSnap.forEach(handleDoc);
-      receivedSnap.forEach(handleDoc);
-
-      const list = Object.values(map).sort((a, b) => b.lastTime - a.lastTime);
-      setConversations(list);
-    } catch (err) {
-      console.error("Error loading conversations:", err);
-      setStatusMessage("Could not load conversations.");
-    }
+    return () => unsub();
   }, [myId]);
 
-  useEffect(() => {
-    loadConversations();
-  }, [loadConversations]);
+  // ============================================================
+  // PRESENCE
+  // ============================================================
 
   useEffect(() => {
-    if (!myId || !selectedUserId) {
-      setMessages([]);
-      return;
-    }
-
-    const baseRef = collection(db, "messages");
-
-    const qSent = query(
-      baseRef,
-      where("fromUserId", "==", myId),
-      where("toUserId", "==", selectedUserId),
-      orderBy("createdAt", "asc")
-    );
-
-    const qReceived = query(
-      baseRef,
-      where("fromUserId", "==", selectedUserId),
-      where("toUserId", "==", myId),
-      orderBy("createdAt", "asc")
-    );
-
-    setLoadingMessages(true);
-
-    let sentMsgs = [];
-    let receivedMsgs = [];
-
-    const mergeAndSet = () => {
-      const all = [...sentMsgs, ...receivedMsgs].sort((a, b) => {
-        const ta = a.createdAt?.toMillis?.() || 0;
-        const tb = b.createdAt?.toMillis?.() || 0;
-        return ta - tb;
-      });
-      setMessages(all);
-      setLoadingMessages(false);
-    };
-
-    const unsubSent = onSnapshot(
-      qSent,
+    const unsub = onSnapshot(
+      collection(db, "user_presence"),
       (snap) => {
-        sentMsgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        mergeAndSet();
+        setPresence(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
+        );
       },
-      (err) => {
-        console.error("Error listening sent messages:", err);
-        setLoadingMessages(false);
-      }
+      (err) => console.error("Error loading presence for chat:", err)
     );
 
-    const unsubReceived = onSnapshot(
-      qReceived,
-      (snap) => {
-        receivedMsgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        mergeAndSet();
-      },
-      (err) => {
-        console.error("Error listening received messages:", err);
-        setLoadingMessages(false);
-      }
-    );
+    return () => unsub();
+  }, []);
 
-    return () => {
-      unsubSent();
-      unsubReceived();
-    };
-  }, [myId, selectedUserId]);
+  const presenceByUserId = useMemo(() => {
+    const map = new Map();
 
-  useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (!myId || !selectedUserId || messages.length === 0) return;
-
-    const unread = messages.filter(
-      (m) => m.toUserId === myId && m.read === false
-    );
-    if (unread.length === 0) return;
-
-    unread.forEach(async (m) => {
-      try {
-        await updateDoc(doc(db, "messages", m.id), { read: true });
-      } catch (e) {
-        console.error("Error marking message as read:", e);
-      }
+    presence.forEach((p) => {
+      map.set(String(p.userId || p.id), p);
     });
-  }, [myId, selectedUserId, messages]);
+
+    return map;
+  }, [presence]);
+
+  // ============================================================
+  // LIVE CONVERSATIONS
+  // ============================================================
+
+  useEffect(() => {
+    if (!myId) return undefined;
+
+    const qConversations = query(
+      collection(db, "conversations"),
+      where("participants", "array-contains", myId)
+    );
+
+    const unsub = onSnapshot(
+      qConversations,
+      (snap) => {
+        const rows = snap.docs
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
+          .sort((a, b) => {
+            const A = toDateSafe(a.lastMessageAt)?.getTime() || 0;
+            const B = toDateSafe(b.lastMessageAt)?.getTime() || 0;
+            return B - A;
+          });
+
+        setConversations(rows);
+      },
+      (err) => {
+        console.error("Error loading conversations:", err);
+        setStatusMessage("Could not load conversations.");
+      }
+    );
+
+    return () => unsub();
+  }, [myId]);
+
+  // ============================================================
+  // SELECTED USER / CONVERSATION
+  // ============================================================
+
+  const selectedUser = useMemo(
+    () => allUsers.find((u) => u.id === selectedUserId) || null,
+    [allUsers, selectedUserId]
+  );
+
+  const selectedPresence = useMemo(
+    () => presenceByUserId.get(String(selectedUserId)) || null,
+    [presenceByUserId, selectedUserId]
+  );
+
+  const selectedConversation = useMemo(
+    () =>
+      conversations.find((c) => c.id === selectedConversationId) || null,
+    [conversations, selectedConversationId]
+  );
+
+  const openConversationWithUser = useCallback(
+    (targetUserId) => {
+      if (!myId || !targetUserId) return;
+
+      const conversationId = getConversationId(myId, targetUserId);
+
+      setSelectedUserId(targetUserId);
+      setSelectedConversationId(conversationId);
+      setShowNewChat(false);
+      setStatusMessage("");
+
+      requestAnimationFrame(() => {
+        inputRef.current?.focus?.();
+      });
+    },
+    [myId]
+  );
+
+  // ============================================================
+  // ROUTE PREFILL
+  // ============================================================
 
   useEffect(() => {
     if (loadingUsers) return;
     if (prefillAppliedRef.current) return;
     if (!allUsers.length) return;
 
-    const incomingState = location.state || {};
-    const recipientUserId = String(incomingState.recipientUserId || "").trim();
-    const recipientUsername = String(incomingState.recipientUsername || "")
-      .trim()
-      .toLowerCase();
-    const recipientName = String(incomingState.recipientName || "").trim();
-    const prefilledMessage = String(incomingState.prefilledMessage || "").trim();
+    const incoming = location.state || {};
 
-    if (!recipientUserId && !recipientUsername && !recipientName && !prefilledMessage) {
+    const recipientUserId = normalizeText(incoming.recipientUserId);
+    const recipientUsername = normalizeLower(incoming.recipientUsername);
+    const recipientName = normalizeLower(incoming.recipientName);
+    const prefilledMessage = normalizeText(incoming.prefilledMessage);
+
+    if (
+      !recipientUserId &&
+      !recipientUsername &&
+      !recipientName &&
+      !prefilledMessage
+    ) {
       return;
     }
 
-    let foundUser = null;
+    let found = null;
 
     if (recipientUserId) {
-      foundUser = allUsers.find((u) => u.id === recipientUserId) || null;
+      found = allUsers.find((u) => u.id === recipientUserId) || null;
     }
 
-    if (!foundUser && recipientUsername) {
-      foundUser =
-        allUsers.find(
-          (u) =>
-            String(u.username || "").trim().toLowerCase() === recipientUsername ||
-            String(u.loginUsername || "").trim().toLowerCase() === recipientUsername
-        ) || null;
-    }
-
-    if (!foundUser && recipientName) {
-      foundUser =
+    if (!found && recipientUsername) {
+      found =
         allUsers.find((u) => {
-          const full =
-            String(
-              u.displayName ||
-                u.fullName ||
-                u.name ||
-                u.username ||
-                u.loginUsername ||
-                ""
-            )
-              .trim()
-              .toLowerCase();
-          return full === recipientName.toLowerCase();
+          return (
+            normalizeLower(u.username) === recipientUsername ||
+            normalizeLower(u.loginUsername) === recipientUsername
+          );
         }) || null;
     }
 
-    if (foundUser) {
-      setSelectedUserId(foundUser.id);
-      setSelectedUser(foundUser);
+    if (!found && recipientName) {
+      found =
+        allUsers.find(
+          (u) => normalizeLower(getUserLabel(u)) === recipientName
+        ) || null;
+    }
+
+    if (found) {
+      openConversationWithUser(found.id);
     }
 
     if (prefilledMessage) {
@@ -379,37 +435,262 @@ export default function MessagesPage() {
     prefillAppliedRef.current = true;
 
     window.history.replaceState({}, document.title);
-  }, [loadingUsers, allUsers, location.state]);
+  }, [
+    loadingUsers,
+    allUsers,
+    location.state,
+    openConversationWithUser,
+  ]);
 
-  const handleChangeUser = (id) => {
-    setSelectedUserId(id || "");
-    const found = allUsers.find((u) => u.id === id) || null;
-    setSelectedUser(found);
+  // ============================================================
+  // LIVE MESSAGES FOR SELECTED CONVERSATION
+  // ============================================================
+
+  useEffect(() => {
+    if (!selectedConversationId) {
+      setMessages([]);
+      return undefined;
+    }
+
+    setLoadingMessages(true);
+
+    const qMessages = query(
+      collection(
+        db,
+        "conversations",
+        selectedConversationId,
+        "messages"
+      ),
+      orderBy("createdAt", "asc")
+    );
+
+    const unsub = onSnapshot(
+      qMessages,
+      (snap) => {
+        setMessages(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
+        );
+        setLoadingMessages(false);
+      },
+      (err) => {
+        console.error("Error listening to messages:", err);
+        setLoadingMessages(false);
+        setStatusMessage("Could not load this conversation.");
+      }
+    );
+
+    return () => unsub();
+  }, [selectedConversationId]);
+
+  // ============================================================
+  // MARK AS READ
+  // ============================================================
+
+  useEffect(() => {
+    if (!myId || !selectedConversationId || !messages.length) return;
+
+    const unread = messages.filter(
+      (m) => m.receiverId === myId && m.read !== true
+    );
+
+    if (!unread.length) {
+      // Still clear conversation unread marker in case old state remains.
+      updateDoc(
+        doc(db, "conversations", selectedConversationId),
+        {
+          unreadUserIds: arrayRemove(myId),
+        }
+      ).catch(() => {});
+      return;
+    }
+
+    async function markRead() {
+      try {
+        const batch = writeBatch(db);
+
+        unread.forEach((m) => {
+          batch.update(
+            doc(
+              db,
+              "conversations",
+              selectedConversationId,
+              "messages",
+              m.id
+            ),
+            {
+              read: true,
+              readAt: serverTimestamp(),
+            }
+          );
+        });
+
+        batch.update(
+          doc(db, "conversations", selectedConversationId),
+          {
+            unreadUserIds: arrayRemove(myId),
+          }
+        );
+
+        await batch.commit();
+      } catch (err) {
+        console.error("Error marking chat read:", err);
+      }
+    }
+
+    markRead();
+  }, [myId, selectedConversationId, messages]);
+
+  // ============================================================
+  // AUTO SCROLL
+  // ============================================================
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [messages, selectedConversationId]);
+
+  // ============================================================
+  // TYPING INDICATOR
+  // ============================================================
+
+  const setTypingState = useCallback(
+    async (isTyping) => {
+      if (!myId || !selectedConversationId) return;
+
+      try {
+        await updateDoc(
+          doc(db, "conversations", selectedConversationId),
+          {
+            typingUserIds: isTyping
+              ? arrayUnion(myId)
+              : arrayRemove(myId),
+          }
+        );
+      } catch {
+        // Conversation may not exist yet. Typing starts after first message.
+      }
+    },
+    [myId, selectedConversationId]
+  );
+
+  const handleTextChange = (value) => {
+    setText(value);
+
+    if (!selectedConversationId) return;
+
+    setTypingState(true);
+
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+
+    typingTimerRef.current = setTimeout(() => {
+      setTypingState(false);
+    }, TYPING_TIMEOUT_MS);
   };
 
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+      }
+
+      if (selectedConversationId && myId) {
+        updateDoc(
+          doc(db, "conversations", selectedConversationId),
+          {
+            typingUserIds: arrayRemove(myId),
+          }
+        ).catch(() => {});
+      }
+    };
+  }, [selectedConversationId, myId]);
+
+  const otherUserTyping =
+    Array.isArray(selectedConversation?.typingUserIds) &&
+    selectedConversation.typingUserIds.includes(selectedUserId);
+
+  // ============================================================
+  // SEND MESSAGE
+  // ============================================================
+
   const handleSend = async (e) => {
-    e.preventDefault();
-    if (!user || !myId || !selectedUserId || !text.trim()) return;
+    e?.preventDefault?.();
+
+    if (!myId || !selectedUserId) return;
 
     const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const conversationId = getConversationId(myId, selectedUserId);
+    const conversationRef = doc(
+      db,
+      "conversations",
+      conversationId
+    );
 
     try {
       setSending(true);
       setStatusMessage("");
 
-      await addDoc(collection(db, "messages"), {
-        fromUserId: myId,
-        toUserId: selectedUserId,
-        fromUsername: user.username || user.loginUsername || "",
-        toUsername:
-          selectedUser?.username || selectedUser?.loginUsername || "",
-        text: trimmed,
-        createdAt: serverTimestamp(),
-        read: false,
-      });
+      await setDoc(
+        conversationRef,
+        {
+          participants: [myId, selectedUserId],
+          participantNames: {
+            [myId]: getUserLabel(user),
+            [selectedUserId]: getUserLabel(selectedUser),
+          },
+          lastMessage: trimmed,
+          lastMessageAt: serverTimestamp(),
+          lastSenderId: myId,
+          unreadUserIds: arrayUnion(selectedUserId),
+          typingUserIds: arrayRemove(myId),
+          updatedAt: serverTimestamp(),
+          createdAt:
+            selectedConversation?.createdAt || serverTimestamp(),
+        },
+        { merge: true }
+      );
 
+      await addDoc(
+        collection(
+          db,
+          "conversations",
+          conversationId,
+          "messages"
+        ),
+        {
+          senderId: myId,
+          receiverId: selectedUserId,
+          senderUsername:
+            user?.username || user?.loginUsername || "",
+          receiverUsername:
+            selectedUser?.username ||
+            selectedUser?.loginUsername ||
+            "",
+          text: trimmed,
+          createdAt: serverTimestamp(),
+          read: false,
+          readAt: null,
+        }
+      );
+
+      setSelectedConversationId(conversationId);
       setText("");
-      await loadConversations();
+
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+      }
+
+      requestAnimationFrame(() => {
+        inputRef.current?.focus?.();
+      });
     } catch (err) {
       console.error("Error sending message:", err);
       setStatusMessage("Error sending message. Please try again.");
@@ -418,70 +699,144 @@ export default function MessagesPage() {
     }
   };
 
-  const handleOpenConversation = (otherUserId) => {
-    handleChangeUser(otherUserId);
-  };
-
-  const handleDeleteConversation = async () => {
-    if (!myId || !selectedUserId) return;
-    if (!isManager) return;
-
-    const other = selectedUser;
-    const name = getUserLabel(other);
-
-    const ok = window.confirm(
-      `Delete entire conversation with ${name}? This cannot be undone.`
-    );
-    if (!ok) return;
-
-    try {
-      const baseRef = collection(db, "messages");
-      const [snap1, snap2] = await Promise.all([
-        getDocs(
-          query(
-            baseRef,
-            where("fromUserId", "==", myId),
-            where("toUserId", "==", selectedUserId)
-          )
-        ),
-        getDocs(
-          query(
-            baseRef,
-            where("fromUserId", "==", selectedUserId),
-            where("toUserId", "==", myId)
-          )
-        ),
-      ]);
-
-      const allDocs = [...snap1.docs, ...snap2.docs];
-      for (const d of allDocs) {
-        await deleteDoc(doc(db, "messages", d.id));
-      }
-
-      setMessages([]);
-      setSelectedUserId("");
-      setSelectedUser(null);
-      setStatusMessage("Conversation deleted.");
-      await loadConversations();
-    } catch (err) {
-      console.error("Error deleting conversation:", err);
-      setStatusMessage("Error deleting conversation. Please try again.");
+  const handleComposerKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(e);
     }
   };
 
+  // ============================================================
+  // DELETE CONVERSATION
+  // ============================================================
+
+  const handleDeleteConversation = async () => {
+    if (!isManager || !selectedConversationId) return;
+
+    const name = getUserLabel(selectedUser);
+
+    if (
+      !window.confirm(
+        `Delete the entire conversation with ${name}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setStatusMessage("");
+
+      const messagesSnap = await getDocs(
+        collection(
+          db,
+          "conversations",
+          selectedConversationId,
+          "messages"
+        )
+      );
+
+      const batch = writeBatch(db);
+
+      messagesSnap.docs.forEach((m) => {
+        batch.delete(m.ref);
+      });
+
+      batch.delete(
+        doc(db, "conversations", selectedConversationId)
+      );
+
+      await batch.commit();
+
+      setMessages([]);
+      setSelectedUserId("");
+      setSelectedConversationId("");
+      setStatusMessage("Conversation deleted.");
+    } catch (err) {
+      console.error("Error deleting conversation:", err);
+      setStatusMessage("Error deleting conversation.");
+    }
+  };
+
+  // ============================================================
+  // DERIVED CONVERSATION LIST
+  // ============================================================
+
+  const conversationRows = useMemo(() => {
+    return conversations
+      .map((c) => {
+        const otherId =
+          (c.participants || []).find((id) => id !== myId) || "";
+
+        const otherUser =
+          allUsers.find((u) => u.id === otherId) || {
+            id: otherId,
+            displayName:
+              c.participantNames?.[otherId] ||
+              "Unknown User",
+          };
+
+        const presenceRow =
+          presenceByUserId.get(String(otherId)) || null;
+
+        const unread =
+          Array.isArray(c.unreadUserIds) &&
+          c.unreadUserIds.includes(myId);
+
+        return {
+          ...c,
+          otherId,
+          otherUser,
+          presence: presenceRow,
+          unread,
+        };
+      })
+      .filter((row) => {
+        const q = normalizeLower(conversationSearch);
+        if (!q) return true;
+
+        return (
+          normalizeLower(getUserLabel(row.otherUser)).includes(q) ||
+          normalizeLower(row.lastMessage).includes(q)
+        );
+      });
+  }, [
+    conversations,
+    allUsers,
+    myId,
+    presenceByUserId,
+    conversationSearch,
+  ]);
+
+  const newChatUsers = useMemo(() => {
+    const q = normalizeLower(userSearch);
+
+    return allUsers.filter((u) => {
+      if (!q) return true;
+
+      return [
+        getUserLabel(u),
+        u.username,
+        u.loginUsername,
+        u.role,
+        u.department,
+      ]
+        .map(normalizeLower)
+        .join(" ")
+        .includes(q);
+    });
+  }, [allUsers, userSearch]);
+
+  // ============================================================
+  // MOBILE SCREEN MODE
+  // ============================================================
+
+  const mobileShowingChat =
+    isMobile && Boolean(selectedUserId);
+
   if (!user) {
     return (
-      <PageCard style={{ padding: 22 }}>
-        <p
-          style={{
-            margin: 0,
-            color: "#64748b",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          You must be logged in to see messages.
-        </p>
+      <PageCard style={{ padding: 18 }}>
+        You must be logged in to see messages.
       </PageCard>
     );
   }
@@ -489,17 +844,21 @@ export default function MessagesPage() {
   return (
     <div
       style={{
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflowX: "hidden",
         display: "grid",
-        gap: 18,
+        gap: 14,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
       <div
         style={{
           background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+            "linear-gradient(135deg, #061f3d 0%, #0f4c81 48%, #1769aa 75%, #4fb6e9 100%)",
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 18 : 22,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
@@ -511,9 +870,9 @@ export default function MessagesPage() {
             position: "absolute",
             width: 220,
             height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
+            borderRadius: 999,
+            border: "1px solid rgba(255,255,255,0.1)",
+            top: -100,
             right: -40,
           }}
         />
@@ -522,32 +881,30 @@ export default function MessagesPage() {
           style={{
             position: "relative",
             display: "flex",
-            alignItems: "flex-start",
+            alignItems: "center",
             justifyContent: "space-between",
-            gap: 16,
+            gap: 14,
             flexWrap: "wrap",
           }}
         >
           <div>
-            <p
+            <div
               style={{
-                margin: 0,
-                fontSize: 12,
+                fontSize: 10,
                 textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.78)",
-                fontWeight: 700,
+                letterSpacing: "0.16em",
+                fontWeight: 850,
+                color: "rgba(255,255,255,0.72)",
               }}
             >
-              TPA OPS · Communications
-            </p>
+              {APP_NAME} {"\u00B7"} Live Communications
+            </div>
 
             <h1
               style={{
-                margin: "10px 0 6px",
-                fontSize: 32,
-                lineHeight: 1.05,
-                fontWeight: 800,
+                margin: "6px 0 4px",
+                fontSize: isMobile ? 24 : 30,
+                fontWeight: 900,
                 letterSpacing: "-0.04em",
               }}
             >
@@ -557,37 +914,35 @@ export default function MessagesPage() {
             <p
               style={{
                 margin: 0,
-                maxWidth: 760,
-                fontSize: 14,
-                color: "rgba(255,255,255,0.88)",
+                fontSize: 12.5,
+                color: "rgba(255,255,255,0.84)",
               }}
             >
-              Start direct conversations with users, review existing chats and
-              manage message threads.
+              Live direct messaging for the station team.
             </p>
           </div>
 
-          <ActionButton
+          <button
             type="button"
-            variant="secondary"
             onClick={() => navigate(-1)}
+            style={heroButtonStyle}
           >
-            ← Back
-          </ActionButton>
+            Back
+          </button>
         </div>
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
+        <PageCard style={{ padding: 13 }}>
           <div
             style={{
-              background: "#edf7ff",
-              border: "1px solid #cfe7fb",
-              borderRadius: 16,
-              padding: "14px 16px",
+              borderRadius: 13,
+              padding: "10px 12px",
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
               color: "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
+              fontSize: 12.5,
+              fontWeight: 750,
             }}
           >
             {statusMessage}
@@ -595,392 +950,770 @@ export default function MessagesPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 20 }}>
-        <div style={{ marginBottom: 14 }}>
-          <h2
+      <div
+        style={{
+          display: isMobile ? "block" : "grid",
+          gridTemplateColumns: "320px minmax(0, 1fr)",
+          gap: 14,
+          minHeight: isMobile ? "auto" : "68vh",
+          minWidth: 0,
+        }}
+      >
+        {(!isMobile || !mobileShowingChat) && (
+          <PageCard
             style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Conversations
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Open an existing thread or start a new one by selecting a user.
-          </p>
-        </div>
-
-        {conversations.length === 0 ? (
-          <p
-            style={{
-              margin: 0,
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            No conversations yet. Start by sending a message.
-          </p>
-        ) : (
-          <div
-            style={{
+              padding: 0,
+              overflow: "hidden",
               display: "flex",
-              flexWrap: "wrap",
-              gap: 10,
+              flexDirection: "column",
+              minHeight: isMobile ? 560 : "68vh",
             }}
           >
-            {conversations.map((c) => {
-              const other = allUsers.find((u) => u.id === c.otherUserId) || {};
-              const name = getUserLabel(other);
-              const preview = c.lastFromMe ? `You: ${c.lastText}` : c.lastText;
-              const isActive = selectedUserId === c.otherUserId;
-
-              return (
-                <button
-                  key={c.otherUserId}
-                  type="button"
-                  onClick={() => handleOpenConversation(c.otherUserId)}
-                  style={{
-                    minWidth: 180,
-                    maxWidth: 260,
-                    textAlign: "left",
-                    padding: "12px 14px",
-                    borderRadius: 16,
-                    border: isActive
-                      ? "1px solid #1769aa"
-                      : "1px solid #e2e8f0",
-                    background: isActive ? "#1769aa" : "#f8fbff",
-                    color: isActive ? "#fff" : "#0f172a",
-                    cursor: "pointer",
-                    boxShadow: isActive
-                      ? "0 12px 24px rgba(23,105,170,0.18)"
-                      : "none",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 800,
-                      fontSize: 13,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {name}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 11,
-                      opacity: isActive ? 0.92 : 0.7,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {preview}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </PageCard>
-
-      <PageCard style={{ padding: 20 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1.2fr auto",
-            gap: 14,
-            alignItems: "end",
-          }}
-        >
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: 6,
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#475569",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-              }}
-            >
-              Send message to
-            </label>
-
-            {loadingUsers ? (
-              <p
-                style={{
-                  margin: 0,
-                  color: "#64748b",
-                  fontSize: 14,
-                  fontWeight: 600,
-                }}
-              >
-                Loading users...
-              </p>
-            ) : (
-              <SelectInput
-                value={selectedUserId}
-                onChange={(e) => handleChangeUser(e.target.value)}
-              >
-                <option value="">Select a user</option>
-                {allUsers.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {getUserLabel(u)} · {u.role}
-                  </option>
-                ))}
-              </SelectInput>
-            )}
-          </div>
-
-          {selectedUser && (
             <div
               style={{
-                background: "#f8fbff",
-                border: "1px solid #dbeafe",
-                borderRadius: 14,
-                padding: "12px 14px",
-                minWidth: 220,
+                padding: 14,
+                borderBottom: "1px solid #e2e8f0",
+                display: "grid",
+                gap: 10,
               }}
             >
               <div
                 style={{
-                  fontSize: 12,
-                  color: "#64748b",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  alignItems: "center",
                 }}
               >
-                Active chat
+                <div>
+                  <div
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 900,
+                      color: "#0f172a",
+                    }}
+                  >
+                    Conversations
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 2,
+                      fontSize: 11,
+                      color: "#64748b",
+                    }}
+                  >
+                    {conversationRows.length} active thread
+                    {conversationRows.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowNewChat((v) => !v)}
+                  style={primarySmallButtonStyle}
+                >
+                  + New Chat
+                </button>
               </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 14,
-                  color: "#0f172a",
-                  fontWeight: 800,
-                }}
-              >
-                {getUserLabel(selectedUser)}
-              </div>
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: 12,
-                  color: "#64748b",
-                }}
-              >
-                Role: {selectedUser.role || "N/A"}
-              </div>
-              {(selectedUser.username || selectedUser.loginUsername) && (
+
+              <input
+                value={conversationSearch}
+                onChange={(e) =>
+                  setConversationSearch(e.target.value)
+                }
+                placeholder="Search conversations..."
+                style={searchInputStyle}
+              />
+
+              {showNewChat && (
                 <div
                   style={{
-                    marginTop: 2,
-                    fontSize: 12,
-                    color: "#64748b",
+                    border: "1px solid #dbeafe",
+                    borderRadius: 14,
+                    background: "#f8fbff",
+                    padding: 10,
+                    display: "grid",
+                    gap: 8,
                   }}
                 >
-                  @{selectedUser.username || selectedUser.loginUsername}
+                  <input
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    placeholder="Find employee..."
+                    style={searchInputStyle}
+                  />
+
+                  <div
+                    style={{
+                      maxHeight: 220,
+                      overflowY: "auto",
+                      display: "grid",
+                      gap: 6,
+                    }}
+                  >
+                    {loadingUsers ? (
+                      <div style={mutedTextStyle}>
+                        Loading users...
+                      </div>
+                    ) : newChatUsers.length === 0 ? (
+                      <div style={mutedTextStyle}>
+                        No users found.
+                      </div>
+                    ) : (
+                      newChatUsers.map((u) => {
+                        const p =
+                          presenceByUserId.get(String(u.id)) || null;
+
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() =>
+                              openConversationWithUser(u.id)
+                            }
+                            style={newChatUserButtonStyle}
+                          >
+                            <Avatar user={u} size={36} />
+
+                            <div
+                              style={{
+                                minWidth: 0,
+                                textAlign: "left",
+                                flex: 1,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontWeight: 800,
+                                  fontSize: 12.5,
+                                  color: "#0f172a",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {getUserLabel(u)}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop: 2,
+                                  fontSize: 10.5,
+                                  color: p?.online
+                                    ? "#047857"
+                                    : "#94a3b8",
+                                }}
+                              >
+                                {p?.online
+                                  ? "Online"
+                                  : formatLastSeen(
+                                      p?.lastActivityAt ||
+                                        p?.lastSeen
+                                    )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-          )}
-        </div>
-      </PageCard>
 
-      {selectedUserId ? (
-        <PageCard
-          style={{
-            padding: 18,
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 520,
-          }}
-        >
-          {isManager && (
             <div
               style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginBottom: 10,
+                flex: 1,
+                overflowY: "auto",
               }}
             >
-              <ActionButton
-                type="button"
-                variant="danger"
-                onClick={handleDeleteConversation}
-              >
-                Delete conversation
-              </ActionButton>
-            </div>
-          )}
-
-          <div
-            style={{
-              flex: 1,
-              overflow: "auto",
-              paddingRight: 4,
-              marginBottom: 12,
-              borderRadius: 18,
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              padding: 14,
-              minHeight: 320,
-            }}
-          >
-            {loadingMessages ? (
-              <p
-                style={{
-                  margin: 0,
-                  color: "#64748b",
-                  fontSize: 14,
-                  fontWeight: 600,
-                }}
-              >
-                Loading messages...
-              </p>
-            ) : messages.length === 0 ? (
-              <p
-                style={{
-                  margin: 0,
-                  color: "#64748b",
-                  fontSize: 14,
-                  fontWeight: 600,
-                }}
-              >
-                No messages yet. Start the conversation.
-              </p>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gap: 10,
-                }}
-              >
-                {messages.map((m) => {
-                  const isMine = m.fromUserId === myId;
+              {conversationRows.length === 0 ? (
+                <div
+                  style={{
+                    padding: 20,
+                    textAlign: "center",
+                    color: "#64748b",
+                    fontSize: 12.5,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  No conversations yet.
+                  <br />
+                  Tap <b>+ New Chat</b> to start one.
+                </div>
+              ) : (
+                conversationRows.map((row) => {
+                  const active =
+                    selectedConversationId === row.id;
 
                   return (
-                    <div
-                      key={m.id}
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() =>
+                        openConversationWithUser(row.otherId)
+                      }
                       style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        border: "none",
+                        borderBottom: "1px solid #eef2f7",
+                        background: active
+                          ? "#edf7ff"
+                          : "#ffffff",
+                        padding: 12,
+                        cursor: "pointer",
                         display: "flex",
-                        justifyContent: isMine ? "flex-end" : "flex-start",
+                        gap: 10,
+                        alignItems: "center",
+                        textAlign: "left",
                       }}
                     >
-                      <div
-                        style={{
-                          maxWidth: "78%",
-                          borderRadius: 18,
-                          padding: "12px 14px",
-                          fontSize: 13,
-                          lineHeight: 1.5,
-                          boxShadow: "0 8px 18px rgba(15,23,42,0.06)",
-                          background: isMine ? "#1769aa" : "#ffffff",
-                          color: isMine ? "#ffffff" : "#0f172a",
-                          border: isMine
-                            ? "1px solid #1769aa"
-                            : "1px solid #e2e8f0",
-                        }}
-                      >
-                        {!isMine && (
-                          <div
+                      <div style={{ position: "relative" }}>
+                        <Avatar user={row.otherUser} size={44} />
+
+                        {row.presence?.online && (
+                          <span
                             style={{
-                              fontWeight: 800,
-                              marginBottom: 4,
-                              fontSize: 11,
-                              color: "#1769aa",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.05em",
+                              position: "absolute",
+                              right: -2,
+                              bottom: -2,
+                              width: 11,
+                              height: 11,
+                              borderRadius: 999,
+                              background: "#22c55e",
+                              border: "2px solid #ffffff",
                             }}
-                          >
-                            {m.fromUsername || "User"}
-                          </div>
+                          />
                         )}
+                      </div>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            alignItems: "center",
                           }}
                         >
-                          {m.text}
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: row.unread ? 900 : 800,
+                              color: "#0f172a",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {getUserLabel(row.otherUser)}
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 9.5,
+                              color: "#94a3b8",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {formatMessageTime(row.lastMessageAt)}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 4,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            alignItems: "center",
+                          }}
+                        >
+                          <div
+                            style={{
+                              minWidth: 0,
+                              flex: 1,
+                              fontSize: 11,
+                              color: row.unread
+                                ? "#334155"
+                                : "#64748b",
+                              fontWeight: row.unread ? 750 : 500,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {row.lastSenderId === myId
+                              ? "You: "
+                              : ""}
+                            {row.lastMessage || "No messages yet"}
+                          </div>
+
+                          {row.unread && (
+                            <span
+                              style={{
+                                width: 9,
+                                height: 9,
+                                borderRadius: 999,
+                                background: "#1769aa",
+                                flexShrink: 0,
+                              }}
+                            />
+                          )}
                         </div>
                       </div>
-                    </div>
+                    </button>
                   );
-                })}
-                <div ref={bottomRef} />
-              </div>
-            )}
-          </div>
-
-          <form onSubmit={handleSend}>
-            <label
-              style={{
-                display: "block",
-                marginBottom: 6,
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#475569",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-              }}
-            >
-              Write a message
-            </label>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 10,
-                alignItems: "end",
-              }}
-            >
-              <TextArea
-                rows={3}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Type your message..."
-              />
-              <ActionButton
-                type="submit"
-                variant="primary"
-                disabled={sending || !text.trim()}
-              >
-                {sending ? "Sending..." : "Send"}
-              </ActionButton>
+                })
+              )}
             </div>
-          </form>
-        </PageCard>
-      ) : (
-        <PageCard style={{ padding: 22 }}>
-          <p
+          </PageCard>
+        )}
+
+        {(!isMobile || mobileShowingChat) && (
+          <PageCard
             style={{
-              margin: 0,
-              color: "#64748b",
-              fontSize: 14,
-              fontWeight: 600,
+              padding: 0,
+              overflow: "hidden",
+              minWidth: 0,
+              minHeight: isMobile ? 620 : "68vh",
+              display: "flex",
+              flexDirection: "column",
             }}
           >
-            Select a user to start a conversation.
-          </p>
-        </PageCard>
-      )}
+            {!selectedUserId ? (
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 24,
+                  textAlign: "center",
+                  color: "#64748b",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                Select a conversation or start a new chat.
+              </div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    padding: 12,
+                    borderBottom: "1px solid #e2e8f0",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    background: "#ffffff",
+                  }}
+                >
+                  {isMobile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUserId("");
+                        setSelectedConversationId("");
+                      }}
+                      style={backButtonStyle}
+                    >
+                      {"\u2190"}
+                    </button>
+                  )}
+
+                  <div style={{ position: "relative" }}>
+                    <Avatar user={selectedUser} size={44} />
+
+                    {selectedPresence?.online && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          right: -2,
+                          bottom: -2,
+                          width: 11,
+                          height: 11,
+                          borderRadius: 999,
+                          background: "#22c55e",
+                          border: "2px solid #ffffff",
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 900,
+                        color: "#0f172a",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {getUserLabel(selectedUser)}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 2,
+                        fontSize: 10.5,
+                        color: selectedPresence?.online
+                          ? "#047857"
+                          : "#94a3b8",
+                        fontWeight: selectedPresence?.online
+                          ? 750
+                          : 500,
+                      }}
+                    >
+                      {otherUserTyping
+                        ? "Typing..."
+                        : selectedPresence?.online
+                        ? "Online"
+                        : formatLastSeen(
+                            selectedPresence?.lastActivityAt ||
+                              selectedPresence?.lastSeen
+                          )}
+                    </div>
+                  </div>
+
+                  {isManager && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteConversation}
+                      style={deleteIconButtonStyle}
+                      title="Delete conversation"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    padding: isMobile ? 12 : 16,
+                    background:
+                      "linear-gradient(180deg, #f8fbff 0%, #f5f9fd 100%)",
+                  }}
+                >
+                  {loadingMessages ? (
+                    <div style={mutedTextStyle}>
+                      Loading messages...
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <div
+                      style={{
+                        height: "100%",
+                        minHeight: 300,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        textAlign: "center",
+                        color: "#64748b",
+                        fontSize: 12.5,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      Start the conversation with{" "}
+                      {getUserLabel(selectedUser)}.
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {messages.map((m) => {
+                        const isMine = m.senderId === myId;
+
+                        return (
+                          <div
+                            key={m.id}
+                            style={{
+                              display: "flex",
+                              justifyContent: isMine
+                                ? "flex-end"
+                                : "flex-start",
+                            }}
+                          >
+                            <div
+                              style={{
+                                maxWidth: isMobile ? "86%" : "72%",
+                                minWidth: 70,
+                                borderRadius: isMine
+                                  ? "18px 18px 4px 18px"
+                                  : "18px 18px 18px 4px",
+                                padding: "10px 12px 7px",
+                                background: isMine
+                                  ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)"
+                                  : "#ffffff",
+                                color: isMine
+                                  ? "#ffffff"
+                                  : "#0f172a",
+                                border: isMine
+                                  ? "1px solid #1769aa"
+                                  : "1px solid #e2e8f0",
+                                boxShadow:
+                                  "0 6px 16px rgba(15,23,42,0.05)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                  fontSize: 13,
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                {m.text}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop: 5,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "flex-end",
+                                  gap: 5,
+                                  fontSize: 9.5,
+                                  color: isMine
+                                    ? "rgba(255,255,255,0.72)"
+                                    : "#94a3b8",
+                                }}
+                              >
+                                <span>
+                                  {formatMessageTime(m.createdAt)}
+                                </span>
+
+                                {isMine && (
+                                  <span
+                                    title={
+                                      m.read
+                                        ? "Read"
+                                        : "Delivered"
+                                    }
+                                  >
+                                    {m.read ? "\u2713\u2713" : "\u2713"}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {otherUserTyping && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "flex-start",
+                          }}
+                        >
+                          <div
+                            style={{
+                              borderRadius:
+                                "18px 18px 18px 4px",
+                              padding: "8px 12px",
+                              background: "#ffffff",
+                              border: "1px solid #e2e8f0",
+                              color: "#64748b",
+                              fontSize: 11,
+                              fontWeight: 750,
+                            }}
+                          >
+                            Typing...
+                          </div>
+                        </div>
+                      )}
+
+                      <div ref={bottomRef} />
+                    </div>
+                  )}
+                </div>
+
+                <form
+                  onSubmit={handleSend}
+                  style={{
+                    borderTop: "1px solid #e2e8f0",
+                    background: "#ffffff",
+                    padding: 10,
+                    display: "grid",
+                    gridTemplateColumns:
+                      "minmax(0, 1fr) auto",
+                    gap: 8,
+                    alignItems: "end",
+                  }}
+                >
+                  <textarea
+                    ref={inputRef}
+                    value={text}
+                    rows={1}
+                    onChange={(e) =>
+                      handleTextChange(e.target.value)
+                    }
+                    onKeyDown={handleComposerKeyDown}
+                    placeholder={`Message ${getUserLabel(
+                      selectedUser
+                    )}...`}
+                    style={{
+                      width: "100%",
+                      minHeight: 44,
+                      maxHeight: 120,
+                      boxSizing: "border-box",
+                      resize: "none",
+                      border: "1px solid #dbeafe",
+                      borderRadius: 16,
+                      padding: "11px 13px",
+                      fontSize: 16,
+                      lineHeight: 1.4,
+                      color: "#0f172a",
+                      outline: "none",
+                      background: "#f8fbff",
+                    }}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={sending || !text.trim()}
+                    style={{
+                      minWidth: isMobile ? 58 : 74,
+                      height: 44,
+                      border: "none",
+                      borderRadius: 14,
+                      background:
+                        sending || !text.trim()
+                          ? "#cbd5e1"
+                          : "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                      color: "#ffffff",
+                      fontWeight: 850,
+                      cursor:
+                        sending || !text.trim()
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {sending ? "..." : "Send"}
+                  </button>
+                </form>
+              </>
+            )}
+          </PageCard>
+        )}
+      </div>
+
+      <div
+        style={{
+          textAlign: "center",
+          color: "#94a3b8",
+          fontSize: 10,
+          paddingBottom: 4,
+        }}
+      >
+        {APP_NAME} {"\u00B7"} {APP_SUBTITLE}
+      </div>
     </div>
   );
 }
+
+function PageCard({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        background: "rgba(255,255,255,0.96)",
+        border: "1px solid rgba(255,255,255,0.98)",
+        borderRadius: 22,
+        boxShadow: "0 16px 38px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+const searchInputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  border: "1px solid #dbeafe",
+  background: "#ffffff",
+  borderRadius: 12,
+  padding: "10px 11px",
+  fontSize: 16,
+  color: "#0f172a",
+  outline: "none",
+};
+
+const heroButtonStyle = {
+  border: "1px solid rgba(255,255,255,0.24)",
+  background: "rgba(255,255,255,0.12)",
+  color: "#ffffff",
+  borderRadius: 12,
+  padding: "9px 13px",
+  fontSize: 12,
+  fontWeight: 850,
+  cursor: "pointer",
+};
+
+const primarySmallButtonStyle = {
+  border: "none",
+  background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+  color: "#ffffff",
+  borderRadius: 11,
+  padding: "8px 10px",
+  fontSize: 11,
+  fontWeight: 850,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
+
+const backButtonStyle = {
+  width: 36,
+  height: 36,
+  border: "1px solid #dbeafe",
+  borderRadius: 11,
+  background: "#ffffff",
+  color: "#1769aa",
+  fontSize: 18,
+  fontWeight: 850,
+  cursor: "pointer",
+  flexShrink: 0,
+};
+
+const deleteIconButtonStyle = {
+  border: "1px solid #fecdd3",
+  background: "#fff1f2",
+  color: "#b91c1c",
+  borderRadius: 10,
+  padding: "7px 9px",
+  fontSize: 10.5,
+  fontWeight: 850,
+  cursor: "pointer",
+};
+
+const newChatUserButtonStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  border: "1px solid #e2e8f0",
+  background: "#ffffff",
+  borderRadius: 12,
+  padding: 8,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+};
+
+const mutedTextStyle = {
+  color: "#64748b",
+  fontSize: 12,
+  fontWeight: 650,
+  padding: 8,
+};
+
+// END MessagesPage
