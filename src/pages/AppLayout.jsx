@@ -1,7 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  query,
+  where,
+  onSnapshot,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import {
   updateUserPresence,
@@ -16,6 +22,18 @@ import {
 // Menu icons intentionally use Unicode escape sequences (for example "\\u{1F3E0}")
 // instead of literal emoji characters. This prevents mojibake/encoding corruption
 // when editing the file from GitHub web, Safari, iPad, or different text encodings.
+//
+// SESSION CONTROL:
+// Admin User Activity can increment users/{userId}.sessionVersion.
+// AppLayout listens to that value in real time. When the remote version becomes
+// greater than the version loaded with the current session, the user is logged out.
+//
+// ACTIVITY HEARTBEAT:
+// Pointer, keyboard, touch, scroll and focus activity refresh presence at a
+// throttled interval. This gives the User Activity dashboard a better "lastSeen"
+// signal even when an employee stays on the same page for a long time.
+
+const ACTIVITY_PING_MS = 60 * 1000;
 
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
@@ -53,6 +71,11 @@ function getInitials(name) {
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
+function getSessionVersion(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
 export default function AppLayout() {
   const { user, setUser } = useUser();
   const navigate = useNavigate();
@@ -64,6 +87,10 @@ export default function AppLayout() {
   const [operationalAlerts, setOperationalAlerts] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
+
+  const sessionVersionRef = useRef(getSessionVersion(user?.sessionVersion));
+  const forcedLogoutHandledRef = useRef(false);
+  const lastActivityPingRef = useRef(0);
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
@@ -86,6 +113,81 @@ export default function AppLayout() {
       navigate("/login");
     }
   };
+
+  // ============================================================
+  // REMOTE SESSION CONTROL / FORCE LOGOUT
+  // ============================================================
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    // The login flow normally loads the complete user document.
+    // That means sessionVersion from the current login becomes our baseline.
+    sessionVersionRef.current = getSessionVersion(user?.sessionVersion);
+    forcedLogoutHandledRef.current = false;
+
+    const userRef = doc(db, "users", user.id);
+
+    const unsub = onSnapshot(
+      userRef,
+      async (snap) => {
+        if (!snap.exists()) {
+          // Account removed while the employee is signed in.
+          if (forcedLogoutHandledRef.current) return;
+
+          forcedLogoutHandledRef.current = true;
+
+          try {
+            await markUserOffline(user);
+          } catch (err) {
+            console.error("Error marking deleted user offline:", err);
+          } finally {
+            setUser(null);
+            navigate("/login", {
+              replace: true,
+              state: {
+                sessionMessage:
+                  "Your AeroStation Hub account is no longer active. Please contact management.",
+              },
+            });
+          }
+
+          return;
+        }
+
+        const remoteData = snap.data();
+        const remoteVersion = getSessionVersion(remoteData.sessionVersion);
+        const localVersion = getSessionVersion(sessionVersionRef.current);
+
+        if (
+          remoteVersion > localVersion &&
+          !forcedLogoutHandledRef.current
+        ) {
+          forcedLogoutHandledRef.current = true;
+
+          try {
+            await markUserOffline(user);
+          } catch (err) {
+            console.error("Error marking forced-logout user offline:", err);
+          } finally {
+            setUser(null);
+            navigate("/login", {
+              replace: true,
+              state: {
+                sessionMessage:
+                  "Your session was refreshed by management. Please sign in again to load the latest AeroStation Hub updates.",
+              },
+            });
+          }
+        }
+      },
+      (err) => {
+        console.error("Error listening for session control:", err);
+      }
+    );
+
+    return () => unsub();
+  }, [user?.id, user?.sessionVersion, setUser, navigate]);
 
   // ============================================================
   // PENDING TIME OFF
@@ -111,7 +213,7 @@ export default function AppLayout() {
   // ============================================================
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) return undefined;
 
     const qMsgs = query(
       collection(db, "messages"),
@@ -133,7 +235,7 @@ export default function AppLayout() {
   // ============================================================
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) return undefined;
 
     const qNotifications = query(
       collection(db, "notifications"),
@@ -218,7 +320,7 @@ export default function AppLayout() {
   }, [location.pathname, user]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) return undefined;
 
     const handleBeforeUnload = () => {
       markUserOffline(user).catch(() => {});
@@ -243,6 +345,55 @@ export default function AppLayout() {
         "visibilitychange",
         handleVisibilityChange
       );
+    };
+  }, [user, location.pathname]);
+
+  // ============================================================
+  // REAL USER ACTIVITY HEARTBEAT
+  // ============================================================
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    const sendActivityPing = () => {
+      if (document.visibilityState === "hidden") return;
+
+      const now = Date.now();
+
+      if (
+        lastActivityPingRef.current &&
+        now - lastActivityPingRef.current < ACTIVITY_PING_MS
+      ) {
+        return;
+      }
+
+      lastActivityPingRef.current = now;
+
+      updateUserPresence(user, {
+        currentPage: location.pathname,
+        lastActivityAt: new Date(now).toISOString(),
+      }).catch((err) =>
+        console.error("Error updating activity heartbeat:", err)
+      );
+    };
+
+    // Initial activity mark after login/layout mount.
+    sendActivityPing();
+
+    const passiveOptions = { passive: true };
+
+    window.addEventListener("pointerdown", sendActivityPing, passiveOptions);
+    window.addEventListener("touchstart", sendActivityPing, passiveOptions);
+    window.addEventListener("scroll", sendActivityPing, passiveOptions);
+    window.addEventListener("focus", sendActivityPing);
+    window.addEventListener("keydown", sendActivityPing);
+
+    return () => {
+      window.removeEventListener("pointerdown", sendActivityPing, passiveOptions);
+      window.removeEventListener("touchstart", sendActivityPing, passiveOptions);
+      window.removeEventListener("scroll", sendActivityPing, passiveOptions);
+      window.removeEventListener("focus", sendActivityPing);
+      window.removeEventListener("keydown", sendActivityPing);
     };
   }, [user, location.pathname]);
 
@@ -434,8 +585,6 @@ export default function AppLayout() {
     const wchr = [];
     const admin = [];
 
-    // MANAGER SCHEDULES
-
     if (canAccessRegularManagerSchedules) {
       schedules.push(
         { to: "/schedule", label: "Create Schedule", icon: "\u{1F5D3}" },
@@ -482,8 +631,6 @@ export default function AppLayout() {
       );
     }
 
-    // CABIN SERVICE MANAGER
-
     if (canAccessCabinServiceOnlyManager) {
       schedules.push(
         { to: "/cabin-service", label: "Cabin Service", icon: "\u{1F9F3}" },
@@ -494,8 +641,6 @@ export default function AppLayout() {
         }
       );
     }
-
-    // STATION MANAGER ADMIN
 
     if (user?.role === "station_manager") {
       admin.push(
@@ -509,13 +654,11 @@ export default function AppLayout() {
           label: "Privacy Acknowledgments",
           icon: "\u{1F510}",
         },
-
         {
           to: "/admin/reports-data-management",
           label: "Reports Data Management",
           icon: "\u{1F5C3}",
         },
-
         {
           to: "/create-user",
           label: "Create User",
@@ -533,8 +676,6 @@ export default function AppLayout() {
         }
       );
     }
-
-    // AGENT / SUPERVISOR SCHEDULES
 
     if (isAgentOrSupervisor) {
       schedules.push({
@@ -556,8 +697,6 @@ export default function AppLayout() {
         }
       );
     }
-
-    // SUBMISSION OF REPORTS
 
     if (canAccessTimesheets) {
       submissionReports.push({
@@ -639,8 +778,6 @@ export default function AppLayout() {
         icon: "\u{2708}",
       });
     }
-
-    // MANAGEMENT OF REPORTS
 
     if (canAccessTimesheets) {
       managementReports.push({
@@ -728,8 +865,6 @@ export default function AppLayout() {
       });
     }
 
-    // WCHR
-
     if (canAccessWchrTools) {
       wchr.push(
         {
@@ -761,8 +896,6 @@ export default function AppLayout() {
       });
     }
 
-    // OPERATIONAL REPORT BUILDER
-
     if (canManageOperationalReportForm) {
       admin.push({
         to: "/operational-report/form-builder",
@@ -770,8 +903,6 @@ export default function AppLayout() {
         icon: "\u{1F9E9}",
       });
     }
-
-    // BUILD SECTIONS
 
     if (general.length) {
       sections.push({ title: "General", items: general });
@@ -903,7 +1034,6 @@ export default function AppLayout() {
               minWidth: 0,
             }}
           >
-            {/* PRODUCT BRAND */}
             <div
               style={{
                 width: 46,
@@ -931,7 +1061,6 @@ export default function AppLayout() {
               />
             </div>
 
-            {/* PRODUCT NAME */}
             <div
               style={{
                 minWidth: 0,
@@ -964,7 +1093,6 @@ export default function AppLayout() {
               </div>
             </div>
 
-            {/* DIVIDER */}
             <div
               aria-hidden="true"
               style={{
@@ -975,7 +1103,6 @@ export default function AppLayout() {
               }}
             />
 
-            {/* USER PROFILE */}
             <div
               style={{
                 width: 42,
@@ -1363,3 +1490,5 @@ const emptySearchStyle = {
   fontWeight: 800,
   textAlign: "center",
 };
+
+// END AppLayout
