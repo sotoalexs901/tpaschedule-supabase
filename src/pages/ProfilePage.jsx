@@ -1,16 +1,43 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
-function PageCard({ children, style = {} }) {
+// IMPORTANT:
+// Special punctuation and symbols use Unicode escape sequences where practical
+// to reduce encoding issues when editing through GitHub/Safari/iPad.
+
+function useIsMobile(breakpoint = 780) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
+function PageCard({ children, style = {}, isMobile = false }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: 24,
+        background: "rgba(255,255,255,0.94)",
+        border: "1px solid rgba(219,234,254,0.88)",
+        borderRadius: isMobile ? 18 : 24,
         boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
         ...style,
       }}
@@ -26,10 +53,10 @@ function FieldLabel({ children }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
-        fontWeight: 700,
+        fontSize: 11,
+        fontWeight: 800,
         color: "#475569",
-        letterSpacing: "0.03em",
+        letterSpacing: "0.05em",
         textTransform: "uppercase",
       }}
     >
@@ -44,13 +71,16 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
-        fontSize: 14,
+        minHeight: 46,
+        fontSize: 16,
         color: "#0f172a",
         outline: "none",
+        WebkitAppearance: "none",
         ...props.style,
       }}
     />
@@ -64,7 +94,8 @@ function ActionButton({ children, disabled = false, type = "button" }) {
       disabled={disabled}
       style={{
         borderRadius: 14,
-        padding: "12px 16px",
+        padding: "13px 16px",
+        minHeight: 48,
         fontSize: 14,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
@@ -100,8 +131,61 @@ function getDefaultPosition(role) {
   return "Team Member";
 }
 
+function getRoleLabel(role) {
+  return getDefaultPosition(role);
+}
+
+function formatBirthdayPreview(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return "Not set";
+
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+
+  if (Number.isNaN(date.getTime())) return "Not set";
+
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+  });
+}
+
+async function findLinkedEmployeeDocs({ userId, username }) {
+  const found = new Map();
+
+  const collect = (snap) => {
+    snap.docs.forEach((d) => {
+      found.set(d.ref.path, d.ref);
+    });
+  };
+
+  try {
+    if (userId) {
+      const byUserId = await getDocs(
+        query(collection(db, "employees"), where("userId", "==", userId))
+      );
+      collect(byUserId);
+    }
+  } catch (err) {
+    console.warn("Could not search employee by userId:", err);
+  }
+
+  try {
+    if (username) {
+      const byUsername = await getDocs(
+        query(collection(db, "employees"), where("username", "==", username))
+      );
+      collect(byUsername);
+    }
+  } catch (err) {
+    console.warn("Could not search employee by username:", err);
+  }
+
+  return Array.from(found.values());
+}
+
 export default function ProfilePage() {
   const { user, setUser } = useUser();
+  const isMobile = useIsMobile(780);
 
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -132,6 +216,11 @@ export default function ProfilePage() {
     [position, user?.role]
   );
 
+  const birthdayPreview = useMemo(
+    () => formatBirthdayPreview(birthDate),
+    [birthDate]
+  );
+
   useEffect(() => {
     async function loadProfile() {
       if (!user?.id) {
@@ -159,7 +248,9 @@ export default function ProfilePage() {
               ""
           );
           setPosition(
-            data.position || user.position || getDefaultPosition(data.role || user.role)
+            data.position ||
+              user.position ||
+              getDefaultPosition(data.role || user.role)
           );
           setBirthDate(data.birthDate || user.birthDate || "");
           setPin(data.pin || "");
@@ -214,11 +305,13 @@ export default function ProfilePage() {
 
     if (!file.type.startsWith("image/")) {
       setError("Please select a valid image file.");
+      e.target.value = "";
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
       setError("Image must be smaller than 5MB.");
+      e.target.value = "";
       return;
     }
 
@@ -238,6 +331,11 @@ export default function ProfilePage() {
 
     if (!user?.id) {
       setError("User not found in session.");
+      return;
+    }
+
+    if (!displayName.trim()) {
+      setError("Display name is required.");
       return;
     }
 
@@ -271,15 +369,49 @@ export default function ProfilePage() {
         finalPhotoURL = await getDownloadURL(storageRef);
       }
 
+      const normalizedDisplayName = displayName.trim();
+      const normalizedPosition = position.trim() || getDefaultPosition(user.role);
+      const normalizedBirthDate = birthDate || "";
+      const normalizedPin = pin.trim();
+
       const payload = {
-        pin: pin.trim(),
+        pin: normalizedPin,
         profilePhotoURL: finalPhotoURL,
-        displayName: displayName.trim(),
-        position: position.trim(),
-        birthDate: birthDate || "",
+        displayName: normalizedDisplayName,
+        position: normalizedPosition,
+        birthDate: normalizedBirthDate,
+        birthdayMonth: normalizedBirthDate ? Number(normalizedBirthDate.slice(5, 7)) : null,
+        birthdayDay: normalizedBirthDate ? Number(normalizedBirthDate.slice(8, 10)) : null,
       };
 
       await updateDoc(userRef, payload);
+
+      // Keep any linked employee record synchronized with the profile.
+      // This lets Dashboard birthday widgets use the same source of truth
+      // even when other modules read from the employees collection.
+      const linkedEmployeeRefs = await findLinkedEmployeeDocs({
+        userId: user.id,
+        username,
+      });
+
+      if (linkedEmployeeRefs.length > 0) {
+        const employeePayload = {
+          displayName: normalizedDisplayName,
+          position: normalizedPosition,
+          birthDate: normalizedBirthDate,
+          birthdayMonth: payload.birthdayMonth,
+          birthdayDay: payload.birthdayDay,
+          profilePhotoURL: finalPhotoURL,
+        };
+
+        await Promise.all(
+          linkedEmployeeRefs.map((employeeRef) =>
+            updateDoc(employeeRef, employeePayload).catch((err) => {
+              console.warn("Could not sync linked employee profile:", err);
+            })
+          )
+        );
+      }
 
       setStoredPhotoURL(finalPhotoURL);
       setPhotoFile(null);
@@ -294,17 +426,23 @@ export default function ProfilePage() {
           prev
             ? {
                 ...prev,
-                pin: pin.trim(),
+                pin: normalizedPin,
                 profilePhotoURL: finalPhotoURL,
-                displayName: displayName.trim(),
-                position: position.trim(),
-                birthDate: birthDate || "",
+                displayName: normalizedDisplayName,
+                position: normalizedPosition,
+                birthDate: normalizedBirthDate,
+                birthdayMonth: payload.birthdayMonth,
+                birthdayDay: payload.birthdayDay,
               }
             : prev
         );
       }
 
-      setMessage("Profile updated successfully.");
+      setMessage(
+        linkedEmployeeRefs.length > 0
+          ? "Profile updated successfully. Birthday data was synchronized for the dashboard."
+          : "Profile updated successfully."
+      );
     } catch (err) {
       console.error("Error saving profile:", err);
       setError(err?.message || "Error saving your profile. Please try again.");
@@ -315,15 +453,8 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <PageCard style={{ padding: 22 }}>
-        <p
-          style={{
-            margin: 0,
-            color: "#64748b",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
+      <PageCard style={{ padding: 22 }} isMobile={isMobile}>
+        <p style={{ margin: 0, color: "#64748b", fontSize: 14, fontWeight: 600 }}>
           You must be logged in to view your profile.
         </p>
       </PageCard>
@@ -332,15 +463,8 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <PageCard style={{ padding: 22 }}>
-        <p
-          style={{
-            margin: 0,
-            color: "#64748b",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
+      <PageCard style={{ padding: 22 }} isMobile={isMobile}>
+        <p style={{ margin: 0, color: "#64748b", fontSize: 14, fontWeight: 600 }}>
           Loading profile...
         </p>
       </PageCard>
@@ -351,20 +475,21 @@ export default function ProfilePage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 12 : 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
         maxWidth: 980,
         margin: "0 auto",
+        paddingBottom: isMobile ? 24 : 0,
       }}
     >
       <div
         style={{
           background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+            "linear-gradient(135deg, #073b66 0%, #0f5c91 48%, #2e9fd6 100%)",
+          borderRadius: isMobile ? 18 : 28,
+          padding: isMobile ? 16 : 24,
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow: "0 20px 50px rgba(23,105,170,0.20)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -372,64 +497,94 @@ export default function ProfilePage() {
         <div
           style={{
             position: "absolute",
-            width: 220,
-            height: 220,
+            width: isMobile ? 150 : 220,
+            height: isMobile ? 150 : 220,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
-            top: -80,
-            right: -40,
+            background: "rgba(255,255,255,0.07)",
+            top: isMobile ? -60 : -80,
+            right: isMobile ? -50 : -40,
           }}
         />
 
-        <div style={{ position: "relative" }}>
-          <p
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+          }}
+        >
+          <div
             style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
+              width: isMobile ? 48 : 58,
+              height: isMobile ? 48 : 58,
+              borderRadius: 16,
+              background: "rgba(255,255,255,0.97)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              flexShrink: 0,
             }}
           >
-            TPA OPS · My Profile
-          </p>
+            <img
+              src="/icons/aerostation-icon.png"
+              alt={APP_NAME}
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+            />
+          </div>
 
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
-            My Profile
-          </h1>
+          <div style={{ minWidth: 0 }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: isMobile ? 9 : 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.16em",
+                color: "rgba(255,255,255,0.76)",
+                fontWeight: 800,
+              }}
+            >
+              {APP_NAME} {"\u00B7"} My Profile
+            </p>
 
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 760,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            Update your display information, PIN, birthday and profile picture.
-          </p>
+            <h1
+              style={{
+                margin: "5px 0 3px",
+                fontSize: isMobile ? 22 : 30,
+                lineHeight: 1.05,
+                fontWeight: 800,
+                letterSpacing: "-0.03em",
+              }}
+            >
+              My Profile
+            </h1>
+
+            {!isMobile && (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  color: "rgba(255,255,255,0.86)",
+                }}
+              >
+                {APP_SUBTITLE || "Operational Management Platform"}
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
       {error && (
-        <PageCard style={{ padding: 16 }}>
+        <PageCard style={{ padding: isMobile ? 10 : 16 }} isMobile={isMobile}>
           <div
             style={{
               background: "#fff1f2",
               border: "1px solid #fecdd3",
-              borderRadius: 16,
-              padding: "14px 16px",
+              borderRadius: 14,
+              padding: "12px 14px",
               color: "#9f1239",
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: 700,
             }}
           >
@@ -439,15 +594,15 @@ export default function ProfilePage() {
       )}
 
       {message && (
-        <PageCard style={{ padding: 16 }}>
+        <PageCard style={{ padding: isMobile ? 10 : 16 }} isMobile={isMobile}>
           <div
             style={{
               background: "#ecfdf5",
               border: "1px solid #a7f3d0",
-              borderRadius: 16,
-              padding: "14px 16px",
+              borderRadius: 14,
+              padding: "12px 14px",
               color: "#065f46",
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: 700,
             }}
           >
@@ -456,92 +611,102 @@ export default function ProfilePage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 22 }} isMobile={isMobile}>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(240px, 280px) 1fr",
-            gap: 24,
+            gridTemplateColumns: isMobile ? "1fr" : "minmax(240px, 280px) 1fr",
+            gap: isMobile ? 18 : 24,
           }}
         >
-          <div
-            style={{
-              display: "grid",
-              gap: 14,
-              alignContent: "start",
-            }}
-          >
+          <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
             <div
               style={{
-                background: "#f8fbff",
+                background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)",
                 border: "1px solid #dbeafe",
-                borderRadius: 22,
-                padding: 18,
+                borderRadius: isMobile ? 18 : 22,
+                padding: isMobile ? 14 : 18,
                 textAlign: "center",
               }}
             >
               <div
                 style={{
-                  width: 130,
-                  height: 130,
+                  width: isMobile ? 104 : 130,
+                  height: isMobile ? 104 : 130,
                   borderRadius: "999px",
                   overflow: "hidden",
                   background: "#e2e8f0",
-                  margin: "0 auto 14px",
+                  margin: "0 auto 12px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   color: "#64748b",
                   fontSize: 13,
                   fontWeight: 700,
+                  border: "4px solid #ffffff",
+                  boxShadow: "0 10px 24px rgba(15,23,42,0.10)",
                 }}
               >
                 {visiblePhotoURL ? (
                   <img
                     src={visiblePhotoURL}
                     alt="Profile"
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                    }}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   />
                 ) : (
                   <span>No photo</span>
                 )}
               </div>
 
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 18,
-                  fontWeight: 800,
-                  color: "#0f172a",
-                }}
-              >
+              <p style={{ margin: 0, fontSize: isMobile ? 18 : 20, fontWeight: 800, color: "#0f172a" }}>
                 {visibleName}
               </p>
 
-              <p
-                style={{
-                  margin: "4px 0 0",
-                  fontSize: 13,
-                  color: "#64748b",
-                  fontWeight: 600,
-                }}
-              >
+              <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569", fontWeight: 700 }}>
                 {visiblePosition}
               </p>
 
-              <p
-                style={{
-                  margin: "6px 0 0",
-                  fontSize: 12,
-                  color: "#94a3b8",
-                }}
-              >
+              <p style={{ margin: "5px 0 0", fontSize: 12, color: "#94a3b8" }}>
                 @{username}
               </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                  gap: 7,
+                  marginTop: 12,
+                }}
+              >
+                <span
+                  style={{
+                    padding: "6px 9px",
+                    borderRadius: 999,
+                    background: "#eff6ff",
+                    color: "#1d4ed8",
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                >
+                  {getRoleLabel(user?.role)}
+                </span>
+
+                {birthDate && (
+                  <span
+                    style={{
+                      padding: "6px 9px",
+                      borderRadius: 999,
+                      background: "#fff7ed",
+                      color: "#c2410c",
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {"\u{1F382}"} {birthdayPreview}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>
@@ -550,49 +715,20 @@ export default function ProfilePage() {
                 type="file"
                 accept="image/*"
                 onChange={handleFileChange}
-                style={{ padding: "10px 12px" }}
+                style={{ padding: "9px 10px", fontSize: 13 }}
               />
-              <p
-                style={{
-                  marginTop: 8,
-                  marginBottom: 0,
-                  fontSize: 12,
-                  color: "#64748b",
-                  lineHeight: 1.6,
-                }}
-              >
-                JPG / PNG. Max 5MB. A small square photo works best.
+              <p style={{ margin: "7px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
+                JPG / PNG. Max 5MB. A square photo works best.
               </p>
             </div>
           </div>
 
-          <form
-            onSubmit={handleSave}
-            style={{
-              display: "grid",
-              gap: 16,
-              alignContent: "start",
-            }}
-          >
+          <form onSubmit={handleSave} style={{ display: "grid", gap: 15, alignContent: "start" }}>
             <div>
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: 20,
-                  fontWeight: 800,
-                  color: "#0f172a",
-                  letterSpacing: "-0.02em",
-                }}
-              >
+              <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 20, fontWeight: 800, color: "#0f172a" }}>
                 Profile Information
               </h2>
-              <p
-                style={{
-                  margin: "4px 0 0",
-                  fontSize: 13,
-                  color: "#64748b",
-                }}
-              >
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
                 Keep your account details up to date.
               </p>
             </div>
@@ -603,21 +739,9 @@ export default function ProfilePage() {
                 value={username}
                 readOnly
                 disabled
-                style={{
-                  background: "#f8fafc",
-                  color: "#64748b",
-                  cursor: "not-allowed",
-                }}
+                style={{ background: "#f8fafc", color: "#64748b", cursor: "not-allowed" }}
               />
-              <p
-                style={{
-                  marginTop: 8,
-                  marginBottom: 0,
-                  fontSize: 12,
-                  color: "#64748b",
-                  lineHeight: 1.6,
-                }}
-              >
+              <p style={{ margin: "7px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
                 Username is managed by administration and cannot be changed here.
               </p>
             </div>
@@ -628,18 +752,8 @@ export default function ProfilePage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Alexis Napoles"
+                autoComplete="name"
               />
-              <p
-                style={{
-                  marginTop: 8,
-                  marginBottom: 0,
-                  fontSize: 12,
-                  color: "#64748b",
-                  lineHeight: 1.6,
-                }}
-              >
-                This is the name that will be shown across the app.
-              </p>
             </div>
 
             <div>
@@ -649,37 +763,43 @@ export default function ProfilePage() {
                 onChange={(e) => setPosition(e.target.value)}
                 placeholder="Station Manager"
               />
-              <p
-                style={{
-                  marginTop: 8,
-                  marginBottom: 0,
-                  fontSize: 12,
-                  color: "#64748b",
-                  lineHeight: 1.6,
-                }}
-              >
-                Visible job title shown in profile, dashboard and other pages.
-              </p>
             </div>
 
-            <div>
+            <div
+              style={{
+                borderRadius: 16,
+                padding: isMobile ? 12 : 14,
+                background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
+                border: "1px solid #fed7aa",
+              }}
+            >
               <FieldLabel>Birthday</FieldLabel>
               <TextInput
                 type="date"
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
               />
-              <p
+
+              <div
                 style={{
-                  marginTop: 8,
-                  marginBottom: 0,
-                  fontSize: 12,
-                  color: "#64748b",
-                  lineHeight: 1.6,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  marginTop: 9,
+                  flexWrap: "wrap",
                 }}
               >
-                This will be used later for the company birthday calendar.
-              </p>
+                <p style={{ margin: 0, fontSize: 11, color: "#9a3412", lineHeight: 1.5 }}>
+                  Used by the company birthday calendar and Dashboard.
+                </p>
+
+                {birthDate && (
+                  <span style={{ fontSize: 11, fontWeight: 800, color: "#c2410c" }}>
+                    Dashboard: {birthdayPreview}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>
@@ -690,21 +810,15 @@ export default function ProfilePage() {
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
                 placeholder="4-digit PIN"
                 maxLength={10}
+                inputMode="numeric"
+                autoComplete="off"
               />
-              <p
-                style={{
-                  marginTop: 8,
-                  marginBottom: 0,
-                  fontSize: 12,
-                  color: "#64748b",
-                  lineHeight: 1.6,
-                }}
-              >
-                This PIN is used to access certain tools and personal features.
+              <p style={{ margin: "7px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
+                PIN is used for selected tools and personal features. Do not share it.
               </p>
             </div>
 
-            <div style={{ marginTop: 4 }}>
+            <div style={{ marginTop: 2, position: isMobile ? "sticky" : "static", bottom: isMobile ? 10 : "auto", zIndex: 5 }}>
               <ActionButton type="submit" disabled={saving}>
                 {saving ? "Saving..." : "Save changes"}
               </ActionButton>
@@ -715,3 +829,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+// END ProfilePage
