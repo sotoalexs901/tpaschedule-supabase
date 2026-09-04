@@ -7,6 +7,42 @@ function getAdminApp() {
     return admin.app();
   }
 
+  const credentialsJson = String(
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || ""
+  ).trim();
+
+  if (credentialsJson) {
+    let serviceAccount;
+
+    try {
+      serviceAccount = JSON.parse(credentialsJson);
+    } catch (error) {
+      throw new Error(
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON contains invalid JSON."
+      );
+    }
+
+    if (
+      !serviceAccount?.project_id ||
+      !serviceAccount?.client_email ||
+      !serviceAccount?.private_key
+    ) {
+      throw new Error(
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON is missing required Firebase service account fields."
+      );
+    }
+
+    return admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: serviceAccount.project_id,
+        clientEmail: serviceAccount.client_email,
+        privateKey: String(
+          serviceAccount.private_key || ""
+        ).replace(/\\n/g, "\n"),
+      }),
+    });
+  }
+
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = String(
@@ -15,7 +51,7 @@ function getAdminApp() {
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(
-      "Firebase Admin environment variables are not fully configured."
+      "Firebase Admin credentials are not configured. Add GOOGLE_APPLICATION_CREDENTIALS_JSON or the FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY variables."
     );
   }
 
