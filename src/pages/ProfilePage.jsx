@@ -7,6 +7,7 @@ import {
   query,
   updateDoc,
   where,
+  deleteField,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
@@ -135,18 +136,59 @@ function getRoleLabel(role) {
   return getDefaultPosition(role);
 }
 
-function formatBirthdayPreview(value) {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return "Not set";
+function formatBirthdayPreview(month, day) {
+  const safeMonth = Number(month || 0);
+  const safeDay = Number(day || 0);
 
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
+  if (!safeMonth || !safeDay) return "Not set";
 
+  const date = new Date(2000, safeMonth - 1, safeDay);
   if (Number.isNaN(date.getTime())) return "Not set";
 
   return date.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
   });
+}
+
+function parseLegacyBirthday(value) {
+  if (!value) return { month: "", day: "" };
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return {
+      month: String(Number(value.slice(5, 7))),
+      day: String(Number(value.slice(8, 10))),
+    };
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return { month: "", day: "" };
+
+  return {
+    month: String(parsed.getMonth() + 1),
+    day: String(parsed.getDate()),
+  };
+}
+
+const BIRTHDAY_MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function getDaysInBirthdayMonth(month) {
+  const safeMonth = Number(month || 0);
+  if (!safeMonth) return 31;
+  return new Date(2000, safeMonth, 0).getDate();
 }
 
 async function findLinkedEmployeeDocs({ userId, username }) {
@@ -190,7 +232,8 @@ export default function ProfilePage() {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [position, setPosition] = useState("");
-  const [birthDate, setBirthDate] = useState("");
+  const [birthdayMonth, setBirthdayMonth] = useState("");
+  const [birthdayDay, setBirthdayDay] = useState("");
   const [pin, setPin] = useState("");
   const [storedPhotoURL, setStoredPhotoURL] = useState("");
   const [photoPreviewURL, setPhotoPreviewURL] = useState("");
@@ -217,9 +260,14 @@ export default function ProfilePage() {
   );
 
   const birthdayPreview = useMemo(
-    () => formatBirthdayPreview(birthDate),
-    [birthDate]
+    () => formatBirthdayPreview(birthdayMonth, birthdayDay),
+    [birthdayMonth, birthdayDay]
   );
+
+  const birthdayDayOptions = useMemo(() => {
+    const count = getDaysInBirthdayMonth(birthdayMonth);
+    return Array.from({ length: count }, (_, index) => index + 1);
+  }, [birthdayMonth]);
 
   useEffect(() => {
     async function loadProfile() {
@@ -252,14 +300,28 @@ export default function ProfilePage() {
               user.position ||
               getDefaultPosition(data.role || user.role)
           );
-          setBirthDate(data.birthDate || user.birthDate || "");
+          const legacyBirthday = parseLegacyBirthday(
+            data.birthDate || user.birthDate || ""
+          );
+          setBirthdayMonth(
+            data.birthdayMonth ? String(data.birthdayMonth) : legacyBirthday.month
+          );
+          setBirthdayDay(
+            data.birthdayDay ? String(data.birthdayDay) : legacyBirthday.day
+          );
           setPin(data.pin || "");
           setStoredPhotoURL(data.profilePhotoURL || "");
         } else {
           setUsername(user.username || "");
           setDisplayName(user.displayName || "");
           setPosition(user.position || getDefaultPosition(user.role));
-          setBirthDate(user.birthDate || "");
+          const legacyBirthday = parseLegacyBirthday(user.birthDate || "");
+          setBirthdayMonth(
+            user.birthdayMonth ? String(user.birthdayMonth) : legacyBirthday.month
+          );
+          setBirthdayDay(
+            user.birthdayDay ? String(user.birthdayDay) : legacyBirthday.day
+          );
           setPin(user.pin || "");
           setStoredPhotoURL(user.profilePhotoURL || "");
         }
@@ -278,6 +340,8 @@ export default function ProfilePage() {
     user?.displayName,
     user?.position,
     user?.birthDate,
+    user?.birthdayMonth,
+    user?.birthdayDay,
     user?.pin,
     user?.profilePhotoURL,
     user?.role,
@@ -344,9 +408,20 @@ export default function ProfilePage() {
       return;
     }
 
-    if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
-      setError("Birth date must be a valid date.");
+    const hasBirthdayMonth = Boolean(birthdayMonth);
+    const hasBirthdayDay = Boolean(birthdayDay);
+
+    if (hasBirthdayMonth !== hasBirthdayDay) {
+      setError("Birthday is optional. If entered, please select both month and day.");
       return;
+    }
+
+    if (hasBirthdayMonth && hasBirthdayDay) {
+      const maxDay = getDaysInBirthdayMonth(birthdayMonth);
+      if (Number(birthdayDay) < 1 || Number(birthdayDay) > maxDay) {
+        setError("Please select a valid birthday month and day.");
+        return;
+      }
     }
 
     try {
@@ -371,7 +446,8 @@ export default function ProfilePage() {
 
       const normalizedDisplayName = displayName.trim();
       const normalizedPosition = position.trim() || getDefaultPosition(user.role);
-      const normalizedBirthDate = birthDate || "";
+      const normalizedBirthdayMonth = birthdayMonth ? Number(birthdayMonth) : null;
+      const normalizedBirthdayDay = birthdayDay ? Number(birthdayDay) : null;
       const normalizedPin = pin.trim();
 
       const payload = {
@@ -379,9 +455,10 @@ export default function ProfilePage() {
         profilePhotoURL: finalPhotoURL,
         displayName: normalizedDisplayName,
         position: normalizedPosition,
-        birthDate: normalizedBirthDate,
-        birthdayMonth: normalizedBirthDate ? Number(normalizedBirthDate.slice(5, 7)) : null,
-        birthdayDay: normalizedBirthDate ? Number(normalizedBirthDate.slice(8, 10)) : null,
+        // Privacy-by-design: store only month/day. The full date of birth is not retained.
+        birthDate: deleteField(),
+        birthdayMonth: normalizedBirthdayMonth,
+        birthdayDay: normalizedBirthdayDay,
       };
 
       await updateDoc(userRef, payload);
@@ -398,9 +475,9 @@ export default function ProfilePage() {
         const employeePayload = {
           displayName: normalizedDisplayName,
           position: normalizedPosition,
-          birthDate: normalizedBirthDate,
-          birthdayMonth: payload.birthdayMonth,
-          birthdayDay: payload.birthdayDay,
+          birthDate: deleteField(),
+          birthdayMonth: normalizedBirthdayMonth,
+          birthdayDay: normalizedBirthdayDay,
           profilePhotoURL: finalPhotoURL,
         };
 
@@ -430,9 +507,9 @@ export default function ProfilePage() {
                 profilePhotoURL: finalPhotoURL,
                 displayName: normalizedDisplayName,
                 position: normalizedPosition,
-                birthDate: normalizedBirthDate,
-                birthdayMonth: payload.birthdayMonth,
-                birthdayDay: payload.birthdayDay,
+                birthDate: "",
+                birthdayMonth: normalizedBirthdayMonth,
+                birthdayDay: normalizedBirthdayDay,
               }
             : prev
         );
@@ -440,7 +517,7 @@ export default function ProfilePage() {
 
       setMessage(
         linkedEmployeeRefs.length > 0
-          ? "Profile updated successfully. Birthday data was synchronized for the dashboard."
+          ? "Profile updated successfully. Birthday month/day was synchronized for the dashboard."
           : "Profile updated successfully."
       );
     } catch (err) {
@@ -692,7 +769,7 @@ export default function ProfilePage() {
                   {getRoleLabel(user?.role)}
                 </span>
 
-                {birthDate && (
+                {birthdayMonth && birthdayDay && (
                   <span
                     style={{
                       padding: "6px 9px",
@@ -729,7 +806,7 @@ export default function ProfilePage() {
                 Profile Information
               </h2>
               <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
-                Keep your account details up to date.
+                Keep your account details up to date. Birthday information is optional.
               </p>
             </div>
 
@@ -773,12 +850,78 @@ export default function ProfilePage() {
                 border: "1px solid #fed7aa",
               }}
             >
-              <FieldLabel>Birthday</FieldLabel>
-              <TextInput
-                type="date"
-                value={birthDate}
-                onChange={(e) => setBirthDate(e.target.value)}
-              />
+              <FieldLabel>Birthday (Optional)</FieldLabel>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile ? "1fr 1fr" : "minmax(0, 1fr) minmax(0, 1fr)",
+                  gap: 10,
+                }}
+              >
+                <select
+                  value={birthdayMonth}
+                  onChange={(e) => {
+                    const nextMonth = e.target.value;
+                    setBirthdayMonth(nextMonth);
+
+                    if (!nextMonth) {
+                      setBirthdayDay("");
+                      return;
+                    }
+
+                    const maxDay = getDaysInBirthdayMonth(nextMonth);
+                    if (Number(birthdayDay) > maxDay) {
+                      setBirthdayDay("");
+                    }
+                  }}
+                  aria-label="Birthday month"
+                  style={{
+                    width: "100%",
+                    minWidth: 0,
+                    border: "1px solid #dbeafe",
+                    background: "#ffffff",
+                    borderRadius: 14,
+                    padding: "12px 11px",
+                    fontSize: 16,
+                    color: birthdayMonth ? "#0f172a" : "#64748b",
+                    outline: "none",
+                  }}
+                >
+                  <option value="">Month</option>
+                  {BIRTHDAY_MONTHS.map((monthName, index) => (
+                    <option key={monthName} value={String(index + 1)}>
+                      {monthName}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={birthdayDay}
+                  onChange={(e) => setBirthdayDay(e.target.value)}
+                  disabled={!birthdayMonth}
+                  aria-label="Birthday day"
+                  style={{
+                    width: "100%",
+                    minWidth: 0,
+                    border: "1px solid #dbeafe",
+                    background: birthdayMonth ? "#ffffff" : "#f8fafc",
+                    borderRadius: 14,
+                    padding: "12px 11px",
+                    fontSize: 16,
+                    color: birthdayDay ? "#0f172a" : "#64748b",
+                    outline: "none",
+                    cursor: birthdayMonth ? "pointer" : "not-allowed",
+                  }}
+                >
+                  <option value="">Day</option>
+                  {birthdayDayOptions.map((day) => (
+                    <option key={day} value={String(day)}>
+                      {day}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div
                 style={{
@@ -791,10 +934,10 @@ export default function ProfilePage() {
                 }}
               >
                 <p style={{ margin: 0, fontSize: 11, color: "#9a3412", lineHeight: 1.5 }}>
-                  Used by the company birthday calendar and Dashboard.
+                  Optional. For privacy, only the month and day are stored. Your birth year is not requested or saved.
                 </p>
 
-                {birthDate && (
+                {birthdayMonth && birthdayDay && (
                   <span style={{ fontSize: 11, fontWeight: 800, color: "#c2410c" }}>
                     Dashboard: {birthdayPreview}
                   </span>
