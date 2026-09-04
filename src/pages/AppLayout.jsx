@@ -92,6 +92,9 @@ export default function AppLayout() {
   const forcedLogoutHandledRef = useRef(false);
   const lastActivityPingRef = useRef(0);
 
+  const previousUnreadMessagesRef = useRef(0);
+  const soundReadyRef = useRef(false);
+
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
 
@@ -209,6 +212,70 @@ export default function AppLayout() {
   }, []);
 
   // ============================================================
+  // MESSAGE SOUND ENABLEMENT
+  // ============================================================
+
+  useEffect(() => {
+    const enableSound = () => {
+      soundReadyRef.current = true;
+    };
+
+    window.addEventListener("pointerdown", enableSound, { once: true });
+    window.addEventListener("touchstart", enableSound, { once: true });
+    window.addEventListener("keydown", enableSound, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", enableSound);
+      window.removeEventListener("touchstart", enableSound);
+      window.removeEventListener("keydown", enableSound);
+    };
+  }, []);
+
+  const playMessageSound = () => {
+    if (!soundReadyRef.current) return;
+
+    try {
+      const AudioContextClass =
+        window.AudioContext || window.webkitAudioContext;
+
+      if (!AudioContextClass) return;
+
+      const context = new AudioContextClass();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(720, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(
+        980,
+        context.currentTime + 0.12
+      );
+
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(
+        0.12,
+        context.currentTime + 0.02
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        context.currentTime + 0.2
+      );
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.22);
+
+      oscillator.addEventListener("ended", () => {
+        context.close().catch(() => {});
+      });
+    } catch (err) {
+      console.warn("Message sound unavailable:", err);
+    }
+  };
+
+  // ============================================================
   // UNREAD MESSAGES - LIVE CHAT V2
   // ============================================================
 
@@ -235,6 +302,13 @@ export default function AppLayout() {
           return unreadUserIds.includes(user.id);
         }).length;
 
+        const previousCount = previousUnreadMessagesRef.current;
+
+        if (unreadCount > previousCount && previousCount >= 0) {
+          playMessageSound();
+        }
+
+        previousUnreadMessagesRef.current = unreadCount;
         setUnreadMessages(unreadCount);
       },
       (err) => {
@@ -1196,7 +1270,19 @@ export default function AppLayout() {
               />
             )}
 
-            <StatusPill label="Messages" value={unreadMessages} />
+            <StatusPill
+              label="Messages"
+              value={unreadMessages}
+              active={unreadMessages > 0}
+              onClick={() => navigate("/messages")}
+              title={
+                unreadMessages > 0
+                  ? `${unreadMessages} unread conversation${
+                      unreadMessages === 1 ? "" : "s"
+                    }. Open Messages.`
+                  : "Open Messages"
+              }
+            />
             <StatusPill label="Notifications" value={unreadNotifications} />
             <StatusPill label="Day Off" value={pendingTimeOff} />
 
@@ -1371,39 +1457,121 @@ function OperationalAlertBell({ value, onClick }) {
 // STATUS PILL
 // ============================================================
 
-function StatusPill({ label, value }) {
-  return (
-    <div
-      style={{
-        background: "#f8fbff",
-        border: "1px solid #d7e9fb",
-        borderRadius: 14,
-        padding: "8px 10px",
-        minWidth: 92,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 800,
-          color: "#64748b",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
-      >
-        {label}
-      </div>
+function StatusPill({
+  label,
+  value,
+  active = false,
+  onClick,
+  title = "",
+}) {
+  const Wrapper = onClick ? "button" : "div";
 
-      <div
+  return (
+    <>
+      <style>
+        {`
+          @keyframes aerostationMessagePulse {
+            0%, 100% {
+              transform: translateY(0) scale(1);
+              box-shadow: 0 8px 22px rgba(220, 38, 38, 0.16);
+            }
+            50% {
+              transform: translateY(-1px) scale(1.025);
+              box-shadow: 0 12px 28px rgba(220, 38, 38, 0.30);
+            }
+          }
+        `}
+      </style>
+
+      <Wrapper
+        type={onClick ? "button" : undefined}
+        onClick={onClick}
+        title={title || undefined}
         style={{
-          fontSize: 16,
-          fontWeight: 900,
-          color: "#0f172a",
+          position: "relative",
+          appearance: "none",
+          WebkitAppearance: "none",
+          textAlign: "left",
+          background: active
+            ? "linear-gradient(135deg, #fff1f2 0%, #ffffff 52%, #eaf6ff 100%)"
+            : "#f8fbff",
+          border: active
+            ? "1px solid #fca5a5"
+            : "1px solid #d7e9fb",
+          borderRadius: 14,
+          padding: "8px 10px",
+          minWidth: 92,
+          minHeight: 48,
+          cursor: onClick ? "pointer" : "default",
+          fontFamily: "inherit",
+          animation: active
+            ? "aerostationMessagePulse 1.8s ease-in-out infinite"
+            : "none",
+          boxSizing: "border-box",
+          overflow: "hidden",
         }}
       >
-        {value}
-      </div>
-    </div>
+        {active && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: 7,
+              right: 8,
+              width: 8,
+              height: 8,
+              borderRadius: 999,
+              background: "#dc2626",
+              boxShadow: "0 0 0 4px rgba(220,38,38,0.10)",
+            }}
+          />
+        )}
+
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 800,
+            color: active ? "#b91c1c" : "#64748b",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            paddingRight: active ? 14 : 0,
+          }}
+        >
+          {label}
+        </div>
+
+        <div
+          style={{
+            marginTop: 1,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 900,
+              color: active ? "#b91c1c" : "#0f172a",
+            }}
+          >
+            {value}
+          </div>
+
+          {active && (
+            <span
+              aria-hidden="true"
+              style={{
+                fontSize: 13,
+                lineHeight: 1,
+              }}
+            >
+              {"\u{1F4AC}"}
+            </span>
+          )}
+        </div>
+      </Wrapper>
+    </>
   );
 }
 
