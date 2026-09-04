@@ -283,17 +283,22 @@ exports.handler = async function handler(event) {
   if (event.httpMethod !== "POST") {
     return json(405, {
       ok: false,
+      stage: "http-method",
       error: "Method not allowed. Use POST.",
     });
   }
+
+  let stage = "initialize-admin";
 
   try {
     getAdminApp();
 
     const db = admin.firestore();
 
+    stage = "find-test-user";
     const testUser = await findTestUser(db);
 
+    stage = "read-push-tokens";
     const tokenItems = await getEnabledTokens(
       db,
       testUser.id
@@ -302,17 +307,20 @@ exports.handler = async function handler(event) {
     if (!tokenItems.length) {
       return json(409, {
         ok: false,
+        stage,
         error:
           "No enabled Push tokens were found for the configured test user.",
         userId: testUser.id,
       });
     }
 
+    stage = "read-operational-alerts";
     const alert = await getLatestActiveAlert(db);
 
     if (!alert) {
       return json(404, {
         ok: false,
+        stage,
         error:
           "No active Operational Alerts were found.",
       });
@@ -339,6 +347,7 @@ exports.handler = async function handler(event) {
       },
     };
 
+    stage = "send-fcm";
     const result =
       await admin
         .messaging()
@@ -365,6 +374,8 @@ exports.handler = async function handler(event) {
     );
 
     if (invalidIndexes.length) {
+      stage = "disable-invalid-tokens";
+
       await Promise.all(
         invalidIndexes.map((index) =>
           tokenItems[index].ref.set(
@@ -382,6 +393,7 @@ exports.handler = async function handler(event) {
 
     return json(200, {
       ok: true,
+      stage: "complete",
       userId: testUser.id,
       username:
         testUser.data.username ||
@@ -396,12 +408,14 @@ exports.handler = async function handler(event) {
     });
   } catch (error) {
     console.error(
-      "send-latest-operational-alert error:",
+      `send-latest-operational-alert error at ${stage}:`,
       error
     );
 
     return json(500, {
       ok: false,
+      stage,
+      code: error?.code || "",
       error:
         error?.message ||
         "Unexpected Push notification error.",
