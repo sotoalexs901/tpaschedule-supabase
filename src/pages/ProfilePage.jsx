@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   collection,
   doc,
@@ -13,6 +19,10 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+
+const PushNotificationsButton = lazy(() =>
+  import("../components/PushNotificationsButton.jsx")
+);
 
 // IMPORTANT:
 // Special punctuation and symbols use Unicode escape sequences where practical
@@ -300,28 +310,36 @@ export default function ProfilePage() {
               user.position ||
               getDefaultPosition(data.role || user.role)
           );
+
           const legacyBirthday = parseLegacyBirthday(
             data.birthDate || user.birthDate || ""
           );
+
           setBirthdayMonth(
             data.birthdayMonth ? String(data.birthdayMonth) : legacyBirthday.month
           );
+
           setBirthdayDay(
             data.birthdayDay ? String(data.birthdayDay) : legacyBirthday.day
           );
+
           setPin(data.pin || "");
           setStoredPhotoURL(data.profilePhotoURL || "");
         } else {
           setUsername(user.username || "");
           setDisplayName(user.displayName || "");
           setPosition(user.position || getDefaultPosition(user.role));
+
           const legacyBirthday = parseLegacyBirthday(user.birthDate || "");
+
           setBirthdayMonth(
             user.birthdayMonth ? String(user.birthdayMonth) : legacyBirthday.month
           );
+
           setBirthdayDay(
             user.birthdayDay ? String(user.birthdayDay) : legacyBirthday.day
           );
+
           setPin(user.pin || "");
           setStoredPhotoURL(user.profilePhotoURL || "");
         }
@@ -412,12 +430,15 @@ export default function ProfilePage() {
     const hasBirthdayDay = Boolean(birthdayDay);
 
     if (hasBirthdayMonth !== hasBirthdayDay) {
-      setError("Birthday is optional. If entered, please select both month and day.");
+      setError(
+        "Birthday is optional. If entered, please select both month and day."
+      );
       return;
     }
 
     if (hasBirthdayMonth && hasBirthdayDay) {
       const maxDay = getDaysInBirthdayMonth(birthdayMonth);
+
       if (Number(birthdayDay) < 1 || Number(birthdayDay) > maxDay) {
         setError("Please select a valid birthday month and day.");
         return;
@@ -431,7 +452,10 @@ export default function ProfilePage() {
       let finalPhotoURL = storedPhotoURL || "";
 
       if (photoFile) {
-        const extSafeName = safeFileName(photoFile.name || "profile-photo.jpg");
+        const extSafeName = safeFileName(
+          photoFile.name || "profile-photo.jpg"
+        );
+
         const storageRef = ref(
           storage,
           `profilePictures/${user.id}/${Date.now()}_${extSafeName}`
@@ -445,9 +469,18 @@ export default function ProfilePage() {
       }
 
       const normalizedDisplayName = displayName.trim();
-      const normalizedPosition = position.trim() || getDefaultPosition(user.role);
-      const normalizedBirthdayMonth = birthdayMonth ? Number(birthdayMonth) : null;
-      const normalizedBirthdayDay = birthdayDay ? Number(birthdayDay) : null;
+
+      const normalizedPosition =
+        position.trim() || getDefaultPosition(user.role);
+
+      const normalizedBirthdayMonth = birthdayMonth
+        ? Number(birthdayMonth)
+        : null;
+
+      const normalizedBirthdayDay = birthdayDay
+        ? Number(birthdayDay)
+        : null;
+
       const normalizedPin = pin.trim();
 
       const payload = {
@@ -455,7 +488,6 @@ export default function ProfilePage() {
         profilePhotoURL: finalPhotoURL,
         displayName: normalizedDisplayName,
         position: normalizedPosition,
-        // Privacy-by-design: store only month/day. The full date of birth is not retained.
         birthDate: deleteField(),
         birthdayMonth: normalizedBirthdayMonth,
         birthdayDay: normalizedBirthdayDay,
@@ -463,9 +495,6 @@ export default function ProfilePage() {
 
       await updateDoc(userRef, payload);
 
-      // Keep any linked employee record synchronized with the profile.
-      // This lets Dashboard birthday widgets use the same source of truth
-      // even when other modules read from the employees collection.
       const linkedEmployeeRefs = await findLinkedEmployeeDocs({
         userId: user.id,
         username,
@@ -496,6 +525,7 @@ export default function ProfilePage() {
       if (photoPreviewURL) {
         URL.revokeObjectURL(photoPreviewURL);
       }
+
       setPhotoPreviewURL("");
 
       if (typeof setUser === "function") {
@@ -522,7 +552,10 @@ export default function ProfilePage() {
       );
     } catch (err) {
       console.error("Error saving profile:", err);
-      setError(err?.message || "Error saving your profile. Please try again.");
+      setError(
+        err?.message ||
+          "Error saving your profile. Please try again."
+      );
     } finally {
       setSaving(false);
     }
@@ -531,7 +564,14 @@ export default function ProfilePage() {
   if (!user) {
     return (
       <PageCard style={{ padding: 22 }} isMobile={isMobile}>
-        <p style={{ margin: 0, color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
           You must be logged in to view your profile.
         </p>
       </PageCard>
@@ -541,7 +581,14 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <PageCard style={{ padding: 22 }} isMobile={isMobile}>
-        <p style={{ margin: 0, color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+        <p
+          style={{
+            margin: 0,
+            color: "#64748b",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
           Loading profile...
         </p>
       </PageCard>
@@ -607,7 +654,11 @@ export default function ProfilePage() {
             <img
               src="/icons/aerostation-icon.png"
               alt={APP_NAME}
-              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+              }}
             />
           </div>
 
@@ -653,7 +704,10 @@ export default function ProfilePage() {
       </div>
 
       {error && (
-        <PageCard style={{ padding: isMobile ? 10 : 16 }} isMobile={isMobile}>
+        <PageCard
+          style={{ padding: isMobile ? 10 : 16 }}
+          isMobile={isMobile}
+        >
           <div
             style={{
               background: "#fff1f2",
@@ -671,7 +725,10 @@ export default function ProfilePage() {
       )}
 
       {message && (
-        <PageCard style={{ padding: isMobile ? 10 : 16 }} isMobile={isMobile}>
+        <PageCard
+          style={{ padding: isMobile ? 10 : 16 }}
+          isMobile={isMobile}
+        >
           <div
             style={{
               background: "#ecfdf5",
@@ -688,18 +745,30 @@ export default function ProfilePage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: isMobile ? 14 : 22 }} isMobile={isMobile}>
+      <PageCard
+        style={{ padding: isMobile ? 14 : 22 }}
+        isMobile={isMobile}
+      >
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "minmax(240px, 280px) 1fr",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "minmax(240px, 280px) 1fr",
             gap: isMobile ? 18 : 24,
           }}
         >
-          <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+              alignContent: "start",
+            }}
+          >
             <div
               style={{
-                background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)",
+                background:
+                  "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)",
                 border: "1px solid #dbeafe",
                 borderRadius: isMobile ? 18 : 22,
                 padding: isMobile ? 14 : 18,
@@ -721,29 +790,54 @@ export default function ProfilePage() {
                   fontSize: 13,
                   fontWeight: 700,
                   border: "4px solid #ffffff",
-                  boxShadow: "0 10px 24px rgba(15,23,42,0.10)",
+                  boxShadow:
+                    "0 10px 24px rgba(15,23,42,0.10)",
                 }}
               >
                 {visiblePhotoURL ? (
                   <img
                     src={visiblePhotoURL}
                     alt="Profile"
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
                   />
                 ) : (
                   <span>No photo</span>
                 )}
               </div>
 
-              <p style={{ margin: 0, fontSize: isMobile ? 18 : 20, fontWeight: 800, color: "#0f172a" }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: isMobile ? 18 : 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
                 {visibleName}
               </p>
 
-              <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569", fontWeight: 700 }}>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 13,
+                  color: "#475569",
+                  fontWeight: 700,
+                }}
+              >
                 {visiblePosition}
               </p>
 
-              <p style={{ margin: "5px 0 0", fontSize: 12, color: "#94a3b8" }}>
+              <p
+                style={{
+                  margin: "5px 0 0",
+                  fontSize: 12,
+                  color: "#94a3b8",
+                }}
+              >
                 @{username}
               </p>
 
@@ -788,43 +882,93 @@ export default function ProfilePage() {
 
             <div>
               <FieldLabel>Profile picture</FieldLabel>
+
               <TextInput
                 type="file"
                 accept="image/*"
                 onChange={handleFileChange}
-                style={{ padding: "9px 10px", fontSize: 13 }}
+                style={{
+                  padding: "9px 10px",
+                  fontSize: 13,
+                }}
               />
-              <p style={{ margin: "7px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
+
+              <p
+                style={{
+                  margin: "7px 0 0",
+                  fontSize: 11,
+                  color: "#64748b",
+                  lineHeight: 1.5,
+                }}
+              >
                 JPG / PNG. Max 5MB. A square photo works best.
               </p>
             </div>
           </div>
 
-          <form onSubmit={handleSave} style={{ display: "grid", gap: 15, alignContent: "start" }}>
+          <form
+            onSubmit={handleSave}
+            style={{
+              display: "grid",
+              gap: 15,
+              alignContent: "start",
+            }}
+          >
             <div>
-              <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 20, fontWeight: 800, color: "#0f172a" }}>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: isMobile ? 18 : 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
                 Profile Information
               </h2>
-              <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
-                Keep your account details up to date. Birthday information is optional.
+
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.5,
+                }}
+              >
+                Keep your account details up to date. Birthday
+                information is optional.
               </p>
             </div>
 
             <div>
               <FieldLabel>Username</FieldLabel>
+
               <TextInput
                 value={username}
                 readOnly
                 disabled
-                style={{ background: "#f8fafc", color: "#64748b", cursor: "not-allowed" }}
+                style={{
+                  background: "#f8fafc",
+                  color: "#64748b",
+                  cursor: "not-allowed",
+                }}
               />
-              <p style={{ margin: "7px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
-                Username is managed by administration and cannot be changed here.
+
+              <p
+                style={{
+                  margin: "7px 0 0",
+                  fontSize: 11,
+                  color: "#64748b",
+                  lineHeight: 1.5,
+                }}
+              >
+                Username is managed by administration and cannot be
+                changed here.
               </p>
             </div>
 
             <div>
               <FieldLabel>Display Name</FieldLabel>
+
               <TextInput
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
@@ -835,6 +979,7 @@ export default function ProfilePage() {
 
             <div>
               <FieldLabel>Position</FieldLabel>
+
               <TextInput
                 value={position}
                 onChange={(e) => setPosition(e.target.value)}
@@ -846,7 +991,8 @@ export default function ProfilePage() {
               style={{
                 borderRadius: 16,
                 padding: isMobile ? 12 : 14,
-                background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
+                background:
+                  "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
                 border: "1px solid #fed7aa",
               }}
             >
@@ -855,7 +1001,8 @@ export default function ProfilePage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: isMobile ? "1fr 1fr" : "minmax(0, 1fr) minmax(0, 1fr)",
+                  gridTemplateColumns:
+                    "minmax(0, 1fr) minmax(0, 1fr)",
                   gap: 10,
                 }}
               >
@@ -870,7 +1017,9 @@ export default function ProfilePage() {
                       return;
                     }
 
-                    const maxDay = getDaysInBirthdayMonth(nextMonth);
+                    const maxDay =
+                      getDaysInBirthdayMonth(nextMonth);
+
                     if (Number(birthdayDay) > maxDay) {
                       setBirthdayDay("");
                     }
@@ -884,39 +1033,59 @@ export default function ProfilePage() {
                     borderRadius: 14,
                     padding: "12px 11px",
                     fontSize: 16,
-                    color: birthdayMonth ? "#0f172a" : "#64748b",
+                    color: birthdayMonth
+                      ? "#0f172a"
+                      : "#64748b",
                     outline: "none",
                   }}
                 >
                   <option value="">Month</option>
-                  {BIRTHDAY_MONTHS.map((monthName, index) => (
-                    <option key={monthName} value={String(index + 1)}>
-                      {monthName}
-                    </option>
-                  ))}
+
+                  {BIRTHDAY_MONTHS.map(
+                    (monthName, index) => (
+                      <option
+                        key={monthName}
+                        value={String(index + 1)}
+                      >
+                        {monthName}
+                      </option>
+                    )
+                  )}
                 </select>
 
                 <select
                   value={birthdayDay}
-                  onChange={(e) => setBirthdayDay(e.target.value)}
+                  onChange={(e) =>
+                    setBirthdayDay(e.target.value)
+                  }
                   disabled={!birthdayMonth}
                   aria-label="Birthday day"
                   style={{
                     width: "100%",
                     minWidth: 0,
                     border: "1px solid #dbeafe",
-                    background: birthdayMonth ? "#ffffff" : "#f8fafc",
+                    background: birthdayMonth
+                      ? "#ffffff"
+                      : "#f8fafc",
                     borderRadius: 14,
                     padding: "12px 11px",
                     fontSize: 16,
-                    color: birthdayDay ? "#0f172a" : "#64748b",
+                    color: birthdayDay
+                      ? "#0f172a"
+                      : "#64748b",
                     outline: "none",
-                    cursor: birthdayMonth ? "pointer" : "not-allowed",
+                    cursor: birthdayMonth
+                      ? "pointer"
+                      : "not-allowed",
                   }}
                 >
                   <option value="">Day</option>
+
                   {birthdayDayOptions.map((day) => (
-                    <option key={day} value={String(day)}>
+                    <option
+                      key={day}
+                      value={String(day)}
+                    >
                       {day}
                     </option>
                   ))}
@@ -933,12 +1102,26 @@ export default function ProfilePage() {
                   flexWrap: "wrap",
                 }}
               >
-                <p style={{ margin: 0, fontSize: 11, color: "#9a3412", lineHeight: 1.5 }}>
-                  Optional. For privacy, only the month and day are stored. Your birth year is not requested or saved.
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 11,
+                    color: "#9a3412",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Optional. For privacy, only the month and day are
+                  stored. Your birth year is not requested or saved.
                 </p>
 
                 {birthdayMonth && birthdayDay && (
-                  <span style={{ fontSize: 11, fontWeight: 800, color: "#c2410c" }}>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "#c2410c",
+                    }}
+                  >
                     Dashboard: {birthdayPreview}
                   </span>
                 )}
@@ -947,26 +1130,167 @@ export default function ProfilePage() {
 
             <div>
               <FieldLabel>PIN</FieldLabel>
+
               <TextInput
                 type="password"
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) =>
+                  setPin(e.target.value.replace(/\D/g, ""))
+                }
                 placeholder="4-digit PIN"
                 maxLength={10}
                 inputMode="numeric"
                 autoComplete="off"
               />
-              <p style={{ margin: "7px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
-                PIN is used for selected tools and personal features. Do not share it.
+
+              <p
+                style={{
+                  margin: "7px 0 0",
+                  fontSize: 11,
+                  color: "#64748b",
+                  lineHeight: 1.5,
+                }}
+              >
+                PIN is used for selected tools and personal features.
+                Do not share it.
               </p>
             </div>
 
-            <div style={{ marginTop: 2, position: isMobile ? "sticky" : "static", bottom: isMobile ? 10 : "auto", zIndex: 5 }}>
-              <ActionButton type="submit" disabled={saving}>
+            <div
+              style={{
+                marginTop: 2,
+                position: isMobile ? "sticky" : "static",
+                bottom: isMobile ? 10 : "auto",
+                zIndex: 5,
+              }}
+            >
+              <ActionButton
+                type="submit"
+                disabled={saving}
+              >
                 {saving ? "Saving..." : "Save changes"}
               </ActionButton>
             </div>
           </form>
+        </div>
+      </PageCard>
+
+      <PageCard
+        style={{
+          padding: isMobile ? 14 : 20,
+        }}
+        isMobile={isMobile}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "minmax(0, 1fr) auto",
+            gap: 14,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+              }}
+            >
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#eff6ff",
+                  border: "1px solid #bfdbfe",
+                  fontSize: 18,
+                  flexShrink: 0,
+                }}
+              >
+                {"\u{1F514}"}
+              </div>
+
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: isMobile ? 16 : 18,
+                    fontWeight: 850,
+                    color: "#0f172a",
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  Mobile Notifications
+                </h2>
+
+                <p
+                  style={{
+                    margin: "3px 0 0",
+                    fontSize: 11.5,
+                    color: "#64748b",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Enable AeroStation Hub notifications on this
+                  device.
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                borderRadius: 12,
+                padding: "9px 10px",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                color: "#64748b",
+                fontSize: 10.5,
+                lineHeight: 1.5,
+              }}
+            >
+              On iPhone or iPad, AeroStation Hub should be
+              installed on the Home Screen before enabling Push
+              Notifications.
+            </div>
+          </div>
+
+          <div
+            style={{
+              minWidth: isMobile ? 0 : 150,
+              display: "flex",
+              justifyContent: isMobile
+                ? "stretch"
+                : "flex-end",
+            }}
+          >
+            <Suspense
+              fallback={
+                <div
+                  style={{
+                    width: "100%",
+                    borderRadius: 13,
+                    padding: "10px 12px",
+                    background: "#f1f5f9",
+                    color: "#64748b",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    textAlign: "center",
+                  }}
+                >
+                  Loading...
+                </div>
+              }
+            >
+              <PushNotificationsButton user={user} />
+            </Suspense>
+          </div>
         </div>
       </PageCard>
     </div>
