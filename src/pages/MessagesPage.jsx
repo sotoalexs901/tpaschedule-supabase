@@ -30,6 +30,7 @@ import {
   APP_NAME,
   APP_SUBTITLE,
 } from "../config/appConfig.js";
+import { triggerDirectMessagePush } from "../utils/messagePush.js";
 
 // ============================================================
 // AEROSTATION HUB - MESSAGES V2
@@ -658,7 +659,7 @@ export default function MessagesPage() {
         { merge: true }
       );
 
-      await addDoc(
+      const messageRef = await addDoc(
         collection(
           db,
           "conversations",
@@ -678,7 +679,15 @@ export default function MessagesPage() {
           createdAt: serverTimestamp(),
           read: false,
           readAt: null,
+          pushStatus: "PENDING",
         }
+      );
+
+      // Fire-and-forget. The direct message is already stored
+      // before the Push request is made.
+      triggerDirectMessagePush(
+        conversationId,
+        messageRef.id
       );
 
       setSelectedConversationId(conversationId);
