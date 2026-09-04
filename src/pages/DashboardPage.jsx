@@ -14,8 +14,8 @@ import { APP_NAME } from "../config/appConfig.js";
 import OperationalAlertsPanel from "../components/OperationalAlertsPanel.jsx";
 
 // IMPORTANT:
-// Special punctuation and menu/dashboard symbols use Unicode escape sequences
-// to prevent encoding corruption when editing through GitHub/Safari/iPad.
+// Special punctuation and symbols use Unicode escape sequences to reduce
+// encoding issues when editing through GitHub/Safari/iPad.
 
 const FIXED_AUTHOR = "AeroStation Hub";
 
@@ -33,7 +33,7 @@ function formatDateLabel(value) {
 
   try {
     const date = new Date(`${value}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return value;
+    if (Number.isNaN(date.getTime())) return String(value);
 
     return date.toLocaleDateString("en-US", {
       month: "short",
@@ -41,7 +41,7 @@ function formatDateLabel(value) {
       year: "numeric",
     });
   } catch {
-    return value;
+    return String(value);
   }
 }
 
@@ -78,9 +78,108 @@ function getEmployeeName(item) {
     item?.name ||
     item?.displayName ||
     item?.fullName ||
+    item?.employee_name ||
     item?.employeeId ||
     "Employee"
   );
+}
+
+function getEmployeePhoto(item) {
+  return (
+    item?.photoURL ||
+    item?.profilePhotoURL ||
+    item?.photoUrl ||
+    item?.profilePhotoUrl ||
+    item?.avatarURL ||
+    item?.avatarUrl ||
+    ""
+  );
+}
+
+function getRecognitionNote(item) {
+  return (
+    item?.note ||
+    item?.dedication ||
+    item?.message ||
+    item?.recognitionMessage ||
+    item?.description ||
+    ""
+  );
+}
+
+function parseBirthdayValue(value) {
+  if (!value) return null;
+
+  try {
+    let date = null;
+
+    if (typeof value?.toDate === "function") {
+      date = value.toDate();
+    } else if (value instanceof Date) {
+      date = value;
+    } else if (typeof value === "string") {
+      const clean = value.trim();
+      if (!clean) return null;
+
+      // Prefer local parsing for YYYY-MM-DD to avoid timezone shifting.
+      const isoMatch = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (isoMatch) {
+        const month = Number(isoMatch[2]);
+        const day = Number(isoMatch[3]);
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          return { month, day };
+        }
+      }
+
+      // Also support MM/DD/YYYY and MM/DD.
+      const slashMatch = clean.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+      if (slashMatch) {
+        const month = Number(slashMatch[1]);
+        const day = Number(slashMatch[2]);
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          return { month, day };
+        }
+      }
+
+      date = new Date(clean);
+    } else {
+      date = new Date(value);
+    }
+
+    if (!date || Number.isNaN(date.getTime())) return null;
+
+    return {
+      month: date.getMonth() + 1,
+      day: date.getDate(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getBirthdayInfo(employee) {
+  const raw =
+    employee?.birthday ||
+    employee?.birthDate ||
+    employee?.birth_date ||
+    employee?.dateOfBirth ||
+    employee?.date_of_birth ||
+    employee?.dob ||
+    employee?.DOB ||
+    null;
+
+  return parseBirthdayValue(raw);
+}
+
+function formatBirthdayDay(day) {
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+  const date = new Date(currentYear, currentMonth, day);
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function useIsMobile(breakpoint = 900) {
@@ -101,11 +200,11 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: isMobile ? 18 : 22,
-        padding: isMobile ? 16 : 18,
-        boxShadow: "0 16px 36px rgba(23,105,170,0.08)",
+        background: "rgba(255,255,255,0.94)",
+        border: "1px solid rgba(255,255,255,0.98)",
+        borderRadius: isMobile ? 16 : 20,
+        padding: isMobile ? 14 : 16,
+        boxShadow: "0 14px 32px rgba(23,105,170,0.07)",
         position: "relative",
         overflow: "hidden",
       }}
@@ -114,7 +213,7 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
         style={{
           position: "absolute",
           inset: 0,
-          background: `linear-gradient(135deg, ${accent}16 0%, transparent 58%)`,
+          background: `linear-gradient(135deg, ${accent}14 0%, transparent 58%)`,
           pointerEvents: "none",
         }}
       />
@@ -124,28 +223,21 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
           display: "flex",
           alignItems: "flex-start",
           justifyContent: "space-between",
-          gap: 12,
+          gap: 10,
           position: "relative",
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#64748b",
-            }}
-          >
+          <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#64748b" }}>
             {title}
           </p>
 
           <h3
             style={{
-              margin: "8px 0 4px",
-              fontSize: isMobile ? 24 : 28,
+              margin: "7px 0 3px",
+              fontSize: isMobile ? 23 : 26,
               lineHeight: 1.05,
-              fontWeight: 800,
+              fontWeight: 850,
               color: "#0f172a",
               letterSpacing: "-0.03em",
             }}
@@ -153,27 +245,19 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
             {value}
           </h3>
 
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              color: "#475569",
-            }}
-          >
-            {subtitle}
-          </p>
+          <p style={{ margin: 0, fontSize: 11, color: "#475569" }}>{subtitle}</p>
         </div>
 
         <div
           style={{
-            width: isMobile ? 40 : 44,
-            height: isMobile ? 40 : 44,
-            borderRadius: 14,
+            width: isMobile ? 38 : 42,
+            height: isMobile ? 38 : 42,
+            borderRadius: 13,
             background: `${accent}18`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: isMobile ? 18 : 20,
+            fontSize: isMobile ? 17 : 19,
             flexShrink: 0,
           }}
         >
@@ -184,22 +268,15 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
   );
 }
 
-function GlassCard({
-  title,
-  icon,
-  action,
-  children,
-  accent = "#1769aa",
-  isMobile,
-}) {
+function GlassCard({ title, icon, action, children, accent = "#1769aa", isMobile }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
-        borderRadius: isMobile ? 20 : 24,
-        padding: isMobile ? 16 : 20,
-        boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        background: "rgba(255,255,255,0.94)",
+        border: "1px solid rgba(255,255,255,0.98)",
+        borderRadius: isMobile ? 18 : 22,
+        padding: isMobile ? 15 : 18,
+        boxShadow: "0 16px 36px rgba(15,23,42,0.055)",
         minWidth: 0,
       }}
     >
@@ -208,32 +285,32 @@ function GlassCard({
           display: "flex",
           alignItems: isMobile ? "flex-start" : "center",
           justifyContent: "space-between",
-          gap: 12,
-          marginBottom: 14,
+          gap: 10,
+          marginBottom: 13,
           flexWrap: "wrap",
         }}
       >
         <div
           style={{
             display: "flex",
-            alignItems: isMobile ? "flex-start" : "center",
-            gap: 12,
+            alignItems: "center",
+            gap: 10,
             minWidth: 0,
             flex: 1,
           }}
         >
           <div
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 14,
+              width: 38,
+              height: 38,
+              borderRadius: 13,
               background: `${accent}16`,
               color: accent,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 18,
-              fontWeight: 700,
+              fontSize: 17,
+              fontWeight: 800,
               flexShrink: 0,
             }}
           >
@@ -243,8 +320,8 @@ function GlassCard({
           <h2
             style={{
               margin: 0,
-              fontSize: isMobile ? 17 : 19,
-              fontWeight: 800,
+              fontSize: isMobile ? 16 : 18,
+              fontWeight: 850,
               color: "#0f172a",
               letterSpacing: "-0.02em",
               lineHeight: 1.15,
@@ -263,143 +340,383 @@ function GlassCard({
   );
 }
 
-function EmployeeRecognitionCard({ item, isMobile, onMessage }) {
-  const photo = item?.photoURL || item?.profilePhotoURL || "";
-  const employeeName = item?.employeeName || "Employee";
+function RecognitionCompactCard({ item, onOpen, isMobile }) {
+  const employeeName = getEmployeeName(item);
+  const photo = getEmployeePhoto(item);
+  const initials = getInitials(employeeName);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      style={{
+        width: "100%",
+        border: "1px solid #fde68a",
+        background: "linear-gradient(135deg, #fffdf5 0%, #ffffff 100%)",
+        borderRadius: 15,
+        padding: isMobile ? 10 : 11,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        cursor: "pointer",
+        textAlign: "left",
+        boxShadow: "0 8px 18px rgba(15,23,42,0.035)",
+      }}
+    >
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 13,
+          overflow: "hidden",
+          background: "#ffedd5",
+          border: "1px solid #fdba74",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#9a3412",
+          fontWeight: 850,
+          fontSize: 15,
+          flexShrink: 0,
+        }}
+      >
+        {photo ? (
+          <img
+            src={photo}
+            alt={employeeName}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          initials
+        )}
+      </div>
+
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div
+          style={{
+            color: "#0f172a",
+            fontSize: 13.5,
+            fontWeight: 850,
+            lineHeight: 1.2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {employeeName}
+        </div>
+        <div
+          style={{
+            marginTop: 3,
+            fontSize: 11,
+            color: "#9a3412",
+            fontWeight: 750,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {item?.department || item?.position || "Employee of the Month"}
+        </div>
+      </div>
+
+      <span
+        style={{
+          fontSize: 11,
+          color: "#b45309",
+          fontWeight: 800,
+          whiteSpace: "nowrap",
+        }}
+      >
+        View {"\u2192"}
+      </span>
+    </button>
+  );
+}
+
+function RecognitionModal({ item, onClose, onMessage, isMobile }) {
+  if (!item) return null;
+
+  const employeeName = getEmployeeName(item);
+  const photo = getEmployeePhoto(item);
+  const note = getRecognitionNote(item);
   const initials = getInitials(employeeName);
   const canWrite = Boolean(item?.userId || item?.username);
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
       style={{
-        borderRadius: 18,
-        padding: 16,
-        background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
-        border: "1px solid #fed7aa",
-        boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.58)",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 18,
+        backdropFilter: "blur(5px)",
+        WebkitBackdropFilter: "blur(5px)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 560,
+          maxHeight: "88vh",
+          overflowY: "auto",
+          background: "#ffffff",
+          borderRadius: isMobile ? 20 : 24,
+          padding: isMobile ? 18 : 22,
+          boxShadow: "0 28px 70px rgba(15,23,42,0.28)",
+          border: "1px solid #fde68a",
+        }}
+      >
         <div
           style={{
-            width: isMobile ? 62 : 68,
-            height: isMobile ? 62 : 68,
-            borderRadius: 18,
-            overflow: "hidden",
-            background: "#ffedd5",
-            border: "1px solid #fdba74",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#9a3412",
-            fontWeight: 800,
-            fontSize: 22,
-            flexShrink: 0,
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 14,
           }}
         >
-          {photo ? (
-            <img
-              src={photo}
-              alt={employeeName}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-              }}
-            />
-          ) : (
-            <span>{initials}</span>
-          )}
-        </div>
-
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div
-            style={{
-              fontSize: 17,
-              fontWeight: 800,
-              color: "#0f172a",
-              lineHeight: 1.2,
-              wordBreak: "break-word",
-            }}
-          >
-            {employeeName}
-          </div>
-
-          <div
-            style={{
-              marginTop: 4,
-              fontSize: 13,
-              color: "#9a3412",
-              fontWeight: 700,
-              wordBreak: "break-word",
-            }}
-          >
-            {item?.position || "\u2014"} {"\u00B7"} {item?.department || "\u2014"}
-          </div>
-
-          {!!item?.airline && (
-            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
-              Airline: {item.airline}
-            </div>
-          )}
-
-          {!!item?.monthLabel && (
+          <div style={{ display: "flex", gap: 14, minWidth: 0, flex: 1 }}>
             <div
               style={{
-                marginTop: 4,
-                fontSize: 12,
-                color: "#64748b",
-                fontWeight: 700,
+                width: 72,
+                height: 72,
+                borderRadius: 20,
+                overflow: "hidden",
+                background: "#ffedd5",
+                border: "1px solid #fdba74",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#9a3412",
+                fontWeight: 850,
+                fontSize: 22,
+                flexShrink: 0,
               }}
             >
-              {item.monthLabel}
+              {photo ? (
+                <img
+                  src={photo}
+                  alt={employeeName}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                initials
+              )}
             </div>
-          )}
+
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "#b45309",
+                  fontWeight: 850,
+                }}
+              >
+                Employee of the Month
+              </div>
+              <h3
+                style={{
+                  margin: "5px 0 0",
+                  fontSize: isMobile ? 20 : 23,
+                  color: "#0f172a",
+                  lineHeight: 1.15,
+                }}
+              >
+                {employeeName}
+              </h3>
+              <div style={{ marginTop: 5, fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+                {item?.position || "\u2014"} {"\u00B7"} {item?.department || "\u2014"}
+              </div>
+              {!!item?.airline && (
+                <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
+                  Airline: {item.airline}
+                </div>
+              )}
+              {!!item?.monthLabel && (
+                <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 750 }}>
+                  {item.monthLabel}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              background: "#f8fafc",
+              color: "#475569",
+              fontSize: 18,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            {"\u00D7"}
+          </button>
+        </div>
+
+        <div
+          style={{
+            marginTop: 18,
+            borderRadius: 16,
+            padding: 16,
+            background: "linear-gradient(135deg, #fff7ed 0%, #fffdf7 100%)",
+            border: "1px solid #fde68a",
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 850, color: "#92400e", marginBottom: 8 }}>
+            Recognition message
+          </div>
+          <div
+            style={{
+              fontSize: 13.5,
+              color: "#475569",
+              lineHeight: 1.7,
+              whiteSpace: "pre-line",
+            }}
+          >
+            {note || "No dedication has been added yet."}
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: 16,
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border: "1px solid #cbd5e1",
+              background: "#ffffff",
+              color: "#475569",
+              borderRadius: 13,
+              padding: "10px 14px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            Close
+          </button>
+
+          <button
+            type="button"
+            onClick={onMessage}
+            disabled={!canWrite}
+            style={{
+              border: "none",
+              background: canWrite
+                ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)"
+                : "#cbd5e1",
+              color: "#ffffff",
+              borderRadius: 13,
+              padding: "10px 14px",
+              fontWeight: 800,
+              cursor: canWrite ? "pointer" : "not-allowed",
+              opacity: canWrite ? 1 : 0.8,
+            }}
+          >
+            Send congratulations
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BirthdayCard({ employee, isToday }) {
+  const employeeName = getEmployeeName(employee);
+  const photo = getEmployeePhoto(employee);
+  const initials = getInitials(employeeName);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        borderRadius: 15,
+        padding: 10,
+        background: isToday
+          ? "linear-gradient(135deg, #fdf2f8 0%, #fff7ed 100%)"
+          : "linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)",
+        border: isToday ? "1px solid #f9a8d4" : "1px solid #e2e8f0",
+      }}
+    >
+      <div
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: 13,
+          overflow: "hidden",
+          background: isToday ? "#fce7f3" : "#e0f2fe",
+          border: isToday ? "1px solid #f9a8d4" : "1px solid #bae6fd",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 850,
+          color: isToday ? "#be185d" : "#0369a1",
+          flexShrink: 0,
+        }}
+      >
+        {photo ? (
+          <img
+            src={photo}
+            alt={employeeName}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          initials
+        )}
+      </div>
+
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 850,
+            color: "#0f172a",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {employeeName}
+        </div>
+        <div style={{ marginTop: 2, fontSize: 11, color: "#64748b", fontWeight: 700 }}>
+          {employee?.department || employee?.position || "Team Member"}
         </div>
       </div>
 
-      {!!item?.note && (
-        <div
-          style={{
-            marginTop: 12,
-            borderRadius: 14,
-            background: "#ffffff",
-            border: "1px solid #fde68a",
-            padding: "12px 14px",
-            fontSize: 13,
-            color: "#475569",
-            lineHeight: 1.7,
-            whiteSpace: "pre-line",
-          }}
-        >
-          {item.note}
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 850, color: isToday ? "#be185d" : "#1769aa" }}>
+          {formatBirthdayDay(employee.__birthdayDay)}
         </div>
-      )}
-
-      <div style={{ marginTop: 14 }}>
-        <button
-          type="button"
-          onClick={onMessage}
-          disabled={!canWrite}
-          style={{
-            border: "none",
-            background: canWrite
-              ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)"
-              : "#cbd5e1",
-            color: "#fff",
-            borderRadius: 14,
-            padding: "11px 15px",
-            fontWeight: 800,
-            fontSize: 13,
-            cursor: canWrite ? "pointer" : "not-allowed",
-            boxShadow: canWrite
-              ? "0 12px 24px rgba(23,105,170,0.18)"
-              : "none",
-            opacity: canWrite ? 1 : 0.8,
-          }}
-        >
-          Send congratulations
-        </button>
+        {isToday && (
+          <div style={{ marginTop: 2, fontSize: 9, fontWeight: 850, color: "#be185d" }}>
+            TODAY {"\u{1F389}"}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -434,6 +751,10 @@ export default function DashboardPage() {
 
   const [employeesOfMonth, setEmployeesOfMonth] = useState([]);
   const [loadingEmployeeOfMonth, setLoadingEmployeeOfMonth] = useState(false);
+  const [selectedRecognition, setSelectedRecognition] = useState(null);
+
+  const [birthdays, setBirthdays] = useState([]);
+  const [loadingBirthdays, setLoadingBirthdays] = useState(false);
 
   const canTrackTimesheets =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -484,6 +805,43 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchBirthdays = async () => {
+    setLoadingBirthdays(true);
+
+    try {
+      const snap = await getDocs(collection(db, "employees"));
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+
+      const items = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .map((employee) => {
+          const birthday = getBirthdayInfo(employee);
+          if (!birthday || birthday.month !== currentMonth) return null;
+
+          return {
+            ...employee,
+            __birthdayMonth: birthday.month,
+            __birthdayDay: birthday.day,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          if (a.__birthdayDay !== b.__birthdayDay) {
+            return a.__birthdayDay - b.__birthdayDay;
+          }
+          return getEmployeeName(a).localeCompare(getEmployeeName(b));
+        });
+
+      setBirthdays(items);
+    } catch (err) {
+      console.error("Error loading birthdays:", err);
+      setBirthdays([]);
+    } finally {
+      setLoadingBirthdays(false);
+    }
+  };
+
   const fetchEvents = async () => {
     setLoadingEvents(true);
 
@@ -495,9 +853,7 @@ export default function DashboardPage() {
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((e) => !e.date || e.date >= today)
         .sort((a, b) => {
-          const dateCompare = String(a.date || "").localeCompare(
-            String(b.date || "")
-          );
+          const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
           if (dateCompare !== 0) return dateCompare;
           return String(a.time || "").localeCompare(String(b.time || ""));
         })
@@ -555,11 +911,7 @@ export default function DashboardPage() {
     setLoadingPending(true);
 
     try {
-      const qPending = query(
-        collection(db, "schedules"),
-        where("status", "==", "pending")
-      );
-
+      const qPending = query(collection(db, "schedules"), where("status", "==", "pending"));
       const snap = await getDocs(qPending);
 
       const items = snap.docs
@@ -627,14 +979,15 @@ export default function DashboardPage() {
   const handleMessageEmployeeOfMonth = (employee) => {
     if (!employee?.userId && !employee?.username) return;
 
-    const personName = employee.employeeName || "team member";
+    const personName = getEmployeeName(employee);
     const messageText = `Congratulations ${personName}! You were selected as Employee of the Month. Great job and thank you for your hard work!`;
 
+    setSelectedRecognition(null);
     navigate("/messages", {
       state: {
         recipientUserId: employee.userId || "",
         recipientUsername: employee.username || "",
-        recipientName: employee.employeeName || "",
+        recipientName: personName,
         prefilledMessage: messageText,
       },
     });
@@ -643,6 +996,7 @@ export default function DashboardPage() {
   const reloadAll = () => {
     fetchMainMessage();
     fetchEmployeeOfMonth();
+    fetchBirthdays();
     fetchEvents();
     fetchNotices();
     fetchBlockedEmployees();
@@ -670,6 +1024,13 @@ export default function DashboardPage() {
         subtitle: "Latest crew updates",
         accent: "#f59e0b",
         icon: "\u{1F4CC}",
+      },
+      {
+        title: "Birthdays This Month",
+        value: birthdays.length,
+        subtitle: "Team celebrations",
+        accent: "#db2777",
+        icon: "\u{1F382}",
       },
       {
         title: "Blocked Employees",
@@ -701,27 +1062,24 @@ export default function DashboardPage() {
   }, [
     events.length,
     notices.length,
+    birthdays.length,
     blockedEmployees.length,
     pendingSchedules.length,
     pendingTimesheets.length,
     canTrackTimesheets,
   ]);
 
-  return (
-    <div
-      style={{
-        minHeight: "100%",
-        fontFamily: "Poppins, Inter, system-ui, sans-serif",
-      }}
-    >
-      {/* ============================================================
-          AEROSTATION HUB - SLIM WELCOME BAR
-      ============================================================ */}
+  const currentDay = new Date().getDate();
+  const currentMonthLabel = new Date().toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
 
+  return (
+    <div style={{ minHeight: "100%", fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
       <div
         style={{
-          background:
-            "linear-gradient(135deg, #073b66 0%, #0f5c91 48%, #2e9fd6 100%)",
+          background: "linear-gradient(135deg, #073b66 0%, #0f5c91 48%, #2e9fd6 100%)",
           borderRadius: isMobile ? 16 : 18,
           padding: isMobile ? "12px 14px" : "12px 16px",
           color: "#ffffff",
@@ -754,15 +1112,7 @@ export default function DashboardPage() {
             flexWrap: isMobile ? "wrap" : "nowrap",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 11,
-              minWidth: 0,
-              flex: 1,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0, flex: 1 }}>
             <div
               style={{
                 width: isMobile ? 38 : 42,
@@ -780,12 +1130,7 @@ export default function DashboardPage() {
               <img
                 src="/icons/aerostation-icon.png"
                 alt={APP_NAME}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                  display: "block",
-                }}
+                style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
               />
             </div>
 
@@ -825,7 +1170,7 @@ export default function DashboardPage() {
                     lineHeight: 1.35,
                   }}
                 >
-                  Station activity and pending actions at a glance.
+                  Station activity, team recognition, and pending actions at a glance.
                 </div>
               )}
             </div>
@@ -855,13 +1200,12 @@ export default function DashboardPage() {
       </div>
 
       {canTrackTimesheets && (
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 16 }}>
           <OperationalAlertsPanel
             compact={isMobile}
             maxItems={6}
             onOpenSource={(alert) => {
               const target = String(alert?.sourcePath || "").trim();
-
               if (target) {
                 navigate(target, {
                   state: {
@@ -878,11 +1222,9 @@ export default function DashboardPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isMobile
-            ? "1fr"
-            : "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 14,
-          marginBottom: 18,
+          gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: isMobile ? 10 : 12,
+          marginBottom: 16,
         }}
       >
         {stats.map((item) => (
@@ -893,25 +1235,18 @@ export default function DashboardPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isMobile
-            ? "1fr"
-            : "minmax(0, 1.8fr) minmax(320px, 1fr)",
-          gap: 18,
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.7fr) minmax(320px, 1fr)",
+          gap: 16,
         }}
       >
-        <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
-          <GlassCard
-            title="Station Manager Message"
-            icon={"\u{1F4E2}"}
-            accent="#1f7cc1"
-            isMobile={isMobile}
-          >
+        <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
+          <GlassCard title="Station Manager Message" icon={"\u{1F4E2}"} accent="#1f7cc1" isMobile={isMobile}>
             <div
               style={{
                 background: "linear-gradient(135deg, #edf7ff 0%, #f8fcff 100%)",
                 border: "1px solid #d6ebff",
-                borderRadius: 18,
-                padding: 16,
+                borderRadius: 16,
+                padding: 15,
               }}
             >
               <p
@@ -920,25 +1255,54 @@ export default function DashboardPage() {
                   whiteSpace: "pre-line",
                   color: "#1e293b",
                   fontSize: isMobile ? 13 : 14,
-                  lineHeight: 1.7,
+                  lineHeight: 1.65,
                   wordBreak: "break-word",
                 }}
               >
                 {mainMessage || "No message posted yet."}
               </p>
 
-              <p
-                style={{
-                  marginTop: 10,
-                  marginBottom: 0,
-                  fontSize: 12,
-                  color: "#64748b",
-                  fontWeight: 700,
-                }}
-              >
+              <p style={{ marginTop: 9, marginBottom: 0, fontSize: 11, color: "#64748b", fontWeight: 750 }}>
                 By {mainMeta?.updatedBy || FIXED_AUTHOR}
               </p>
             </div>
+          </GlassCard>
+
+          <GlassCard
+            title="Employees of the Month"
+            icon={"\u{1F3C6}"}
+            accent="#f59e0b"
+            isMobile={isMobile}
+            action={
+              employeesOfMonth.length > 0 ? (
+                <span style={{ fontSize: 11, color: "#92400e", fontWeight: 800 }}>
+                  Tap a name to read the dedication
+                </span>
+              ) : null
+            }
+          >
+            {loadingEmployeeOfMonth ? (
+              <p style={{ margin: 0, color: "#94a3b8" }}>Loading employee recognitions...</p>
+            ) : employeesOfMonth.length === 0 ? (
+              <p style={{ margin: 0, color: "#64748b" }}>No employee recognition published.</p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(230px, 1fr))",
+                  gap: 9,
+                }}
+              >
+                {employeesOfMonth.map((employee) => (
+                  <RecognitionCompactCard
+                    key={employee.id}
+                    item={employee}
+                    isMobile={isMobile}
+                    onOpen={() => setSelectedRecognition(employee)}
+                  />
+                ))}
+              </div>
+            )}
           </GlassCard>
 
           {canTrackTimesheets && (
@@ -955,9 +1319,9 @@ export default function DashboardPage() {
                     border: "1px solid #bbf7d0",
                     background: "#ecfdf5",
                     color: "#166534",
-                    borderRadius: 14,
-                    padding: "10px 14px",
-                    fontWeight: 700,
+                    borderRadius: 13,
+                    padding: "9px 13px",
+                    fontWeight: 750,
                     cursor: "pointer",
                     width: isMobile ? "100%" : "auto",
                   }}
@@ -966,55 +1330,11 @@ export default function DashboardPage() {
                 </button>
               }
             >
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 13,
-                  color: "#475569",
-                  lineHeight: 1.6,
-                }}
-              >
-                Export billing, review monthly WCHR performance, close completed
-                months, and manage archived WCHR data.
+              <p style={{ margin: 0, fontSize: 12.5, color: "#475569", lineHeight: 1.55 }}>
+                Export billing, review monthly WCHR performance, close completed months, and manage archived WCHR data.
               </p>
             </GlassCard>
           )}
-
-          <GlassCard
-            title="Employees of the Month"
-            icon={"\u{1F3C6}"}
-            accent="#f59e0b"
-            isMobile={isMobile}
-          >
-            {loadingEmployeeOfMonth ? (
-              <p style={{ margin: 0, color: "#94a3b8" }}>
-                Loading employee recognitions...
-              </p>
-            ) : employeesOfMonth.length === 0 ? (
-              <p style={{ margin: 0, color: "#64748b" }}>
-                No employee recognition published.
-              </p>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile
-                    ? "1fr"
-                    : "repeat(auto-fit, minmax(300px, 1fr))",
-                  gap: 14,
-                }}
-              >
-                {employeesOfMonth.map((employee) => (
-                  <EmployeeRecognitionCard
-                    key={employee.id}
-                    item={employee}
-                    isMobile={isMobile}
-                    onMessage={() => handleMessageEmployeeOfMonth(employee)}
-                  />
-                ))}
-              </div>
-            )}
-          </GlassCard>
 
           <GlassCard
             title="Station Highlights"
@@ -1023,13 +1343,7 @@ export default function DashboardPage() {
             isMobile={isMobile}
             action={
               photos.length > 0 ? (
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: "#64748b",
-                  }}
-                >
+                <span style={{ fontSize: 11, fontWeight: 750, color: "#64748b" }}>
                   {photos.length} photo{photos.length !== 1 ? "s" : ""}
                 </span>
               ) : null
@@ -1038,17 +1352,13 @@ export default function DashboardPage() {
             {loadingPhotos ? (
               <p style={{ margin: 0, color: "#94a3b8" }}>Loading photos...</p>
             ) : photos.length === 0 ? (
-              <p style={{ margin: 0, color: "#64748b" }}>
-                No station highlights yet.
-              </p>
+              <p style={{ margin: 0, color: "#64748b" }}>No station highlights yet.</p>
             ) : (
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: isMobile
-                    ? "1fr"
-                    : "repeat(auto-fit, minmax(170px, 1fr))",
-                  gap: 12,
+                  gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(auto-fit, minmax(150px, 1fr))",
+                  gap: 10,
                 }}
               >
                 {photos.slice(0, 6).map((p) => (
@@ -1057,41 +1367,23 @@ export default function DashboardPage() {
                     style={{
                       background: "#fff",
                       border: "1px solid #e0f2fe",
-                      borderRadius: 18,
+                      borderRadius: 15,
                       overflow: "hidden",
-                      boxShadow: "0 12px 24px rgba(15,23,42,0.05)",
+                      boxShadow: "0 10px 20px rgba(15,23,42,0.04)",
                       minWidth: 0,
                     }}
                   >
-                    <div
-                      style={{
-                        aspectRatio: "4 / 3",
-                        background: "#e2e8f0",
-                      }}
-                    >
+                    <div style={{ aspectRatio: "4 / 3", background: "#e2e8f0" }}>
                       <img
                         src={p.url}
                         alt={p.caption || "Station highlight"}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          display: "block",
-                        }}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
                     </div>
 
                     {p.caption && (
-                      <div style={{ padding: 12 }}>
-                        <p
-                          style={{
-                            margin: 0,
-                            fontSize: 12,
-                            color: "#475569",
-                            fontWeight: 700,
-                            wordBreak: "break-word",
-                          }}
-                        >
+                      <div style={{ padding: 10 }}>
+                        <p style={{ margin: 0, fontSize: 11, color: "#475569", fontWeight: 750, wordBreak: "break-word" }}>
                           {p.caption}
                         </p>
                       </div>
@@ -1116,9 +1408,9 @@ export default function DashboardPage() {
                     border: "1px solid #cfe7fb",
                     background: "#edf7ff",
                     color: "#1769aa",
-                    borderRadius: 14,
-                    padding: "10px 14px",
-                    fontWeight: 700,
+                    borderRadius: 13,
+                    padding: "9px 13px",
+                    fontWeight: 750,
                     cursor: "pointer",
                     width: isMobile ? "100%" : "auto",
                   }}
@@ -1129,35 +1421,28 @@ export default function DashboardPage() {
             }
           >
             {loadingPending ? (
-              <p style={{ margin: 0, color: "#94a3b8" }}>
-                Loading schedules...
-              </p>
+              <p style={{ margin: 0, color: "#94a3b8" }}>Loading schedules...</p>
             ) : pendingSchedules.length === 0 ? (
-              <p style={{ margin: 0, color: "#64748b" }}>
-                No schedules waiting for approval.
-              </p>
+              <p style={{ margin: 0, color: "#64748b" }}>No schedules waiting for approval.</p>
             ) : (
-              <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 10 }}>
                 {pendingSchedules.map((sch) => (
                   <div
                     key={sch.id}
                     style={{
-                      borderRadius: 18,
-                      padding: 16,
-                      background:
-                        "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)",
+                      borderRadius: 15,
+                      padding: 13,
+                      background: "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)",
                       border: "1px solid #d1fae5",
                     }}
                   >
-                    <p style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
-                      {sch.airlineDisplayName || sch.airline || "Airline"} {"\u2014"}{" "}
-                      {sch.department || "Department"}
-                    </p>
-                    <p style={{ margin: "8px 0 0", fontSize: 13 }}>
-                      Total Hours:{" "}
-                      {Number(sch.airlineWeeklyHours || 0).toFixed(2)}
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 850 }}>
+                      {sch.airlineDisplayName || sch.airline || "Airline"} {"\u2014"} {sch.department || "Department"}
                     </p>
                     <p style={{ margin: "6px 0 0", fontSize: 12 }}>
+                      Total Hours: {Number(sch.airlineWeeklyHours || 0).toFixed(2)}
+                    </p>
+                    <p style={{ margin: "5px 0 0", fontSize: 11 }}>
                       Sent by: {sch.createdBy || "unknown"}
                     </p>
                   </div>
@@ -1180,9 +1465,9 @@ export default function DashboardPage() {
                     border: "1px solid #fdba74",
                     background: "#fff7ed",
                     color: "#c2410c",
-                    borderRadius: 14,
-                    padding: "10px 14px",
-                    fontWeight: 700,
+                    borderRadius: 13,
+                    padding: "9px 13px",
+                    fontWeight: 750,
                     cursor: "pointer",
                     width: isMobile ? "100%" : "auto",
                   }}
@@ -1192,39 +1477,28 @@ export default function DashboardPage() {
               }
             >
               {loadingTimesheets ? (
-                <p style={{ margin: 0, color: "#94a3b8" }}>
-                  Loading timesheets...
-                </p>
+                <p style={{ margin: 0, color: "#94a3b8" }}>Loading timesheets...</p>
               ) : pendingTimesheets.length === 0 ? (
-                <p style={{ margin: 0, color: "#64748b" }}>
-                  No pending supervisor timesheets right now.
-                </p>
+                <p style={{ margin: 0, color: "#64748b" }}>No pending supervisor timesheets right now.</p>
               ) : (
-                <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ display: "grid", gap: 9 }}>
                   {pendingTimesheets.slice(0, 6).map((item) => (
                     <div
                       key={item.id}
                       style={{
-                        borderRadius: 16,
-                        padding: 14,
-                        background:
-                          "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
+                        borderRadius: 14,
+                        padding: 12,
+                        background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
                         border: "1px solid #fdba74",
                       }}
                     >
-                      <p style={{ margin: 0, fontWeight: 800 }}>
+                      <p style={{ margin: 0, fontWeight: 850 }}>
                         {item.airline || "\u2014"} {"\u00B7"} {item.reportDate || "\u2014"}
                       </p>
-                      <p style={{ margin: "7px 0 0", fontSize: 13 }}>
-                        Submitted by{" "}
-                        <b>
-                          {item.submittedByName ||
-                            item.submittedByUsername ||
-                            item.supervisorReporting ||
-                            "Unknown"}
-                        </b>
-                      </p>
                       <p style={{ margin: "6px 0 0", fontSize: 12 }}>
+                        Submitted by <b>{item.submittedByName || item.submittedByUsername || item.supervisorReporting || "Unknown"}</b>
+                      </p>
+                      <p style={{ margin: "5px 0 0", fontSize: 11 }}>
                         Created: {formatCreatedAtLabel(item.createdAt)}
                       </p>
                     </div>
@@ -1235,90 +1509,87 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div style={{ display: "grid", gap: 18, minWidth: 0 }}>
+        <div style={{ display: "grid", gap: 16, minWidth: 0, alignContent: "start" }}>
           <GlassCard
-            title="Upcoming Events"
-            icon={"\u{1F4C5}"}
-            accent="#3b82f6"
+            title={`Birthdays \u00B7 ${currentMonthLabel}`}
+            icon={"\u{1F382}"}
+            accent="#db2777"
             isMobile={isMobile}
+            action={
+              birthdays.length > 0 ? (
+                <span style={{ fontSize: 11, color: "#9d174d", fontWeight: 850 }}>
+                  Visible to all profiles
+                </span>
+              ) : null
+            }
           >
+            {loadingBirthdays ? (
+              <p style={{ margin: 0, color: "#94a3b8" }}>Loading birthdays...</p>
+            ) : birthdays.length === 0 ? (
+              <p style={{ margin: 0, color: "#64748b", fontSize: 12.5 }}>
+                No birthdays registered for this month.
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {birthdays.map((employee) => (
+                  <BirthdayCard
+                    key={employee.id}
+                    employee={employee}
+                    isToday={employee.__birthdayDay === currentDay}
+                  />
+                ))}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard title="Upcoming Events" icon={"\u{1F4C5}"} accent="#3b82f6" isMobile={isMobile}>
             {loadingEvents ? (
               <p style={{ margin: 0, color: "#94a3b8" }}>Loading events...</p>
             ) : events.length === 0 ? (
-              <p style={{ margin: 0, color: "#64748b" }}>
-                No events scheduled.
-              </p>
+              <p style={{ margin: 0, color: "#64748b" }}>No events scheduled.</p>
             ) : (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gap: 9 }}>
                 {events.map((ev) => (
                   <div
                     key={ev.id}
                     style={{
-                      borderRadius: 16,
-                      padding: 14,
-                      background:
-                        "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
                       border: "1px solid #dbeafe",
                     }}
                   >
-                    <p style={{ margin: 0, fontWeight: 800 }}>
-                      {ev.title || "Event"}
-                    </p>
-                    <p
-                      style={{
-                        margin: "6px 0 0",
-                        fontSize: 12,
-                        color: "#2563eb",
-                        fontWeight: 700,
-                      }}
-                    >
+                    <p style={{ margin: 0, fontWeight: 850, fontSize: 13.5 }}>{ev.title || "Event"}</p>
+                    <p style={{ margin: "5px 0 0", fontSize: 11, color: "#2563eb", fontWeight: 750 }}>
                       {formatDateLabel(ev.date)}
-                      {ev.time ? ` â¢ ${ev.time}` : ""}
+                      {ev.time ? ` \u00B7 ${ev.time}` : ""}
                     </p>
-                    {ev.details && (
-                      <p style={{ margin: "8px 0 0", fontSize: 13 }}>
-                        {ev.details}
-                      </p>
-                    )}
+                    {ev.details && <p style={{ margin: "7px 0 0", fontSize: 12 }}>{ev.details}</p>}
                   </div>
                 ))}
               </div>
             )}
           </GlassCard>
 
-          <GlassCard
-            title="Notices / Invitations"
-            icon={"\u{1F4CC}"}
-            accent="#f59e0b"
-            isMobile={isMobile}
-          >
+          <GlassCard title="Notices / Invitations" icon={"\u{1F4CC}"} accent="#f59e0b" isMobile={isMobile}>
             {loadingNotices ? (
               <p style={{ margin: 0, color: "#94a3b8" }}>Loading notices...</p>
             ) : notices.length === 0 ? (
               <p style={{ margin: 0, color: "#64748b" }}>No notices posted.</p>
             ) : (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gap: 9 }}>
                 {notices.map((n) => (
                   <div
                     key={n.id}
                     style={{
-                      borderRadius: 16,
-                      padding: 14,
-                      background:
-                        "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)",
                       border: "1px solid #fde68a",
                     }}
                   >
-                    <p style={{ margin: 0, fontWeight: 800 }}>
-                      {n.title || "Notice"}
-                    </p>
-
-                    {n.body && (
-                      <p style={{ margin: "8px 0 0", fontSize: 13 }}>
-                        {n.body}
-                      </p>
-                    )}
-
+                    <p style={{ margin: 0, fontWeight: 850, fontSize: 13.5 }}>{n.title || "Notice"}</p>
+                    {n.body && <p style={{ margin: "7px 0 0", fontSize: 12 }}>{n.body}</p>}
                     {n.link && (
                       <a
                         href={n.link}
@@ -1326,9 +1597,9 @@ export default function DashboardPage() {
                         rel="noreferrer"
                         style={{
                           display: "inline-block",
-                          marginTop: 10,
-                          fontSize: 12,
-                          fontWeight: 700,
+                          marginTop: 8,
+                          fontSize: 11,
+                          fontWeight: 800,
                           color: "#b45309",
                           textDecoration: "none",
                         }}
@@ -1356,9 +1627,9 @@ export default function DashboardPage() {
                     border: "1px solid #fecdd3",
                     background: "#fff1f2",
                     color: "#be123c",
-                    borderRadius: 14,
-                    padding: "10px 14px",
-                    fontWeight: 700,
+                    borderRadius: 13,
+                    padding: "9px 13px",
+                    fontWeight: 750,
                     cursor: "pointer",
                     width: isMobile ? "100%" : "auto",
                   }}
@@ -1369,33 +1640,29 @@ export default function DashboardPage() {
             }
           >
             {loadingBlocked ? (
-              <p style={{ margin: 0, color: "#94a3b8" }}>
-                Loading employees...
-              </p>
+              <p style={{ margin: 0, color: "#94a3b8" }}>Loading employees...</p>
             ) : blockedEmployees.length === 0 ? (
-              <p style={{ margin: 0, color: "#64748b" }}>
-                No employees blocked.
-              </p>
+              <p style={{ margin: 0, color: "#64748b" }}>No employees blocked.</p>
             ) : (
               <>
                 <div
                   style={{
                     display: "flex",
                     flexWrap: "wrap",
-                    gap: 8,
-                    marginBottom: showBlockedList ? 14 : 0,
+                    gap: 7,
+                    marginBottom: showBlockedList ? 12 : 0,
                   }}
                 >
                   {blockedEmployees.slice(0, 8).map((b) => (
                     <span
                       key={b.id}
                       style={{
-                        padding: "8px 12px",
+                        padding: "7px 10px",
                         borderRadius: 999,
                         background: "#fff1f2",
                         border: "1px solid #fecdd3",
-                        fontSize: 12,
-                        fontWeight: 700,
+                        fontSize: 11,
+                        fontWeight: 750,
                         color: "#9f1239",
                       }}
                     >
@@ -1406,12 +1673,12 @@ export default function DashboardPage() {
                   {blockedEmployees.length > 8 && (
                     <span
                       style={{
-                        padding: "8px 12px",
+                        padding: "7px 10px",
                         borderRadius: 999,
                         background: "#f8fafc",
                         border: "1px solid #e2e8f0",
-                        fontSize: 12,
-                        fontWeight: 700,
+                        fontSize: 11,
+                        fontWeight: 750,
                         color: "#64748b",
                       }}
                     >
@@ -1421,37 +1688,23 @@ export default function DashboardPage() {
                 </div>
 
                 {showBlockedList && (
-                  <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "grid", gap: 9 }}>
                     {blockedEmployees.map((b) => (
                       <div
                         key={b.id}
                         style={{
-                          borderRadius: 16,
-                          padding: 14,
-                          background:
-                            "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)",
+                          borderRadius: 14,
+                          padding: 12,
+                          background: "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)",
                           border: "1px solid #fecdd3",
                         }}
                       >
-                        <p
-                          style={{
-                            margin: 0,
-                            fontWeight: 800,
-                            color: "#881337",
-                          }}
-                        >
+                        <p style={{ margin: 0, fontWeight: 850, color: "#881337", fontSize: 13 }}>
                           {getEmployeeName(b)}
                         </p>
-
-                        {b.reason && (
-                          <p style={{ margin: "7px 0 0", fontSize: 13 }}>
-                            {b.reason}
-                          </p>
-                        )}
-
-                        <p style={{ margin: "7px 0 0", fontSize: 12 }}>
-                          {b.start_date || b.startDate || "N/A"} {"\u2192"}{" "}
-                          {b.end_date || b.endDate || "N/A"}
+                        {b.reason && <p style={{ margin: "6px 0 0", fontSize: 12 }}>{b.reason}</p>}
+                        <p style={{ margin: "6px 0 0", fontSize: 11 }}>
+                          {b.start_date || b.startDate || "N/A"} {"\u2192"} {b.end_date || b.endDate || "N/A"}
                         </p>
                       </div>
                     ))}
@@ -1462,6 +1715,15 @@ export default function DashboardPage() {
           </GlassCard>
         </div>
       </div>
+
+      <RecognitionModal
+        item={selectedRecognition}
+        isMobile={isMobile}
+        onClose={() => setSelectedRecognition(null)}
+        onMessage={() => handleMessageEmployeeOfMonth(selectedRecognition)}
+      />
     </div>
   );
 }
+
+// END DashboardPage
