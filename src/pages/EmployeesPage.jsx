@@ -10,25 +10,56 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import {
+  APP_NAME,
+  APP_SUBTITLE,
+} from "../config/appConfig.js";
+
+// IMPORTANT:
+// Employee names in this collection are stored as:
+// LAST NAME + FIRST NAME
+//
+// Username suggestion format:
+// first-name initial + last name
+//
+// Example:
+// "Napoles Alexis" -> "anapoles"
+// "Diaz Evelin"    -> "ediaz"
 
 async function syncUserLink(employeeId, loginUsername) {
-  if (!loginUsername) return;
+  const cleanUsername = String(loginUsername || "").trim().toLowerCase();
+  if (!cleanUsername) return;
 
   try {
-    const q = query(
+    const usernameQuery = query(
       collection(db, "users"),
-      where("username", "==", loginUsername)
-    );
-    const snap = await getDocs(q);
-    if (snap.empty) return;
-
-    const updates = snap.docs.map((u) =>
-      updateDoc(u.ref, {
-        employeeId,
-      })
+      where("username", "==", cleanUsername)
     );
 
-    await Promise.all(updates);
+    const loginUsernameQuery = query(
+      collection(db, "users"),
+      where("loginUsername", "==", cleanUsername)
+    );
+
+    const [usernameSnap, loginUsernameSnap] = await Promise.all([
+      getDocs(usernameQuery),
+      getDocs(loginUsernameQuery),
+    ]);
+
+    const refs = new Map();
+
+    usernameSnap.docs.forEach((u) => refs.set(u.id, u.ref));
+    loginUsernameSnap.docs.forEach((u) => refs.set(u.id, u.ref));
+
+    if (!refs.size) return;
+
+    await Promise.all(
+      Array.from(refs.values()).map((ref) =>
+        updateDoc(ref, {
+          employeeId,
+        })
+      )
+    );
   } catch (err) {
     console.error("Error syncing user link:", err);
   }
@@ -46,6 +77,53 @@ function getEmployeeDisplayName(emp) {
 
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function normalizeDisplay(value) {
+  return String(value || "").trim();
+}
+
+function slugPart(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+}
+
+function suggestBaseUsername(name) {
+  const clean = String(name || "").trim();
+  if (!clean) return "";
+
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (!parts.length) return "";
+
+  // Stored order: LAST NAME + FIRST NAME
+  const lastName = slugPart(parts[0]);
+  const firstName = slugPart(parts[1] || "");
+
+  if (!lastName && !firstName) return "";
+  if (!firstName) return lastName;
+
+  return `${firstName.slice(0, 1)}${lastName}`;
+}
+
+function getUniqueSuggestion(name, existingUsernames) {
+  const base = suggestBaseUsername(name);
+  if (!base) return "";
+
+  const used = new Set(
+    Array.from(existingUsernames || []).map((value) => normalizeText(value))
+  );
+
+  if (!used.has(base)) return base;
+
+  let counter = 2;
+  while (used.has(`${base}${counter}`)) {
+    counter += 1;
+  }
+
+  return `${base}${counter}`;
 }
 
 function getLastNameInitial(emp) {
@@ -68,8 +146,8 @@ function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
+        background: "rgba(255,255,255,0.94)",
+        border: "1px solid rgba(255,255,255,0.98)",
         borderRadius: 24,
         boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
         ...style,
@@ -87,7 +165,7 @@ function FieldLabel({ children }) {
         display: "block",
         marginBottom: 6,
         fontSize: 12,
-        fontWeight: 700,
+        fontWeight: 800,
         color: "#475569",
         letterSpacing: "0.03em",
         textTransform: "uppercase",
@@ -104,11 +182,12 @@ function TextInput(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
-        fontSize: 14,
+        fontSize: 16,
         color: "#0f172a",
         outline: "none",
         ...props.style,
@@ -123,11 +202,12 @@ function TextArea(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
-        fontSize: 14,
+        fontSize: 16,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
@@ -143,11 +223,12 @@ function SelectInput(props) {
       {...props}
       style={{
         width: "100%",
+        boxSizing: "border-box",
         border: "1px solid #dbeafe",
         background: "#ffffff",
         borderRadius: 14,
         padding: "12px 14px",
-        fontSize: 14,
+        fontSize: 16,
         color: "#0f172a",
         outline: "none",
         ...props.style,
@@ -161,6 +242,7 @@ function ActionButton({
   onClick,
   type = "button",
   variant = "primary",
+  disabled = false,
 }) {
   const styles = {
     primary: {
@@ -194,13 +276,15 @@ function ActionButton({
     <button
       type={type}
       onClick={onClick}
+      disabled={disabled}
       style={{
         borderRadius: 12,
         padding: "10px 14px",
         fontSize: 13,
         fontWeight: 800,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        opacity: disabled ? 0.65 : 1,
         ...styles[variant],
       }}
     >
@@ -211,6 +295,7 @@ function ActionButton({
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
+  const [users, setUsers] = useState([]);
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -226,17 +311,148 @@ export default function EmployeesPage() {
   const [bulkText, setBulkText] = useState("");
   const [importStatus, setImportStatus] = useState("");
 
-  const loadEmployees = async () => {
-    const snap = await getDocs(collection(db, "employees"));
-    setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const [search, setSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
+
+  const loadData = async () => {
+    const [employeesSnap, usersSnap] = await Promise.all([
+      getDocs(collection(db, "employees")),
+      getDocs(collection(db, "users")),
+    ]);
+
+    setEmployees(
+      employeesSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    );
+
+    setUsers(
+      usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    );
   };
 
   useEffect(() => {
-    loadEmployees().catch(console.error);
+    loadData().catch(console.error);
   }, []);
 
+  const allUsernames = useMemo(() => {
+    const values = new Set();
+
+    employees.forEach((emp) => {
+      const value = normalizeText(emp.loginUsername);
+      if (value) values.add(value);
+    });
+
+    users.forEach((u) => {
+      const value = normalizeText(u.username || u.loginUsername);
+      if (value) values.add(value);
+    });
+
+    if (editingId) {
+      const editingEmployee = employees.find((emp) => emp.id === editingId);
+      const editingUsername = normalizeText(editingEmployee?.loginUsername);
+      if (editingUsername) values.delete(editingUsername);
+    }
+
+    return values;
+  }, [employees, users, editingId]);
+
+  const suggestedUsername = useMemo(
+    () => getUniqueSuggestion(name, allUsernames),
+    [name, allUsernames]
+  );
+
+  const duplicateUsername = useMemo(() => {
+    const cleanUsername = normalizeText(username);
+    if (!cleanUsername) return null;
+
+    const duplicateEmployee = employees.find(
+      (emp) =>
+        emp.id !== editingId &&
+        normalizeText(emp.loginUsername) === cleanUsername
+    );
+
+    if (duplicateEmployee) {
+      return {
+        source: "employee",
+        label: getEmployeeDisplayName(duplicateEmployee) || "another employee",
+      };
+    }
+
+    const duplicateUser = users.find(
+      (u) =>
+        normalizeText(u.username || u.loginUsername) === cleanUsername &&
+        normalizeText(u.employeeId) !== normalizeText(editingId)
+    );
+
+    if (duplicateUser) {
+      return {
+        source: "user",
+        label:
+          duplicateUser.displayName ||
+          duplicateUser.username ||
+          duplicateUser.loginUsername ||
+          "existing user account",
+      };
+    }
+
+    return null;
+  }, [username, employees, users, editingId]);
+
+  const duplicateName = useMemo(() => {
+    const cleanName = normalizeText(name);
+    if (!cleanName) return null;
+
+    return (
+      employees.find(
+        (emp) =>
+          emp.id !== editingId &&
+          normalizeText(getEmployeeDisplayName(emp)) === cleanName
+      ) || null
+    );
+  }, [name, employees, editingId]);
+
+  const departments = useMemo(() => {
+    const values = new Set();
+
+    employees.forEach((emp) => {
+      const dept = normalizeDisplay(emp.department);
+      if (dept) values.add(dept);
+    });
+
+    return Array.from(values).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [employees]);
+
   const groupedEmployees = useMemo(() => {
-    const sorted = [...employees].sort((a, b) => {
+    const searchKey = normalizeText(search);
+
+    const filtered = employees.filter((emp) => {
+      const dept = getDepartmentLabel(emp.department);
+
+      if (
+        departmentFilter !== "ALL" &&
+        dept !== departmentFilter
+      ) {
+        return false;
+      }
+
+      if (!searchKey) return true;
+
+      const haystack = [
+        getEmployeeDisplayName(emp),
+        emp.loginUsername,
+        emp.department,
+        emp.position,
+        emp.status,
+        emp.notes,
+      ]
+        .map(normalizeText)
+        .join(" ");
+
+      return haystack.includes(searchKey);
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
       const aDepartment = normalizeText(a.department);
       const bDepartment = normalizeText(b.department);
 
@@ -253,7 +469,9 @@ export default function EmployeesPage() {
         return aInitial.localeCompare(bInitial);
       }
 
-      return getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b));
+      return getEmployeeDisplayName(a).localeCompare(
+        getEmployeeDisplayName(b)
+      );
     });
 
     const groups = {};
@@ -267,37 +485,40 @@ export default function EmployeesPage() {
     return Object.entries(groups).sort((a, b) =>
       a[0].localeCompare(b[0], undefined, { sensitivity: "base" })
     );
-  }, [employees]);
+  }, [employees, search, departmentFilter]);
 
   const handleAddOrUpdateEmployee = async (e) => {
     e.preventDefault();
     setFormMessage("");
 
     const cleanName = name.trim();
-    const cleanUsername = username.trim();
+    const cleanUsername = username.trim().toLowerCase();
 
     if (!cleanName) {
       setFormMessage("Name is required.");
       return;
     }
 
-    if (cleanUsername) {
-      const exists = employees.some(
-        (emp) =>
-          (emp.loginUsername || "").toLowerCase() ===
-            cleanUsername.toLowerCase() && emp.id !== editingId
+    if (duplicateName) {
+      setFormMessage(
+        `An employee with the same name already exists: "${getEmployeeDisplayName(
+          duplicateName
+        )}". Please verify before saving.`
       );
-      if (exists) {
-        setFormMessage(
-          "This username is already linked to another employee. Please use a different one."
-        );
-        return;
-      }
+      return;
+    }
+
+    if (duplicateUsername) {
+      setFormMessage(
+        `Username "${cleanUsername}" is already being used by ${duplicateUsername.label}.`
+      );
+      return;
     }
 
     try {
       if (editingId) {
         const ref = doc(db, "employees", editingId);
+
         await updateDoc(ref, {
           name: cleanName,
           loginUsername: cleanUsername || null,
@@ -337,7 +558,7 @@ export default function EmployeesPage() {
       setShowInStationTeam(true);
       setEditingId(null);
 
-      await loadEmployees();
+      await loadData();
     } catch (err) {
       console.error(err);
       setFormMessage("Error saving employee. Check console for details.");
@@ -357,7 +578,16 @@ export default function EmployeesPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete this employee?")) return;
+    const target = employees.find((emp) => emp.id === id);
+
+    if (
+      !window.confirm(
+        `Delete employee "${getEmployeeDisplayName(target) || ""}"?`
+      )
+    ) {
+      return;
+    }
+
     await deleteDoc(doc(db, "employees", id));
     setEmployees((prev) => prev.filter((e) => e.id !== id));
   };
@@ -384,7 +614,10 @@ export default function EmployeesPage() {
       setEmployees((prev) =>
         prev.map((item) =>
           item.id === emp.id
-            ? { ...item, showInStationTeam: item.showInStationTeam === false }
+            ? {
+                ...item,
+                showInStationTeam: item.showInStationTeam === false,
+              }
             : item
         )
       );
@@ -423,15 +656,26 @@ export default function EmployeesPage() {
       const startIndex = hasHeader ? 1 : 0;
 
       const existingUsernames = new Set(
+        [
+          ...employees.map((e) => e.loginUsername),
+          ...users.map((u) => u.username || u.loginUsername),
+        ]
+          .map(normalizeText)
+          .filter(Boolean)
+      );
+
+      const existingNames = new Set(
         employees
-          .map((e) => (e.loginUsername || "").toLowerCase().trim())
+          .map((e) => normalizeText(getEmployeeDisplayName(e)))
           .filter(Boolean)
       );
 
       const batchUsernames = new Set();
+      const batchNames = new Set();
 
       let createdCount = 0;
       let skippedDuplicates = 0;
+      let skippedDuplicateNames = 0;
       let skippedInvalid = 0;
 
       for (let i = startIndex; i < lines.length; i++) {
@@ -493,15 +737,40 @@ export default function EmployeesPage() {
           continue;
         }
 
-        const normalizedStatus =
-          String(statusRaw).toLowerCase() === "inactive" ? "Inactive" : "Active";
+        const cleanEmployeeName = employeeName.trim();
+        const cleanNameKey = normalizeText(cleanEmployeeName);
 
-        const cleanUsername = String(loginUsername || "").trim();
+        if (!cleanEmployeeName) {
+          skippedInvalid++;
+          continue;
+        }
+
+        if (
+          existingNames.has(cleanNameKey) ||
+          batchNames.has(cleanNameKey)
+        ) {
+          skippedDuplicateNames++;
+          continue;
+        }
+
+        batchNames.add(cleanNameKey);
+
+        const normalizedStatus =
+          String(statusRaw).toLowerCase() === "inactive"
+            ? "Inactive"
+            : "Active";
+
+        const cleanUsername = String(loginUsername || "")
+          .trim()
+          .toLowerCase();
 
         if (cleanUsername) {
-          const key = cleanUsername.toLowerCase();
+          const key = normalizeText(cleanUsername);
 
-          if (existingUsernames.has(key) || batchUsernames.has(key)) {
+          if (
+            existingUsernames.has(key) ||
+            batchUsernames.has(key)
+          ) {
             skippedDuplicates++;
             continue;
           }
@@ -510,7 +779,7 @@ export default function EmployeesPage() {
         }
 
         const ref = await addDoc(collection(db, "employees"), {
-          name: employeeName.trim(),
+          name: cleanEmployeeName,
           loginUsername: cleanUsername || null,
           department: dept.trim() || null,
           position: pos.trim() || null,
@@ -534,13 +803,17 @@ export default function EmployeesPage() {
         msg += ` Skipped ${skippedDuplicates} line(s) because username was already used.`;
       }
 
+      if (skippedDuplicateNames > 0) {
+        msg += ` Skipped ${skippedDuplicateNames} duplicate employee name(s).`;
+      }
+
       if (skippedInvalid > 0) {
         msg += ` Skipped ${skippedInvalid} invalid line(s).`;
       }
 
       setImportStatus(msg);
       setBulkText("");
-      await loadEmployees();
+      await loadData();
     } catch (err) {
       console.error(err);
       setImportStatus("Error importing data. Check console for details.");
@@ -561,7 +834,7 @@ export default function EmployeesPage() {
       <div
         style={{
           background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+            "linear-gradient(135deg, #061f3d 0%, #0f4c81 48%, #1769aa 72%, #4fb6e9 100%)",
           borderRadius: 28,
           padding: 24,
           color: "#fff",
@@ -582,43 +855,74 @@ export default function EmployeesPage() {
           }}
         />
 
-        <div style={{ position: "relative" }}>
-          <p
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            gap: 14,
+            alignItems: "center",
+          }}
+        >
+          <div
             style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
+              width: 58,
+              height: 58,
+              borderRadius: 18,
+              overflow: "hidden",
+              background: "rgba(255,255,255,0.96)",
+              border: "1px solid rgba(255,255,255,0.86)",
+              flexShrink: 0,
             }}
           >
-            TPA OPS · Administration
-          </p>
+            <img
+              src="/icons/aerostation-icon.png"
+              alt={APP_NAME}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+              }}
+            />
+          </div>
 
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
-            Employees
-          </h1>
+          <div style={{ minWidth: 0 }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.18em",
+                color: "rgba(255,255,255,0.76)",
+                fontWeight: 800,
+              }}
+            >
+              {APP_NAME} {"\u00B7"} Administration
+            </p>
 
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 760,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            Create, edit and import employee records, and link them to login
-            usernames for scheduling visibility.
-          </p>
+            <h1
+              style={{
+                margin: "6px 0 4px",
+                fontSize: 30,
+                lineHeight: 1.05,
+                fontWeight: 850,
+                letterSpacing: "-0.04em",
+              }}
+            >
+              Employees
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 13,
+                color: "rgba(255,255,255,0.86)",
+              }}
+            >
+              Create and maintain employee profiles before station login
+              accounts are assigned.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -640,9 +944,11 @@ export default function EmployeesPage() {
               margin: "4px 0 0",
               fontSize: 13,
               color: "#64748b",
+              lineHeight: 1.6,
             }}
           >
-            Keep the employee profile and login username in sync.
+            Enter names as <b>Last Name / First Name</b>. The system will use
+            that order when recommending the future login username.
           </p>
         </div>
 
@@ -655,21 +961,103 @@ export default function EmployeesPage() {
           }}
         >
           <div>
-            <FieldLabel>Name</FieldLabel>
+            <FieldLabel>Name - Last Name / First Name</FieldLabel>
             <TextInput
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setFormMessage("");
+              }}
+              placeholder="Napoles Alexis"
               required
             />
+
+            {duplicateName && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "10px 11px",
+                  borderRadius: 12,
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  color: "#9f1239",
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                {"\u26A0"} Possible duplicate employee:{" "}
+                {getEmployeeDisplayName(duplicateName)}
+              </div>
+            )}
           </div>
 
           <div>
             <FieldLabel>Username (login)</FieldLabel>
             <TextInput
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Optional"
+              onChange={(e) => {
+                setUsername(
+                  e.target.value
+                    .toLowerCase()
+                    .replace(/\s+/g, "")
+                );
+                setFormMessage("");
+              }}
+              placeholder="Optional until user account is created"
+              autoCapitalize="none"
+              autoCorrect="off"
             />
+
+            {suggestedUsername && (
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 12,
+                    background: "#eff6ff",
+                    border: "1px solid #bfdbfe",
+                    color: "#1769aa",
+                    fontSize: 12,
+                    fontWeight: 750,
+                  }}
+                >
+                  Suggested: <b>{suggestedUsername}</b>
+                </div>
+
+                <ActionButton
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setUsername(suggestedUsername)}
+                >
+                  Use
+                </ActionButton>
+              </div>
+            )}
+
+            {duplicateUsername && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "10px 11px",
+                  borderRadius: 12,
+                  background: "#fff1f2",
+                  border: "1px solid #fecdd3",
+                  color: "#9f1239",
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                {"\u26A0"} Username already used by {duplicateUsername.label}.
+              </div>
+            )}
           </div>
 
           <div>
@@ -703,7 +1091,9 @@ export default function EmployeesPage() {
             <FieldLabel>Show in Station Team</FieldLabel>
             <SelectInput
               value={showInStationTeam ? "yes" : "no"}
-              onChange={(e) => setShowInStationTeam(e.target.value === "yes")}
+              onChange={(e) =>
+                setShowInStationTeam(e.target.value === "yes")
+              }
             >
               <option value="yes">Yes</option>
               <option value="no">No</option>
@@ -727,7 +1117,11 @@ export default function EmployeesPage() {
               flexWrap: "wrap",
             }}
           >
-            <ActionButton type="submit" variant="primary">
+            <ActionButton
+              type="submit"
+              variant="primary"
+              disabled={Boolean(duplicateName || duplicateUsername)}
+            >
               {editingId ? "Update Employee" : "Save Employee"}
             </ActionButton>
 
@@ -748,7 +1142,9 @@ export default function EmployeesPage() {
             style={{
               marginTop: 14,
               background: formSuccess ? "#ecfdf5" : "#fff1f2",
-              border: `1px solid ${formSuccess ? "#a7f3d0" : "#fecdd3"}`,
+              border: `1px solid ${
+                formSuccess ? "#a7f3d0" : "#fecdd3"
+              }`,
               borderRadius: 16,
               padding: "14px 16px",
               color: formSuccess ? "#065f46" : "#9f1239",
@@ -782,7 +1178,8 @@ export default function EmployeesPage() {
               lineHeight: 1.6,
             }}
           >
-            Paste rows using comma, tab or semicolon separated values.
+            Names should also be imported as <b>Last Name / First Name</b>.
+            Duplicate names and usernames will be skipped automatically.
             <br />
             Accepted formats:
             <br />
@@ -817,7 +1214,9 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
             <div
               style={{
                 background: importSuccess ? "#ecfdf5" : "#fff7ed",
-                border: `1px solid ${importSuccess ? "#a7f3d0" : "#fed7aa"}`,
+                border: `1px solid ${
+                  importSuccess ? "#a7f3d0" : "#fed7aa"
+                }`,
                 borderRadius: 16,
                 padding: "14px 16px",
                 color: importSuccess ? "#065f46" : "#9a3412",
@@ -828,6 +1227,35 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
               {importStatus}
             </div>
           )}
+        </div>
+      </PageCard>
+
+      <PageCard style={{ padding: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(220px, 1fr) minmax(180px, 260px)",
+            gap: 10,
+          }}
+        >
+          <TextInput
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search employee, username, department..."
+          />
+
+          <SelectInput
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+          >
+            <option value="ALL">All Departments</option>
+            {departments.map((dept) => (
+              <option key={dept} value={dept}>
+                {dept}
+              </option>
+            ))}
+          </SelectInput>
         </div>
       </PageCard>
 
@@ -842,7 +1270,7 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                 color: "#64748b",
               }}
             >
-              No employees yet.
+              No employees match the current filters.
             </div>
           </PageCard>
         ) : (
@@ -901,7 +1329,9 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                   <thead>
                     <tr style={{ background: "#f8fbff" }}>
                       <th style={thStyle({ textAlign: "left" })}>Last Initial</th>
-                      <th style={thStyle({ textAlign: "left" })}>Name</th>
+                      <th style={thStyle({ textAlign: "left" })}>
+                        Name (Last / First)
+                      </th>
                       <th style={thStyle({ textAlign: "left" })}>Username</th>
                       <th style={thStyle({ textAlign: "left" })}>Position</th>
                       <th style={thStyle({ textAlign: "left" })}>Status</th>
@@ -916,13 +1346,35 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                       <tr
                         key={e.id}
                         style={{
-                          background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                          background:
+                            index % 2 === 0 ? "#ffffff" : "#fbfdff",
                         }}
                       >
                         <td style={tdStyle}>{getLastNameInitial(e)}</td>
                         <td style={tdStyle}>{e.name}</td>
-                        <td style={tdStyle}>{e.loginUsername || "—"}</td>
-                        <td style={tdStyle}>{e.position || "—"}</td>
+                        <td style={tdStyle}>
+                          {e.loginUsername || (
+                            <span style={{ color: "#94a3b8" }}>
+                              Suggested:{" "}
+                              {getUniqueSuggestion(
+                                e.name,
+                                new Set([
+                                  ...employees
+                                    .filter((item) => item.id !== e.id)
+                                    .map((item) => item.loginUsername)
+                                    .filter(Boolean),
+                                  ...users
+                                    .map(
+                                      (u) =>
+                                        u.username || u.loginUsername
+                                    )
+                                    .filter(Boolean),
+                                ])
+                              ) || "\u2014"}
+                            </span>
+                          )}
+                        </td>
+                        <td style={tdStyle}>{e.position || "\u2014"}</td>
                         <td style={tdStyle}>
                           <span
                             style={{
@@ -932,17 +1384,20 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                               fontSize: 12,
                               fontWeight: 700,
                               background:
-                                (e.status || (e.active ? "Active" : "Inactive")) ===
+                                (e.status ||
+                                  (e.active ? "Active" : "Inactive")) ===
                                 "Active"
                                   ? "#ecfdf5"
                                   : "#fff1f2",
                               color:
-                                (e.status || (e.active ? "Active" : "Inactive")) ===
+                                (e.status ||
+                                  (e.active ? "Active" : "Inactive")) ===
                                 "Active"
                                   ? "#065f46"
                                   : "#9f1239",
                               border: `1px solid ${
-                                (e.status || (e.active ? "Active" : "Inactive")) ===
+                                (e.status ||
+                                  (e.active ? "Active" : "Inactive")) ===
                                 "Active"
                                   ? "#a7f3d0"
                                   : "#fecdd3"
@@ -975,10 +1430,12 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                               }`,
                             }}
                           >
-                            {e.showInStationTeam === false ? "Hidden" : "Shown"}
+                            {e.showInStationTeam === false
+                              ? "Hidden"
+                              : "Shown"}
                           </span>
                         </td>
-                        <td style={tdStyle}>{e.notes || "—"}</td>
+                        <td style={tdStyle}>{e.notes || "\u2014"}</td>
                         <td style={{ ...tdStyle, textAlign: "center" }}>
                           <div
                             style={{
@@ -1001,7 +1458,9 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                               variant="warning"
                               onClick={() => handleToggleStationTeam(e)}
                             >
-                              {e.showInStationTeam === false ? "Show" : "Hide"}
+                              {e.showInStationTeam === false
+                                ? "Show"
+                                : "Hide"}
                             </ActionButton>
 
                             <ActionButton
@@ -1021,6 +1480,17 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
             </PageCard>
           ))
         )}
+      </div>
+
+      <div
+        style={{
+          textAlign: "center",
+          padding: "0 10px 8px",
+          fontSize: 10.5,
+          color: "#94a3b8",
+        }}
+      >
+        {APP_NAME} {"\u00B7"} {APP_SUBTITLE}
       </div>
     </div>
   );
@@ -1047,3 +1517,5 @@ const tdStyle = {
   fontSize: 14,
   color: "#0f172a",
 };
+
+// END EmployeesPage
