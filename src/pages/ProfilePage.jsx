@@ -254,9 +254,6 @@ export default function ProfilePage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const [sendingLatestAlert, setSendingLatestAlert] = useState(false);
-  const [pushDiagnosticMessage, setPushDiagnosticMessage] = useState("");
-  const [pushDiagnosticError, setPushDiagnosticError] = useState("");
 
   const visiblePhotoURL = useMemo(
     () => photoPreviewURL || storedPhotoURL || "",
@@ -562,86 +559,6 @@ export default function ProfilePage() {
       );
     } finally {
       setSaving(false);
-    }
-  };
-
-  const canSendPushDiagnostic =
-    user?.role === "station_manager" &&
-    String(
-      user?.username ||
-        user?.loginUsername ||
-        username ||
-        ""
-    )
-      .trim()
-      .toLowerCase() === "anapoles";
-
-  const handleSendLatestOperationalAlert = async () => {
-    if (!canSendPushDiagnostic || sendingLatestAlert) {
-      return;
-    }
-
-    try {
-      setSendingLatestAlert(true);
-      setPushDiagnosticMessage("");
-      setPushDiagnosticError("");
-
-      const response = await fetch(
-        "/.netlify/functions/send-latest-operational-alert",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          cache: "no-store",
-        }
-      );
-
-      let result = {};
-
-      try {
-        result = await response.json();
-      } catch {
-        result = {};
-      }
-
-      if (!response.ok || result?.ok === false) {
-        const stage = result?.stage
-          ? `Stage: ${result.stage}. `
-          : "";
-
-        const code = result?.code
-          ? `Code: ${result.code}. `
-          : "";
-
-        throw new Error(
-          `${stage}${code}${
-            result?.error ||
-            `Push request failed with status ${response.status}.`
-          }`
-        );
-      }
-
-      const successCount = Number(result?.successCount || 0);
-      const failureCount = Number(result?.failureCount || 0);
-
-      setPushDiagnosticMessage(
-        successCount > 0
-          ? `Latest Operational Alert sent. ${successCount} device(s) accepted the Push.${failureCount ? ` ${failureCount} failed.` : ""}`
-          : "The request completed, but no device accepted the Push."
-      );
-    } catch (err) {
-      console.error(
-        "Could not send latest Operational Alert Push:",
-        err
-      );
-
-      setPushDiagnosticError(
-        err?.message ||
-          "Could not send the latest Operational Alert."
-      );
-    } finally {
-      setSendingLatestAlert(false);
     }
   };
 
@@ -1377,106 +1294,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {canSendPushDiagnostic && (
-          <div
-            style={{
-              marginTop: 14,
-              paddingTop: 14,
-              borderTop: "1px solid #e2e8f0",
-              display: "grid",
-              gap: 10,
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "#475569",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                Push Diagnostic
-              </p>
-
-              <p
-                style={{
-                  margin: "4px 0 0",
-                  fontSize: 11,
-                  color: "#64748b",
-                  lineHeight: 1.5,
-                }}
-              >
-                Sends the latest active Operational Alert only to the
-                configured Push test user.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSendLatestOperationalAlert}
-              disabled={sendingLatestAlert}
-              style={{
-                width: "100%",
-                minHeight: 44,
-                border: "1px solid #bfdbfe",
-                borderRadius: 13,
-                padding: "10px 13px",
-                background: sendingLatestAlert
-                  ? "#f1f5f9"
-                  : "#eff6ff",
-                color: sendingLatestAlert
-                  ? "#94a3b8"
-                  : "#1d4ed8",
-                fontSize: 12,
-                fontWeight: 850,
-                cursor: sendingLatestAlert
-                  ? "not-allowed"
-                  : "pointer",
-              }}
-            >
-              {sendingLatestAlert
-                ? "Sending Latest Alert..."
-                : "Send Latest Alert"}
-            </button>
-
-            {pushDiagnosticMessage && (
-              <div
-                style={{
-                  borderRadius: 12,
-                  padding: "10px 11px",
-                  background: "#ecfdf5",
-                  border: "1px solid #a7f3d0",
-                  color: "#065f46",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  lineHeight: 1.5,
-                }}
-              >
-                {pushDiagnosticMessage}
-              </div>
-            )}
-
-            {pushDiagnosticError && (
-              <div
-                style={{
-                  borderRadius: 12,
-                  padding: "10px 11px",
-                  background: "#fff1f2",
-                  border: "1px solid #fecdd3",
-                  color: "#9f1239",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  lineHeight: 1.5,
-                }}
-              >
-                {pushDiagnosticError}
-              </div>
-            )}
-          </div>
-        )}
       </PageCard>
     </div>
   );
