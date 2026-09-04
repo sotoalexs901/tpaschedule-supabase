@@ -142,6 +142,23 @@ function getDepartmentLabel(value) {
   return clean || "No Department";
 }
 
+function useIsMobile(breakpoint = 760) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < breakpoint);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -150,6 +167,11 @@ function PageCard({ children, style = {} }) {
         border: "1px solid rgba(255,255,255,0.98)",
         borderRadius: 24,
         boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        overflow: "hidden",
         ...style,
       }}
     >
@@ -284,6 +306,9 @@ function ActionButton({
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         opacity: disabled ? 0.65 : 1,
         ...styles[variant],
       }}
@@ -294,6 +319,8 @@ function ActionButton({
 }
 
 export default function EmployeesPage() {
+  const isMobile = useIsMobile(760);
+
   const [employees, setEmployees] = useState([]);
   const [users, setUsers] = useState([]);
 
@@ -827,7 +854,12 @@ export default function EmployeesPage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 12 : 18,
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflowX: "hidden",
+        boxSizing: "border-box",
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
@@ -835,8 +867,12 @@ export default function EmployeesPage() {
         style={{
           background:
             "linear-gradient(135deg, #061f3d 0%, #0f4c81 48%, #1769aa 72%, #4fb6e9 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 18 : 24,
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
@@ -860,7 +896,9 @@ export default function EmployeesPage() {
             position: "relative",
             display: "flex",
             gap: 14,
-            alignItems: "center",
+            alignItems: isMobile ? "flex-start" : "center",
+            flexDirection: isMobile ? "column" : "row",
+            minWidth: 0,
           }}
         >
           <div
@@ -902,7 +940,7 @@ export default function EmployeesPage() {
             <h1
               style={{
                 margin: "6px 0 4px",
-                fontSize: 30,
+                fontSize: isMobile ? 24 : 30,
                 lineHeight: 1.05,
                 fontWeight: 850,
                 letterSpacing: "-0.04em",
@@ -926,7 +964,7 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 22 }}>
         <div style={{ marginBottom: 16 }}>
           <h2
             style={{
@@ -956,8 +994,11 @@ export default function EmployeesPage() {
           onSubmit={handleAddOrUpdateEmployee}
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: isMobile
+              ? "minmax(0, 1fr)"
+              : "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: isMobile ? 12 : 14,
+            minWidth: 0,
           }}
         >
           <div>
@@ -1115,6 +1156,7 @@ export default function EmployeesPage() {
               display: "flex",
               gap: 10,
               flexWrap: "wrap",
+              flexDirection: isMobile ? "column" : "row",
             }}
           >
             <ActionButton
@@ -1157,7 +1199,7 @@ export default function EmployeesPage() {
         )}
       </PageCard>
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 22 }}>
         <div style={{ marginBottom: 16 }}>
           <h2
             style={{
@@ -1230,12 +1272,15 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
         </div>
       </PageCard>
 
-      <PageCard style={{ padding: 16 }}>
+      <PageCard style={{ padding: isMobile ? 12 : 16 }}>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(220px, 1fr) minmax(180px, 260px)",
+            gridTemplateColumns: isMobile
+              ? "minmax(0, 1fr)"
+              : "minmax(220px, 1fr) minmax(180px, 260px)",
             gap: 10,
+            minWidth: 0,
           }}
         >
           <TextInput
@@ -1275,7 +1320,7 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
           </PageCard>
         ) : (
           groupedEmployees.map(([dept, deptEmployees]) => (
-            <PageCard key={dept} style={{ padding: 18 }}>
+            <PageCard key={dept} style={{ padding: isMobile ? 12 : 18 }}>
               <div
                 style={{
                   marginBottom: 14,
@@ -1310,173 +1355,210 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
                 </div>
               </div>
 
-              <div
-                style={{
-                  overflowX: "auto",
-                  borderRadius: 18,
-                  border: "1px solid #e2e8f0",
-                }}
-              >
-                <table
+              {isMobile ? (
+                <div
                   style={{
-                    width: "100%",
-                    borderCollapse: "separate",
-                    borderSpacing: 0,
-                    minWidth: 1120,
-                    background: "#fff",
+                    display: "grid",
+                    gap: 10,
+                    minWidth: 0,
                   }}
                 >
-                  <thead>
-                    <tr style={{ background: "#f8fbff" }}>
-                      <th style={thStyle({ textAlign: "left" })}>Last Initial</th>
-                      <th style={thStyle({ textAlign: "left" })}>
-                        Name (Last / First)
-                      </th>
-                      <th style={thStyle({ textAlign: "left" })}>Username</th>
-                      <th style={thStyle({ textAlign: "left" })}>Position</th>
-                      <th style={thStyle({ textAlign: "left" })}>Status</th>
-                      <th style={thStyle({ textAlign: "left" })}>Station Team</th>
-                      <th style={thStyle({ textAlign: "left" })}>Notes</th>
-                      <th style={thStyle({ textAlign: "center" })}>Actions</th>
-                    </tr>
-                  </thead>
+                  {deptEmployees.map((e) => (
+                    <EmployeeMobileCard
+                      key={e.id}
+                      employee={e}
+                      suggestedUsername={
+                        e.loginUsername
+                          ? ""
+                          : getUniqueSuggestion(
+                              e.name,
+                              new Set([
+                                ...employees
+                                  .filter((item) => item.id !== e.id)
+                                  .map((item) => item.loginUsername)
+                                  .filter(Boolean),
+                                ...users
+                                  .map((u) => u.username || u.loginUsername)
+                                  .filter(Boolean),
+                              ])
+                            )
+                      }
+                      onEdit={() => handleStartEdit(e)}
+                      onToggle={() => handleToggleStationTeam(e)}
+                      onDelete={() => handleDelete(e.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    overflowX: "auto",
+                    maxWidth: "100%",
+                    borderRadius: 18,
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "separate",
+                      borderSpacing: 0,
+                      minWidth: 1120,
+                      background: "#fff",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#f8fbff" }}>
+                        <th style={thStyle({ textAlign: "left" })}>Last Initial</th>
+                        <th style={thStyle({ textAlign: "left" })}>
+                          Name (Last / First)
+                        </th>
+                        <th style={thStyle({ textAlign: "left" })}>Username</th>
+                        <th style={thStyle({ textAlign: "left" })}>Position</th>
+                        <th style={thStyle({ textAlign: "left" })}>Status</th>
+                        <th style={thStyle({ textAlign: "left" })}>Station Team</th>
+                        <th style={thStyle({ textAlign: "left" })}>Notes</th>
+                        <th style={thStyle({ textAlign: "center" })}>Actions</th>
+                      </tr>
+                    </thead>
 
-                  <tbody>
-                    {deptEmployees.map((e, index) => (
-                      <tr
-                        key={e.id}
-                        style={{
-                          background:
-                            index % 2 === 0 ? "#ffffff" : "#fbfdff",
-                        }}
-                      >
-                        <td style={tdStyle}>{getLastNameInitial(e)}</td>
-                        <td style={tdStyle}>{e.name}</td>
-                        <td style={tdStyle}>
-                          {e.loginUsername || (
-                            <span style={{ color: "#94a3b8" }}>
-                              Suggested:{" "}
-                              {getUniqueSuggestion(
-                                e.name,
-                                new Set([
-                                  ...employees
-                                    .filter((item) => item.id !== e.id)
-                                    .map((item) => item.loginUsername)
-                                    .filter(Boolean),
-                                  ...users
-                                    .map(
-                                      (u) =>
-                                        u.username || u.loginUsername
-                                    )
-                                    .filter(Boolean),
-                                ])
-                              ) || "\u2014"}
-                            </span>
-                          )}
-                        </td>
-                        <td style={tdStyle}>{e.position || "\u2014"}</td>
-                        <td style={tdStyle}>
-                          <span
-                            style={{
-                              display: "inline-block",
-                              padding: "6px 10px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 700,
-                              background:
-                                (e.status ||
-                                  (e.active ? "Active" : "Inactive")) ===
-                                "Active"
-                                  ? "#ecfdf5"
-                                  : "#fff1f2",
-                              color:
-                                (e.status ||
-                                  (e.active ? "Active" : "Inactive")) ===
-                                "Active"
-                                  ? "#065f46"
-                                  : "#9f1239",
-                              border: `1px solid ${
-                                (e.status ||
-                                  (e.active ? "Active" : "Inactive")) ===
-                                "Active"
-                                  ? "#a7f3d0"
-                                  : "#fecdd3"
-                              }`,
-                            }}
-                          >
-                            {e.status || (e.active ? "Active" : "Inactive")}
-                          </span>
-                        </td>
-                        <td style={tdStyle}>
-                          <span
-                            style={{
-                              display: "inline-block",
-                              padding: "6px 10px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 700,
-                              background:
-                                e.showInStationTeam === false
-                                  ? "#fff1f2"
-                                  : "#ecfdf5",
-                              color:
-                                e.showInStationTeam === false
-                                  ? "#9f1239"
-                                  : "#065f46",
-                              border: `1px solid ${
-                                e.showInStationTeam === false
-                                  ? "#fecdd3"
-                                  : "#a7f3d0"
-                              }`,
-                            }}
-                          >
-                            {e.showInStationTeam === false
-                              ? "Hidden"
-                              : "Shown"}
-                          </span>
-                        </td>
-                        <td style={tdStyle}>{e.notes || "\u2014"}</td>
-                        <td style={{ ...tdStyle, textAlign: "center" }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              justifyContent: "center",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <ActionButton
-                              type="button"
-                              variant="secondary"
-                              onClick={() => handleStartEdit(e)}
+                    <tbody>
+                      {deptEmployees.map((e, index) => (
+                        <tr
+                          key={e.id}
+                          style={{
+                            background:
+                              index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                          }}
+                        >
+                          <td style={tdStyle}>{getLastNameInitial(e)}</td>
+                          <td style={tdStyle}>{e.name}</td>
+                          <td style={tdStyle}>
+                            {e.loginUsername || (
+                              <span style={{ color: "#94a3b8" }}>
+                                Suggested:{" "}
+                                {getUniqueSuggestion(
+                                  e.name,
+                                  new Set([
+                                    ...employees
+                                      .filter((item) => item.id !== e.id)
+                                      .map((item) => item.loginUsername)
+                                      .filter(Boolean),
+                                    ...users
+                                      .map(
+                                        (u) =>
+                                          u.username || u.loginUsername
+                                      )
+                                      .filter(Boolean),
+                                  ])
+                                ) || "\u2014"}
+                              </span>
+                            )}
+                          </td>
+                          <td style={tdStyle}>{e.position || "\u2014"}</td>
+                          <td style={tdStyle}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background:
+                                  (e.status ||
+                                    (e.active ? "Active" : "Inactive")) ===
+                                  "Active"
+                                    ? "#ecfdf5"
+                                    : "#fff1f2",
+                                color:
+                                  (e.status ||
+                                    (e.active ? "Active" : "Inactive")) ===
+                                  "Active"
+                                    ? "#065f46"
+                                    : "#9f1239",
+                                border: `1px solid ${
+                                  (e.status ||
+                                    (e.active ? "Active" : "Inactive")) ===
+                                  "Active"
+                                    ? "#a7f3d0"
+                                    : "#fecdd3"
+                                }`,
+                              }}
                             >
-                              Edit
-                            </ActionButton>
-
-                            <ActionButton
-                              type="button"
-                              variant="warning"
-                              onClick={() => handleToggleStationTeam(e)}
+                              {e.status || (e.active ? "Active" : "Inactive")}
+                            </span>
+                          </td>
+                          <td style={tdStyle}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background:
+                                  e.showInStationTeam === false
+                                    ? "#fff1f2"
+                                    : "#ecfdf5",
+                                color:
+                                  e.showInStationTeam === false
+                                    ? "#9f1239"
+                                    : "#065f46",
+                                border: `1px solid ${
+                                  e.showInStationTeam === false
+                                    ? "#fecdd3"
+                                    : "#a7f3d0"
+                                }`,
+                              }}
                             >
                               {e.showInStationTeam === false
-                                ? "Show"
-                                : "Hide"}
-                            </ActionButton>
-
-                            <ActionButton
-                              type="button"
-                              variant="danger"
-                              onClick={() => handleDelete(e.id)}
+                                ? "Hidden"
+                                : "Shown"}
+                            </span>
+                          </td>
+                          <td style={tdStyle}>{e.notes || "\u2014"}</td>
+                          <td style={{ ...tdStyle, textAlign: "center" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                justifyContent: "center",
+                                flexWrap: "wrap",
+                              }}
                             >
-                              Delete
-                            </ActionButton>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                              <ActionButton
+                                type="button"
+                                variant="secondary"
+                                onClick={() => handleStartEdit(e)}
+                              >
+                                Edit
+                              </ActionButton>
+
+                              <ActionButton
+                                type="button"
+                                variant="warning"
+                                onClick={() => handleToggleStationTeam(e)}
+                              >
+                                {e.showInStationTeam === false
+                                  ? "Show"
+                                  : "Hide"}
+                              </ActionButton>
+
+                              <ActionButton
+                                type="button"
+                                variant="danger"
+                                onClick={() => handleDelete(e.id)}
+                              >
+                                Delete
+                              </ActionButton>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </PageCard>
           ))
         )}
@@ -1488,9 +1570,221 @@ Castro Magalys, DL Cabin Service, Agent, Active`}
           padding: "0 10px 8px",
           fontSize: 10.5,
           color: "#94a3b8",
+          width: "100%",
+          boxSizing: "border-box",
         }}
       >
         {APP_NAME} {"\u00B7"} {APP_SUBTITLE}
+      </div>
+    </div>
+  );
+}
+
+function EmployeeMobileCard({
+  employee,
+  suggestedUsername,
+  onEdit,
+  onToggle,
+  onDelete,
+}) {
+  const isActive =
+    (employee.status || (employee.active ? "Active" : "Inactive")) === "Active";
+  const isShown = employee.showInStationTeam !== false;
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        border: "1px solid #e2e8f0",
+        borderRadius: 16,
+        background: "#ffffff",
+        padding: 13,
+        display: "grid",
+        gap: 11,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 10,
+          minWidth: 0,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 850,
+              color: "#0f172a",
+              lineHeight: 1.3,
+              wordBreak: "break-word",
+            }}
+          >
+            {employee.name || "Unnamed"}
+          </div>
+
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 12,
+              color: "#64748b",
+              lineHeight: 1.45,
+            }}
+          >
+            {employee.position || "No position"}
+          </div>
+        </div>
+
+        <div
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 11,
+            background: "#eff6ff",
+            color: "#1769aa",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 13,
+            fontWeight: 900,
+            flexShrink: 0,
+          }}
+        >
+          {getLastNameInitial(employee)}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 8,
+        }}
+      >
+        <MobileInfo label="Username">
+          {employee.loginUsername || (
+            <span style={{ color: "#1769aa" }}>
+              {suggestedUsername ? `Suggested: ${suggestedUsername}` : "\u2014"}
+            </span>
+          )}
+        </MobileInfo>
+
+        <MobileInfo label="Department">
+          {employee.department || "No Department"}
+        </MobileInfo>
+
+        <MobileInfo label="Status">
+          <span
+            style={{
+              display: "inline-flex",
+              padding: "4px 8px",
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 800,
+              background: isActive ? "#ecfdf5" : "#fff1f2",
+              color: isActive ? "#065f46" : "#9f1239",
+              border: `1px solid ${isActive ? "#a7f3d0" : "#fecdd3"}`,
+            }}
+          >
+            {isActive ? "Active" : "Inactive"}
+          </span>
+        </MobileInfo>
+
+        <MobileInfo label="Station Team">
+          <span
+            style={{
+              display: "inline-flex",
+              padding: "4px 8px",
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 800,
+              background: isShown ? "#ecfdf5" : "#fff1f2",
+              color: isShown ? "#065f46" : "#9f1239",
+              border: `1px solid ${isShown ? "#a7f3d0" : "#fecdd3"}`,
+            }}
+          >
+            {isShown ? "Shown" : "Hidden"}
+          </span>
+        </MobileInfo>
+      </div>
+
+      {employee.notes && (
+        <div
+          style={{
+            padding: "9px 10px",
+            borderRadius: 12,
+            background: "#f8fafc",
+            color: "#64748b",
+            fontSize: 12,
+            lineHeight: 1.5,
+            wordBreak: "break-word",
+          }}
+        >
+          {employee.notes}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: 8,
+        }}
+      >
+        <ActionButton type="button" variant="secondary" onClick={onEdit}>
+          Edit
+        </ActionButton>
+
+        <ActionButton type="button" variant="warning" onClick={onToggle}>
+          {isShown ? "Hide" : "Show"}
+        </ActionButton>
+
+        <ActionButton type="button" variant="danger" onClick={onDelete}>
+          Delete
+        </ActionButton>
+      </div>
+    </div>
+  );
+}
+
+function MobileInfo({ label, children }) {
+  return (
+    <div
+      style={{
+        minWidth: 0,
+        borderRadius: 12,
+        background: "#f8fbff",
+        border: "1px solid #e5eef8",
+        padding: "9px 10px",
+      }}
+    >
+      <div
+        style={{
+          marginBottom: 4,
+          fontSize: 9.5,
+          fontWeight: 850,
+          color: "#94a3b8",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          fontSize: 12,
+          color: "#334155",
+          fontWeight: 700,
+          lineHeight: 1.4,
+          wordBreak: "break-word",
+        }}
+      >
+        {children}
       </div>
     </div>
   );
