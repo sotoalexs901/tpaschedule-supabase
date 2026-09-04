@@ -334,7 +334,7 @@ function buildMostUsedWheelchair(reports) {
 }
 
 function getInactiveMs(user) {
-  const lastSeen = toDateSafe(user?.lastSeen);
+  const lastSeen = toDateSafe(user?.lastActivityAt || user?.lastSeen);
   if (!lastSeen) return Number.POSITIVE_INFINITY;
   return Math.max(0, Date.now() - lastSeen.getTime());
 }
@@ -376,13 +376,12 @@ function getLoginCount(user) {
     if (Number.isFinite(n) && n >= 0) return n;
   }
 
-  return null;
+  return 0;
 }
 
 function getActivityCount(user) {
   const values = [
     user?.activityCount,
-    user?.pageViews,
     user?.navigationCount,
     user?.totalActions,
   ];
@@ -392,16 +391,52 @@ function getActivityCount(user) {
     if (Number.isFinite(n) && n >= 0) return n;
   }
 
-  return null;
+  return 0;
+}
+
+function getPageViews(user) {
+  const n = Number(user?.pageViews || 0);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function getActiveMinutes(user) {
+  const n = Number(user?.activeMinutesApprox || 0);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 function getEngagementScore(user) {
   const logins = getLoginCount(user);
   const actions = getActivityCount(user);
+  const pageViews = getPageViews(user);
+  const activeMinutes = getActiveMinutes(user);
 
-  if (logins == null && actions == null) return null;
+  // Weighted operational-use score.
+  // Sessions matter, but active minutes and actual interaction are weighted
+  // more heavily so simply logging in repeatedly does not dominate the ranking.
+  return (
+    logins * 10 +
+    pageViews * 2 +
+    actions * 3 +
+    activeMinutes * 4
+  );
+}
 
-  return (logins || 0) * 10 + (actions || 0);
+function formatMinutes(value) {
+  const minutes = Math.max(0, Number(value || 0));
+
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+
+  if (hours < 24) {
+    return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 
 function downloadCSV(filename, rows) {
@@ -508,6 +543,13 @@ export default function AdminActivityDashboard() {
           online: Boolean(p?.online),
           currentPage: p?.currentPage || "\u2014",
           lastSeen: p?.lastSeen || user.lastSeen || null,
+          lastActivityAt:
+            p?.lastActivityAt ||
+            user.lastActivityAt ||
+            p?.lastSeen ||
+            user.lastSeen ||
+            null,
+          firstLoginAt: p?.firstLoginAt || user.firstLoginAt || null,
           lastLoginAt: p?.lastLoginAt || user.lastLoginAt || null,
           employeeId: user.employeeId || "",
           presenceId: p?.id || user.id,
@@ -516,13 +558,25 @@ export default function AdminActivityDashboard() {
             p?.sessionCount ??
             user.loginCount ??
             user.sessionCount ??
-            null,
+            0,
+          sessionCount:
+            p?.sessionCount ??
+            p?.loginCount ??
+            user.sessionCount ??
+            user.loginCount ??
+            0,
+          pageViews:
+            p?.pageViews ??
+            user.pageViews ??
+            0,
           activityCount:
             p?.activityCount ??
-            p?.pageViews ??
             user.activityCount ??
-            user.pageViews ??
-            null,
+            0,
+          activeMinutesApprox:
+            p?.activeMinutesApprox ??
+            user.activeMinutesApprox ??
+            0,
         };
       })
       .sort((a, b) => String(a.username).localeCompare(String(b.username)));
@@ -577,7 +631,7 @@ export default function AdminActivityDashboard() {
 
   const totalUsers = filteredUsers.length;
   const onlineUsers = filteredUsers.filter((u) => u.online).length;
-  const activeUsers = filteredUsers.filter((u) => u.lastSeen).length;
+  const activeUsers = filteredUsers.filter((u) => u.lastActivityAt || u.lastSeen).length;
   const totalWchr = filteredReports.length;
 
   const staleOnlineUsers = useMemo(
@@ -597,7 +651,7 @@ export default function AdminActivityDashboard() {
     return [...mergedUsers]
       .map((u) => ({
         ...u,
-        inactivityDays: daysSince(u.lastSeen || u.lastLoginAt),
+        inactivityDays: daysSince(u.lastActivityAt || u.lastSeen || u.lastLoginAt),
       }))
       .filter((u) => u.inactivityDays == null || u.inactivityDays >= 7)
       .sort((a, b) => {
@@ -613,11 +667,36 @@ export default function AdminActivityDashboard() {
         ...u,
         loginMetric: getLoginCount(u),
         activityMetric: getActivityCount(u),
+        pageViewMetric: getPageViews(u),
+        activeMinutesMetric: getActiveMinutes(u),
         engagementScore: getEngagementScore(u),
       }))
-      .filter((u) => u.engagementScore != null)
-      .sort((a, b) => b.engagementScore - a.engagementScore);
+      .sort(
+        (a, b) =>
+          b.engagementScore - a.engagementScore ||
+          b.activeMinutesMetric - a.activeMinutesMetric ||
+          b.activityMetric - a.activityMetric ||
+          String(a.username).localeCompare(String(b.username))
+      );
   }, [mergedUsers]);
+
+  const topUsageUser = engagementRows[0] || null;
+
+  const topLoginUser = useMemo(() => {
+    return [...engagementRows].sort(
+      (a, b) =>
+        b.loginMetric - a.loginMetric ||
+        b.engagementScore - a.engagementScore
+    )[0] || null;
+  }, [engagementRows]);
+
+  const topActiveMinutesUser = useMemo(() => {
+    return [...engagementRows].sort(
+      (a, b) =>
+        b.activeMinutesMetric - a.activeMinutesMetric ||
+        b.engagementScore - a.engagementScore
+    )[0] || null;
+  }, [engagementRows]);
 
   const topWchrLogins = useMemo(
     () => buildCountByLogin(filteredReports).slice(0, 10),
@@ -674,8 +753,8 @@ export default function AdminActivityDashboard() {
     return [...filteredUsers]
       .filter((u) => u.lastSeen)
       .sort((a, b) => {
-        const A = toDateSafe(a.lastSeen)?.getTime() || 0;
-        const B = toDateSafe(b.lastSeen)?.getTime() || 0;
+        const A = toDateSafe(a.lastActivityAt || a.lastSeen)?.getTime() || 0;
+        const B = toDateSafe(b.lastActivityAt || b.lastSeen)?.getTime() || 0;
         return B - A;
       })
       .slice(0, 20);
@@ -840,6 +919,32 @@ export default function AdminActivityDashboard() {
       ["Stale Online > 2 Hours", staleOnlineUsers.length],
       ["Never Connected", neverConnectedUsers.length],
       [],
+      ["APP USAGE RANKING"],
+      [
+        "Rank",
+        "User",
+        "Username",
+        "Role",
+        "Sessions",
+        "Page Views",
+        "Activity",
+        "Active Minutes Approx",
+        "Last Activity",
+        "Last Login",
+      ],
+      ...engagementRows.map((u, index) => [
+        index + 1,
+        getVisibleUserName(u),
+        u.username || "",
+        normalizeRole(u.role),
+        u.loginMetric,
+        u.pageViewMetric,
+        u.activityMetric,
+        u.activeMinutesMetric,
+        formatDate(u.lastActivityAt || u.lastSeen),
+        formatDate(u.lastLoginAt),
+      ]),
+      [],
       ["TOP WCHR LOGINS / AGENTS"],
       ["Agent / Login", "Count"],
       ...topWchrLogins.map((r) => [r.label, r.count]),
@@ -977,7 +1082,7 @@ export default function AdminActivityDashboard() {
                   lineHeight: 1.5,
                 }}
               >
-                Presence, inactivity control, account health and WCHR performance.
+                Live presence, usage analytics, inactivity control, account health and WCHR performance.
               </p>
             </div>
           </div>
@@ -1366,48 +1471,131 @@ export default function AdminActivityDashboard() {
               gap: 12,
             }}
           >
-            <StatCard label="Online Now" value={onlineUsers} />
-            <StatCard label="Idle >2 Hours" value={staleOnlineUsers.length} danger={staleOnlineUsers.length > 0} />
-            <StatCard label="Tracked Activity" value={activeUsers} />
-            <StatCard label="Never Connected" value={neverConnectedUsers.length} danger={neverConnectedUsers.length > 0} />
+            <StatCard label="Online Now" value={onlineUsers} icon={"\u{1F7E2}"} />
+            <StatCard
+              label="Idle >2 Hours"
+              value={staleOnlineUsers.length}
+              icon={"\u{23F3}"}
+              danger={staleOnlineUsers.length > 0}
+            />
+            <StatCard
+              label="Most Active User"
+              value={topUsageUser ? getVisibleUserName(topUsageUser) : "\u2014"}
+              subvalue={
+                topUsageUser
+                  ? `${formatMinutes(topUsageUser.activeMinutesMetric)} active`
+                  : ""
+              }
+              icon={"\u{1F680}"}
+            />
+            <StatCard
+              label="Most Logins"
+              value={topLoginUser ? getVisibleUserName(topLoginUser) : "\u2014"}
+              subvalue={topLoginUser ? `${topLoginUser.loginMetric} sessions` : ""}
+              icon={"\u{1F511}"}
+            />
+            <StatCard
+              label="Most Active Time"
+              value={topActiveMinutesUser ? getVisibleUserName(topActiveMinutesUser) : "\u2014"}
+              subvalue={
+                topActiveMinutesUser
+                  ? formatMinutes(topActiveMinutesUser.activeMinutesMetric)
+                  : ""
+              }
+              icon={"\u{23F1}"}
+            />
+            <StatCard
+              label="Never Connected"
+              value={neverConnectedUsers.length}
+              icon={"\u{1F6AB}"}
+              danger={neverConnectedUsers.length > 0}
+            />
           </div>
 
-          {engagementRows.length > 0 ? (
-            <Panel title="Most Frequent App Users">
+          <Panel title="App Usage Ranking">
+            <div
+              style={{
+                marginBottom: 12,
+                padding: "11px 13px",
+                borderRadius: 14,
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                color: "#64748b",
+                fontSize: 11.5,
+                lineHeight: 1.55,
+              }}
+            >
+              Ranking uses sessions, page views, interaction heartbeats and
+              approximate active minutes. Metrics begin accumulating after the
+              new presence analytics deployment.
+            </div>
+
+            {engagementRows.length === 0 ? (
+              <InfoBox text="No user usage metrics are available yet." />
+            ) : (
               <div style={tableWrapStyle}>
-                <table style={{ ...tableStyle, minWidth: 760 }}>
+                <table style={{ ...tableStyle, minWidth: 980 }}>
                   <thead style={{ background: "#f8fbff" }}>
                     <tr>
                       <th style={th}>Rank</th>
                       <th style={th}>User</th>
                       <th style={th}>Role</th>
-                      <th style={th}>Logins / Sessions</th>
-                      <th style={th}>Activity / Page Views</th>
-                      <th style={th}>Last Seen</th>
+                      <th style={th}>Sessions</th>
+                      <th style={th}>Page Views</th>
+                      <th style={th}>Activity</th>
+                      <th style={th}>Active Time</th>
+                      <th style={th}>Last Activity</th>
+                      <th style={th}>Last Login</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {engagementRows.map((u, i) => (
-                      <tr key={u.id} style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}>
-                        <td style={{ ...td, fontWeight: 850 }}>{i + 1}</td>
+                      <tr
+                        key={u.id}
+                        style={{
+                          background:
+                            i === 0
+                              ? "#eff6ff"
+                              : i % 2 === 0
+                              ? "#fff"
+                              : "#f9fbff",
+                        }}
+                      >
+                        <td style={{ ...td, fontWeight: 900 }}>
+                          {i < 3 ? medalLabel(i) : i + 1}
+                        </td>
+
                         <td style={td}>
                           <UserIdentity user={u} />
                         </td>
+
                         <td style={td}>{normalizeRole(u.role)}</td>
-                        <td style={td}>{u.loginMetric ?? "\u2014"}</td>
-                        <td style={td}>{u.activityMetric ?? "\u2014"}</td>
-                        <td style={td}>{formatDate(u.lastSeen)}</td>
+
+                        <td style={{ ...td, fontWeight: 800 }}>
+                          {u.loginMetric}
+                        </td>
+
+                        <td style={td}>{u.pageViewMetric}</td>
+
+                        <td style={td}>{u.activityMetric}</td>
+
+                        <td style={{ ...td, fontWeight: 800, color: "#0f4c81" }}>
+                          {formatMinutes(u.activeMinutesMetric)}
+                        </td>
+
+                        <td style={td}>
+                          {formatDate(u.lastActivityAt || u.lastSeen)}
+                        </td>
+
+                        <td style={td}>{formatDate(u.lastLoginAt)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </Panel>
-          ) : (
-            <Panel title="Most Frequent App Users">
-              <InfoBox text="Current presence data does not include login/session counters yet. Last Seen and inactivity are available now; exact frequency ranking will populate when loginCount/sessionCount or activityCount/pageViews are written by the app." />
-            </Panel>
-          )}
+            )}
+          </Panel>
 
           <Panel title="Recent User Activity">
             {recentUsers.length === 0 ? (
@@ -1579,8 +1767,9 @@ export default function AdminActivityDashboard() {
                       <th style={th}>Role</th>
                       <th style={th}>Status</th>
                       <th style={th}>Current Page</th>
-                      <th style={th}>Last Seen</th>
-                      <th style={th}>First Login Tracked</th>
+                      <th style={th}>Last Activity</th>
+                      <th style={th}>Last Login</th>
+                      <th style={th}>First Login</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1601,8 +1790,11 @@ export default function AdminActivityDashboard() {
                           )}
                         </td>
                         <td style={td}>{u.currentPage || "\u2014"}</td>
-                        <td style={td}>{formatDate(u.lastSeen)}</td>
+                        <td style={td}>
+                          {formatDate(u.lastActivityAt || u.lastSeen)}
+                        </td>
                         <td style={td}>{formatDate(u.lastLoginAt)}</td>
+                        <td style={td}>{formatDate(u.firstLoginAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -2011,7 +2203,7 @@ function Panel({ title, children, action }) {
   );
 }
 
-function StatCard({ label, value, icon, danger = false }) {
+function StatCard({ label, value, subvalue = "", icon, danger = false }) {
   return (
     <div
       style={{
@@ -2059,10 +2251,25 @@ function StatCard({ label, value, icon, danger = false }) {
           fontSize: 23,
           fontWeight: 900,
           color: danger ? "#be123c" : "#0f172a",
+          lineHeight: 1.12,
+          wordBreak: "break-word",
         }}
       >
         {value}
       </p>
+
+      {subvalue && (
+        <div
+          style={{
+            marginTop: 5,
+            fontSize: 10.5,
+            color: danger ? "#be123c" : "#64748b",
+            fontWeight: 750,
+          }}
+        >
+          {subvalue}
+        </div>
+      )}
     </div>
   );
 }
