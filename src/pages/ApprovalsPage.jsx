@@ -14,6 +14,7 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { triggerScheduleDecisionPush } from "../utils/schedulePush.js";
+import { APP_NAME } from "../config/appConfig.js";
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
@@ -361,7 +362,7 @@ export default function ApprovalsPage() {
                 fontWeight: 700,
               }}
             >
-              TPA OPS {"\u00B7"} Scheduling
+              {APP_NAME} {"\u00B7"} Scheduling
             </p>
 
             <h1
