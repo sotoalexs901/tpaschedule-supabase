@@ -79,10 +79,6 @@ function normalizeText(value) {
   return String(value ?? "").trim();
 }
 
-function normalizeRole(value) {
-  return normalizeText(value).toLowerCase();
-}
-
 function normalizeDecision(value) {
   return normalizeText(value).toLowerCase();
 }
@@ -283,9 +279,9 @@ exports.handler = async function handler(event) {
     if (!submittedUser) {
       await reportRef.set(
         {
-          supervisorDecisionPushStatus:
+          submitterDecisionPushStatus:
             "NO_USER",
-          supervisorDecisionPushUpdatedAt:
+          submitterDecisionPushUpdatedAt:
             admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -299,40 +295,13 @@ exports.handler = async function handler(event) {
       });
     }
 
-    // User requested this workflow specifically for supervisors.
-    // If another role ever submits a report, do not send this decision Push.
-    if (
-      normalizeRole(submittedUser.data.role) !==
-      "supervisor"
-    ) {
-      await reportRef.set(
-        {
-          supervisorDecisionPushStatus:
-            "SKIPPED_NON_SUPERVISOR",
-          supervisorDecisionPushTargetUserId:
-            submittedUser.id,
-          supervisorDecisionPushUpdatedAt:
-            admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      return json(200, {
-        ok: true,
-        skipped: true,
-        reason: "submitter-is-not-supervisor",
-        reportId,
-        targetUserId: submittedUser.id,
-      });
-    }
-
     const sentDecision =
       normalizeDecision(
-        report.supervisorDecisionPushDecision
+        report.submitterDecisionPushDecision
       );
 
     if (
-      report.supervisorDecisionPushStatus ===
+      report.submitterDecisionPushStatus ===
         "SENT" &&
       sentDecision === requestedDecision
     ) {
@@ -354,17 +323,17 @@ exports.handler = async function handler(event) {
     if (!tokenItems.length) {
       await reportRef.set(
         {
-          supervisorDecisionPushStatus:
+          submitterDecisionPushStatus:
             "NO_TOKENS",
-          supervisorDecisionPushDecision:
+          submitterDecisionPushDecision:
             requestedDecision,
-          supervisorDecisionPushTargetUserId:
+          submitterDecisionPushTargetUserId:
             submittedUser.id,
-          supervisorDecisionPushSuccessCount:
+          submitterDecisionPushSuccessCount:
             0,
-          supervisorDecisionPushFailureCount:
+          submitterDecisionPushFailureCount:
             0,
-          supervisorDecisionPushUpdatedAt:
+          submitterDecisionPushUpdatedAt:
             admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -452,29 +421,29 @@ exports.handler = async function handler(event) {
 
     await reportRef.set(
       {
-        supervisorDecisionPushStatus:
+        submitterDecisionPushStatus:
           result.successCount > 0
             ? "SENT"
             : "FAILED",
 
-        supervisorDecisionPushDecision:
+        submitterDecisionPushDecision:
           requestedDecision,
 
-        supervisorDecisionPushTargetUserId:
+        submitterDecisionPushTargetUserId:
           submittedUser.id,
 
-        supervisorDecisionPushSuccessCount:
+        submitterDecisionPushSuccessCount:
           result.successCount,
 
-        supervisorDecisionPushFailureCount:
+        submitterDecisionPushFailureCount:
           result.failureCount,
 
-        supervisorDecisionPushSentAt:
+        submitterDecisionPushSentAt:
           result.successCount > 0
             ? admin.firestore.FieldValue.serverTimestamp()
             : null,
 
-        supervisorDecisionPushUpdatedAt:
+        submitterDecisionPushUpdatedAt:
           admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -485,6 +454,15 @@ exports.handler = async function handler(event) {
       reportId,
       decision: requestedDecision,
       targetUserId: submittedUser.id,
+      targetUsername:
+        normalizeText(
+          submittedUser.data.username ||
+          submittedUser.data.loginUsername
+        ),
+      targetRole:
+        normalizeText(
+          submittedUser.data.role
+        ),
       tokenCount: tokenItems.length,
       successCount: result.successCount,
       failureCount: result.failureCount,
@@ -503,14 +481,14 @@ exports.handler = async function handler(event) {
           .doc(reportId)
           .set(
             {
-              supervisorDecisionPushStatus:
+              submitterDecisionPushStatus:
                 "FAILED",
-              supervisorDecisionPushDecision:
+              submitterDecisionPushDecision:
                 requestedDecision,
-              supervisorDecisionPushError:
+              submitterDecisionPushError:
                 error?.message ||
                 "Unexpected Push error.",
-              supervisorDecisionPushUpdatedAt:
+              submitterDecisionPushUpdatedAt:
                 admin.firestore.FieldValue.serverTimestamp(),
             },
             { merge: true }
