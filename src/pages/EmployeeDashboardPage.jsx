@@ -989,32 +989,12 @@ function RecognizedEmployeeCard({
   item,
   isMobile,
   language,
-  onCongratulate,
+  onOpen,
 }) {
-  const writeText =
-    language === "es"
-      ? "Escribir felicitaci\u00F3n"
-      : "Write congratulations";
-
-  const monthText =
-    language === "es"
-      ? "Mes"
-      : "Month";
-
-  const departmentText =
-    language === "es"
-      ? "Departamento"
-      : "Department";
-
   const positionText =
     language === "es"
       ? "Posici\u00F3n"
       : "Position";
-
-  const airlineText =
-    language === "es"
-      ? "Aerol\u00EDnea"
-      : "Airline";
 
   const initials =
     getInitials(
@@ -1027,255 +1007,464 @@ function RecognizedEmployeeCard({
     item?.profilePhotoURL ||
     "";
 
-  const canWrite =
-    Boolean(
-      item?.userId ||
-        item?.username
-    );
-
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => onOpen(item)}
       style={{
+        width: "100%",
+        minWidth: 0,
+        border: "1px solid #fde68a",
+        borderRadius: 16,
+        padding: isMobile ? 11 : 12,
         background:
-          "linear-gradient(180deg, #ffffff 0%, #fffdf7 100%)",
-        border:
-          "1px solid #fde68a",
-        borderRadius: 18,
-        padding: 15,
+          "linear-gradient(135deg, #ffffff 0%, #fffaf0 100%)",
         boxShadow:
-          "0 10px 24px rgba(15,23,42,0.05)",
-        display: "grid",
-        gap: 11,
+          "0 8px 20px rgba(15,23,42,0.04)",
+        cursor: "pointer",
+        textAlign: "left",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
       }}
     >
       <div
         style={{
+          width: isMobile ? 44 : 48,
+          height: isMobile ? 44 : 48,
+          borderRadius: 14,
+          overflow: "hidden",
+          background: "#ffedd5",
+          border: "1px solid #fdba74",
           display: "flex",
-          alignItems:
-            "center",
-          gap: 11,
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#9a3412",
+          fontWeight: 900,
+          fontSize: 15,
+          flexShrink: 0,
+        }}
+      >
+        {profileImage ? (
+          <img
+            src={profileImage}
+            alt={item.employeeName}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+        ) : (
+          <span>{initials}</span>
+        )}
+      </div>
+
+      <div
+        style={{
           minWidth: 0,
+          flex: 1,
         }}
       >
         <div
           style={{
-            width:
-              isMobile
-                ? 54
-                : 60,
-            height:
-              isMobile
-                ? 54
-                : 60,
-            borderRadius: 17,
-            overflow:
-              "hidden",
-            background:
-              "#ffedd5",
-            border:
-              "1px solid #fdba74",
-            display: "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
-            color: "#9a3412",
+            fontSize: isMobile ? 13 : 13.5,
             fontWeight: 900,
-            fontSize: 19,
-            flexShrink: 0,
+            color: "#0f172a",
+            lineHeight: 1.25,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}
         >
-          {profileImage ? (
-            <img
-              src={profileImage}
-              alt={
-                item.employeeName
-              }
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit:
-                  "cover",
-              }}
-            />
-          ) : (
-            <span>
-              {initials}
-            </span>
-          )}
+          {item.employeeName || "\u2014"}
         </div>
 
         <div
           style={{
-            minWidth: 0,
+            marginTop: 3,
+            fontSize: 10.5,
+            fontWeight: 800,
+            color: "#9a3412",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}
         >
-          <div
-            style={{
-              fontSize: 15,
-              fontWeight: 900,
-              color: "#0f172a",
-              lineHeight: 1.2,
-              wordBreak:
-                "break-word",
-            }}
-          >
-            {item.employeeName ||
-              "\u2014"}
-          </div>
+          {item.position || positionText}
+        </div>
 
-          <div
-            style={{
-              marginTop: 4,
-              fontSize: 12,
-              color: "#9a3412",
-              fontWeight: 800,
-            }}
-          >
-            {item.position ||
-              "\u2014"}
-          </div>
-
-          {item.username && (
-            <div
-              style={{
-                marginTop: 3,
-                fontSize: 11,
-                color: "#64748b",
-              }}
-            >
-              @{item.username}
-            </div>
-          )}
+        <div
+          style={{
+            marginTop: 3,
+            fontSize: 10,
+            color: "#64748b",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {[item.department, item.airline]
+            .filter(Boolean)
+            .join(" \u00B7 ") || "AeroStation Hub"}
         </div>
       </div>
 
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns:
-            "1fr 1fr",
-          gap: 7,
+          flexShrink: 0,
+          textAlign: "right",
         }}
       >
-        {[
-          [
-            positionText,
-            item.position,
-          ],
-          [
-            departmentText,
-            item.department,
-          ],
-          [
-            airlineText,
-            item.airline,
-          ],
-          [
-            monthText,
-            item.monthLabel,
-          ],
-        ].map(
-          ([label, value]) => (
+        <div
+          style={{
+            fontSize: 9.5,
+            color: "#b45309",
+            fontWeight: 850,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {item.monthLabel || ""}
+        </div>
+
+        <div
+          style={{
+            marginTop: 5,
+            width: 26,
+            height: 26,
+            borderRadius: 9,
+            background: "#fff7ed",
+            border: "1px solid #fed7aa",
+            color: "#b45309",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 13,
+            fontWeight: 900,
+          }}
+        >
+          {"\u203A"}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function RecognizedEmployeeDetailModal({
+  item,
+  language,
+  onClose,
+  onCongratulate,
+}) {
+  if (!item) return null;
+
+  const labels =
+    language === "es"
+      ? {
+          title: "Empleado Reconocido",
+          position: "Posici\u00F3n",
+          department: "Departamento",
+          airline: "Aerol\u00EDnea",
+          month: "Mes",
+          note: "Reconocimiento",
+          close: "Cerrar",
+          write: "Escribir felicitaci\u00F3n",
+        }
+      : {
+          title: "Recognized Employee",
+          position: "Position",
+          department: "Department",
+          airline: "Airline",
+          month: "Month",
+          note: "Recognition",
+          close: "Close",
+          write: "Write congratulations",
+        };
+
+  const profileImage =
+    item?.photoURL ||
+    item?.profilePhotoURL ||
+    "";
+
+  const initials =
+    getInitials(item?.employeeName || "E");
+
+  const canWrite =
+    Boolean(item?.userId || item?.username);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "rgba(7,28,51,0.58)",
+        backdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          maxHeight: "88vh",
+          overflowY: "auto",
+          background: "#ffffff",
+          border: "1px solid rgba(255,255,255,0.9)",
+          borderRadius: 24,
+          boxShadow: "0 30px 80px rgba(15,23,42,0.28)",
+        }}
+      >
+        <div
+          style={{
+            background:
+              "linear-gradient(135deg, #071c33 0%, #0f4c81 48%, #1769aa 76%, #62c4ef 100%)",
+            color: "#ffffff",
+            padding: 18,
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              width: 150,
+              height: 150,
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.09)",
+              top: -80,
+              right: -30,
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              gap: 13,
+              alignItems: "center",
+            }}
+          >
             <div
-              key={label}
               style={{
-                borderRadius: 11,
-                background:
-                  "#fffdf7",
-                border:
-                  "1px solid #fde68a",
-                padding:
-                  "8px 9px",
+                width: 68,
+                height: 68,
+                borderRadius: 20,
+                overflow: "hidden",
+                background: "rgba(255,255,255,0.14)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 21,
+                fontWeight: 900,
+                flexShrink: 0,
               }}
             >
+              {profileImage ? (
+                <img
+                  src={profileImage}
+                  alt={item.employeeName}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              ) : (
+                initials
+              )}
+            </div>
+
+            <div style={{ minWidth: 0 }}>
               <div
                 style={{
-                  fontSize: 9,
+                  fontSize: 9.5,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.12em",
                   fontWeight: 850,
-                  color: "#64748b",
-                  textTransform:
-                    "uppercase",
-                  letterSpacing:
-                    "0.05em",
+                  color: "rgba(255,255,255,0.68)",
                 }}
               >
-                {label}
+                {APP_NAME} {"\u00B7"} {labels.title}
               </div>
+
+              <h3
+                style={{
+                  margin: "5px 0 0",
+                  fontSize: 22,
+                  lineHeight: 1.15,
+                  fontWeight: 900,
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                {item.employeeName || "\u2014"}
+              </h3>
 
               <div
                 style={{
                   marginTop: 4,
                   fontSize: 12,
+                  color: "rgba(255,255,255,0.82)",
                   fontWeight: 750,
-                  color: "#0f172a",
                 }}
               >
-                {value ||
-                  "\u2014"}
+                {item.position || "\u2014"}
               </div>
             </div>
-          )
-        )}
-      </div>
+          </div>
+        </div>
 
-      {item.note && (
         <div
           style={{
-            borderRadius: 11,
-            background:
-              "#fffdf7",
-            border:
-              "1px solid #fde68a",
-            padding:
-              "9px 11px",
+            padding: 17,
+            display: "grid",
+            gap: 12,
           }}
         >
           <div
             style={{
-              fontSize: 12,
-              color: "#475569",
-              lineHeight: 1.55,
-              whiteSpace:
-                "pre-line",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
             }}
           >
-            {item.note}
+            {[
+              [labels.position, item.position],
+              [labels.department, item.department],
+              [labels.airline, item.airline],
+              [labels.month, item.monthLabel],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                style={{
+                  borderRadius: 13,
+                  background: "#f8fbff",
+                  border: "1px solid #dbeafe",
+                  padding: "10px 11px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 850,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    color: "#94a3b8",
+                  }}
+                >
+                  {label}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {value || "\u2014"}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {item.note && (
+            <div
+              style={{
+                borderRadius: 14,
+                background: "#fffaf0",
+                border: "1px solid #fde68a",
+                padding: 13,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 850,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "#b45309",
+                }}
+              >
+                {labels.note}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 7,
+                  fontSize: 13,
+                  color: "#475569",
+                  lineHeight: 1.65,
+                  whiteSpace: "pre-line",
+                }}
+              >
+                {item.note}
+              </div>
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: canWrite ? "1fr 1fr" : "1fr",
+              gap: 8,
+            }}
+          >
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => {
+                  onCongratulate(item);
+                  onClose();
+                }}
+                style={{
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                  color: "#fff",
+                  borderRadius: 13,
+                  padding: "11px 12px",
+                  fontWeight: 850,
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                {labels.write}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                border: "1px solid #dbeafe",
+                background: "#ffffff",
+                color: "#1769aa",
+                borderRadius: 13,
+                padding: "11px 12px",
+                fontWeight: 850,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              {labels.close}
+            </button>
           </div>
         </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() =>
-          onCongratulate(item)
-        }
-        disabled={!canWrite}
-        style={{
-          border: "none",
-          background: canWrite
-            ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)"
-            : "#cbd5e1",
-          color: "#fff",
-          borderRadius: 13,
-          padding:
-            "10px 12px",
-          fontWeight: 850,
-          fontSize: 12,
-          cursor: canWrite
-            ? "pointer"
-            : "not-allowed",
-          boxShadow: canWrite
-            ? "0 10px 20px rgba(23,105,170,0.16)"
-            : "none",
-          opacity: canWrite
-            ? 1
-            : 0.8,
-          width: "100%",
-        }}
-      >
-        {writeText}
-      </button>
+      </div>
     </div>
   );
 }
@@ -1284,7 +1473,7 @@ function RecognizedEmployeesBanner({
   items,
   isMobile,
   language,
-  onCongratulate,
+  onOpen,
 }) {
   const title =
     language === "es"
@@ -1395,7 +1584,7 @@ function RecognizedEmployeesBanner({
             gridTemplateColumns:
               isMobile
                 ? "1fr"
-                : "repeat(auto-fit, minmax(255px, 1fr))",
+                : "repeat(auto-fit, minmax(210px, 1fr))",
             gap: 12,
           }}
         >
@@ -1411,8 +1600,8 @@ function RecognizedEmployeesBanner({
                 language={
                   language
                 }
-                onCongratulate={
-                  onCongratulate
+                onOpen={
+                  onOpen
                 }
               />
             ))}
@@ -1467,6 +1656,11 @@ export default function EmployeeDashboardPage() {
     language,
     setLanguage,
   ] = useState("en");
+
+  const [
+    selectedRecognizedEmployee,
+    setSelectedRecognizedEmployee,
+  ] = useState(null);
 
   const visibleName =
     useMemo(
@@ -2623,8 +2817,8 @@ export default function EmployeeDashboardPage() {
             }
             isMobile={isMobile}
             language={language}
-            onCongratulate={
-              handleCongratulateRecognizedEmployee
+            onOpen={
+              setSelectedRecognizedEmployee
             }
           />
 
@@ -3306,6 +3500,21 @@ export default function EmployeeDashboardPage() {
           </GlassCard>
         </div>
       </div>
+
+      <RecognizedEmployeeDetailModal
+        item={
+          selectedRecognizedEmployee
+        }
+        language={language}
+        onClose={() =>
+          setSelectedRecognizedEmployee(
+            null
+          )
+        }
+        onCongratulate={
+          handleCongratulateRecognizedEmployee
+        }
+      />
 
       <div
         style={{
