@@ -8,7 +8,9 @@ import {
 } from "../config/appConfig.js";
 import "./PrivacyPolicyPage.css";
 
-const POLICY_VERSION = "2026.08.26";
+const POLICY_VERSION = "2026.09.04";
+const PLATFORM_VERSION = "1.7";
+const OFFICIAL_DOMAIN = "aerostationhub.com";
 
 export default function PrivacyPolicyPage() {
   const navigate = useNavigate();
@@ -74,17 +76,21 @@ export default function PrivacyPolicyPage() {
 
           <p>
             This policy establishes the privacy, confidentiality,
-            authorized-use and ownership requirements applicable to the
-            {` ${APP_NAME}`}.
+            authorized-use, mobile notification and ownership requirements
+            applicable to the {` ${APP_NAME}`}.
           </p>
 
           <div className="privacy-page-meta">
             <span>
-              <strong>Effective:</strong> August 26, 2026
+              <strong>Effective:</strong> September 4, 2026
             </span>
 
             <span>
-              <strong>Version:</strong> {POLICY_VERSION}
+              <strong>Policy Version:</strong> {POLICY_VERSION}
+            </span>
+
+            <span>
+              <strong>Platform Update:</strong> {PLATFORM_VERSION}
             </span>
 
             <span>
@@ -106,6 +112,8 @@ export default function PrivacyPolicyPage() {
               business information intended only for authorized users.
               Information accessed through this system may not be disclosed,
               copied, distributed, published or used for unauthorized purposes.
+              Mobile notifications may display limited operational information
+              on a user's device and should be protected accordingly.
             </p>
           </div>
         </section>
@@ -116,19 +124,41 @@ export default function PrivacyPolicyPage() {
               {APP_NAME} is an operational management platform designed
               to support aviation-related workforce management, scheduling,
               operational reporting, employee coordination, service tracking,
-              compliance documentation and other authorized business
-              activities.
+              compliance documentation, internal communications and other
+              authorized business activities.
             </p>
 
             <p>
               This policy explains how information within the platform is
               handled, establishes user responsibilities regarding confidential
-              information, and identifies the ownership and administration of
-              the platform.
+              information, describes the use of mobile and Push notifications,
+              and identifies the ownership and administration of the platform.
             </p>
           </PolicySection>
 
-          <PolicySection number="02" title="Platform Ownership">
+          <PolicySection number="02" title="Official Platform Access">
+            <p>
+              The official web address for {APP_NAME} is{" "}
+              <strong>{OFFICIAL_DOMAIN}</strong>.
+            </p>
+
+            <p>
+              Users should access the platform only through the official domain
+              or through an authorized Home Screen installation created from
+              that domain. Users should not enter login credentials into
+              unofficial, copied or unverified websites that claim to represent
+              {APP_NAME}.
+            </p>
+
+            <p>
+              {APP_NAME} may be installed on supported mobile devices as
+              a Progressive Web App or Home Screen application. Installing the
+              platform does not transfer ownership of the software or create a
+              separate user account.
+            </p>
+          </PolicySection>
+
+          <PolicySection number="03" title="Platform Ownership">
             <p>
               {APP_NAME} is created, administered and monitored by{" "}
               <strong>ANapoles Solutions</strong>.
@@ -149,7 +179,7 @@ export default function PrivacyPolicyPage() {
           </PolicySection>
 
           <PolicySection
-            number="03"
+            number="04"
             title="Information Processed by the Platform"
           >
             <p>
@@ -169,6 +199,11 @@ export default function PrivacyPolicyPage() {
               <li>Requests, submissions and management approvals.</li>
               <li>Airline and flight operational information.</li>
               <li>Service and activity records.</li>
+              <li>Internal direct messages between authorized users.</li>
+              <li>
+                Mobile notification registration information, including device
+                notification tokens and notification enablement status.
+              </li>
               <li>System access and activity information.</li>
               <li>
                 Other information necessary for authorized operational,
@@ -177,7 +212,7 @@ export default function PrivacyPolicyPage() {
             </ul>
           </PolicySection>
 
-          <PolicySection number="04" title="Purpose of Information">
+          <PolicySection number="05" title="Purpose of Information">
             <p>
               Information processed through {APP_NAME} may be used for
               legitimate purposes including workforce administration,
@@ -193,7 +228,119 @@ export default function PrivacyPolicyPage() {
             </p>
           </PolicySection>
 
-          <PolicySection number="05" title="Confidentiality">
+          <PolicySection
+            number="06"
+            title="Mobile Notifications and Push Alerts"
+          >
+            <p>
+              {APP_NAME} may allow authorized users to enable mobile Push
+              notifications on supported devices. Push notifications are
+              associated with the user account and device on which notification
+              access was enabled.
+            </p>
+
+            <p>
+              Depending on the user's role and activity within the platform,
+              notifications may include:
+            </p>
+
+            <ul>
+              <li>Direct messages from another authorized user.</li>
+              <li>Timesheet submission, approval or return status.</li>
+              <li>Schedule submission, approval or return status.</li>
+              <li>Notice that a new approved schedule is available.</li>
+              <li>Operational alerts intended for authorized management roles.</li>
+              <li>
+                Other authorized operational notifications introduced in future
+                platform updates.
+              </li>
+            </ul>
+
+            <div className="privacy-page-warning">
+              <strong>Important:</strong> A Push notification may appear on a
+              device lock screen, notification center or other system interface
+              depending on the user's device settings. Users are responsible
+              for protecting devices that receive {APP_NAME} notifications.
+            </div>
+          </PolicySection>
+
+          <PolicySection
+            number="07"
+            title="Notification Content and Privacy"
+          >
+            <p>
+              Push notifications are intended to provide concise operational
+              information. Depending on the notification type, a notification
+              may display a sender name, message preview, schedule status,
+              timesheet status, operational alert summary or similar limited
+              information.
+            </p>
+
+            <p>
+              Users should avoid leaving devices that display notifications
+              unattended or accessible to unauthorized persons. Device-level
+              privacy controls, including lock screen notification settings,
+              remain controlled by the user and the device operating system.
+            </p>
+
+            <p>
+              Users who do not want notification content displayed outside the
+              application may adjust their device notification settings or
+              disable Mobile Notifications within {APP_NAME}, where available.
+            </p>
+          </PolicySection>
+
+          <PolicySection
+            number="08"
+            title="Notification Delivery and Operational Responsibility"
+          >
+            <p>
+              Push notifications are provided as an operational convenience and
+              communication aid. Delivery may depend on internet connectivity,
+              device settings, operating system behavior, browser permissions,
+              notification services and other technical factors outside the
+              direct control of {APP_NAME}.
+            </p>
+
+            <p>
+              A delayed, blocked or undelivered Push notification does not
+              replace a user's responsibility to access the platform, review
+              assigned schedules, monitor applicable work responsibilities and
+              follow authorized management instructions.
+            </p>
+
+            <p>
+              Users should periodically open {APP_NAME} directly to verify
+              schedules, messages, approvals and other information applicable
+              to their responsibilities.
+            </p>
+          </PolicySection>
+
+          <PolicySection
+            number="09"
+            title="Shared, Lost or Reassigned Devices"
+          >
+            <p>
+              Users should not leave their {APP_NAME} account active on a
+              shared, lost, sold, transferred or reassigned device.
+            </p>
+
+            <p>
+              When using a shared device, users are responsible for signing out
+              after use. If a device is lost, replaced or no longer under the
+              user's control, the user should promptly notify the appropriate
+              administrator when necessary and should disable access or
+              notifications where reasonably possible.
+            </p>
+
+            <p>
+              Users should not enable persistent Push notifications for another
+              employee's account on their personal device unless specifically
+              authorized for a legitimate operational purpose.
+            </p>
+          </PolicySection>
+
+          <PolicySection number="10" title="Confidentiality">
             <p>
               Information accessible through {APP_NAME} may contain
               confidential employee, company, airline, customer, security and
@@ -216,7 +363,8 @@ export default function PrivacyPolicyPage() {
               </li>
 
               <li>
-                Forward confidential records to unauthorized recipients.
+                Forward confidential records or direct messages to unauthorized
+                recipients.
               </li>
 
               <li>
@@ -247,12 +395,12 @@ export default function PrivacyPolicyPage() {
             </div>
           </PolicySection>
 
-          <PolicySection number="06" title="Access Control">
+          <PolicySection number="11" title="Access Control">
             <p>
               Access to {APP_NAME} is restricted to authorized users.
               Role-based permissions may determine which modules, reports,
-              records and administrative functions an individual user is
-              permitted to access.
+              records, notifications and administrative functions an individual
+              user is permitted to access.
             </p>
 
             <p>
@@ -269,14 +417,44 @@ export default function PrivacyPolicyPage() {
           </PolicySection>
 
           <PolicySection
-            number="07"
+            number="12"
+            title="Direct Messaging"
+          >
+            <p>
+              {APP_NAME} may provide direct messaging between authorized
+              users for legitimate work-related communication.
+            </p>
+
+            <p>
+              Direct messages may be stored within the platform and may generate
+              a Push notification to the intended recipient when notifications
+              are enabled.
+            </p>
+
+            <p>
+              Users should communicate professionally and should not use the
+              messaging function to transmit information that is unnecessary,
+              inappropriate, unauthorized or unrelated to legitimate business
+              purposes.
+            </p>
+
+            <p>
+              Users should assume that work-related messages may be retained as
+              part of the platform's operational records and may be accessible
+              to authorized administrators where required for legitimate
+              administrative, security, compliance or troubleshooting purposes.
+            </p>
+          </PolicySection>
+
+          <PolicySection
+            number="13"
             title="Monitoring and System Activity"
           >
             <p>
               For operational integrity, security, troubleshooting, compliance
               and system administration purposes, {APP_NAME} may maintain
-              records relating to system access, user activity and platform
-              usage.
+              records relating to system access, user activity, notification
+              delivery status and platform usage.
             </p>
 
             <p>
@@ -291,7 +469,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </PolicySection>
 
-          <PolicySection number="08" title="Data Security">
+          <PolicySection number="14" title="Data Security">
             <p>
               Reasonable administrative and technical safeguards are intended
               to protect information against unauthorized access, disclosure,
@@ -301,19 +479,21 @@ export default function PrivacyPolicyPage() {
             <p>
               Security measures may include authentication, role-based
               permissions, access restrictions, activity records, database
-              security controls and other appropriate safeguards.
+              security controls, device notification registration controls and
+              other appropriate safeguards.
             </p>
 
             <p>
               No electronic system can guarantee absolute security. Users must
               promptly report suspected unauthorized access, compromised
-              credentials, data exposure or other security incidents through
-              the appropriate management or administrative channel.
+              credentials, data exposure, lost devices with active access or
+              other security incidents through the appropriate management or
+              administrative channel.
             </p>
           </PolicySection>
 
           <PolicySection
-            number="09"
+            number="15"
             title="Data Sharing and Disclosure"
           >
             <p>
@@ -329,9 +509,16 @@ export default function PrivacyPolicyPage() {
               required by applicable law, regulation, legal process or
               governmental authority.
             </p>
+
+            <p>
+              Technical service providers used to operate platform features,
+              including hosting, database, authentication, storage or
+              notification delivery services, may process limited technical
+              information as necessary to provide those services.
+            </p>
           </PolicySection>
 
-          <PolicySection number="10" title="Data Retention">
+          <PolicySection number="16" title="Data Retention">
             <p>
               Information should be maintained only for as long as reasonably
               necessary for its legitimate operational, administrative,
@@ -346,7 +533,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </PolicySection>
 
-          <PolicySection number="11" title="User Responsibilities">
+          <PolicySection number="17" title="User Responsibilities">
             <p>
               By accessing {APP_NAME}, users are responsible for:
             </p>
@@ -356,10 +543,10 @@ export default function PrivacyPolicyPage() {
 
               <li>
                 Maintaining the confidentiality of information accessed through
-                the platform.
+                the platform or displayed in mobile notifications.
               </li>
 
-              <li>Protecting their login credentials.</li>
+              <li>Protecting their login credentials and personal devices.</li>
 
               <li>
                 Accessing only information required for their assigned
@@ -369,6 +556,15 @@ export default function PrivacyPolicyPage() {
               <li>
                 Refraining from unauthorized copying, disclosure or
                 distribution.
+              </li>
+
+              <li>
+                Signing out when using a shared or temporary device.
+              </li>
+
+              <li>
+                Reviewing schedules, messages and required operational
+                information directly in the platform when appropriate.
               </li>
 
               <li>
@@ -388,7 +584,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </PolicySection>
 
-          <PolicySection number="12" title="Intellectual Property">
+          <PolicySection number="18" title="Intellectual Property">
             <p>
               Original software, interface organization, workflows, platform
               architecture, documentation, reports, forms, designs and other
@@ -418,7 +614,7 @@ export default function PrivacyPolicyPage() {
           </PolicySection>
 
           <PolicySection
-            number="13"
+            number="19"
             title="No Transfer of Ownership Through Access"
           >
             <p>
@@ -429,12 +625,19 @@ export default function PrivacyPolicyPage() {
             </p>
           </PolicySection>
 
-          <PolicySection number="14" title="Policy Updates">
+          <PolicySection number="20" title="Policy Updates">
             <p>
               This policy may be revised as the platform evolves, new
               functionality is introduced, operational requirements change or
               additional privacy, security, legal or compliance requirements
               become applicable.
+            </p>
+
+            <p>
+              Update {PLATFORM_VERSION} includes expanded mobile capabilities,
+              including Home Screen installation, Push notifications, schedule
+              notifications, timesheet notifications and direct-message
+              notifications.
             </p>
 
             <p>
@@ -444,7 +647,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </PolicySection>
 
-          <PolicySection number="15" title="User Acknowledgment">
+          <PolicySection number="21" title="User Acknowledgment">
             <p>
               Users may be required to acknowledge the current version of this
               policy before accessing {APP_NAME}.
@@ -454,6 +657,15 @@ export default function PrivacyPolicyPage() {
               The platform may record the policy version and date and time of
               acknowledgment for administrative, security and compliance
               purposes.
+            </p>
+
+            <p>
+              By acknowledging this version, the user confirms that they
+              understand that mobile notifications may be generated when
+              enabled, that notification content may appear outside the
+              application depending on device settings, and that the user is
+              responsible for maintaining the security of their account and
+              device.
             </p>
 
             <div className="privacy-page-warning">
@@ -475,13 +687,11 @@ export default function PrivacyPolicyPage() {
             </div>
 
             <p>
-              {APP_NAME} is created, administered and monitored by
+              {APP_NAME} is created, administered and monitored by{" "}
               ANapoles Solutions.
             </p>
 
-            <span>
-              {APP_COPYRIGHT}
-            </span>
+            <span>{APP_COPYRIGHT}</span>
           </div>
         </section>
       </main>
@@ -492,6 +702,10 @@ export default function PrivacyPolicyPage() {
         <span>{"\u2022"}</span>
 
         <span>Privacy Policy Version {POLICY_VERSION}</span>
+
+        <span>{"\u2022"}</span>
+
+        <span>Update {PLATFORM_VERSION}</span>
 
         <span>{"\u2022"}</span>
 
