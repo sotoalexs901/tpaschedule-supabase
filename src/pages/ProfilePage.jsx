@@ -606,9 +606,19 @@ export default function ProfilePage() {
       }
 
       if (!response.ok || result?.ok === false) {
+        const stage = result?.stage
+          ? `Stage: ${result.stage}. `
+          : "";
+
+        const code = result?.code
+          ? `Code: ${result.code}. `
+          : "";
+
         throw new Error(
-          result?.error ||
+          `${stage}${code}${
+            result?.error ||
             `Push request failed with status ${response.status}.`
+          }`
         );
       }
 
