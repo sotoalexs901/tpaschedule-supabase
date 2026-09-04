@@ -14,6 +14,7 @@ import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 import { createOperationalAlert } from "../utils/operationalAlerts.js";
+import { triggerTimesheetSubmittedPush } from "../utils/timesheetPush.js";
 
 const AIRLINE_OPTIONS = [
   { value: "SY", label: "SY" },
@@ -756,8 +757,6 @@ export default function SupervisorTimesheetPage() {
 
       return true;
     } catch (alertErr) {
-      // Never block the operational timesheet submission because an alert write
-      // failed. The report itself remains flagged for management follow-up.
       console.error("Late timesheet management alert error:", alertErr);
       return false;
     }
@@ -806,9 +805,6 @@ export default function SupervisorTimesheetPage() {
         submittedByRole: user?.role || "",
         status: "submitted",
 
-        // Late-submission tracking. These fields are intentionally stored
-        // directly on the timesheet so the future Alert Center can surface
-        // the issue even if a separate alert document cannot be written.
         lateSubmission: isLateInitialSubmission,
         lateSubmissionHours: isLateInitialSubmission
           ? Number(lateInfo?.lateHours || 0)
@@ -827,8 +823,6 @@ export default function SupervisorTimesheetPage() {
           doc(db, "timesheet_reports", editingReportId),
           {
             ...payload,
-            // A correction/resubmission is not treated as a new "late initial
-            // submission"; it keeps the original workflow intact.
             lateSubmission: false,
             lateSubmissionHours: 0,
             managementAlertRequired: false,
@@ -861,9 +855,6 @@ export default function SupervisorTimesheetPage() {
             airline: normalizedAirline,
           });
 
-          // Record whether the separate alert was created. If it was not,
-          // managementAlertRequired remains true so the upcoming Alert Center
-          // can still discover the report directly.
           try {
             await updateDoc(reportRef, {
               managementAlertCreated: alertCreated,
@@ -883,6 +874,10 @@ export default function SupervisorTimesheetPage() {
               : "Late timesheet submitted. It is flagged URGENT for management review."
           );
         } else {
+          // Fire-and-forget: the timesheet is already safely stored.
+          // The server sends Push only to Station Manager and Duty Manager.
+          triggerTimesheetSubmittedPush(reportRef.id);
+
           setStatusMessage(
             "Timesheet submitted for approval successfully."
           );
@@ -979,8 +974,6 @@ export default function SupervisorTimesheetPage() {
 
     const lateInfo = getTimesheetSubmissionTiming(form.reportDate);
 
-    // Returned reports already entered the approval workflow, so the late
-    // initial-submission warning applies only to brand-new submissions.
     if (!editingReportId && lateInfo.isLate) {
       setLateSubmitPrompt({
         cleanRows,
@@ -1004,10 +997,6 @@ export default function SupervisorTimesheetPage() {
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
-      {/* ============================================================
-          AEROSTATION HUB - TIMESHEET HEADER
-      ============================================================ */}
-
       <div
         style={{
           background:
@@ -2132,3 +2121,5 @@ export default function SupervisorTimesheetPage() {
     </div>
   );
 }
+
+// END SupervisorTimesheetPage
