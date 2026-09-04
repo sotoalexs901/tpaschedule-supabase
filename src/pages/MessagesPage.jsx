@@ -1,4 +1,4 @@
-// src/pages/MessagesPage.jsx
+rc/pages/MessagesPage.jsx
 import React, {
   useCallback,
   useEffect,
@@ -658,7 +658,7 @@ export default function MessagesPage() {
         { merge: true }
       );
 
-      await addDoc(
+      const messageRef = await addDoc(
         collection(
           db,
           "conversations",
@@ -680,6 +680,21 @@ export default function MessagesPage() {
           readAt: null,
         }
       );
+
+      // Ask the server-side Netlify Function to deliver the push.
+      // Sending the chat itself does not depend on the push succeeding.
+      fetch("/.netlify/functions/send-push-message", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          conversationId,
+          messageId: messageRef.id,
+        }),
+      }).catch((error) => {
+        console.warn("Push delivery request failed:", error);
+      });
 
       setSelectedConversationId(conversationId);
       setText("");
