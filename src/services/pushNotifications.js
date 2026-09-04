@@ -9,11 +9,6 @@ import {
   doc,
   where,
 } from "firebase/firestore";
-import {
-  getMessaging,
-  getToken,
-  isSupported,
-} from "firebase/messaging";
 
 import { app, db } from "../firebase.js";
 
@@ -21,9 +16,30 @@ const VAPID_KEY = String(
   import.meta.env.VITE_FIREBASE_VAPID_KEY || ""
 ).trim();
 
+async function loadFirebaseMessaging() {
+  try {
+    const messagingModule = await import("firebase/messaging");
+
+    return {
+      getMessaging: messagingModule.getMessaging,
+      getToken: messagingModule.getToken,
+      isSupported: messagingModule.isSupported,
+    };
+  } catch (error) {
+    console.error("Firebase Messaging could not be loaded:", error);
+    return null;
+  }
+}
+
 async function sha256(value) {
+  if (!window.crypto?.subtle) {
+    throw new Error(
+      "Secure browser crypto is not available on this device."
+    );
+  }
+
   const encoded = new TextEncoder().encode(String(value || ""));
-  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  const digest = await window.crypto.subtle.digest("SHA-256", encoded);
 
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -43,10 +59,14 @@ function getDeviceLabel() {
 }
 
 function isStandaloneMode() {
-  return (
-    window.matchMedia?.("(display-mode: standalone)")?.matches ||
-    window.navigator.standalone === true
-  );
+  try {
+    return Boolean(
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+        window.navigator?.standalone === true
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function getPushSupportStatus() {
@@ -74,10 +94,26 @@ export async function getPushSupportStatus() {
     };
   }
 
-  const messagingSupported = await isSupported().catch(() => false);
+  const messaging = await loadFirebaseMessaging();
+
+  if (!messaging) {
+    return {
+      supported: false,
+      permission: Notification.permission,
+      reason: "firebase-messaging-load",
+    };
+  }
+
+  let messagingSupported = false;
+
+  try {
+    messagingSupported = await messaging.isSupported();
+  } catch (error) {
+    console.warn("Firebase Messaging support check failed:", error);
+  }
 
   return {
-    supported: messagingSupported,
+    supported: Boolean(messagingSupported),
     permission: Notification.permission,
     standalone: isStandaloneMode(),
     reason: messagingSupported ? "" : "firebase-messaging",
@@ -85,7 +121,8 @@ export async function getPushSupportStatus() {
 }
 
 async function getRootServiceWorkerRegistration() {
-  let registration = await navigator.serviceWorker.getRegistration("/");
+  let registration =
+    await navigator.serviceWorker.getRegistration("/");
 
   if (!registration) {
     registration = await navigator.serviceWorker.register("/sw.js", {
@@ -93,7 +130,7 @@ async function getRootServiceWorkerRegistration() {
       updateViaCache: "none",
     });
 
-    await navigator.serviceWorker.ready;
+    registration = await navigator.serviceWorker.ready;
   }
 
   return registration;
@@ -114,27 +151,33 @@ async function savePushToken(user, token) {
     tokenHash
   );
 
+  const nowPayload = {
+    token,
+    tokenHash,
+    userId: user.id,
+    username:
+      user.username ||
+      user.loginUsername ||
+      "",
+    displayName:
+      user.displayName ||
+      user.fullName ||
+      user.name ||
+      "",
+    deviceLabel: getDeviceLabel(),
+    userAgent: navigator.userAgent || "",
+    platform: navigator.platform || "",
+    standalone: isStandaloneMode(),
+    enabled: true,
+    updatedAt: serverTimestamp(),
+  };
+
+  // setDoc + merge means an existing token is refreshed without
+  // overwriting unrelated token data.
   await setDoc(
     tokenRef,
     {
-      token,
-      tokenHash,
-      userId: user.id,
-      username:
-        user.username ||
-        user.loginUsername ||
-        "",
-      displayName:
-        user.displayName ||
-        user.fullName ||
-        user.name ||
-        "",
-      deviceLabel: getDeviceLabel(),
-      userAgent: navigator.userAgent || "",
-      platform: navigator.platform || "",
-      standalone: isStandaloneMode(),
-      enabled: true,
-      updatedAt: serverTimestamp(),
+      ...nowPayload,
       createdAt: serverTimestamp(),
     },
     { merge: true }
@@ -158,7 +201,9 @@ export async function enablePushNotifications(user) {
 
   if (!support.supported) {
     throw new Error(
-      "Push notifications are not supported on this device/browser."
+      support.reason === "notifications"
+        ? "Notifications are not supported on this browser."
+        : "Push notifications are not available on this device yet."
     );
   }
 
@@ -179,9 +224,17 @@ export async function enablePushNotifications(user) {
   const registration =
     await getRootServiceWorkerRegistration();
 
-  const messaging = getMessaging(app);
+  const messagingModule = await loadFirebaseMessaging();
 
-  const token = await getToken(messaging, {
+  if (!messagingModule) {
+    throw new Error(
+      "Firebase Messaging could not be loaded on this device."
+    );
+  }
+
+  const messaging = messagingModule.getMessaging(app);
+
+  const token = await messagingModule.getToken(messaging, {
     vapidKey: VAPID_KEY,
     serviceWorkerRegistration: registration,
   });
@@ -203,7 +256,15 @@ export async function enablePushNotifications(user) {
 
 export async function refreshPushToken(user) {
   if (!user?.id) return null;
-  if (Notification.permission !== "granted") return null;
+
+  if (
+    typeof window === "undefined" ||
+    !("Notification" in window) ||
+    Notification.permission !== "granted"
+  ) {
+    return null;
+  }
+
   if (!VAPID_KEY) return null;
 
   const support = await getPushSupportStatus();
@@ -212,9 +273,12 @@ export async function refreshPushToken(user) {
   const registration =
     await getRootServiceWorkerRegistration();
 
-  const messaging = getMessaging(app);
+  const messagingModule = await loadFirebaseMessaging();
+  if (!messagingModule) return null;
 
-  const token = await getToken(messaging, {
+  const messaging = messagingModule.getMessaging(app);
+
+  const token = await messagingModule.getToken(messaging, {
     vapidKey: VAPID_KEY,
     serviceWorkerRegistration: registration,
   });
@@ -222,6 +286,7 @@ export async function refreshPushToken(user) {
   if (!token) return null;
 
   await savePushToken(user, token);
+
   return token;
 }
 
