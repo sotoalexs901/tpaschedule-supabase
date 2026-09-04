@@ -1,4 +1,4 @@
-rc/pages/MessagesPage.jsx
+src/pages/MessagesPage.jsx
 import React, {
   useCallback,
   useEffect,
