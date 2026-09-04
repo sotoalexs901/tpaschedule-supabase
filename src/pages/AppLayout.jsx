@@ -93,7 +93,9 @@ export default function AppLayout() {
   const lastActivityPingRef = useRef(0);
 
   const previousUnreadMessagesRef = useRef(0);
+  const unreadInitializedRef = useRef(false);
   const soundReadyRef = useRef(false);
+  const audioContextRef = useRef(null);
 
   const visibleName = useMemo(() => getVisibleName(user), [user]);
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
@@ -216,22 +218,68 @@ export default function AppLayout() {
   // ============================================================
 
   useEffect(() => {
-    const enableSound = () => {
-      soundReadyRef.current = true;
+    const unlockSound = async () => {
+      if (soundReadyRef.current && audioContextRef.current) {
+        return;
+      }
+
+      try {
+        const AudioContextClass =
+          window.AudioContext || window.webkitAudioContext;
+
+        if (!AudioContextClass) return;
+
+        let context = audioContextRef.current;
+
+        if (!context) {
+          context = new AudioContextClass();
+          audioContextRef.current = context;
+        }
+
+        if (context.state === "suspended") {
+          await context.resume();
+        }
+
+        // Play an almost-silent, ultra-short tone during the actual
+        // user gesture. This reliably unlocks WebAudio on iOS/iPadOS Safari.
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(
+          440,
+          context.currentTime
+        );
+
+        gain.gain.setValueAtTime(
+          0.00001,
+          context.currentTime
+        );
+
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+
+        oscillator.start(context.currentTime);
+        oscillator.stop(context.currentTime + 0.03);
+
+        soundReadyRef.current = true;
+      } catch (err) {
+        console.warn("Could not unlock message sound:", err);
+      }
     };
 
-    window.addEventListener("pointerdown", enableSound, { once: true });
-    window.addEventListener("touchstart", enableSound, { once: true });
-    window.addEventListener("keydown", enableSound, { once: true });
+    window.addEventListener("pointerdown", unlockSound, { once: true });
+    window.addEventListener("touchstart", unlockSound, { once: true });
+    window.addEventListener("keydown", unlockSound, { once: true });
 
     return () => {
-      window.removeEventListener("pointerdown", enableSound);
-      window.removeEventListener("touchstart", enableSound);
-      window.removeEventListener("keydown", enableSound);
+      window.removeEventListener("pointerdown", unlockSound);
+      window.removeEventListener("touchstart", unlockSound);
+      window.removeEventListener("keydown", unlockSound);
     };
   }, []);
 
-  const playMessageSound = () => {
+  const playMessageSound = async () => {
     if (!soundReadyRef.current) return;
 
     try {
@@ -240,36 +288,74 @@ export default function AppLayout() {
 
       if (!AudioContextClass) return;
 
-      const context = new AudioContextClass();
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
+      let context = audioContextRef.current;
 
-      oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(720, context.currentTime);
-      oscillator.frequency.exponentialRampToValueAtTime(
-        980,
-        context.currentTime + 0.12
+      if (!context) {
+        // Fallback for browsers that do not preserve the context.
+        context = new AudioContextClass();
+        audioContextRef.current = context;
+      }
+
+      if (context.state === "suspended") {
+        await context.resume();
+      }
+
+      const now = context.currentTime;
+
+      // First tone.
+      const oscillator1 = context.createOscillator();
+      const gain1 = context.createGain();
+
+      oscillator1.type = "sine";
+      oscillator1.frequency.setValueAtTime(720, now);
+      oscillator1.frequency.exponentialRampToValueAtTime(
+        920,
+        now + 0.10
       );
 
-      gain.gain.setValueAtTime(0.0001, context.currentTime);
-      gain.gain.exponentialRampToValueAtTime(
-        0.12,
-        context.currentTime + 0.02
+      gain1.gain.setValueAtTime(0.0001, now);
+      gain1.gain.exponentialRampToValueAtTime(
+        0.16,
+        now + 0.015
       );
-      gain.gain.exponentialRampToValueAtTime(
+      gain1.gain.exponentialRampToValueAtTime(
         0.0001,
-        context.currentTime + 0.2
+        now + 0.16
       );
 
-      oscillator.connect(gain);
-      gain.connect(context.destination);
+      oscillator1.connect(gain1);
+      gain1.connect(context.destination);
 
-      oscillator.start();
-      oscillator.stop(context.currentTime + 0.22);
+      oscillator1.start(now);
+      oscillator1.stop(now + 0.17);
 
-      oscillator.addEventListener("ended", () => {
-        context.close().catch(() => {});
-      });
+      // Second short tone gives the notification more presence,
+      // especially through iPad/iPhone speakers.
+      const oscillator2 = context.createOscillator();
+      const gain2 = context.createGain();
+
+      oscillator2.type = "sine";
+      oscillator2.frequency.setValueAtTime(980, now + 0.12);
+      oscillator2.frequency.exponentialRampToValueAtTime(
+        1180,
+        now + 0.22
+      );
+
+      gain2.gain.setValueAtTime(0.0001, now + 0.12);
+      gain2.gain.exponentialRampToValueAtTime(
+        0.13,
+        now + 0.135
+      );
+      gain2.gain.exponentialRampToValueAtTime(
+        0.0001,
+        now + 0.27
+      );
+
+      oscillator2.connect(gain2);
+      gain2.connect(context.destination);
+
+      oscillator2.start(now + 0.12);
+      oscillator2.stop(now + 0.28);
     } catch (err) {
       console.warn("Message sound unavailable:", err);
     }
@@ -304,11 +390,15 @@ export default function AppLayout() {
 
         const previousCount = previousUnreadMessagesRef.current;
 
-        if (unreadCount > previousCount && previousCount >= 0) {
+        if (
+          unreadInitializedRef.current &&
+          unreadCount > previousCount
+        ) {
           playMessageSound();
         }
 
         previousUnreadMessagesRef.current = unreadCount;
+        unreadInitializedRef.current = true;
         setUnreadMessages(unreadCount);
       },
       (err) => {
