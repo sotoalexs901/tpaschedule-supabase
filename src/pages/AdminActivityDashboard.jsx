@@ -1,6 +1,32 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import { db } from "../firebase";
+import {
+  APP_NAME,
+  APP_SUBTITLE,
+} from "../config/appConfig.js";
+
+// IMPORTANT:
+// Special punctuation and symbols use Unicode escape sequences to reduce
+// encoding issues when editing through GitHub/Safari/iPad.
+//
+// FORCE LOGOUT NOTE:
+// This page writes forceLogoutAt + sessionVersion to /users/{userId} and
+// marks the presence record offline. For immediate forced logout, AppLayout
+// or UserContext must listen to those fields and clear the local session when
+// sessionVersion changes. The management control is implemented here.
+
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -15,7 +41,7 @@ function toDateSafe(value) {
 
 function formatDate(value) {
   const d = toDateSafe(value);
-  if (!d) return "—";
+  if (!d) return "\u2014";
   return d.toLocaleString();
 }
 
@@ -31,7 +57,7 @@ function normalizeRole(role) {
   if (value === "duty_manager") return "Duty Manager";
   if (value === "supervisor") return "Supervisor";
   if (value === "agent") return "Agent";
-  return value || "—";
+  return value || "\u2014";
 }
 
 function startOfToday() {
@@ -115,6 +141,32 @@ function normalizeText(value) {
 
 function normalizeLookup(value) {
   return normalizeText(value).toLowerCase();
+}
+
+function getVisibleUserName(user) {
+  return (
+    normalizeText(user?.displayName) ||
+    normalizeText(user?.fullName) ||
+    normalizeText(user?.name) ||
+    normalizeText(user?.username) ||
+    "User"
+  );
+}
+
+function getUserPhoto(user) {
+  return (
+    user?.profilePhotoURL ||
+    user?.photoURL ||
+    user?.photoUrl ||
+    ""
+  );
+}
+
+function getInitials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "U";
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
 function getReportAgentName(report) {
@@ -250,6 +302,7 @@ function buildProductivityTable(reports, users) {
         ...row,
         role: matchedUser?.role || "",
         online: Boolean(matchedUser?.online),
+        user: matchedUser,
       };
     })
     .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
@@ -280,6 +333,77 @@ function buildMostUsedWheelchair(reports) {
   return { chair: topChair, count: topCount };
 }
 
+function getInactiveMs(user) {
+  const lastSeen = toDateSafe(user?.lastSeen);
+  if (!lastSeen) return Number.POSITIVE_INFINITY;
+  return Math.max(0, Date.now() - lastSeen.getTime());
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms)) return "Never connected";
+
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (hours < 24) {
+    return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
+function daysSince(value) {
+  const d = toDateSafe(value);
+  if (!d) return null;
+  return Math.floor(Math.max(0, Date.now() - d.getTime()) / DAY_MS);
+}
+
+function getLoginCount(user) {
+  const values = [
+    user?.loginCount,
+    user?.sessionCount,
+    user?.totalLogins,
+    user?.sessions,
+  ];
+
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+
+  return null;
+}
+
+function getActivityCount(user) {
+  const values = [
+    user?.activityCount,
+    user?.pageViews,
+    user?.navigationCount,
+    user?.totalActions,
+  ];
+
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+
+  return null;
+}
+
+function getEngagementScore(user) {
+  const logins = getLoginCount(user);
+  const actions = getActivityCount(user);
+
+  if (logins == null && actions == null) return null;
+
+  return (logins || 0) * 10 + (actions || 0);
+}
+
 function downloadCSV(filename, rows) {
   const csv = rows
     .map((row) =>
@@ -304,6 +428,13 @@ function safeRangeLabel(range) {
   return "custom";
 }
 
+function medalLabel(index) {
+  if (index === 0) return "\u{1F947}";
+  if (index === 1) return "\u{1F948}";
+  if (index === 2) return "\u{1F949}";
+  return `#${index + 1}`;
+}
+
 export default function AdminActivityDashboard() {
   const [users, setUsers] = useState([]);
   const [presence, setPresence] = useState([]);
@@ -317,6 +448,12 @@ export default function AdminActivityDashboard() {
   const [selectedRole, setSelectedRole] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+
+  const [showTopPerformers, setShowTopPerformers] = useState(false);
+  const [workingUserId, setWorkingUserId] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+
+  const flyerRef = useRef(null);
 
   useEffect(() => {
     const unsubUsers = onSnapshot(
@@ -360,21 +497,35 @@ export default function AdminActivityDashboard() {
       .map((user) => {
         const p = presenceMap.get(String(user.id)) || null;
         return {
+          ...user,
           id: user.id,
-          username: user.username || "—",
+          username: user.username || "\u2014",
           displayName: user.displayName || "",
           fullName: user.fullName || "",
           name: user.name || "",
           email: user.email || "",
-          role: user.role || "—",
+          role: user.role || "\u2014",
           online: Boolean(p?.online),
-          currentPage: p?.currentPage || "—",
-          lastSeen: p?.lastSeen || null,
-          lastLoginAt: p?.lastLoginAt || null,
+          currentPage: p?.currentPage || "\u2014",
+          lastSeen: p?.lastSeen || user.lastSeen || null,
+          lastLoginAt: p?.lastLoginAt || user.lastLoginAt || null,
           employeeId: user.employeeId || "",
+          presenceId: p?.id || user.id,
+          loginCount:
+            p?.loginCount ??
+            p?.sessionCount ??
+            user.loginCount ??
+            user.sessionCount ??
+            null,
+          activityCount:
+            p?.activityCount ??
+            p?.pageViews ??
+            user.activityCount ??
+            user.pageViews ??
+            null,
         };
       })
-      .sort((a, b) => a.username.localeCompare(b.username));
+      .sort((a, b) => String(a.username).localeCompare(String(b.username)));
   }, [users, presence]);
 
   const loginOptions = useMemo(() => {
@@ -429,8 +580,52 @@ export default function AdminActivityDashboard() {
   const activeUsers = filteredUsers.filter((u) => u.lastSeen).length;
   const totalWchr = filteredReports.length;
 
+  const staleOnlineUsers = useMemo(
+    () =>
+      mergedUsers
+        .filter((u) => u.online && getInactiveMs(u) >= TWO_HOURS_MS)
+        .sort((a, b) => getInactiveMs(b) - getInactiveMs(a)),
+    [mergedUsers]
+  );
+
+  const neverConnectedUsers = useMemo(
+    () => mergedUsers.filter((u) => !u.lastSeen && !u.lastLoginAt),
+    [mergedUsers]
+  );
+
+  const inactiveAccountRows = useMemo(() => {
+    return [...mergedUsers]
+      .map((u) => ({
+        ...u,
+        inactivityDays: daysSince(u.lastSeen || u.lastLoginAt),
+      }))
+      .filter((u) => u.inactivityDays == null || u.inactivityDays >= 7)
+      .sort((a, b) => {
+        if (a.inactivityDays == null && b.inactivityDays != null) return -1;
+        if (a.inactivityDays != null && b.inactivityDays == null) return 1;
+        return (b.inactivityDays || 0) - (a.inactivityDays || 0);
+      });
+  }, [mergedUsers]);
+
+  const engagementRows = useMemo(() => {
+    return [...mergedUsers]
+      .map((u) => ({
+        ...u,
+        loginMetric: getLoginCount(u),
+        activityMetric: getActivityCount(u),
+        engagementScore: getEngagementScore(u),
+      }))
+      .filter((u) => u.engagementScore != null)
+      .sort((a, b) => b.engagementScore - a.engagementScore);
+  }, [mergedUsers]);
+
   const topWchrLogins = useMemo(
     () => buildCountByLogin(filteredReports).slice(0, 10),
+    [filteredReports]
+  );
+
+  const topThreeWchr = useMemo(
+    () => buildCountByLogin(filteredReports).slice(0, 3),
     [filteredReports]
   );
 
@@ -483,7 +678,7 @@ export default function AdminActivityDashboard() {
         const B = toDateSafe(b.lastSeen)?.getTime() || 0;
         return B - A;
       })
-      .slice(0, 15);
+      .slice(0, 20);
   }, [filteredUsers]);
 
   const productivityRows = useMemo(() => {
@@ -504,12 +699,136 @@ export default function AdminActivityDashboard() {
       .slice(0, 25);
   }, [filteredReports]);
 
+  const handleForceLogout = async (target) => {
+    if (!target?.id) return;
+
+    const label = getVisibleUserName(target);
+    if (
+      !window.confirm(
+        `Force "${label}" to sign in again? This will mark the current session for logout.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setWorkingUserId(target.id);
+      setActionMessage("");
+
+      const nextVersion = Number(target.sessionVersion || 0) + 1;
+
+      await updateDoc(doc(db, "users", target.id), {
+        forceLogoutAt: serverTimestamp(),
+        sessionVersion: nextVersion,
+        forceLogoutReason: "Administrative inactivity reset",
+      });
+
+      if (target.presenceId) {
+        try {
+          await updateDoc(doc(db, "user_presence", target.presenceId), {
+            online: false,
+            currentPage: "Forced logout",
+            lastSeen: serverTimestamp(),
+          });
+        } catch (presenceErr) {
+          console.warn("Could not update presence during force logout:", presenceErr);
+        }
+      }
+
+      setActionMessage(
+        `${label} was marked for forced logout. The session listener must be enabled in AppLayout/UserContext for immediate logout.`
+      );
+    } catch (err) {
+      console.error("Error forcing logout:", err);
+      setActionMessage("Could not force logout this user.");
+    } finally {
+      setWorkingUserId("");
+    }
+  };
+
+  const handleDeleteAccount = async (target) => {
+    if (!target?.id) return;
+
+    const label = getVisibleUserName(target);
+    if (
+      !window.confirm(
+        `Permanently delete the platform account for "${label}"? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setWorkingUserId(target.id);
+      setActionMessage("");
+
+      await deleteDoc(doc(db, "users", target.id));
+
+      if (target.presenceId) {
+        try {
+          await deleteDoc(doc(db, "user_presence", target.presenceId));
+        } catch (presenceErr) {
+          console.warn("Could not delete presence record:", presenceErr);
+        }
+      }
+
+      setActionMessage(`Account "${label}" was deleted.`);
+    } catch (err) {
+      console.error("Error deleting user account:", err);
+      setActionMessage("Could not delete the user account.");
+    } finally {
+      setWorkingUserId("");
+    }
+  };
+
+  const handleExportTopPerformersPdf = async () => {
+    if (!flyerRef.current || topThreeWchr.length === 0) return;
+
+    try {
+      const canvas = await html2canvas(flyerRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "letter",
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 28;
+      const usableWidth = pageWidth - margin * 2;
+      const ratio = canvas.height / canvas.width;
+      const renderedHeight = usableWidth * ratio;
+      const finalHeight = Math.min(renderedHeight, pageHeight - margin * 2);
+      const finalWidth = finalHeight / ratio;
+
+      pdf.addImage(
+        imgData,
+        "PNG",
+        (pageWidth - finalWidth) / 2,
+        margin,
+        finalWidth,
+        finalHeight
+      );
+
+      pdf.save(`AeroStation-WCHR-Top-Performers-${safeRangeLabel(range)}.pdf`);
+    } catch (err) {
+      console.error("Error exporting WCHR flyer:", err);
+      setActionMessage("Could not export the WCHR recognition flyer.");
+    }
+  };
+
   const handleExportCsv = () => {
     const rows = [
-      ["ADMIN ACTIVITY DASHBOARD"],
+      [APP_NAME.toUpperCase(), "USER ACTIVITY DASHBOARD"],
       ["Range", safeRangeLabel(range)],
-      ["From", fromDate || "—"],
-      ["To", toDate || "—"],
+      ["From", fromDate || "\u2014"],
+      ["To", toDate || "\u2014"],
       ["Agent/Login Filter", selectedLogin],
       ["Role Filter", selectedRole],
       [],
@@ -518,6 +837,8 @@ export default function AdminActivityDashboard() {
       ["Online Now", onlineUsers],
       ["Users With Activity", activeUsers],
       ["WCHR Reports", totalWchr],
+      ["Stale Online > 2 Hours", staleOnlineUsers.length],
+      ["Never Connected", neverConnectedUsers.length],
       [],
       ["TOP WCHR LOGINS / AGENTS"],
       ["Agent / Login", "Count"],
@@ -554,7 +875,7 @@ export default function AdminActivityDashboard() {
       ]),
     ];
 
-    downloadCSV(`admin-activity-dashboard-${safeRangeLabel(range)}.csv`, rows);
+    downloadCSV(`aerostation-user-activity-${safeRangeLabel(range)}.csv`, rows);
   };
 
   const handlePrint = () => {
@@ -565,7 +886,7 @@ export default function AdminActivityDashboard() {
     <div
       id="admin-activity-dashboard"
       style={{
-        maxWidth: 1380,
+        maxWidth: 1450,
         margin: "0 auto",
         display: "grid",
         gap: 16,
@@ -574,37 +895,125 @@ export default function AdminActivityDashboard() {
     >
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "flex-start",
+          background:
+            "linear-gradient(135deg, #061f3d 0%, #0f4c81 48%, #1769aa 72%, #4fb6e9 100%)",
+          borderRadius: 28,
+          padding: 22,
+          color: "#ffffff",
+          boxShadow: "0 24px 60px rgba(15,76,129,0.22)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>
-            User Activity Dashboard
-          </h1>
-          <p style={{ marginTop: 6, color: "#64748b", fontSize: 14 }}>
-            Monitor user access, presence, scan hours, airlines and WCHR productivity.
-          </p>
-        </div>
+        <div
+          style={{
+            position: "absolute",
+            width: 260,
+            height: 260,
+            borderRadius: "999px",
+            border: "1px solid rgba(255,255,255,0.09)",
+            top: -120,
+            right: -45,
+          }}
+        />
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button onClick={handleExportCsv} style={actionBtnStyle}>
-            Export CSV
-          </button>
-          <button onClick={handlePrint} style={actionBtnStyle}>
-            Print / Save PDF
-          </button>
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+            <div
+              style={{
+                width: 58,
+                height: 58,
+                borderRadius: 18,
+                overflow: "hidden",
+                background: "rgba(255,255,255,0.96)",
+                flexShrink: 0,
+              }}
+            >
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              />
+            </div>
+
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: "0.16em",
+                  textTransform: "uppercase",
+                  color: "rgba(255,255,255,0.72)",
+                }}
+              >
+                {APP_NAME} {"\u00B7"} Operations Intelligence
+              </div>
+
+              <h1
+                style={{
+                  margin: "6px 0 4px",
+                  fontSize: 30,
+                  fontWeight: 850,
+                  letterSpacing: "-0.04em",
+                }}
+              >
+                User Activity Dashboard
+              </h1>
+
+              <p
+                style={{
+                  margin: 0,
+                  color: "rgba(255,255,255,0.84)",
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}
+              >
+                Presence, inactivity control, account health and WCHR performance.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+            <button onClick={handleExportCsv} style={heroBtnStyle}>
+              Export CSV
+            </button>
+            <button onClick={handlePrint} style={heroBtnStyle}>
+              Print / Save PDF
+            </button>
+          </div>
         </div>
       </div>
+
+      {actionMessage && (
+        <div
+          style={{
+            borderRadius: 16,
+            padding: "13px 15px",
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            color: "#0f4c81",
+            fontSize: 12.5,
+            fontWeight: 750,
+          }}
+        >
+          {actionMessage}
+        </div>
+      )}
 
       <Panel title="Filters">
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
             gap: 12,
           }}
         >
@@ -678,7 +1087,7 @@ export default function AdminActivityDashboard() {
         </div>
       </Panel>
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>
           Overview
         </TabButton>
@@ -692,7 +1101,7 @@ export default function AdminActivityDashboard() {
           User Activity
         </TabButton>
         <TabButton active={activeTab === "users"} onClick={() => setActiveTab("users")}>
-          Users
+          Account Health
         </TabButton>
       </div>
 
@@ -701,25 +1110,52 @@ export default function AdminActivityDashboard() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
               gap: 12,
             }}
           >
-            <StatCard label="Filtered Users" value={totalUsers} />
-            <StatCard label="Online Now" value={onlineUsers} />
-            <StatCard label="Users With Activity" value={activeUsers} />
-            <StatCard label="WCHR Reports" value={totalWchr} />
+            <StatCard label="Registered Users" value={totalUsers} icon={"\u{1F465}"} />
+            <StatCard label="Online Now" value={onlineUsers} icon={"\u{1F7E2}"} />
+            <StatCard label="Idle Online >2h" value={staleOnlineUsers.length} icon={"\u{23F3}"} danger={staleOnlineUsers.length > 0} />
+            <StatCard label="Never Connected" value={neverConnectedUsers.length} icon={"\u{1F6AB}"} danger={neverConnectedUsers.length > 0} />
+            <StatCard label="WCHR Reports" value={totalWchr} icon={"\u{1F9BD}"} />
           </div>
+
+          {staleOnlineUsers.length > 0 && (
+            <Panel title="Session Attention \u00B7 Online but inactive over 2 hours">
+              <div style={{ display: "grid", gap: 10 }}>
+                {staleOnlineUsers.map((u) => (
+                  <UserAttentionRow
+                    key={u.id}
+                    user={u}
+                    working={workingUserId === u.id}
+                    onForceLogout={() => handleForceLogout(u)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          )}
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
               gap: 16,
             }}
           >
-            <Panel title="Top WCHR Logins / Agents">
+            <Panel title="Top WCHR Agents">
               <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
+              {topThreeWchr.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowTopPerformers(true)}
+                    style={primaryBtnStyle}
+                  >
+                    View Top Performers
+                  </button>
+                </div>
+              )}
             </Panel>
 
             <Panel title="Top Airlines">
@@ -740,7 +1176,7 @@ export default function AdminActivityDashboard() {
                 value={
                   mostUsedWheelchairToday.chair
                     ? `${mostUsedWheelchairToday.chair} (${mostUsedWheelchairToday.count})`
-                    : "—"
+                    : "\u2014"
                 }
               />
               <StatCard
@@ -748,7 +1184,7 @@ export default function AdminActivityDashboard() {
                 value={
                   mostUsedWheelchairWeek.chair
                     ? `${mostUsedWheelchairWeek.chair} (${mostUsedWheelchairWeek.count})`
-                    : "—"
+                    : "\u2014"
                 }
               />
               <StatCard
@@ -756,7 +1192,7 @@ export default function AdminActivityDashboard() {
                 value={
                   mostUsedWheelchairMonth.chair
                     ? `${mostUsedWheelchairMonth.chair} (${mostUsedWheelchairMonth.count})`
-                    : "—"
+                    : "\u2014"
                 }
               />
             </div>
@@ -766,7 +1202,7 @@ export default function AdminActivityDashboard() {
 
       {activeTab === "wchr" && (
         <>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <SubTabButton
               active={activeWchrTab === "summary"}
               onClick={() => setActiveWchrTab("summary")}
@@ -792,7 +1228,7 @@ export default function AdminActivityDashboard() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
                   gap: 16,
                 }}
               >
@@ -805,7 +1241,20 @@ export default function AdminActivityDashboard() {
                 </Panel>
               </div>
 
-              <Panel title="Top WCHR Logins / Agents">
+              <Panel
+                title="Top WCHR Logins / Agents"
+                action={
+                  topThreeWchr.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowTopPerformers(true)}
+                      style={smallBtnStyle}
+                    >
+                      Recognition Flyer
+                    </button>
+                  ) : null
+                }
+              >
                 <BarChartList rows={topWchrLogins} emptyText="No WCHR activity for this filter." />
               </Panel>
             </>
@@ -817,7 +1266,7 @@ export default function AdminActivityDashboard() {
                 <InfoBox text="No productivity data for this filter." />
               ) : (
                 <div style={tableWrapStyle}>
-                  <table style={tableStyle}>
+                  <table style={{ ...tableStyle, minWidth: 760 }}>
                     <thead style={{ background: "#f8fbff" }}>
                       <tr>
                         <th style={th}>Agent / Login</th>
@@ -865,7 +1314,7 @@ export default function AdminActivityDashboard() {
                 <InfoBox text="No WCHR reports for this filter." />
               ) : (
                 <div style={tableWrapStyle}>
-                  <table style={tableStyle}>
+                  <table style={{ ...tableStyle, minWidth: 900 }}>
                     <thead style={{ background: "#f8fbff" }}>
                       <tr>
                         <th style={th}>Submitted At</th>
@@ -888,15 +1337,15 @@ export default function AdminActivityDashboard() {
                           <td style={td}>
                             <div style={{ fontWeight: 700 }}>{getReportAgentName(r)}</div>
                             <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                              {r.employee_login || r.employee_name || "—"}
+                              {r.employee_login || r.employee_name || "\u2014"}
                             </div>
                           </td>
-                          <td style={td}>{r.passenger_name || "—"}</td>
-                          <td style={td}>{r.airline || "—"}</td>
-                          <td style={td}>{r.flight_number || "—"}</td>
-                          <td style={td}>{r.wch_type || "—"}</td>
-                          <td style={td}>{r.wheelchair_number || "—"}</td>
-                          <td style={td}>{r.status || "—"}</td>
+                          <td style={td}>{r.passenger_name || "\u2014"}</td>
+                          <td style={td}>{r.airline || "\u2014"}</td>
+                          <td style={td}>{r.flight_number || "\u2014"}</td>
+                          <td style={td}>{r.wch_type || "\u2014"}</td>
+                          <td style={td}>{r.wheelchair_number || "\u2014"}</td>
+                          <td style={td}>{r.status || "\u2014"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -909,160 +1358,707 @@ export default function AdminActivityDashboard() {
       )}
 
       {activeTab === "user_activity" && (
-        <Panel title="Recent User Activity">
-          {recentUsers.length === 0 ? (
-            <InfoBox text="No recent activity for this filter." />
-          ) : (
-            <div style={tableWrapStyle}>
-              <table style={tableStyle}>
-                <thead style={{ background: "#f8fbff" }}>
-                  <tr>
-                    <th style={th}>User</th>
-                    <th style={th}>Role</th>
-                    <th style={th}>Status</th>
-                    <th style={th}>Current Page</th>
-                    <th style={th}>Last Seen</th>
-                    <th style={th}>First Login Tracked</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentUsers.map((u, i) => (
-                    <tr
-                      key={u.id}
-                      style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
-                    >
-                      <td style={td}>
-                        <div style={{ fontWeight: 700 }}>{u.username}</div>
-                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                          {u.employeeId || "No linked employee"}
-                        </div>
-                      </td>
-                      <td style={td}>{normalizeRole(u.role)}</td>
-                      <td style={td}>
-                        {u.online ? (
-                          <span style={badge("green")}>ONLINE</span>
-                        ) : (
-                          <span style={badge("gray")}>OFFLINE</span>
-                        )}
-                      </td>
-                      <td style={td}>{u.currentPage || "—"}</td>
-                      <td style={td}>{formatDate(u.lastSeen)}</td>
-                      <td style={td}>{formatDate(u.lastLoginAt)}</td>
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <StatCard label="Online Now" value={onlineUsers} />
+            <StatCard label="Idle >2 Hours" value={staleOnlineUsers.length} danger={staleOnlineUsers.length > 0} />
+            <StatCard label="Tracked Activity" value={activeUsers} />
+            <StatCard label="Never Connected" value={neverConnectedUsers.length} danger={neverConnectedUsers.length > 0} />
+          </div>
+
+          {engagementRows.length > 0 ? (
+            <Panel title="Most Frequent App Users">
+              <div style={tableWrapStyle}>
+                <table style={{ ...tableStyle, minWidth: 760 }}>
+                  <thead style={{ background: "#f8fbff" }}>
+                    <tr>
+                      <th style={th}>Rank</th>
+                      <th style={th}>User</th>
+                      <th style={th}>Role</th>
+                      <th style={th}>Logins / Sessions</th>
+                      <th style={th}>Activity / Page Views</th>
+                      <th style={th}>Last Seen</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {engagementRows.map((u, i) => (
+                      <tr key={u.id} style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}>
+                        <td style={{ ...td, fontWeight: 850 }}>{i + 1}</td>
+                        <td style={td}>
+                          <UserIdentity user={u} />
+                        </td>
+                        <td style={td}>{normalizeRole(u.role)}</td>
+                        <td style={td}>{u.loginMetric ?? "\u2014"}</td>
+                        <td style={td}>{u.activityMetric ?? "\u2014"}</td>
+                        <td style={td}>{formatDate(u.lastSeen)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          ) : (
+            <Panel title="Most Frequent App Users">
+              <InfoBox text="Current presence data does not include login/session counters yet. Last Seen and inactivity are available now; exact frequency ranking will populate when loginCount/sessionCount or activityCount/pageViews are written by the app." />
+            </Panel>
           )}
-        </Panel>
+
+          <Panel title="Recent User Activity">
+            {recentUsers.length === 0 ? (
+              <InfoBox text="No recent activity for this filter." />
+            ) : (
+              <div style={tableWrapStyle}>
+                <table style={{ ...tableStyle, minWidth: 900 }}>
+                  <thead style={{ background: "#f8fbff" }}>
+                    <tr>
+                      <th style={th}>User</th>
+                      <th style={th}>Role</th>
+                      <th style={th}>Status</th>
+                      <th style={th}>Current Page</th>
+                      <th style={th}>Last Seen</th>
+                      <th style={th}>Idle Time</th>
+                      <th style={th}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentUsers.map((u, i) => {
+                      const idleMs = getInactiveMs(u);
+                      const stale = u.online && idleMs >= TWO_HOURS_MS;
+
+                      return (
+                        <tr
+                          key={u.id}
+                          style={{
+                            background: stale
+                              ? "#fff7ed"
+                              : i % 2 === 0
+                              ? "#fff"
+                              : "#f9fbff",
+                          }}
+                        >
+                          <td style={td}>
+                            <UserIdentity user={u} />
+                          </td>
+                          <td style={td}>{normalizeRole(u.role)}</td>
+                          <td style={td}>
+                            {u.online ? (
+                              <span style={badge(stale ? "orange" : "green")}>
+                                {stale ? "IDLE ONLINE" : "ONLINE"}
+                              </span>
+                            ) : (
+                              <span style={badge("gray")}>OFFLINE</span>
+                            )}
+                          </td>
+                          <td style={td}>{u.currentPage || "\u2014"}</td>
+                          <td style={td}>{formatDate(u.lastSeen)}</td>
+                          <td style={{ ...td, fontWeight: stale ? 800 : 500 }}>
+                            {formatDuration(idleMs)}
+                          </td>
+                          <td style={td}>
+                            {stale ? (
+                              <button
+                                type="button"
+                                disabled={workingUserId === u.id}
+                                onClick={() => handleForceLogout(u)}
+                                style={dangerBtnStyle}
+                              >
+                                {workingUserId === u.id ? "Working..." : "Force Logout"}
+                              </button>
+                            ) : (
+                              "\u2014"
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </>
       )}
 
       {activeTab === "users" && (
-        <Panel title="All Registered Users">
-          {mergedUsers.length === 0 ? (
-            <InfoBox text="No registered users found." />
-          ) : (
-            <div style={tableWrapStyle}>
-              <table style={tableStyle}>
-                <thead style={{ background: "#f8fbff" }}>
-                  <tr>
-                    <th style={th}>User</th>
-                    <th style={th}>Role</th>
-                    <th style={th}>Status</th>
-                    <th style={th}>Current Page</th>
-                    <th style={th}>Last Seen</th>
-                    <th style={th}>First Login Tracked</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mergedUsers.map((u, i) => (
-                    <tr
-                      key={u.id}
-                      style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
-                    >
-                      <td style={td}>
-                        <div style={{ fontWeight: 700 }}>{u.username}</div>
-                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                          {u.employeeId || "No linked employee"}
-                        </div>
-                      </td>
-                      <td style={td}>{normalizeRole(u.role)}</td>
-                      <td style={td}>
-                        {u.online ? (
-                          <span style={badge("green")}>ONLINE</span>
-                        ) : (
-                          <span style={badge("gray")}>OFFLINE</span>
-                        )}
-                      </td>
-                      <td style={td}>{u.currentPage || "—"}</td>
-                      <td style={td}>{formatDate(u.lastSeen)}</td>
-                      <td style={td}>{formatDate(u.lastLoginAt)}</td>
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <StatCard label="All Accounts" value={mergedUsers.length} />
+            <StatCard label="Inactive 7+ Days" value={inactiveAccountRows.filter((u) => u.inactivityDays != null && u.inactivityDays >= 7).length} />
+            <StatCard label="Inactive 30+ Days" value={inactiveAccountRows.filter((u) => u.inactivityDays != null && u.inactivityDays >= 30).length} danger />
+            <StatCard label="Never Connected" value={neverConnectedUsers.length} danger={neverConnectedUsers.length > 0} />
+          </div>
+
+          <Panel title="Account Health / Inactive Users">
+            {inactiveAccountRows.length === 0 ? (
+              <InfoBox text="No inactive accounts currently require review." />
+            ) : (
+              <div style={tableWrapStyle}>
+                <table style={{ ...tableStyle, minWidth: 920 }}>
+                  <thead style={{ background: "#f8fbff" }}>
+                    <tr>
+                      <th style={th}>User</th>
+                      <th style={th}>Role</th>
+                      <th style={th}>Last Seen</th>
+                      <th style={th}>Time Inactive</th>
+                      <th style={th}>Current Status</th>
+                      <th style={th}>Account Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
+                  </thead>
+                  <tbody>
+                    {inactiveAccountRows.map((u, i) => {
+                      const critical = u.inactivityDays == null || u.inactivityDays >= 30;
+
+                      return (
+                        <tr
+                          key={u.id}
+                          style={{
+                            background: critical
+                              ? "#fff1f2"
+                              : i % 2 === 0
+                              ? "#ffffff"
+                              : "#f9fbff",
+                          }}
+                        >
+                          <td style={td}>
+                            <UserIdentity user={u} />
+                          </td>
+                          <td style={td}>{normalizeRole(u.role)}</td>
+                          <td style={td}>{formatDate(u.lastSeen || u.lastLoginAt)}</td>
+                          <td style={{ ...td, fontWeight: critical ? 850 : 650 }}>
+                            {u.inactivityDays == null
+                              ? "Never connected"
+                              : `${u.inactivityDays} day${u.inactivityDays === 1 ? "" : "s"}`}
+                          </td>
+                          <td style={td}>
+                            {u.online ? (
+                              <span style={badge("green")}>ONLINE</span>
+                            ) : (
+                              <span style={badge("gray")}>OFFLINE</span>
+                            )}
+                          </td>
+                          <td style={td}>
+                            <button
+                              type="button"
+                              disabled={workingUserId === u.id}
+                              onClick={() => handleDeleteAccount(u)}
+                              style={dangerBtnStyle}
+                            >
+                              {workingUserId === u.id ? "Working..." : "Delete Account"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="All Registered Users">
+            {mergedUsers.length === 0 ? (
+              <InfoBox text="No registered users found." />
+            ) : (
+              <div style={tableWrapStyle}>
+                <table style={{ ...tableStyle, minWidth: 920 }}>
+                  <thead style={{ background: "#f8fbff" }}>
+                    <tr>
+                      <th style={th}>User</th>
+                      <th style={th}>Role</th>
+                      <th style={th}>Status</th>
+                      <th style={th}>Current Page</th>
+                      <th style={th}>Last Seen</th>
+                      <th style={th}>First Login Tracked</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mergedUsers.map((u, i) => (
+                      <tr
+                        key={u.id}
+                        style={{ background: i % 2 === 0 ? "#fff" : "#f9fbff" }}
+                      >
+                        <td style={td}>
+                          <UserIdentity user={u} />
+                        </td>
+                        <td style={td}>{normalizeRole(u.role)}</td>
+                        <td style={td}>
+                          {u.online ? (
+                            <span style={badge("green")}>ONLINE</span>
+                          ) : (
+                            <span style={badge("gray")}>OFFLINE</span>
+                          )}
+                        </td>
+                        <td style={td}>{u.currentPage || "\u2014"}</td>
+                        <td style={td}>{formatDate(u.lastSeen)}</td>
+                        <td style={td}>{formatDate(u.lastLoginAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </>
       )}
+
+      {showTopPerformers && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowTopPerformers(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(15,23,42,0.65)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 760,
+              maxHeight: "92vh",
+              overflowY: "auto",
+              borderRadius: 24,
+              background: "#ffffff",
+              boxShadow: "0 30px 80px rgba(15,23,42,0.32)",
+            }}
+          >
+            <div ref={flyerRef}>
+              <WchrRecognitionFlyer
+                rows={topThreeWchr}
+                users={mergedUsers}
+                range={range}
+                fromDate={fromDate}
+                toDate={toDate}
+              />
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+                padding: 16,
+                borderTop: "1px solid #e2e8f0",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowTopPerformers(false)}
+                style={smallBtnStyle}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={handleExportTopPerformersPdf}
+                style={primaryBtnStyle}
+              >
+                Export PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div
+        style={{
+          textAlign: "center",
+          padding: "2px 10px 10px",
+          color: "#94a3b8",
+          fontSize: 10.5,
+        }}
+      >
+        {APP_NAME} {"\u00B7"} {APP_SUBTITLE}
+      </div>
     </div>
   );
 }
 
-function Panel({ title, children }) {
+function WchrRecognitionFlyer({ rows, users, range, fromDate, toDate }) {
   return (
     <div
       style={{
-        background: "#fff",
-        border: "1px solid #e2e8f0",
-        borderRadius: 18,
-        padding: 16,
-        boxShadow: "0 8px 24px rgba(15,23,42,0.04)",
+        padding: 28,
+        background:
+          "linear-gradient(180deg, #061f3d 0%, #0f4c81 36%, #f8fbff 36%, #ffffff 100%)",
+        minHeight: 720,
       }}
     >
-      <h2
+      <div style={{ textAlign: "center", color: "#ffffff" }}>
+        <img
+          src="/icons/aerostation-icon.png"
+          alt={APP_NAME}
+          style={{
+            width: 70,
+            height: 70,
+            objectFit: "contain",
+            borderRadius: 20,
+            background: "#ffffff",
+          }}
+        />
+
+        <div
+          style={{
+            marginTop: 12,
+            fontSize: 11,
+            letterSpacing: "0.16em",
+            textTransform: "uppercase",
+            fontWeight: 850,
+            opacity: 0.8,
+          }}
+        >
+          {APP_NAME} {"\u00B7"} WCHR Recognition
+        </div>
+
+        <h2
+          style={{
+            margin: "8px 0 4px",
+            fontSize: 30,
+            fontWeight: 900,
+          }}
+        >
+          Top WCHR Performers
+        </h2>
+
+        <p style={{ margin: 0, fontSize: 12, opacity: 0.82 }}>
+          Congratulations to our top three team members for outstanding WCHR service.
+        </p>
+
+        <p style={{ margin: "5px 0 0", fontSize: 10.5, opacity: 0.68 }}>
+          {range === "custom"
+            ? `${fromDate || "\u2014"} to ${toDate || "\u2014"}`
+            : safeRangeLabel(range).replace(/-/g, " ")}
+        </p>
+      </div>
+
+      <div
         style={{
-          margin: "0 0 12px",
-          fontSize: 18,
-          fontWeight: 800,
-          color: "#0f172a",
+          marginTop: 28,
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: 12,
+          alignItems: "stretch",
         }}
       >
-        {title}
-      </h2>
+        {rows.map((row, index) => {
+          const matched = findMatchedUser(users, row.label);
+          const name = matched ? getVisibleUserName(matched) : row.label;
+          const photo = getUserPhoto(matched || {});
+
+          return (
+            <div
+              key={row.label}
+              style={{
+                borderRadius: 20,
+                background: "#ffffff",
+                border:
+                  index === 0
+                    ? "2px solid #f59e0b"
+                    : index === 1
+                    ? "2px solid #94a3b8"
+                    : "2px solid #c2410c",
+                padding: 16,
+                textAlign: "center",
+                boxShadow: "0 14px 30px rgba(15,23,42,0.10)",
+              }}
+            >
+              <div style={{ fontSize: 34 }}>{medalLabel(index)}</div>
+
+              <div
+                style={{
+                  width: 82,
+                  height: 82,
+                  margin: "10px auto 12px",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                  background: "#e0f2fe",
+                  border: "3px solid #ffffff",
+                  outline: "2px solid #bfdbfe",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#0f4c81",
+                  fontSize: 24,
+                  fontWeight: 900,
+                }}
+              >
+                {photo ? (
+                  <img
+                    src={photo}
+                    alt={name}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  getInitials(name)
+                )}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                  lineHeight: 1.25,
+                }}
+              >
+                {name}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 11,
+                  color: "#64748b",
+                  fontWeight: 750,
+                }}
+              >
+                {matched?.position || normalizeRole(matched?.role) || "Team Member"}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 13,
+                  display: "inline-flex",
+                  borderRadius: 999,
+                  padding: "7px 12px",
+                  background: "#eff6ff",
+                  color: "#1769aa",
+                  fontSize: 12,
+                  fontWeight: 900,
+                }}
+              >
+                {row.count} WCHR Services
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          marginTop: 26,
+          borderRadius: 20,
+          padding: 18,
+          background: "#f8fbff",
+          border: "1px solid #dbeafe",
+          textAlign: "center",
+          color: "#334155",
+          lineHeight: 1.65,
+          fontSize: 13,
+        }}
+      >
+        Thank you for your dedication, professionalism, and commitment to
+        providing excellent assistance to our passengers. Your performance
+        represents the service standards of {APP_NAME}.
+      </div>
+
+      <div
+        style={{
+          marginTop: 18,
+          textAlign: "center",
+          color: "#64748b",
+          fontSize: 10.5,
+          fontWeight: 750,
+        }}
+      >
+        {APP_NAME} {"\u00B7"} {APP_SUBTITLE}
+      </div>
+    </div>
+  );
+}
+
+function UserIdentity({ user }) {
+  const name = getVisibleUserName(user);
+  const photo = getUserPhoto(user);
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+      <div
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 12,
+          overflow: "hidden",
+          background: "#e0f2fe",
+          border: "1px solid #bae6fd",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#0f4c81",
+          fontWeight: 850,
+          flexShrink: 0,
+        }}
+      >
+        {photo ? (
+          <img
+            src={photo}
+            alt={name}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          getInitials(name)
+        )}
+      </div>
+
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 800, color: "#0f172a" }}>{name}</div>
+        <div style={{ marginTop: 2, fontSize: 11, color: "#64748b" }}>
+          @{user?.username || "\u2014"}
+          {user?.employeeId ? ` \u00B7 ${user.employeeId}` : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserAttentionRow({ user, onForceLogout, working }) {
+  const idle = getInactiveMs(user);
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(220px, 1fr) auto auto",
+        alignItems: "center",
+        gap: 12,
+        borderRadius: 16,
+        padding: 12,
+        background: "#fff7ed",
+        border: "1px solid #fdba74",
+      }}
+    >
+      <UserIdentity user={user} />
+
+      <div>
+        <div style={{ fontSize: 10, color: "#9a3412", fontWeight: 800 }}>
+          NO MOVEMENT
+        </div>
+        <div style={{ marginTop: 2, fontSize: 13, color: "#7c2d12", fontWeight: 850 }}>
+          {formatDuration(idle)}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        disabled={working}
+        onClick={onForceLogout}
+        style={dangerBtnStyle}
+      >
+        {working ? "Working..." : "Force Logout"}
+      </button>
+    </div>
+  );
+}
+
+function Panel({ title, children, action }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.96)",
+        border: "1px solid #e2e8f0",
+        borderRadius: 20,
+        padding: 16,
+        boxShadow: "0 10px 28px rgba(15,23,42,0.045)",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 12,
+        }}
+      >
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 17,
+            fontWeight: 850,
+            color: "#0f172a",
+          }}
+        >
+          {title}
+        </h2>
+        {action}
+      </div>
       {children}
     </div>
   );
 }
 
-function StatCard({ label, value }) {
+function StatCard({ label, value, icon, danger = false }) {
   return (
     <div
       style={{
-        background: "#f8fbff",
-        border: "1px solid #dbeafe",
-        borderRadius: 14,
-        padding: 16,
+        background: danger
+          ? "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)"
+          : "linear-gradient(135deg, #f8fbff 0%, #ffffff 100%)",
+        border: danger ? "1px solid #fecdd3" : "1px solid #dbeafe",
+        borderRadius: 16,
+        padding: 15,
+        position: "relative",
+        overflow: "hidden",
       }}
     >
+      {icon && (
+        <div
+          style={{
+            position: "absolute",
+            right: 12,
+            top: 10,
+            fontSize: 20,
+            opacity: 0.85,
+          }}
+        >
+          {icon}
+        </div>
+      )}
+
       <p
         style={{
           margin: 0,
-          fontSize: 12,
-          color: "#64748b",
-          fontWeight: 700,
+          fontSize: 10.5,
+          color: danger ? "#9f1239" : "#64748b",
+          fontWeight: 800,
           textTransform: "uppercase",
           letterSpacing: "0.04em",
+          paddingRight: icon ? 30 : 0,
         }}
       >
         {label}
       </p>
+
       <p
         style={{
-          margin: "8px 0 0",
-          fontSize: 24,
-          fontWeight: 800,
-          color: "#0f172a",
+          margin: "7px 0 0",
+          fontSize: 23,
+          fontWeight: 900,
+          color: danger ? "#be123c" : "#0f172a",
         }}
       >
         {value}
@@ -1077,7 +2073,7 @@ function FilterField({ label, children }) {
       <div
         style={{
           marginBottom: 6,
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: 800,
           color: "#64748b",
           textTransform: "uppercase",
@@ -1097,12 +2093,14 @@ function TabButton({ children, active, onClick }) {
       onClick={onClick}
       style={{
         border: active ? "1px solid #1769aa" : "1px solid #cfe7fb",
-        background: active ? "#1769aa" : "#ffffff",
+        background: active
+          ? "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)"
+          : "#ffffff",
         color: active ? "#ffffff" : "#1769aa",
         borderRadius: 12,
         padding: "10px 14px",
-        fontSize: 13,
-        fontWeight: 800,
+        fontSize: 12.5,
+        fontWeight: 850,
         cursor: "pointer",
       }}
     >
@@ -1157,7 +2155,7 @@ function BarChartList({ rows, emptyText }) {
 
           <div
             style={{
-              height: 12,
+              height: 11,
               borderRadius: 999,
               background: "#e2e8f0",
               overflow: "hidden",
@@ -1168,7 +2166,7 @@ function BarChartList({ rows, emptyText }) {
                 width: `${(row.count / max) * 100}%`,
                 height: "100%",
                 borderRadius: 999,
-                background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+                background: "linear-gradient(135deg, #0f4c81 0%, #4fb6e9 100%)",
               }}
             />
           </div>
@@ -1188,9 +2186,10 @@ function VerticalBars({ rows, compact = false }) {
       style={{
         display: "grid",
         gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))`,
-        gap: compact ? 6 : 8,
+        gap: compact ? 5 : 8,
         alignItems: "end",
         minHeight: 220,
+        overflowX: "auto",
       }}
     >
       {rows.map((row) => (
@@ -1202,23 +2201,17 @@ function VerticalBars({ rows, compact = false }) {
             alignItems: "center",
             justifyContent: "end",
             gap: 8,
-            minWidth: 0,
+            minWidth: compact ? 22 : 34,
           }}
         >
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#334155",
-            }}
-          >
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#334155" }}>
             {row.count}
           </div>
 
           <div
             style={{
               width: "100%",
-              maxWidth: compact ? 22 : 34,
+              maxWidth: compact ? 20 : 32,
               height: `${Math.max((row.count / max) * 150, row.count > 0 ? 10 : 2)}px`,
               borderRadius: 10,
               background: "linear-gradient(180deg, #5aa9e6 0%, #1769aa 100%)",
@@ -1227,7 +2220,7 @@ function VerticalBars({ rows, compact = false }) {
 
           <div
             style={{
-              fontSize: compact ? 9 : 11,
+              fontSize: compact ? 8 : 10,
               color: "#64748b",
               textAlign: "center",
               wordBreak: "break-word",
@@ -1250,8 +2243,9 @@ function InfoBox({ text }) {
         background: "#f8fbff",
         border: "1px solid #dbeafe",
         color: "#64748b",
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: 600,
+        lineHeight: 1.55,
       }}
     >
       {text}
@@ -1261,30 +2255,65 @@ function InfoBox({ text }) {
 
 const selectStyle = {
   width: "100%",
+  boxSizing: "border-box",
   border: "1px solid #dbeafe",
   background: "#ffffff",
   borderRadius: 12,
   padding: "10px 12px",
-  fontSize: 14,
+  fontSize: 16,
   color: "#0f172a",
   outline: "none",
 };
 
-const actionBtnStyle = {
-  border: "1px solid #cfe7fb",
-  background: "#ffffff",
-  color: "#1769aa",
+const heroBtnStyle = {
+  border: "1px solid rgba(255,255,255,0.24)",
+  background: "rgba(255,255,255,0.12)",
+  color: "#ffffff",
+  borderRadius: 12,
+  padding: "9px 13px",
+  fontSize: 12,
+  fontWeight: 850,
+  cursor: "pointer",
+};
+
+const primaryBtnStyle = {
+  border: "none",
+  background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+  color: "#ffffff",
   borderRadius: 12,
   padding: "10px 14px",
-  fontSize: 13,
-  fontWeight: 800,
+  fontSize: 12,
+  fontWeight: 850,
   cursor: "pointer",
+};
+
+const smallBtnStyle = {
+  border: "1px solid #bfdbfe",
+  background: "#ffffff",
+  color: "#1769aa",
+  borderRadius: 11,
+  padding: "8px 11px",
+  fontSize: 11,
+  fontWeight: 850,
+  cursor: "pointer",
+};
+
+const dangerBtnStyle = {
+  border: "none",
+  background: "#dc2626",
+  color: "#ffffff",
+  borderRadius: 10,
+  padding: "8px 11px",
+  fontSize: 11,
+  fontWeight: 850,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 };
 
 const tableWrapStyle = {
   border: "1px solid #e2e8f0",
   borderRadius: 16,
-  overflow: "hidden",
+  overflowX: "auto",
   background: "#fff",
 };
 
@@ -1296,31 +2325,42 @@ const tableStyle = {
 const th = {
   padding: 12,
   textAlign: "left",
-  fontSize: 12,
-  fontWeight: 800,
+  fontSize: 11,
+  fontWeight: 850,
   color: "#475569",
   textTransform: "uppercase",
   letterSpacing: "0.04em",
+  whiteSpace: "nowrap",
 };
 
 const td = {
   padding: 12,
-  fontSize: 14,
+  fontSize: 13,
   borderTop: "1px solid #eef2f7",
-  verticalAlign: "top",
+  verticalAlign: "middle",
   color: "#0f172a",
 };
 
 function badge(color) {
+  const config =
+    color === "green"
+      ? { bg: "#dcfce7", text: "#166534", border: "#86efac" }
+      : color === "orange"
+      ? { bg: "#fff7ed", text: "#c2410c", border: "#fdba74" }
+      : { bg: "#f1f5f9", text: "#334155", border: "#cbd5e1" };
+
   return {
     display: "inline-flex",
     alignItems: "center",
-    padding: "4px 10px",
+    padding: "4px 9px",
     borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 800,
-    background: color === "green" ? "#dcfce7" : "#f1f5f9",
-    color: color === "green" ? "#166534" : "#334155",
-    border: `1px solid ${color === "green" ? "#86efac" : "#cbd5e1"}`,
+    fontSize: 10.5,
+    fontWeight: 850,
+    background: config.bg,
+    color: config.text,
+    border: `1px solid ${config.border}`,
+    whiteSpace: "nowrap",
   };
 }
+
+// END AdminActivityDashboard
