@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { triggerScheduleDecisionPush } from "../utils/schedulePush.js";
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const DAY_LABELS = {
@@ -128,18 +129,31 @@ export default function ApprovalsPage() {
   const loadPending = async () => {
     setLoading(true);
     setStatusMessage("");
+
     try {
       const qPending = query(
         collection(db, "schedules"),
         where("status", "==", "pending"),
         orderBy("createdAt", "desc")
       );
+
       const snap = await getDocs(qPending);
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const items = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+
       setPendingSchedules(items);
     } catch (err) {
-      console.error("Error loading pending schedules:", err);
-      setStatusMessage("Could not load pending schedules.");
+      console.error(
+        "Error loading pending schedules:",
+        err
+      );
+
+      setStatusMessage(
+        "Could not load pending schedules."
+      );
     } finally {
       setLoading(false);
     }
@@ -151,6 +165,7 @@ export default function ApprovalsPage() {
 
   const formatWeekLabel = (sch) => {
     if (!sch.days) return "";
+
     return DAY_KEYS.map((k) => {
       const label = DAY_LABELS[k];
       const num = sch.days[k];
@@ -159,44 +174,126 @@ export default function ApprovalsPage() {
   };
 
   const handleApprove = async (scheduleId) => {
-    const ok = window.confirm("Approve this schedule?");
+    const ok = window.confirm(
+      "Approve this schedule?"
+    );
+
     if (!ok) return;
 
     try {
-      await updateDoc(doc(db, "schedules", scheduleId), {
-        status: "approved",
-        approvedBy: user?.username || "station_manager",
-        approvedAt: serverTimestamp(),
-        reviewNotes: null,
-      });
+      await updateDoc(
+        doc(db, "schedules", scheduleId),
+        {
+          status: "approved",
+          approvedBy:
+            user?.username ||
+            "station_manager",
+          approvedAt: serverTimestamp(),
+          reviewNotes: null,
 
-      setPendingSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
-      setStatusMessage("Schedule approved successfully.");
+          // Reset decision Push state for this approval.
+          decisionPushStatus: "PENDING",
+          decisionPushDecision: "approved",
+          decisionPushError: "",
+        }
+      );
+
+      // Fire-and-forget.
+      // The schedule is already approved before Push is requested.
+      //
+      // The server will:
+      // 1) notify the original submitter personally;
+      // 2) notify every other Push-enabled user that the new
+      //    personalized schedule is available.
+      triggerScheduleDecisionPush(
+        scheduleId,
+        "approved"
+      );
+
+      setPendingSchedules((prev) =>
+        prev.filter(
+          (s) => s.id !== scheduleId
+        )
+      );
+
+      setStatusMessage(
+        "Schedule approved successfully."
+      );
     } catch (err) {
-      console.error("Error approving schedule:", err);
-      setStatusMessage("Error approving schedule.");
+      console.error(
+        "Error approving schedule:",
+        err
+      );
+
+      setStatusMessage(
+        "Error approving schedule."
+      );
     }
   };
 
-  const handleReturnToDuty = async (scheduleId) => {
+  const handleReturnToDuty = async (
+    scheduleId
+  ) => {
     const note = window.prompt(
       "Reason to return this schedule to Duty Manager:"
     );
+
     if (note === null) return;
 
-    try {
-      await updateDoc(doc(db, "schedules", scheduleId), {
-        status: "returned",
-        reviewNotes: note,
-        reviewedBy: user?.username || "station_manager",
-        reviewedAt: serverTimestamp(),
-      });
+    const cleanNote =
+      String(note || "").trim();
 
-      setPendingSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
-      setStatusMessage("Schedule returned to Duty Manager.");
+    if (!cleanNote) {
+      setStatusMessage(
+        "Please enter a reason before returning the schedule."
+      );
+      return;
+    }
+
+    try {
+      await updateDoc(
+        doc(db, "schedules", scheduleId),
+        {
+          status: "returned",
+          reviewNotes: cleanNote,
+          reviewedBy:
+            user?.username ||
+            "station_manager",
+          reviewedAt: serverTimestamp(),
+
+          // Reset decision Push state for this return.
+          decisionPushStatus: "PENDING",
+          decisionPushDecision: "returned",
+          decisionPushError: "",
+        }
+      );
+
+      // Fire-and-forget.
+      // Only the user who originally submitted the schedule
+      // receives the Return notification.
+      triggerScheduleDecisionPush(
+        scheduleId,
+        "returned"
+      );
+
+      setPendingSchedules((prev) =>
+        prev.filter(
+          (s) => s.id !== scheduleId
+        )
+      );
+
+      setStatusMessage(
+        "Schedule returned to the submitting user."
+      );
     } catch (err) {
-      console.error("Error returning schedule:", err);
-      setStatusMessage("Error returning schedule.");
+      console.error(
+        "Error returning schedule:",
+        err
+      );
+
+      setStatusMessage(
+        "Error returning schedule."
+      );
     }
   };
 
@@ -209,7 +306,8 @@ export default function ApprovalsPage() {
       style={{
         display: "grid",
         gap: 18,
-        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        fontFamily:
+          "Poppins, Inter, system-ui, sans-serif",
       }}
     >
       <div
@@ -219,7 +317,8 @@ export default function ApprovalsPage() {
           borderRadius: 28,
           padding: 24,
           color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+          boxShadow:
+            "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
           overflow: "hidden",
         }}
@@ -230,7 +329,8 @@ export default function ApprovalsPage() {
             width: 220,
             height: 220,
             borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
+            background:
+              "rgba(255,255,255,0.08)",
             top: -80,
             right: -40,
           }}
@@ -240,7 +340,8 @@ export default function ApprovalsPage() {
           style={{
             position: "relative",
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             alignItems: "flex-start",
             gap: 16,
             flexWrap: "wrap",
@@ -251,22 +352,27 @@ export default function ApprovalsPage() {
               style={{
                 margin: 0,
                 fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.22em",
-                color: "rgba(255,255,255,0.78)",
+                textTransform:
+                  "uppercase",
+                letterSpacing:
+                  "0.22em",
+                color:
+                  "rgba(255,255,255,0.78)",
                 fontWeight: 700,
               }}
             >
-              TPA OPS · Scheduling
+              TPA OPS {"\u00B7"} Scheduling
             </p>
 
             <h1
               style={{
-                margin: "10px 0 6px",
+                margin:
+                  "10px 0 6px",
                 fontSize: 32,
                 lineHeight: 1.05,
                 fontWeight: 800,
-                letterSpacing: "-0.04em",
+                letterSpacing:
+                  "-0.04em",
               }}
             >
               Pending Schedules Approval
@@ -277,26 +383,35 @@ export default function ApprovalsPage() {
                 margin: 0,
                 maxWidth: 760,
                 fontSize: 14,
-                color: "rgba(255,255,255,0.88)",
+                color:
+                  "rgba(255,255,255,0.88)",
               }}
             >
-              Review schedules submitted for approval, validate hours against
-              budget, and approve or return them to Duty Manager.
+              Review schedules submitted for
+              approval, validate hours against
+              budget, and approve or return them
+              to the submitting user.
             </p>
           </div>
 
-          <ActionButton onClick={loadPending} variant="secondary">
+          <ActionButton
+            onClick={loadPending}
+            variant="secondary"
+          >
             Refresh
           </ActionButton>
         </div>
       </div>
 
       {statusMessage && (
-        <PageCard style={{ padding: 16 }}>
+        <PageCard
+          style={{ padding: 16 }}
+        >
           <div
             style={{
               background: "#edf7ff",
-              border: "1px solid #cfe7fb",
+              border:
+                "1px solid #cfe7fb",
               borderRadius: 16,
               padding: "14px 16px",
               color: "#1769aa",
@@ -310,7 +425,9 @@ export default function ApprovalsPage() {
       )}
 
       {loading ? (
-        <PageCard style={{ padding: 22 }}>
+        <PageCard
+          style={{ padding: 22 }}
+        >
           <p
             style={{
               margin: 0,
@@ -323,7 +440,9 @@ export default function ApprovalsPage() {
           </p>
         </PageCard>
       ) : pendingSchedules.length === 0 ? (
-        <PageCard style={{ padding: 22 }}>
+        <PageCard
+          style={{ padding: 22 }}
+        >
           <p
             style={{
               margin: 0,
@@ -332,28 +451,40 @@ export default function ApprovalsPage() {
               fontWeight: 600,
             }}
           >
-            There are no schedules waiting for approval.
+            There are no schedules waiting for
+            approval.
           </p>
         </PageCard>
       ) : (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(320px, 1fr))",
             gap: 18,
           }}
         >
           {pendingSchedules.map((sch) => {
             const totalHours =
-              typeof sch.airlineWeeklyHours === "number"
-                ? sch.airlineWeeklyHours.toFixed(2)
+              typeof sch.airlineWeeklyHours ===
+              "number"
+                ? sch.airlineWeeklyHours.toFixed(
+                    2
+                  )
                 : "0.00";
 
             const overBudget =
-              sch.budget && sch.airlineWeeklyHours > sch.budget;
+              sch.budget &&
+              sch.airlineWeeklyHours >
+                sch.budget;
 
             return (
-              <PageCard key={sch.id} style={{ padding: 20 }}>
+              <PageCard
+                key={sch.id}
+                style={{
+                  padding: 20,
+                }}
+              >
                 <div
                   style={{
                     display: "grid",
@@ -367,48 +498,66 @@ export default function ApprovalsPage() {
                         fontSize: 19,
                         fontWeight: 800,
                         color: "#0f172a",
-                        letterSpacing: "-0.02em",
+                        letterSpacing:
+                          "-0.02em",
                         lineHeight: 1.2,
                       }}
                     >
-                      {sch.airline} — {sch.department}
+                      {sch.airline}{" "}
+                      {"\u2014"}{" "}
+                      {sch.department}
                     </h2>
 
                     <p
                       style={{
-                        margin: "6px 0 0",
+                        margin:
+                          "6px 0 0",
                         fontSize: 12,
                         color: "#64748b",
                         lineHeight: 1.5,
                       }}
                     >
-                      Week: {formatWeekLabel(sch)}
+                      Week:{" "}
+                      {formatWeekLabel(
+                        sch
+                      )}
                     </p>
 
                     <p
                       style={{
-                        margin: "8px 0 0",
+                        margin:
+                          "8px 0 0",
                         fontSize: 12,
                         color: "#64748b",
                       }}
                     >
-                      Created by: <b>{sch.createdBy || "unknown"}</b>
+                      Submitted by:{" "}
+                      <b>
+                        {sch.submittedByName ||
+                          sch.submittedByUsername ||
+                          sch.createdBy ||
+                          "unknown"}
+                      </b>
                     </p>
                   </div>
 
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
+                      gridTemplateColumns:
+                        "1fr 1fr",
                       gap: 12,
                     }}
                   >
                     <div
                       style={{
-                        background: "#f8fbff",
-                        border: "1px solid #dbeafe",
+                        background:
+                          "#f8fbff",
+                        border:
+                          "1px solid #dbeafe",
                         borderRadius: 16,
-                        padding: "14px 16px",
+                        padding:
+                          "14px 16px",
                       }}
                     >
                       <p
@@ -417,19 +566,24 @@ export default function ApprovalsPage() {
                           fontSize: 11,
                           fontWeight: 800,
                           color: "#64748b",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.08em",
+                          textTransform:
+                            "uppercase",
+                          letterSpacing:
+                            "0.08em",
                         }}
                       >
                         Total hours
                       </p>
+
                       <p
                         style={{
-                          margin: "6px 0 0",
+                          margin:
+                            "6px 0 0",
                           fontSize: 24,
                           fontWeight: 800,
                           color: "#0f172a",
-                          letterSpacing: "-0.03em",
+                          letterSpacing:
+                            "-0.03em",
                         }}
                       >
                         {totalHours}
@@ -438,10 +592,13 @@ export default function ApprovalsPage() {
 
                     <div
                       style={{
-                        background: "#f8fbff",
-                        border: "1px solid #dbeafe",
+                        background:
+                          "#f8fbff",
+                        border:
+                          "1px solid #dbeafe",
                         borderRadius: 16,
-                        padding: "14px 16px",
+                        padding:
+                          "14px 16px",
                       }}
                     >
                       <p
@@ -450,19 +607,24 @@ export default function ApprovalsPage() {
                           fontSize: 11,
                           fontWeight: 800,
                           color: "#64748b",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.08em",
+                          textTransform:
+                            "uppercase",
+                          letterSpacing:
+                            "0.08em",
                         }}
                       >
                         Budget
                       </p>
+
                       <p
                         style={{
-                          margin: "6px 0 0",
+                          margin:
+                            "6px 0 0",
                           fontSize: 24,
                           fontWeight: 800,
                           color: "#0f172a",
-                          letterSpacing: "-0.03em",
+                          letterSpacing:
+                            "-0.03em",
                         }}
                       >
                         {sch.budget ?? 0}
@@ -471,16 +633,23 @@ export default function ApprovalsPage() {
                   </div>
 
                   <div>
-                    <StatusBadge overBudget={overBudget} />
+                    <StatusBadge
+                      overBudget={
+                        overBudget
+                      }
+                    />
                   </div>
 
                   {sch.reviewNotes && (
                     <div
                       style={{
-                        background: "#fff7ed",
-                        border: "1px solid #fed7aa",
+                        background:
+                          "#fff7ed",
+                        border:
+                          "1px solid #fed7aa",
                         borderRadius: 16,
-                        padding: "14px 16px",
+                        padding:
+                          "14px 16px",
                       }}
                     >
                       <p
@@ -489,15 +658,19 @@ export default function ApprovalsPage() {
                           fontSize: 12,
                           fontWeight: 800,
                           color: "#9a3412",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
+                          textTransform:
+                            "uppercase",
+                          letterSpacing:
+                            "0.06em",
                         }}
                       >
                         Last review note
                       </p>
+
                       <p
                         style={{
-                          margin: "6px 0 0",
+                          margin:
+                            "6px 0 0",
                           fontSize: 13,
                           color: "#7c2d12",
                           lineHeight: 1.55,
@@ -518,7 +691,11 @@ export default function ApprovalsPage() {
                     <ActionButton
                       type="button"
                       variant="secondary"
-                      onClick={() => handleView(sch.id)}
+                      onClick={() =>
+                        handleView(
+                          sch.id
+                        )
+                      }
                     >
                       View schedule
                     </ActionButton>
@@ -526,7 +703,11 @@ export default function ApprovalsPage() {
                     <ActionButton
                       type="button"
                       variant="primary"
-                      onClick={() => handleApprove(sch.id)}
+                      onClick={() =>
+                        handleApprove(
+                          sch.id
+                        )
+                      }
                     >
                       Approve
                     </ActionButton>
@@ -534,7 +715,11 @@ export default function ApprovalsPage() {
                     <ActionButton
                       type="button"
                       variant="danger"
-                      onClick={() => handleReturnToDuty(sch.id)}
+                      onClick={() =>
+                        handleReturnToDuty(
+                          sch.id
+                        )
+                      }
                     >
                       Return to Duty
                     </ActionButton>
@@ -548,3 +733,5 @@ export default function ApprovalsPage() {
     </div>
   );
 }
+
+// END ApprovalsPage
