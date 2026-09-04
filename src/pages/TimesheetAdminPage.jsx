@@ -14,6 +14,7 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 import { createOperationalAlert } from "../utils/operationalAlerts.js";
+import { triggerTimesheetDecisionPush } from "../utils/timesheetPush.js";
 
 function normalizeAirlineName(value) {
   const airline = String(value || "").trim();
@@ -1779,6 +1780,10 @@ export default function TimesheetAdminPage() {
 
       await removeActiveTimesheetAlerts(report.id);
 
+      // Fire-and-forget: approval is already saved before Push is requested.
+      // Only the supervisor who submitted this timesheet is notified.
+      triggerTimesheetDecisionPush(report.id, "approved");
+
       setReports((prev) =>
         prev.map((item) =>
           item.id === report.id
@@ -1849,6 +1854,10 @@ export default function TimesheetAdminPage() {
       });
 
       await removeActiveTimesheetAlerts(report.id);
+
+      // Fire-and-forget: return is already saved before Push is requested.
+      // Only the supervisor who submitted this timesheet is notified.
+      triggerTimesheetDecisionPush(report.id, "returned");
 
       setReports((prev) =>
         prev.map((item) =>
