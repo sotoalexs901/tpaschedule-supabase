@@ -1,6 +1,6 @@
 // public/sw.js
 
-const CACHE_NAME = "aerostation-hub-v4";
+const CACHE_NAME = "aerostation-hub-v5";
 
 const APP_SHELL = [
   "/",
@@ -54,6 +54,93 @@ self.addEventListener("message", (event) => {
         )
     );
   }
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    try {
+      payload = {
+        body: event.data ? event.data.text() : "",
+      };
+    } catch {
+      payload = {};
+    }
+  }
+
+  const data = payload?.data || payload || {};
+
+  const title =
+    payload?.notification?.title ||
+    data.title ||
+    "AeroStation Hub";
+
+  const body =
+    payload?.notification?.body ||
+    data.body ||
+    "You have a new notification.";
+
+  const targetUrl =
+    data.url ||
+    data.link ||
+    "/dashboard";
+
+  const options = {
+    body,
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    data: {
+      url: targetUrl,
+      ...data,
+    },
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const targetUrl =
+    event.notification?.data?.url ||
+    "/dashboard";
+
+  event.waitUntil(
+    self.clients
+      .matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      })
+      .then(async (clients) => {
+        for (const client of clients) {
+          try {
+            if ("navigate" in client) {
+              await client.navigate(targetUrl);
+            }
+
+            if ("focus" in client) {
+              return client.focus();
+            }
+          } catch (error) {
+            console.warn(
+              "Could not focus existing AeroStation Hub window:",
+              error
+            );
+          }
+        }
+
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(targetUrl);
+        }
+
+        return null;
+      })
+  );
 });
 
 self.addEventListener("fetch", (event) => {
