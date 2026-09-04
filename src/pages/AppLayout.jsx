@@ -18,7 +18,6 @@ import {
   APP_NAME,
   APP_SUBTITLE,
 } from "../config/appConfig.js";
-import PushNotificationsButton from "../components/PushNotificationsButton.jsx";
 
 // Menu icons intentionally use Unicode escape sequences (for example "\\u{1F3E0}")
 // instead of literal emoji characters. This prevents mojibake/encoding corruption
@@ -1376,8 +1375,6 @@ export default function AppLayout() {
             />
             <StatusPill label="Notifications" value={unreadNotifications} />
             <StatusPill label="Day Off" value={pendingTimeOff} />
-
-            <PushNotificationsButton user={user} />
 
             <button
               type="button"
