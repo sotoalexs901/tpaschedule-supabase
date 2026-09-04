@@ -7,6 +7,15 @@ import "./styles.css";
 
 import { UserProvider, useUser } from "./UserContext.jsx";
 
+import {
+  activateAeroStationUpdate,
+  checkAeroStationServiceWorkerUpdate,
+  AEROSTATION_PWA_UPDATE_EVENT,
+  AEROSTATION_PWA_CONTROLLER_EVENT,
+} from "./services/pwaService.js";
+
+import { APP_NAME } from "./config/appConfig.js";
+
 import LoginPage from "./pages/LoginPage.jsx";
 import AppLayout from "./pages/AppLayout.jsx";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
@@ -163,12 +172,13 @@ function DashboardEntry() {
 function UpdatePrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let intervalId = null;
     let cancelled = false;
 
-    const STORAGE_KEY = "tpa_app_version";
+    const STORAGE_KEY = "aerostation_app_version";
 
     async function checkVersion() {
       try {
@@ -191,31 +201,62 @@ function UpdatePrompt() {
         }
 
         if (savedVersion !== incomingVersion) {
-          setUpdateReady(true);
-          setShowPrompt(true);
+          await checkAeroStationServiceWorkerUpdate();
+
+          if (!cancelled) {
+            setUpdateReady(true);
+            setShowPrompt(true);
+          }
         }
       } catch (error) {
         console.error("Version check failed:", error);
       }
     }
 
+    const handleServiceWorkerUpdate = () => {
+      if (cancelled) return;
+
+      setUpdateReady(true);
+      setShowPrompt(true);
+    };
+
+    const handleControllerChange = () => {
+      if (cancelled) return;
+
+      window.location.reload();
+    };
+
+    window.addEventListener(
+      AEROSTATION_PWA_UPDATE_EVENT,
+      handleServiceWorkerUpdate
+    );
+
+    window.addEventListener(
+      AEROSTATION_PWA_CONTROLLER_EVENT,
+      handleControllerChange
+    );
+
     checkVersion();
+    checkAeroStationServiceWorkerUpdate();
 
     intervalId = window.setInterval(() => {
       if (!cancelled) {
         checkVersion();
+        checkAeroStationServiceWorkerUpdate();
       }
     }, 60000);
 
     const onFocus = () => {
       if (!cancelled) {
         checkVersion();
+        checkAeroStationServiceWorkerUpdate();
       }
     };
 
     const onVisibility = () => {
       if (document.visibilityState === "visible" && !cancelled) {
         checkVersion();
+        checkAeroStationServiceWorkerUpdate();
       }
     };
 
@@ -231,6 +272,16 @@ function UpdatePrompt() {
 
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
+
+      window.removeEventListener(
+        AEROSTATION_PWA_UPDATE_EVENT,
+        handleServiceWorkerUpdate
+      );
+
+      window.removeEventListener(
+        AEROSTATION_PWA_CONTROLLER_EVENT,
+        handleControllerChange
+      );
     };
   }, []);
 
@@ -239,7 +290,11 @@ function UpdatePrompt() {
   };
 
   const handleRefresh = async () => {
+    if (refreshing) return;
+
     try {
+      setRefreshing(true);
+
       const response = await fetch(`/version.json?t=${Date.now()}`, {
         cache: "no-store",
       });
@@ -249,17 +304,25 @@ function UpdatePrompt() {
         const incomingVersion = String(data?.version || "").trim();
 
         if (incomingVersion) {
-          localStorage.setItem("tpa_app_version", incomingVersion);
+          localStorage.setItem(
+            "aerostation_app_version",
+            incomingVersion
+          );
         }
       }
     } catch (error) {
       console.error(
-        "Could not refresh saved version before reload:",
+        "Could not save AeroStation Hub version before refresh:",
         error
       );
     }
 
-    window.location.reload();
+    try {
+      await activateAeroStationUpdate();
+    } catch (error) {
+      console.error("Could not activate app update:", error);
+      window.location.reload();
+    }
   };
 
   return (
@@ -270,22 +333,22 @@ function UpdatePrompt() {
           onClick={() => setShowPrompt(true)}
           style={{
             position: "fixed",
-            right: 20,
-            bottom: 20,
+            right: 16,
+            bottom: 16,
             zIndex: 9999,
             border: "none",
             background:
               "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
             color: "#fff",
             borderRadius: 999,
-            padding: "14px 18px",
-            fontWeight: 800,
-            fontSize: 14,
+            padding: "13px 16px",
+            fontWeight: 850,
+            fontSize: 13,
             cursor: "pointer",
             boxShadow: "0 16px 30px rgba(23,105,170,0.28)",
           }}
         >
-          Refresh app
+          Update AeroStation
         </button>
       )}
 
@@ -294,21 +357,22 @@ function UpdatePrompt() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(15,23,42,0.35)",
+            background: "rgba(15,23,42,0.42)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             zIndex: 99999,
-            padding: 20,
+            padding: 18,
+            backdropFilter: "blur(4px)",
           }}
         >
           <div
             style={{
               width: "100%",
-              maxWidth: 540,
+              maxWidth: 520,
               background: "#ffffff",
               borderRadius: 24,
-              boxShadow: "0 24px 60px rgba(15,23,42,0.22)",
+              boxShadow: "0 24px 60px rgba(15,23,42,0.24)",
               border: "1px solid #e2e8f0",
               overflow: "hidden",
             }}
@@ -316,56 +380,72 @@ function UpdatePrompt() {
             <div
               style={{
                 padding: "18px 20px",
-                background: "#edf7ff",
-                borderBottom: "1px solid #cfe7fb",
+                background:
+                  "linear-gradient(135deg, #061f3d 0%, #0f4c81 55%, #1769aa 100%)",
+                color: "#ffffff",
               }}
             >
               <div
                 style={{
-                  fontSize: 18,
+                  fontSize: 10,
+                  fontWeight: 850,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.14em",
+                  color: "rgba(255,255,255,0.72)",
+                }}
+              >
+                {APP_NAME}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 19,
                   fontWeight: 900,
-                  color: "#1769aa",
                   letterSpacing: "-0.02em",
                 }}
               >
-                App update ready
+                New update available
               </div>
             </div>
 
             <div
               style={{
-                padding: "22px 20px 18px",
-                fontSize: 15,
+                padding: "20px 20px 16px",
+                fontSize: 14,
                 lineHeight: 1.65,
-                color: "#0f172a",
-                fontWeight: 700,
+                color: "#334155",
+                fontWeight: 650,
               }}
             >
-              A newer version of TPA OPS Platform is available. Refresh the app
-              to load the latest changes without logging out manually.
+              A newer version of AeroStation Hub is ready. Update now to load
+              the latest operational changes while keeping your current login
+              session.
             </div>
 
             <div
               style={{
                 padding: "0 20px 20px",
                 display: "flex",
-                justifyContent: "center",
-                gap: 12,
+                justifyContent: "flex-end",
+                gap: 10,
                 flexWrap: "wrap",
               }}
             >
               <button
                 type="button"
                 onClick={handleLater}
+                disabled={refreshing}
                 style={{
                   border: "1px solid #cfe7fb",
                   background: "#ffffff",
                   color: "#1769aa",
-                  borderRadius: 14,
-                  padding: "12px 18px",
+                  borderRadius: 13,
+                  padding: "11px 17px",
                   fontWeight: 800,
-                  fontSize: 14,
-                  cursor: "pointer",
+                  fontSize: 13,
+                  cursor: refreshing ? "not-allowed" : "pointer",
+                  opacity: refreshing ? 0.65 : 1,
                 }}
               >
                 Later
@@ -374,20 +454,22 @@ function UpdatePrompt() {
               <button
                 type="button"
                 onClick={handleRefresh}
+                disabled={refreshing}
                 style={{
                   border: "none",
                   background:
                     "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
                   color: "#fff",
-                  borderRadius: 14,
-                  padding: "12px 22px",
-                  fontWeight: 800,
-                  fontSize: 14,
-                  cursor: "pointer",
+                  borderRadius: 13,
+                  padding: "11px 19px",
+                  fontWeight: 850,
+                  fontSize: 13,
+                  cursor: refreshing ? "not-allowed" : "pointer",
+                  opacity: refreshing ? 0.75 : 1,
                   boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
                 }}
               >
-                Refresh app
+                {refreshing ? "Updating..." : "Update now"}
               </button>
             </div>
           </div>
@@ -814,8 +896,6 @@ function AppRouter() {
             }
           />
 
-          {/* NEW: REPORTS DATA MANAGEMENT */}
-
           <Route
             path="admin/reports-data-management"
             element={
@@ -1049,3 +1129,5 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     </UserProvider>
   </React.StrictMode>
 );
+
+// END main.jsx
