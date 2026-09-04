@@ -209,22 +209,38 @@ export default function AppLayout() {
   }, []);
 
   // ============================================================
-  // UNREAD MESSAGES
+  // UNREAD MESSAGES - LIVE CHAT V2
   // ============================================================
 
   useEffect(() => {
-    if (!user?.id) return undefined;
+    if (!user?.id) {
+      setUnreadMessages(0);
+      return undefined;
+    }
 
-    const qMsgs = query(
-      collection(db, "messages"),
-      where("toUserId", "==", user.id),
-      where("read", "==", false)
+    const qConversations = query(
+      collection(db, "conversations"),
+      where("participants", "array-contains", user.id)
     );
 
     const unsub = onSnapshot(
-      qMsgs,
-      (snap) => setUnreadMessages(snap.size),
-      (err) => console.error("Error listening unread messages:", err)
+      qConversations,
+      (snap) => {
+        const unreadCount = snap.docs.filter((item) => {
+          const data = item.data();
+          const unreadUserIds = Array.isArray(data.unreadUserIds)
+            ? data.unreadUserIds
+            : [];
+
+          return unreadUserIds.includes(user.id);
+        }).length;
+
+        setUnreadMessages(unreadCount);
+      },
+      (err) => {
+        console.error("Error listening unread conversations:", err);
+        setUnreadMessages(0);
+      }
     );
 
     return () => unsub();
