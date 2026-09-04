@@ -62,4 +62,37 @@ export function triggerScheduleSubmittedPush(scheduleId) {
   );
 }
 
+export function triggerScheduleDecisionPush(scheduleId, decision) {
+  if (!scheduleId) {
+    return;
+  }
+
+  const normalizedDecision = String(decision || "")
+    .trim()
+    .toLowerCase();
+
+  if (
+    normalizedDecision !== "approved" &&
+    normalizedDecision !== "returned"
+  ) {
+    console.warn(
+      "Schedule decision Push ignored because decision is invalid.",
+      {
+        scheduleId,
+        decision,
+      }
+    );
+    return;
+  }
+
+  fireAndForgetSchedulePush(
+    "/.netlify/functions/send-schedule-decision-push",
+    {
+      scheduleId: String(scheduleId),
+      decision: normalizedDecision,
+    },
+    "Schedule decision"
+  );
+}
+
 // END schedulePush.js
