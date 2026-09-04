@@ -1,6 +1,6 @@
 // public/sw.js
 
-const CACHE_NAME = "aerostation-hub-v3";
+const CACHE_NAME = "aerostation-hub-v4";
 
 const APP_SHELL = [
   "/",
@@ -11,10 +11,6 @@ const APP_SHELL = [
   "/icons/icon-192.png",
   "/icons/icon-512.png",
 ];
-
-// ============================================================
-// INSTALL
-// ============================================================
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -28,10 +24,6 @@ self.addEventListener("install", (event) => {
       })
   );
 });
-
-// ============================================================
-// ACTIVATE
-// ============================================================
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
@@ -47,10 +39,6 @@ self.addEventListener("activate", (event) => {
       .then(() => self.clients.claim())
   );
 });
-
-// ============================================================
-// MESSAGES FROM APP
-// ============================================================
 
 self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") {
@@ -68,115 +56,6 @@ self.addEventListener("message", (event) => {
   }
 });
 
-// ============================================================
-// FIREBASE CLOUD MESSAGING / WEB PUSH
-// ============================================================
-
-self.addEventListener("push", (event) => {
-  if (!event.data) return;
-
-  let payload = {};
-
-  try {
-    payload = event.data.json();
-  } catch (error) {
-    payload = {
-      data: {
-        body: event.data.text(),
-      },
-    };
-  }
-
-  const notificationPayload = payload.notification || {};
-  const dataPayload = payload.data || {};
-
-  const title =
-    notificationPayload.title ||
-    dataPayload.title ||
-    "AeroStation Hub";
-
-  const body =
-    notificationPayload.body ||
-    dataPayload.body ||
-    "You have a new notification.";
-
-  const targetUrl =
-    dataPayload.url ||
-    notificationPayload.click_action ||
-    "/";
-
-  const options = {
-    body,
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
-    tag:
-      dataPayload.tag ||
-      dataPayload.conversationId ||
-      `aerostation-${Date.now()}`,
-    renotify: true,
-    requireInteraction: false,
-    data: {
-      url: targetUrl,
-      type: dataPayload.type || "general",
-      conversationId:
-        dataPayload.conversationId || "",
-      senderId: dataPayload.senderId || "",
-    },
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-  );
-});
-
-// ============================================================
-// NOTIFICATION CLICK
-// ============================================================
-
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-
-  const targetUrl =
-    event.notification?.data?.url || "/";
-
-  event.waitUntil(
-    self.clients
-      .matchAll({
-        type: "window",
-        includeUncontrolled: true,
-      })
-      .then(async (clientList) => {
-        for (const client of clientList) {
-          try {
-            const clientUrl = new URL(client.url);
-
-            if (clientUrl.origin === self.location.origin) {
-              if ("navigate" in client) {
-                await client.navigate(targetUrl);
-              }
-
-              if ("focus" in client) {
-                return client.focus();
-              }
-            }
-          } catch {
-            // Continue looking for another AeroStation client.
-          }
-        }
-
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(targetUrl);
-        }
-
-        return undefined;
-      })
-  );
-});
-
-// ============================================================
-// FETCH
-// ============================================================
-
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
@@ -190,7 +69,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navigation: network first, cached shell fallback.
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request, {
@@ -229,7 +107,6 @@ self.addEventListener("fetch", (event) => {
                   />
                   <title>AeroStation Hub</title>
                 </head>
-
                 <body
                   style="
                     margin:0;
@@ -246,14 +123,8 @@ self.addEventListener("fetch", (event) => {
                   "
                 >
                   <div>
-                    <h1 style="margin-bottom:8px;">
-                      AeroStation Hub
-                    </h1>
-
-                    <p style="opacity:.8;">
-                      You appear to be offline.
-                    </p>
-
+                    <h1 style="margin-bottom:8px;">AeroStation Hub</h1>
+                    <p style="opacity:.8;">You appear to be offline.</p>
                     <p style="opacity:.65;font-size:14px;">
                       Reconnect to the internet and open AeroStation Hub again.
                     </p>
@@ -273,7 +144,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Vite hashed assets: cache first.
   if (url.pathname.startsWith("/assets/")) {
     event.respondWith(
       caches.match(request).then((cached) => {
@@ -303,7 +173,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Always fetch these fresh.
   if (
     url.pathname === "/manifest.webmanifest" ||
     url.pathname === "/version.json" ||
@@ -318,7 +187,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Other static files: network first, cache fallback.
   event.respondWith(
     fetch(request, {
       cache: "no-store",
