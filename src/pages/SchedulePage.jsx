@@ -16,6 +16,7 @@ import ScheduleGrid from "../components/ScheduleGrid";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import { triggerScheduleSubmittedPush } from "../utils/schedulePush.js";
 
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
@@ -335,6 +336,16 @@ function emptyRow() {
       { start: "", end: "" },
     ],
   };
+}
+
+function getVisibleName(user) {
+  return (
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    "User"
+  );
 }
 
 function PageCard({ children, style = {} }) {
@@ -1044,16 +1055,35 @@ export default function SchedulePage() {
       const weekTagToSave =
         weekTag || buildWeekTagFromWeekStart(weekStart);
 
-      const payload = buildSchedulePayload(
-        "pending",
-        weekTagToSave
-      );
+      const payload = {
+        ...buildSchedulePayload(
+          "pending",
+          weekTagToSave
+        ),
+
+        submittedByUserId: user?.id || "",
+        submittedByUsername: user?.username || "",
+        submittedByName: getVisibleName(user),
+        submittedByRole: user?.role || "",
+        submittedAt: serverTimestamp(),
+
+        // Reset on every Submit / Re-Submit so Station Manager
+        // receives a fresh approval notification.
+        approvalSubmissionPushStatus: "PENDING",
+        approvalSubmissionPushSuccessCount: 0,
+        approvalSubmissionPushFailureCount: 0,
+        approvalSubmissionPushError: "",
+      };
 
       if (editingScheduleId) {
         await updateDoc(
           doc(db, "schedules", editingScheduleId),
           payload
         );
+
+        // Fire-and-forget. The schedule is already safely stored.
+        // The server sends this notification only to Station Manager.
+        triggerScheduleSubmittedPush(editingScheduleId);
 
         setStatusMessage(
           "Schedule re-submitted for approval."
@@ -1066,6 +1096,10 @@ export default function SchedulePage() {
 
         setEditingScheduleId(ref.id);
         setLoadedExistingSchedule(true);
+
+        // Fire-and-forget. The schedule is already safely stored.
+        // The server sends this notification only to Station Manager.
+        triggerScheduleSubmittedPush(ref.id);
 
         setStatusMessage(
           "Schedule submitted for approval."
