@@ -10,15 +10,12 @@ import {
   query,
   serverTimestamp,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 import { createOperationalAlert } from "../utils/operationalAlerts.js";
-
-const MONTHLY_WARNING_THRESHOLD = 4;
-const MONTHLY_MAX_REQUESTS = 5;
+import { triggerTimeOffDecisionPush } from "../utils/timeOffPush.js";
 
 function useViewport() {
   const [width, setWidth] = useState(() =>
@@ -171,158 +168,6 @@ function getVisibleName(user) {
   );
 }
 
-function getMonthKey(dateValue) {
-  const value = String(dateValue || "").trim();
-  return /^\d{4}-\d{2}/.test(value) ? value.slice(0, 7) : "";
-}
-
-function formatMonthLabel(monthKey) {
-  if (!monthKey) return "Unknown month";
-
-  const [year, month] = monthKey.split("-");
-  const date = new Date(Number(year), Number(month) - 1, 1);
-
-  return date.toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  });
-}
-
-function buildMonthlyRequestSummary(requests) {
-  const map = new Map();
-
-  for (const req of requests) {
-    const employeeKey =
-      String(req.employeeId || "").trim() ||
-      String(req.employeeName || "").trim().toLowerCase();
-
-    const monthKey = getMonthKey(req.startDate);
-
-    if (!employeeKey || !monthKey) continue;
-
-    const key = `${employeeKey}__${monthKey}`;
-
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        employeeId: req.employeeId || "",
-        employeeName: req.employeeName || "Unknown employee",
-        monthKey,
-        monthLabel: formatMonthLabel(monthKey),
-        requests: [],
-      });
-    }
-
-    map.get(key).requests.push(req);
-  }
-
-  return Array.from(map.values())
-    .map((item) => ({
-      ...item,
-      count: item.requests.length,
-      dates: item.requests
-        .map((req) => req.startDate)
-        .filter(Boolean)
-        .sort(),
-    }))
-    .filter((item) => item.count >= MONTHLY_WARNING_THRESHOLD)
-    .sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return b.monthKey.localeCompare(a.monthKey);
-    });
-}
-
-function buildEmployeeGroups(requests) {
-  const map = new Map();
-
-  for (const req of requests) {
-    const employeeKey =
-      String(req.employeeId || "").trim() ||
-      String(req.employeeName || "unknown").trim().toLowerCase();
-
-    if (!map.has(employeeKey)) {
-      map.set(employeeKey, {
-        key: employeeKey,
-        employeeId: req.employeeId || "",
-        employeeName: req.employeeName || "Unknown employee",
-        requests: [],
-      });
-    }
-
-    map.get(employeeKey).requests.push(req);
-  }
-
-  return Array.from(map.values())
-    .map((group) => {
-      const sortedRequests = [...group.requests].sort(
-        (a, b) =>
-          (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-      );
-
-      const monthMap = new Map();
-
-      for (const req of sortedRequests) {
-        const monthKey = getMonthKey(req.startDate) || "unknown";
-
-        if (!monthMap.has(monthKey)) {
-          monthMap.set(monthKey, {
-            monthKey,
-            monthLabel:
-              monthKey === "unknown"
-                ? "Unknown month"
-                : formatMonthLabel(monthKey),
-            requests: [],
-          });
-        }
-
-        monthMap.get(monthKey).requests.push(req);
-      }
-
-      const months = Array.from(monthMap.values())
-        .map((item) => ({
-          ...item,
-          count: item.requests.length,
-          pending: item.requests.filter(
-            (r) => String(r.status || "pending").toLowerCase() === "pending"
-          ).length,
-          approved: item.requests.filter(
-            (r) => String(r.status || "").toLowerCase() === "approved"
-          ).length,
-          rejected: item.requests.filter(
-            (r) => String(r.status || "").toLowerCase() === "rejected"
-          ).length,
-          needsInfo: item.requests.filter(
-            (r) => String(r.status || "").toLowerCase() === "needs_info"
-          ).length,
-        }))
-        .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
-
-      return {
-        ...group,
-        requests: sortedRequests,
-        totalRequests: sortedRequests.length,
-        pendingCount: sortedRequests.filter(
-          (r) => String(r.status || "pending").toLowerCase() === "pending"
-        ).length,
-        approvedCount: sortedRequests.filter(
-          (r) => String(r.status || "").toLowerCase() === "approved"
-        ).length,
-        rejectedCount: sortedRequests.filter(
-          (r) => String(r.status || "").toLowerCase() === "rejected"
-        ).length,
-        needsInfoCount: sortedRequests.filter(
-          (r) => String(r.status || "").toLowerCase() === "needs_info"
-        ).length,
-        months,
-      };
-    })
-    .sort((a, b) =>
-      String(a.employeeName || "").localeCompare(
-        String(b.employeeName || "")
-      )
-    );
-}
-
 export default function TimeOffRequestsAdminPage() {
   const { user } = useUser();
   const { isMobile, isTablet } = useViewport();
@@ -333,9 +178,6 @@ export default function TimeOffRequestsAdminPage() {
   const [notesById, setNotesById] = useState({});
   const [statusMessage, setStatusMessage] = useState("");
   const [busyRequestId, setBusyRequestId] = useState("");
-  const [syncingFrequencyAlerts, setSyncingFrequencyAlerts] = useState(false);
-  const [expandedEmployees, setExpandedEmployees] = useState({});
-  const [expandedMonths, setExpandedMonths] = useState({});
 
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -358,13 +200,11 @@ export default function TimeOffRequestsAdminPage() {
 
       setNotesById((prev) => {
         const next = { ...prev };
-
         for (const req of list) {
           if (next[req.id] === undefined && req.managerNote) {
             next[req.id] = req.managerNote;
           }
         }
-
         return next;
       });
     } catch (err) {
@@ -387,109 +227,6 @@ export default function TimeOffRequestsAdminPage() {
     () => requests.filter((r) => r.status === "pending").length,
     [requests]
   );
-
-  const monthlyFrequencySummary = useMemo(
-    () => buildMonthlyRequestSummary(requests),
-    [requests]
-  );
-
-  useEffect(() => {
-    if (
-      !canAccess ||
-      loading ||
-      syncingFrequencyAlerts ||
-      monthlyFrequencySummary.length === 0
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function syncFrequencyAlerts() {
-      try {
-        setSyncingFrequencyAlerts(true);
-
-        for (const item of monthlyFrequencySummary) {
-          if (cancelled) return;
-
-          const sourceId = `TIME_OFF_FREQ_${
-            item.employeeId || item.employeeName
-          }_${item.monthKey}`;
-
-          const activeSnap = await getDocs(
-            query(
-              collection(db, "operational_alerts"),
-              where("sourceId", "==", sourceId)
-            )
-          );
-
-          if (!activeSnap.empty) continue;
-
-          const historySnap = await getDocs(
-            query(
-              collection(db, "operational_alert_history"),
-              where("sourceId", "==", sourceId)
-            )
-          );
-
-          if (!historySnap.empty) continue;
-
-          await createOperationalAlert({
-            alertType: "TIME_OFF_MONTHLY_FREQUENCY",
-            category: "TIME_OFF",
-            severity: "LOW",
-            priority: "LOW",
-            title: "Frequent Day Off / PTO Requests",
-            message: `${item.employeeName} has submitted ${
-              item.count
-            } Day Off / PTO request(s) for ${
-              item.monthLabel
-            }. Requested dates: ${item.dates.join(
-              ", "
-            )}. Review monthly request frequency.`,
-            source: "TimeOffRequestsAdminPage",
-            sourceId,
-            department: "",
-            reportDate: item.requests[0]?.startDate || "",
-            targetRoles: ["station_manager", "duty_manager"],
-            createdByUserId: user?.id || "",
-            createdByUsername: user?.username || "",
-            createdByName: getVisibleName(user),
-            createdByRole: user?.role || "",
-            metadata: {
-              employeeId: item.employeeId || "",
-              employeeName: item.employeeName,
-              monthKey: item.monthKey,
-              monthLabel: item.monthLabel,
-              requestCount: item.count,
-              requestedDates: item.dates,
-              warningThreshold: MONTHLY_WARNING_THRESHOLD,
-              monthlyMaximum: MONTHLY_MAX_REQUESTS,
-              requestIds: item.requests.map((req) => req.id),
-            },
-          });
-        }
-      } catch (err) {
-        console.error("Time Off monthly frequency alert error:", err);
-      } finally {
-        if (!cancelled) {
-          setSyncingFrequencyAlerts(false);
-        }
-      }
-    }
-
-    syncFrequencyAlerts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    canAccess,
-    loading,
-    monthlyFrequencySummary,
-    syncingFrequencyAlerts,
-    user,
-  ]);
 
   const updateLocalRequest = (id, patch) => {
     setRequests((prev) =>
@@ -582,6 +319,10 @@ export default function TimeOffRequestsAdminPage() {
         handledBy: user?.username || null,
         handledByName: getVisibleName(user),
         handledAt: serverTimestamp(),
+
+        decisionPushStatus: "PENDING",
+        decisionPushDecision: "approved",
+        decisionPushError: "",
       });
 
       updateLocalRequest(req.id, {
@@ -590,6 +331,10 @@ export default function TimeOffRequestsAdminPage() {
         handledBy: user?.username || null,
         handledByName: getVisibleName(user),
       });
+
+      // Fire-and-forget. The approval is already saved before Push is requested.
+      // The server resolves the employee's linked AeroStation Hub user account.
+      triggerTimeOffDecisionPush(req.id, "approved");
 
       await sendLowStatusAlert(req, "approved", note);
       setStatusMessage("Request approved.");
@@ -621,6 +366,10 @@ export default function TimeOffRequestsAdminPage() {
         handledBy: user?.username || null,
         handledByName: getVisibleName(user),
         handledAt: serverTimestamp(),
+
+        decisionPushStatus: "PENDING",
+        decisionPushDecision: "rejected",
+        decisionPushError: "",
       });
 
       updateLocalRequest(req.id, {
@@ -629,6 +378,9 @@ export default function TimeOffRequestsAdminPage() {
         handledBy: user?.username || null,
         handledByName: getVisibleName(user),
       });
+
+      // Fire-and-forget. The rejection is already saved before Push is requested.
+      triggerTimeOffDecisionPush(req.id, "rejected");
 
       await sendLowStatusAlert(req, "rejected", note);
       setStatusMessage("Request rejected.");
@@ -661,6 +413,10 @@ export default function TimeOffRequestsAdminPage() {
         handledBy: user?.username || null,
         handledByName: getVisibleName(user),
         handledAt: serverTimestamp(),
+
+        decisionPushStatus: "PENDING",
+        decisionPushDecision: "needs_info",
+        decisionPushError: "",
       });
 
       updateLocalRequest(req.id, {
@@ -669,6 +425,9 @@ export default function TimeOffRequestsAdminPage() {
         handledBy: user?.username || null,
         handledByName: getVisibleName(user),
       });
+
+      // Fire-and-forget. The request update is already saved before Push is requested.
+      triggerTimeOffDecisionPush(req.id, "needs_info");
 
       await sendLowStatusAlert(req, "needs_info", note);
       setStatusMessage("Request marked as needs info.");
@@ -829,11 +588,6 @@ export default function TimeOffRequestsAdminPage() {
     return requests.filter((r) => r.status === filterStatus);
   }, [requests, filterStatus]);
 
-  const employeeGroups = useMemo(
-    () => buildEmployeeGroups(filteredRequests),
-    [filteredRequests]
-  );
-
   if (!canAccess) {
     return (
       <PageCard style={{ padding: 18 }}>
@@ -948,7 +702,8 @@ export default function TimeOffRequestsAdminPage() {
                 color: "rgba(255,255,255,0.88)",
               }}
             >
-              Requests are grouped by employee and month for faster review.
+              Review, approve, reject, print and manage employee time off
+              requests.
             </p>
 
             <p
@@ -963,146 +718,41 @@ export default function TimeOffRequestsAdminPage() {
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div
+            style={{
+              background: "rgba(255,255,255,0.16)",
+              border: "1px solid rgba(255,255,255,0.18)",
+              borderRadius: 14,
+              padding: isMobile ? "9px 11px" : "10px 12px",
+              minWidth: isMobile ? 0 : 118,
+              width: isMobile ? "fit-content" : "auto",
+            }}
+          >
             <div
               style={{
-                background: "rgba(255,255,255,0.16)",
-                border: "1px solid rgba(255,255,255,0.18)",
-                borderRadius: 14,
-                padding: "9px 11px",
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                color: "rgba(255,255,255,0.78)",
+                fontWeight: 800,
               }}
             >
-              <div
-                style={{
-                  fontSize: 10,
-                  textTransform: "uppercase",
-                  color: "rgba(255,255,255,0.78)",
-                  fontWeight: 800,
-                }}
-              >
-                Pending
-              </div>
-
-              <div
-                style={{
-                  marginTop: 3,
-                  fontSize: isMobile ? 22 : 26,
-                  fontWeight: 900,
-                  lineHeight: 1,
-                }}
-              >
-                {pendingCount}
-              </div>
+              Pending
             </div>
 
             <div
               style={{
-                background: "rgba(255,255,255,0.16)",
-                border: "1px solid rgba(255,255,255,0.18)",
-                borderRadius: 14,
-                padding: "9px 11px",
+                marginTop: 3,
+                fontSize: isMobile ? 22 : 26,
+                fontWeight: 900,
+                lineHeight: 1,
               }}
             >
-              <div
-                style={{
-                  fontSize: 10,
-                  textTransform: "uppercase",
-                  color: "rgba(255,255,255,0.78)",
-                  fontWeight: 800,
-                }}
-              >
-                Employees
-              </div>
-
-              <div
-                style={{
-                  marginTop: 3,
-                  fontSize: isMobile ? 22 : 26,
-                  fontWeight: 900,
-                  lineHeight: 1,
-                }}
-              >
-                {employeeGroups.length}
-              </div>
+              {pendingCount}
             </div>
           </div>
         </div>
       </div>
-
-      {monthlyFrequencySummary.length > 0 && (
-        <PageCard
-          style={{
-            padding: isMobile ? 12 : 16,
-            border: "1px solid #fed7aa",
-          }}
-        >
-          <div
-            style={{
-              fontSize: isMobile ? 16 : 18,
-              fontWeight: 900,
-              color: "#9a3412",
-              marginBottom: 10,
-            }}
-          >
-            Monthly Request Frequency Review
-          </div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            {monthlyFrequencySummary.map((item) => {
-              const atLimit = item.count >= MONTHLY_MAX_REQUESTS;
-
-              return (
-                <div
-                  key={item.key}
-                  style={{
-                    border: atLimit
-                      ? "1px solid #fecdd3"
-                      : "1px solid #fed7aa",
-                    background: atLimit ? "#fff1f2" : "#fff7ed",
-                    borderRadius: 12,
-                    padding: 11,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 13.5,
-                      fontWeight: 900,
-                      color: atLimit ? "#9f1239" : "#9a3412",
-                    }}
-                  >
-                    {item.employeeName} {"\u00B7"} {item.monthLabel} {"\u00B7"}{" "}
-                    {item.count} request(s)
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 12,
-                      lineHeight: 1.5,
-                      color: "#475569",
-                    }}
-                  >
-                    Requested dates: {item.dates.join(", ")}
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: 5,
-                      fontSize: 11.5,
-                      fontWeight: 800,
-                      color: atLimit ? "#9f1239" : "#9a3412",
-                    }}
-                  >
-                    {atLimit
-                      ? `Monthly maximum reached (${MONTHLY_MAX_REQUESTS}).`
-                      : `Frequency warning begins at ${MONTHLY_WARNING_THRESHOLD} requests.`}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </PageCard>
-      )}
 
       {statusMessage && (
         <PageCard style={{ padding: isMobile ? 12 : 16 }}>
@@ -1123,7 +773,13 @@ export default function TimeOffRequestsAdminPage() {
       )}
 
       <PageCard style={{ padding: isMobile ? 12 : 16 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
           {[
             { key: "pending", label: "Pending" },
             { key: "approved", label: "Approved" },
@@ -1143,342 +799,244 @@ export default function TimeOffRequestsAdminPage() {
       </PageCard>
 
       {loading ? (
-        <PageCard style={{ padding: 18 }}>Loading requests...</PageCard>
-      ) : employeeGroups.length === 0 ? (
-        <PageCard style={{ padding: 18 }}>
-          No requests for this filter.
+        <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            Loading requests...
+          </p>
+        </PageCard>
+      ) : filteredRequests.length === 0 ? (
+        <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+          <p
+            style={{
+              margin: 0,
+              color: "#64748b",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            No requests for this filter.
+          </p>
         </PageCard>
       ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {employeeGroups.map((group) => {
-            const expanded = Boolean(expandedEmployees[group.key]);
+        <div style={{ display: "grid", gap: isMobile ? 10 : 12 }}>
+          {filteredRequests.map((req) => {
+            const currentStatus = String(req.status || "pending").toLowerCase();
+            const busy = busyRequestId === req.id;
+            const canProcess =
+              currentStatus === "pending" || currentStatus === "needs_info";
 
             return (
               <PageCard
-                key={group.key}
-                style={{
-                  padding: isMobile ? 13 : 16,
-                  border:
-                    group.pendingCount > 0
-                      ? "1px solid #bfdbfe"
-                      : "1px solid #e2e8f0",
-                }}
+                key={req.id}
+                style={{ padding: isMobile ? 14 : 18 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: isMobile ? "column" : "row",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    alignItems: isMobile ? "stretch" : "center",
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: isMobile ? 17 : 19,
-                        fontWeight: 900,
-                        color: "#0f172a",
-                      }}
-                    >
-                      {group.employeeName}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontSize: 12,
-                        color: "#64748b",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Total requests: <b>{group.totalRequests}</b>
-                      {" \u00B7 "}
-                      Pending: <b>{group.pendingCount}</b>
-                      {" \u00B7 "}
-                      Approved: <b>{group.approvedCount}</b>
-                    </div>
-                  </div>
-
-                  <ActionButton
-                    variant={expanded ? "primary" : "secondary"}
-                    onClick={() =>
-                      setExpandedEmployees((prev) => ({
-                        ...prev,
-                        [group.key]: !expanded,
-                      }))
-                    }
-                  >
-                    {expanded ? "Hide Requests" : "View Requests"}
-                  </ActionButton>
-                </div>
-
-                {expanded && (
+                <div style={{ display: "grid", gap: 13 }}>
                   <div
                     style={{
-                      marginTop: 12,
-                      display: "grid",
-                      gap: 10,
+                      display: "flex",
+                      flexDirection: isMobile ? "column" : "row",
+                      justifyContent: "space-between",
+                      alignItems: isMobile ? "stretch" : "flex-start",
+                      gap: 12,
                     }}
                   >
-                    {group.months.map((month) => {
-                      const monthKey = `${group.key}__${month.monthKey}`;
-                      const monthExpanded = Boolean(expandedMonths[monthKey]);
-                      const atLimit = month.count >= MONTHLY_MAX_REQUESTS;
-                      const warning =
-                        month.count >= MONTHLY_WARNING_THRESHOLD;
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h2
+                        style={{
+                          margin: 0,
+                          fontSize: isMobile ? 16 : 18,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          letterSpacing: "-0.02em",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {req.employeeName || "Unknown employee"}
+                      </h2>
 
-                      return (
+                      <p
+                        style={{
+                          margin: "5px 0 0",
+                          fontSize: isMobile ? 12 : 13,
+                          color: "#64748b",
+                          lineHeight: 1.5,
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {req.reasonType || "Reason"} {"\u00B7"}{" "}
+                        {req.startDate || "\u2014"} {"\u2192"}{" "}
+                        {req.endDate || "\u2014"}
+                      </p>
+
+                      <div style={{ marginTop: 8 }}>
+                        <span style={statusBadge(req.status)}>
+                          {currentStatus.toUpperCase()}
+                        </span>
+                      </div>
+
+                      {req.notes && (
                         <div
-                          key={monthKey}
                           style={{
-                            border: atLimit
-                              ? "1px solid #fecdd3"
-                              : warning
-                              ? "1px solid #fed7aa"
-                              : "1px solid #dbeafe",
-                            background: atLimit
-                              ? "#fff1f2"
-                              : warning
-                              ? "#fff7ed"
-                              : "#f8fbff",
-                            borderRadius: 14,
-                            overflow: "hidden",
+                            marginTop: 10,
+                            background: "#f8fbff",
+                            border: "1px solid #dbeafe",
+                            borderRadius: 12,
+                            padding: "10px 11px",
+                            fontSize: 12.5,
+                            color: "#334155",
+                            lineHeight: 1.55,
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
                           }}
                         >
-                          <div
+                          <strong>Employee note: </strong>
+                          {req.notes}
+                        </div>
+                      )}
+
+                      {req.managerNote && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            background: "#f8fbff",
+                            border: "1px solid #dbeafe",
+                            borderRadius: 12,
+                            padding: "10px 11px",
+                          }}
+                        >
+                          <p
                             style={{
-                              padding: 11,
-                              display: "flex",
-                              flexDirection: isMobile ? "column" : "row",
-                              justifyContent: "space-between",
-                              gap: 8,
-                              alignItems: isMobile ? "stretch" : "center",
+                              margin: 0,
+                              fontSize: 10.5,
+                              fontWeight: 800,
+                              color: "#1769aa",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.05em",
                             }}
                           >
-                            <div>
-                              <div
-                                style={{
-                                  fontSize: 14,
-                                  fontWeight: 900,
-                                  color: atLimit
-                                    ? "#9f1239"
-                                    : warning
-                                    ? "#9a3412"
-                                    : "#0f172a",
-                                }}
-                              >
-                                {month.monthLabel} {"\u00B7"} {month.count} request(s)
-                              </div>
+                            Message from Management
+                          </p>
 
-                              <div
-                                style={{
-                                  marginTop: 3,
-                                  fontSize: 11.5,
-                                  color: "#64748b",
-                                }}
-                              >
-                                Pending {month.pending} {"\u00B7"} Approved{" "}
-                                {month.approved} {"\u00B7"} Rejected{" "}
-                                {month.rejected} {"\u00B7"} Needs Info{" "}
-                                {month.needsInfo}
-                              </div>
-                            </div>
-
-                            <ActionButton
-                              variant="secondary"
-                              onClick={() =>
-                                setExpandedMonths((prev) => ({
-                                  ...prev,
-                                  [monthKey]: !monthExpanded,
-                                }))
-                              }
-                            >
-                              {monthExpanded ? "Hide Month" : "Open Month"}
-                            </ActionButton>
-                          </div>
-
-                          {monthExpanded && (
-                            <div
-                              style={{
-                                padding: "0 10px 10px",
-                                display: "grid",
-                                gap: 8,
-                              }}
-                            >
-                              {month.requests.map((req) => {
-                                const currentStatus = String(
-                                  req.status || "pending"
-                                ).toLowerCase();
-                                const busy = busyRequestId === req.id;
-                                const canProcess =
-                                  currentStatus === "pending" ||
-                                  currentStatus === "needs_info";
-
-                                return (
-                                  <div
-                                    key={req.id}
-                                    style={{
-                                      border: "1px solid #e2e8f0",
-                                      borderRadius: 12,
-                                      padding: isMobile ? 10 : 12,
-                                      background: "#ffffff",
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        flexDirection: isMobile
-                                          ? "column"
-                                          : "row",
-                                        justifyContent: "space-between",
-                                        gap: 10,
-                                      }}
-                                    >
-                                      <div style={{ minWidth: 0 }}>
-                                        <div
-                                          style={{
-                                            fontSize: 13.5,
-                                            fontWeight: 900,
-                                            color: "#0f172a",
-                                          }}
-                                        >
-                                          {req.reasonType || "Reason"} {"\u00B7"}{" "}
-                                          {req.startDate || "\u2014"} {"\u2192"}{" "}
-                                          {req.endDate || "\u2014"}
-                                        </div>
-
-                                        <div style={{ marginTop: 6 }}>
-                                          <span style={statusBadge(req.status)}>
-                                            {currentStatus.toUpperCase()}
-                                          </span>
-                                        </div>
-
-                                        {req.notes && (
-                                          <div
-                                            style={{
-                                              marginTop: 8,
-                                              padding: "8px 9px",
-                                              borderRadius: 10,
-                                              background: "#f8fbff",
-                                              border: "1px solid #dbeafe",
-                                              fontSize: 12,
-                                              color: "#334155",
-                                            }}
-                                          >
-                                            <strong>Employee note: </strong>
-                                            {req.notes}
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          gap: 6,
-                                          flexWrap: "wrap",
-                                          alignContent: "flex-start",
-                                        }}
-                                      >
-                                        {canProcess && (
-                                          <>
-                                            <ActionButton
-                                              variant="success"
-                                              disabled={busy}
-                                              onClick={() => handleApprove(req)}
-                                            >
-                                              Approve
-                                            </ActionButton>
-
-                                            <ActionButton
-                                              variant="warning"
-                                              disabled={busy}
-                                              onClick={() =>
-                                                handleNeedsInfo(req)
-                                              }
-                                            >
-                                              Needs Info
-                                            </ActionButton>
-
-                                            <ActionButton
-                                              variant="danger"
-                                              disabled={busy}
-                                              onClick={() => handleReject(req)}
-                                            >
-                                              Reject
-                                            </ActionButton>
-                                          </>
-                                        )}
-
-                                        <ActionButton
-                                          variant="secondary"
-                                          disabled={busy}
-                                          onClick={() => handlePrint(req)}
-                                        >
-                                          Print
-                                        </ActionButton>
-
-                                        <ActionButton
-                                          variant="secondary"
-                                          disabled={busy}
-                                          onClick={() => handleDelete(req)}
-                                        >
-                                          Delete
-                                        </ActionButton>
-                                      </div>
-                                    </div>
-
-                                    <div style={{ marginTop: 9 }}>
-                                      <label
-                                        style={{
-                                          display: "block",
-                                          marginBottom: 5,
-                                          fontSize: 10.5,
-                                          fontWeight: 800,
-                                          color: "#475569",
-                                          textTransform: "uppercase",
-                                        }}
-                                      >
-                                        Manager Note
-                                      </label>
-
-                                      <textarea
-                                        rows={2}
-                                        disabled={busy}
-                                        style={{
-                                          width: "100%",
-                                          minWidth: 0,
-                                          boxSizing: "border-box",
-                                          border: "1px solid #dbeafe",
-                                          background: "#ffffff",
-                                          borderRadius: 10,
-                                          padding: "9px 10px",
-                                          fontSize: 13,
-                                          color: "#0f172a",
-                                          outline: "none",
-                                          resize: "vertical",
-                                          fontFamily: "inherit",
-                                        }}
-                                        placeholder="Management note"
-                                        value={notesById[req.id] || ""}
-                                        onChange={(e) =>
-                                          setNotesById((prev) => ({
-                                            ...prev,
-                                            [req.id]: e.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                          <p
+                            style={{
+                              margin: "5px 0 0",
+                              fontSize: 12.5,
+                              color: "#334155",
+                              lineHeight: 1.55,
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {req.managerNote}
+                          </p>
                         </div>
-                      );
-                    })}
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 7,
+                        flexWrap: "wrap",
+                        justifyContent: isMobile ? "flex-start" : "flex-end",
+                      }}
+                    >
+                      {canProcess && (
+                        <>
+                          <ActionButton
+                            variant="success"
+                            disabled={busy}
+                            onClick={() => handleApprove(req)}
+                          >
+                            Approve
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="warning"
+                            disabled={busy}
+                            onClick={() => handleNeedsInfo(req)}
+                          >
+                            Needs Info
+                          </ActionButton>
+
+                          <ActionButton
+                            variant="danger"
+                            disabled={busy}
+                            onClick={() => handleReject(req)}
+                          >
+                            Reject
+                          </ActionButton>
+                        </>
+                      )}
+
+                      <ActionButton
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => handlePrint(req)}
+                      >
+                        Print
+                      </ActionButton>
+
+                      <ActionButton
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => handleDelete(req)}
+                      >
+                        Delete
+                      </ActionButton>
+                    </div>
                   </div>
-                )}
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: 6,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: "#475569",
+                        letterSpacing: "0.03em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Manager Note
+                    </label>
+
+                    <textarea
+                      rows={3}
+                      disabled={busy}
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        boxSizing: "border-box",
+                        border: "1px solid #dbeafe",
+                        background: "#ffffff",
+                        borderRadius: 12,
+                        padding: "11px 13px",
+                        fontSize: 14,
+                        color: "#0f172a",
+                        outline: "none",
+                        resize: "vertical",
+                        fontFamily: "inherit",
+                      }}
+                      placeholder='e.g. "More documentation needed, please pass by the office."'
+                      value={notesById[req.id] || ""}
+                      onChange={(e) =>
+                        setNotesById((prev) => ({
+                          ...prev,
+                          [req.id]: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
               </PageCard>
             );
           })}
