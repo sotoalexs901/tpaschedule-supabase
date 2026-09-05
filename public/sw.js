@@ -1,11 +1,10 @@
-// public/sw.js
+//public/sw.js
 
-const CACHE_NAME = "aerostation-hub-v6";
+const CACHE_NAME = "aerostation-hub-v7";
 const BADGE_STATE_CACHE = "aerostation-hub-badge-v1";
 const BADGE_STATE_URL = "/__aerostation_badge_state__";
 
 const APP_SHELL = [
-  "/",
   "/index.html",
   "/manifest.webmanifest",
   "/icons/aerostation-icon.png",
@@ -157,22 +156,89 @@ function getPayloadBadgeCount(data) {
 }
 
 // ============================================================
+// CACHE HELPERS
+// ============================================================
+
+async function fetchFresh(url) {
+  const request = new Request(url, {
+    cache: "reload",
+    credentials: "same-origin",
+  });
+
+  return fetch(request);
+}
+
+async function installFreshAppShell() {
+  const cache = await caches.open(CACHE_NAME);
+
+  const results = await Promise.allSettled(
+    APP_SHELL.map(async (url) => {
+      const response = await fetchFresh(url);
+
+      if (
+        !response ||
+        !response.ok
+      ) {
+        throw new Error(
+          `Could not precache ${url}`
+        );
+      }
+
+      await cache.put(
+        url,
+        response.clone()
+      );
+    })
+  );
+
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      console.warn(
+        "AeroStation Hub shell item was not precached:",
+        APP_SHELL[index],
+        result.reason
+      );
+    }
+  });
+}
+
+async function cacheFreshIndex(response) {
+  if (
+    !response ||
+    !response.ok
+  ) {
+    return;
+  }
+
+  try {
+    const cache = await caches.open(CACHE_NAME);
+
+    await cache.put(
+      "/index.html",
+      response.clone()
+    );
+  } catch (error) {
+    console.warn(
+      "Could not save fresh AeroStation Hub index:",
+      error
+    );
+  }
+}
+
+// ============================================================
 // INSTALL
 // ============================================================
 
 self.addEventListener("install", (event) => {
-  self.skipWaiting();
-
   event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .catch((error) => {
-        console.error(
-          "AeroStation Hub cache install error:",
-          error
-        );
-      })
+    (async () => {
+      // Always install the newest worker immediately.
+      await self.skipWaiting();
+
+      // Fetch the shell directly from network instead of allowing
+      // an older HTTP-cached index.html to seed the new SW cache.
+      await installFreshAppShell();
+    })()
   );
 });
 
@@ -182,20 +248,38 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter(
-              (key) =>
-                key !== CACHE_NAME &&
-                key !== BADGE_STATE_CACHE
-            )
-            .map((key) => caches.delete(key))
-        )
-      )
-      .then(() => self.clients.claim())
+    (async () => {
+      const keys = await caches.keys();
+
+      await Promise.all(
+        keys
+          .filter(
+            (key) =>
+              key !== CACHE_NAME &&
+              key !== BADGE_STATE_CACHE
+          )
+          .map((key) =>
+            caches.delete(key)
+          )
+      );
+
+      // Navigation preload lets the browser begin the fresh page request
+      // while the service worker is starting.
+      try {
+        if (
+          self.registration.navigationPreload
+        ) {
+          await self.registration.navigationPreload.enable();
+        }
+      } catch (error) {
+        console.warn(
+          "AeroStation Hub navigation preload unavailable:",
+          error
+        );
+      }
+
+      await self.clients.claim();
+    })()
   );
 });
 
@@ -207,7 +291,9 @@ self.addEventListener("message", (event) => {
   const message = event.data;
 
   if (message === "SKIP_WAITING") {
-    self.skipWaiting();
+    event.waitUntil(
+      self.skipWaiting()
+    );
     return;
   }
 
@@ -298,6 +384,7 @@ self.addEventListener("push", (event) => {
   const targetUrl =
     data.url ||
     data.link ||
+    data.route ||
     "/dashboard";
 
   const exactBadgeCount =
@@ -362,42 +449,45 @@ self.addEventListener("notificationclick", (event) => {
 
   const targetUrl =
     event.notification?.data?.url ||
+    event.notification?.data?.link ||
+    event.notification?.data?.route ||
     "/dashboard";
 
   event.waitUntil(
-    self.clients
-      .matchAll({
-        type: "window",
-        includeUncontrolled: true,
-      })
-      .then(async (clients) => {
-        for (const client of clients) {
-          try {
-            if ("navigate" in client) {
-              await client.navigate(
-                targetUrl
-              );
-            }
+    (async () => {
+      const clients =
+        await self.clients.matchAll({
+          type: "window",
+          includeUncontrolled: true,
+        });
 
-            if ("focus" in client) {
-              return client.focus();
-            }
-          } catch (error) {
-            console.warn(
-              "Could not focus existing AeroStation Hub window:",
-              error
+      for (const client of clients) {
+        try {
+          if ("navigate" in client) {
+            await client.navigate(
+              targetUrl
             );
           }
-        }
 
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(
-            targetUrl
+          if ("focus" in client) {
+            return client.focus();
+          }
+        } catch (error) {
+          console.warn(
+            "Could not focus existing AeroStation Hub window:",
+            error
           );
         }
+      }
 
-        return null;
-      })
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(
+          targetUrl
+        );
+      }
+
+      return null;
+    })()
   );
 });
 
@@ -434,31 +524,52 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // ----------------------------------------------------------
+  // PAGE NAVIGATION
+  // Always prefer the newest HTML from the network.
+  // Cached index.html is used only when offline.
+  // ----------------------------------------------------------
+
   if (
     request.mode ===
     "navigate"
   ) {
     event.respondWith(
-      fetch(request, {
-        cache: "no-store",
-      })
-        .then((response) => {
-          const copy =
-            response.clone();
+      (async () => {
+        try {
+          const preloadResponse =
+            await event.preloadResponse;
 
-          caches
-            .open(CACHE_NAME)
-            .then((cache) =>
-              cache.put(
-                "/index.html",
-                copy
-              )
-            )
-            .catch(() => {});
+          if (
+            preloadResponse &&
+            preloadResponse.ok
+          ) {
+            await cacheFreshIndex(
+              preloadResponse
+            );
+
+            return preloadResponse;
+          }
+
+          const response =
+            await fetch(
+              request,
+              {
+                cache: "no-store",
+              }
+            );
+
+          if (
+            response &&
+            response.ok
+          ) {
+            await cacheFreshIndex(
+              response
+            );
+          }
 
           return response;
-        })
-        .catch(async () => {
+        } catch (error) {
           const cached =
             (await caches.match(
               "/index.html"
@@ -524,14 +635,23 @@ self.addEventListener("fetch", (event) => {
               headers: {
                 "Content-Type":
                   "text/html; charset=utf-8",
+                "Cache-Control":
+                  "no-store",
               },
             }
           );
-        })
+        }
+      })()
     );
 
     return;
   }
+
+  // ----------------------------------------------------------
+  // VITE HASHED ASSETS
+  // Their filenames change whenever the build changes, so cache-first
+  // is safe and keeps AeroStation Hub fast after the fresh index loads.
+  // ----------------------------------------------------------
 
   if (
     url.pathname.startsWith(
@@ -585,6 +705,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // ----------------------------------------------------------
+  // UPDATE-SENSITIVE FILES
+  // Never intentionally serve an old version from HTTP cache.
+  // ----------------------------------------------------------
+
   if (
     url.pathname ===
       "/manifest.webmanifest" ||
@@ -605,6 +730,11 @@ self.addEventListener("fetch", (event) => {
 
     return;
   }
+
+  // ----------------------------------------------------------
+  // OTHER SAME-ORIGIN GET REQUESTS
+  // Network first, cache only as offline fallback.
+  // ----------------------------------------------------------
 
   event.respondWith(
     fetch(request, {
@@ -641,4 +771,4 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// END sw.
+// END sw.js
