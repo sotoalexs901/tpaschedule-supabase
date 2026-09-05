@@ -12,6 +12,7 @@ import {
 import { db } from "../firebase";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 import { createOperationalAlert } from "../utils/operationalAlerts.js";
+import { triggerTimeOffSubmittedPush } from "../utils/timeOffPush.js";
 
 const MONTHLY_WARNING_THRESHOLD = 4;
 const MONTHLY_MAX_REQUESTS = 5;
@@ -477,7 +478,15 @@ export default function TimeOffRequestPage() {
         status: "pending",
         createdAt: serverTimestamp(),
         createdVia: "public_form",
+
+        // Push delivery state for Management notification.
+        managementSubmissionPushStatus: "PENDING",
+        managementSubmissionPushError: "",
       });
+
+      // Fire-and-forget. The request is already safely stored before
+      // Station Manager / Duty Manager Push delivery is requested.
+      triggerTimeOffSubmittedPush(requestRef.id);
 
       const newMonthlyCount = monthlyCount + 1;
       const newMonthlyDates = [...monthlyDates, range.start].sort();
