@@ -19,6 +19,7 @@ import {
   APP_NAME,
   APP_SUBTITLE,
 } from "../config/appConfig.js";
+import { triggerDashboardEventRsvpPush } from "../utils/dashboardEventPush.js";
 
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
@@ -2431,6 +2432,14 @@ export default function EmployeeDashboardPage() {
         return;
       }
 
+      if (
+        String(
+          eventResponses[eventId] || ""
+        ).toLowerCase() === response
+      ) {
+        return;
+      }
+
       try {
         setSavingEventResponse(
           eventId
@@ -2483,6 +2492,11 @@ export default function EmployeeDashboardPage() {
             [eventId]:
               response,
           })
+        );
+
+        triggerDashboardEventRsvpPush(
+          eventId,
+          userId
         );
       } catch (error) {
         console.error(
