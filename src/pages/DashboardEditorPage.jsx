@@ -1,3 +1,5 @@
+// src/pages/DashboardEditorPage.jsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import { db, storage } from "../firebase";
 import {
@@ -430,58 +432,82 @@ function PublishedRow({
   );
 }
 
-function RsvpToggle({ checked, onChange }) {
+function ResponseTypeCard({
+  selected,
+  icon,
+  title,
+  subtitle,
+  accent,
+  onClick,
+}) {
   return (
-    <label
+    <button
+      type="button"
+      onClick={onClick}
       style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
+        width: "100%",
+        border: selected
+          ? `2px solid ${accent}`
+          : "1px solid #dbeafe",
+        background: selected
+          ? `linear-gradient(135deg, ${accent}10 0%, #ffffff 100%)`
+          : "#ffffff",
+        borderRadius: 15,
         padding: 12,
-        borderRadius: 14,
-        border: checked ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
-        background: checked
-          ? "linear-gradient(135deg,#eff6ff 0%,#ffffff 100%)"
-          : "#f8fafc",
         cursor: "pointer",
+        textAlign: "left",
+        boxShadow: selected
+          ? `0 8px 18px ${accent}12`
+          : "none",
       }}
     >
-      <div style={{ minWidth: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+        }}
+      >
         <div
           style={{
-            fontSize: 12.5,
-            fontWeight: 850,
-            color: "#0f172a",
+            width: 38,
+            height: 38,
+            borderRadius: 12,
+            background: `${accent}16`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 18,
+            flexShrink: 0,
           }}
         >
-          Allow employee RSVP
+          {icon}
         </div>
 
-        <div
-          style={{
-            marginTop: 3,
-            fontSize: 11,
-            lineHeight: 1.5,
-            color: "#64748b",
-          }}
-        >
-          Employees can answer Yes, No, Maybe, or Sorry, I can&apos;t.
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 12.5,
+              fontWeight: 850,
+              color: "#0f172a",
+            }}
+          >
+            {title}
+          </div>
+
+          <div
+            style={{
+              marginTop: 3,
+              fontSize: 10.5,
+              lineHeight: 1.5,
+              color: "#64748b",
+            }}
+          >
+            {subtitle}
+          </div>
         </div>
       </div>
-
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        style={{
-          width: 20,
-          height: 20,
-          accentColor: "#1769aa",
-          flexShrink: 0,
-        }}
-      />
-    </label>
+    </button>
   );
 }
 
@@ -498,7 +524,7 @@ export default function DashboardEditorPage() {
   const [eventDate, setEventDate] = useState("");
   const [eventTime, setEventTime] = useState("");
   const [eventDetails, setEventDetails] = useState("");
-  const [eventRsvpEnabled, setEventRsvpEnabled] = useState(true);
+  const [eventResponseMode, setEventResponseMode] = useState("rsvp");
 
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeBody, setNoticeBody] = useState("");
@@ -639,6 +665,16 @@ export default function DashboardEditorPage() {
       return;
     }
 
+    const isStandardRsvp = eventResponseMode === "rsvp";
+    const isJobPosting = eventResponseMode === "job_posting";
+    const responseEnabled = isStandardRsvp || isJobPosting;
+
+    const responseOptions = isJobPosting
+      ? ["apply", "not_interested"]
+      : isStandardRsvp
+      ? ["yes", "no", "maybe", "cant"]
+      : [];
+
     try {
       setSavingEvent(true);
 
@@ -650,9 +686,11 @@ export default function DashboardEditorPage() {
           time: eventTime || null,
           details: eventDetails.trim() || null,
 
-          rsvpEnabled: eventRsvpEnabled,
-          rsvpVersion: 1,
-          rsvpOptions: ["yes", "no", "maybe", "cant"],
+          eventType: isJobPosting ? "job_posting" : "event",
+          responseMode: eventResponseMode,
+          rsvpEnabled: responseEnabled,
+          rsvpVersion: 2,
+          rsvpOptions: responseOptions,
 
           createdAt: serverTimestamp(),
           createdBy: currentAuthor,
@@ -669,16 +707,26 @@ export default function DashboardEditorPage() {
       setEventDate("");
       setEventTime("");
       setEventDetails("");
-      setEventRsvpEnabled(true);
+      setEventResponseMode("rsvp");
 
       await loadDashboardContent();
 
-      showStatus(
-        eventRsvpEnabled
-          ? "Event published with employee RSVP enabled."
-          : "Event published.",
-        "success"
-      );
+      if (isJobPosting) {
+        showStatus(
+          "Job posting published with employee application response enabled.",
+          "success"
+        );
+      } else if (isStandardRsvp) {
+        showStatus(
+          "Event published with employee RSVP enabled.",
+          "success"
+        );
+      } else {
+        showStatus(
+          "Information-only event published.",
+          "success"
+        );
+      }
     } catch (err) {
       console.error("Add event error:", err);
       showStatus(err?.message || "Could not add event.", "error");
@@ -1072,16 +1120,65 @@ export default function DashboardEditorPage() {
         }}
       >
         <SectionCard
-          title="Create Event"
-          subtitle="Post a dated operational event to the dashboard."
+          title="Create Event / Posting"
+          subtitle="Publish an operational event, internal opportunity, or information-only item."
           icon={"\u{1F4C5}"}
           accent="#1f7cc1"
         >
           <div style={{ display: "grid", gap: 12 }}>
             <div>
-              <FieldLabel>Title</FieldLabel>
+              <FieldLabel>Response Type</FieldLabel>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 9,
+                }}
+              >
+                <ResponseTypeCard
+                  selected={eventResponseMode === "rsvp"}
+                  icon={"\u{1F4C5}"}
+                  title="Standard RSVP"
+                  subtitle="Yes, No, Maybe, or Sorry, I can't."
+                  accent="#1769aa"
+                  onClick={() => setEventResponseMode("rsvp")}
+                />
+
+                <ResponseTypeCard
+                  selected={eventResponseMode === "job_posting"}
+                  icon={"\u{1F4BC}"}
+                  title="Job Posting / Sign-Up"
+                  subtitle="Employees can Apply or select Not Interested."
+                  accent="#7c3aed"
+                  onClick={() => setEventResponseMode("job_posting")}
+                />
+
+                <ResponseTypeCard
+                  selected={eventResponseMode === "none"}
+                  icon={"\u{1F4E2}"}
+                  title="Information Only"
+                  subtitle="Publish without any employee response buttons."
+                  accent="#64748b"
+                  onClick={() => setEventResponseMode("none")}
+                />
+              </div>
+            </div>
+
+            <div>
+              <FieldLabel>
+                {eventResponseMode === "job_posting"
+                  ? "Posting Title"
+                  : "Title"}
+              </FieldLabel>
+
               <TextInput
-                placeholder="Event title"
+                placeholder={
+                  eventResponseMode === "job_posting"
+                    ? "Example: Cabin Service Supervisor"
+                    : "Event title"
+                }
                 value={eventTitle}
                 onChange={(e) => setEventTitle(e.target.value)}
               />
@@ -1095,7 +1192,12 @@ export default function DashboardEditorPage() {
               }}
             >
               <div>
-                <FieldLabel>Date</FieldLabel>
+                <FieldLabel>
+                  {eventResponseMode === "job_posting"
+                    ? "Application Deadline"
+                    : "Date"}
+                </FieldLabel>
+
                 <TextInput
                   type="date"
                   value={eventDate}
@@ -1104,7 +1206,12 @@ export default function DashboardEditorPage() {
               </div>
 
               <div>
-                <FieldLabel optional>Time</FieldLabel>
+                <FieldLabel optional>
+                  {eventResponseMode === "job_posting"
+                    ? "Deadline Time"
+                    : "Time"}
+                </FieldLabel>
+
                 <TextInput
                   type="time"
                   value={eventTime}
@@ -1114,33 +1221,55 @@ export default function DashboardEditorPage() {
             </div>
 
             <div>
-              <FieldLabel optional>Details</FieldLabel>
+              <FieldLabel optional>
+                {eventResponseMode === "job_posting"
+                  ? "Posting Details"
+                  : "Details"}
+              </FieldLabel>
+
               <TextArea
-                rows={3}
-                placeholder="Operational details, location or instructions"
+                rows={eventResponseMode === "job_posting" ? 8 : 3}
+                placeholder={
+                  eventResponseMode === "job_posting"
+                    ? "Position summary, qualifications, responsibilities, schedule expectations, application instructions..."
+                    : "Operational details, location or instructions"
+                }
                 value={eventDetails}
                 onChange={(e) => setEventDetails(e.target.value)}
               />
             </div>
 
-            <RsvpToggle
-              checked={eventRsvpEnabled}
-              onChange={setEventRsvpEnabled}
-            />
-
-            {eventRsvpEnabled && (
+            {eventResponseMode === "rsvp" && (
               <SecondaryNote>
-                Employee responses will be stored under this event as:
+                Employees will be able to answer <b>Yes</b>, <b>No</b>,
                 {" "}
-                <b>Yes</b>, <b>No</b>, <b>Maybe</b>, and <b>Sorry, I can&apos;t</b>.
-                Management response counts and employee names will be added to the
-                Station Manager Dashboard in the next step.
+                <b>Maybe</b>, or <b>Sorry, I can&apos;t</b>.
+              </SecondaryNote>
+            )}
+
+            {eventResponseMode === "job_posting" && (
+              <SecondaryNote>
+                Employees will not type their name manually. AeroStation Hub will
+                automatically save the logged-in employee&apos;s identity when they
+                select <b>Apply / I&apos;m Interested</b> or <b>Not Interested</b>.
+                The Station Manager will be able to see the applicant count and names.
+              </SecondaryNote>
+            )}
+
+            {eventResponseMode === "none" && (
+              <SecondaryNote>
+                This item will be visible to employees, but no response will be
+                requested or stored.
               </SecondaryNote>
             )}
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <PrimaryButton onClick={addEvent} disabled={savingEvent}>
-                {savingEvent ? "Publishing..." : "Publish Event"}
+                {savingEvent
+                  ? "Publishing..."
+                  : eventResponseMode === "job_posting"
+                  ? "Publish Job Posting"
+                  : "Publish Event"}
               </PrimaryButton>
             </div>
           </div>
@@ -1271,8 +1400,8 @@ export default function DashboardEditorPage() {
       </div>
 
       <SectionCard
-        title="Published Events"
-        subtitle="Review or remove events currently stored in the dashboard."
+        title="Published Events / Postings"
+        subtitle="Review or remove events and internal postings currently stored in the dashboard."
         icon={"\u{1F5C2}"}
         accent={COLORS.blue}
         action={<CountBadge value={events.length} label="Published" />}
@@ -1283,40 +1412,56 @@ export default function DashboardEditorPage() {
           <EmptyState text="No events published." />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
-            {events.map((item) => (
-              <PublishedRow
-                key={item.id}
-                title={item.title || "Untitled"}
-                meta={
-                  <>
-                    {item.date || "\u2014"}{" "}
-                    {item.time ? `\u00B7 ${item.time}` : ""}
-                    {" "}
-                    {item.rsvpEnabled ? "\u00B7 RSVP Enabled" : ""}
-                  </>
-                }
-                body={item.details || null}
-                footer={`By ${
-                  item.createdByLabel ||
-                  item.createdBy ||
-                  FIXED_AUTHOR
-                }`}
-                action={
-                  <DangerButton
-                    disabled={deletingId === item.id}
-                    onClick={() =>
-                      deleteDashboardItem({
-                        collectionName: "dashboard_events",
-                        id: item.id,
-                        label: "event",
-                      })
-                    }
-                  >
-                    {deletingId === item.id ? "Deleting..." : "Delete"}
-                  </DangerButton>
-                }
-              />
-            ))}
+            {events.map((item) => {
+              const mode =
+                item.responseMode ||
+                (item.rsvpEnabled ? "rsvp" : "none");
+
+              const modeLabel =
+                mode === "job_posting"
+                  ? "Job Posting"
+                  : mode === "rsvp"
+                  ? "Standard RSVP"
+                  : "Information Only";
+
+              return (
+                <PublishedRow
+                  key={item.id}
+                  title={item.title || "Untitled"}
+                  meta={
+                    <>
+                      {item.date || "\u2014"}{" "}
+                      {item.time ? `\u00B7 ${item.time}` : ""}
+                      {" \u00B7 "}
+                      {modeLabel}
+                    </>
+                  }
+                  body={item.details || null}
+                  footer={`By ${
+                    item.createdByLabel ||
+                    item.createdBy ||
+                    FIXED_AUTHOR
+                  }`}
+                  action={
+                    <DangerButton
+                      disabled={deletingId === item.id}
+                      onClick={() =>
+                        deleteDashboardItem({
+                          collectionName: "dashboard_events",
+                          id: item.id,
+                          label:
+                            mode === "job_posting"
+                              ? "job posting"
+                              : "event",
+                        })
+                      }
+                    >
+                      {deletingId === item.id ? "Deleting..." : "Delete"}
+                    </DangerButton>
+                  }
+                />
+              );
+            })}
           </div>
         )}
       </SectionCard>
@@ -1530,3 +1675,5 @@ export default function DashboardEditorPage() {
     </div>
   );
 }
+
+// END DashboardEditorPage.jsx
