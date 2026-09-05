@@ -21,12 +21,6 @@ import {
 } from "../config/appConfig.js";
 import "./LoginPage.css";
 
-// ============================================================
-// PRIVACY POLICY
-// Change this version only when a new acknowledgment
-// must be required from all users.
-// ============================================================
-
 const PRIVACY_POLICY_VERSION = "2026.08.26";
 
 function normalizeCabinServiceValue(value) {
@@ -64,15 +58,9 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ==========================================================
-  // PRIVACY ACKNOWLEDGMENT
-  // ==========================================================
-
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [privacyChecked, setPrivacyChecked] = useState(false);
   const [acceptingPrivacy, setAcceptingPrivacy] = useState(false);
-
-  // Authenticated user waiting for privacy acceptance
   const [pendingUser, setPendingUser] = useState(null);
 
   useEffect(() => {
@@ -81,10 +69,6 @@ export default function LoginPage() {
     }
   }, [user, navigate]);
 
-  // ==========================================================
-  // LOGIN
-  // ==========================================================
-
   const handleLogin = async (e) => {
     e.preventDefault();
 
@@ -92,7 +76,10 @@ export default function LoginPage() {
 
     setError("");
 
-    const cleanUsername = username.trim();
+    const cleanUsername = String(username || "")
+      .trim()
+      .toLowerCase();
+
     const cleanPin = pin.trim();
 
     if (!cleanUsername || !cleanPin) {
@@ -102,10 +89,6 @@ export default function LoginPage() {
 
     try {
       setLoading(true);
-
-      // ------------------------------------------------------
-      // FIND USER
-      // ------------------------------------------------------
 
       const userQuery = query(
         collection(db, "users"),
@@ -126,18 +109,10 @@ export default function LoginPage() {
         ...userDoc.data(),
       };
 
-      // ------------------------------------------------------
-      // VERIFY PIN
-      // ------------------------------------------------------
-
       if (String(userData.pin || "") !== cleanPin) {
         setError("Invalid username or PIN.");
         return;
       }
-
-      // ------------------------------------------------------
-      // FIND EMPLOYEE INFORMATION
-      // ------------------------------------------------------
 
       let employeeData = null;
 
@@ -157,10 +132,6 @@ export default function LoginPage() {
         }
       }
 
-      // ------------------------------------------------------
-      // FALLBACK: FIND EMPLOYEE BY USERNAME
-      // ------------------------------------------------------
-
       if (!employeeData) {
         const employeeByUsernameQuery = query(
           collection(db, "employees"),
@@ -178,10 +149,6 @@ export default function LoginPage() {
           };
         }
       }
-
-      // ------------------------------------------------------
-      // BUILD USER PROFILE
-      // ------------------------------------------------------
 
       const mergedUser = {
         ...userData,
@@ -212,22 +179,6 @@ export default function LoginPage() {
           "",
       };
 
-      // ======================================================
-      // PRIVACY POLICY VERSION CHECK
-      // ======================================================
-      //
-      // CURRENT USERS:
-      // They will see the new notice once because they do not
-      // yet have this policy version recorded.
-      //
-      // NEW USERS:
-      // They will also see it on their first login.
-      //
-      // AFTER ACCEPTANCE:
-      // They will not see it again unless the policy version
-      // is changed in the future.
-      // ======================================================
-
       const hasAcceptedCurrentPolicy =
         userData.privacyPolicyAccepted === true &&
         userData.privacyPolicyVersion === PRIVACY_POLICY_VERSION;
@@ -238,11 +189,6 @@ export default function LoginPage() {
         setShowPrivacyModal(true);
         return;
       }
-
-      // ------------------------------------------------------
-      // POLICY ALREADY ACCEPTED
-      // NORMAL LOGIN
-      // ------------------------------------------------------
 
       setUser(mergedUser);
 
@@ -260,10 +206,6 @@ export default function LoginPage() {
     }
   };
 
-  // ==========================================================
-  // ACCEPT PRIVACY POLICY
-  // ==========================================================
-
   const handleAcceptPrivacy = async () => {
     if (
       !privacyChecked ||
@@ -277,10 +219,6 @@ export default function LoginPage() {
       setAcceptingPrivacy(true);
       setError("");
 
-      // ------------------------------------------------------
-      // SAVE ACKNOWLEDGMENT
-      // ------------------------------------------------------
-
       await updateDoc(
         doc(db, "users", pendingUser.id),
         {
@@ -289,10 +227,6 @@ export default function LoginPage() {
           privacyPolicyAcceptedAt: serverTimestamp(),
         }
       );
-
-      // ------------------------------------------------------
-      // UPDATE SESSION USER
-      // ------------------------------------------------------
 
       const acceptedUser = {
         ...pendingUser,
@@ -303,10 +237,6 @@ export default function LoginPage() {
       setShowPrivacyModal(false);
       setPrivacyChecked(false);
       setPendingUser(null);
-
-      // ------------------------------------------------------
-      // LOGIN
-      // ------------------------------------------------------
 
       setUser(acceptedUser);
 
@@ -327,10 +257,6 @@ export default function LoginPage() {
     }
   };
 
-  // ==========================================================
-  // CANCEL PRIVACY ACKNOWLEDGMENT
-  // ==========================================================
-
   const handleCancelPrivacy = () => {
     if (acceptingPrivacy) return;
 
@@ -338,7 +264,6 @@ export default function LoginPage() {
     setPrivacyChecked(false);
     setPendingUser(null);
 
-    // Require PIN again
     setPin("");
     setError("");
   };
@@ -346,12 +271,7 @@ export default function LoginPage() {
   return (
     <div className="login-container">
 
-      {/* =====================================================
-          LEFT SIDE
-      ===================================================== */}
-
       <div className="login-left">
-
         <div className="login-overlay-content">
 
           <div className="login-overlay-tag">
@@ -372,18 +292,10 @@ export default function LoginPage() {
           </p>
 
         </div>
-
       </div>
 
-      {/* =====================================================
-          RIGHT SIDE
-      ===================================================== */}
-
       <div className="login-right">
-
         <div className="login-card">
-
-          {/* BRAND */}
 
           <div className="login-brand">
 
@@ -414,10 +326,6 @@ export default function LoginPage() {
 
           </div>
 
-          {/* =================================================
-              LOGIN FORM
-          ================================================= */}
-
           <form
             className="login-box"
             onSubmit={handleLogin}
@@ -438,8 +346,6 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* USERNAME */}
-
             <div className="login-field">
 
               <label htmlFor="username">
@@ -455,12 +361,12 @@ export default function LoginPage() {
                   setUsername(e.target.value)
                 }
                 autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
                 disabled={loading}
               />
 
             </div>
-
-            {/* PIN */}
 
             <div className="login-field">
 
@@ -487,8 +393,6 @@ export default function LoginPage() {
 
             </div>
 
-            {/* ACCESS MESSAGE */}
-
             <div className="login-row">
 
               <span className="login-helper-text">
@@ -497,8 +401,6 @@ export default function LoginPage() {
               </span>
 
             </div>
-
-            {/* SIGN IN */}
 
             <button
               type="submit"
@@ -514,11 +416,6 @@ export default function LoginPage() {
               Secure access to schedules, team updates,
               approvals, reports and daily station operations.
             </p>
-
-            {/* =================================================
-                ANAPOLES SOLUTIONS
-                ALWAYS VISIBLE ON LOGIN
-            ================================================= */}
 
             <div className="login-ownership">
 
@@ -547,12 +444,7 @@ export default function LoginPage() {
           </form>
 
         </div>
-
       </div>
-
-      {/* =====================================================
-          PRIVACY POLICY ACKNOWLEDGMENT MODAL
-      ===================================================== */}
 
       {showPrivacyModal && pendingUser && (
 
@@ -565,12 +457,10 @@ export default function LoginPage() {
             aria-labelledby="privacy-modal-title"
           >
 
-            {/* HEADER */}
-
             <div className="privacy-modal-header">
 
               <div className="privacy-modal-icon">
-                ð
+                {"\u{1F512}"}
               </div>
 
               <div>
@@ -586,8 +476,6 @@ export default function LoginPage() {
               </div>
 
             </div>
-
-            {/* BODY */}
 
             <div className="privacy-modal-body">
 
@@ -607,8 +495,6 @@ export default function LoginPage() {
                 this notice before continuing.
               </p>
 
-              {/* CONFIDENTIAL SYSTEM */}
-
               <div className="privacy-notice">
 
                 <strong>
@@ -623,8 +509,6 @@ export default function LoginPage() {
                 </p>
 
               </div>
-
-              {/* PRIVACY RULES */}
 
               <div className="privacy-rules">
 
@@ -671,8 +555,6 @@ export default function LoginPage() {
 
               </div>
 
-              {/* FULL POLICY */}
-
               <Link
                 to="/privacy"
                 target="_blank"
@@ -680,18 +562,14 @@ export default function LoginPage() {
                 className="privacy-read-full"
               >
                 Read Full Privacy, Confidentiality &amp;
-                Ownership Policy â
+                Ownership Policy {"\u2192"}
               </Link>
-
-              {/* ERROR */}
 
               {error && (
                 <div className="login-error">
                   {error}
                 </div>
               )}
-
-              {/* ACKNOWLEDGMENT */}
 
               <label className="privacy-acknowledgment">
 
@@ -721,8 +599,6 @@ export default function LoginPage() {
 
             </div>
 
-            {/* FOOTER */}
-
             <div className="privacy-modal-footer">
 
               <button
@@ -750,8 +626,6 @@ export default function LoginPage() {
 
             </div>
 
-            {/* POLICY INFORMATION */}
-
             <div className="privacy-policy-version">
 
               <span>
@@ -760,7 +634,7 @@ export default function LoginPage() {
               </span>
 
               <span>
-                {APP_NAME} Â© 2026 ANapoles Solutions
+                {APP_NAME} {"\u00A9"} 2026 ANapoles Solutions
               </span>
 
             </div>
