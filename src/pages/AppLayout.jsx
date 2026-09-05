@@ -1,3 +1,5 @@
+// src/components/AppLayout.jsx
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
@@ -18,6 +20,10 @@ import {
   APP_NAME,
   APP_SUBTITLE,
 } from "../config/appConfig.js";
+import {
+  setAeroStationAppBadge,
+  clearAeroStationAppBadge,
+} from "../utils/appBadge.js";
 
 // Menu icons intentionally use Unicode escape sequences (for example "\\u{1F3E0}")
 // instead of literal emoji characters. This prevents mojibake/encoding corruption
@@ -32,6 +38,12 @@ import {
 // Pointer, keyboard, touch, scroll and focus activity refresh presence at a
 // throttled interval. This gives the User Activity dashboard a better "lastSeen"
 // signal even when an employee stays on the same page for a long time.
+//
+// APP BADGE:
+// The installed AeroStation Hub app icon shows a numeric badge when supported.
+// Agent/Supervisor: unread messages + unread notifications.
+// Duty Manager/Station Manager: unread messages + unread notifications
+// + active operational alerts + pending Day Off requests.
 
 const ACTIVITY_PING_MS = 60 * 1000;
 
@@ -114,6 +126,12 @@ export default function AppLayout() {
     } catch (err) {
       console.error("Error marking user offline on logout:", err);
     } finally {
+      try {
+        await clearAeroStationAppBadge();
+      } catch (badgeErr) {
+        console.warn("Could not clear app badge on logout:", badgeErr);
+      }
+
       setUser(null);
       navigate("/login");
     }
@@ -126,8 +144,6 @@ export default function AppLayout() {
   useEffect(() => {
     if (!user?.id) return undefined;
 
-    // The login flow normally loads the complete user document.
-    // That means sessionVersion from the current login becomes our baseline.
     sessionVersionRef.current = getSessionVersion(user?.sessionVersion);
     forcedLogoutHandledRef.current = false;
 
@@ -137,7 +153,6 @@ export default function AppLayout() {
       userRef,
       async (snap) => {
         if (!snap.exists()) {
-          // Account removed while the employee is signed in.
           if (forcedLogoutHandledRef.current) return;
 
           forcedLogoutHandledRef.current = true;
@@ -147,6 +162,12 @@ export default function AppLayout() {
           } catch (err) {
             console.error("Error marking deleted user offline:", err);
           } finally {
+            try {
+              await clearAeroStationAppBadge();
+            } catch (badgeErr) {
+              console.warn("Could not clear app badge:", badgeErr);
+            }
+
             setUser(null);
             navigate("/login", {
               replace: true,
@@ -175,6 +196,12 @@ export default function AppLayout() {
           } catch (err) {
             console.error("Error marking forced-logout user offline:", err);
           } finally {
+            try {
+              await clearAeroStationAppBadge();
+            } catch (badgeErr) {
+              console.warn("Could not clear app badge:", badgeErr);
+            }
+
             setUser(null);
             navigate("/login", {
               replace: true,
@@ -240,8 +267,6 @@ export default function AppLayout() {
           await context.resume();
         }
 
-        // Play an almost-silent, ultra-short tone during the actual
-        // user gesture. This reliably unlocks WebAudio on iOS/iPadOS Safari.
         const oscillator = context.createOscillator();
         const gain = context.createGain();
 
@@ -291,7 +316,6 @@ export default function AppLayout() {
       let context = audioContextRef.current;
 
       if (!context) {
-        // Fallback for browsers that do not preserve the context.
         context = new AudioContextClass();
         audioContextRef.current = context;
       }
@@ -302,7 +326,6 @@ export default function AppLayout() {
 
       const now = context.currentTime;
 
-      // First tone.
       const oscillator1 = context.createOscillator();
       const gain1 = context.createGain();
 
@@ -329,8 +352,6 @@ export default function AppLayout() {
       oscillator1.start(now);
       oscillator1.stop(now + 0.17);
 
-      // Second short tone gives the notification more presence,
-      // especially through iPad/iPhone speakers.
       const oscillator2 = context.createOscillator();
       const gain2 = context.createGain();
 
@@ -415,7 +436,10 @@ export default function AppLayout() {
   // ============================================================
 
   useEffect(() => {
-    if (!user?.id) return undefined;
+    if (!user?.id) {
+      setUnreadNotifications(0);
+      return undefined;
+    }
 
     const qNotifications = query(
       collection(db, "notifications"),
@@ -426,7 +450,10 @@ export default function AppLayout() {
     const unsub = onSnapshot(
       qNotifications,
       (snap) => setUnreadNotifications(snap.size),
-      (err) => console.error("Error listening notifications:", err)
+      (err) => {
+        console.error("Error listening notifications:", err);
+        setUnreadNotifications(0);
+      }
     );
 
     return () => unsub();
@@ -468,6 +495,79 @@ export default function AppLayout() {
 
     return () => unsub();
   }, [user?.role]);
+
+  // ============================================================
+  // USER NORMALIZATION
+  // ============================================================
+
+  const normalizedDepartment = String(user?.department || "")
+    .trim()
+    .toLowerCase();
+
+  const normalizedUsername = String(user?.username || "")
+    .trim()
+    .toLowerCase();
+
+  const isHhernandez =
+    normalizedUsername === "hhernandez" ||
+    normalizedUsername === "hhernadez";
+
+  const isDLCabinService =
+    normalizedDepartment.includes("dl cabin") ||
+    normalizedDepartment.includes("cabin service");
+
+  // ============================================================
+  // ROLE HELPERS
+  // ============================================================
+
+  const isManager =
+    user?.role === "station_manager" ||
+    user?.role === "duty_manager";
+
+  const isAgent = user?.role === "agent";
+
+  const isAgentOrSupervisor =
+    user?.role === "agent" ||
+    user?.role === "supervisor";
+
+  const isManagementUser =
+    user?.role === "station_manager" ||
+    user?.role === "duty_manager";
+
+  // ============================================================
+  // APP BADGE COUNT
+  // ============================================================
+
+  const appBadgeCount = useMemo(() => {
+    const personalCount =
+      Math.max(0, Number(unreadMessages || 0)) +
+      Math.max(0, Number(unreadNotifications || 0));
+
+    if (!isManagementUser) {
+      return personalCount;
+    }
+
+    return (
+      personalCount +
+      Math.max(0, Number(operationalAlerts || 0)) +
+      Math.max(0, Number(pendingTimeOff || 0))
+    );
+  }, [
+    unreadMessages,
+    unreadNotifications,
+    operationalAlerts,
+    pendingTimeOff,
+    isManagementUser,
+  ]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      clearAeroStationAppBadge();
+      return;
+    }
+
+    setAeroStationAppBadge(appBadgeCount);
+  }, [user?.id, appBadgeCount]);
 
   // ============================================================
   // CLOSE MENU WHEN NAVIGATING
@@ -557,7 +657,6 @@ export default function AppLayout() {
       );
     };
 
-    // Initial activity mark after login/layout mount.
     sendActivityPing();
 
     const passiveOptions = { passive: true };
@@ -576,40 +675,6 @@ export default function AppLayout() {
       window.removeEventListener("keydown", sendActivityPing);
     };
   }, [user, location.pathname]);
-
-  // ============================================================
-  // USER NORMALIZATION
-  // ============================================================
-
-  const normalizedDepartment = String(user?.department || "")
-    .trim()
-    .toLowerCase();
-
-  const normalizedUsername = String(user?.username || "")
-    .trim()
-    .toLowerCase();
-
-  const isHhernandez =
-    normalizedUsername === "hhernandez" ||
-    normalizedUsername === "hhernadez";
-
-  const isDLCabinService =
-    normalizedDepartment.includes("dl cabin") ||
-    normalizedDepartment.includes("cabin service");
-
-  // ============================================================
-  // ROLE HELPERS
-  // ============================================================
-
-  const isManager =
-    user?.role === "station_manager" ||
-    user?.role === "duty_manager";
-
-  const isAgent = user?.role === "agent";
-
-  const isAgentOrSupervisor =
-    user?.role === "agent" ||
-    user?.role === "supervisor";
 
   // ============================================================
   // PERMISSIONS
@@ -748,13 +813,13 @@ export default function AppLayout() {
         to: "/messages",
         label: "Messages",
         icon: "\u{1F4AC}",
-        showDot: unreadMessages > 0,
+        badgeValue: unreadMessages,
       },
       {
         to: "/notifications",
         label: "Notifications",
         icon: "\u{1F514}",
-        showDot: unreadNotifications > 0,
+        badgeValue: unreadNotifications,
       },
     ];
 
@@ -786,7 +851,7 @@ export default function AppLayout() {
           to: "/timeoff-requests",
           label: "Day Off Requests",
           icon: "\u{1F334}",
-          showDot: pendingTimeOff > 0,
+          badgeValue: pendingTimeOff,
         },
         { to: "/blocked", label: "Blocked Employees", icon: "\u{1F6AB}" }
       );
@@ -1352,8 +1417,7 @@ export default function AppLayout() {
               flexWrap: "wrap",
             }}
           >
-            {(user?.role === "station_manager" ||
-              user?.role === "duty_manager") && (
+            {isManagementUser && (
               <OperationalAlertBell
                 value={operationalAlerts}
                 onClick={() => navigate("/dashboard")}
@@ -1373,8 +1437,36 @@ export default function AppLayout() {
                   : "Open Messages"
               }
             />
-            <StatusPill label="Notifications" value={unreadNotifications} />
-            <StatusPill label="Day Off" value={pendingTimeOff} />
+
+            <StatusPill
+              label="Notifications"
+              value={unreadNotifications}
+              active={unreadNotifications > 0}
+              onClick={() => navigate("/notifications")}
+              title={
+                unreadNotifications > 0
+                  ? `${unreadNotifications} unread notification${
+                      unreadNotifications === 1 ? "" : "s"
+                    }. Open Notifications.`
+                  : "Open Notifications"
+              }
+            />
+
+            {isManagementUser && (
+              <StatusPill
+                label="Day Off"
+                value={pendingTimeOff}
+                active={pendingTimeOff > 0}
+                onClick={() => navigate("/timeoff-requests")}
+                title={
+                  pendingTimeOff > 0
+                    ? `${pendingTimeOff} pending Day Off request${
+                        pendingTimeOff === 1 ? "" : "s"
+                      }. Open Day Off Requests.`
+                    : "Open Day Off Requests"
+                }
+              />
+            )}
 
             <button
               type="button"
@@ -1656,7 +1748,7 @@ function StatusPill({
                 lineHeight: 1,
               }}
             >
-              {"\u{1F4AC}"}
+              {"\u{1F514}"}
             </span>
           )}
         </div>
@@ -1669,7 +1761,18 @@ function StatusPill({
 // NAV ITEM
 // ============================================================
 
-function TopNavItem({ to, label, showDot, icon }) {
+function TopNavItem({
+  to,
+  label,
+  showDot,
+  badgeValue,
+  icon,
+}) {
+  const numericBadge = Math.max(
+    0,
+    Number(badgeValue || 0)
+  );
+
   return (
     <NavLink
       to={to}
@@ -1697,22 +1800,45 @@ function TopNavItem({ to, label, showDot, icon }) {
           display: "flex",
           alignItems: "center",
           gap: 10,
+          minWidth: 0,
         }}
       >
         <span>{icon}</span>
         <span>{label}</span>
       </span>
 
-      {showDot && (
+      {numericBadge > 0 ? (
+        <span
+          style={{
+            minWidth: 22,
+            height: 22,
+            padding: "0 6px",
+            borderRadius: 999,
+            background: "#dc2626",
+            color: "#ffffff",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 10,
+            fontWeight: 900,
+            lineHeight: 1,
+            boxShadow: "0 4px 10px rgba(220,38,38,0.18)",
+            flexShrink: 0,
+          }}
+        >
+          {numericBadge > 99 ? "99+" : numericBadge}
+        </span>
+      ) : showDot ? (
         <span
           style={{
             width: 8,
             height: 8,
             borderRadius: 999,
             background: "#ef4444",
+            flexShrink: 0,
           }}
         />
-      )}
+      ) : null}
     </NavLink>
   );
 }
