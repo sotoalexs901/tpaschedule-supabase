@@ -1468,75 +1468,143 @@ function RecognizedEmployeesBanner({
   );
 }
 
-function EventRsvpButtons({
+function EventResponseButtons({
   event,
   selectedResponse,
   saving,
   language,
   onRespond,
 }) {
+  const responseMode =
+    String(
+      event?.responseMode ||
+        (event?.rsvpEnabled ? "rsvp" : "none")
+    )
+      .trim()
+      .toLowerCase();
+
   const labels =
     language === "es"
       ? {
-          question: "\u00BFPuedes asistir?",
+          rsvpQuestion: "\u00BFPuedes asistir?",
           yes: "S\u00ED",
           no: "No",
           maybe: "Tal vez",
           cant: "Lo siento, no puedo",
+          jobQuestion: "\u00BFEst\u00E1s interesado(a) en esta oportunidad?",
+          apply: "Aplicar / Estoy interesado(a)",
+          notInterested: "No estoy interesado(a)",
           saved: "Tu respuesta",
+          jobSaved: "Tu selecci\u00F3n",
+          postingLabel: "Oportunidad interna",
         }
       : {
-          question: "Can you attend?",
+          rsvpQuestion: "Can you attend?",
           yes: "Yes",
           no: "No",
           maybe: "Maybe",
           cant: "Sorry, I can't",
+          jobQuestion: "Are you interested in this opportunity?",
+          apply: "Apply / I'm Interested",
+          notInterested: "Not Interested",
           saved: "Your response",
+          jobSaved: "Your selection",
+          postingLabel: "Internal opportunity",
         };
 
-  const options = [
-    {
-      key: "yes",
-      label: labels.yes,
-      emoji: "\u{1F642}",
-      activeBg: "#ecfdf5",
-      activeBorder: "#86efac",
-      activeText: "#166534",
-    },
-    {
-      key: "no",
-      label: labels.no,
-      emoji: "\u{1F641}",
-      activeBg: "#fff1f2",
-      activeBorder: "#fda4af",
-      activeText: "#be123c",
-    },
-    {
-      key: "maybe",
-      label: labels.maybe,
-      emoji: "\u{1F615}",
-      activeBg: "#fffbeb",
-      activeBorder: "#fcd34d",
-      activeText: "#a16207",
-    },
-    {
-      key: "cant",
-      label: labels.cant,
-      emoji: "\u{1F614}",
-      activeBg: "#f8fafc",
-      activeBorder: "#94a3b8",
-      activeText: "#475569",
-    },
-  ];
+  if (responseMode === "none") {
+    return null;
+  }
+
+  const isJobPosting =
+    responseMode === "job_posting";
+
+  const options = isJobPosting
+    ? [
+        {
+          key: "apply",
+          label: labels.apply,
+          emoji: "\u{1F4BC}",
+          activeBg: "#f5f3ff",
+          activeBorder: "#a78bfa",
+          activeText: "#6d28d9",
+        },
+        {
+          key: "not_interested",
+          label: labels.notInterested,
+          emoji: "\u{1F6AB}",
+          activeBg: "#f8fafc",
+          activeBorder: "#cbd5e1",
+          activeText: "#475569",
+        },
+      ]
+    : [
+        {
+          key: "yes",
+          label: labels.yes,
+          emoji: "\u{1F642}",
+          activeBg: "#ecfdf5",
+          activeBorder: "#86efac",
+          activeText: "#166534",
+        },
+        {
+          key: "no",
+          label: labels.no,
+          emoji: "\u{1F641}",
+          activeBg: "#fff1f2",
+          activeBorder: "#fda4af",
+          activeText: "#be123c",
+        },
+        {
+          key: "maybe",
+          label: labels.maybe,
+          emoji: "\u{1F615}",
+          activeBg: "#fffbeb",
+          activeBorder: "#fcd34d",
+          activeText: "#a16207",
+        },
+        {
+          key: "cant",
+          label: labels.cant,
+          emoji: "\u{1F614}",
+          activeBg: "#f8fafc",
+          activeBorder: "#94a3b8",
+          activeText: "#475569",
+        },
+      ];
 
   return (
     <div
       style={{
         marginTop: 12,
         paddingTop: 12,
-        borderTop: "1px solid #dbeafe",
+        borderTop: isJobPosting
+          ? "1px solid #ddd6fe"
+          : "1px solid #dbeafe",
       }}
     >
+      {isJobPosting && (
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            marginBottom: 8,
+            padding: "5px 8px",
+            borderRadius: 999,
+            background: "#f5f3ff",
+            border: "1px solid #ddd6fe",
+            color: "#6d28d9",
+            fontSize: 9.5,
+            fontWeight: 850,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+          }}
+        >
+          {"\u{1F4BC}"} {labels.postingLabel}
+        </div>
+      )}
+
       <div
         style={{
           fontSize: 11,
@@ -1545,7 +1613,9 @@ function EventRsvpButtons({
           marginBottom: 8,
         }}
       >
-        {labels.question}
+        {isJobPosting
+          ? labels.jobQuestion
+          : labels.rsvpQuestion}
       </div>
 
       <div
@@ -1582,7 +1652,9 @@ function EventRsvpButtons({
                   ? option.activeText
                   : "#475569",
                 borderRadius: 13,
-                padding: "9px 8px",
+                padding: isJobPosting
+                  ? "11px 8px"
+                  : "9px 8px",
                 cursor: saving
                   ? "wait"
                   : "pointer",
@@ -1625,7 +1697,10 @@ function EventRsvpButtons({
             fontWeight: 700,
           }}
         >
-          {labels.saved}:{" "}
+          {isJobPosting
+            ? labels.jobSaved
+            : labels.saved}
+          :{" "}
           {
             options.find(
               (option) =>
@@ -1637,6 +1712,7 @@ function EventRsvpButtons({
     </div>
   );
 }
+
 
 export default function EmployeeDashboardPage() {
   const { user } = useUser();
@@ -2405,12 +2481,40 @@ export default function EmployeeDashboardPage() {
       eventId,
       response
     ) => {
-      const allowedResponses = [
-        "yes",
-        "no",
-        "maybe",
-        "cant",
-      ];
+      const selectedEvent =
+        dashboardEvents.find(
+          (event) =>
+            event.id === eventId
+        );
+
+      if (!selectedEvent) {
+        return;
+      }
+
+      const responseMode =
+        String(
+          selectedEvent.responseMode ||
+            (selectedEvent.rsvpEnabled
+              ? "rsvp"
+              : "none")
+        )
+          .trim()
+          .toLowerCase();
+
+      const allowedResponses =
+        responseMode === "job_posting"
+          ? [
+              "apply",
+              "not_interested",
+            ]
+          : responseMode === "rsvp"
+          ? [
+              "yes",
+              "no",
+              "maybe",
+              "cant",
+            ]
+          : [];
 
       if (
         !allowedResponses.includes(
@@ -2427,7 +2531,7 @@ export default function EmployeeDashboardPage() {
 
       if (!userId) {
         console.error(
-          "RSVP could not be saved because user.id is missing."
+          "Event response could not be saved because user.id is missing."
         );
         return;
       }
@@ -2458,6 +2562,17 @@ export default function EmployeeDashboardPage() {
           responseRef,
           {
             response,
+            responseMode,
+            eventType:
+              String(
+                selectedEvent.eventType ||
+                  ""
+              ).trim(),
+            eventTitle:
+              String(
+                selectedEvent.title ||
+                  ""
+              ).trim(),
             userId,
             employeeId:
               String(
@@ -2478,6 +2593,10 @@ export default function EmployeeDashboardPage() {
                 user?.department ||
                   ""
               ).trim(),
+            managementPushStatus:
+              "PENDING",
+            managementPushError:
+              null,
             updatedAt:
               serverTimestamp(),
           },
@@ -2500,7 +2619,7 @@ export default function EmployeeDashboardPage() {
         );
       } catch (error) {
         console.error(
-          "Error saving event RSVP:",
+          "Error saving event response:",
           error
         );
       } finally {
@@ -3045,7 +3164,7 @@ export default function EmployeeDashboardPage() {
               fontWeight: 700,
             }}
           >
-            Update 1.8
+            Update 1.9
           </div>
         </div>
       </section>
@@ -3312,7 +3431,7 @@ export default function EmployeeDashboardPage() {
 
                       {event.rsvpEnabled ===
                         true && (
-                        <EventRsvpButtons
+                        <EventResponseButtons
                           event={
                             event
                           }
