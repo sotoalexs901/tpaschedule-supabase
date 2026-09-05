@@ -917,9 +917,17 @@ export default function AppLayout() {
       });
 
       training.push({
-        to: "/dayoff-status-internal",
+        to: "/training-notices",
         label: "Training Notices",
         icon: "\u{1F4DA}",
+      });
+    }
+
+    if (isManagementUser) {
+      training.push({
+        to: "/training-notices-management",
+        label: "Training Notices Management",
+        icon: "\u{1F393}",
       });
     }
 
@@ -1193,6 +1201,7 @@ export default function AppLayout() {
     canManageFuel,
     canSubmitCierreVuelo,
     canManageCierreVuelo,
+    isManagementUser,
     unreadMessages,
     unreadNotifications,
     pendingTimeOff,
