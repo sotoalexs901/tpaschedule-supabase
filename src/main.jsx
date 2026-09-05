@@ -38,7 +38,6 @@ import WeeklyEmployeesSummaryPage from "./pages/WeeklyEmployeesSummaryPage.jsx";
 import ReturnedSchedulesPage from "./pages/ReturnedSchedulesPage.jsx";
 import DraftSchedulesPage from "./pages/DraftSchedulesPage.jsx";
 
-import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
 import TimeOffRequestsAdminPage from "./pages/TimeOffRequestsAdminPage.jsx";
 import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx";
 import EmployeeDashboardPage from "./pages/EmployeeDashboardPage.jsx";
@@ -493,8 +492,6 @@ function AppRouter() {
 
         <Route path="/login" element={<LoginPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
-        <Route path="/request-dayoff" element={<TimeOffRequestPage />} />
-        <Route path="/dayoff-status" element={<TimeOffStatusPublicPage />} />
 
         {/* PROTECTED PLATFORM */}
 
@@ -530,7 +527,7 @@ function AppRouter() {
             }
           />
 
-          {/* EMPLOYEE SCHEDULE / TIME OFF */}
+          {/* EMPLOYEE SCHEDULE / TIME OFF / TRAINING */}
 
           <Route
             path="my-schedule"
@@ -551,10 +548,26 @@ function AppRouter() {
           />
 
           <Route
-            path="dayoff-status-internal"
+            path="training-notices"
             element={
               <ProtectedRoute roles={["agent", "supervisor"]}>
                 <EmployeeTimeOffStatusPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="dayoff-status-internal"
+            element={<Navigate to="/training-notices" replace />}
+          />
+
+          {/* TRAINING NOTICES MANAGEMENT */}
+
+          <Route
+            path="training-notices-management"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <TimeOffStatusPublicPage />
               </ProtectedRoute>
             }
           />
