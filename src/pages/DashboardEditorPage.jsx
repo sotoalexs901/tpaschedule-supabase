@@ -20,6 +20,7 @@ import {
 } from "firebase/storage";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import { triggerDashboardEventCreatedPush } from "../utils/dashboardEventPush.js";
 
 const FIXED_AUTHOR = "AeroStation Hub";
 
@@ -641,20 +642,28 @@ export default function DashboardEditorPage() {
     try {
       setSavingEvent(true);
 
-      await addDoc(collection(db, "dashboard_events"), {
-        title: eventTitle.trim(),
-        date: eventDate,
-        time: eventTime || null,
-        details: eventDetails.trim() || null,
+      const createdEventRef = await addDoc(
+        collection(db, "dashboard_events"),
+        {
+          title: eventTitle.trim(),
+          date: eventDate,
+          time: eventTime || null,
+          details: eventDetails.trim() || null,
 
-        rsvpEnabled: eventRsvpEnabled,
-        rsvpVersion: 1,
-        rsvpOptions: ["yes", "no", "maybe", "cant"],
+          rsvpEnabled: eventRsvpEnabled,
+          rsvpVersion: 1,
+          rsvpOptions: ["yes", "no", "maybe", "cant"],
 
-        createdAt: serverTimestamp(),
-        createdBy: currentAuthor,
-        createdByLabel: currentAuthor,
-      });
+          createdAt: serverTimestamp(),
+          createdBy: currentAuthor,
+          createdByLabel: currentAuthor,
+
+          creationPushStatus: "PENDING",
+          creationPushError: null,
+        }
+      );
+
+      triggerDashboardEventCreatedPush(createdEventRef.id);
 
       setEventTitle("");
       setEventDate("");
