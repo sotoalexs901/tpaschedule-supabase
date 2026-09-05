@@ -429,6 +429,61 @@ function PublishedRow({
   );
 }
 
+function RsvpToggle({ checked, onChange }) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        padding: 12,
+        borderRadius: 14,
+        border: checked ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+        background: checked
+          ? "linear-gradient(135deg,#eff6ff 0%,#ffffff 100%)"
+          : "#f8fafc",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 12.5,
+            fontWeight: 850,
+            color: "#0f172a",
+          }}
+        >
+          Allow employee RSVP
+        </div>
+
+        <div
+          style={{
+            marginTop: 3,
+            fontSize: 11,
+            lineHeight: 1.5,
+            color: "#64748b",
+          }}
+        >
+          Employees can answer Yes, No, Maybe, or Sorry, I can&apos;t.
+        </div>
+      </div>
+
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{
+          width: 20,
+          height: 20,
+          accentColor: "#1769aa",
+          flexShrink: 0,
+        }}
+      />
+    </label>
+  );
+}
+
 export default function DashboardEditorPage() {
   const { user } = useUser();
 
@@ -442,6 +497,7 @@ export default function DashboardEditorPage() {
   const [eventDate, setEventDate] = useState("");
   const [eventTime, setEventTime] = useState("");
   const [eventDetails, setEventDetails] = useState("");
+  const [eventRsvpEnabled, setEventRsvpEnabled] = useState(true);
 
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeBody, setNoticeBody] = useState("");
@@ -590,6 +646,11 @@ export default function DashboardEditorPage() {
         date: eventDate,
         time: eventTime || null,
         details: eventDetails.trim() || null,
+
+        rsvpEnabled: eventRsvpEnabled,
+        rsvpVersion: 1,
+        rsvpOptions: ["yes", "no", "maybe", "cant"],
+
         createdAt: serverTimestamp(),
         createdBy: currentAuthor,
         createdByLabel: currentAuthor,
@@ -599,10 +660,16 @@ export default function DashboardEditorPage() {
       setEventDate("");
       setEventTime("");
       setEventDetails("");
+      setEventRsvpEnabled(true);
 
       await loadDashboardContent();
 
-      showStatus("Event published.", "success");
+      showStatus(
+        eventRsvpEnabled
+          ? "Event published with employee RSVP enabled."
+          : "Event published.",
+        "success"
+      );
     } catch (err) {
       console.error("Add event error:", err);
       showStatus(err?.message || "Could not add event.", "error");
@@ -752,6 +819,20 @@ export default function DashboardEditorPage() {
     try {
       setDeletingId(id);
 
+      if (collectionName === "dashboard_events") {
+        const responsesSnap = await getDocs(
+          collection(db, "dashboard_events", id, "responses")
+        );
+
+        if (!responsesSnap.empty) {
+          await Promise.all(
+            responsesSnap.docs.map((responseDoc) =>
+              deleteDoc(responseDoc.ref)
+            )
+          );
+        }
+      }
+
       await deleteDoc(doc(db, collectionName, id));
 
       if (storagePath) {
@@ -802,10 +883,6 @@ export default function DashboardEditorPage() {
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
       }}
     >
-      {/* ============================================================
-          PROFESSIONAL DASHBOARD EDITOR HEADER
-      ============================================================ */}
-
       <div
         style={{
           background:
@@ -912,13 +989,7 @@ export default function DashboardEditorPage() {
             </div>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 7,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
             <CountBadge value={contentSummary.events} label="Events" />
             <CountBadge value={contentSummary.notices} label="Notices" />
             <CountBadge value={contentSummary.photos} label="Photos" />
@@ -968,7 +1039,6 @@ export default function DashboardEditorPage() {
         <div style={{ display: "grid", gap: 12 }}>
           <div>
             <FieldLabel>Main message</FieldLabel>
-
             <TextArea
               rows={4}
               value={message}
@@ -1043,6 +1113,21 @@ export default function DashboardEditorPage() {
                 onChange={(e) => setEventDetails(e.target.value)}
               />
             </div>
+
+            <RsvpToggle
+              checked={eventRsvpEnabled}
+              onChange={setEventRsvpEnabled}
+            />
+
+            {eventRsvpEnabled && (
+              <SecondaryNote>
+                Employee responses will be stored under this event as:
+                {" "}
+                <b>Yes</b>, <b>No</b>, <b>Maybe</b>, and <b>Sorry, I can&apos;t</b>.
+                Management response counts and employee names will be added to the
+                Station Manager Dashboard in the next step.
+              </SecondaryNote>
+            )}
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <PrimaryButton onClick={addEvent} disabled={savingEvent}>
@@ -1197,6 +1282,8 @@ export default function DashboardEditorPage() {
                   <>
                     {item.date || "\u2014"}{" "}
                     {item.time ? `\u00B7 ${item.time}` : ""}
+                    {" "}
+                    {item.rsvpEnabled ? "\u00B7 RSVP Enabled" : ""}
                   </>
                 }
                 body={item.details || null}
