@@ -77,6 +77,7 @@ export default function AppLayout() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [operationalAlerts, setOperationalAlerts] = useState(0);
+  const [trainingNotices, setTrainingNotices] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
 
@@ -440,6 +441,76 @@ export default function AppLayout() {
   }, [user?.id]);
 
   // ============================================================
+  // UNACKNOWLEDGED TRAINING NOTICES - AGENT / SUPERVISOR
+  // ============================================================
+
+  useEffect(() => {
+    const role = String(user?.role || "")
+      .trim()
+      .toLowerCase();
+
+    const employeeId = String(
+      user?.employeeId || ""
+    ).trim();
+
+    if (
+      (role !== "agent" && role !== "supervisor") ||
+      !employeeId
+    ) {
+      setTrainingNotices(0);
+      return undefined;
+    }
+
+    const qTraining = query(
+      collection(db, "training_notices"),
+      where("employeeId", "==", employeeId)
+    );
+
+    const unsub = onSnapshot(
+      qTraining,
+      (snap) => {
+        const count = snap.docs.filter((item) => {
+          const data = item.data() || {};
+
+          const visibility = String(
+            data.visibility || "active"
+          )
+            .trim()
+            .toLowerCase();
+
+          const status = String(
+            data.status || "pending"
+          )
+            .trim()
+            .toLowerCase();
+
+          const acknowledged =
+            data.acknowledged === true;
+
+          return (
+            visibility !== "archived" &&
+            status !== "completed" &&
+            status !== "complete" &&
+            !acknowledged
+          );
+        }).length;
+
+        setTrainingNotices(count);
+      },
+      (err) => {
+        console.error(
+          "Error listening training notices:",
+          err
+        );
+
+        setTrainingNotices(0);
+      }
+    );
+
+    return () => unsub();
+  }, [user?.role, user?.employeeId]);
+
+  // ============================================================
   // ACTIVE OPERATIONAL ALERTS - DUTY / STATION MANAGEMENT
   // ============================================================
 
@@ -524,7 +595,10 @@ export default function AppLayout() {
       Math.max(0, Number(unreadNotifications || 0));
 
     if (!isManagementUser) {
-      return personalCount;
+      return (
+        personalCount +
+        Math.max(0, Number(trainingNotices || 0))
+      );
     }
 
     return (
@@ -535,6 +609,7 @@ export default function AppLayout() {
   }, [
     unreadMessages,
     unreadNotifications,
+    trainingNotices,
     operationalAlerts,
     pendingTimeOff,
     isManagementUser,
@@ -920,6 +995,7 @@ export default function AppLayout() {
         to: "/training-notices",
         label: "Training Notices",
         icon: "\u{1F4DA}",
+        badgeValue: trainingNotices,
       });
     }
 
@@ -1204,6 +1280,7 @@ export default function AppLayout() {
     isManagementUser,
     unreadMessages,
     unreadNotifications,
+    trainingNotices,
     pendingTimeOff,
     user,
     isAgent,
