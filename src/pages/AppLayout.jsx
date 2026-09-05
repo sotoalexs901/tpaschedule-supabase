@@ -25,26 +25,6 @@ import {
   clearAeroStationAppBadge,
 } from "../utils/appBadge.js";
 
-// Menu icons intentionally use Unicode escape sequences (for example "\\u{1F3E0}")
-// instead of literal emoji characters. This prevents mojibake/encoding corruption
-// when editing the file from GitHub web, Safari, iPad, or different text encodings.
-//
-// SESSION CONTROL:
-// Admin User Activity can increment users/{userId}.sessionVersion.
-// AppLayout listens to that value in real time. When the remote version becomes
-// greater than the version loaded with the current session, the user is logged out.
-//
-// ACTIVITY HEARTBEAT:
-// Pointer, keyboard, touch, scroll and focus activity refresh presence at a
-// throttled interval. This gives the User Activity dashboard a better "lastSeen"
-// signal even when an employee stays on the same page for a long time.
-//
-// APP BADGE:
-// The installed AeroStation Hub app icon shows a numeric badge when supported.
-// Agent/Supervisor: unread messages + unread notifications.
-// Duty Manager/Station Manager: unread messages + unread notifications
-// + active operational alerts + pending Day Off requests.
-
 const ACTIVITY_PING_MS = 60 * 1000;
 
 function getDefaultPosition(role) {
@@ -827,6 +807,7 @@ export default function AppLayout() {
     const submissionReports = [];
     const managementReports = [];
     const timeoff = [];
+    const training = [];
     const wchr = [];
     const admin = [];
 
@@ -929,18 +910,17 @@ export default function AppLayout() {
         icon: "\u{1F4C5}",
       });
 
-      timeoff.push(
-        {
-          to: "/request-dayoff-internal",
-          label: "Request Day Off",
-          icon: "\u{1F6EB}",
-        },
-        {
-          to: "/dayoff-status-internal",
-          label: "My Day Off Status",
-          icon: "\u{1F4CD}",
-        }
-      );
+      timeoff.push({
+        to: "/request-dayoff-internal",
+        label: "Request / My Time Off",
+        icon: "\u{1F6EB}",
+      });
+
+      training.push({
+        to: "/dayoff-status-internal",
+        label: "Training Notices",
+        icon: "\u{1F4DA}",
+      });
     }
 
     if (canAccessTimesheets) {
@@ -1173,6 +1153,10 @@ export default function AppLayout() {
 
     if (timeoff.length) {
       sections.push({ title: "Time Off", items: timeoff });
+    }
+
+    if (training.length) {
+      sections.push({ title: "Training", items: training });
     }
 
     if (wchr.length) {
@@ -1565,10 +1549,6 @@ export default function AppLayout() {
   );
 }
 
-// ============================================================
-// OPERATIONAL ALERT BELL
-// ============================================================
-
 function OperationalAlertBell({ value, onClick }) {
   const hasAlerts = Number(value || 0) > 0;
 
@@ -1634,10 +1614,6 @@ function OperationalAlertBell({ value, onClick }) {
     </button>
   );
 }
-
-// ============================================================
-// STATUS PILL
-// ============================================================
 
 function StatusPill({
   label,
@@ -1757,10 +1733,6 @@ function StatusPill({
   );
 }
 
-// ============================================================
-// NAV ITEM
-// ============================================================
-
 function TopNavItem({
   to,
   label,
@@ -1842,10 +1814,6 @@ function TopNavItem({
     </NavLink>
   );
 }
-
-// ============================================================
-// STYLES
-// ============================================================
 
 const topButtonStyle = {
   border: "1px solid #cfe7fb",
