@@ -168,8 +168,30 @@ async function disableInvalidTokens(tokenItems, responses) {
   );
 }
 
-function getResponsePresentation(response) {
+function getResponsePresentation(response, responseMode) {
   const normalized = normalizeText(response).toLowerCase();
+  const normalizedMode =
+    normalizeText(responseMode).toLowerCase();
+
+  if (
+    normalizedMode === "job_posting" &&
+    normalized === "apply"
+  ) {
+    return {
+      label: "Applied / Interested",
+      emoji: "\u{1F4BC}",
+    };
+  }
+
+  if (
+    normalizedMode === "job_posting" &&
+    normalized === "not_interested"
+  ) {
+    return {
+      label: "Not Interested",
+      emoji: "\u{1F6AB}",
+    };
+  }
 
   if (normalized === "yes") {
     return {
@@ -278,8 +300,17 @@ exports.handler = async function handler(event) {
       responseData.response
     ).toLowerCase();
 
+    const responseMode = normalizeText(
+      dashboardEvent.responseMode ||
+        responseData.responseMode ||
+        (dashboardEvent.rsvpEnabled ? "rsvp" : "none")
+    ).toLowerCase();
+
     const presentation =
-      getResponsePresentation(response);
+      getResponsePresentation(
+        response,
+        responseMode
+      );
 
     if (!presentation) {
       return json(409, {
@@ -343,10 +374,18 @@ exports.handler = async function handler(event) {
       normalizeText(dashboardEvent.title) ||
       "Station Event";
 
-    const title = "Event RSVP Update";
+    const isJobPosting =
+      responseMode === "job_posting";
 
-    const body =
-      `${employeeName} responded ${presentation.emoji} ${presentation.label} to ${eventTitle}.`;
+    const title = isJobPosting
+      ? "Internal Job Posting Response"
+      : "Event RSVP Update";
+
+    const body = isJobPosting
+      ? response === "apply"
+        ? `${employeeName} applied for ${eventTitle}.`
+        : `${employeeName} selected Not Interested for ${eventTitle}.`
+      : `${employeeName} responded ${presentation.emoji} ${presentation.label} to ${eventTitle}.`;
 
     const targetRoute = "/dashboard";
 
@@ -366,6 +405,7 @@ exports.handler = async function handler(event) {
           userId,
           employeeName,
           response,
+          responseMode,
           responseLabel: presentation.label,
         },
 
