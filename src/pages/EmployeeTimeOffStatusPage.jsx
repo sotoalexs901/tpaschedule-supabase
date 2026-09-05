@@ -1,17 +1,35 @@
 // src/pages/EmployeeTimeOffStatusPage.jsx
-import React, { useEffect, useState } from "react";
-import { collection, getDocs, query, where, getDoc, doc } from "firebase/firestore";
+// This route/component is now used as the employee-facing Training Notices page.
+
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import {
+  APP_NAME,
+  APP_SUBTITLE,
+} from "../config/appConfig.js";
 
 function PageCard({ children, style = {} }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.92)",
-        border: "1px solid rgba(255,255,255,0.96)",
+        background: "rgba(255,255,255,0.94)",
+        border: "1px solid rgba(255,255,255,0.98)",
         borderRadius: 24,
         boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -20,114 +38,610 @@ function PageCard({ children, style = {} }) {
   );
 }
 
-function FieldLabel({ children }) {
+function normalizeText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function getVisibleUserName(user) {
   return (
-    <label
-      style={{
-        display: "block",
-        marginBottom: 6,
-        fontSize: 12,
-        fontWeight: 700,
-        color: "#475569",
-        letterSpacing: "0.03em",
-        textTransform: "uppercase",
-      }}
-    >
-      {children}
-    </label>
+    user?.displayName ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    "Employee"
   );
 }
 
-function TextInput(props) {
-  return (
-    <input
-      {...props}
-      style={{
-        width: "100%",
-        border: "1px solid #dbeafe",
-        background: "#ffffff",
-        borderRadius: 14,
-        padding: "12px 14px",
-        fontSize: 14,
-        color: "#0f172a",
-        outline: "none",
-        ...props.style,
-      }}
-    />
+function formatDate(value) {
+  const raw = String(value || "").trim();
+
+  if (!raw) return "No due date";
+
+  const date = new Date(`${raw}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function getTodayKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getDaysUntilDue(dateValue) {
+  const raw = String(dateValue || "").trim();
+
+  if (!raw) return null;
+
+  const due = new Date(`${raw}T00:00:00`);
+  const today = new Date(`${getTodayKey()}T00:00:00`);
+
+  if (
+    Number.isNaN(due.getTime()) ||
+    Number.isNaN(today.getTime())
+  ) {
+    return null;
+  }
+
+  return Math.ceil(
+    (due.getTime() - today.getTime()) /
+      (1000 * 60 * 60 * 24)
   );
 }
 
-function ActionButton({
-  children,
-  type = "button",
-  disabled = false,
-  onClick,
-}) {
-  return (
-    <button
-      type={type}
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        borderRadius: 12,
-        padding: "12px 16px",
-        fontSize: 14,
-        fontWeight: 800,
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.65 : 1,
-        border: "none",
-        color: "#fff",
-        background:
-          "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-        boxShadow: "0 12px 24px rgba(23,105,170,0.18)",
-        width: "100%",
-      }}
-    >
-      {children}
-    </button>
+function getTrainingState(notice) {
+  const storedStatus = normalizeText(
+    notice?.status || "pending"
   );
+
+  if (
+    storedStatus === "completed" ||
+    storedStatus === "complete"
+  ) {
+    return "completed";
+  }
+
+  const daysUntilDue = getDaysUntilDue(
+    notice?.dueDate
+  );
+
+  if (
+    daysUntilDue !== null &&
+    daysUntilDue < 0
+  ) {
+    return "overdue";
+  }
+
+  if (
+    daysUntilDue !== null &&
+    daysUntilDue <= 7
+  ) {
+    return "due_soon";
+  }
+
+  return "pending";
 }
 
-function getStatusStyles(status) {
-  const s = String(status || "").toLowerCase();
+function getTrainingStateLabel(state) {
+  if (state === "completed") {
+    return "Completed";
+  }
 
-  if (s === "approved") {
+  if (state === "overdue") {
+    return "Overdue";
+  }
+
+  if (state === "due_soon") {
+    return "Due Soon";
+  }
+
+  return "Pending";
+}
+
+function getTrainingStateStyle(state) {
+  if (state === "completed") {
     return {
-      badgeBg: "#ecfdf5",
-      badgeBorder: "#a7f3d0",
-      badgeColor: "#065f46",
-      icon: "😊",
-      label: "APPROVED",
+      background: "#ecfdf5",
+      border: "1px solid #a7f3d0",
+      color: "#065f46",
     };
   }
 
-  if (s === "rejected") {
+  if (state === "overdue") {
     return {
-      badgeBg: "#fff1f2",
-      badgeBorder: "#fecdd3",
-      badgeColor: "#9f1239",
-      icon: "😞",
-      label: "REJECTED",
+      background: "#fff1f2",
+      border: "1px solid #fecdd3",
+      color: "#9f1239",
     };
   }
 
-  if (s === "needs_info") {
+  if (state === "due_soon") {
     return {
-      badgeBg: "#fff7ed",
-      badgeBorder: "#fed7aa",
-      badgeColor: "#9a3412",
-      icon: "📝",
-      label: "MORE INFO NEEDED",
+      background: "#fff7ed",
+      border: "1px solid #fed7aa",
+      color: "#9a3412",
     };
   }
 
   return {
-    badgeBg: "#edf7ff",
-    badgeBorder: "#cfe7fb",
-    badgeColor: "#1769aa",
-    icon: "⏳",
-    label: (status || "pending").toUpperCase(),
+    background: "#eff6ff",
+    border: "1px solid #bfdbfe",
+    color: "#1769aa",
   };
+}
+
+function getTrainingStateIcon(state) {
+  if (state === "completed") {
+    return "\u2705";
+  }
+
+  if (state === "overdue") {
+    return "\u{1F6A8}";
+  }
+
+  if (state === "due_soon") {
+    return "\u23F0";
+  }
+
+  return "\u{1F4DA}";
+}
+
+function StatusSummary({
+  label,
+  value,
+  tone,
+}) {
+  const tones = {
+    blue: {
+      background: "#eff6ff",
+      border: "1px solid #bfdbfe",
+      color: "#1769aa",
+    },
+    orange: {
+      background: "#fff7ed",
+      border: "1px solid #fed7aa",
+      color: "#9a3412",
+    },
+    red: {
+      background: "#fff1f2",
+      border: "1px solid #fecdd3",
+      color: "#9f1239",
+    },
+    green: {
+      background: "#ecfdf5",
+      border: "1px solid #a7f3d0",
+      color: "#065f46",
+    },
+  };
+
+  const style = tones[tone] || tones.blue;
+
+  return (
+    <div
+      style={{
+        ...style,
+        minWidth: 68,
+        borderRadius: 12,
+        padding: "7px 9px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          fontWeight: 900,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 2,
+          fontSize: 17,
+          fontWeight: 900,
+          lineHeight: 1,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function TrainingNoticeCard({
+  notice,
+  busy,
+  onAcknowledge,
+}) {
+  const state = getTrainingState(notice);
+  const stateStyle = getTrainingStateStyle(state);
+  const stateLabel = getTrainingStateLabel(state);
+  const stateIcon = getTrainingStateIcon(state);
+  const acknowledged =
+    notice?.acknowledged === true ||
+    Boolean(notice?.acknowledgedAt);
+
+  const daysUntilDue =
+    getDaysUntilDue(
+      notice?.dueDate
+    );
+
+  return (
+    <div
+      style={{
+        border:
+          state === "overdue"
+            ? "1px solid #fecdd3"
+            : state === "due_soon"
+            ? "1px solid #fed7aa"
+            : "1px solid #e2e8f0",
+        borderRadius: 18,
+        padding: 15,
+        background: "#ffffff",
+        boxShadow:
+          "0 8px 22px rgba(15,23,42,0.04)",
+        display: "grid",
+        gap: 11,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent:
+            "space-between",
+          alignItems:
+            "flex-start",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems:
+              "flex-start",
+            gap: 11,
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 13,
+              background:
+                stateStyle.background,
+              border:
+                stateStyle.border,
+              color:
+                stateStyle.color,
+              display: "flex",
+              alignItems: "center",
+              justifyContent:
+                "center",
+              fontSize: 19,
+              flexShrink: 0,
+            }}
+          >
+            {stateIcon}
+          </div>
+
+          <div
+            style={{
+              minWidth: 0,
+              flex: 1,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 900,
+                color: "#0f172a",
+                lineHeight: 1.35,
+              }}
+            >
+              {notice.trainingName ||
+                notice.title ||
+                "Training Required"}
+            </div>
+
+            {notice.trainingCategory && (
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  color: "#1769aa",
+                  textTransform:
+                    "uppercase",
+                  letterSpacing:
+                    "0.05em",
+                }}
+              >
+                {notice.trainingCategory}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <span
+          style={{
+            ...stateStyle,
+            display:
+              "inline-flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            padding:
+              "6px 10px",
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 900,
+            whiteSpace:
+              "nowrap",
+          }}
+        >
+          {stateLabel}
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 8,
+        }}
+      >
+        <InfoBox
+          label="Due Date"
+          value={
+            notice.dueDate
+              ? formatDate(
+                  notice.dueDate
+                )
+              : "No due date"
+          }
+        />
+
+        <InfoBox
+          label="Assigned By"
+          value={
+            notice.assignedByName ||
+            notice.assignedByUsername ||
+            "Management"
+          }
+        />
+
+        <InfoBox
+          label="Acknowledged"
+          value={
+            acknowledged
+              ? "Yes"
+              : "No"
+          }
+        />
+      </div>
+
+      {daysUntilDue !== null &&
+        state !== "completed" && (
+          <div
+            style={{
+              borderRadius: 12,
+              padding: "9px 10px",
+              background:
+                state === "overdue"
+                  ? "#fff1f2"
+                  : state === "due_soon"
+                  ? "#fff7ed"
+                  : "#f8fbff",
+              border:
+                state === "overdue"
+                  ? "1px solid #fecdd3"
+                  : state === "due_soon"
+                  ? "1px solid #fed7aa"
+                  : "1px solid #dbeafe",
+              color:
+                state === "overdue"
+                  ? "#9f1239"
+                  : state === "due_soon"
+                  ? "#9a3412"
+                  : "#475569",
+              fontSize: 11.5,
+              fontWeight: 800,
+            }}
+          >
+            {state === "overdue"
+              ? `Training is overdue by ${Math.abs(
+                  daysUntilDue
+                )} day${
+                  Math.abs(
+                    daysUntilDue
+                  ) === 1
+                    ? ""
+                    : "s"
+                }.`
+              : daysUntilDue === 0
+              ? "Training is due today."
+              : `Training is due in ${daysUntilDue} day${
+                  daysUntilDue === 1
+                    ? ""
+                    : "s"
+                }.`}
+          </div>
+        )}
+
+      {(notice.message ||
+        notice.instructions) && (
+        <div
+          style={{
+            borderRadius: 13,
+            background: "#f8fbff",
+            border:
+              "1px solid #dbeafe",
+            padding: "11px 12px",
+            color: "#475569",
+            fontSize: 12.5,
+            lineHeight: 1.65,
+            whiteSpace: "pre-line",
+          }}
+        >
+          {notice.message ||
+            notice.instructions}
+        </div>
+      )}
+
+      {notice.trainingLink && (
+        <a
+          href={
+            notice.trainingLink
+          }
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            textDecoration: "none",
+            display: "block",
+          }}
+        >
+          <div
+            style={{
+              borderRadius: 12,
+              padding:
+                "10px 12px",
+              textAlign: "center",
+              background:
+                "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+              color: "#ffffff",
+              fontSize: 12.5,
+              fontWeight: 900,
+              boxShadow:
+                "0 10px 20px rgba(23,105,170,0.16)",
+            }}
+          >
+            Open Training
+          </div>
+        </a>
+      )}
+
+      {!acknowledged && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            onAcknowledge(
+              notice
+            )
+          }
+          style={{
+            width: "100%",
+            borderRadius: 12,
+            border:
+              "1px solid #cfe7fb",
+            background:
+              busy
+                ? "#f1f5f9"
+                : "#ffffff",
+            color:
+              busy
+                ? "#94a3b8"
+                : "#1769aa",
+            padding:
+              "10px 12px",
+            fontSize: 12.5,
+            fontWeight: 900,
+            cursor:
+              busy
+                ? "not-allowed"
+                : "pointer",
+          }}
+        >
+          {busy
+            ? "Saving..."
+            : "Acknowledge Notice"}
+        </button>
+      )}
+
+      {acknowledged && (
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: 11.5,
+            fontWeight: 800,
+            color: "#64748b",
+          }}
+        >
+          Notice acknowledged. Training completion status is controlled by
+          Management.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoBox({
+  label,
+  value,
+}) {
+  return (
+    <div
+      style={{
+        background: "#f8fbff",
+        border:
+          "1px solid #e5eef8",
+        borderRadius: 12,
+        padding: "9px 10px",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9.5,
+          color: "#94a3b8",
+          fontWeight: 900,
+          textTransform:
+            "uppercase",
+          letterSpacing:
+            "0.05em",
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 4,
+          fontSize: 12,
+          color: "#334155",
+          fontWeight: 800,
+          lineHeight: 1.4,
+          wordBreak:
+            "break-word",
+        }}
+      >
+        {value ||
+          "\u2014"}
+      </div>
+    </div>
+  );
 }
 
 export default function EmployeeTimeOffStatusPage() {
@@ -135,102 +649,408 @@ export default function EmployeeTimeOffStatusPage() {
 
   const [employeeName, setEmployeeName] = useState("");
   const [employeeId, setEmployeeId] = useState("");
-  const [pin, setPin] = useState("");
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [employeeDepartment, setEmployeeDepartment] = useState("");
+  const [employeePosition, setEmployeePosition] = useState("");
+
+  const [notices, setNotices] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
+  const [noticesLoading, setNoticesLoading] = useState(true);
+  const [busyNoticeId, setBusyNoticeId] = useState("");
   const [message, setMessage] = useState("");
+
+  // ============================================================
+  // LOAD EMPLOYEE PROFILE
+  // ============================================================
 
   useEffect(() => {
     async function loadEmployeeProfile() {
+      if (!user) {
+        setEmployeeId("");
+        setEmployeeName("");
+        setPageLoading(false);
+        return;
+      }
+
       if (!user?.employeeId) {
         setEmployeeId("");
-        setEmployeeName(user?.username || "");
+        setEmployeeName(
+          getVisibleUserName(
+            user
+          )
+        );
+        setEmployeeDepartment(
+          user?.department ||
+            ""
+        );
+        setEmployeePosition(
+          user?.position ||
+            ""
+        );
         setPageLoading(false);
         return;
       }
 
       try {
-        const ref = doc(db, "employees", user.employeeId);
-        const snap = await getDoc(ref);
+        const ref = doc(
+          db,
+          "employees",
+          user.employeeId
+        );
+
+        const snap =
+          await getDoc(ref);
 
         if (snap.exists()) {
-          const data = snap.data();
-          setEmployeeId(snap.id);
-          setEmployeeName(data.name || user.username || "");
+          const data =
+            snap.data();
+
+          setEmployeeId(
+            snap.id
+          );
+
+          setEmployeeName(
+            data.name ||
+              data.fullName ||
+              data.displayName ||
+              getVisibleUserName(
+                user
+              )
+          );
+
+          setEmployeeDepartment(
+            data.department ||
+              user?.department ||
+              ""
+          );
+
+          setEmployeePosition(
+            data.position ||
+              user?.position ||
+              ""
+          );
         } else {
-          setEmployeeId(user.employeeId);
-          setEmployeeName(user.username || "");
+          setEmployeeId(
+            user.employeeId
+          );
+
+          setEmployeeName(
+            getVisibleUserName(
+              user
+            )
+          );
+
+          setEmployeeDepartment(
+            user?.department ||
+              ""
+          );
+
+          setEmployeePosition(
+            user?.position ||
+              ""
+          );
         }
       } catch (err) {
-        console.error("Error loading employee profile:", err);
-        setEmployeeName(user?.username || "Unknown");
+        console.error(
+          "Error loading employee profile for Training Notices:",
+          err
+        );
+
+        setEmployeeId(
+          user?.employeeId ||
+            ""
+        );
+
+        setEmployeeName(
+          getVisibleUserName(
+            user
+          )
+        );
+
+        setEmployeeDepartment(
+          user?.department ||
+            ""
+        );
+
+        setEmployeePosition(
+          user?.position ||
+            ""
+        );
       } finally {
-        setPageLoading(false);
+        setPageLoading(
+          false
+        );
       }
     }
 
-    loadEmployeeProfile().catch(console.error);
+    loadEmployeeProfile().catch(
+      console.error
+    );
   }, [user]);
 
-  const handleCheck = async (e) => {
-    e.preventDefault();
-    setMessage("");
-    setRequests([]);
+  // ============================================================
+  // LIVE TRAINING NOTICES
+  // ============================================================
 
-    if (!pin || pin.length !== 4) {
-      setMessage("Please enter your 4-digit PIN.");
-      return;
-    }
-
+  useEffect(() => {
     if (!employeeId) {
-      setMessage("Employee profile not found.");
-      return;
+      setNotices([]);
+      setNoticesLoading(false);
+      return undefined;
     }
 
-    try {
-      setLoading(true);
+    setNoticesLoading(true);
 
-      const qReq = query(
-        collection(db, "timeOffRequests"),
-        where("employeeId", "==", employeeId),
-        where("pin", "==", pin)
+    const qNotices = query(
+      collection(
+        db,
+        "training_notices"
+      ),
+      where(
+        "employeeId",
+        "==",
+        employeeId
+      )
+    );
+
+    const unsub =
+      onSnapshot(
+        qNotices,
+        (snap) => {
+          const list =
+            snap.docs
+              .map(
+                (item) => ({
+                  id:
+                    item.id,
+                  ...item.data(),
+                })
+              )
+              .filter(
+                (notice) =>
+                  normalizeText(
+                    notice.visibility ||
+                      "active"
+                  ) !==
+                  "archived"
+              )
+              .sort(
+                (a, b) => {
+                  const aCompleted =
+                    getTrainingState(
+                      a
+                    ) ===
+                    "completed";
+
+                  const bCompleted =
+                    getTrainingState(
+                      b
+                    ) ===
+                    "completed";
+
+                  if (
+                    aCompleted !==
+                    bCompleted
+                  ) {
+                    return aCompleted
+                      ? 1
+                      : -1;
+                  }
+
+                  const aDue =
+                    String(
+                      a.dueDate ||
+                        "9999-12-31"
+                    );
+
+                  const bDue =
+                    String(
+                      b.dueDate ||
+                        "9999-12-31"
+                    );
+
+                  if (
+                    aDue !==
+                    bDue
+                  ) {
+                    return aDue.localeCompare(
+                      bDue
+                    );
+                  }
+
+                  return (
+                    (b.createdAt
+                      ?.seconds ||
+                      0) -
+                    (a.createdAt
+                      ?.seconds ||
+                      0)
+                  );
+                }
+              );
+
+          setNotices(
+            list
+          );
+
+          setNoticesLoading(
+            false
+          );
+        },
+        (err) => {
+          console.error(
+            "Error listening Training Notices:",
+            err
+          );
+
+          setNoticesLoading(
+            false
+          );
+
+          setMessage(
+            "Could not load your Training Notices. Please try again."
+          );
+        }
       );
 
-      const snap = await getDocs(qReq);
-      let list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return () =>
+      unsub();
+  }, [employeeId]);
 
-      list.sort(
-        (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-      );
+  // ============================================================
+  // ACKNOWLEDGE NOTICE
+  // ============================================================
 
-      if (list.length === 0) {
-        setMessage("No requests found for this employee and PIN.");
-      } else {
-        setRequests(list);
+  const handleAcknowledge =
+    async (notice) => {
+      if (!notice?.id) {
+        return;
       }
-    } catch (err) {
-      console.error("Error checking time off status:", err);
-      setMessage("Error loading status. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
+
+      try {
+        setBusyNoticeId(
+          notice.id
+        );
+
+        setMessage("");
+
+        await updateDoc(
+          doc(
+            db,
+            "training_notices",
+            notice.id
+          ),
+          {
+            acknowledged:
+              true,
+            acknowledgedAt:
+              serverTimestamp(),
+            acknowledgedByUserId:
+              user?.id ||
+              "",
+            acknowledgedByUsername:
+              user?.username ||
+              user?.loginUsername ||
+              "",
+          }
+        );
+
+        setMessage(
+          "Training notice acknowledged successfully."
+        );
+      } catch (err) {
+        console.error(
+          "Error acknowledging Training Notice:",
+          err
+        );
+
+        setMessage(
+          "Could not acknowledge this notice. Please try again."
+        );
+      } finally {
+        setBusyNoticeId(
+          ""
+        );
+      }
+    };
+
+  const counts =
+    useMemo(() => {
+      const result = {
+        pending: 0,
+        dueSoon: 0,
+        overdue: 0,
+        completed: 0,
+        unread: 0,
+      };
+
+      notices.forEach(
+        (notice) => {
+          const state =
+            getTrainingState(
+              notice
+            );
+
+          if (
+            state ===
+            "completed"
+          ) {
+            result.completed += 1;
+          } else if (
+            state ===
+            "overdue"
+          ) {
+            result.overdue += 1;
+          } else if (
+            state ===
+            "due_soon"
+          ) {
+            result.dueSoon += 1;
+          } else {
+            result.pending += 1;
+          }
+
+          const acknowledged =
+            notice
+              ?.acknowledged ===
+              true ||
+            Boolean(
+              notice
+                ?.acknowledgedAt
+            );
+
+          if (
+            !acknowledged
+          ) {
+            result.unread += 1;
+          }
+        }
+      );
+
+      return result;
+    }, [notices]);
 
   if (!user) {
     return (
-      <PageCard style={{ padding: 22 }}>
+      <PageCard
+        style={{
+          padding: 22,
+        }}
+      >
         <div
           style={{
-            background: "#fff1f2",
-            border: "1px solid #fecdd3",
+            background:
+              "#fff1f2",
+            border:
+              "1px solid #fecdd3",
             borderRadius: 18,
-            padding: "16px 18px",
-            color: "#9f1239",
+            padding:
+              "16px 18px",
+            color:
+              "#9f1239",
             fontWeight: 700,
           }}
         >
-          You must be logged in to view your request status.
+          You must be logged in to view your Training Notices.
         </div>
       </PageCard>
     );
@@ -238,14 +1058,22 @@ export default function EmployeeTimeOffStatusPage() {
 
   if (pageLoading) {
     return (
-      <PageCard style={{ padding: 22 }}>
+      <PageCard
+        style={{
+          padding: 22,
+        }}
+      >
         <div
           style={{
-            background: "#f8fbff",
-            border: "1px solid #dbeafe",
+            background:
+              "#f8fbff",
+            border:
+              "1px solid #dbeafe",
             borderRadius: 18,
-            padding: "16px 18px",
-            color: "#475569",
+            padding:
+              "16px 18px",
+            color:
+              "#475569",
             fontWeight: 700,
           }}
         >
@@ -260,197 +1088,397 @@ export default function EmployeeTimeOffStatusPage() {
       style={{
         display: "grid",
         gap: 18,
-        fontFamily: "Poppins, Inter, system-ui, sans-serif",
-        maxWidth: 900,
-        margin: "0 auto",
+        fontFamily:
+          "Poppins, Inter, system-ui, sans-serif",
+        maxWidth: 940,
+        margin:
+          "0 auto",
+        width:
+          "100%",
+        minWidth: 0,
+        boxSizing:
+          "border-box",
       }}
     >
       <div
         style={{
           background:
-            "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
+            "linear-gradient(135deg, #071c33 0%, #0f4c81 48%, #1769aa 72%, #62c4ef 100%)",
           borderRadius: 28,
           padding: 24,
-          color: "#fff",
-          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
-          position: "relative",
-          overflow: "hidden",
+          color:
+            "#fff",
+          boxShadow:
+            "0 24px 60px rgba(23,105,170,0.22)",
+          position:
+            "relative",
+          overflow:
+            "hidden",
         }}
       >
         <div
           style={{
-            position: "absolute",
+            position:
+              "absolute",
             width: 220,
             height: 220,
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.08)",
+            borderRadius:
+              "999px",
+            background:
+              "rgba(255,255,255,0.08)",
             top: -80,
             right: -40,
           }}
         />
 
-        <div style={{ position: "relative" }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              textTransform: "uppercase",
-              letterSpacing: "0.22em",
-              color: "rgba(255,255,255,0.78)",
-              fontWeight: 700,
-            }}
-          >
-            TPA OPS · Time Off
-          </p>
-
-          <h1
-            style={{
-              margin: "10px 0 6px",
-              fontSize: 32,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: "-0.04em",
-            }}
-          >
-            My Request Status
-          </h1>
-
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 760,
-              fontSize: 14,
-              color: "rgba(255,255,255,0.88)",
-            }}
-          >
-            Check the current status of your submitted day off and PTO requests.
-          </p>
-        </div>
-      </div>
-
-      <PageCard style={{ padding: 18 }}>
         <div
           style={{
-            background: "#f8fbff",
-            border: "1px solid #dbeafe",
-            borderRadius: 16,
-            padding: "14px 16px",
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              fontSize: 11,
-              fontWeight: 800,
-              color: "#64748b",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}
-          >
-            Logged Employee
-          </p>
-          <p
-            style={{
-              margin: "8px 0 0",
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
-            {employeeName || user.username}
-          </p>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Role: {user.role}
-          </p>
-        </div>
-      </PageCard>
-
-      <PageCard style={{ padding: 22 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#0f172a",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Check Status
-          </h2>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 13,
-              color: "#64748b",
-            }}
-          >
-            Enter the same 4-digit PIN you used when sending the request.
-          </p>
-        </div>
-
-        <form
-          onSubmit={handleCheck}
-          style={{
-            display: "grid",
+            position:
+              "relative",
+            display:
+              "flex",
             gap: 14,
+            alignItems:
+              "center",
           }}
         >
-          <div>
-            <FieldLabel>4-digit PIN</FieldLabel>
-            <TextInput
-              type="password"
-              maxLength={4}
-              inputMode="numeric"
-              value={pin}
-              onChange={(e) =>
-                setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-              placeholder="Enter your 4-digit PIN"
-              style={{ letterSpacing: "0.2em" }}
+          <div
+            style={{
+              width: 54,
+              height: 54,
+              borderRadius: 16,
+              overflow:
+                "hidden",
+              background:
+                "#ffffff",
+              border:
+                "1px solid rgba(255,255,255,0.86)",
+              flexShrink: 0,
+            }}
+          >
+            <img
+              src="/icons/aerostation-icon.png"
+              alt={APP_NAME}
+              style={{
+                width:
+                  "100%",
+                height:
+                  "100%",
+                objectFit:
+                  "contain",
+              }}
             />
           </div>
 
           <div
             style={{
-              background: "#f8fbff",
-              border: "1px solid #dbeafe",
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: "#475569",
-              fontSize: 13,
-              lineHeight: 1.6,
+              minWidth: 0,
             }}
           >
-            HR and Management may take up to <b>72 hours</b> to process your
-            request.
+            <p
+              style={{
+                margin: 0,
+                fontSize: 10,
+                textTransform:
+                  "uppercase",
+                letterSpacing:
+                  "0.16em",
+                color:
+                  "rgba(255,255,255,0.76)",
+                fontWeight: 800,
+              }}
+            >
+              {APP_NAME} {"\u00B7"} Training
+            </p>
+
+            <h1
+              style={{
+                margin:
+                  "6px 0 4px",
+                fontSize: 28,
+                lineHeight: 1.05,
+                fontWeight: 900,
+                letterSpacing:
+                  "-0.04em",
+              }}
+            >
+              Training Notices
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 13,
+                color:
+                  "rgba(255,255,255,0.88)",
+                lineHeight: 1.5,
+              }}
+            >
+              Review training assignments, deadlines and instructions sent
+              directly to you by Management.
+            </p>
+
+            <p
+              style={{
+                margin:
+                  "4px 0 0",
+                fontSize: 10,
+                color:
+                  "rgba(255,255,255,0.70)",
+                fontWeight: 700,
+              }}
+            >
+              {APP_SUBTITLE}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <PageCard
+        style={{
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            background:
+              "#f8fbff",
+            border:
+              "1px solid #dbeafe",
+            borderRadius: 16,
+            padding:
+              "14px 16px",
+            display:
+              "flex",
+            justifyContent:
+              "space-between",
+            alignItems:
+              "center",
+            gap: 12,
+            flexWrap:
+              "wrap",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 900,
+                color:
+                  "#1769aa",
+                textTransform:
+                  "uppercase",
+                letterSpacing:
+                  "0.08em",
+              }}
+            >
+              Employee
+            </p>
+
+            <p
+              style={{
+                margin:
+                  "8px 0 0",
+                fontSize: 20,
+                fontWeight: 900,
+                color:
+                  "#0f172a",
+              }}
+            >
+              {employeeName ||
+                user.username}
+            </p>
+
+            <p
+              style={{
+                margin:
+                  "4px 0 0",
+                fontSize: 13,
+                color:
+                  "#64748b",
+              }}
+            >
+              {[
+                employeePosition ||
+                  user?.position,
+                employeeDepartment ||
+                  user?.department,
+              ]
+                .filter(
+                  Boolean
+                )
+                .join(
+                  " \u00B7 "
+                ) ||
+                `Role: ${user.role}`}
+            </p>
           </div>
 
+          {counts.unread >
+            0 && (
+            <div
+              style={{
+                minWidth: 42,
+                height: 42,
+                padding:
+                  "0 11px",
+                borderRadius:
+                  999,
+                background:
+                  "#dc2626",
+                color:
+                  "#ffffff",
+                display:
+                  "inline-flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                fontSize: 14,
+                fontWeight: 900,
+                boxShadow:
+                  "0 8px 18px rgba(220,38,38,0.22)",
+              }}
+            >
+              {counts.unread >
+              99
+                ? "99+"
+                : counts.unread}
+            </div>
+          )}
+        </div>
+      </PageCard>
+
+      <PageCard
+        style={{
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            display:
+              "flex",
+            justifyContent:
+              "space-between",
+            alignItems:
+              "center",
+            gap: 12,
+            flexWrap:
+              "wrap",
+          }}
+        >
           <div>
-            <ActionButton type="submit" disabled={loading}>
-              {loading ? "Checking..." : "Check Status"}
-            </ActionButton>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 900,
+                color:
+                  "#0f172a",
+                letterSpacing:
+                  "-0.02em",
+              }}
+            >
+              My Training Status
+            </h2>
+
+            <p
+              style={{
+                margin:
+                  "4px 0 0",
+                fontSize: 12,
+                color:
+                  "#64748b",
+                lineHeight: 1.5,
+              }}
+            >
+              Completion status is maintained by Management.
+            </p>
           </div>
-        </form>
+
+          <div
+            style={{
+              display:
+                "flex",
+              gap: 6,
+              flexWrap:
+                "wrap",
+            }}
+          >
+            <StatusSummary
+              label="Pending"
+              value={
+                counts.pending
+              }
+              tone="blue"
+            />
+
+            <StatusSummary
+              label="Due Soon"
+              value={
+                counts.dueSoon
+              }
+              tone="orange"
+            />
+
+            <StatusSummary
+              label="Overdue"
+              value={
+                counts.overdue
+              }
+              tone="red"
+            />
+
+            <StatusSummary
+              label="Completed"
+              value={
+                counts.completed
+              }
+              tone="green"
+            />
+          </div>
+        </div>
       </PageCard>
 
       {message && (
-        <PageCard style={{ padding: 16 }}>
+        <PageCard
+          style={{
+            padding: 14,
+          }}
+        >
           <div
             style={{
-              background: "#edf7ff",
-              border: "1px solid #cfe7fb",
-              borderRadius: 16,
-              padding: "14px 16px",
-              color: "#1769aa",
-              fontSize: 14,
-              fontWeight: 700,
+              background:
+                message
+                  .toLowerCase()
+                  .includes(
+                    "successfully"
+                  )
+                  ? "#ecfdf5"
+                  : "#fff7ed",
+              border:
+                message
+                  .toLowerCase()
+                  .includes(
+                    "successfully"
+                  )
+                  ? "1px solid #a7f3d0"
+                  : "1px solid #fed7aa",
+              borderRadius: 14,
+              padding:
+                "11px 12px",
+              color:
+                message
+                  .toLowerCase()
+                  .includes(
+                    "successfully"
+                  )
+                  ? "#065f46"
+                  : "#9a3412",
+              fontSize: 12.5,
+              fontWeight: 800,
             }}
           >
             {message}
@@ -458,144 +1486,130 @@ export default function EmployeeTimeOffStatusPage() {
         </PageCard>
       )}
 
-      {requests.length > 0 && (
-        <PageCard style={{ padding: 20 }}>
-          <div style={{ marginBottom: 14 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Request History
-            </h2>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 13,
-                color: "#64748b",
-              }}
-            >
-              Review the latest updates from management on your submitted requests.
-            </p>
-          </div>
-
-          <div
+      <PageCard
+        style={{
+          padding: 18,
+        }}
+      >
+        <div
+          style={{
+            marginBottom: 14,
+          }}
+        >
+          <h2
             style={{
-              display: "grid",
-              gap: 14,
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 900,
+              color:
+                "#0f172a",
+              letterSpacing:
+                "-0.02em",
             }}
           >
-            {requests.map((r) => {
-              const statusUI = getStatusStyles(r.status);
+            Assigned Trainings
+          </h2>
 
-              return (
-                <div
-                  key={r.id}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 20,
-                    padding: 18,
-                    background: "#ffffff",
-                    boxShadow: "0 8px 22px rgba(15,23,42,0.04)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: 14,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <span style={{ fontSize: 22 }}>{statusUI.icon}</span>
-                        <h3
-                          style={{
-                            margin: 0,
-                            fontSize: 18,
-                            fontWeight: 800,
-                            color: "#0f172a",
-                            letterSpacing: "-0.02em",
-                          }}
-                        >
-                          {r.reasonType || "Request"}
-                        </h3>
-                      </div>
+          <p
+            style={{
+              margin:
+                "4px 0 0",
+              fontSize: 12,
+              color:
+                "#64748b",
+              lineHeight: 1.5,
+            }}
+          >
+            New notices and status changes appear here automatically.
+          </p>
+        </div>
 
-                      <p
-                        style={{
-                          margin: "10px 0 0",
-                          fontSize: 14,
-                          color: "#334155",
-                          lineHeight: 1.7,
-                        }}
-                      >
-                        <b>Dates:</b> {r.startDate} → {r.endDate}
-                      </p>
-
-                      {r.notes && (
-                        <p
-                          style={{
-                            margin: "8px 0 0",
-                            fontSize: 14,
-                            color: "#475569",
-                            lineHeight: 1.7,
-                          }}
-                        >
-                          <b>Your notes:</b> {r.notes}
-                        </p>
-                      )}
-
-                      {r.managerNote && (
-                        <p
-                          style={{
-                            margin: "8px 0 0",
-                            fontSize: 14,
-                            color: "#475569",
-                            lineHeight: 1.7,
-                          }}
-                        >
-                          <b>Management note:</b> {r.managerNote}
-                        </p>
-                      )}
-                    </div>
-
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        padding: "8px 12px",
-                        borderRadius: 999,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        border: `1px solid ${statusUI.badgeBorder}`,
-                        background: statusUI.badgeBg,
-                        color: statusUI.badgeColor,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {statusUI.label}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+        {!employeeId ? (
+          <div
+            style={{
+              padding: 18,
+              textAlign:
+                "center",
+              background:
+                "#fff7ed",
+              border:
+                "1px solid #fed7aa",
+              borderRadius: 14,
+              color:
+                "#9a3412",
+              fontSize: 12.5,
+              fontWeight: 700,
+              lineHeight: 1.6,
+            }}
+          >
+            Your employee profile is not linked to this AeroStation Hub
+            account. Please contact Management.
           </div>
-        </PageCard>
-      )}
+        ) : noticesLoading ? (
+          <div
+            style={{
+              padding: 18,
+              textAlign:
+                "center",
+              color:
+                "#64748b",
+              fontSize: 13,
+            }}
+          >
+            Loading your Training Notices...
+          </div>
+        ) : notices.length ===
+          0 ? (
+          <div
+            style={{
+              padding: 18,
+              textAlign:
+                "center",
+              background:
+                "#f8fbff",
+              border:
+                "1px solid #dbeafe",
+              borderRadius: 14,
+              color:
+                "#64748b",
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            You do not have any Training Notices assigned at this time.
+          </div>
+        ) : (
+          <div
+            style={{
+              display:
+                "grid",
+              gap: 10,
+            }}
+          >
+            {notices.map(
+              (notice) => (
+                <TrainingNoticeCard
+                  key={
+                    notice.id
+                  }
+                  notice={
+                    notice
+                  }
+                  busy={
+                    busyNoticeId ===
+                    notice.id
+                  }
+                  onAcknowledge={
+                    handleAcknowledge
+                  }
+                />
+              )
+            )}
+          </div>
+        )}
+      </PageCard>
     </div>
   );
 }
+
+// END EmployeeTimeOffStatusPage
