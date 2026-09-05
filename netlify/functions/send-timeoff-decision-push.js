@@ -372,6 +372,8 @@ exports.handler = async function handler(event) {
 
     body = body.slice(0, 240);
 
+    const targetRoute = "/request-dayoff-internal";
+
     const result = await admin
       .messaging()
       .sendEachForMulticast({
@@ -380,7 +382,8 @@ exports.handler = async function handler(event) {
         data: {
           title,
           body,
-          url: "/time-off/status",
+          url: targetRoute,
+          route: targetRoute,
           type: `timeoff_${decision}`,
           requestId,
           decision,
@@ -390,6 +393,9 @@ exports.handler = async function handler(event) {
         webpush: {
           headers: {
             Urgency: urgency,
+          },
+          fcmOptions: {
+            link: targetRoute,
           },
         },
       });
@@ -410,6 +416,7 @@ exports.handler = async function handler(event) {
             : null,
         decisionPushUpdatedAt:
           admin.firestore.FieldValue.serverTimestamp(),
+        decisionPushRoute: targetRoute,
       },
       { merge: true }
     );
@@ -422,6 +429,7 @@ exports.handler = async function handler(event) {
       tokenCount: tokenItems.length,
       successCount: result.successCount,
       failureCount: result.failureCount,
+      route: targetRoute,
     });
   } catch (error) {
     console.error("send-timeoff-decision-push error:", error);
