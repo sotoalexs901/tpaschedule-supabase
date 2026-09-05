@@ -318,7 +318,8 @@ exports.handler = async function handler(event) {
         data: {
           title,
           body,
-          url: "/time-off/manage",
+          url: "/timeoff-requests",
+          route: "/timeoff-requests",
           type: "timeoff_submitted",
           requestId,
           employeeId: normalizeText(request.employeeId),
@@ -328,6 +329,9 @@ exports.handler = async function handler(event) {
         webpush: {
           headers: {
             Urgency: "normal",
+          },
+          fcmOptions: {
+            link: "/timeoff-requests",
           },
         },
       });
@@ -355,6 +359,9 @@ exports.handler = async function handler(event) {
 
         managementSubmissionPushUpdatedAt:
           admin.firestore.FieldValue.serverTimestamp(),
+
+        managementSubmissionPushRoute:
+          "/timeoff-requests",
       },
       { merge: true }
     );
@@ -367,6 +374,7 @@ exports.handler = async function handler(event) {
       tokenCount: tokenItems.length,
       successCount: result.successCount,
       failureCount: result.failureCount,
+      route: "/timeoff-requests",
     });
   } catch (error) {
     console.error(
