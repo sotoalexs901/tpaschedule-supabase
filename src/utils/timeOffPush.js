@@ -1,9 +1,7 @@
 // src/utils/timeOffPush.js
 
 function fireAndForgetTimeOffPush(endpoint, payload, label) {
-  if (typeof window === "undefined") {
-    return;
-  }
+  if (typeof window === "undefined") return;
 
   fetch(endpoint, {
     method: "POST",
@@ -15,9 +13,7 @@ function fireAndForgetTimeOffPush(endpoint, payload, label) {
     keepalive: true,
   })
     .then(async (response) => {
-      if (response.ok) {
-        return;
-      }
+      if (response.ok) return;
 
       let details = "";
 
@@ -49,9 +45,7 @@ function fireAndForgetTimeOffPush(endpoint, payload, label) {
 }
 
 export function triggerTimeOffSubmittedPush(requestId) {
-  if (!requestId) {
-    return;
-  }
+  if (!requestId) return;
 
   fireAndForgetTimeOffPush(
     "/.netlify/functions/send-timeoff-submitted-push",
@@ -63,9 +57,7 @@ export function triggerTimeOffSubmittedPush(requestId) {
 }
 
 export function triggerTimeOffDecisionPush(requestId, decision) {
-  if (!requestId) {
-    return;
-  }
+  if (!requestId) return;
 
   const normalizedDecision = String(decision || "")
     .trim()
@@ -74,7 +66,7 @@ export function triggerTimeOffDecisionPush(requestId, decision) {
   if (
     normalizedDecision !== "approved" &&
     normalizedDecision !== "rejected" &&
-    normalizedDecision !== "returned"
+    normalizedDecision !== "needs_info"
   ) {
     console.warn(
       "Time Off decision Push ignored because decision is invalid.",
