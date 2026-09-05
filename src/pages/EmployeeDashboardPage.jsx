@@ -4,9 +4,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
+  serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase";
@@ -26,6 +30,7 @@ function getDefaultPosition(role) {
 
 function getVisibleName(user) {
   return (
+    user?.employeeName ||
     user?.displayName ||
     user?.fullName ||
     user?.name ||
@@ -40,90 +45,84 @@ function getVisiblePosition(user) {
 
 function getInitials(name) {
   const clean = String(name || "").trim();
-
   if (!clean) return "U";
 
-  const parts = clean
-    .split(/\s+/)
-    .filter(Boolean);
+  const parts = clean.split(/\s+/).filter(Boolean);
 
   if (parts.length === 1) {
-    return parts[0]
-      .slice(0, 1)
-      .toUpperCase();
+    return parts[0].slice(0, 1).toUpperCase();
   }
 
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
-function parseBirthDate(value) {
+function parseBirthDate(value, birthdayMonth, birthdayDay) {
+  if (
+    Number.isInteger(Number(birthdayMonth)) &&
+    Number.isInteger(Number(birthdayDay)) &&
+    Number(birthdayMonth) >= 1 &&
+    Number(birthdayMonth) <= 12 &&
+    Number(birthdayDay) >= 1 &&
+    Number(birthdayDay) <= 31
+  ) {
+    const currentYear = new Date().getFullYear();
+    const d = new Date(
+      currentYear,
+      Number(birthdayMonth) - 1,
+      Number(birthdayDay)
+    );
+
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
   if (!value) return null;
 
-  if (
-    typeof value?.toDate ===
-    "function"
-  ) {
+  if (typeof value?.toDate === "function") {
     const d = value.toDate();
-    return Number.isNaN(
-      d.getTime()
-    )
-      ? null
-      : d;
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
   if (value instanceof Date) {
-    return Number.isNaN(
-      value.getTime()
-    )
-      ? null
-      : value;
+    return Number.isNaN(value.getTime()) ? null : value;
   }
 
-  if (
-    typeof value ===
-    "string"
-  ) {
-    const d = new Date(
-      `${value}T00:00:00`
-    );
+  if (typeof value === "string") {
+    const clean = value.trim();
 
-    return Number.isNaN(
-      d.getTime()
-    )
-      ? null
-      : d;
+    const iso = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    if (iso) {
+      const d = new Date(
+        Number(iso[1]),
+        Number(iso[2]) - 1,
+        Number(iso[3])
+      );
+
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    const parsed = new Date(clean);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   const d = new Date(value);
-
-  return Number.isNaN(
-    d.getTime()
-  )
-    ? null
-    : d;
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function sameMonthAndDay(a, b) {
   return (
     a &&
     b &&
-    a.getMonth() ===
-      b.getMonth() &&
-    a.getDate() ===
-      b.getDate()
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
   );
 }
 
-function formatBirthday(
-  date,
-  language = "en"
-) {
+function formatBirthday(date, language = "en") {
   if (!date) return "\u2014";
 
   return date.toLocaleDateString(
-    language === "es"
-      ? "es-US"
-      : "en-US",
+    language === "es" ? "es-US" : "en-US",
     {
       month: "long",
       day: "numeric",
@@ -156,42 +155,65 @@ function daysUntilBirthday(date) {
     );
   }
 
-  const diff =
-    next.getTime() -
-    current.getTime();
+  const diff = next.getTime() - current.getTime();
 
   return Math.round(
-    diff /
-      (1000 * 60 * 60 * 24)
+    diff / (1000 * 60 * 60 * 24)
   );
 }
 
-function useIsMobile(
-  breakpoint = 900
-) {
-  const [
-    isMobile,
-    setIsMobile,
-  ] = useState(() =>
-    typeof window !==
-    "undefined"
-      ? window.innerWidth <
-        breakpoint
+function formatEventDate(value, language = "en") {
+  const raw = String(value || "").trim();
+
+  if (!raw) return "";
+
+  const d = new Date(`${raw}T00:00:00`);
+
+  if (Number.isNaN(d.getTime())) {
+    return raw;
+  }
+
+  return d.toLocaleDateString(
+    language === "es" ? "es-US" : "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
+}
+
+function getMillis(value) {
+  if (!value) return 0;
+
+  if (typeof value?.toMillis === "function") {
+    return value.toMillis();
+  }
+
+  if (typeof value?.toDate === "function") {
+    return value.toDate().getTime();
+  }
+
+  const parsed = new Date(value).getTime();
+
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function useIsMobile(breakpoint = 900) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined"
+      ? window.innerWidth < breakpoint
       : false
   );
 
   useEffect(() => {
-    if (
-      typeof window ===
-      "undefined"
-    ) {
+    if (typeof window === "undefined") {
       return undefined;
     }
 
     const onResize = () =>
       setIsMobile(
-        window.innerWidth <
-          breakpoint
+        window.innerWidth < breakpoint
       );
 
     window.addEventListener(
@@ -228,8 +250,7 @@ function startOfWeekMonday() {
       ? -6
       : 1 - day;
 
-  const monday =
-    new Date(now);
+  const monday = new Date(now);
 
   monday.setDate(
     now.getDate() + diff
@@ -248,30 +269,20 @@ function startOfWeekMonday() {
 function toJsDate(value) {
   if (!value) return null;
 
-  if (
-    typeof value?.toDate ===
-    "function"
-  ) {
+  if (typeof value?.toDate === "function") {
     return value.toDate();
   }
 
-  const parsed =
-    new Date(value);
+  const parsed = new Date(value);
 
-  if (
-    Number.isNaN(
-      parsed.getTime()
-    )
-  ) {
+  if (Number.isNaN(parsed.getTime())) {
     return null;
   }
 
   return parsed;
 }
 
-function getAgentNameFromWchr(
-  item
-) {
+function getAgentNameFromWchr(item) {
   return (
     item?.employee_login ||
     item?.employee_name ||
@@ -285,44 +296,30 @@ function getAgentNameFromWchr(
   );
 }
 
-function getTopAgent(
-  items,
-  fromDate,
-  label
-) {
+function getTopAgent(items, fromDate, label) {
   const counts = {};
 
   items.forEach((item) => {
-    const createdAt =
-      toJsDate(
-        item?.submitted_at ||
-          item?.createdAt ||
-          item?.timestamp ||
-          item?.date
-      );
+    const createdAt = toJsDate(
+      item?.submitted_at ||
+        item?.createdAt ||
+        item?.timestamp ||
+        item?.date
+    );
 
     if (!createdAt) return;
-    if (createdAt < fromDate) {
-      return;
-    }
+    if (createdAt < fromDate) return;
 
     const agentName =
-      getAgentNameFromWchr(
-        item
-      );
+      getAgentNameFromWchr(item);
 
     counts[agentName] =
-      (counts[agentName] ||
-        0) + 1;
+      (counts[agentName] || 0) + 1;
   });
 
-  const entries =
-    Object.entries(
-      counts
-    ).sort(
-      (a, b) =>
-        b[1] - a[1]
-    );
+  const entries = Object.entries(counts).sort(
+    (a, b) => b[1] - a[1]
+  );
 
   if (!entries.length) {
     return {
@@ -338,9 +335,7 @@ function getTopAgent(
     rank: 1,
     name: entries[0][0],
     position: "Agent",
-    value: String(
-      entries[0][1]
-    ),
+    value: String(entries[0][1]),
     label,
   };
 }
@@ -366,8 +361,7 @@ function HeroButton({
         fontWeight: 800,
         fontSize: 12,
         cursor: "pointer",
-        backdropFilter:
-          "blur(8px)",
+        backdropFilter: "blur(8px)",
       }}
     >
       {children}
@@ -388,65 +382,46 @@ function StatCard({
       style={{
         background:
           "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.98) 100%)",
-        border:
-          "1px solid #dbeafe",
-        borderRadius:
-          isMobile
-            ? 18
-            : 22,
-        padding:
-          isMobile
-            ? 15
-            : 18,
+        border: "1px solid #dbeafe",
+        borderRadius: isMobile ? 18 : 22,
+        padding: isMobile ? 15 : 18,
         boxShadow:
           "0 14px 34px rgba(15,23,42,0.055)",
-        position:
-          "relative",
+        position: "relative",
         overflow: "hidden",
         minWidth: 0,
       }}
     >
       <div
         style={{
-          position:
-            "absolute",
+          position: "absolute",
           width: 110,
           height: 110,
           borderRadius: 999,
           background: `${accent}10`,
           top: -54,
           right: -28,
-          pointerEvents:
-            "none",
+          pointerEvents: "none",
         }}
       />
 
       <div
         style={{
-          position:
-            "relative",
+          position: "relative",
           display: "flex",
-          alignItems:
-            "flex-start",
-          justifyContent:
-            "space-between",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
           gap: 12,
         }}
       >
-        <div
-          style={{
-            minWidth: 0,
-          }}
-        >
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
               fontSize: 10.5,
               fontWeight: 850,
               color: "#64748b",
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.08em",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
             }}
           >
             {title}
@@ -455,17 +430,12 @@ function StatCard({
           <div
             style={{
               marginTop: 8,
-              fontSize:
-                isMobile
-                  ? 21
-                  : 25,
+              fontSize: isMobile ? 21 : 25,
               fontWeight: 900,
               color: "#0f172a",
               lineHeight: 1.05,
-              letterSpacing:
-                "-0.03em",
-              wordBreak:
-                "break-word",
+              letterSpacing: "-0.03em",
+              wordBreak: "break-word",
             }}
           >
             {value}
@@ -484,25 +454,14 @@ function StatCard({
 
         <div
           style={{
-            width:
-              isMobile
-                ? 38
-                : 42,
-            height:
-              isMobile
-                ? 38
-                : 42,
+            width: isMobile ? 38 : 42,
+            height: isMobile ? 38 : 42,
             borderRadius: 13,
             background: `${accent}16`,
             display: "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
-            fontSize:
-              isMobile
-                ? 17
-                : 19,
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: isMobile ? 17 : 19,
             flexShrink: 0,
           }}
         >
@@ -525,18 +484,10 @@ function GlassCard({
   return (
     <section
       style={{
-        background:
-          "rgba(255,255,255,0.97)",
-        border:
-          "1px solid #e2e8f0",
-        borderRadius:
-          isMobile
-            ? 20
-            : 24,
-        padding:
-          isMobile
-            ? 15
-            : 19,
+        background: "rgba(255,255,255,0.97)",
+        border: "1px solid #e2e8f0",
+        borderRadius: isMobile ? 20 : 24,
+        padding: isMobile ? 15 : 19,
         boxShadow:
           "0 16px 40px rgba(15,23,42,0.055)",
         minWidth: 0,
@@ -545,10 +496,8 @@ function GlassCard({
       <div
         style={{
           display: "flex",
-          alignItems:
-            "flex-start",
-          justifyContent:
-            "space-between",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
           gap: 12,
           marginBottom: 14,
           flexWrap: "wrap",
@@ -557,8 +506,7 @@ function GlassCard({
         <div
           style={{
             display: "flex",
-            alignItems:
-              "flex-start",
+            alignItems: "flex-start",
             gap: 11,
             minWidth: 0,
             flex: 1,
@@ -572,10 +520,8 @@ function GlassCard({
               background: `${accent}14`,
               color: accent,
               display: "flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "center",
+              alignItems: "center",
+              justifyContent: "center",
               fontSize: 17,
               flexShrink: 0,
             }}
@@ -583,22 +529,14 @@ function GlassCard({
             {icon}
           </div>
 
-          <div
-            style={{
-              minWidth: 0,
-            }}
-          >
+          <div style={{ minWidth: 0 }}>
             <h2
               style={{
                 margin: 0,
-                fontSize:
-                  isMobile
-                    ? 16
-                    : 18,
+                fontSize: isMobile ? 16 : 18,
                 fontWeight: 900,
                 color: "#0f172a",
-                letterSpacing:
-                  "-0.02em",
+                letterSpacing: "-0.02em",
                 lineHeight: 1.2,
               }}
             >
@@ -608,8 +546,7 @@ function GlassCard({
             {subtitle && (
               <p
                 style={{
-                  margin:
-                    "4px 0 0",
+                  margin: "4px 0 0",
                   fontSize: 11.5,
                   lineHeight: 1.5,
                   color: "#64748b",
@@ -646,15 +583,11 @@ function QuickActionTile({
         textAlign: "left",
         width: "100%",
         minWidth: 0,
-        border:
-          "1px solid #dbeafe",
+        border: "1px solid #dbeafe",
         background:
           `linear-gradient(135deg, ${accent}10 0%, #ffffff 72%)`,
         borderRadius: 18,
-        padding:
-          isMobile
-            ? 14
-            : 16,
+        padding: isMobile ? 14 : 16,
         cursor: "pointer",
         boxShadow:
           "0 9px 22px rgba(15,23,42,0.04)",
@@ -663,25 +596,17 @@ function QuickActionTile({
       <div
         style={{
           display: "flex",
-          alignItems:
-            "flex-start",
-          justifyContent:
-            "space-between",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
           gap: 12,
         }}
       >
-        <div
-          style={{
-            minWidth: 0,
-          }}
-        >
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
               fontSize: 10,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.08em",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
               color: "#64748b",
               fontWeight: 850,
             }}
@@ -703,8 +628,7 @@ function QuickActionTile({
 
           <p
             style={{
-              margin:
-                "7px 0 0",
+              margin: "7px 0 0",
               fontSize: 12,
               color: "#475569",
               lineHeight: 1.55,
@@ -721,10 +645,8 @@ function QuickActionTile({
             borderRadius: 14,
             background: `${accent}16`,
             display: "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
+            alignItems: "center",
+            justifyContent: "center",
             fontSize: 19,
             flexShrink: 0,
           }}
@@ -741,33 +663,28 @@ function BirthdayRow({
   language,
   tag,
 }) {
-  const initials =
-    getInitials(
-      person.displayName
-    );
+  const initials = getInitials(
+    person.displayName
+  );
 
   return (
     <div
       style={{
         display: "flex",
-        alignItems:
-          "center",
-        justifyContent:
-          "space-between",
+        alignItems: "center",
+        justifyContent: "space-between",
         gap: 12,
         borderRadius: 15,
         padding: 12,
         background:
           "linear-gradient(135deg, #fdf2f8 0%, #ffffff 100%)",
-        border:
-          "1px solid #fbcfe8",
+        border: "1px solid #fbcfe8",
       }}
     >
       <div
         style={{
           display: "flex",
-          alignItems:
-            "center",
+          alignItems: "center",
           gap: 10,
           minWidth: 0,
         }}
@@ -777,17 +694,12 @@ function BirthdayRow({
             width: 40,
             height: 40,
             borderRadius: 13,
-            overflow:
-              "hidden",
-            background:
-              "#fce7f3",
-            border:
-              "1px solid #fbcfe8",
+            overflow: "hidden",
+            background: "#fce7f3",
+            border: "1px solid #fbcfe8",
             display: "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
+            alignItems: "center",
+            justifyContent: "center",
             color: "#9d174d",
             fontWeight: 850,
             flexShrink: 0,
@@ -795,38 +707,26 @@ function BirthdayRow({
         >
           {person.profilePhotoURL ? (
             <img
-              src={
-                person.profilePhotoURL
-              }
-              alt={
-                person.displayName
-              }
+              src={person.profilePhotoURL}
+              alt={person.displayName}
               style={{
                 width: "100%",
                 height: "100%",
-                objectFit:
-                  "cover",
+                objectFit: "cover",
               }}
             />
           ) : (
-            <span>
-              {initials}
-            </span>
+            <span>{initials}</span>
           )}
         </div>
 
-        <div
-          style={{
-            minWidth: 0,
-          }}
-        >
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
               fontSize: 13,
               fontWeight: 850,
               color: "#0f172a",
-              wordBreak:
-                "break-word",
+              wordBreak: "break-word",
             }}
           >
             {person.displayName}
@@ -846,8 +746,7 @@ function BirthdayRow({
 
       <div
         style={{
-          textAlign:
-            "right",
+          textAlign: "right",
           flexShrink: 0,
         }}
       >
@@ -886,24 +785,20 @@ function LeaderRow({
     <div
       style={{
         display: "flex",
-        alignItems:
-          "center",
-        justifyContent:
-          "space-between",
+        alignItems: "center",
+        justifyContent: "space-between",
         gap: 12,
         borderRadius: 15,
         padding: 12,
         background:
           "linear-gradient(135deg, #edf7ff 0%, #ffffff 100%)",
-        border:
-          "1px solid #dbeafe",
+        border: "1px solid #dbeafe",
       }}
     >
       <div
         style={{
           display: "flex",
-          alignItems:
-            "center",
+          alignItems: "center",
           gap: 10,
           minWidth: 0,
         }}
@@ -918,21 +813,15 @@ function LeaderRow({
             fontSize: 12,
             fontWeight: 850,
             display: "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
+            alignItems: "center",
+            justifyContent: "center",
             flexShrink: 0,
           }}
         >
           {row.rank}
         </div>
 
-        <div
-          style={{
-            minWidth: 0,
-          }}
-        >
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
               fontSize: 13,
@@ -957,8 +846,7 @@ function LeaderRow({
 
       <div
         style={{
-          textAlign:
-            "right",
+          textAlign: "right",
           flexShrink: 0,
         }}
       >
@@ -996,11 +884,9 @@ function RecognizedEmployeeCard({
       ? "Posici\u00F3n"
       : "Position";
 
-  const initials =
-    getInitials(
-      item?.employeeName ||
-        "E"
-    );
+  const initials = getInitials(
+    item?.employeeName || "E"
+  );
 
   const profileImage =
     item?.photoURL ||
@@ -1221,7 +1107,8 @@ function RecognizedEmployeeDetailModal({
           background: "#ffffff",
           border: "1px solid rgba(255,255,255,0.9)",
           borderRadius: 24,
-          boxShadow: "0 30px 80px rgba(15,23,42,0.28)",
+          boxShadow:
+            "0 30px 80px rgba(15,23,42,0.28)",
         }}
       >
         <div
@@ -1230,25 +1117,10 @@ function RecognizedEmployeeDetailModal({
               "linear-gradient(135deg, #071c33 0%, #0f4c81 48%, #1769aa 76%, #62c4ef 100%)",
             color: "#ffffff",
             padding: 18,
-            position: "relative",
-            overflow: "hidden",
           }}
         >
           <div
             style={{
-              position: "absolute",
-              width: 150,
-              height: 150,
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.09)",
-              top: -80,
-              right: -30,
-            }}
-          />
-
-          <div
-            style={{
-              position: "relative",
               display: "flex",
               gap: 13,
               alignItems: "center",
@@ -1260,8 +1132,10 @@ function RecognizedEmployeeDetailModal({
                 height: 68,
                 borderRadius: 20,
                 overflow: "hidden",
-                background: "rgba(255,255,255,0.14)",
-                border: "1px solid rgba(255,255,255,0.18)",
+                background:
+                  "rgba(255,255,255,0.14)",
+                border:
+                  "1px solid rgba(255,255,255,0.18)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1293,7 +1167,8 @@ function RecognizedEmployeeDetailModal({
                   textTransform: "uppercase",
                   letterSpacing: "0.12em",
                   fontWeight: 850,
-                  color: "rgba(255,255,255,0.68)",
+                  color:
+                    "rgba(255,255,255,0.68)",
                 }}
               >
                 {APP_NAME} {"\u00B7"} {labels.title}
@@ -1315,7 +1190,8 @@ function RecognizedEmployeeDetailModal({
                 style={{
                   marginTop: 4,
                   fontSize: 12,
-                  color: "rgba(255,255,255,0.82)",
+                  color:
+                    "rgba(255,255,255,0.82)",
                   fontWeight: 750,
                 }}
               >
@@ -1419,7 +1295,10 @@ function RecognizedEmployeeDetailModal({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: canWrite ? "1fr 1fr" : "1fr",
+              gridTemplateColumns:
+                canWrite
+                  ? "1fr 1fr"
+                  : "1fr",
               gap: 8,
             }}
           >
@@ -1490,16 +1369,9 @@ function RecognizedEmployeesBanner({
       style={{
         background:
           "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)",
-        border:
-          "1px solid #fed7aa",
-        borderRadius:
-          isMobile
-            ? 20
-            : 24,
-        padding:
-          isMobile
-            ? 15
-            : 19,
+        border: "1px solid #fed7aa",
+        borderRadius: isMobile ? 20 : 24,
+        padding: isMobile ? 15 : 19,
         boxShadow:
           "0 16px 40px rgba(15,23,42,0.055)",
       }}
@@ -1507,8 +1379,7 @@ function RecognizedEmployeesBanner({
       <div
         style={{
           display: "flex",
-          alignItems:
-            "center",
+          alignItems: "center",
           gap: 11,
           marginBottom: 13,
         }}
@@ -1518,14 +1389,11 @@ function RecognizedEmployeesBanner({
             width: 39,
             height: 39,
             borderRadius: 13,
-            background:
-              "#f59e0b18",
+            background: "#f59e0b18",
             color: "#b45309",
             display: "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
+            alignItems: "center",
+            justifyContent: "center",
             fontSize: 17,
             flexShrink: 0,
           }}
@@ -1537,10 +1405,8 @@ function RecognizedEmployeesBanner({
           <div
             style={{
               fontSize: 10,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.08em",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
               color: "#b45309",
               fontWeight: 850,
             }}
@@ -1551,14 +1417,10 @@ function RecognizedEmployeesBanner({
           <h2
             style={{
               margin: "3px 0 0",
-              fontSize:
-                isMobile
-                  ? 16
-                  : 18,
+              fontSize: isMobile ? 16 : 18,
               fontWeight: 900,
               color: "#0f172a",
-              letterSpacing:
-                "-0.02em",
+              letterSpacing: "-0.02em",
             }}
           >
             {title}
@@ -1594,15 +1456,9 @@ function RecognizedEmployeesBanner({
               <RecognizedEmployeeCard
                 key={item.id}
                 item={item}
-                isMobile={
-                  isMobile
-                }
-                language={
-                  language
-                }
-                onOpen={
-                  onOpen
-                }
+                isMobile={isMobile}
+                language={language}
+                onOpen={onOpen}
               />
             ))}
         </div>
@@ -1611,110 +1467,273 @@ function RecognizedEmployeesBanner({
   );
 }
 
+function EventRsvpButtons({
+  event,
+  selectedResponse,
+  saving,
+  language,
+  onRespond,
+}) {
+  const labels =
+    language === "es"
+      ? {
+          question: "\u00BFPuedes asistir?",
+          yes: "S\u00ED",
+          no: "No",
+          maybe: "Tal vez",
+          cant: "Lo siento, no puedo",
+          saved: "Tu respuesta",
+        }
+      : {
+          question: "Can you attend?",
+          yes: "Yes",
+          no: "No",
+          maybe: "Maybe",
+          cant: "Sorry, I can't",
+          saved: "Your response",
+        };
+
+  const options = [
+    {
+      key: "yes",
+      label: labels.yes,
+      emoji: "\u{1F642}",
+      activeBg: "#ecfdf5",
+      activeBorder: "#86efac",
+      activeText: "#166534",
+    },
+    {
+      key: "no",
+      label: labels.no,
+      emoji: "\u{1F641}",
+      activeBg: "#fff1f2",
+      activeBorder: "#fda4af",
+      activeText: "#be123c",
+    },
+    {
+      key: "maybe",
+      label: labels.maybe,
+      emoji: "\u{1F615}",
+      activeBg: "#fffbeb",
+      activeBorder: "#fcd34d",
+      activeText: "#a16207",
+    },
+    {
+      key: "cant",
+      label: labels.cant,
+      emoji: "\u{1F614}",
+      activeBg: "#f8fafc",
+      activeBorder: "#94a3b8",
+      activeText: "#475569",
+    },
+  ];
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        paddingTop: 12,
+        borderTop: "1px solid #dbeafe",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 850,
+          color: "#475569",
+          marginBottom: 8,
+        }}
+      >
+        {labels.question}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(2, minmax(0, 1fr))",
+          gap: 8,
+        }}
+      >
+        {options.map((option) => {
+          const active =
+            selectedResponse === option.key;
+
+          return (
+            <button
+              key={option.key}
+              type="button"
+              disabled={saving}
+              onClick={() =>
+                onRespond(
+                  event.id,
+                  option.key
+                )
+              }
+              style={{
+                border: active
+                  ? `1px solid ${option.activeBorder}`
+                  : "1px solid #e2e8f0",
+                background: active
+                  ? option.activeBg
+                  : "#ffffff",
+                color: active
+                  ? option.activeText
+                  : "#475569",
+                borderRadius: 13,
+                padding: "9px 8px",
+                cursor: saving
+                  ? "wait"
+                  : "pointer",
+                fontSize: 11,
+                fontWeight: active
+                  ? 850
+                  : 750,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                opacity: saving
+                  ? 0.65
+                  : 1,
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 16,
+                }}
+              >
+                {option.emoji}
+              </span>
+
+              <span>
+                {option.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedResponse && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 10.5,
+            color: "#64748b",
+            fontWeight: 700,
+          }}
+        >
+          {labels.saved}:{" "}
+          {
+            options.find(
+              (option) =>
+                option.key === selectedResponse
+            )?.label
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EmployeeDashboardPage() {
   const { user } = useUser();
   const navigate = useNavigate();
-  const isMobile =
-    useIsMobile(900);
+  const isMobile = useIsMobile(900);
 
-  const [
-    announcements,
-    setAnnouncements,
-  ] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [birthdays, setBirthdays] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [wchrReports, setWchrReports] = useState([]);
+  const [recognizedEmployees, setRecognizedEmployees] = useState([]);
 
-  const [
-    birthdays,
-    setBirthdays,
-  ] = useState([]);
+  const [stationMessage, setStationMessage] = useState("");
+  const [stationMessageAuthor, setStationMessageAuthor] =
+    useState(APP_NAME);
 
-  const [
-    photos,
-    setPhotos,
-  ] = useState([]);
+  const [dashboardEvents, setDashboardEvents] = useState([]);
+  const [dashboardNotices, setDashboardNotices] = useState([]);
+  const [dashboardDocs, setDashboardDocs] = useState([]);
 
-  const [
-    wchrReports,
-    setWchrReports,
-  ] = useState([]);
+  const [eventResponses, setEventResponses] = useState({});
+  const [savingEventResponse, setSavingEventResponse] = useState("");
 
-  const [
-    recognizedEmployees,
-    setRecognizedEmployees,
-  ] = useState([]);
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-  const [
-    wchrLoading,
-    setWchrLoading,
-  ] = useState(true);
-
-  const [
-    language,
-    setLanguage,
-  ] = useState("en");
+  const [loading, setLoading] = useState(true);
+  const [wchrLoading, setWchrLoading] = useState(true);
+  const [language, setLanguage] = useState("en");
 
   const [
     selectedRecognizedEmployee,
     setSelectedRecognizedEmployee,
   ] = useState(null);
 
-  const visibleName =
-    useMemo(
-      () =>
-        getVisibleName(user),
-      [user]
-    );
+  const visibleName = useMemo(
+    () => getVisibleName(user),
+    [user]
+  );
 
-  const visiblePosition =
-    useMemo(
-      () =>
-        getVisiblePosition(user),
-      [user]
-    );
+  const visiblePosition = useMemo(
+    () => getVisiblePosition(user),
+    [user]
+  );
 
   const profilePhotoURL =
-    user?.profilePhotoURL ||
-    "";
+    user?.profilePhotoURL || "";
 
   const copy = {
     en: {
-      crewPortal:
-        "Crew Portal",
-      welcome:
-        "Welcome back,",
+      crewPortal: "Crew Portal",
+      welcome: "Welcome back,",
       intro:
         "Your AeroStation Hub workspace for schedules, WCHR tools, messages and station updates.",
-      quickActionsTitle:
-        "Quick Access",
+      quickActionsTitle: "Quick Access",
       quickActionsSubtitle:
         "Open the tools you use most.",
-      stationHighlights:
-        "Station Highlights",
+      stationHighlights: "Station Highlights",
       stationHighlightsSubtitle:
         "Recent moments from the station.",
       noHighlights:
         "No station highlights available.",
+      stationManagerMessage:
+        "Station Manager Message",
+      stationManagerMessageSubtitle:
+        "Latest message published for the station team.",
+      noStationMessage:
+        "No station message has been published.",
+      upcomingEvents:
+        "Upcoming Events",
+      upcomingEventsSubtitle:
+        "Station events and activities.",
+      noEvents:
+        "No upcoming events.",
+      notices:
+        "Notices / Invitations",
+      noticesSubtitle:
+        "Current station notices and invitations.",
+      noNotices:
+        "No notices posted.",
+      viewMore:
+        "View more",
+      operationalDocs:
+        "Operational Documents",
+      operationalDocsSubtitle:
+        "SOPs, memos, checklists and station references.",
+      noDocs:
+        "No operational documents published.",
+      openDocument:
+        "Open document",
       quickActions: {
-        myScheduleTitle:
-          "Schedule",
-        myScheduleSubtitle:
-          "My Schedule",
+        myScheduleTitle: "Schedule",
+        myScheduleSubtitle: "My Schedule",
         myScheduleBody:
           "Review your approved personalized work schedule.",
-        messagesTitle:
-          "Communication",
-        messagesSubtitle:
-          "Messages",
+        messagesTitle: "Communication",
+        messagesSubtitle: "Messages",
         messagesBody:
           "Open direct messages from your station team.",
-        wchrScanTitle:
-          "WCHR",
-        wchrScanSubtitle:
-          "Scan Boarding Pass",
+        wchrScanTitle: "WCHR",
+        wchrScanSubtitle: "Scan Boarding Pass",
         wchrScanBody:
           "Create a new WCHR report from a boarding pass scan.",
       },
@@ -1732,7 +1751,8 @@ export default function EmployeeDashboardPage() {
         "Most recent crew communication.",
       portalAccess:
         "Portal Access",
-      modules: "Quick Tools",
+      modules:
+        "Quick Tools",
       totalNews:
         "Announcements",
       birthdaysToday:
@@ -1769,6 +1789,8 @@ export default function EmployeeDashboardPage() {
         "Operational workspace",
       currentUpdates:
         "Current updates",
+      by:
+        "By",
     },
 
     es: {
@@ -1788,6 +1810,34 @@ export default function EmployeeDashboardPage() {
         "Momentos recientes de la estaci\u00F3n.",
       noHighlights:
         "No hay fotos de la estaci\u00F3n disponibles.",
+      stationManagerMessage:
+        "Mensaje del Station Manager",
+      stationManagerMessageSubtitle:
+        "Mensaje m\u00E1s reciente publicado para el equipo.",
+      noStationMessage:
+        "No hay un mensaje publicado.",
+      upcomingEvents:
+        "Pr\u00F3ximos Eventos",
+      upcomingEventsSubtitle:
+        "Eventos y actividades de la estaci\u00F3n.",
+      noEvents:
+        "No hay eventos pr\u00F3ximos.",
+      notices:
+        "Avisos / Invitaciones",
+      noticesSubtitle:
+        "Avisos e invitaciones actuales de la estaci\u00F3n.",
+      noNotices:
+        "No hay avisos publicados.",
+      viewMore:
+        "Ver m\u00E1s",
+      operationalDocs:
+        "Documentos Operacionales",
+      operationalDocsSubtitle:
+        "SOPs, memos, checklists y referencias de la estaci\u00F3n.",
+      noDocs:
+        "No hay documentos operacionales publicados.",
+      openDocument:
+        "Abrir documento",
       quickActions: {
         myScheduleTitle:
           "Horario",
@@ -1860,30 +1910,81 @@ export default function EmployeeDashboardPage() {
         "Espacio operacional",
       currentUpdates:
         "Actualizaciones actuales",
+      by:
+        "Por",
     },
   };
 
   const t = copy[language];
 
   useEffect(() => {
+    let active = true;
+
     async function loadDashboardData() {
       try {
-        const qAnnouncements =
-          query(
+        setLoading(true);
+
+        const [
+          announcementsSnap,
+          photosSnap,
+          usersSnap,
+          mainSnap,
+          eventsSnap,
+          noticesSnap,
+          docsSnap,
+        ] = await Promise.all([
+          getDocs(
+            query(
+              collection(
+                db,
+                "employeeAnnouncements"
+              ),
+              orderBy(
+                "createdAt",
+                "desc"
+              )
+            )
+          ),
+          getDocs(
             collection(
               db,
-              "employeeAnnouncements"
-            ),
-            orderBy(
-              "createdAt",
-              "desc"
+              "dashboard_photos"
             )
-          );
+          ),
+          getDocs(
+            collection(
+              db,
+              "users"
+            )
+          ),
+          getDoc(
+            doc(
+              db,
+              "dashboard",
+              "main"
+            )
+          ),
+          getDocs(
+            collection(
+              db,
+              "dashboard_events"
+            )
+          ),
+          getDocs(
+            collection(
+              db,
+              "dashboard_notices"
+            )
+          ),
+          getDocs(
+            collection(
+              db,
+              "dashboard_docs"
+            )
+          ),
+        ]);
 
-        const announcementsSnap =
-          await getDocs(
-            qAnnouncements
-          );
+        if (!active) return;
 
         const announcementList =
           announcementsSnap.docs.map(
@@ -1917,12 +2018,12 @@ export default function EmployeeDashboardPage() {
               }
 
               const aTime =
-                a.createdAt
-                  ?.seconds || 0;
+                a.createdAt?.seconds ||
+                0;
 
               const bTime =
-                b.createdAt
-                  ?.seconds || 0;
+                b.createdAt?.seconds ||
+                0;
 
               return (
                 bTime -
@@ -1939,9 +2040,7 @@ export default function EmployeeDashboardPage() {
         const filteredAnnouncements =
           sortedAnnouncements.filter(
             (item) => {
-              if (
-                !item.expiresOn
-              ) {
+              if (!item.expiresOn) {
                 return true;
               }
 
@@ -1956,44 +2055,27 @@ export default function EmployeeDashboardPage() {
           filteredAnnouncements
         );
 
-        const photosSnap =
-          await getDocs(
-            collection(
-              db,
-              "dashboard_photos"
-            )
-          );
-
         const photoList =
           photosSnap.docs
             .map((d) => ({
               id: d.id,
               ...d.data(),
             }))
-            .sort((a, b) => {
-              const aTime =
-                a.createdAt
-                  ?.seconds || 0;
-
-              const bTime =
-                b.createdAt
-                  ?.seconds || 0;
-
-              return (
-                bTime -
-                aTime
-              );
-            });
+            .filter(
+              (item) =>
+                item.url
+            )
+            .sort(
+              (a, b) =>
+                getMillis(
+                  b.createdAt
+                ) -
+                getMillis(
+                  a.createdAt
+                )
+            );
 
         setPhotos(photoList);
-
-        const usersSnap =
-          await getDocs(
-            collection(
-              db,
-              "users"
-            )
-          );
 
         const birthdayList =
           usersSnap.docs
@@ -2003,7 +2085,9 @@ export default function EmployeeDashboardPage() {
 
               const parsedDate =
                 parseBirthDate(
-                  data.birthDate
+                  data.birthDate,
+                  data.birthdayMonth,
+                  data.birthdayDay
                 );
 
               return {
@@ -2039,6 +2123,170 @@ export default function EmployeeDashboardPage() {
           birthdayList
         );
 
+        if (mainSnap.exists()) {
+          const data =
+            mainSnap.data() || {};
+
+          setStationMessage(
+            String(
+              data.message || ""
+            )
+          );
+
+          setStationMessageAuthor(
+            String(
+              data.updatedByLabel ||
+                data.updatedBy ||
+                APP_NAME
+            )
+          );
+        } else {
+          setStationMessage("");
+          setStationMessageAuthor(
+            APP_NAME
+          );
+        }
+
+        const eventList =
+          eventsSnap.docs
+            .map((d) => ({
+              id: d.id,
+              ...d.data(),
+            }))
+            .filter(
+              (item) =>
+                !item.date ||
+                item.date >= todayStr
+            )
+            .sort(
+              (a, b) =>
+                String(
+                  a.date || ""
+                ).localeCompare(
+                  String(
+                    b.date || ""
+                  )
+                ) ||
+                String(
+                  a.time || ""
+                ).localeCompare(
+                  String(
+                    b.time || ""
+                  )
+                )
+            )
+            .slice(0, 8);
+
+        setDashboardEvents(
+          eventList
+        );
+
+        const noticeList =
+          noticesSnap.docs
+            .map((d) => ({
+              id: d.id,
+              ...d.data(),
+            }))
+            .sort(
+              (a, b) =>
+                getMillis(
+                  b.createdAt
+                ) -
+                getMillis(
+                  a.createdAt
+                )
+            )
+            .slice(0, 8);
+
+        setDashboardNotices(
+          noticeList
+        );
+
+        const docList =
+          docsSnap.docs
+            .map((d) => ({
+              id: d.id,
+              ...d.data(),
+            }))
+            .sort(
+              (a, b) =>
+                getMillis(
+                  b.createdAt
+                ) -
+                getMillis(
+                  a.createdAt
+                )
+            )
+            .slice(0, 8);
+
+        setDashboardDocs(
+          docList
+        );
+
+        const responseUserId =
+          String(
+            user?.id || ""
+          ).trim();
+
+        if (
+          responseUserId &&
+          eventList.length
+        ) {
+          const responseEntries =
+            await Promise.all(
+              eventList
+                .filter(
+                  (event) =>
+                    event.rsvpEnabled === true
+                )
+                .map(
+                  async (event) => {
+                    try {
+                      const responseSnap =
+                        await getDoc(
+                          doc(
+                            db,
+                            "dashboard_events",
+                            event.id,
+                            "responses",
+                            responseUserId
+                          )
+                        );
+
+                      return [
+                        event.id,
+                        responseSnap.exists()
+                          ? String(
+                              responseSnap.data()
+                                ?.response ||
+                                ""
+                            )
+                          : "",
+                      ];
+                    } catch (error) {
+                      console.error(
+                        "Error loading event response:",
+                        error
+                      );
+
+                      return [
+                        event.id,
+                        "",
+                      ];
+                    }
+                  }
+                )
+            );
+
+          setEventResponses(
+            Object.fromEntries(
+              responseEntries
+            )
+          );
+        } else {
+          setEventResponses({});
+        }
+
         try {
           const qRecognized =
             query(
@@ -2058,28 +2306,23 @@ export default function EmployeeDashboardPage() {
               qRecognized
             );
 
+          if (!active) return;
+
           const recognizedList =
             recognizedSnap.docs
               .map((d) => ({
                 id: d.id,
                 ...d.data(),
               }))
-              .sort((a, b) => {
-                const aTime =
-                  a.createdAt
-                    ?.seconds ||
-                  0;
-
-                const bTime =
-                  b.createdAt
-                    ?.seconds ||
-                  0;
-
-                return (
-                  bTime -
-                  aTime
-                );
-              });
+              .sort(
+                (a, b) =>
+                  getMillis(
+                    b.createdAt
+                  ) -
+                  getMillis(
+                    a.createdAt
+                  )
+              );
 
           setRecognizedEmployees(
             recognizedList
@@ -2090,9 +2333,11 @@ export default function EmployeeDashboardPage() {
             err
           );
 
-          setRecognizedEmployees(
-            []
-          );
+          if (active) {
+            setRecognizedEmployees(
+              []
+            );
+          }
         }
       } catch (err) {
         console.error(
@@ -2100,14 +2345,22 @@ export default function EmployeeDashboardPage() {
           err
         );
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
     loadDashboardData().catch(
       console.error
     );
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [
+    user?.id,
+  ]);
 
   useEffect(() => {
     async function loadWchrReports() {
@@ -2145,6 +2398,103 @@ export default function EmployeeDashboardPage() {
       console.error
     );
   }, []);
+
+  const handleEventResponse =
+    async (
+      eventId,
+      response
+    ) => {
+      const allowedResponses = [
+        "yes",
+        "no",
+        "maybe",
+        "cant",
+      ];
+
+      if (
+        !allowedResponses.includes(
+          response
+        )
+      ) {
+        return;
+      }
+
+      const userId =
+        String(
+          user?.id || ""
+        ).trim();
+
+      if (!userId) {
+        console.error(
+          "RSVP could not be saved because user.id is missing."
+        );
+        return;
+      }
+
+      try {
+        setSavingEventResponse(
+          eventId
+        );
+
+        const responseRef =
+          doc(
+            db,
+            "dashboard_events",
+            eventId,
+            "responses",
+            userId
+          );
+
+        await setDoc(
+          responseRef,
+          {
+            response,
+            userId,
+            employeeId:
+              String(
+                user?.employeeId ||
+                  ""
+              ).trim(),
+            username:
+              String(
+                user?.username ||
+                  ""
+              ).trim(),
+            employeeName:
+              visibleName,
+            position:
+              visiblePosition,
+            department:
+              String(
+                user?.department ||
+                  ""
+              ).trim(),
+            updatedAt:
+              serverTimestamp(),
+          },
+          {
+            merge: true,
+          }
+        );
+
+        setEventResponses(
+          (current) => ({
+            ...current,
+            [eventId]:
+              response,
+          })
+        );
+      } catch (error) {
+        console.error(
+          "Error saving event RSVP:",
+          error
+        );
+      } finally {
+        setSavingEventResponse(
+          ""
+        );
+      }
+    };
 
   const goTo = (path) =>
     navigate(path);
@@ -2202,8 +2552,7 @@ export default function EmployeeDashboardPage() {
               "/my-schedule"
             ),
           accent: "#1769aa",
-          icon:
-            "\u{1F4C5}",
+          icon: "\u{1F4C5}",
         },
         {
           title:
@@ -2220,8 +2569,7 @@ export default function EmployeeDashboardPage() {
               "/messages"
             ),
           accent: "#7c3aed",
-          icon:
-            "\u{1F4AC}",
+          icon: "\u{1F4AC}",
         },
         {
           title:
@@ -2238,8 +2586,7 @@ export default function EmployeeDashboardPage() {
               "/wchr/scan"
             ),
           accent: "#14b8a6",
-          icon:
-            "\u{1F3AB}",
+          icon: "\u{1F3AB}",
         },
       ],
       [t]
@@ -2251,8 +2598,7 @@ export default function EmployeeDashboardPage() {
 
   const todayBirthdays =
     useMemo(() => {
-      const today =
-        new Date();
+      const today = new Date();
 
       return birthdays.filter(
         (item) =>
@@ -2342,7 +2688,8 @@ export default function EmployeeDashboardPage() {
           title:
             t.totalNews,
           value:
-            announcements.length,
+            announcements.length +
+            dashboardNotices.length,
           subtitle:
             t.currentUpdates,
           accent:
@@ -2355,6 +2702,7 @@ export default function EmployeeDashboardPage() {
         visiblePosition,
         quickCards.length,
         announcements.length,
+        dashboardNotices.length,
         t,
       ]
     );
@@ -2384,17 +2732,14 @@ export default function EmployeeDashboardPage() {
           color: "#fff",
           boxShadow:
             "0 24px 60px rgba(23,105,170,0.22)",
-          position:
-            "relative",
-          overflow:
-            "hidden",
+          position: "relative",
+          overflow: "hidden",
           marginBottom: 16,
         }}
       >
         <div
           style={{
-            position:
-              "absolute",
+            position: "absolute",
             width:
               isMobile
                 ? 190
@@ -2410,10 +2755,7 @@ export default function EmployeeDashboardPage() {
               isMobile
                 ? -100
                 : -125,
-            right:
-              isMobile
-                ? -55
-                : -55,
+            right: -55,
             pointerEvents:
               "none",
           }}
@@ -2421,33 +2763,7 @@ export default function EmployeeDashboardPage() {
 
         <div
           style={{
-            position:
-              "absolute",
-            width:
-              isMobile
-                ? 110
-                : 160,
-            height:
-              isMobile
-                ? 110
-                : 160,
-            borderRadius: 999,
-            background:
-              "rgba(255,255,255,0.05)",
-            bottom: -65,
-            right:
-              isMobile
-                ? 35
-                : 150,
-            pointerEvents:
-              "none",
-          }}
-        />
-
-        <div
-          style={{
-            position:
-              "relative",
+            position: "relative",
             display: "flex",
             alignItems:
               "flex-start",
@@ -2484,8 +2800,7 @@ export default function EmployeeDashboardPage() {
                   isMobile
                     ? 18
                     : 21,
-                overflow:
-                  "hidden",
+                overflow: "hidden",
                 background:
                   "rgba(255,255,255,0.12)",
                 border:
@@ -2530,11 +2845,7 @@ export default function EmployeeDashboardPage() {
               )}
             </div>
 
-            <div
-              style={{
-                minWidth: 0,
-              }}
-            >
+            <div style={{ minWidth: 0 }}>
               <div
                 style={{
                   fontSize: 9.5,
@@ -2576,8 +2887,7 @@ export default function EmployeeDashboardPage() {
                 style={{
                   display: "flex",
                   gap: 7,
-                  flexWrap:
-                    "wrap",
+                  flexWrap: "wrap",
                   alignItems:
                     "center",
                 }}
@@ -2594,8 +2904,7 @@ export default function EmployeeDashboardPage() {
                       "1px solid rgba(255,255,255,0.14)",
                     fontSize:
                       10.5,
-                    fontWeight:
-                      800,
+                    fontWeight: 800,
                   }}
                 >
                   {visiblePosition}
@@ -2645,8 +2954,7 @@ export default function EmployeeDashboardPage() {
           <div
             style={{
               display: "flex",
-              alignItems:
-                "center",
+              alignItems: "center",
               gap: 7,
               width:
                 isMobile
@@ -2685,8 +2993,7 @@ export default function EmployeeDashboardPage() {
 
         <div
           style={{
-            position:
-              "relative",
+            position: "relative",
             marginTop: 15,
             borderRadius: 16,
             padding:
@@ -2698,8 +3005,7 @@ export default function EmployeeDashboardPage() {
             border:
               "1px solid rgba(255,255,255,0.12)",
             display: "flex",
-            alignItems:
-              "center",
+            alignItems: "center",
             justifyContent:
               "space-between",
             gap: 10,
@@ -2725,7 +3031,7 @@ export default function EmployeeDashboardPage() {
               fontWeight: 700,
             }}
           >
-            Update 1.7
+            Update 1.8
           </div>
         </div>
       </section>
@@ -2811,6 +3117,62 @@ export default function EmployeeDashboardPage() {
             </div>
           </GlassCard>
 
+          <GlassCard
+            title={
+              t.stationManagerMessage
+            }
+            subtitle={
+              t.stationManagerMessageSubtitle
+            }
+            icon={"\u{1F4E2}"}
+            accent="#1f7cc1"
+            isMobile={isMobile}
+          >
+            <div
+              style={{
+                background:
+                  "linear-gradient(135deg,#edf7ff 0%,#f8fcff 100%)",
+                border:
+                  "1px solid #d6ebff",
+                borderRadius: 16,
+                padding: 14,
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  whiteSpace:
+                    "pre-line",
+                  color:
+                    "#1e293b",
+                  fontSize: 13,
+                  lineHeight: 1.65,
+                }}
+              >
+                {stationMessage ||
+                  t.noStationMessage}
+              </p>
+
+              {stationMessage && (
+                <p
+                  style={{
+                    margin:
+                      "9px 0 0",
+                    fontSize:
+                      11.5,
+                    color:
+                      "#64748b",
+                    fontWeight:
+                      700,
+                  }}
+                >
+                  {t.by}{" "}
+                  {stationMessageAuthor}
+                </p>
+              )}
+            </div>
+          </GlassCard>
+
           <RecognizedEmployeesBanner
             items={
               recognizedEmployees
@@ -2821,6 +3183,377 @@ export default function EmployeeDashboardPage() {
               setSelectedRecognizedEmployee
             }
           />
+
+          <GlassCard
+            title={
+              t.upcomingEvents
+            }
+            subtitle={
+              t.upcomingEventsSubtitle
+            }
+            icon={"\u{1F4C5}"}
+            accent="#3b82f6"
+            isMobile={isMobile}
+          >
+            {loading ? (
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#94a3b8",
+                }}
+              >
+                {t.loading}
+              </p>
+            ) : dashboardEvents.length ===
+              0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#64748b",
+                }}
+              >
+                {t.noEvents}
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                {dashboardEvents.map(
+                  (event) => (
+                    <div
+                      key={
+                        event.id
+                      }
+                      style={{
+                        borderRadius:
+                          16,
+                        padding: 13,
+                        background:
+                          "linear-gradient(135deg,#eff6ff 0%,#ffffff 100%)",
+                        border:
+                          "1px solid #dbeafe",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontWeight:
+                            900,
+                          fontSize:
+                            14,
+                          color:
+                            "#0f172a",
+                        }}
+                      >
+                        {event.title ||
+                          "Event"}
+                      </p>
+
+                      <p
+                        style={{
+                          margin:
+                            "5px 0 0",
+                          fontSize:
+                            11.5,
+                          color:
+                            "#2563eb",
+                          fontWeight:
+                            750,
+                        }}
+                      >
+                        {formatEventDate(
+                          event.date,
+                          language
+                        )}
+                        {event.time
+                          ? ` \u00B7 ${event.time}`
+                          : ""}
+                      </p>
+
+                      {event.details && (
+                        <p
+                          style={{
+                            margin:
+                              "7px 0 0",
+                            fontSize:
+                              12,
+                            color:
+                              "#475569",
+                            lineHeight:
+                              1.55,
+                            whiteSpace:
+                              "pre-line",
+                          }}
+                        >
+                          {
+                            event.details
+                          }
+                        </p>
+                      )}
+
+                      {event.rsvpEnabled ===
+                        true && (
+                        <EventRsvpButtons
+                          event={
+                            event
+                          }
+                          selectedResponse={
+                            eventResponses[
+                              event.id
+                            ] || ""
+                          }
+                          saving={
+                            savingEventResponse ===
+                            event.id
+                          }
+                          language={
+                            language
+                          }
+                          onRespond={
+                            handleEventResponse
+                          }
+                        />
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title={
+              t.notices
+            }
+            subtitle={
+              t.noticesSubtitle
+            }
+            icon={"\u{1F4CC}"}
+            accent="#f59e0b"
+            isMobile={isMobile}
+          >
+            {dashboardNotices.length ===
+            0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#64748b",
+                }}
+              >
+                {t.noNotices}
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 9,
+                }}
+              >
+                {dashboardNotices.map(
+                  (item) => (
+                    <div
+                      key={
+                        item.id
+                      }
+                      style={{
+                        borderRadius:
+                          15,
+                        padding:
+                          12,
+                        background:
+                          "linear-gradient(135deg,#fffbeb 0%,#ffffff 100%)",
+                        border:
+                          "1px solid #fde68a",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontWeight:
+                            850,
+                          color:
+                            "#0f172a",
+                          fontSize:
+                            13.5,
+                        }}
+                      >
+                        {item.title ||
+                          "Notice"}
+                      </p>
+
+                      {item.body && (
+                        <p
+                          style={{
+                            margin:
+                              "7px 0 0",
+                            fontSize:
+                              12,
+                            color:
+                              "#475569",
+                            lineHeight:
+                              1.55,
+                            whiteSpace:
+                              "pre-line",
+                          }}
+                        >
+                          {
+                            item.body
+                          }
+                        </p>
+                      )}
+
+                      {item.link && (
+                        <a
+                          href={
+                            item.link
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display:
+                              "inline-block",
+                            marginTop:
+                              8,
+                            fontSize:
+                              11.5,
+                            fontWeight:
+                              800,
+                            color:
+                              "#b45309",
+                            textDecoration:
+                              "none",
+                          }}
+                        >
+                          {t.viewMore}{" "}
+                          {"\u2192"}
+                        </a>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title={
+              t.operationalDocs
+            }
+            subtitle={
+              t.operationalDocsSubtitle
+            }
+            icon={"\u{1F4C4}"}
+            accent="#10b981"
+            isMobile={isMobile}
+          >
+            {dashboardDocs.length ===
+            0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#64748b",
+                }}
+              >
+                {t.noDocs}
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 9,
+                }}
+              >
+                {dashboardDocs.map(
+                  (item) => (
+                    <div
+                      key={
+                        item.id
+                      }
+                      style={{
+                        borderRadius:
+                          15,
+                        padding:
+                          12,
+                        background:
+                          "linear-gradient(135deg,#ecfdf5 0%,#ffffff 100%)",
+                        border:
+                          "1px solid #d1fae5",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontWeight:
+                            850,
+                          color:
+                            "#0f172a",
+                          fontSize:
+                            13.5,
+                        }}
+                      >
+                        {item.title ||
+                          item.filename ||
+                          "Document"}
+                      </p>
+
+                      {item.filename && (
+                        <p
+                          style={{
+                            margin:
+                              "4px 0 0",
+                            fontSize:
+                              10.5,
+                            color:
+                              "#64748b",
+                          }}
+                        >
+                          {
+                            item.filename
+                          }
+                        </p>
+                      )}
+
+                      {item.url && (
+                        <a
+                          href={
+                            item.url
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display:
+                              "inline-block",
+                            marginTop:
+                              8,
+                            fontSize:
+                              11.5,
+                            fontWeight:
+                              800,
+                            color:
+                              "#047857",
+                            textDecoration:
+                              "none",
+                          }}
+                        >
+                          {
+                            t.openDocument
+                          }{" "}
+                          {"\u2192"}
+                        </a>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </GlassCard>
 
           <GlassCard
             title={
@@ -2838,8 +3571,10 @@ export default function EmployeeDashboardPage() {
                 <span
                   style={{
                     fontSize: 11,
-                    fontWeight: 750,
-                    color: "#64748b",
+                    fontWeight:
+                      750,
+                    color:
+                      "#64748b",
                   }}
                 >
                   {photos.length}{" "}
@@ -2856,7 +3591,8 @@ export default function EmployeeDashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#94a3b8",
+                  color:
+                    "#94a3b8",
                 }}
               >
                 {t.loading}
@@ -2866,7 +3602,8 @@ export default function EmployeeDashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#64748b",
+                  color:
+                    "#64748b",
                 }}
               >
                 {t.noHighlights}
@@ -2886,7 +3623,9 @@ export default function EmployeeDashboardPage() {
                   .slice(0, 6)
                   .map((p) => (
                     <div
-                      key={p.id}
+                      key={
+                        p.id
+                      }
                       style={{
                         background:
                           "#fff",
@@ -2898,7 +3637,8 @@ export default function EmployeeDashboardPage() {
                           "hidden",
                         boxShadow:
                           "0 10px 22px rgba(15,23,42,0.045)",
-                        minWidth: 0,
+                        minWidth:
+                          0,
                       }}
                     >
                       <div
@@ -3000,7 +3740,8 @@ export default function EmployeeDashboardPage() {
                   >
                     <h3
                       style={{
-                        margin: 0,
+                        margin:
+                          0,
                         fontSize:
                           isMobile
                             ? 16
@@ -3120,7 +3861,8 @@ export default function EmployeeDashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#94a3b8",
+                  color:
+                    "#94a3b8",
                 }}
               >
                 {t.loading}
@@ -3130,7 +3872,8 @@ export default function EmployeeDashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#64748b",
+                  color:
+                    "#64748b",
                 }}
               >
                 {t.announcementsEmpty}
@@ -3226,7 +3969,8 @@ export default function EmployeeDashboardPage() {
 
                       <p
                         style={{
-                          margin: 0,
+                          margin:
+                            0,
                           fontWeight:
                             850,
                           color:
@@ -3307,8 +4051,10 @@ export default function EmployeeDashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#64748b",
-                  fontSize: 12.5,
+                  color:
+                    "#64748b",
+                  fontSize:
+                    12.5,
                 }}
               >
                 {t.birthdaysEmptyToday}
@@ -3316,7 +4062,8 @@ export default function EmployeeDashboardPage() {
             ) : (
               <div
                 style={{
-                  display: "grid",
+                  display:
+                    "grid",
                   gap: 9,
                 }}
               >
@@ -3355,8 +4102,10 @@ export default function EmployeeDashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#64748b",
-                  fontSize: 12.5,
+                  color:
+                    "#64748b",
+                  fontSize:
+                    12.5,
                 }}
               >
                 {t.birthdaysEmptyMonth}
@@ -3364,7 +4113,8 @@ export default function EmployeeDashboardPage() {
             ) : (
               <div
                 style={{
-                  display: "grid",
+                  display:
+                    "grid",
                   gap: 9,
                 }}
               >
@@ -3410,7 +4160,8 @@ export default function EmployeeDashboardPage() {
                 margin:
                   "0 0 10px",
                 fontSize: 12,
-                color: "#64748b",
+                color:
+                  "#64748b",
               }}
             >
               {t.topTodaySub}
@@ -3420,8 +4171,10 @@ export default function EmployeeDashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#94a3b8",
-                  fontSize: 12,
+                  color:
+                    "#94a3b8",
+                  fontSize:
+                    12,
                 }}
               >
                 {t.loadingWchr}
@@ -3429,7 +4182,8 @@ export default function EmployeeDashboardPage() {
             ) : (
               <div
                 style={{
-                  display: "grid",
+                  display:
+                    "grid",
                   gap: 9,
                 }}
               >
@@ -3461,7 +4215,8 @@ export default function EmployeeDashboardPage() {
                 margin:
                   "0 0 10px",
                 fontSize: 12,
-                color: "#64748b",
+                color:
+                  "#64748b",
               }}
             >
               {t.topWeekSub}
@@ -3471,8 +4226,10 @@ export default function EmployeeDashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#94a3b8",
-                  fontSize: 12,
+                  color:
+                    "#94a3b8",
+                  fontSize:
+                    12,
                 }}
               >
                 {t.loadingWchr}
@@ -3480,7 +4237,8 @@ export default function EmployeeDashboardPage() {
             ) : (
               <div
                 style={{
-                  display: "grid",
+                  display:
+                    "grid",
                   gap: 9,
                 }}
               >
@@ -3533,4 +4291,4 @@ export default function EmployeeDashboardPage() {
   );
 }
 
-// END EmployeeDashboardPage
+// END EmployeeDashboardPage.jsx
