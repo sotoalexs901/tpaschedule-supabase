@@ -3,11 +3,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
+  doc,
+  getDoc,
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
-const RSVP_OPTIONS = [
+const STANDARD_OPTIONS = [
   {
     key: "yes",
     label: "Yes",
@@ -36,6 +38,25 @@ const RSVP_OPTIONS = [
     key: "cant",
     label: "Sorry, I can't",
     emoji: "\u{1F614}",
+    background: "#f8fafc",
+    border: "#cbd5e1",
+    text: "#475569",
+  },
+];
+
+const JOB_OPTIONS = [
+  {
+    key: "apply",
+    label: "Applicants",
+    emoji: "\u{1F4BC}",
+    background: "#f5f3ff",
+    border: "#c4b5fd",
+    text: "#6d28d9",
+  },
+  {
+    key: "not_interested",
+    label: "Not Interested",
+    emoji: "\u{1F6AB}",
     background: "#f8fafc",
     border: "#cbd5e1",
     text: "#475569",
@@ -95,6 +116,68 @@ export default function EventRsvpSummary({
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(enabled);
   const [selectedGroup, setSelectedGroup] = useState("");
+  const [responseMode, setResponseMode] = useState("rsvp");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadEventMode() {
+      if (!enabled || !eventId) {
+        setResponseMode("rsvp");
+        return;
+      }
+
+      try {
+        const eventSnap = await getDoc(
+          doc(
+            db,
+            "dashboard_events",
+            eventId
+          )
+        );
+
+        if (!active) return;
+
+        if (!eventSnap.exists()) {
+          setResponseMode("rsvp");
+          return;
+        }
+
+        const data = eventSnap.data() || {};
+
+        setResponseMode(
+          String(
+            data.responseMode ||
+              (data.rsvpEnabled ? "rsvp" : "none")
+          )
+            .trim()
+            .toLowerCase()
+        );
+      } catch (error) {
+        console.error(
+          "Error loading event response mode:",
+          error
+        );
+
+        if (active) {
+          setResponseMode("rsvp");
+        }
+      }
+    }
+
+    loadEventMode().catch(
+      console.error
+    );
+
+    return () => {
+      active = false;
+    };
+  }, [eventId, enabled]);
+
+  const options =
+    responseMode === "job_posting"
+      ? JOB_OPTIONS
+      : STANDARD_OPTIONS;
 
   useEffect(() => {
     if (!enabled || !eventId) {
@@ -120,20 +203,29 @@ export default function EventRsvpSummary({
             id: responseDoc.id,
             ...responseDoc.data(),
           }))
-          .filter((item) =>
-            RSVP_OPTIONS.some(
-              (option) =>
-                option.key ===
-                String(item.response || "")
+          .filter((item) => {
+            const key = String(
+              item.response || ""
             )
-          );
+              .trim()
+              .toLowerCase();
+
+            return [
+              "yes",
+              "no",
+              "maybe",
+              "cant",
+              "apply",
+              "not_interested",
+            ].includes(key);
+          });
 
         setResponses(items);
         setLoading(false);
       },
       (error) => {
         console.error(
-          "Error listening to event RSVP responses:",
+          "Error listening to event responses:",
           error
         );
 
@@ -145,16 +237,26 @@ export default function EventRsvpSummary({
     return () => unsubscribe();
   }, [eventId, enabled]);
 
+  useEffect(() => {
+    setSelectedGroup("");
+  }, [responseMode, eventId]);
+
   const grouped = useMemo(() => {
     const result = {
       yes: [],
       no: [],
       maybe: [],
       cant: [],
+      apply: [],
+      not_interested: [],
     };
 
     responses.forEach((item) => {
-      const key = String(item.response || "");
+      const key = String(
+        item.response || ""
+      )
+        .trim()
+        .toLowerCase();
 
       if (result[key]) {
         result[key].push(item);
@@ -172,9 +274,11 @@ export default function EventRsvpSummary({
     return result;
   }, [responses]);
 
-  if (!enabled) return null;
+  if (!enabled || responseMode === "none") {
+    return null;
+  }
 
-  const selectedOption = RSVP_OPTIONS.find(
+  const selectedOption = options.find(
     (option) =>
       option.key === selectedGroup
   );
@@ -183,13 +287,25 @@ export default function EventRsvpSummary({
     ? grouped[selectedGroup] || []
     : [];
 
+  const visibleResponseCount = options.reduce(
+    (total, option) =>
+      total +
+      (grouped[option.key]?.length || 0),
+    0
+  );
+
+  const isJobPosting =
+    responseMode === "job_posting";
+
   return (
     <>
       <div
         style={{
           marginTop: 12,
           paddingTop: 12,
-          borderTop: "1px solid #bfdbfe",
+          borderTop: isJobPosting
+            ? "1px solid #ddd6fe"
+            : "1px solid #bfdbfe",
         }}
       >
         <div
@@ -206,12 +322,16 @@ export default function EventRsvpSummary({
             style={{
               fontSize: 10.5,
               fontWeight: 850,
-              color: "#475569",
+              color: isJobPosting
+                ? "#6d28d9"
+                : "#475569",
               textTransform: "uppercase",
               letterSpacing: "0.06em",
             }}
           >
-            Employee RSVP
+            {isJobPosting
+              ? "Job Posting Responses"
+              : "Employee RSVP"}
           </div>
 
           <div
@@ -223,8 +343,8 @@ export default function EventRsvpSummary({
           >
             {loading
               ? "Loading..."
-              : `${responses.length} response${
-                  responses.length === 1 ? "" : "s"
+              : `${visibleResponseCount} response${
+                  visibleResponseCount === 1 ? "" : "s"
                 }`}
           </div>
         </div>
@@ -237,7 +357,7 @@ export default function EventRsvpSummary({
             gap: 7,
           }}
         >
-          {RSVP_OPTIONS.map((option) => {
+          {options.map((option) => {
             const count =
               grouped[option.key]?.length || 0;
 
@@ -245,31 +365,24 @@ export default function EventRsvpSummary({
               <button
                 key={option.key}
                 type="button"
-                disabled={loading}
                 onClick={() =>
-                  setSelectedGroup(option.key)
+                  setSelectedGroup(
+                    option.key
+                  )
                 }
                 style={{
-                  border:
-                    `1px solid ${option.border}`,
-                  background:
-                    option.background,
-                  color:
-                    option.text,
+                  border: `1px solid ${option.border}`,
+                  background: option.background,
+                  color: option.text,
                   borderRadius: 12,
                   padding: "8px 9px",
-                  cursor:
-                    loading
-                      ? "default"
-                      : "pointer",
+                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent:
                     "space-between",
                   gap: 8,
                   minWidth: 0,
-                  opacity:
-                    loading ? 0.7 : 1,
                 }}
               >
                 <span
@@ -282,100 +395,85 @@ export default function EventRsvpSummary({
                     fontWeight: 800,
                   }}
                 >
-                  <span
-                    style={{
-                      fontSize: 15,
-                      flexShrink: 0,
-                    }}
-                  >
+                  <span style={{ fontSize: 15 }}>
                     {option.emoji}
                   </span>
-
-                  <span
-                    style={{
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
+                  <span>
                     {option.label}
                   </span>
                 </span>
 
-                <span
+                <strong
                   style={{
-                    minWidth: 24,
-                    height: 24,
-                    borderRadius: 999,
-                    background:
-                      "rgba(255,255,255,0.78)",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 11,
-                    fontWeight: 900,
+                    fontSize: 13,
                     flexShrink: 0,
                   }}
                 >
                   {count}
-                </span>
+                </strong>
               </button>
             );
           })}
         </div>
 
-        <div
-          style={{
-            marginTop: 7,
-            fontSize: 10,
-            color: "#64748b",
-          }}
-        >
-          Tap a response group to view employee names.
-        </div>
+        {isJobPosting && (
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 10.5,
+              color: "#64748b",
+              lineHeight: 1.5,
+            }}
+          >
+            Select <b>Applicants</b> to view the employees who applied.
+          </div>
+        )}
       </div>
 
-      {selectedGroup && selectedOption && (
+      {selectedGroup && (
         <div
+          role="dialog"
+          aria-modal="true"
           onClick={() =>
             setSelectedGroup("")
           }
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 1200,
+            zIndex: 9999,
             background:
               "rgba(15,23,42,0.58)",
+            backdropFilter:
+              "blur(6px)",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
+            justifyContent:
+              "center",
             padding: 16,
           }}
         >
           <div
-            onClick={(event) =>
-              event.stopPropagation()
+            onClick={(e) =>
+              e.stopPropagation()
             }
             style={{
-              width:
-                "min(540px, 100%)",
-              maxHeight: "86vh",
+              width: "100%",
+              maxWidth: 520,
+              maxHeight: "82vh",
               overflowY: "auto",
               background: "#ffffff",
               borderRadius: 22,
               border:
                 "1px solid #e2e8f0",
               boxShadow:
-                "0 30px 80px rgba(15,23,42,0.30)",
+                "0 30px 80px rgba(15,23,42,0.28)",
             }}
           >
             <div
               style={{
                 padding: 16,
                 borderBottom:
-                  `1px solid ${selectedOption.border}`,
-                background:
-                  selectedOption.background,
+                  "1px solid #e2e8f0",
                 display: "flex",
                 alignItems: "center",
                 justifyContent:
@@ -387,43 +485,34 @@ export default function EventRsvpSummary({
                 <div
                   style={{
                     fontSize: 10,
+                    color:
+                      selectedOption?.text ||
+                      "#475569",
+                    fontWeight: 850,
                     textTransform:
                       "uppercase",
                     letterSpacing:
-                      "0.08em",
-                    fontWeight: 850,
-                    color:
-                      selectedOption.text,
+                      "0.06em",
                   }}
                 >
-                  Event RSVP
+                  {isJobPosting
+                    ? "Job Posting"
+                    : "Event RSVP"}
                 </div>
 
                 <h3
                   style={{
-                    margin: "4px 0 0",
+                    margin:
+                      "4px 0 0",
                     fontSize: 18,
-                    fontWeight: 900,
-                    color: "#0f172a",
+                    color:
+                      "#0f172a",
                   }}
                 >
-                  {selectedOption.emoji}{" "}
-                  {selectedOption.label}
+                  {selectedOption?.emoji}{" "}
+                  {selectedOption?.label}{" "}
+                  ({selectedPeople.length})
                 </h3>
-
-                <div
-                  style={{
-                    marginTop: 3,
-                    fontSize: 11.5,
-                    color: "#64748b",
-                    fontWeight: 700,
-                  }}
-                >
-                  {selectedPeople.length} employee
-                  {selectedPeople.length === 1
-                    ? ""
-                    : "s"}
-                </div>
               </div>
 
               <button
@@ -432,16 +521,17 @@ export default function EventRsvpSummary({
                   setSelectedGroup("")
                 }
                 style={{
-                  border: "none",
                   width: 34,
                   height: 34,
                   borderRadius: 10,
+                  border:
+                    "1px solid #e2e8f0",
                   background:
-                    "rgba(255,255,255,0.82)",
-                  color: "#475569",
-                  cursor: "pointer",
-                  fontSize: 18,
-                  fontWeight: 800,
+                    "#f8fafc",
+                  cursor:
+                    "pointer",
+                  fontSize:
+                    18,
                 }}
               >
                 {"\u00D7"}
@@ -456,118 +546,175 @@ export default function EventRsvpSummary({
               {selectedPeople.length === 0 ? (
                 <div
                   style={{
-                    padding: 16,
-                    borderRadius: 14,
+                    padding:
+                      18,
+                    borderRadius:
+                      14,
+                    background:
+                      "#f8fafc",
                     border:
                       "1px dashed #cbd5e1",
-                    color: "#64748b",
-                    textAlign: "center",
-                    fontSize: 12,
+                    textAlign:
+                      "center",
+                    color:
+                      "#64748b",
+                    fontSize:
+                      12.5,
                   }}
                 >
-                  No employees selected this response.
+                  No employees in this group.
                 </div>
               ) : (
                 <div
                   style={{
-                    display: "grid",
+                    display:
+                      "grid",
                     gap: 9,
                   }}
                 >
-                  {selectedPeople.map((person) => {
-                    const name =
-                      getResponderName(person);
+                  {selectedPeople.map(
+                    (person) => {
+                      const name =
+                        getResponderName(
+                          person
+                        );
 
-                    return (
-                      <div
-                        key={person.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          border:
-                            "1px solid #e2e8f0",
-                          borderRadius: 14,
-                          padding: 11,
-                          background: "#ffffff",
-                        }}
-                      >
+                      return (
                         <div
+                          key={
+                            person.id
+                          }
                           style={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: 12,
-                            background:
-                              selectedOption.background,
+                            borderRadius:
+                              14,
                             border:
-                              `1px solid ${selectedOption.border}`,
-                            color:
-                              selectedOption.text,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 12,
-                            fontWeight: 900,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {getInitials(name)}
-                        </div>
-
-                        <div
-                          style={{
-                            minWidth: 0,
-                            flex: 1,
+                              "1px solid #e2e8f0",
+                            background:
+                              "#ffffff",
+                            padding:
+                              11,
+                            display:
+                              "flex",
+                            alignItems:
+                              "center",
+                            justifyContent:
+                              "space-between",
+                            gap: 10,
                           }}
                         >
                           <div
                             style={{
-                              fontSize: 13,
-                              fontWeight: 850,
-                              color: "#0f172a",
-                              wordBreak: "break-word",
+                              display:
+                                "flex",
+                              alignItems:
+                                "center",
+                              gap: 10,
+                              minWidth:
+                                0,
                             }}
                           >
-                            {name}
-                          </div>
-
-                          <div
-                            style={{
-                              marginTop: 2,
-                              fontSize: 10.5,
-                              color: "#64748b",
-                            }}
-                          >
-                            {[
-                              person.position,
-                              person.department,
-                            ]
-                              .filter(Boolean)
-                              .join(" \u00B7 ") ||
-                              person.username ||
-                              "Team Member"}
-                          </div>
-
-                          {formatUpdatedAt(
-                            person.updatedAt
-                          ) && (
                             <div
                               style={{
-                                marginTop: 2,
-                                fontSize: 9.5,
-                                color: "#94a3b8",
+                                width:
+                                  38,
+                                height:
+                                  38,
+                                borderRadius:
+                                  12,
+                                background:
+                                  selectedOption?.background ||
+                                  "#f8fafc",
+                                border: `1px solid ${
+                                  selectedOption?.border ||
+                                  "#e2e8f0"
+                                }`,
+                                color:
+                                  selectedOption?.text ||
+                                  "#475569",
+                                display:
+                                  "flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                                fontWeight:
+                                  850,
+                                flexShrink:
+                                  0,
                               }}
                             >
-                              Updated{" "}
-                              {formatUpdatedAt(
-                                person.updatedAt
+                              {getInitials(
+                                name
                               )}
                             </div>
-                          )}
+
+                            <div
+                              style={{
+                                minWidth:
+                                  0,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize:
+                                    13,
+                                  fontWeight:
+                                    850,
+                                  color:
+                                    "#0f172a",
+                                  wordBreak:
+                                    "break-word",
+                                }}
+                              >
+                                {name}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop:
+                                    2,
+                                  fontSize:
+                                    10.5,
+                                  color:
+                                    "#64748b",
+                                }}
+                              >
+                                {[
+                                  person.position,
+                                  person.department,
+                                ]
+                                  .filter(
+                                    Boolean
+                                  )
+                                  .join(
+                                    " \u00B7 "
+                                  ) ||
+                                  person.username ||
+                                  "Employee"}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              textAlign:
+                                "right",
+                              flexShrink:
+                                0,
+                              fontSize:
+                                9.5,
+                              color:
+                                "#94a3b8",
+                            }}
+                          >
+                            {formatUpdatedAt(
+                              person.updatedAt
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    }
+                  )}
                 </div>
               )}
             </div>
@@ -577,3 +724,5 @@ export default function EventRsvpSummary({
     </>
   );
 }
+
+// END EventRsvpSummary.jsx
