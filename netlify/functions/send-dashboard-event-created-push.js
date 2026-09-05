@@ -274,9 +274,26 @@ exports.handler = async function handler(event) {
       .filter(Boolean)
       .join(" at ");
 
-    const title = "New Station Event";
+    const responseMode = normalizeText(
+      dashboardEvent.responseMode ||
+        (dashboardEvent.rsvpEnabled ? "rsvp" : "none")
+    ).toLowerCase();
 
-    const body = when
+    const isJobPosting =
+      responseMode === "job_posting" ||
+      normalizeText(
+        dashboardEvent.eventType
+      ).toLowerCase() === "job_posting";
+
+    const title = isJobPosting
+      ? "New Internal Job Posting"
+      : "New Station Event";
+
+    const body = isJobPosting
+      ? when
+        ? `${eventTitle} - application deadline ${when}. Open AeroStation Hub to review the posting and apply.`
+        : `${eventTitle}. Open AeroStation Hub to review the posting and apply.`
+      : when
       ? `${eventTitle} - ${when}. Open AeroStation Hub to view details${dashboardEvent.rsvpEnabled === true ? " and RSVP." : "."}`
       : `${eventTitle}. Open AeroStation Hub to view details${dashboardEvent.rsvpEnabled === true ? " and RSVP." : "."}`;
 
@@ -295,6 +312,10 @@ exports.handler = async function handler(event) {
           type: "dashboard_event_created",
           eventId,
           eventTitle,
+          responseMode,
+          eventType: normalizeText(
+            dashboardEvent.eventType
+          ),
         },
 
         webpush: {
