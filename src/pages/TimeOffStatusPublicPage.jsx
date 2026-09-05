@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { triggerTrainingNoticePush } from "../utils/trainingPush.js";
 import {
   APP_NAME,
   APP_SUBTITLE,
@@ -589,7 +590,7 @@ export default function TimeOffStatusPublicPage() {
         return;
       }
 
-      await addDoc(
+      const noticeRef = await addDoc(
         collection(db, "training_notices"),
         {
           employeeId,
@@ -658,11 +659,20 @@ export default function TimeOffStatusPublicPage() {
 
           pushStatus:
             "PENDING",
+
+          pushError:
+            "",
         }
       );
 
+      // Fire-and-forget. The Training Notice is already safely stored
+      // before Push delivery is requested.
+      triggerTrainingNoticePush(
+        noticeRef.id
+      );
+
       setStatusMessage(
-        "Training Notice created successfully."
+        "Training Notice created successfully. Employee notification requested."
       );
 
       setEmployeeId("");
