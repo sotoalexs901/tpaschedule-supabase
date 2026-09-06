@@ -15,6 +15,22 @@ import {
   APP_SUBTITLE,
 } from "../config/appConfig.js";
 
+
+const STANDARD_DEPARTMENTS = [
+  "AA BSO",
+  "AV",
+  "AV RAMP",
+  "DL Cabin Service",
+  "Duty Managers",
+  "Eulen Admin",
+  "Station Management / Admin",
+  "SY",
+  "SY RAMP",
+  "WCHR",
+  "WL",
+  "WL RAMP",
+];
+
 // IMPORTANT:
 // Employee names in this collection are stored as:
 // LAST NAME + FIRST NAME
@@ -26,7 +42,7 @@ import {
 // "Napoles Alexis" -> "anapoles"
 // "Diaz Evelin"    -> "ediaz"
 
-async function syncUserLink(employeeId, loginUsername) {
+async function syncUserLink(employeeId, loginUsername, employeeData = {}) {
   const cleanUsername = String(loginUsername || "").trim().toLowerCase();
   if (!cleanUsername) return;
 
@@ -57,6 +73,12 @@ async function syncUserLink(employeeId, loginUsername) {
       Array.from(refs.values()).map((ref) =>
         updateDoc(ref, {
           employeeId,
+          ...(normalizeDisplay(employeeData.department)
+            ? { department: normalizeDisplay(employeeData.department) }
+            : {}),
+          ...(normalizeDisplay(employeeData.position)
+            ? { position: normalizeDisplay(employeeData.position) }
+            : {}),
         })
       )
     );
@@ -438,7 +460,7 @@ export default function EmployeesPage() {
   }, [name, employees, editingId]);
 
   const departments = useMemo(() => {
-    const values = new Set();
+    const values = new Set(STANDARD_DEPARTMENTS);
 
     employees.forEach((emp) => {
       const dept = normalizeDisplay(emp.department);
@@ -557,7 +579,10 @@ export default function EmployeesPage() {
           showInStationTeam,
         });
 
-        await syncUserLink(editingId, cleanUsername);
+        await syncUserLink(editingId, cleanUsername, {
+          department: department.trim(),
+          position: position.trim(),
+        });
         setFormMessage("Employee updated successfully.");
       } else {
         const ref = await addDoc(collection(db, "employees"), {
@@ -572,7 +597,10 @@ export default function EmployeesPage() {
           createdAt: new Date().toISOString(),
         });
 
-        await syncUserLink(ref.id, cleanUsername);
+        await syncUserLink(ref.id, cleanUsername, {
+          department: department.trim(),
+          position: position.trim(),
+        });
         setFormMessage("Employee created successfully.");
       }
 
@@ -818,7 +846,10 @@ export default function EmployeesPage() {
         });
 
         if (cleanUsername) {
-          await syncUserLink(ref.id, cleanUsername);
+          await syncUserLink(ref.id, cleanUsername, {
+            department: dept.trim(),
+            position: pos.trim(),
+          });
         }
 
         createdCount++;
@@ -1103,10 +1134,29 @@ export default function EmployeesPage() {
 
           <div>
             <FieldLabel>Department</FieldLabel>
-            <TextInput
+            <SelectInput
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
-            />
+            >
+              <option value="">Select Department</option>
+              {departments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </SelectInput>
+
+            <div
+              style={{
+                marginTop: 7,
+                fontSize: 10.5,
+                color: "#64748b",
+                lineHeight: 1.45,
+              }}
+            >
+              Duty Managers and Station Management / Admin are available as
+              dedicated recipient departments for schedule notifications.
+            </div>
           </div>
 
           <div>
