@@ -581,6 +581,11 @@ export default function AppLayout() {
     user?.role === "agent" ||
     user?.role === "supervisor";
 
+  const canViewMySchedule =
+    user?.role === "agent" ||
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager";
+
   const isManagementUser =
     user?.role === "station_manager" ||
     user?.role === "duty_manager";
@@ -978,13 +983,15 @@ export default function AppLayout() {
       );
     }
 
-    if (isAgentOrSupervisor) {
+    if (canViewMySchedule) {
       schedules.push({
         to: "/my-schedule",
         label: "My Schedule",
         icon: "\u{1F4C5}",
       });
+    }
 
+    if (isAgentOrSupervisor) {
       timeoff.push({
         to: "/request-dayoff-internal",
         label: "Request / My Time Off",
@@ -1256,6 +1263,7 @@ export default function AppLayout() {
     canAccessRegularManagerSchedules,
     canAccessCabinServiceOnlyManager,
     isAgentOrSupervisor,
+    canViewMySchedule,
     canAccessTimesheets,
     canAccessOperationalReports,
     canAccessOperationalReportAdmin,
