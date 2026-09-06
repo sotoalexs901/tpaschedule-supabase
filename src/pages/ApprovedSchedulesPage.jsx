@@ -277,26 +277,30 @@ function DistributionModal({
   const isLastMinute =
     mode === "last_minute";
 
-  const scheduleDepartments =
+  const recipientGroups =
     useMemo(() => {
-      return Array.from(
+      const actualDepartments = Array.from(
         new Set(
-          schedules
+          users
             .map((item) =>
-              String(
-                item.department || ""
-              ).trim()
+              getUserDepartment(item)
             )
             .filter(Boolean)
         )
       ).sort((a, b) =>
         a.localeCompare(b)
       );
-    }, [schedules]);
+
+      return [
+        "Duty Managers",
+        "Station Management / Admin",
+        ...actualDepartments,
+      ];
+    }, [users]);
 
   const [department, setDepartment] =
     useState(
-      scheduleDepartments[0] || ""
+      recipientGroups[0] || ""
     );
 
   const [selectedUserIds, setSelectedUserIds] =
@@ -322,13 +326,45 @@ function DistributionModal({
 
       return users
         .filter((item) => {
+          const role = normalizeText(
+            item?.role
+          );
+
+          const itemDepartment =
+            normalizeText(
+              getUserDepartment(item)
+            );
+
+          if (
+            cleanDepartment ===
+            "duty managers"
+          ) {
+            return (
+              role ===
+              "duty_manager"
+            );
+          }
+
+          if (
+            cleanDepartment ===
+            "station management / admin"
+          ) {
+            return (
+              role ===
+                "station_manager" ||
+              role ===
+                "admin"
+            );
+          }
+
           if (!cleanDepartment) {
             return true;
           }
 
-          return normalizeText(
-            getUserDepartment(item)
-          ) === cleanDepartment;
+          return (
+            itemDepartment ===
+            cleanDepartment
+          );
         })
         .sort((a, b) =>
           getUserName(a).localeCompare(
@@ -670,7 +706,7 @@ function DistributionModal({
                   "0.05em",
               }}
             >
-              Department
+              Recipient Group / Department
             </label>
 
             <select
@@ -693,7 +729,7 @@ function DistributionModal({
                 color: "#0f172a",
               }}
             >
-              {scheduleDepartments.map(
+              {recipientGroups.map(
                 (dept) => (
                   <option
                     key={dept}
@@ -704,6 +740,18 @@ function DistributionModal({
                 )
               )}
             </select>
+
+            <div
+              style={{
+                marginTop: 7,
+                fontSize: 10.5,
+                color: "#64748b",
+                lineHeight: 1.5,
+              }}
+            >
+              Recipient groups are built from the employee records in AeroStation Hub.
+              Duty Managers and Station Management / Admin are grouped automatically by role.
+            </div>
           </div>
 
           <div>
@@ -792,7 +840,7 @@ function DistributionModal({
                     fontSize: 12,
                   }}
                 >
-                  No users found for this department.
+                  No users found for this group.
                 </div>
               ) : (
                 visibleUsers.map(
