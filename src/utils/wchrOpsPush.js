@@ -1,4 +1,4 @@
-/ src/utils/wchrOpsPush.js
+// src/utils/wchrOpsPush.js
 
 function fireAndForgetWchrOpsPush(endpoint, payload, label) {
   if (typeof window === "undefined") {
