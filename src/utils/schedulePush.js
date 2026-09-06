@@ -1,26 +1,19 @@
 // src/utils/schedulePush.js
 
 function fireAndForgetSchedulePush(endpoint, payload, label) {
-  if (typeof window === "undefined") {
-    return;
-  }
+  if (typeof window === "undefined") return;
 
   fetch(endpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     cache: "no-store",
     keepalive: true,
   })
     .then(async (response) => {
-      if (response.ok) {
-        return;
-      }
+      if (response.ok) return;
 
       let details = "";
-
       try {
         const result = await response.json();
         details = result?.error || "";
@@ -30,42 +23,29 @@ function fireAndForgetSchedulePush(endpoint, payload, label) {
 
       console.warn(
         `${label} completed, but Push delivery was not completed.`,
-        {
-          status: response.status,
-          details,
-          payload,
-        }
+        { status: response.status, details, payload }
       );
     })
     .catch((error) => {
       console.warn(
         `${label} completed, but Push delivery could not be requested.`,
-        {
-          error,
-          payload,
-        }
+        { error, payload }
       );
     });
 }
 
 export function triggerScheduleSubmittedPush(scheduleId) {
-  if (!scheduleId) {
-    return;
-  }
+  if (!scheduleId) return;
 
   fireAndForgetSchedulePush(
     "/.netlify/functions/send-schedule-submitted-push",
-    {
-      scheduleId: String(scheduleId),
-    },
+    { scheduleId: String(scheduleId) },
     "Schedule submission"
   );
 }
 
 export function triggerScheduleDecisionPush(scheduleId, decision) {
-  if (!scheduleId) {
-    return;
-  }
+  if (!scheduleId) return;
 
   const normalizedDecision = String(decision || "")
     .trim()
@@ -77,10 +57,7 @@ export function triggerScheduleDecisionPush(scheduleId, decision) {
   ) {
     console.warn(
       "Schedule decision Push ignored because decision is invalid.",
-      {
-        scheduleId,
-        decision,
-      }
+      { scheduleId, decision }
     );
     return;
   }
@@ -92,6 +69,54 @@ export function triggerScheduleDecisionPush(scheduleId, decision) {
       decision: normalizedDecision,
     },
     "Schedule decision"
+  );
+}
+
+async function postScheduleDistribution(endpoint, payload) {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result?.error || "Schedule notification failed.");
+  }
+
+  return result;
+}
+
+export function sendApprovedScheduleNotifications({
+  weekStart,
+  userIds,
+  scheduleIds = [],
+  departments = [],
+}) {
+  return postScheduleDistribution(
+    "/.netlify/functions/send-approved-schedule-notification-push",
+    { weekStart, userIds, scheduleIds, departments }
+  );
+}
+
+export function sendLastMinuteScheduleChange({
+  weekStart,
+  userIds,
+  message,
+  scheduleIds = [],
+  departments = [],
+}) {
+  return postScheduleDistribution(
+    "/.netlify/functions/send-last-minute-schedule-change-push",
+    {
+      weekStart,
+      userIds,
+      message,
+      scheduleIds,
+      departments,
+    }
   );
 }
 
