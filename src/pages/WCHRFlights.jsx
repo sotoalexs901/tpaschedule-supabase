@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import WchrOperationalClosePanel from "../components/WchrOperationalClosePanel.jsx";
 
 import {
   addDoc,
@@ -183,7 +184,7 @@ function getMillis(value) {
 function formatDateTimeValue(value) {
   const date = tsToDate(value);
 
-  if (!date) return "—";
+  if (!date) return "â";
 
   return `${toMMDDYYYY(date)} ${pad2(date.getHours())}:${pad2(
     date.getMinutes()
@@ -205,7 +206,7 @@ function formatMinutes(value) {
     value === undefined ||
     Number.isNaN(value)
   ) {
-    return "—";
+    return "â";
   }
 
   if (value < 60) {
@@ -1041,7 +1042,7 @@ function DetailField({ label, value }) {
           wordBreak: "break-word",
         }}
       >
-        {value || "—"}
+        {value || "â"}
       </div>
     </div>
   );
@@ -1465,7 +1466,7 @@ function TrackingSummary({ report }) {
 
       <DetailField
         label="Current Location"
-        value={report.current_location || "—"}
+        value={report.current_location || "â"}
       />
 
       <DetailField
@@ -1486,14 +1487,14 @@ function TrackingSummary({ report }) {
       />
 
       <DetailField
-        label="Counter → Gate"
+        label="Counter â Gate"
         value={formatMinutes(
           getCounterToGateMinutes(report)
         )}
       />
 
       <DetailField
-        label="Gate → Delivered"
+        label="Gate â Delivered"
         value={formatMinutes(
           getGateToDeliveredMinutes(report)
         )}
@@ -1514,8 +1515,8 @@ function TrackingSummary({ report }) {
             ? `${formatDateTimeValue(
                 report.last_location_update_at ||
                   report.last_updated_at
-              )} · ${minutesWithoutUpdate} min ago`
-            : "—"
+              )} Âˇ ${minutesWithoutUpdate} min ago`
+            : "â"
         }
       />
 
@@ -1526,7 +1527,7 @@ function TrackingSummary({ report }) {
             report.delivered_location ||
             report.dropoff_location ||
             report.current_location ||
-            "—"
+            "â"
           }
         />
       )}
@@ -1539,7 +1540,7 @@ function TrackingSummary({ report }) {
               ? formatDateTimeValue(
                   report.stored_at
                 )
-              : "—"
+              : "â"
           }
         />
       )}
@@ -1648,7 +1649,7 @@ function EmployeeLeaderboard({
                   textAlign: "left",
                 })}
               >
-                Avg Counter → Gate
+                Avg Counter â Gate
               </th>
 
               <th
@@ -1656,7 +1657,7 @@ function EmployeeLeaderboard({
                   textAlign: "left",
                 })}
               >
-                Avg Gate → Delivered
+                Avg Gate â Delivered
               </th>
 
               <th
@@ -3183,7 +3184,7 @@ export default function WCHRFlights() {
         setError(
           `Cannot close operation. Wheelchair ${
             firstPendingDelivery.wheelchair_number ||
-            "—"
+            "â"
           } is still pending passenger delivery. Last location: ${
             firstPendingDelivery.current_location ||
             "Unknown"
@@ -3205,7 +3206,7 @@ export default function WCHRFlights() {
         setError(
           `Cannot close operation. Wheelchair ${
             firstPendingStorage.wheelchair_number ||
-            "—"
+            "â"
           } was delivered but has not been stored. Last location: ${
             firstPendingStorage.current_location ||
             firstPendingStorage.delivered_location ||
@@ -3226,7 +3227,7 @@ export default function WCHRFlights() {
       setError(
         `Cannot close operation. Wheelchair ${
           firstUnresolved?.wheelchair_number ||
-          "—"
+          "â"
         } is not stored.`
       );
     };
@@ -3342,7 +3343,7 @@ export default function WCHRFlights() {
                 fontWeight: 700,
               }}
             >
-              TPA OPS · WCHR TRACKING
+              TPA OPS Âˇ WCHR TRACKING
             </p>
 
             <h1
@@ -3567,6 +3568,13 @@ export default function WCHRFlights() {
         </div>
       </PageCard>
 
+
+      <WchrOperationalClosePanel
+        selectedDate={selectedDate}
+        reports={allDayReports}
+        user={user}
+      />
+
       <OperationalFilters
         selectedFilter={operationalFilter}
         onChange={handleFilterChange}
@@ -3588,7 +3596,7 @@ export default function WCHRFlights() {
             }}
           >
             Active filter:{" "}
-            <b>{selectedFilterLabel}</b> · Showing{" "}
+            <b>{selectedFilterLabel}</b> Âˇ Showing{" "}
             <b>{filteredDayReports.length}</b> wheelchair
             record
             {filteredDayReports.length === 1 ? "" : "s"}.
@@ -3691,7 +3699,7 @@ export default function WCHRFlights() {
                         ? toMMDDYYYY(
                             flight.report_date
                           )
-                        : "—"}
+                        : "â"}
                     </div>
                   </div>
 
@@ -3715,7 +3723,7 @@ export default function WCHRFlights() {
                       (
                         flight.wheelchair_numbers ||
                         []
-                      ).join(", ") || "—"
+                      ).join(", ") || "â"
                     }
                   />
 
@@ -3915,14 +3923,14 @@ export default function WCHRFlights() {
                         ? toMMDDYYYY(
                             flight.report_date
                           )
-                        : "—"}
+                        : "â"}
                     </td>
 
                     <td style={tdStyle}>
                       {(
                         flight.wheelchair_numbers ||
                         []
-                      ).join(", ") || "—"}
+                      ).join(", ") || "â"}
                     </td>
 
                     <td style={tdStyle}>
@@ -3937,7 +3945,7 @@ export default function WCHRFlights() {
                           color: "#64748b",
                         }}
                       >
-                        NEW: {flight.new_reports} ·
+                        NEW: {flight.new_reports} Âˇ
                         LATE: {flight.late_reports}
                       </div>
                     </td>
@@ -4054,13 +4062,13 @@ export default function WCHRFlights() {
                     Flight{" "}
                     {selectedFlight.flight_number}
                   </b>{" "}
-                  ·{" "}
+                  Âˇ{" "}
                   <b>
                     {selectedFlight.report_date
                       ? toMMDDYYYY(
                           selectedFlight.report_date
                         )
-                      : "—"}
+                      : "â"}
                   </b>
                 </>
               ) : (
@@ -4212,7 +4220,7 @@ export default function WCHRFlights() {
                           >
                             Wheelchair{" "}
                             {report.wheelchair_number ||
-                              "—"}
+                              "â"}
                           </div>
 
                           <div
@@ -4399,10 +4407,10 @@ export default function WCHRFlights() {
                           <DetailField
                             label="Flight"
                             value={`${
-                              report.airline || "—"
+                              report.airline || "â"
                             } ${
                               report.flight_number ||
-                              "—"
+                              "â"
                             }`}
                           />
 
@@ -4440,7 +4448,7 @@ export default function WCHRFlights() {
                                       report
                                     )
                                   )
-                                : "—"
+                                : "â"
                             }
                           />
 
@@ -4468,7 +4476,7 @@ export default function WCHRFlights() {
                           />
 
                           <DetailField
-                            label="Counter → Gate"
+                            label="Counter â Gate"
                             value={formatMinutes(
                               getCounterToGateMinutes(
                                 report
@@ -4477,7 +4485,7 @@ export default function WCHRFlights() {
                           />
 
                           <DetailField
-                            label="Gate → Delivered"
+                            label="Gate â Delivered"
                             value={formatMinutes(
                               getGateToDeliveredMinutes(
                                 report
