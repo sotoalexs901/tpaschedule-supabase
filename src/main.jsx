@@ -532,7 +532,7 @@ function AppRouter() {
           <Route
             path="my-schedule"
             element={
-              <ProtectedRoute roles={["agent", "supervisor"]}>
+              <ProtectedRoute roles={["agent", "supervisor", "duty_manager"]}>
                 <MySchedulePage />
               </ProtectedRoute>
             }
