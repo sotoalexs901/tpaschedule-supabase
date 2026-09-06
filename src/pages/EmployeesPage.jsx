@@ -548,6 +548,11 @@ export default function EmployeesPage() {
       return;
     }
 
+    if (!department.trim()) {
+      setFormMessage("Department is required.");
+      return;
+    }
+
     if (duplicateName) {
       setFormMessage(
         `An employee with the same name already exists: "${getEmployeeDisplayName(
@@ -794,8 +799,9 @@ export default function EmployeesPage() {
 
         const cleanEmployeeName = employeeName.trim();
         const cleanNameKey = normalizeText(cleanEmployeeName);
+        const cleanDepartment = String(dept || "").trim();
 
-        if (!cleanEmployeeName) {
+        if (!cleanEmployeeName || !cleanDepartment) {
           skippedInvalid++;
           continue;
         }
@@ -836,7 +842,7 @@ export default function EmployeesPage() {
         const ref = await addDoc(collection(db, "employees"), {
           name: cleanEmployeeName,
           loginUsername: cleanUsername || null,
-          department: dept.trim() || null,
+          department: cleanDepartment,
           position: pos.trim() || null,
           status: normalizedStatus,
           active: normalizedStatus === "Active",
@@ -1137,6 +1143,7 @@ export default function EmployeesPage() {
             <SelectInput
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
+              required
             >
               <option value="">Select Department</option>
               {departments.map((dept) => (
@@ -1154,8 +1161,8 @@ export default function EmployeesPage() {
                 lineHeight: 1.45,
               }}
             >
-              Duty Managers and Station Management / Admin are available as
-              dedicated recipient departments for schedule notifications.
+              Department is required. Schedule notifications use this field
+              to place each employee in the correct recipient group.
             </div>
           </div>
 
