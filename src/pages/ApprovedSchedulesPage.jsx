@@ -749,8 +749,8 @@ function DistributionModal({
                 lineHeight: 1.5,
               }}
             >
-              Recipient groups are built from the employee records in AeroStation Hub.
-              Duty Managers and Station Management / Admin are grouped automatically by role.
+              Employee departments come from the Employees page and are linked to each login account for Push delivery.
+              Duty Managers and Station Management / Admin are also grouped automatically by role.
             </div>
           </div>
 
@@ -1103,6 +1103,7 @@ export default function ApprovedSchedulesPage() {
     try {
       const [
         approvedSnap,
+        employeesSnap,
         usersSnap,
         historySnap,
       ] = await Promise.all([
@@ -1117,6 +1118,12 @@ export default function ApprovedSchedulesPage() {
               "==",
               "approved"
             )
+          )
+        ),
+        getDocs(
+          collection(
+            db,
+            "employees"
           )
         ),
         getDocs(
@@ -1248,14 +1255,149 @@ export default function ApprovedSchedulesPage() {
         sortedGrouped
       );
 
-      setUsers(
+      const userRecords =
         usersSnap.docs.map(
           (d) => ({
             id: d.id,
             ...d.data(),
           })
-        )
+        );
+
+      const employeeRecords =
+        employeesSnap.docs.map(
+          (d) => ({
+            id: d.id,
+            ...d.data(),
+          })
+        );
+
+      const usersByEmployeeId =
+        new Map();
+
+      const usersByUsername =
+        new Map();
+
+      userRecords.forEach(
+        (account) => {
+          const employeeId =
+            String(
+              account.employeeId || ""
+            ).trim();
+
+          const username =
+            normalizeText(
+              account.username ||
+                account.loginUsername
+            );
+
+          if (employeeId) {
+            usersByEmployeeId.set(
+              employeeId,
+              account
+            );
+          }
+
+          if (username) {
+            usersByUsername.set(
+              username,
+              account
+            );
+          }
+        }
       );
+
+      const linkedUserIds =
+        new Set();
+
+      const employeeRecipients =
+        employeeRecords
+          .map((employee) => {
+            const employeeUsername =
+              normalizeText(
+                employee.loginUsername
+              );
+
+            const linkedUser =
+              usersByEmployeeId.get(
+                employee.id
+              ) ||
+              (employeeUsername
+                ? usersByUsername.get(
+                    employeeUsername
+                  )
+                : null);
+
+            if (!linkedUser) {
+              return null;
+            }
+
+            linkedUserIds.add(
+              linkedUser.id
+            );
+
+            return {
+              ...linkedUser,
+              id: linkedUser.id,
+
+              employeeId:
+                employee.id,
+
+              employeeName:
+                employee.name ||
+                linkedUser.employeeName ||
+                linkedUser.displayName ||
+                linkedUser.fullName ||
+                "",
+
+              displayName:
+                employee.name ||
+                linkedUser.displayName ||
+                linkedUser.fullName ||
+                linkedUser.name ||
+                "",
+
+              department:
+                employee.department ||
+                linkedUser.department ||
+                "",
+
+              position:
+                employee.position ||
+                linkedUser.position ||
+                "",
+
+              employeeStatus:
+                employee.status ||
+                (employee.active === false
+                  ? "Inactive"
+                  : "Active"),
+
+              employeeActive:
+                employee.active !== false &&
+                normalizeText(
+                  employee.status
+                ) !== "inactive",
+            };
+          })
+          .filter(Boolean)
+          .filter(
+            (recipient) =>
+              recipient.employeeActive !==
+              false
+          );
+
+      const unmatchedUserRecipients =
+        userRecords.filter(
+          (account) =>
+            !linkedUserIds.has(
+              account.id
+            )
+        );
+
+      setUsers([
+        ...employeeRecipients,
+        ...unmatchedUserRecipients,
+      ]);
 
       setHistory(
         historySnap.docs
