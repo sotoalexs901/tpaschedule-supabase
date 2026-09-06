@@ -204,8 +204,10 @@ export default function ApprovalsPage() {
       //
       // The server will:
       // 1) notify the original submitter personally;
-      // 2) notify every other Push-enabled user that the new
-      //    personalized schedule is available.
+      // 2) NOT broadcast the approved schedule to employees.
+      //
+      // Employee schedule notifications are released manually
+      // from Approved Schedules by the Station Manager.
       triggerScheduleDecisionPush(
         scheduleId,
         "approved"
@@ -735,4 +737,4 @@ export default function ApprovalsPage() {
   );
 }
 
-// END ApprovalsPage
+// END ApprovalsPage.jsx
