@@ -20,8 +20,8 @@ import { triggerScheduleSubmittedPush } from "../utils/schedulePush.js";
 
 const AIRLINE_LOGOS = {
   SY: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_59%20p.m..png?alt=media&token=8fbdd39b-c6f8-4446-9657-76641e27fc59",
-  WestJet: "/logos/westjet.png",
-  "WL Havana Air": "/logos/westjet.png",
+  Volaris: "/logos/westjet.png",
+  "EULEN Management": "/icons/aerostation-icon.png",
   "WL Invicta":
     "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_49%20p.m..png?alt=media&token=092a1deb-3285-41e1-ab0c-2e48a8faab92",
   AV: "https://firebasestorage.googleapis.com/v0/b/tpa-schedule-app.firebasestorage.app/o/logos%2FChatGPT%20Image%2013%20nov%202025%2C%2009_14_37%20p.m..png?alt=media&token=f133d1c8-51f9-4513-96df-8a75c6457b5b",
@@ -38,8 +38,8 @@ const AIRLINE_LOGOS = {
 
 const AIRLINE_COLORS = {
   SY: "#F28C28",
-  WestJet: "#22B8B0",
-  "WL Havana Air": "#22B8B0",
+  Volaris: "#22B8B0",
+  "EULEN Management": "#0F4C81",
   "WL Invicta": "#0057B8",
   AV: "#D22630",
   EA: "#003E7E",
@@ -106,13 +106,16 @@ const normalizeAirlineName = (value) => {
   const airline = String(value || "").trim();
   const upper = airline.toUpperCase();
 
+  if (upper === "VOLARIS") {
+    return "Volaris";
+  }
+
   if (
-    upper === "WL HAVANA AIR" ||
-    upper === "WAL HAVANA AIR" ||
-    upper === "WAL HAVANA" ||
-    upper === "WESTJET"
+    upper === "EULEN MANAGEMENT" ||
+    upper === "EULEN MGMT" ||
+    upper === "MANAGEMENT"
   ) {
-    return "WestJet";
+    return "EULEN Management";
   }
 
   return airline;
@@ -131,6 +134,36 @@ const normalizeDepartmentName = (value) => {
 
   return raw;
 };
+
+function getDepartmentOptionsForAirline(airlineKey) {
+  const normalizedAirline = normalizeAirlineName(airlineKey);
+
+  if (normalizedAirline === "EULEN Management") {
+    return [
+      { value: "Duty Managers", label: "Duty Managers" },
+      {
+        value: "Station Management / Admin",
+        label: "Station Management / Admin",
+      },
+    ];
+  }
+
+  if (normalizedAirline === "Volaris") {
+    return [
+      { value: "TC", label: "Volaris TC" },
+      { value: "Ramp", label: "Volaris Ramp" },
+    ];
+  }
+
+  return [
+    { value: "Ramp", label: "Ramp" },
+    { value: "TC", label: "Ticket Counter" },
+    { value: "BSO", label: "BSO" },
+    { value: "Cabin Service", label: "Cabin Service" },
+    { value: "WCHR", label: "WCHR" },
+    { value: "Other", label: "Other" },
+  ];
+}
 
 function normalizeCustomOtherAirline(value) {
   const raw = String(value || "").trim();
@@ -535,6 +568,11 @@ export default function SchedulePage() {
   const themeColor = useMemo(
     () => getThemeColor(airlineKey, airlineDisplayName),
     [airlineKey, airlineDisplayName]
+  );
+
+  const departmentOptions = useMemo(
+    () => getDepartmentOptionsForAirline(airlineKey),
+    [airlineKey]
   );
 
   const isErrorStatus =
@@ -1220,7 +1258,6 @@ export default function SchedulePage() {
   });
 
   const canEditAirlineName =
-    normalizeAirlineName(airlineKey) === "WestJet" ||
     normalizeAirlineName(airlineKey) === "OTHER";
 
   return (
@@ -1517,7 +1554,7 @@ export default function SchedulePage() {
               color: "#64748b",
             }}
           >
-            Select airline, department and week start before assigning shifts.
+            Select operation, department and week start before assigning shifts.
           </p>
         </div>
 
@@ -1556,6 +1593,7 @@ export default function SchedulePage() {
                 );
 
                 setAirlineKey(normalizedKey);
+                setDepartment("");
 
                 if (normalizedKey === "OTHER") {
                   setAirlineDisplayName("");
@@ -1566,7 +1604,8 @@ export default function SchedulePage() {
             >
               <option value="">Select airline</option>
               <option value="SY">SY</option>
-              <option value="WestJet">WestJet</option>
+              <option value="Volaris">Volaris</option>
+              <option value="EULEN Management">EULEN Management</option>
               <option value="WL Invicta">WL Invicta</option>
               <option value="AV">AV</option>
               <option value="EA">EA</option>
@@ -1597,7 +1636,11 @@ export default function SchedulePage() {
                 placeholder={
                   normalizeAirlineName(airlineKey) === "OTHER"
                     ? "Example: AM or AMS"
-                    : "Example: WestJet"
+                    : normalizeAirlineName(airlineKey) === "Volaris"
+                    ? "Volaris"
+                    : normalizeAirlineName(airlineKey) === "EULEN Management"
+                    ? "EULEN Management"
+                    : "Airline"
                 }
                 style={{
                   background: canEditAirlineName ? "#fff" : "#f8fafc",
@@ -1621,12 +1664,11 @@ export default function SchedulePage() {
               onChange={(e) => setDepartment(e.target.value)}
             >
               <option value="">Select department</option>
-              <option value="Ramp">Ramp</option>
-              <option value="TC">Ticket Counter</option>
-              <option value="BSO">BSO</option>
-              <option value="Cabin Service">Cabin Service</option>
-              <option value="WCHR">WCHR</option>
-              <option value="Other">Other</option>
+              {departmentOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </SelectInput>
           </div>
 
