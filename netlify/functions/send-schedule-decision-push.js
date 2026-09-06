@@ -3,9 +3,7 @@
 const admin = require("firebase-admin");
 
 function getAdminApp() {
-  if (admin.apps.length) {
-    return admin.app();
-  }
+  if (admin.apps.length) return admin.app();
 
   const credentialsJson = String(
     process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || ""
@@ -36,9 +34,8 @@ function getAdminApp() {
       credential: admin.credential.cert({
         projectId: serviceAccount.project_id,
         clientEmail: serviceAccount.client_email,
-        privateKey: String(
-          serviceAccount.private_key || ""
-        ).replace(/\\n/g, "\n"),
+        privateKey: String(serviceAccount.private_key || "")
+          .replace(/\\n/g, "\n"),
       }),
     });
   }
@@ -50,9 +47,7 @@ function getAdminApp() {
   ).replace(/\\n/g, "\n");
 
   if (!projectId || !clientEmail || !privateKey) {
-    throw new Error(
-      "Firebase Admin credentials are not configured."
-    );
+    throw new Error("Firebase Admin credentials are not configured.");
   }
 
   return admin.initializeApp({
@@ -86,9 +81,7 @@ function normalizeDecision(value) {
 function formatScheduleRange(schedule) {
   const weekStart = normalizeText(schedule.weekStart);
 
-  if (!weekStart) {
-    return "Weekly Schedule";
-  }
+  if (!weekStart) return "Weekly Schedule";
 
   const start = new Date(`${weekStart}T00:00:00`);
 
@@ -99,50 +92,42 @@ function formatScheduleRange(schedule) {
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
 
-  const monthFormatter = new Intl.DateTimeFormat("en-US", {
+  const formatter = new Intl.DateTimeFormat("en-US", {
     month: "short",
   });
 
-  const startMonth = monthFormatter.format(start);
-  const endMonth = monthFormatter.format(end);
-  const startDay = start.getDate();
-  const endDay = end.getDate();
+  const startMonth = formatter.format(start);
+  const endMonth = formatter.format(end);
 
   if (
     start.getFullYear() === end.getFullYear() &&
     start.getMonth() === end.getMonth()
   ) {
-    return `Schedule ${startMonth} ${startDay} to ${endDay}`;
+    return `Schedule ${startMonth} ${start.getDate()} to ${end.getDate()}`;
   }
 
-  return `Schedule ${startMonth} ${startDay} to ${endMonth} ${endDay}`;
+  return `Schedule ${startMonth} ${start.getDate()} to ${endMonth} ${end.getDate()}`;
 }
 
 async function findSubmittedUser(db, schedule) {
-  const submittedByUserId =
-    normalizeText(schedule.submittedByUserId);
+  const submittedByUserId = normalizeText(schedule.submittedByUserId);
 
   if (submittedByUserId) {
-    const userRef = db
-      .collection("users")
-      .doc(submittedByUserId);
+    const ref = db.collection("users").doc(submittedByUserId);
+    const snap = await ref.get();
 
-    const userSnap = await userRef.get();
-
-    if (userSnap.exists) {
+    if (snap.exists) {
       return {
-        id: userSnap.id,
-        ref: userRef,
-        data: userSnap.data() || {},
+        id: snap.id,
+        ref,
+        data: snap.data() || {},
       };
     }
   }
 
-  const submittedByUsername =
-    normalizeText(
-      schedule.submittedByUsername ||
-      schedule.createdBy
-    );
+  const submittedByUsername = normalizeText(
+    schedule.submittedByUsername || schedule.createdBy
+  );
 
   if (submittedByUsername) {
     for (const field of ["username", "loginUsername"]) {
@@ -184,50 +169,6 @@ async function getEnabledTokensForUser(db, userId) {
     .filter((item) => item.token);
 }
 
-async function getAllEnabledTokens(db, excludedUserIds = []) {
-  const excluded = new Set(
-    (excludedUserIds || []).map((value) =>
-      normalizeText(value)
-    )
-  );
-
-  const usersSnap = await db
-    .collection("users")
-    .get();
-
-  const tokenMap = new Map();
-
-  await Promise.all(
-    usersSnap.docs.map(async (userDoc) => {
-      if (excluded.has(userDoc.id)) {
-        return;
-      }
-
-      const tokenSnap = await userDoc.ref
-        .collection("pushTokens")
-        .where("enabled", "==", true)
-        .get();
-
-      tokenSnap.docs.forEach((tokenDoc) => {
-        const data = tokenDoc.data() || {};
-        const token = normalizeText(data.token);
-
-        if (!token || tokenMap.has(token)) {
-          return;
-        }
-
-        tokenMap.set(token, {
-          token,
-          ref: tokenDoc.ref,
-          userId: userDoc.id,
-        });
-      });
-    })
-  );
-
-  return Array.from(tokenMap.values());
-}
-
 async function disableInvalidTokens(tokenItems, responses) {
   const invalidItems = [];
 
@@ -243,8 +184,6 @@ async function disableInvalidTokens(tokenItems, responses) {
       invalidItems.push(tokenItems[index]);
     }
   });
-
-  if (!invalidItems.length) return;
 
   await Promise.all(
     invalidItems.map((item) =>
@@ -269,32 +208,29 @@ async function sendPush(tokenItems, payload, urgency = "normal") {
     };
   }
 
-  const result = await admin
-    .messaging()
-    .sendEachForMulticast({
-      tokens: tokenItems.map((item) => item.token),
-
-      data: {
-        title: payload.title,
-        body: payload.body,
-        url: payload.url,
-        type: payload.type,
-        scheduleId: payload.scheduleId,
-        scheduleLabel: payload.scheduleLabel,
-        decision: payload.decision || "",
+  const result = await admin.messaging().sendEachForMulticast({
+    tokens: tokenItems.map((item) => item.token),
+    data: {
+      title: payload.title,
+      body: payload.body,
+      url: payload.url,
+      route: payload.url,
+      type: payload.type,
+      scheduleId: payload.scheduleId,
+      scheduleLabel: payload.scheduleLabel,
+      decision: payload.decision || "",
+    },
+    webpush: {
+      headers: {
+        Urgency: urgency,
       },
-
-      webpush: {
-        headers: {
-          Urgency: urgency,
-        },
+      fcmOptions: {
+        link: payload.url,
       },
-    });
+    },
+  });
 
-  await disableInvalidTokens(
-    tokenItems,
-    result.responses
-  );
+  await disableInvalidTokens(tokenItems, result.responses);
 
   return {
     successCount: result.successCount,
@@ -315,7 +251,6 @@ exports.handler = async function handler(event) {
 
   try {
     const body = JSON.parse(event.body || "{}");
-
     scheduleId = normalizeText(body.scheduleId);
     requestedDecision = normalizeDecision(body.decision);
   } catch {
@@ -338,8 +273,7 @@ exports.handler = async function handler(event) {
   ) {
     return json(400, {
       ok: false,
-      error:
-        "Decision must be approved or returned.",
+      error: "Decision must be approved or returned.",
     });
   }
 
@@ -347,11 +281,7 @@ exports.handler = async function handler(event) {
     getAdminApp();
 
     const db = admin.firestore();
-
-    const scheduleRef = db
-      .collection("schedules")
-      .doc(scheduleId);
-
+    const scheduleRef = db.collection("schedules").doc(scheduleId);
     const scheduleSnap = await scheduleRef.get();
 
     if (!scheduleSnap.exists) {
@@ -362,9 +292,7 @@ exports.handler = async function handler(event) {
     }
 
     const schedule = scheduleSnap.data() || {};
-
-    const actualStatus =
-      normalizeDecision(schedule.status);
+    const actualStatus = normalizeDecision(schedule.status);
 
     if (actualStatus !== requestedDecision) {
       return json(409, {
@@ -389,11 +317,8 @@ exports.handler = async function handler(event) {
       });
     }
 
-    const scheduleLabel =
-      formatScheduleRange(schedule);
-
-    const submittedUser =
-      await findSubmittedUser(db, schedule);
+    const scheduleLabel = formatScheduleRange(schedule);
+    const submittedUser = await findSubmittedUser(db, schedule);
 
     let submitterResult = {
       successCount: 0,
@@ -401,19 +326,18 @@ exports.handler = async function handler(event) {
     };
 
     if (submittedUser) {
-      const submitterTokens =
-        await getEnabledTokensForUser(
-          db,
-          submittedUser.id
-        );
+      const submitterTokens = await getEnabledTokensForUser(
+        db,
+        submittedUser.id
+      );
 
       if (requestedDecision === "approved") {
         submitterResult = await sendPush(
           submitterTokens,
           {
             title: "Schedule Approved",
-            body: `Your ${scheduleLabel} has been approved and processed. It is now available in AeroStation Hub.`,
-            url: "/my-schedule",
+            body: `Your ${scheduleLabel} has been approved and processed.`,
+            url: "/approved-schedules",
             type: "schedule_approved",
             scheduleId,
             scheduleLabel,
@@ -422,11 +346,8 @@ exports.handler = async function handler(event) {
           "normal"
         );
       } else {
-        const note =
-          normalizeText(schedule.reviewNotes);
-
-        const base =
-          `Your ${scheduleLabel} was returned for correction.`;
+        const note = normalizeText(schedule.reviewNotes);
+        const base = `Your ${scheduleLabel} was returned for correction.`;
 
         submitterResult = await sendPush(
           submitterTokens,
@@ -446,75 +367,31 @@ exports.handler = async function handler(event) {
       }
     }
 
-    let broadcastResult = {
-      successCount: 0,
-      failureCount: 0,
-    };
-
-    if (requestedDecision === "approved") {
-      const broadcastTokens =
-        await getAllEnabledTokens(
-          db,
-          submittedUser ? [submittedUser.id] : []
-        );
-
-      broadcastResult = await sendPush(
-        broadcastTokens,
-        {
-          title: "New Schedule Available",
-          body: `${scheduleLabel} has been approved and processed. Please review your personalized schedule in AeroStation Hub.`,
-          url: "/my-schedule",
-          type: "schedule_published",
-          scheduleId,
-          scheduleLabel,
-          decision: requestedDecision,
-        },
-        "normal"
-      );
-    }
-
-    const totalSuccess =
-      submitterResult.successCount +
-      broadcastResult.successCount;
-
-    const totalFailure =
-      submitterResult.failureCount +
-      broadcastResult.failureCount;
+    const totalSuccess = submitterResult.successCount;
+    const totalFailure = submitterResult.failureCount;
 
     await scheduleRef.set(
       {
         decisionPushStatus:
           totalSuccess > 0 ? "SENT" : "NO_TOKENS",
-
-        decisionPushDecision:
-          requestedDecision,
-
-        decisionPushSubmitterUserId:
-          submittedUser?.id || "",
-
+        decisionPushDecision: requestedDecision,
+        decisionPushSubmitterUserId: submittedUser?.id || "",
         decisionPushSubmitterSuccessCount:
           submitterResult.successCount,
-
         decisionPushSubmitterFailureCount:
           submitterResult.failureCount,
-
-        decisionPushBroadcastSuccessCount:
-          broadcastResult.successCount,
-
-        decisionPushBroadcastFailureCount:
-          broadcastResult.failureCount,
-
-        decisionPushTotalSuccessCount:
-          totalSuccess,
-
-        decisionPushTotalFailureCount:
-          totalFailure,
-
+        decisionPushBroadcastSuccessCount: 0,
+        decisionPushBroadcastFailureCount: 0,
+        decisionPushTotalSuccessCount: totalSuccess,
+        decisionPushTotalFailureCount: totalFailure,
+        employeeBroadcastMode:
+          requestedDecision === "approved"
+            ? "MANUAL_FROM_APPROVED_SCHEDULES"
+            : "",
         decisionPushSentAt:
           totalSuccess > 0
             ? admin.firestore.FieldValue.serverTimestamp()
             : null,
-
         decisionPushUpdatedAt:
           admin.firestore.FieldValue.serverTimestamp(),
       },
@@ -526,16 +403,16 @@ exports.handler = async function handler(event) {
       scheduleId,
       decision: requestedDecision,
       scheduleLabel,
-      submittedUserId:
-        submittedUser?.id || "",
+      submittedUserId: submittedUser?.id || "",
       submitterSuccessCount:
         submitterResult.successCount,
-      broadcastSuccessCount:
-        broadcastResult.successCount,
-      totalSuccessCount:
-        totalSuccess,
-      totalFailureCount:
-        totalFailure,
+      broadcastSuccessCount: 0,
+      employeeBroadcastMode:
+        requestedDecision === "approved"
+          ? "manual"
+          : "not-applicable",
+      totalSuccessCount: totalSuccess,
+      totalFailureCount: totalFailure,
     });
   } catch (error) {
     console.error(
@@ -552,11 +429,9 @@ exports.handler = async function handler(event) {
           .set(
             {
               decisionPushStatus: "FAILED",
-              decisionPushDecision:
-                requestedDecision,
+              decisionPushDecision: requestedDecision,
               decisionPushError:
-                error?.message ||
-                "Unexpected Push error.",
+                error?.message || "Unexpected Push error.",
               decisionPushUpdatedAt:
                 admin.firestore.FieldValue.serverTimestamp(),
             },
