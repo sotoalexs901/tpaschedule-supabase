@@ -62,6 +62,7 @@ import WCHRScan from "./pages/WCHRScan.jsx";
 import MyWCHRReports from "./pages/MyWCHRReports.jsx";
 import WCHRFlights from "./pages/WCHRFlights.jsx";
 import WCHRMonthlyClose from "./pages/WCHRMonthlyClose.jsx";
+import WchrDutyFollowUpPage from "./pages/WchrDutyFollowUpPage.jsx";
 
 import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
@@ -873,6 +874,19 @@ function AppRouter() {
                 blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
                 <WCHRFlights />
+              </ProtectedRoute>
+            }
+          />
+
+
+          <Route
+            path="wchr/duty-follow-up"
+            element={
+              <ProtectedRoute
+                roles={["duty_manager", "station_manager"]}
+                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+              >
+                <WchrDutyFollowUpPage />
               </ProtectedRoute>
             }
           />
