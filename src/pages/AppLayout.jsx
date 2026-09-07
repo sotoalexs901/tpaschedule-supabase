@@ -78,6 +78,7 @@ export default function AppLayout() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [operationalAlerts, setOperationalAlerts] = useState(0);
   const [trainingNotices, setTrainingNotices] = useState(0);
+  const [wchrFollowUps, setWchrFollowUps] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
 
@@ -548,6 +549,55 @@ export default function AppLayout() {
   }, [user?.role]);
 
   // ============================================================
+  // OPEN WCHR DUTY FOLLOW-UPS - DUTY / STATION MANAGEMENT
+  // ============================================================
+
+  useEffect(() => {
+    const role = String(user?.role || "")
+      .trim()
+      .toLowerCase();
+
+    if (role !== "station_manager" && role !== "duty_manager") {
+      setWchrFollowUps(0);
+      return undefined;
+    }
+
+    const qFollowUps = query(
+      collection(db, "wchr_operational_closures"),
+      where("requiresDutyFollowUp", "==", true)
+    );
+
+    const unsub = onSnapshot(
+      qFollowUps,
+      (snap) => {
+        const count = snap.docs.filter((item) => {
+          const data = item.data() || {};
+
+          const status = String(
+            data.dutyFollowUpStatus || "OPEN"
+          )
+            .trim()
+            .toUpperCase();
+
+          return status !== "COMPLETED";
+        }).length;
+
+        setWchrFollowUps(count);
+      },
+      (err) => {
+        console.error(
+          "Error listening WCHR Duty Follow-Ups:",
+          err
+        );
+
+        setWchrFollowUps(0);
+      }
+    );
+
+    return () => unsub();
+  }, [user?.role]);
+
+  // ============================================================
   // USER NORMALIZATION
   // ============================================================
 
@@ -609,7 +659,8 @@ export default function AppLayout() {
     return (
       personalCount +
       Math.max(0, Number(operationalAlerts || 0)) +
-      Math.max(0, Number(pendingTimeOff || 0))
+      Math.max(0, Number(pendingTimeOff || 0)) +
+      Math.max(0, Number(wchrFollowUps || 0))
     );
   }, [
     unreadMessages,
@@ -617,6 +668,7 @@ export default function AppLayout() {
     trainingNotices,
     operationalAlerts,
     pendingTimeOff,
+    wchrFollowUps,
     isManagementUser,
   ]);
 
@@ -811,6 +863,13 @@ export default function AppLayout() {
     );
 
   const canAccessWchrMonthlyClose =
+    !isDLCabinService &&
+    (
+      user?.role === "duty_manager" ||
+      user?.role === "station_manager"
+    );
+
+  const canAccessWchrDutyFollowUp =
     !isDLCabinService &&
     (
       user?.role === "duty_manager" ||
@@ -1204,6 +1263,15 @@ export default function AppLayout() {
       });
     }
 
+    if (canAccessWchrDutyFollowUp) {
+      wchr.push({
+        to: "/wchr/duty-follow-up",
+        label: "WCHR Duty Follow-Up",
+        icon: "\u{1F6A8}",
+        badgeValue: wchrFollowUps,
+      });
+    }
+
     if (canAccessWchrMonthlyClose) {
       wchr.push({
         to: "/wchr/monthly-close",
@@ -1270,6 +1338,7 @@ export default function AppLayout() {
     canManageOperationalReportForm,
     canAccessWchrTools,
     canAccessWchrFlightReport,
+    canAccessWchrDutyFollowUp,
     canAccessWchrMonthlyClose,
     canSubmitOperationsRequests,
     canManageOperationsRequests,
@@ -1290,6 +1359,7 @@ export default function AppLayout() {
     unreadNotifications,
     trainingNotices,
     pendingTimeOff,
+    wchrFollowUps,
     user,
     isAgent,
   ]);
@@ -1499,6 +1569,22 @@ export default function AppLayout() {
               <OperationalAlertBell
                 value={operationalAlerts}
                 onClick={() => navigate("/dashboard")}
+              />
+            )}
+
+            {isManagementUser && (
+              <StatusPill
+                label="WCHR"
+                value={wchrFollowUps}
+                active={wchrFollowUps > 0}
+                onClick={() => navigate("/wchr/duty-follow-up")}
+                title={
+                  wchrFollowUps > 0
+                    ? `${wchrFollowUps} open WCHR Duty Follow-Up${
+                        wchrFollowUps === 1 ? "" : "s"
+                      }. Open WCHR Duty Follow-Up.`
+                    : "No open WCHR Duty Follow-Ups"
+                }
               />
             )}
 
