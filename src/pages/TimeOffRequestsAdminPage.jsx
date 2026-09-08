@@ -8,6 +8,7 @@ import {
   doc,
   getDocs,
   query,
+  where,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
@@ -168,6 +169,105 @@ function getVisibleName(user) {
   );
 }
 
+
+const CABIN_DAY_KEYS = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
+
+function normalizeLookup(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function parseLocalDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const d = new Date(`${raw}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toIsoDate(d) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function enumerateDates(startDate, endDate) {
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate || startDate);
+  if (!start || !end || end < start) return [];
+
+  const dates = [];
+  const cursor = new Date(start);
+  while (cursor <= end && dates.length < 62) {
+    dates.push(toIsoDate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function getWeekStartMonday(dateValue) {
+  const d = parseLocalDate(dateValue);
+  if (!d) return "";
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return toIsoDate(d);
+}
+
+function formatCoverageDate(value) {
+  const d = parseLocalDate(value);
+  if (!d) return value || "";
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getRequestSourceLabel(req) {
+  const source = String(req?.requestSource || "").toUpperCase();
+  if (source === "DUTY_MANAGER_FOR_EMPLOYEE") return "Duty Manager for Employee";
+  if (source === "SUPERVISOR_FOR_AGENT") return "Supervisor for Agent";
+  return "Self Request";
+}
+
+function getSubmittedByLabel(req) {
+  return (
+    req?.submittedByManagementName ||
+    req?.submittedByDutyManagerName ||
+    req?.submittedBySupervisorName ||
+    req?.requestedByName ||
+    req?.requestedByUsername ||
+    req?.employeeName ||
+    "Employee"
+  );
+}
+
+function isCabinRequest(req) {
+  const department = normalizeLookup(req?.department);
+  return department.includes("cabin") || department.includes("delta") || department === "dl";
+}
+
+function getCoverageStyle(level) {
+  if (level === "CRITICAL") {
+    return { background: "#fff1f2", border: "1px solid #fecdd3", color: "#9f1239" };
+  }
+  if (level === "CAUTION") {
+    return { background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" };
+  }
+  if (level === "OK") {
+    return { background: "#ecfdf5", border: "1px solid #a7f3d0", color: "#065f46" };
+  }
+  return { background: "#f8fafc", border: "1px solid #e2e8f0", color: "#475569" };
+}
+
 export default function TimeOffRequestsAdminPage() {
   const { user } = useUser();
   const { isMobile, isTablet } = useViewport();
@@ -178,6 +278,8 @@ export default function TimeOffRequestsAdminPage() {
   const [notesById, setNotesById] = useState({});
   const [statusMessage, setStatusMessage] = useState("");
   const [busyRequestId, setBusyRequestId] = useState("");
+  const [coverageByRequest, setCoverageByRequest] = useState({});
+  const [coverageLoading, setCoverageLoading] = useState(false);
 
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -197,6 +299,7 @@ export default function TimeOffRequestsAdminPage() {
         );
 
       setRequests(list);
+      loadCabinCoverage(list).catch(console.error);
 
       setNotesById((prev) => {
         const next = { ...prev };
@@ -212,6 +315,126 @@ export default function TimeOffRequestsAdminPage() {
       setStatusMessage("Error loading requests.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCabinCoverage = async (requestList) => {
+    const cabinRequests = (requestList || []).filter(isCabinRequest);
+    if (!cabinRequests.length) {
+      setCoverageByRequest({});
+      return;
+    }
+
+    setCoverageLoading(true);
+
+    try {
+      const schedulesSnap = await getDocs(collection(db, "cabinSchedules"));
+      const approvedSchedules = schedulesSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((item) => normalizeLookup(item.status) === "approved");
+
+      const scheduleByWeek = {};
+      approvedSchedules.forEach((schedule) => {
+        const weekStart = String(schedule.weekStartDate || schedule.weekStart || "").trim();
+        if (!weekStart) return;
+        const existing = scheduleByWeek[weekStart];
+        const currentSeconds = schedule.updatedAt?.seconds || schedule.createdAt?.seconds || 0;
+        const existingSeconds = existing?.updatedAt?.seconds || existing?.createdAt?.seconds || 0;
+        if (!existing || currentSeconds >= existingSeconds) {
+          scheduleByWeek[weekStart] = schedule;
+        }
+      });
+
+      const neededScheduleIds = new Set();
+      cabinRequests.forEach((req) => {
+        enumerateDates(req.startDate, req.endDate).forEach((date) => {
+          const schedule = scheduleByWeek[getWeekStartMonday(date)];
+          if (schedule?.id) neededScheduleIds.add(schedule.id);
+        });
+      });
+
+      const slotsBySchedule = {};
+      await Promise.all(
+        Array.from(neededScheduleIds).map(async (scheduleId) => {
+          const snap = await getDocs(
+            query(
+              collection(db, "cabinScheduleSlots"),
+              where("scheduleId", "==", scheduleId)
+            )
+          );
+          slotsBySchedule[scheduleId] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        })
+      );
+
+      const next = {};
+
+      cabinRequests.forEach((req) => {
+        next[req.id] = enumerateDates(req.startDate, req.endDate).map((date) => {
+          const weekStart = getWeekStartMonday(date);
+          const schedule = scheduleByWeek[weekStart];
+          const d = parseLocalDate(date);
+          const dayKey = d ? CABIN_DAY_KEYS[d.getDay()] : "";
+
+          if (!schedule) {
+            return { date, weekStart, dayKey, level: "NO_SCHEDULE", scheduled: 0, remaining: 0, employeeScheduled: false };
+          }
+
+          const daySlots = (slotsBySchedule[schedule.id] || []).filter(
+            (slot) =>
+              slot.dayKey === dayKey &&
+              !slot.draftDeleteCandidate &&
+              (slot.employeeId || slot.employeeName)
+          );
+
+          const unique = new Map();
+          daySlots.forEach((slot) => {
+            const key = normalizeLookup(slot.employeeId || slot.employeeName);
+            if (!key) return;
+            if (!unique.has(key)) unique.set(key, slot);
+          });
+
+          const reqId = normalizeLookup(req.employeeId);
+          const reqName = normalizeLookup(req.employeeName);
+          const employeeScheduled = Array.from(unique.entries()).some(([key, slot]) => {
+            if (reqId && key === reqId) return true;
+            const slotName = normalizeLookup(slot.employeeName);
+            return !!reqName && slotName === reqName;
+          });
+
+          const scheduled = unique.size;
+          const remaining = Math.max(0, scheduled - (employeeScheduled ? 1 : 0));
+          const roleCounts = { supervisors: 0, lav: 0, agents: 0 };
+          unique.forEach((slot) => {
+            const role = normalizeLookup(slot.role);
+            if (role === "supervisor") roleCounts.supervisors += 1;
+            else if (role === "lav") roleCounts.lav += 1;
+            else roleCounts.agents += 1;
+          });
+
+          let level = "OK";
+          if (employeeScheduled && remaining < 5) level = "CRITICAL";
+          else if (employeeScheduled && remaining === 5) level = "CAUTION";
+
+          return {
+            date,
+            weekStart,
+            dayKey,
+            scheduleId: schedule.id,
+            level,
+            scheduled,
+            remaining,
+            employeeScheduled,
+            ...roleCounts,
+          };
+        });
+      });
+
+      setCoverageByRequest(next);
+    } catch (err) {
+      console.error("Error loading Cabin Service coverage:", err);
+      setStatusMessage("Requests loaded, but Cabin Service coverage could not be analyzed.");
+    } finally {
+      setCoverageLoading(false);
     }
   };
 
@@ -292,7 +515,15 @@ export default function TimeOffRequestsAdminPage() {
     }
 
     const note = notesById[req.id] || "";
-    const confirmText = `Approve day-off for ${req.employeeName} (${req.reasonType}) from ${req.startDate} to ${req.endDate}?`;
+    const coverage = coverageByRequest[req.id] || [];
+    const criticalDates = coverage.filter((item) => item.level === "CRITICAL");
+    const cautionDates = coverage.filter((item) => item.level === "CAUTION");
+    const coverageWarning = criticalDates.length
+      ? `\n\nCRITICAL COVERAGE: ${criticalDates.map((item) => `${formatCoverageDate(item.date)} (${item.remaining} remaining)`).join(", ")}. Management coverage/replacement will be required.`
+      : cautionDates.length
+      ? `\n\nCAUTION: ${cautionDates.map((item) => `${formatCoverageDate(item.date)} (${item.remaining} remaining)`).join(", ")}. This reaches minimum coverage.`
+      : "";
+    const confirmText = `Approve day-off for ${req.employeeName} (${req.reasonType}) from ${req.startDate} to ${req.endDate}?${coverageWarning}`;
 
     if (!window.confirm(confirmText)) return;
 
@@ -337,7 +568,40 @@ export default function TimeOffRequestsAdminPage() {
       triggerTimeOffDecisionPush(req.id, "approved");
 
       await sendLowStatusAlert(req, "approved", note);
-      setStatusMessage("Request approved.");
+
+      if (criticalDates.length) {
+        createOperationalAlert({
+          alertType: "TIME_OFF_CABIN_COVERAGE_CRITICAL",
+          category: "STAFFING",
+          severity: "HIGH",
+          priority: "HIGH",
+          title: "Delta Cabin Service Coverage Required",
+          message: `${req.employeeName || "Employee"} was approved off. Coverage is below 5 on ${criticalDates.map((item) => `${formatCoverageDate(item.date)} (${item.remaining} remaining)`).join(", ")}. Management coverage or replacement is required.`,
+          source: "TimeOffRequestsAdminPage",
+          sourceId: req.id,
+          department: req.department || "DL Cabin Service",
+          reportDate: req.startDate || "",
+          targetRoles: ["station_manager", "duty_manager"],
+          createdByUserId: user?.id || "",
+          createdByUsername: user?.username || "",
+          createdByName: getVisibleName(user),
+          createdByRole: user?.role || "",
+          metadata: {
+            timeOffRequestId: req.id,
+            employeeId: req.employeeId || "",
+            employeeName: req.employeeName || "",
+            coverageDates: criticalDates,
+          },
+        }).catch((alertErr) =>
+          console.error("Cabin coverage alert error:", alertErr)
+        );
+      }
+
+      setStatusMessage(
+        criticalDates.length
+          ? "Request approved. Critical Delta Cabin Service coverage alert sent to Management."
+          : "Request approved."
+      );
     } catch (err) {
       console.error("Error approving request:", err);
       setStatusMessage("Error approving request. Try again.");
@@ -880,6 +1144,115 @@ export default function TimeOffRequestsAdminPage() {
                           {currentStatus.toUpperCase()}
                         </span>
                       </div>
+
+
+                      <div
+                        style={{
+                          marginTop: 9,
+                          display: "flex",
+                          gap: 7,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            padding: "5px 9px",
+                            borderRadius: 999,
+                            background: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            color: "#475569",
+                            fontSize: 10.5,
+                            fontWeight: 800,
+                          }}
+                        >
+                          {getRequestSourceLabel(req)}
+                        </span>
+                        <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>
+                          Submitted by: {getSubmittedByLabel(req)}
+                        </span>
+                      </div>
+
+                      {isCabinRequest(req) && (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            padding: "11px",
+                            borderRadius: 14,
+                            background: "#f8fbff",
+                            border: "1px solid #dbeafe",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 900,
+                              color: "#1769aa",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.05em",
+                              marginBottom: 8,
+                            }}
+                          >
+                            Delta Cabin Service - Schedule Coverage Analysis
+                          </div>
+
+                          {coverageLoading && !coverageByRequest[req.id] ? (
+                            <div style={{ fontSize: 11.5, color: "#64748b", fontWeight: 700 }}>
+                              Checking approved Cabin schedule...
+                            </div>
+                          ) : !(coverageByRequest[req.id] || []).length ? (
+                            <div style={{ fontSize: 11.5, color: "#64748b", fontWeight: 700 }}>
+                              No coverage data available for this request.
+                            </div>
+                          ) : (
+                            <div style={{ display: "grid", gap: 7 }}>
+                              {(coverageByRequest[req.id] || []).map((item) => {
+                                const label =
+                                  item.level === "CRITICAL"
+                                    ? "CRITICAL COVERAGE"
+                                    : item.level === "CAUTION"
+                                    ? "CAUTION - MINIMUM COVERAGE"
+                                    : item.level === "NO_SCHEDULE"
+                                    ? "NO APPROVED SCHEDULE FOUND"
+                                    : item.employeeScheduled
+                                    ? "COVERAGE OK"
+                                    : "EMPLOYEE NOT SCHEDULED";
+
+                                return (
+                                  <div
+                                    key={`${req.id}-${item.date}`}
+                                    style={{
+                                      ...getCoverageStyle(item.level),
+                                      borderRadius: 11,
+                                      padding: "9px 10px",
+                                      fontSize: 11.5,
+                                      lineHeight: 1.45,
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 900 }}>
+                                      {formatCoverageDate(item.date)} {"\u00B7"} {label}
+                                    </div>
+                                    {item.level !== "NO_SCHEDULE" && (
+                                      <div style={{ marginTop: 3, fontWeight: 700 }}>
+                                        Scheduled: {item.scheduled} {"\u00B7"} Supervisors: {item.supervisors} {"\u00B7"} LAV: {item.lav} {"\u00B7"} Agents: {item.agents}
+                                        {item.employeeScheduled
+                                          ? ` | Remaining if approved: ${item.remaining}`
+                                          : " | Requested employee is not assigned that day."}
+                                      </div>
+                                    )}
+                                    {item.level === "CRITICAL" && (
+                                      <div style={{ marginTop: 3, fontWeight: 900 }}>
+                                        Management coverage or replacement required if approved.
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {req.notes && (
                         <div
