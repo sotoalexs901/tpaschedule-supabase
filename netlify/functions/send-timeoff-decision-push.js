@@ -1,4 +1,4 @@
-// netlify/functions/send-timeoff-decision-push.js
+//netlify/functions/send-timeoff-decision-push.js
 
 const admin = require("firebase-admin");
 
@@ -165,6 +165,36 @@ async function findUserForEmployee(db, request) {
   return null;
 }
 
+async function findSubmittingUser(db, request) {
+  const candidateIds = [
+    request.submittedByManagementId,
+    request.submittedByDutyManagerId,
+    request.submittedBySupervisorId,
+    request.requestedByUserId,
+  ].map(clean).filter(Boolean);
+
+  for (const userId of candidateIds) {
+    const snap = await db.collection("users").doc(userId).get();
+    if (snap.exists) return { id: snap.id, data: snap.data() || {} };
+  }
+
+  const candidateUsernames = [
+    request.submittedByManagementUsername,
+    request.submittedByDutyManagerUsername,
+    request.submittedBySupervisorUsername,
+    request.requestedByUsername,
+  ].map(clean).filter(Boolean);
+
+  for (const username of candidateUsernames) {
+    for (const field of ["username", "loginUsername"]) {
+      const snap = await db.collection("users").where(field, "==", username).limit(1).get();
+      if (!snap.empty) return { id: snap.docs[0].id, data: snap.docs[0].data() || {} };
+    }
+  }
+
+  return null;
+}
+
 async function getEnabledTokens(db, userId) {
   const snap = await db
     .collection("users")
@@ -293,9 +323,19 @@ exports.handler = async function handler(event) {
       });
     }
 
-    const targetUser = await findUserForEmployee(db, request);
+    const employeeUser = await findUserForEmployee(db, request);
+    const submittingUser = await findSubmittingUser(db, request);
 
-    if (!targetUser) {
+    const targetUsers = [];
+    const seenUserIds = new Set();
+
+    for (const candidate of [employeeUser, submittingUser]) {
+      if (!candidate?.id || seenUserIds.has(candidate.id)) continue;
+      seenUserIds.add(candidate.id);
+      targetUsers.push(candidate);
+    }
+
+    if (!targetUsers.length) {
       await requestRef.set(
         {
           decisionPushStatus: "NO_USER",
@@ -309,20 +349,31 @@ exports.handler = async function handler(event) {
       return json(200, {
         ok: true,
         skipped: true,
-        reason: "employee-user-not-found",
+        reason: "recipient-users-not-found",
         requestId,
         decision,
       });
     }
 
-    const tokenItems = await getEnabledTokens(db, targetUser.id);
+    const tokensByValue = new Map();
+    const recipientUserIds = [];
+
+    for (const targetUser of targetUsers) {
+      recipientUserIds.push(targetUser.id);
+      const userTokens = await getEnabledTokens(db, targetUser.id);
+      userTokens.forEach((item) => {
+        if (!tokensByValue.has(item.token)) tokensByValue.set(item.token, item);
+      });
+    }
+
+    const tokenItems = Array.from(tokensByValue.values());
 
     if (!tokenItems.length) {
       await requestRef.set(
         {
           decisionPushStatus: "NO_TOKENS",
           decisionPushDecision: decision,
-          decisionPushTargetUserId: targetUser.id,
+          decisionPushTargetUserIds: recipientUserIds,
           decisionPushSuccessCount: 0,
           decisionPushFailureCount: 0,
           decisionPushUpdatedAt:
@@ -334,10 +385,10 @@ exports.handler = async function handler(event) {
       return json(200, {
         ok: true,
         skipped: true,
-        reason: "employee-has-no-enabled-tokens",
+        reason: "recipients-have-no-enabled-tokens",
         requestId,
         decision,
-        targetUserId: targetUser.id,
+        targetUserIds: recipientUserIds,
       });
     }
 
@@ -345,24 +396,25 @@ exports.handler = async function handler(event) {
     const range = formatRange(request);
     const managerNote = clean(request.managerNote);
 
+    const employeeName = clean(request.employeeName) || "Employee";
     let title = "Time Off Request Updated";
-    let body = `Your ${reasonType} request${range ? ` for ${range}` : ""} was updated.`;
+    let body = `${employeeName}'s ${reasonType} request${range ? ` for ${range}` : ""} was updated.`;
     let urgency = "normal";
 
     if (decision === "approved") {
       title = `${reasonType} Approved`;
-      body = `Your ${reasonType} request${range ? ` for ${range}` : ""} has been approved.`;
+      body = `${employeeName}'s ${reasonType} request${range ? ` for ${range}` : ""} has been approved.`;
     }
 
     if (decision === "rejected") {
       title = `${reasonType} Request Rejected`;
-      body = `Your ${reasonType} request${range ? ` for ${range}` : ""} was not approved.`;
+      body = `${employeeName}'s ${reasonType} request${range ? ` for ${range}` : ""} was not approved.`;
       urgency = "high";
     }
 
     if (decision === "needs_info") {
       title = `${reasonType} Request Needs Info`;
-      body = `Management needs additional information for your ${reasonType} request${range ? ` for ${range}` : ""}.`;
+      body = `Management needs additional information for ${employeeName}'s ${reasonType} request${range ? ` for ${range}` : ""}.`;
       urgency = "high";
     }
 
@@ -407,7 +459,7 @@ exports.handler = async function handler(event) {
         decisionPushStatus:
           result.successCount > 0 ? "SENT" : "FAILED",
         decisionPushDecision: decision,
-        decisionPushTargetUserId: targetUser.id,
+        decisionPushTargetUserIds: recipientUserIds,
         decisionPushSuccessCount: result.successCount,
         decisionPushFailureCount: result.failureCount,
         decisionPushSentAt:
@@ -425,7 +477,7 @@ exports.handler = async function handler(event) {
       ok: true,
       requestId,
       decision,
-      targetUserId: targetUser.id,
+      targetUserIds: recipientUserIds,
       tokenCount: tokenItems.length,
       successCount: result.successCount,
       failureCount: result.failureCount,
@@ -470,4 +522,4 @@ exports.handler = async function handler(event) {
   }
 };
 
-// END send-timeoff-decision-push.js
+// END send-timeoff-decision-push.
