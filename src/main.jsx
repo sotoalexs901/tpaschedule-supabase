@@ -542,7 +542,9 @@ function AppRouter() {
           <Route
             path="request-dayoff-internal"
             element={
-              <ProtectedRoute roles={["agent", "supervisor"]}>
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager"]}
+              >
                 <EmployeeTimeOffRequestPage />
               </ProtectedRoute>
             }
@@ -877,7 +879,6 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
-
 
           <Route
             path="wchr/duty-follow-up"
