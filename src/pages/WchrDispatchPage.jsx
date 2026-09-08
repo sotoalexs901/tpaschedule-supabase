@@ -31,6 +31,10 @@ import {
   getElapsedSeconds,
 } from "../utils/wchrOperations.js";
 
+import {
+  triggerWchrAssignmentPush,
+} from "../utils/wchrAssignmentPush.js";
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -1641,6 +1645,12 @@ export default function WchrDispatchPage() {
             assignment_status:
               "ASSIGNED",
 
+            assignmentPushStatus:
+              "PENDING",
+
+            assignmentPushError:
+              "",
+
             ready_for_pickup:
               false,
 
@@ -1762,6 +1772,19 @@ export default function WchrDispatchPage() {
             )}.`,
 
           user,
+        });
+
+        // ------------------------------------------------------
+        // PUSH NOTIFICATION TO ASSIGNED AGENT
+        // ------------------------------------------------------
+
+        triggerWchrAssignmentPush(
+          selectedReport.id
+        ).catch((pushError) => {
+          console.error(
+            "WCHR assignment push error:",
+            pushError
+          );
         });
 
         // ------------------------------------------------------
