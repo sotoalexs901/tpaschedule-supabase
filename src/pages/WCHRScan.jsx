@@ -7,10 +7,8 @@ import {
   collection,
   doc,
   onSnapshot,
-  query,
   runTransaction,
   serverTimestamp,
-  where,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
@@ -286,7 +284,7 @@ function getFlightLabel(
       : "",
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(" | ");
 }
 
 function buildFlightKey(
@@ -301,6 +299,49 @@ function buildFlightKey(
   )}-${toCompactDate(
     date
   )}`;
+}
+
+function getFlightDateKey(
+  flight
+) {
+  return cleanText(
+    flight?.service_date ||
+      flight?.flight_date ||
+      flight?.date ||
+      ""
+  );
+}
+
+function isWchrFlightEnabled(
+  flight
+) {
+  if (!flight) {
+    return false;
+  }
+
+  if (
+    flight.active === false ||
+    flight.wchr_enabled === false ||
+    flight.enabled_for_wchr === false ||
+    flight.wchr_active === false
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function flightIsOpenForDate(
+  flight,
+  dateKey
+) {
+  return (
+    getFlightDateKey(flight) === dateKey &&
+    safeUpper(
+      flight?.status || "OPEN"
+    ) === "OPEN" &&
+    isWchrFlightEnabled(flight)
+  );
 }
 
 // ============================================================
@@ -713,7 +754,7 @@ function InfoField({
             "break-word",
         }}
       >
-        {value || "—"}
+        {value || "-"}
       </div>
     </div>
   );
@@ -834,23 +875,12 @@ export default function WCHRScan() {
       true
     );
 
-    const flightsQuery =
-      query(
+    const unsubscribe =
+      onSnapshot(
         collection(
           db,
           DAILY_FLIGHTS_COLLECTION
         ),
-
-        where(
-          "flight_date",
-          "==",
-          todayKey
-        )
-      );
-
-    const unsubscribe =
-      onSnapshot(
-        flightsQuery,
 
         (snapshot) => {
           const rows =
@@ -865,16 +895,11 @@ export default function WCHRScan() {
                 })
               )
               .filter(
-                (
-                  flight
-                ) =>
-                  safeUpper(
-                    flight.status ||
-                      "OPEN"
-                  ) ===
-                    "OPEN" &&
-                  flight.active !==
-                    false
+                (flight) =>
+                  flightIsOpenForDate(
+                    flight,
+                    todayKey
+                  )
               )
               .sort(
                 (
@@ -1397,6 +1422,9 @@ export default function WCHRScan() {
             .toUpperCase()}`;
 
         const flightKey =
+          cleanText(
+            selectedFlight.flight_key
+          ) ||
           buildFlightKey(
             finalAirline,
             finalFlightNumber,
@@ -1428,22 +1456,23 @@ export default function WCHRScan() {
             const flightData =
               flightSnapshot.data();
 
-            const currentFlightStatus =
-              safeUpper(
-                flightData.status ||
-                  "OPEN"
-              );
-
             if (
-              currentFlightStatus !==
-                "OPEN" ||
-              flightData.active ===
-                false
+              !flightIsOpenForDate(
+                flightData,
+                todayKey
+              )
             ) {
               throw new Error(
-                `${finalAirline} ${finalFlightNumber} has been closed by WCHR Dispatch.`
+                `${finalAirline} ${finalFlightNumber} is no longer open for today's WCHR operation.`
               );
             }
+
+            const authoritativeFlightKey =
+              cleanText(
+                flightData.flight_key ||
+                  selectedFlight.flight_key
+              ) ||
+              flightKey;
 
             // ==================================================
             // RECHECK COMPANY WHEELCHAIR
@@ -1556,6 +1585,9 @@ export default function WCHRScan() {
                 flight_number:
                   finalFlightNumber,
 
+                service_date:
+                  todayKey,
+
                 flight_date:
                   todayKey,
 
@@ -1563,7 +1595,7 @@ export default function WCHRScan() {
                   finalGate,
 
                 flight_key:
-                  flightKey,
+                  authoritativeFlightKey,
 
                 // ----------------------------------------------
                 // WHEELCHAIR
@@ -2165,7 +2197,7 @@ export default function WCHRScan() {
                     "0.14em",
                 }}
               >
-                {APP_NAME} · WCHR Intake
+                {APP_NAME} | WCHR Intake
               </div>
 
               <h1
@@ -2453,8 +2485,8 @@ export default function WCHRScan() {
                   1.6,
               }}
             >
-              No flights are currently OPEN for today's WCHR operation.
-              WCHR Dispatch must add or reopen a flight before a new passenger
+              No flights are currently OPEN and enabled for today's WCHR operation.
+              WCHR Dispatch must add, enable, or reopen a flight before a new passenger
               service can be created.
             </div>
           </PageCard>
@@ -2860,7 +2892,7 @@ export default function WCHRScan() {
                 PERSONAL_WCHR_VALUE
               }
             >
-              Personal WCHR — Passenger's Own Wheelchair
+              Personal WCHR - Passenger's Own Wheelchair
             </option>
 
             {inventory.map(
@@ -2880,7 +2912,7 @@ export default function WCHRScan() {
                     item
                   )}
                   {item.location
-                    ? ` · ${item.location}`
+                    ? ` | ${item.location}`
                     : ""}
                 </option>
               )
@@ -3320,22 +3352,22 @@ export default function WCHRScan() {
           }}
         >
           <InfoField
-            label="1 · Intake"
+            label="1 | Intake"
             value="Passenger + Flight + WCHR"
           />
 
           <InfoField
-            label="2 · Ready"
+            label="2 | Ready"
             value="Timer Starts"
           />
 
           <InfoField
-            label="3 · Dispatch"
+            label="3 | Dispatch"
             value="Supervisor Assigns Agent"
           />
 
           <InfoField
-            label="4 · Agent"
+            label="4 | Agent"
             value="Journey Begins"
           />
         </div>
@@ -3360,7 +3392,7 @@ export default function WCHRScan() {
             "#94a3b8",
         }}
       >
-        {APP_NAME} · {APP_SUBTITLE}
+        {APP_NAME} | {APP_SUBTITLE}
       </div>
     </div>
   );
