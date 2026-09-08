@@ -76,13 +76,14 @@ const GATE_LOCATIONS = AGENT_LOCATIONS.filter((location) =>
 const SERVICE_STATUS_ORDER = {
   READY_FOR_PICKUP: 1,
   ASSIGNED: 2,
-  PICKED_UP: 3,
-  IN_TRANSIT: 4,
-  AT_GATE: 5,
-  BOARDING: 6,
-  BOARDED: 7,
-  PENDING_STORAGE: 8,
-  STORED: 9,
+  ACCEPTED: 3,
+  PICKED_UP: 4,
+  IN_TRANSIT: 5,
+  AT_GATE: 6,
+  BOARDING: 7,
+  BOARDED: 8,
+  PENDING_STORAGE: 9,
+  STORED: 10,
 };
 
 // ============================================================
@@ -195,6 +196,7 @@ function getServiceStatusLabel(value) {
   const labels = {
     READY_FOR_PICKUP: "Ready for Pickup",
     ASSIGNED: "Assigned",
+    ACCEPTED: "Accepted",
     PICKED_UP: "Picked Up",
     IN_TRANSIT: "In Transit",
     AT_GATE: "At Gate",
@@ -926,6 +928,13 @@ export default function WchrAgentOperationsPage() {
     currentServiceStatus !==
       WCHR_SERVICE_STATUS.STORED;
 
+  const hasAccepted =
+    Boolean(activeReport?.assignment_accepted_at) ||
+    statusAtLeast(
+      currentServiceStatus,
+      "ACCEPTED"
+    );
+
   const hasPickedUp = statusAtLeast(
     currentServiceStatus,
     WCHR_SERVICE_STATUS.PICKED_UP
@@ -1252,12 +1261,88 @@ export default function WchrAgentOperationsPage() {
   };
 
   // ============================================================
+  // ACCEPT ASSIGNMENT
+  // ============================================================
+
+  const handleAcceptAssignment = async () => {
+    if (!activeReport || !agentId) {
+      setError("No wheelchair is assigned.");
+      return;
+    }
+
+    if (hasAccepted) {
+      setError("This WCHR assignment has already been accepted.");
+      return;
+    }
+
+    const location =
+      cleanText(activeReport.current_location) ||
+      cleanText(shift?.current_location) ||
+      "Counter";
+
+    const confirmed = window.confirm(
+      `Accept WCHR ${
+        activeReport.wheelchair_number || ""
+      } for ${activeReport.passenger_name || "this passenger"}?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("accept");
+      setError("");
+      setMessage("");
+
+      await updateJourneyState({
+        serviceStatus: "ACCEPTED",
+        location,
+        reportFields: {
+          assignment_accepted_at: serverTimestamp(),
+          assignment_accepted_by_agent_id: agentId,
+          assignment_accepted_by_agent_name:
+            getEmployeeName(employee),
+        },
+        shiftFields: {
+          availability_status:
+            WCHR_AGENT_AVAILABILITY.BUSY,
+          assignment_accepted_at: serverTimestamp(),
+        },
+        eventType: "ASSIGNMENT_ACCEPTED",
+        eventNote: `WCHR ${
+          activeReport.wheelchair_number || ""
+        } assignment accepted by ${getEmployeeName(employee)}.`,
+      });
+
+      setMessage(
+        `WCHR ${
+          activeReport.wheelchair_number || ""
+        } accepted. Proceed to the pickup location and confirm Picked Up once you physically receive the wheelchair/passenger.`
+      );
+    } catch (err) {
+      console.error("Accept WCHR assignment error:", err);
+      setError(
+        err?.message ||
+          "Unable to accept the WCHR assignment."
+      );
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  // ============================================================
   // MARK PICKED UP
   // ============================================================
 
   const handleMarkPickedUp = async () => {
     if (!activeReport) {
       setError("No wheelchair is assigned.");
+      return;
+    }
+
+    if (!hasAccepted) {
+      setError(
+        "Accept the WCHR assignment before marking it as Picked Up."
+      );
       return;
     }
 
@@ -2447,6 +2532,13 @@ export default function WchrAgentOperationsPage() {
                     activeReport.assigned_at
                   )}
                 />
+
+                <InfoField
+                  label="Accepted"
+                  value={formatTimestamp(
+                    activeReport.assignment_accepted_at
+                  )}
+                />
               </div>
 
               {/* SERVICE FLOW */}
@@ -2486,20 +2578,28 @@ export default function WchrAgentOperationsPage() {
                     display: "grid",
                     gridTemplateColumns: isMobile
                       ? "1fr"
-                      : "repeat(3, minmax(0, 1fr))",
+                      : "repeat(4, minmax(0, 1fr))",
                     gap: 9,
                   }}
                 >
                   <ServiceStep
                     number="1"
-                    title="Pick Up WCHR"
-                    subtitle="Confirm you physically received the assigned wheelchair/passenger."
-                    completed={hasPickedUp}
-                    active={!hasPickedUp}
+                    title="Accept Assignment"
+                    subtitle="Confirm you received and accepted the WCHR assignment from Dispatch."
+                    completed={hasAccepted}
+                    active={!hasAccepted}
                   />
 
                   <ServiceStep
                     number="2"
+                    title="Pick Up WCHR"
+                    subtitle="Confirm you physically received the assigned wheelchair/passenger."
+                    completed={hasPickedUp}
+                    active={hasAccepted && !hasPickedUp}
+                  />
+
+                  <ServiceStep
+                    number="3"
                     title="In Transit"
                     subtitle="Confirm the passenger journey from counter toward the airside/gate."
                     completed={isInTransit}
@@ -2507,7 +2607,7 @@ export default function WchrAgentOperationsPage() {
                   />
 
                   <ServiceStep
-                    number="3"
+                    number="4"
                     title="Arrive at Gate"
                     subtitle="Transfer the passenger to Supervisor gate monitoring and become available."
                     completed={isAtGate}
@@ -2521,14 +2621,28 @@ export default function WchrAgentOperationsPage() {
                     display: "grid",
                     gridTemplateColumns: isMobile
                       ? "1fr"
-                      : "repeat(3, minmax(0, 1fr))",
+                      : "repeat(4, minmax(0, 1fr))",
                     gap: 9,
                   }}
                 >
                   <ActionButton
                     variant="success"
+                    disabled={Boolean(busyAction) || hasAccepted}
+                    onClick={handleAcceptAssignment}
+                  >
+                    {busyAction === "accept"
+                      ? "Accepting..."
+                      : hasAccepted
+                      ? "Assignment Accepted"
+                      : "Accept WCHR"}
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="success"
                     disabled={
-                      busyAction || hasPickedUp
+                      Boolean(busyAction) ||
+                      !hasAccepted ||
+                      hasPickedUp
                     }
                     onClick={handleMarkPickedUp}
                   >
@@ -2559,7 +2673,7 @@ export default function WchrAgentOperationsPage() {
                     variant="warning"
                     disabled={
                       Boolean(busyAction) ||
-                      !hasPickedUp ||
+                      !isInTransit ||
                       isAtGate
                     }
                     onClick={handleArriveAtGate}
@@ -2748,7 +2862,7 @@ export default function WchrAgentOperationsPage() {
                   fontWeight: 750,
                 }}
               >
-                You currently have an active wheelchair assignment. You cannot accept another WCHR or Punch Out until the passenger reaches the gate or WCHR Management releases the assignment.
+                You currently have an active wheelchair assignment. You cannot accept another WCHR or Punch Out until the passenger reaches the gate or WCHR Management releases the assignment. New assignments must be accepted before pickup begins.
               </div>
             </PageCard>
           )}
