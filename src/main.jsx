@@ -43,7 +43,7 @@ import TimeOffStatusPublicPage from "./pages/TimeOffStatusPublicPage.jsx";
 import EmployeeDashboardPage from "./pages/EmployeeDashboardPage.jsx";
 import MySchedulePage from "./pages/MySchedulePage.jsx";
 import CrewAnnouncementsPage from "./pages/CrewAnnouncementsPage.jsx";
-import EmployeeTimeOffRequestPage from "./pages/EmployeeTimeOffRequestPage.jsx";
+import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
 import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
@@ -545,7 +545,7 @@ function AppRouter() {
               <ProtectedRoute
                 roles={["agent", "supervisor", "duty_manager"]}
               >
-                <EmployeeTimeOffRequestPage />
+                <TimeOffRequestPage />
               </ProtectedRoute>
             }
           />
