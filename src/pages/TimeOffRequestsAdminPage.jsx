@@ -1,5 +1,5 @@
 // src/pages/TimeOffRequestsAdminPage.jsx
-
+/ sr
 import React, { useEffect, useMemo, useState } from "react";
 import {
   addDoc,
@@ -170,15 +170,15 @@ function getVisibleName(user) {
 }
 
 
-const CABIN_DAY_KEYS = [
-  "sunday",
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-];
+const CABIN_DAY_KEY_BY_JS_DAY = {
+  0: "sunday",
+  1: "monday",
+  2: "tuesday",
+  3: "wednesday",
+  4: "thursday",
+  5: "friday",
+  6: "saturday",
+};
 
 function normalizeLookup(value) {
   return String(value || "").trim().toLowerCase();
@@ -373,7 +373,7 @@ export default function TimeOffRequestsAdminPage() {
           const weekStart = getWeekStartMonday(date);
           const schedule = scheduleByWeek[weekStart];
           const d = parseLocalDate(date);
-          const dayKey = d ? CABIN_DAY_KEYS[d.getDay()] : "";
+          const dayKey = d ? CABIN_DAY_KEY_BY_JS_DAY[d.getDay()] : "";
 
           if (!schedule) {
             return { date, weekStart, dayKey, level: "NO_SCHEDULE", scheduled: 0, remaining: 0, employeeScheduled: false };
@@ -554,6 +554,18 @@ export default function TimeOffRequestsAdminPage() {
         decisionPushStatus: "PENDING",
         decisionPushDecision: "approved",
         decisionPushError: "",
+
+        coverageAnalysis: coverage,
+        coverageIssue: criticalDates.length > 0,
+        coverageIssueLevel:
+          criticalDates.length > 0
+            ? "CRITICAL"
+            : cautionDates.length > 0
+            ? "CAUTION"
+            : "OK",
+        coverageIssueDates: criticalDates.map((item) => item.date),
+        coverageCheckedAt: serverTimestamp(),
+        coverageSource: "cabinSchedules/cabinScheduleSlots",
       });
 
       updateLocalRequest(req.id, {
