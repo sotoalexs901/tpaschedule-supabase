@@ -631,6 +631,11 @@ export default function AppLayout() {
     user?.role === "agent" ||
     user?.role === "supervisor";
 
+  const canRequestTimeOff =
+    user?.role === "agent" ||
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager";
+
   const canViewMySchedule =
     user?.role === "agent" ||
     user?.role === "supervisor" ||
@@ -1050,13 +1055,15 @@ export default function AppLayout() {
       });
     }
 
-    if (isAgentOrSupervisor) {
+    if (canRequestTimeOff) {
       timeoff.push({
         to: "/request-dayoff-internal",
         label: "Request / My Time Off",
         icon: "\u{1F6EB}",
       });
+    }
 
+    if (isAgentOrSupervisor) {
       training.push({
         to: "/training-notices",
         label: "Training Notices",
@@ -1331,6 +1338,7 @@ export default function AppLayout() {
     canAccessRegularManagerSchedules,
     canAccessCabinServiceOnlyManager,
     isAgentOrSupervisor,
+    canRequestTimeOff,
     canViewMySchedule,
     canAccessTimesheets,
     canAccessOperationalReports,
