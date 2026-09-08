@@ -21,23 +21,41 @@ import {
   APP_SUBTITLE,
 } from "../config/appConfig.js";
 
+import {
+  safeUpper,
+  cleanText,
+} from "../utils/wchrOperations.js";
+
 // ============================================================
 // COLLECTIONS
 // ============================================================
 
 const REPORTS_COLLECTION = "wch_reports";
-const TRACKING_EVENTS_COLLECTION = "wch_tracking_events";
-const INVENTORY_COLLECTION = "wchr_inventory";
-const DAILY_FLIGHTS_COLLECTION = "wchr_daily_flights";
+
+const TRACKING_EVENTS_COLLECTION =
+  "wchr_tracking_events";
+
+const INVENTORY_COLLECTION =
+  "wchr_inventory";
+
+const DAILY_FLIGHTS_COLLECTION =
+  "wchr_daily_flights";
 
 // ============================================================
 // CONSTANTS
 // ============================================================
 
+const WCHR_TYPES = [
+  "WCHR",
+  "WCHS",
+  "WCHC",
+];
+
 const START_LOCATIONS = [
   "Counter",
   "AV Ticket Counter",
   "SY Ticket Counter",
+  "AM Ticket Counter",
   "Outside TSA",
   "TSA",
   "Security",
@@ -57,280 +75,232 @@ const START_LOCATIONS = [
   "Gate F89",
   "Gate F90",
   "Main Terminal",
+  "Wheelchair Storage",
   "Other",
 ];
 
-const WCHR_TYPES = [
-  "WCHR",
-  "WCHS",
-  "WCHC",
-];
+const PERSONAL_WCHR_VALUE =
+  "__PERSONAL_WCHR__";
 
 // ============================================================
-// HELPERS
+// DATE HELPERS
 // ============================================================
 
-function pad2(number) {
-  return String(number).padStart(2, "0");
+function pad2(value) {
+  return String(value).padStart(
+    2,
+    "0"
+  );
 }
 
-function dateKey(date = new Date()) {
+function toDateKey(
+  date = new Date()
+) {
   return `${date.getFullYear()}-${pad2(
     date.getMonth() + 1
-  )}-${pad2(date.getDate())}`;
+  )}-${pad2(
+    date.getDate()
+  )}`;
 }
 
-function compactDateKey(date = new Date()) {
+function toCompactDate(
+  date = new Date()
+) {
   return `${date.getFullYear()}${pad2(
     date.getMonth() + 1
-  )}${pad2(date.getDate())}`;
+  )}${pad2(
+    date.getDate()
+  )}`;
 }
 
-function safeText(value) {
-  return String(value || "").trim();
-}
+// ============================================================
+// TEXT HELPERS
+// ============================================================
 
-function safeUpper(value) {
-  return safeText(value).toUpperCase();
-}
+function normalizePassengerName(
+  value
+) {
+  const text =
+    cleanText(value);
 
-function cleanPnr(value) {
-  return safeUpper(value).replace(
-    /[^A-Z0-9]/g,
-    ""
-  );
-}
-
-function cleanWheelchairNumber(value) {
-  return safeUpper(value).replace(
-    /[^A-Z0-9-]/g,
-    ""
-  );
-}
-
-function normalizePassengerName(value) {
-  const clean = safeText(value);
-
-  if (!clean) {
+  if (!text) {
     return "";
   }
 
-  if (clean.includes("/")) {
-    return clean
-      .split("/")
-      .map((part) =>
-        part
-          .toLowerCase()
-          .replace(
-            /\b\w/g,
-            (character) =>
-              character.toUpperCase()
-          )
-          .trim()
-      )
-      .join(" / ");
-  }
-
-  return clean
+  return text
     .toLowerCase()
     .replace(
       /\b\w/g,
       (character) =>
         character.toUpperCase()
-    )
-    .trim();
+    );
 }
 
-function getVisibleUserName(user) {
+function cleanPnr(value) {
+  return safeUpper(value)
+    .replace(
+      /[^A-Z0-9]/g,
+      ""
+    );
+}
+
+function cleanWheelchairNumber(
+  value
+) {
+  return safeUpper(value)
+    .replace(
+      /[^A-Z0-9-]/g,
+      ""
+    );
+}
+
+function getVisibleName(user) {
   return (
     user?.displayName ||
     user?.fullName ||
     user?.name ||
     user?.username ||
-    user?.email ||
-    "WCHR Supervisor"
+    "Management"
   );
 }
 
-function getUserId(user) {
-  return safeText(
-    user?.id ||
-      user?.uid ||
-      user?.username ||
-      user?.email
-  );
-}
+// ============================================================
+// INVENTORY HELPERS
+// ============================================================
 
-function getWheelchairDocumentId(
-  wheelchairNumber
+function getInventoryNumber(
+  item
 ) {
-  const cleanNumber =
-    cleanWheelchairNumber(
-      wheelchairNumber
+  return cleanWheelchairNumber(
+    item?.wheelchair_number ||
+      item?.number ||
+      item?.id ||
+      ""
+  );
+}
+
+function getInventoryStatus(
+  item
+) {
+  const status =
+    safeUpper(
+      item?.status
     );
 
-  if (!cleanNumber) {
-    return "";
+  if (
+    item?.maintenance ===
+      true ||
+    status ===
+      "MAINTENANCE" ||
+    status ===
+      "OUT_OF_SERVICE"
+  ) {
+    return "MAINTENANCE";
   }
 
-  return cleanNumber
-    .toLowerCase()
-    .replace(
-      /[^a-z0-9-]/g,
-      "-"
-    )
-    .replace(
-      /-+/g,
-      "-"
-    );
+  if (
+    item?.available_for_handoff ===
+      true ||
+    status ===
+      "AVAILABLE_HANDOFF"
+  ) {
+    return "AVAILABLE_HANDOFF";
+  }
+
+  if (
+    item?.is_available ===
+      true ||
+    status ===
+      "AVAILABLE" ||
+    status ===
+      "STORED"
+  ) {
+    return "AVAILABLE";
+  }
+
+  if (
+    item?.is_available ===
+      false ||
+    [
+      "READY_FOR_PICKUP",
+      "ASSIGNED",
+      "IN_USE",
+      "PICKED_UP",
+      "IN_TRANSIT",
+      "AT_GATE",
+      "BOARDING",
+      "BOARDED",
+      "PENDING_STORAGE",
+    ].includes(status)
+  ) {
+    return "IN_USE";
+  }
+
+  return status || "UNKNOWN";
 }
 
-function buildFlightKey(
-  airline,
-  flightNumber,
-  serviceDate = new Date()
+function inventoryIsAvailable(
+  item
 ) {
-  return `${safeUpper(
-    airline
-  )}-${safeUpper(
-    flightNumber
-  )}-${compactDateKey(
-    serviceDate
-  )}`;
-}
+  const status =
+    getInventoryStatus(
+      item
+    );
 
-function getMillis(value) {
-  if (!value) return 0;
-
-  if (
-    typeof value?.toMillis ===
-    "function"
-  ) {
-    return value.toMillis();
-  }
-
-  if (
-    typeof value?.toDate ===
-    "function"
-  ) {
-    return value
-      .toDate()
-      .getTime();
-  }
-
-  const parsed =
-    new Date(value);
-
-  return Number.isNaN(
-    parsed.getTime()
-  )
-    ? 0
-    : parsed.getTime();
-}
-
-function formatFlightTime(value) {
-  if (!value) return "";
-
-  if (
-    typeof value === "string" &&
-    /^\d{1,2}:\d{2}$/.test(value)
-  ) {
-    return value;
-  }
-
-  const millis =
-    getMillis(value);
-
-  if (!millis) {
-    return safeText(value);
-  }
-
-  return new Date(
-    millis
-  ).toLocaleTimeString(
-    undefined,
-    {
-      hour: "2-digit",
-      minute: "2-digit",
-    }
+  return (
+    status === "AVAILABLE" ||
+    status ===
+      "AVAILABLE_HANDOFF"
   );
 }
 
-function getDailyFlightLabel(flight) {
+// ============================================================
+// FLIGHT HELPERS
+// ============================================================
+
+function getFlightLabel(
+  flight
+) {
   const airline =
     safeUpper(
-      flight.airline
+      flight?.airline
     );
 
   const flightNumber =
     safeUpper(
-      flight.flight_number
-    );
-
-  const time =
-    formatFlightTime(
-      flight.departure_time ||
-        flight.flight_time ||
-        flight.scheduled_time
-    );
-
-  const destination =
-    safeUpper(
-      flight.destination
+      flight?.flight_number
     );
 
   const gate =
-    safeUpper(
-      flight.gate
+    cleanText(
+      flight?.gate
     );
 
   return [
     `${airline} ${flightNumber}`.trim(),
-    time,
-    destination,
-    gate,
+    gate
+      ? `Gate ${gate.replace(
+          /^GATE\s*/i,
+          ""
+        )}`
+      : "",
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
-function isInventoryUnavailable(data) {
-  if (!data) {
-    return false;
-  }
-
-  const status =
-    safeUpper(
-      data.status
-    );
-
-  const activeStatuses = [
-    "READY_FOR_PICKUP",
-    "ASSIGNED",
-    "PICKED_UP",
-    "IN_TRANSIT",
-    "AT_GATE",
-    "BOARDING",
-    "BOARDED",
-    "PENDING_STORAGE",
-    "IN_USE",
-  ];
-
-  if (
-    activeStatuses.includes(status)
-  ) {
-    return true;
-  }
-
-  if (
-    data.is_available === false &&
-    status !== "AVAILABLE" &&
-    status !== "STORED"
-  ) {
-    return true;
-  }
-
-  return false;
+function buildFlightKey(
+  airline,
+  flightNumber,
+  date = new Date()
+) {
+  return `${safeUpper(
+    airline
+  )}-${safeUpper(
+    flightNumber
+  )}-${toCompactDate(
+    date
+  )}`;
 }
 
 // ============================================================
@@ -371,6 +341,7 @@ function useViewport() {
     width,
     isMobile:
       width < 768,
+
     isTablet:
       width >= 768 &&
       width < 1100,
@@ -390,14 +361,20 @@ function PageCard({
       style={{
         width: "100%",
         minWidth: 0,
-        boxSizing: "border-box",
+        boxSizing:
+          "border-box",
+
         background:
           "rgba(255,255,255,0.96)",
+
         border:
           "1px solid #e2e8f0",
+
         borderRadius: 22,
+
         boxShadow:
           "0 16px 38px rgba(15,23,42,0.07)",
+
         ...style,
       }}
     >
@@ -408,173 +385,131 @@ function PageCard({
 
 function FieldLabel({
   children,
-  required = false,
 }) {
   return (
     <label
       style={{
         display: "block",
+
         marginBottom: 6,
-        fontSize: 10.5,
+
+        fontSize: 10,
+
         fontWeight: 900,
+
         color: "#64748b",
+
         textTransform:
           "uppercase",
+
         letterSpacing:
           "0.07em",
       }}
     >
       {children}
-
-      {required && (
-        <span
-          style={{
-            color: "#dc2626",
-            marginLeft: 4,
-          }}
-        >
-          *
-        </span>
-      )}
     </label>
   );
 }
 
 function TextInput({
-  label,
   value,
   onChange,
   placeholder = "",
   disabled = false,
-  required = false,
 }) {
   return (
-    <div>
-      <FieldLabel
-        required={required}
-      >
-        {label}
-      </FieldLabel>
+    <input
+      type="text"
+      value={value || ""}
+      disabled={disabled}
+      placeholder={
+        placeholder
+      }
+      onChange={(event) =>
+        onChange(
+          event.target.value
+        )
+      }
+      style={{
+        width: "100%",
+        minWidth: 0,
 
-      <input
-        type="text"
-        value={value || ""}
-        onChange={(event) =>
-          onChange(
-            event.target.value
-          )
-        }
-        placeholder={
-          placeholder
-        }
-        disabled={disabled}
-        style={{
-          width: "100%",
-          minWidth: 0,
-          boxSizing:
-            "border-box",
-          border:
-            "1px solid #dbeafe",
-          background:
-            disabled
-              ? "#f8fafc"
-              : "#ffffff",
-          borderRadius: 13,
-          padding:
-            "11px 13px",
-          fontSize: 14,
-          color: "#0f172a",
-          outline: "none",
-          fontFamily:
-            "inherit",
-        }}
-      />
-    </div>
+        boxSizing:
+          "border-box",
+
+        border:
+          "1px solid #dbeafe",
+
+        borderRadius: 13,
+
+        padding:
+          "11px 13px",
+
+        background:
+          disabled
+            ? "#f8fafc"
+            : "#ffffff",
+
+        color: "#0f172a",
+
+        fontSize: 14,
+
+        fontFamily:
+          "inherit",
+
+        outline: "none",
+      }}
+    />
   );
 }
 
 function SelectInput({
-  label,
   value,
   onChange,
-  options = [],
   disabled = false,
-  required = false,
-  placeholder = "Select",
+  children,
 }) {
   return (
-    <div>
-      <FieldLabel
-        required={required}
-      >
-        {label}
-      </FieldLabel>
+    <select
+      value={value || ""}
+      disabled={disabled}
+      onChange={(event) =>
+        onChange(
+          event.target.value
+        )
+      }
+      style={{
+        width: "100%",
+        minWidth: 0,
 
-      <select
-        value={value || ""}
-        onChange={(event) =>
-          onChange(
-            event.target.value
-          )
-        }
-        disabled={disabled}
-        style={{
-          width: "100%",
-          minWidth: 0,
-          boxSizing:
-            "border-box",
-          border:
-            "1px solid #dbeafe",
-          background:
-            disabled
-              ? "#f8fafc"
-              : "#ffffff",
-          borderRadius: 13,
-          padding:
-            "11px 13px",
-          fontSize: 14,
-          color: "#0f172a",
-          outline: "none",
-          fontFamily:
-            "inherit",
-        }}
-      >
-        <option value="">
-          {placeholder}
-        </option>
+        boxSizing:
+          "border-box",
 
-        {options.map(
-          (option) => {
-            if (
-              typeof option ===
-              "string"
-            ) {
-              return (
-                <option
-                  key={option}
-                  value={option}
-                >
-                  {option}
-                </option>
-              );
-            }
+        border:
+          "1px solid #dbeafe",
 
-            return (
-              <option
-                key={
-                  option.value
-                }
-                value={
-                  option.value
-                }
-              >
-                {option.label}
-              </option>
-            );
-          }
-        )}
-      </select>
-    </div>
+        borderRadius: 13,
+
+        padding:
+          "11px 13px",
+
+        background:
+          disabled
+            ? "#f8fafc"
+            : "#ffffff",
+
+        color: "#0f172a",
+
+        fontSize: 14,
+
+        fontFamily:
+          "inherit",
+
+        outline: "none",
+      }}
+    >
+      {children}
+    </select>
   );
 }
 
@@ -583,56 +518,87 @@ function ActionButton({
   onClick,
   variant = "primary",
   disabled = false,
-  type = "button",
   style = {},
 }) {
   const variants = {
     primary: {
       background:
         "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-      color: "#ffffff",
-      border: "none",
+
+      color:
+        "#ffffff",
+
+      border:
+        "none",
+
+      boxShadow:
+        "0 10px 20px rgba(23,105,170,0.18)",
     },
 
     secondary: {
-      background: "#ffffff",
-      color: "#1769aa",
+      background:
+        "#ffffff",
+
+      color:
+        "#1769aa",
+
       border:
         "1px solid #cfe7fb",
+
+      boxShadow:
+        "none",
     },
 
     success: {
       background:
         "#16a34a",
-      color: "#ffffff",
-      border: "none",
+
+      color:
+        "#ffffff",
+
+      border:
+        "none",
+
+      boxShadow:
+        "0 10px 20px rgba(22,163,74,0.16)",
     },
   };
 
   return (
     <button
-      type={type}
+      type="button"
       onClick={onClick}
       disabled={disabled}
       style={{
-        borderRadius: 13,
+        borderRadius: 12,
+
         padding:
-          "11px 15px",
+          "10px 14px",
+
         fontSize: 13,
+
         fontWeight: 850,
+
         fontFamily:
           "inherit",
-        cursor: disabled
-          ? "not-allowed"
-          : "pointer",
-        opacity: disabled
-          ? 0.55
-          : 1,
+
+        cursor:
+          disabled
+            ? "not-allowed"
+            : "pointer",
+
+        opacity:
+          disabled
+            ? 0.55
+            : 1,
+
         boxSizing:
           "border-box",
+
         ...variants[
           variant
         ],
+
         ...style,
       }}
     >
@@ -641,7 +607,7 @@ function ActionButton({
   );
 }
 
-function StatusPill({
+function InfoField({
   label,
   value,
   tone = "blue",
@@ -649,59 +615,82 @@ function StatusPill({
   const tones = {
     blue: {
       background:
-        "#eff6ff",
+        "#f8fbff",
+
       border:
-        "1px solid #bfdbfe",
-      color:
-        "#1d4ed8",
+        "#dbeafe",
+
+      label:
+        "#64748b",
+
+      value:
+        "#0f172a",
     },
 
     green: {
       background:
-        "#ecfdf5",
-      border:
-        "1px solid #bbf7d0",
-      color:
-        "#166534",
-    },
+        "#f0fdf4",
 
-    slate: {
-      background:
-        "#f8fafc",
       border:
-        "1px solid #e2e8f0",
-      color:
-        "#334155",
+        "#bbf7d0",
+
+      label:
+        "#15803d",
+
+      value:
+        "#166534",
     },
 
     amber: {
       background:
         "#fffbeb",
+
       border:
-        "1px solid #fde68a",
-      color:
+        "#fde68a",
+
+      label:
         "#92400e",
+
+      value:
+        "#854d0e",
     },
   };
+
+  const selected =
+    tones[tone] ||
+    tones.blue;
 
   return (
     <div
       style={{
+        minWidth: 0,
+
         padding:
-          "11px 12px",
-        borderRadius: 14,
-        ...tones[tone],
+          "10px 11px",
+
+        borderRadius: 13,
+
+        background:
+          selected.background,
+
+        border:
+          `1px solid ${selected.border}`,
       }}
     >
       <div
         style={{
           fontSize: 9,
-          fontWeight: 900,
+
+          color:
+            selected.label,
+
           textTransform:
             "uppercase",
+
+          fontWeight: 900,
+
           letterSpacing:
-            "0.06em",
-          opacity: 0.76,
+            "0.05em",
         }}
       >
         {label}
@@ -709,10 +698,19 @@ function StatusPill({
 
       <div
         style={{
-          marginTop: 3,
+          marginTop: 4,
+
           fontSize: 13,
-          fontWeight: 850,
+
+          color:
+            selected.value,
+
+          fontWeight: 800,
+
           lineHeight: 1.4,
+
+          wordBreak:
+            "break-word",
         }}
       >
         {value || "—"}
@@ -737,8 +735,14 @@ export default function WCHRScan() {
     isTablet,
   } = useViewport();
 
-  const today =
-    dateKey();
+  const todayKey =
+    useMemo(
+      () =>
+        toDateKey(
+          new Date()
+        ),
+      []
+    );
 
   // ============================================================
   // FORM
@@ -755,41 +759,55 @@ export default function WCHRScan() {
   ] = useState("");
 
   const [
-    wheelchairNumber,
-    setWheelchairNumber,
-  ] = useState("");
-
-  const [
     wchType,
     setWchType,
-  ] = useState("WCHR");
+  ] = useState(
+    "WCHR"
+  );
 
   const [
     startLocation,
     setStartLocation,
-  ] = useState("Counter");
+  ] = useState(
+    "Counter"
+  );
 
   const [
     selectedFlightId,
     setSelectedFlightId,
   ] = useState("");
 
+  const [
+    selectedWheelchairId,
+    setSelectedWheelchairId,
+  ] = useState("");
+
   // ============================================================
-  // DAILY FLIGHTS
+  // DATA
   // ============================================================
 
   const [
-    dailyFlights,
-    setDailyFlights,
+    flights,
+    setFlights,
   ] = useState([]);
 
   const [
-    flightsLoading,
-    setFlightsLoading,
+    inventory,
+    setInventory,
+  ] = useState([]);
+
+  const [
+    loadingFlights,
+    setLoadingFlights,
+  ] = useState(true);
+
+  const [
+    loadingInventory,
+    setLoadingInventory,
   ] = useState(true);
 
   // ============================================================
-  // SUBMIT STATE
+  // ACTION
   // ============================================================
 
   const [
@@ -807,34 +825,13 @@ export default function WCHRScan() {
     setMessage,
   ] = useState("");
 
-  const [
-    lastCreatedService,
-    setLastCreatedService,
-  ] = useState(null);
-
   // ============================================================
-  // USER
-  // ============================================================
-
-  const currentUserId =
-    getUserId(user);
-
-  const currentUserName =
-    getVisibleUserName(
-      user
-    );
-
-  // ============================================================
-  // LOAD TODAY'S FLIGHTS FROM DISPATCH
+  // LIVE OPEN FLIGHTS
   // ============================================================
 
   useEffect(() => {
-    setFlightsLoading(
+    setLoadingFlights(
       true
-    );
-
-    setSelectedFlightId(
-      ""
     );
 
     const flightsQuery =
@@ -843,104 +840,259 @@ export default function WCHRScan() {
           db,
           DAILY_FLIGHTS_COLLECTION
         ),
+
         where(
-          "service_date",
+          "flight_date",
           "==",
-          today
+          todayKey
         )
       );
 
     const unsubscribe =
       onSnapshot(
         flightsQuery,
+
         (snapshot) => {
           const rows =
             snapshot.docs
               .map(
-                (item) => ({
-                  id: item.id,
+                (
+                  item
+                ) => ({
+                  id:
+                    item.id,
                   ...item.data(),
                 })
               )
               .filter(
-                (flight) =>
-                  flight.enabled !==
-                    false &&
+                (
+                  flight
+                ) =>
+                  safeUpper(
+                    flight.status ||
+                      "OPEN"
+                  ) ===
+                    "OPEN" &&
                   flight.active !==
-                    false &&
-                  safeText(
-                    flight.airline
-                  ) &&
-                  safeText(
-                    flight.flight_number
-                  )
+                    false
               )
               .sort(
-                (a, b) => {
-                  const timeA =
-                    safeText(
-                      a.departure_time ||
-                        a.flight_time ||
-                        a.scheduled_time
-                    );
-
-                  const timeB =
-                    safeText(
-                      b.departure_time ||
-                        b.flight_time ||
-                        b.scheduled_time
+                (
+                  first,
+                  second
+                ) => {
+                  const airlineCompare =
+                    safeUpper(
+                      first.airline
+                    ).localeCompare(
+                      safeUpper(
+                        second.airline
+                      )
                     );
 
                   if (
-                    timeA !==
-                    timeB
+                    airlineCompare !==
+                    0
                   ) {
-                    return timeA.localeCompare(
-                      timeB
-                    );
+                    return airlineCompare;
                   }
 
-                  return getDailyFlightLabel(
-                    a
+                  return safeUpper(
+                    first.flight_number
                   ).localeCompare(
-                    getDailyFlightLabel(
-                      b
-                    )
+                    safeUpper(
+                      second.flight_number
+                    ),
+                    undefined,
+                    {
+                      numeric:
+                        true,
+                    }
                   );
                 }
               );
 
-          setDailyFlights(
+          setFlights(
             rows
           );
 
-          setFlightsLoading(
+          setSelectedFlightId(
+            (
+              previous
+            ) => {
+              if (
+                previous &&
+                rows.some(
+                  (
+                    row
+                  ) =>
+                    row.id ===
+                    previous
+                )
+              ) {
+                return previous;
+              }
+
+              return "";
+            }
+          );
+
+          setLoadingFlights(
             false
           );
         },
-        (err) => {
+
+        (
+          listenerError
+        ) => {
           console.error(
-            "Daily WCHR flights listener error:",
-            err
+            "WCHR daily flights listener error:",
+            listenerError
           );
 
-          setDailyFlights(
+          setFlights(
             []
           );
 
-          setFlightsLoading(
+          setLoadingFlights(
             false
           );
 
           setError(
-            "Today's WCHR flight list could not be loaded."
+            "Unable to load today's WCHR flights."
           );
         }
       );
 
     return () =>
       unsubscribe();
-  }, [today]);
+  }, [
+    todayKey,
+  ]);
+
+  // ============================================================
+  // LIVE INVENTORY
+  // ============================================================
+
+  useEffect(() => {
+    setLoadingInventory(
+      true
+    );
+
+    const unsubscribe =
+      onSnapshot(
+        collection(
+          db,
+          INVENTORY_COLLECTION
+        ),
+
+        (
+          snapshot
+        ) => {
+          const rows =
+            snapshot.docs
+              .map(
+                (
+                  item
+                ) => ({
+                  id:
+                    item.id,
+
+                  ...item.data(),
+                })
+              )
+              .filter(
+                (
+                  item
+                ) =>
+                  inventoryIsAvailable(
+                    item
+                  )
+              )
+              .sort(
+                (
+                  first,
+                  second
+                ) =>
+                  getInventoryNumber(
+                    first
+                  ).localeCompare(
+                    getInventoryNumber(
+                      second
+                    ),
+                    undefined,
+                    {
+                      numeric:
+                        true,
+
+                      sensitivity:
+                        "base",
+                    }
+                  )
+              );
+
+          setInventory(
+            rows
+          );
+
+          setSelectedWheelchairId(
+            (
+              previous
+            ) => {
+              if (
+                previous ===
+                PERSONAL_WCHR_VALUE
+              ) {
+                return previous;
+              }
+
+              if (
+                previous &&
+                rows.some(
+                  (
+                    row
+                  ) =>
+                    row.id ===
+                    previous
+                )
+              ) {
+                return previous;
+              }
+
+              return "";
+            }
+          );
+
+          setLoadingInventory(
+            false
+          );
+        },
+
+        (
+          listenerError
+        ) => {
+          console.error(
+            "WCHR inventory listener error:",
+            listenerError
+          );
+
+          setInventory(
+            []
+          );
+
+          setLoadingInventory(
+            false
+          );
+
+          setError(
+            "Unable to load wheelchair inventory."
+          );
+        }
+      );
+
+    return () =>
+      unsubscribe();
+  }, []);
 
   // ============================================================
   // SELECTED FLIGHT
@@ -949,123 +1101,124 @@ export default function WCHRScan() {
   const selectedFlight =
     useMemo(
       () =>
-        dailyFlights.find(
-          (flight) =>
+        flights.find(
+          (
+            flight
+          ) =>
             flight.id ===
             selectedFlightId
         ) || null,
+
       [
-        dailyFlights,
+        flights,
         selectedFlightId,
       ]
     );
 
-  const airline =
-    safeUpper(
-      selectedFlight?.airline
-    );
-
-  const flightNumber =
-    safeUpper(
-      selectedFlight?.flight_number
-    );
-
   // ============================================================
-  // FLIGHT OPTIONS
+  // SELECTED INVENTORY
   // ============================================================
 
-  const flightOptions =
-    useMemo(
-      () =>
-        dailyFlights.map(
-          (flight) => ({
-            value:
-              flight.id,
-            label:
-              getDailyFlightLabel(
-                flight
-              ),
-          })
-        ),
-      [dailyFlights]
-    );
+  const isPersonalWheelchair =
+    selectedWheelchairId ===
+    PERSONAL_WCHR_VALUE;
+
+  const selectedInventory =
+    useMemo(() => {
+      if (
+        isPersonalWheelchair
+      ) {
+        return null;
+      }
+
+      return (
+        inventory.find(
+          (
+            item
+          ) =>
+            item.id ===
+            selectedWheelchairId
+        ) || null
+      );
+    }, [
+      inventory,
+      selectedWheelchairId,
+      isPersonalWheelchair,
+    ]);
+
+  const wheelchairNumber =
+    isPersonalWheelchair
+      ? "PERSONAL"
+      : getInventoryNumber(
+          selectedInventory
+        );
 
   // ============================================================
   // FORM VALIDATION
   // ============================================================
 
-  const formValid =
+  const formReady =
     useMemo(() => {
       return Boolean(
-        safeText(
+        cleanText(
           passengerName
         ) &&
-          cleanPnr(pnr) &&
-          cleanWheelchairNumber(
-            wheelchairNumber
-          ) &&
-          safeText(
-            wchType
-          ) &&
-          safeText(
-            startLocation
+          cleanPnr(
+            pnr
           ) &&
           selectedFlight &&
-          airline &&
-          flightNumber
+          selectedWheelchairId &&
+          cleanText(
+            wchType
+          ) &&
+          cleanText(
+            startLocation
+          ) &&
+          !loadingFlights &&
+          !loadingInventory
       );
     }, [
       passengerName,
       pnr,
-      wheelchairNumber,
+      selectedFlight,
+      selectedWheelchairId,
       wchType,
       startLocation,
-      selectedFlight,
-      airline,
-      flightNumber,
+      loadingFlights,
+      loadingInventory,
     ]);
 
   // ============================================================
   // RESET
   // ============================================================
 
-  const resetForm =
-    () => {
-      setPassengerName(
-        ""
-      );
+  const resetForm = () => {
+    setPassengerName("");
+    setPnr("");
 
-      setPnr(
-        ""
-      );
+    setWchType(
+      "WCHR"
+    );
 
-      setWheelchairNumber(
-        ""
-      );
+    setStartLocation(
+      "Counter"
+    );
 
-      setWchType(
-        "WCHR"
-      );
+    setSelectedFlightId(
+      ""
+    );
 
-      setStartLocation(
-        "Counter"
-      );
-
-      setSelectedFlightId(
-        ""
-      );
-    };
+    setSelectedWheelchairId(
+      ""
+    );
+  };
 
   // ============================================================
   // CREATE READY SERVICE
   // ============================================================
 
   const handleSubmit =
-    async (
-      event
-    ) => {
-      event?.preventDefault?.();
-
+    async () => {
       setError("");
       setMessage("");
 
@@ -1073,6 +1226,31 @@ export default function WCHRScan() {
         setError(
           "You must be logged in."
         );
+
+        return;
+      }
+
+      if (
+        !cleanText(
+          passengerName
+        )
+      ) {
+        setError(
+          "Passenger Name is required."
+        );
+
+        return;
+      }
+
+      if (
+        !cleanPnr(
+          pnr
+        )
+      ) {
+        setError(
+          "PNR / Reservation Code is required."
+        );
+
         return;
       }
 
@@ -1080,25 +1258,30 @@ export default function WCHRScan() {
         !selectedFlight
       ) {
         setError(
-          "Please select one of today's approved WCHR flights."
+          "Please select an airline and flight from today's open flights."
         );
+
         return;
       }
 
       if (
-        !airline ||
-        !flightNumber
+        !selectedWheelchairId
       ) {
         setError(
-          "Airline and Flight Number are required."
+          "Please select a wheelchair from inventory or choose Personal WCHR."
         );
+
         return;
       }
 
-      if (!formValid) {
+      if (
+        !isPersonalWheelchair &&
+        !selectedInventory
+      ) {
         setError(
-          "Please complete Passenger Name, Flight, PNR, WCHR Number, WCHR Type and Pickup Location."
+          "The selected wheelchair is no longer available."
         );
+
         return;
       }
 
@@ -1108,39 +1291,60 @@ export default function WCHRScan() {
         );
 
       const finalPnr =
-        cleanPnr(pnr);
+        cleanPnr(
+          pnr
+        );
 
-      const finalWheelchairNumber =
-        cleanWheelchairNumber(
-          wheelchairNumber
+      const finalAirline =
+        safeUpper(
+          selectedFlight.airline
+        );
+
+      const finalFlightNumber =
+        safeUpper(
+          selectedFlight.flight_number
+        );
+
+      const finalGate =
+        safeUpper(
+          selectedFlight.gate
         );
 
       const finalStartLocation =
-        safeText(
+        cleanText(
           startLocation
         );
 
-      const inventoryDocumentId =
-        getWheelchairDocumentId(
-          finalWheelchairNumber
+      const finalWchrType =
+        safeUpper(
+          wchType
         );
 
-      if (
-        !inventoryDocumentId
-      ) {
-        setError(
-          "Please enter a valid wheelchair number."
-        );
-        return;
-      }
+      const finalWheelchairNumber =
+        isPersonalWheelchair
+          ? "PERSONAL"
+          : cleanWheelchairNumber(
+              getInventoryNumber(
+                selectedInventory
+              )
+            );
 
       const confirmed =
         window.confirm(
-          `Declare WCHR ${finalWheelchairNumber} READY FOR PICKUP?\n\n` +
-            `Passenger: ${finalPassengerName}\n` +
-            `Flight: ${airline} ${flightNumber}\n` +
-            `Location: ${finalStartLocation}\n\n` +
-            `The service timer will start immediately.`
+          [
+            "Create this WCHR service?",
+            "",
+            `Passenger: ${finalPassengerName}`,
+            `Flight: ${finalAirline} ${finalFlightNumber}`,
+            `Wheelchair: ${
+              isPersonalWheelchair
+                ? "Personal WCHR"
+                : finalWheelchairNumber
+            }`,
+            `Pickup: ${finalStartLocation}`,
+            "",
+            "The service timer will start immediately and the wheelchair will appear in Dispatch as Ready for Pickup.",
+          ].join("\n")
         );
 
       if (!confirmed) {
@@ -1152,22 +1356,12 @@ export default function WCHRScan() {
           true
         );
 
-        const now =
-          new Date();
-
         const reportRef =
           doc(
             collection(
               db,
               REPORTS_COLLECTION
             )
-          );
-
-        const inventoryRef =
-          doc(
-            db,
-            INVENTORY_COLLECTION,
-            inventoryDocumentId
           );
 
         const trackingEventRef =
@@ -1178,18 +1372,35 @@ export default function WCHRScan() {
             )
           );
 
+        const flightRef =
+          doc(
+            db,
+            DAILY_FLIGHTS_COLLECTION,
+            selectedFlight.id
+          );
+
+        const inventoryRef =
+          !isPersonalWheelchair &&
+          selectedInventory
+            ? doc(
+                db,
+                INVENTORY_COLLECTION,
+                selectedInventory.id
+              )
+            : null;
+
         const reportId =
-          `WCHR-${compactDateKey(
-            now
+          `WCHR-${toCompactDate(
+            new Date()
           )}-${reportRef.id
             .slice(-6)
             .toUpperCase()}`;
 
         const flightKey =
           buildFlightKey(
-            airline,
-            flightNumber,
-            now
+            finalAirline,
+            finalFlightNumber,
+            new Date()
           );
 
         await runTransaction(
@@ -1198,62 +1409,78 @@ export default function WCHRScan() {
             transaction
           ) => {
             // ==================================================
-            // CHECK WHEELCHAIR
+            // RECHECK FLIGHT
             // ==================================================
 
-            const inventorySnapshot =
+            const flightSnapshot =
               await transaction.get(
-                inventoryRef
+                flightRef
               );
 
             if (
-              inventorySnapshot.exists()
+              !flightSnapshot.exists()
             ) {
+              throw new Error(
+                "This flight is no longer available."
+              );
+            }
+
+            const flightData =
+              flightSnapshot.data();
+
+            const currentFlightStatus =
+              safeUpper(
+                flightData.status ||
+                  "OPEN"
+              );
+
+            if (
+              currentFlightStatus !==
+                "OPEN" ||
+              flightData.active ===
+                false
+            ) {
+              throw new Error(
+                `${finalAirline} ${finalFlightNumber} has been closed by WCHR Dispatch.`
+              );
+            }
+
+            // ==================================================
+            // RECHECK COMPANY WHEELCHAIR
+            // ==================================================
+
+            if (
+              inventoryRef
+            ) {
+              const inventorySnapshot =
+                await transaction.get(
+                  inventoryRef
+                );
+
+              if (
+                !inventorySnapshot.exists()
+              ) {
+                throw new Error(
+                  `Wheelchair ${finalWheelchairNumber} no longer exists in inventory.`
+                );
+              }
+
               const inventoryData =
                 inventorySnapshot.data();
 
               if (
-                isInventoryUnavailable(
+                !inventoryIsAvailable(
                   inventoryData
                 )
               ) {
-                const currentPassenger =
-                  safeText(
-                    inventoryData.passenger_name
-                  );
-
-                const currentFlight =
-                  [
-                    safeUpper(
-                      inventoryData.airline
-                    ),
-                    safeUpper(
-                      inventoryData.flight_number
-                    ),
-                  ]
-                    .filter(
-                      Boolean
-                    )
-                    .join(" ");
-
                 throw new Error(
-                  `Wheelchair ${finalWheelchairNumber} is already active` +
-                    `${
-                      currentPassenger
-                        ? ` for ${currentPassenger}`
-                        : ""
-                    }` +
-                    `${
-                      currentFlight
-                        ? ` on ${currentFlight}`
-                        : ""
-                    }.`
+                  `Wheelchair ${finalWheelchairNumber} is no longer available. Please select another wheelchair.`
                 );
               }
             }
 
             // ==================================================
-            // CREATE REPORT
+            // REPORT
             // ==================================================
 
             transaction.set(
@@ -1262,11 +1489,49 @@ export default function WCHRScan() {
                 report_id:
                   reportId,
 
-                service_date:
-                  today,
+                // ----------------------------------------------
+                // CREATED BY
+                // ----------------------------------------------
+
+                created_by_user_id:
+                  user?.id ||
+                  user?.uid ||
+                  "",
+
+                created_by_username:
+                  user?.username ||
+                  user?.loginUsername ||
+                  "",
+
+                created_by_name:
+                  getVisibleName(
+                    user
+                  ),
+
+                created_by_role:
+                  user?.role ||
+                  "",
+
+                employee_id:
+                  "",
+
+                employee_name:
+                  "",
+
+                employee_login:
+                  "",
+
+                employee_role:
+                  "",
+
+                submitted_at:
+                  serverTimestamp(),
+
+                created_at:
+                  serverTimestamp(),
 
                 // ----------------------------------------------
-                // Passenger
+                // PASSENGER
                 // ----------------------------------------------
 
                 passenger_name:
@@ -1276,71 +1541,50 @@ export default function WCHRScan() {
                   finalPnr,
 
                 wch_type:
-                  safeUpper(
-                    wchType
-                  ),
-
-                wheelchair_number:
-                  finalWheelchairNumber,
+                  finalWchrType,
 
                 // ----------------------------------------------
-                // Flight
+                // FLIGHT
                 // ----------------------------------------------
 
                 daily_flight_id:
                   selectedFlight.id,
 
-                airline,
+                airline:
+                  finalAirline,
 
                 flight_number:
-                  flightNumber,
+                  finalFlightNumber,
+
+                flight_date:
+                  todayKey,
+
+                gate:
+                  finalGate,
 
                 flight_key:
                   flightKey,
 
-                destination:
-                  safeUpper(
-                    selectedFlight.destination
-                  ),
-
-                gate:
-                  safeUpper(
-                    selectedFlight.gate
-                  ),
-
-                scheduled_time:
-                  selectedFlight.departure_time ||
-                  selectedFlight.flight_time ||
-                  selectedFlight.scheduled_time ||
-                  "",
-
                 // ----------------------------------------------
-                // Creation
+                // WHEELCHAIR
                 // ----------------------------------------------
 
-                created_at:
-                  serverTimestamp(),
+                wheelchair_number:
+                  finalWheelchairNumber,
 
-                submitted_at:
-                  serverTimestamp(),
+                wheelchair_source:
+                  isPersonalWheelchair
+                    ? "PERSONAL"
+                    : "COMPANY",
 
-                created_by_user_id:
-                  currentUserId,
+                personal_wheelchair:
+                  isPersonalWheelchair,
 
-                created_by_username:
-                  user?.username ||
-                  user?.loginUsername ||
-                  "",
-
-                created_by_name:
-                  currentUserName,
-
-                created_by_role:
-                  user?.role ||
-                  "",
-
-                entry_mode:
-                  "MANUAL",
+                inventory_doc_id:
+                  isPersonalWheelchair
+                    ? ""
+                    : selectedInventory?.id ||
+                      "",
 
                 // ----------------------------------------------
                 // READY FOR PICKUP
@@ -1349,11 +1593,8 @@ export default function WCHRScan() {
                 status:
                   "NEW",
 
-                service_status:
-                  "READY_FOR_PICKUP",
-
-                tracking_status:
-                  "READY_FOR_PICKUP",
+                entry_mode:
+                  "MANUAL",
 
                 ready_for_pickup:
                   true,
@@ -1361,26 +1602,23 @@ export default function WCHRScan() {
                 ready_for_pickup_at:
                   serverTimestamp(),
 
-                timer_started_at:
-                  serverTimestamp(),
-
                 ready_location:
                   finalStartLocation,
 
-                pickup_location:
-                  finalStartLocation,
-
-                current_location:
-                  finalStartLocation,
-
-                last_location:
-                  finalStartLocation,
-
-                last_location_update_at:
+                timer_started_at:
                   serverTimestamp(),
 
+                service_status:
+                  "READY_FOR_PICKUP",
+
+                tracking_status:
+                  "READY_FOR_PICKUP",
+
+                assignment_status:
+                  "UNASSIGNED",
+
                 // ----------------------------------------------
-                // Assignment - EMPTY UNTIL DISPATCH
+                // NO AGENT YET
                 // ----------------------------------------------
 
                 wchr_agent_id:
@@ -1404,14 +1642,32 @@ export default function WCHRScan() {
                 assigned_by_name:
                   "",
 
-                assignment_status:
-                  "UNASSIGNED",
+                // ----------------------------------------------
+                // TRACKING
+                // ----------------------------------------------
 
-                // ----------------------------------------------
-                // Journey
-                // ----------------------------------------------
+                tracking_enabled:
+                  true,
+
+                passenger_delivered:
+                  false,
+
+                current_location:
+                  finalStartLocation,
+
+                last_location:
+                  finalStartLocation,
+
+                pickup_location:
+                  finalStartLocation,
 
                 pickup_at:
+                  null,
+
+                initial_pickup_location:
+                  finalStartLocation,
+
+                initial_pickup_at:
                   null,
 
                 gate_location:
@@ -1429,8 +1685,8 @@ export default function WCHRScan() {
                 boarded_at:
                   null,
 
-                boarded_by_name:
-                  "",
+                boarding_started_at:
+                  null,
 
                 stored_location:
                   "",
@@ -1438,14 +1694,8 @@ export default function WCHRScan() {
                 stored_at:
                   null,
 
-                passenger_delivered:
-                  false,
-
-                passenger_boarded:
-                  false,
-
                 // ----------------------------------------------
-                // Active tracking
+                // 15 / 30 MINUTE MONITORING
                 // ----------------------------------------------
 
                 is_active:
@@ -1460,8 +1710,17 @@ export default function WCHRScan() {
                 last_alert_at:
                   null,
 
+                gate_check_required:
+                  false,
+
+                gate_check_interval_minutes:
+                  15,
+
+                last_gate_check_at:
+                  null,
+
                 // ----------------------------------------------
-                // Billing
+                // BILLING
                 // ----------------------------------------------
 
                 billing_ready:
@@ -1480,98 +1739,105 @@ export default function WCHRScan() {
                   finalWheelchairNumber,
 
                 // ----------------------------------------------
-                // Misc
+                // SYSTEM
                 // ----------------------------------------------
 
-                inventory_doc_id:
-                  inventoryDocumentId,
+                last_location_update_at:
+                  serverTimestamp(),
 
                 last_updated_at:
                   serverTimestamp(),
 
                 last_updated_by:
-                  currentUserName,
-
-                last_updated_by_id:
-                  currentUserId,
-              }
-            );
-
-            // ==================================================
-            // RESERVE WHEELCHAIR
-            // ==================================================
-
-            transaction.set(
-              inventoryRef,
-              {
-                wheelchair_number:
-                  finalWheelchairNumber,
-
-                status:
-                  "READY_FOR_PICKUP",
-
-                is_available:
-                  false,
-
-                available_for_handoff:
-                  false,
-
-                location:
-                  finalStartLocation,
-
-                report_doc_id:
-                  reportRef.id,
-
-                assigned_report_doc_id:
-                  reportRef.id,
-
-                report_id:
-                  reportId,
-
-                assigned_report_id:
-                  reportId,
-
-                passenger_name:
-                  finalPassengerName,
-
-                airline,
-
-                flight_number:
-                  flightNumber,
-
-                pnr:
-                  finalPnr,
-
-                wch_type:
-                  safeUpper(
-                    wchType
+                  getVisibleName(
+                    user
                   ),
 
-                current_agent_id:
+                last_updated_by_id:
+                  user?.id ||
+                  user?.uid ||
                   "",
 
-                current_agent_name:
-                  "",
-
-                previous_agent_id:
-                  "",
-
-                previous_agent_name:
-                  "",
-
-                ready_for_pickup_at:
-                  serverTimestamp(),
-
-                updated_at:
-                  serverTimestamp(),
-              },
-              {
-                merge: true,
+                tracking_type:
+                  "MANUAL",
               }
             );
 
             // ==================================================
-            // TIMELINE EVENT
+            // COMPANY INVENTORY
+            // ==================================================
+
+            if (
+              inventoryRef
+            ) {
+              transaction.update(
+                inventoryRef,
+                {
+                  status:
+                    "READY_FOR_PICKUP",
+
+                  is_available:
+                    false,
+
+                  available_for_handoff:
+                    false,
+
+                  ready_for_pickup:
+                    true,
+
+                  location:
+                    finalStartLocation,
+
+                  report_doc_id:
+                    reportRef.id,
+
+                  assigned_report_doc_id:
+                    reportRef.id,
+
+                  report_id:
+                    reportId,
+
+                  assigned_report_id:
+                    reportId,
+
+                  passenger_name:
+                    finalPassengerName,
+
+                  airline:
+                    finalAirline,
+
+                  flight_number:
+                    finalFlightNumber,
+
+                  pnr:
+                    finalPnr,
+
+                  wch_type:
+                    finalWchrType,
+
+                  current_agent_id:
+                    "",
+
+                  current_agent_name:
+                    "",
+
+                  assigned_agent_id:
+                    "",
+
+                  assigned_agent_name:
+                    "",
+
+                  ready_for_pickup_at:
+                    serverTimestamp(),
+
+                  updated_at:
+                    serverTimestamp(),
+                }
+              );
+            }
+
+            // ==================================================
+            // FIRST TIMELINE EVENT
             // ==================================================
 
             transaction.set(
@@ -1586,13 +1852,19 @@ export default function WCHRScan() {
                 wheelchair_number:
                   finalWheelchairNumber,
 
+                wheelchair_source:
+                  isPersonalWheelchair
+                    ? "PERSONAL"
+                    : "COMPANY",
+
                 passenger_name:
                   finalPassengerName,
 
-                airline,
+                airline:
+                  finalAirline,
 
                 flight_number:
-                  flightNumber,
+                  finalFlightNumber,
 
                 pnr:
                   finalPnr,
@@ -1607,18 +1879,14 @@ export default function WCHRScan() {
                   "",
 
                 notes:
-                  `WCHR ${finalWheelchairNumber} declared Ready for Pickup at ${finalStartLocation}.`,
-
-                service_status:
-                  "READY_FOR_PICKUP",
+                  isPersonalWheelchair
+                    ? `Personal wheelchair service created and ready for pickup at ${finalStartLocation}.`
+                    : `Wheelchair ${finalWheelchairNumber} prepared and ready for pickup at ${finalStartLocation}.`,
 
                 tracking_status:
                   "READY_FOR_PICKUP",
 
                 passenger_delivered:
-                  false,
-
-                passenger_boarded:
                   false,
 
                 is_active:
@@ -1628,10 +1896,14 @@ export default function WCHRScan() {
                   true,
 
                 employee_id:
-                  currentUserId,
+                  user?.id ||
+                  user?.uid ||
+                  "",
 
                 employee_name:
-                  currentUserName,
+                  getVisibleName(
+                    user
+                  ),
 
                 employee_role:
                   user?.role ||
@@ -1644,22 +1916,12 @@ export default function WCHRScan() {
           }
         );
 
-        setLastCreatedService(
-          {
-            reportId,
-            wheelchairNumber:
-              finalWheelchairNumber,
-            passengerName:
-              finalPassengerName,
-            airline,
-            flightNumber,
-            location:
-              finalStartLocation,
-          }
-        );
-
         setMessage(
-          `WCHR ${finalWheelchairNumber} is READY FOR PICKUP. The timer is running and the service is now available in WCHR Dispatch.`
+          `${
+            isPersonalWheelchair
+              ? "Personal WCHR"
+              : `WCHR ${finalWheelchairNumber}`
+          } for ${finalPassengerName} is Ready for Pickup. The service timer is now running and the request is available in WCHR Dispatch.`
         );
 
         resetForm();
@@ -1667,13 +1929,13 @@ export default function WCHRScan() {
         submitError
       ) {
         console.error(
-          "WCHR Ready for Pickup error:",
+          "WCHR intake error:",
           submitError
         );
 
         setError(
           submitError?.message ||
-            "Unable to create the wheelchair service."
+            "Unable to create the WCHR service."
         );
       } finally {
         setSubmitting(
@@ -1691,11 +1953,25 @@ export default function WCHRScan() {
       <PageCard
         style={{
           padding: 22,
+
           maxWidth: 900,
-          margin: "0 auto",
+
+          margin:
+            "0 auto",
         }}
       >
-        You must be logged in to create a WCHR service.
+        <div
+          style={{
+            color:
+              "#64748b",
+
+            fontSize: 14,
+
+            fontWeight: 700,
+          }}
+        >
+          You must be logged in to create a WCHR service.
+        </div>
       </PageCard>
     );
   }
@@ -1708,17 +1984,25 @@ export default function WCHRScan() {
     <div
       style={{
         width: "100%",
-        maxWidth: 1050,
-        margin: "0 auto",
-        display: "grid",
+
+        maxWidth: 1100,
+
+        margin:
+          "0 auto",
+
+        display:
+          "grid",
+
         gap:
           isMobile
             ? 12
             : 18,
-        fontFamily:
-          "Poppins, Inter, system-ui, sans-serif",
+
         boxSizing:
           "border-box",
+
+        fontFamily:
+          "Poppins, Inter, system-ui, sans-serif",
       }}
     >
       {/* ====================================================== */}
@@ -1729,20 +2013,26 @@ export default function WCHRScan() {
         style={{
           position:
             "relative",
+
           overflow:
             "hidden",
-          background:
-            "linear-gradient(135deg, #061f3d 0%, #0f4c81 48%, #1769aa 72%, #4fb6e9 100%)",
+
           borderRadius:
             isMobile
               ? 20
               : 28,
+
           padding:
             isMobile
               ? 17
               : 23,
+
           color:
             "#ffffff",
+
+          background:
+            "linear-gradient(135deg, #061f3d 0%, #0f4c81 48%, #1769aa 72%, #4fb6e9 100%)",
+
           boxShadow:
             "0 22px 55px rgba(23,105,170,0.22)",
         }}
@@ -1751,13 +2041,24 @@ export default function WCHRScan() {
           style={{
             position:
               "absolute",
-            width: 220,
-            height: 220,
-            borderRadius: 999,
+
+            width:
+              220,
+
+            height:
+              220,
+
+            borderRadius:
+              999,
+
             background:
               "rgba(255,255,255,0.07)",
-            right: -70,
-            top: -90,
+
+            right:
+              -65,
+
+            top:
+              -95,
           }}
         />
 
@@ -1765,63 +2066,101 @@ export default function WCHRScan() {
           style={{
             position:
               "relative",
-            display: "flex",
+
+            display:
+              "flex",
+
             flexDirection:
               isMobile
                 ? "column"
                 : "row",
+
             justifyContent:
               "space-between",
+
+            gap:
+              15,
+
             alignItems:
               isMobile
-                ? "stretch"
+                ? "flex-start"
                 : "center",
-            gap: 15,
           }}
         >
           <div
             style={{
-              display: "flex",
+              display:
+                "flex",
+
+              gap:
+                13,
+
               alignItems:
                 "center",
-              gap: 13,
-              minWidth: 0,
+
+              minWidth:
+                0,
             }}
           >
             <div
               style={{
-                width: 52,
-                height: 52,
+                width:
+                  52,
+
+                height:
+                  52,
+
                 flex:
                   "0 0 52px",
-                borderRadius: 16,
-                background:
-                  "#ffffff",
+
+                borderRadius:
+                  16,
+
                 overflow:
                   "hidden",
+
+                background:
+                  "#ffffff",
               }}
             >
               <img
                 src="/icons/aerostation-icon.png"
-                alt={APP_NAME}
+                alt={
+                  APP_NAME
+                }
                 style={{
-                  width: "100%",
-                  height: "100%",
+                  width:
+                    "100%",
+
+                  height:
+                    "100%",
+
                   objectFit:
                     "contain",
                 }}
               />
             </div>
 
-            <div>
+            <div
+              style={{
+                minWidth:
+                  0,
+              }}
+            >
               <div
                 style={{
-                  fontSize: 9.5,
-                  fontWeight: 900,
+                  fontSize:
+                    9.5,
+
+                  fontWeight:
+                    900,
+
                   color:
                     "rgba(255,255,255,0.72)",
+
                   textTransform:
                     "uppercase",
+
                   letterSpacing:
                     "0.14em",
                 }}
@@ -1833,38 +2172,54 @@ export default function WCHRScan() {
                 style={{
                   margin:
                     "5px 0 3px",
+
                   fontSize:
                     isMobile
                       ? 23
                       : 29,
-                  lineHeight: 1.08,
-                  fontWeight: 900,
+
+                  lineHeight:
+                    1.08,
+
+                  fontWeight:
+                    900,
+
                   letterSpacing:
                     "-0.035em",
                 }}
               >
-                New Wheelchair Service
+                New WCHR Service
               </h1>
 
               <div
                 style={{
-                  fontSize: 12.5,
-                  lineHeight: 1.5,
                   color:
                     "rgba(255,255,255,0.86)",
+
+                  fontSize:
+                    12.5,
+
+                  lineHeight:
+                    1.5,
                 }}
               >
-                Enter the passenger information manually and declare the
-                wheelchair Ready for Pickup.
+                Prepare the passenger service, select an approved flight and
+                reserve an available wheelchair for Dispatch.
               </div>
 
               <div
                 style={{
-                  marginTop: 3,
-                  fontSize: 10,
+                  marginTop:
+                    3,
+
+                  fontSize:
+                    10,
+
                   color:
                     "rgba(255,255,255,0.66)",
-                  fontWeight: 700,
+
+                  fontWeight:
+                    700,
                 }}
               >
                 {APP_SUBTITLE}
@@ -1874,12 +2229,38 @@ export default function WCHRScan() {
 
           <div
             style={{
-              display: "flex",
-              gap: 8,
+              display:
+                "flex",
+
+              gap:
+                8,
+
               flexWrap:
                 "wrap",
+
+              width:
+                isMobile
+                  ? "100%"
+                  : "auto",
             }}
           >
+            <ActionButton
+              variant="secondary"
+              onClick={() =>
+                navigate(
+                  "/wchr/admin/dispatch"
+                )
+              }
+              style={{
+                width:
+                  isMobile
+                    ? "100%"
+                    : "auto",
+              }}
+            >
+              WCHR Dispatch
+            </ActionButton>
+
             <ActionButton
               variant="secondary"
               onClick={() =>
@@ -1887,48 +2268,55 @@ export default function WCHRScan() {
                   "/wchr/admin/flights"
                 )
               }
+              style={{
+                width:
+                  isMobile
+                    ? "100%"
+                    : "auto",
+              }}
             >
               WCHR Reports
-            </ActionButton>
-
-            <ActionButton
-              variant="secondary"
-              onClick={() =>
-                navigate(
-                  "/dashboard"
-                )
-              }
-            >
-              Back
             </ActionButton>
           </div>
         </div>
       </div>
 
       {/* ====================================================== */}
-      {/* MESSAGES */}
+      {/* MESSAGE */}
       {/* ====================================================== */}
 
       {error && (
         <PageCard
           style={{
-            padding: 14,
+            padding:
+              14,
           }}
         >
           <div
             style={{
               background:
                 "#fff1f2",
+
               border:
                 "1px solid #fecdd3",
+
+              borderRadius:
+                14,
+
+              padding:
+                "11px 13px",
+
               color:
                 "#9f1239",
-              padding:
-                "12px 14px",
-              borderRadius: 14,
-              fontSize: 13,
-              fontWeight: 800,
-              lineHeight: 1.55,
+
+              fontSize:
+                13,
+
+              lineHeight:
+                1.55,
+
+              fontWeight:
+                800,
             }}
           >
             {error}
@@ -1939,23 +2327,35 @@ export default function WCHRScan() {
       {message && (
         <PageCard
           style={{
-            padding: 14,
+            padding:
+              14,
           }}
         >
           <div
             style={{
               background:
                 "#ecfdf5",
+
               border:
                 "1px solid #a7f3d0",
+
+              borderRadius:
+                14,
+
+              padding:
+                "11px 13px",
+
               color:
                 "#065f46",
-              padding:
-                "12px 14px",
-              borderRadius: 14,
-              fontSize: 13,
-              fontWeight: 800,
-              lineHeight: 1.55,
+
+              fontSize:
+                13,
+
+              lineHeight:
+                1.55,
+
+              fontWeight:
+                800,
             }}
           >
             {message}
@@ -1964,148 +2364,98 @@ export default function WCHRScan() {
       )}
 
       {/* ====================================================== */}
-      {/* FLIGHT STATUS */}
+      {/* OPERATION STATUS */}
       {/* ====================================================== */}
 
-      <PageCard
+      <div
         style={{
-          padding:
+          display:
+            "grid",
+
+          gridTemplateColumns:
             isMobile
-              ? 15
-              : 19,
+              ? "1fr"
+              : "repeat(3, minmax(0, 1fr))",
+
+          gap:
+            9,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection:
-              isMobile
-                ? "column"
-                : "row",
-            justifyContent:
-              "space-between",
-            alignItems:
-              isMobile
-                ? "stretch"
-                : "center",
-            gap: 12,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 900,
-                color:
-                  "#1769aa",
-                textTransform:
-                  "uppercase",
-                letterSpacing:
-                  "0.07em",
-              }}
-            >
-              Today's WCHR Operation
-            </div>
+        <InfoField
+          label="Operation Date"
+          value={
+            todayKey
+          }
+        />
 
-            <h2
-              style={{
-                margin:
-                  "4px 0 3px",
-                fontSize:
-                  isMobile
-                    ? 18
-                    : 20,
-                color:
-                  "#0f172a",
-                fontWeight: 900,
-              }}
-            >
-              {today}
-            </h2>
+        <InfoField
+          label="Open Flights"
+          value={
+            loadingFlights
+              ? "Loading..."
+              : flights.length
+          }
+          tone={
+            flights.length
+              ? "green"
+              : "amber"
+          }
+        />
 
-            <div
-              style={{
-                fontSize: 12,
-                color:
-                  "#64748b",
-              }}
-            >
-              Only flights activated by WCHR Dispatch can receive new
-              wheelchair services.
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding:
-                "8px 11px",
-              borderRadius: 999,
-              background:
-                dailyFlights.length
-                  ? "#ecfdf5"
-                  : "#fff7ed",
-              border:
-                dailyFlights.length
-                  ? "1px solid #bbf7d0"
-                  : "1px solid #fed7aa",
-              color:
-                dailyFlights.length
-                  ? "#166534"
-                  : "#9a3412",
-              fontSize: 11,
-              fontWeight: 900,
-              width:
-                "fit-content",
-            }}
-          >
-            {flightsLoading
-              ? "Loading Flights..."
-              : `${dailyFlights.length} Active Flight${
-                  dailyFlights.length ===
-                  1
-                    ? ""
-                    : "s"
-                }`}
-          </div>
-        </div>
-      </PageCard>
+        <InfoField
+          label="Available Company WCHRs"
+          value={
+            loadingInventory
+              ? "Loading..."
+              : inventory.length
+          }
+          tone={
+            inventory.length
+              ? "green"
+              : "amber"
+          }
+        />
+      </div>
 
       {/* ====================================================== */}
-      {/* NO DAILY FLIGHTS */}
+      {/* NO FLIGHTS WARNING */}
       {/* ====================================================== */}
 
-      {!flightsLoading &&
-        dailyFlights.length ===
+      {!loadingFlights &&
+        flights.length ===
           0 && (
           <PageCard
             style={{
               padding:
                 isMobile
-                  ? 16
-                  : 20,
+                  ? 15
+                  : 18,
+
+              background:
+                "#fff7ed",
+
               border:
                 "1px solid #fed7aa",
             }}
           >
             <div
               style={{
-                background:
-                  "#fff7ed",
-                border:
-                  "1px solid #fed7aa",
-                borderRadius: 16,
-                padding:
-                  "14px 15px",
                 color:
                   "#9a3412",
-                fontSize: 13,
-                fontWeight: 800,
-                lineHeight: 1.6,
+
+                fontSize:
+                  13,
+
+                fontWeight:
+                  800,
+
+                lineHeight:
+                  1.6,
               }}
             >
-              No WCHR flights have been opened for today. WCHR Dispatch must
-              create today's flight operation before passenger wheelchair
-              services can be entered.
+              No flights are currently OPEN for today's WCHR operation.
+              WCHR Dispatch must add or reopen a flight before a new passenger
+              service can be created.
             </div>
           </PageCard>
         )}
@@ -2119,175 +2469,123 @@ export default function WCHRScan() {
           padding:
             isMobile
               ? 16
-              : 22,
+              : 21,
         }}
       >
-        <form
-          onSubmit={
-            handleSubmit
-          }
+        <div
           style={{
-            display: "grid",
-            gap: 16,
+            marginBottom:
+              17,
+          }}
+        >
+          <div
+            style={{
+              fontSize:
+                10,
+
+              fontWeight:
+                900,
+
+              color:
+                "#1769aa",
+
+              textTransform:
+                "uppercase",
+
+              letterSpacing:
+                "0.08em",
+            }}
+          >
+            Passenger Intake
+          </div>
+
+          <h2
+            style={{
+              margin:
+                "4px 0 4px",
+
+              fontSize:
+                isMobile
+                  ? 19
+                  : 22,
+
+              color:
+                "#0f172a",
+
+              fontWeight:
+                900,
+            }}
+          >
+            Prepare WCHR for Pickup
+          </h2>
+
+          <p
+            style={{
+              margin:
+                0,
+
+              fontSize:
+                12.5,
+
+              color:
+                "#64748b",
+
+              lineHeight:
+                1.55,
+            }}
+          >
+            All required information must be completed before the wheelchair
+            becomes available to Dispatch.
+          </p>
+        </div>
+
+        {/* ==================================================== */}
+        {/* PASSENGER */}
+        {/* ==================================================== */}
+
+        <div
+          style={{
+            display:
+              "grid",
+
+            gridTemplateColumns:
+              isMobile ||
+              isTablet
+                ? "1fr"
+                : "repeat(2, minmax(0, 1fr))",
+
+            gap:
+              12,
           }}
         >
           <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize:
-                  isMobile
-                    ? 18
-                    : 21,
-                fontWeight: 900,
-                color:
-                  "#0f172a",
-              }}
-            >
-              Passenger & Service Information
-            </h2>
+            <FieldLabel>
+              Passenger Name *
+            </FieldLabel>
 
-            <p
-              style={{
-                margin:
-                  "5px 0 0",
-                color:
-                  "#64748b",
-                fontSize: 12.5,
-                lineHeight: 1.55,
-              }}
-            >
-              All fields marked with * are required. Airline and flight number
-              are controlled by today's WCHR Dispatch flight list.
-            </p>
-          </div>
-
-          {/* ================================================== */}
-          {/* FLIGHT */}
-          {/* ================================================== */}
-
-          <div
-            style={{
-              padding:
-                isMobile
-                  ? 13
-                  : 16,
-              borderRadius: 17,
-              background:
-                "#f8fbff",
-              border:
-                "1px solid #dbeafe",
-            }}
-          >
-            <SelectInput
-              label="Airline / Flight"
-              required
-              value={
-                selectedFlightId
-              }
-              onChange={
-                setSelectedFlightId
-              }
-              options={
-                flightOptions
-              }
-              placeholder={
-                flightsLoading
-                  ? "Loading today's flights..."
-                  : dailyFlights.length
-                  ? "Select today's flight"
-                  : "No flights available"
-              }
-              disabled={
-                submitting ||
-                flightsLoading ||
-                !dailyFlights.length
-              }
-            />
-
-            {selectedFlight && (
-              <div
-                style={{
-                  marginTop: 12,
-                  display: "grid",
-                  gridTemplateColumns:
-                    isMobile
-                      ? "1fr 1fr"
-                      : "repeat(4, minmax(0, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <StatusPill
-                  label="Airline"
-                  value={
-                    airline
-                  }
-                  tone="blue"
-                />
-
-                <StatusPill
-                  label="Flight"
-                  value={
-                    flightNumber
-                  }
-                  tone="blue"
-                />
-
-                <StatusPill
-                  label="Destination"
-                  value={
-                    selectedFlight.destination ||
-                    "—"
-                  }
-                  tone="slate"
-                />
-
-                <StatusPill
-                  label="Gate"
-                  value={
-                    selectedFlight.gate ||
-                    "—"
-                  }
-                  tone="slate"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* ================================================== */}
-          {/* PASSENGER */}
-          {/* ================================================== */}
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                isMobile ||
-                isTablet
-                  ? "1fr"
-                  : "repeat(2, minmax(0, 1fr))",
-              gap: 12,
-            }}
-          >
             <TextInput
-              label="Passenger Name"
-              required
               value={
                 passengerName
               }
               onChange={
                 setPassengerName
               }
-              placeholder="CLAUDIA VERGARA"
+              placeholder="Passenger full name"
               disabled={
                 submitting
               }
             />
+          </div>
+
+          <div>
+            <FieldLabel>
+              PNR / Reservation Code *
+            </FieldLabel>
 
             <TextInput
-              label="PNR / Reservation Code"
-              required
-              value={pnr}
+              value={
+                pnr
+              }
               onChange={
                 setPnr
               }
@@ -2296,251 +2594,752 @@ export default function WCHRScan() {
                 submitting
               }
             />
+          </div>
+        </div>
 
-            <TextInput
-              label="WCHR Number"
-              required
+        {/* ==================================================== */}
+        {/* FLIGHT */}
+        {/* ==================================================== */}
+
+        <div
+          style={{
+            marginTop:
+              17,
+
+            padding:
+              isMobile
+                ? 13
+                : 16,
+
+            borderRadius:
+              17,
+
+            background:
+              "#f8fbff",
+
+            border:
+              "1px solid #dbeafe",
+          }}
+        >
+          <div
+            style={{
+              marginBottom:
+                11,
+            }}
+          >
+            <div
+              style={{
+                fontSize:
+                  10,
+
+                color:
+                  "#1769aa",
+
+                fontWeight:
+                  900,
+
+                textTransform:
+                  "uppercase",
+
+                letterSpacing:
+                  "0.07em",
+              }}
+            >
+              Required Flight Selection
+            </div>
+
+            <div
+              style={{
+                marginTop:
+                  4,
+
+                fontSize:
+                  11.5,
+
+                color:
+                  "#64748b",
+
+                lineHeight:
+                  1.5,
+              }}
+            >
+              Airlines and flight numbers cannot be entered manually. Only
+              flights opened by WCHR Dispatch are permitted.
+            </div>
+          </div>
+
+          <FieldLabel>
+            Airline / Flight *
+          </FieldLabel>
+
+          <SelectInput
+            value={
+              selectedFlightId
+            }
+            onChange={
+              setSelectedFlightId
+            }
+            disabled={
+              submitting ||
+              loadingFlights ||
+              flights.length ===
+                0
+            }
+          >
+            <option value="">
+              {loadingFlights
+                ? "Loading today's flights..."
+                : flights.length
+                ? "Select airline and flight"
+                : "No open flights available"}
+            </option>
+
+            {flights.map(
+              (
+                flight
+              ) => (
+                <option
+                  key={
+                    flight.id
+                  }
+                  value={
+                    flight.id
+                  }
+                >
+                  {getFlightLabel(
+                    flight
+                  )}
+                </option>
+              )
+            )}
+          </SelectInput>
+
+          {selectedFlight && (
+            <div
+              style={{
+                marginTop:
+                  11,
+
+                display:
+                  "grid",
+
+                gridTemplateColumns:
+                  isMobile
+                    ? "1fr"
+                    : "repeat(3, minmax(0, 1fr))",
+
+                gap:
+                  8,
+              }}
+            >
+              <InfoField
+                label="Airline"
+                value={
+                  safeUpper(
+                    selectedFlight.airline
+                  )
+                }
+              />
+
+              <InfoField
+                label="Flight Number"
+                value={
+                  safeUpper(
+                    selectedFlight.flight_number
+                  )
+                }
+              />
+
+              <InfoField
+                label="Gate"
+                value={
+                  selectedFlight.gate ||
+                  "Not Assigned"
+                }
+              />
+            </div>
+          )}
+        </div>
+
+        {/* ==================================================== */}
+        {/* WHEELCHAIR */}
+        {/* ==================================================== */}
+
+        <div
+          style={{
+            marginTop:
+              17,
+
+            padding:
+              isMobile
+                ? 13
+                : 16,
+
+            borderRadius:
+              17,
+
+            background:
+              "#f0fdf4",
+
+            border:
+              "1px solid #bbf7d0",
+          }}
+        >
+          <div
+            style={{
+              marginBottom:
+                11,
+            }}
+          >
+            <div
+              style={{
+                fontSize:
+                  10,
+
+                color:
+                  "#15803d",
+
+                fontWeight:
+                  900,
+
+                textTransform:
+                  "uppercase",
+
+                letterSpacing:
+                  "0.07em",
+              }}
+            >
+              Wheelchair Inventory
+            </div>
+
+            <div
+              style={{
+                marginTop:
+                  4,
+
+                color:
+                  "#166534",
+
+                fontSize:
+                  11.5,
+
+                lineHeight:
+                  1.55,
+              }}
+            >
+              Only wheelchairs currently available in AeroStation inventory can
+              be selected. Choose Personal WCHR when the passenger is using
+              their own wheelchair.
+            </div>
+          </div>
+
+          <FieldLabel>
+            WCHR Number *
+          </FieldLabel>
+
+          <SelectInput
+            value={
+              selectedWheelchairId
+            }
+            onChange={
+              setSelectedWheelchairId
+            }
+            disabled={
+              submitting ||
+              loadingInventory
+            }
+          >
+            <option value="">
+              {loadingInventory
+                ? "Loading wheelchair inventory..."
+                : "Select wheelchair"}
+            </option>
+
+            <option
               value={
-                wheelchairNumber
+                PERSONAL_WCHR_VALUE
               }
-              onChange={
-                setWheelchairNumber
-              }
-              placeholder="023"
-              disabled={
-                submitting
-              }
-            />
+            >
+              Personal WCHR — Passenger's Own Wheelchair
+            </option>
+
+            {inventory.map(
+              (
+                item
+              ) => (
+                <option
+                  key={
+                    item.id
+                  }
+                  value={
+                    item.id
+                  }
+                >
+                  WCHR{" "}
+                  {getInventoryNumber(
+                    item
+                  )}
+                  {item.location
+                    ? ` · ${item.location}`
+                    : ""}
+                </option>
+              )
+            )}
+          </SelectInput>
+
+          {isPersonalWheelchair && (
+            <div
+              style={{
+                marginTop:
+                  10,
+
+                padding:
+                  "10px 11px",
+
+                borderRadius:
+                  12,
+
+                background:
+                  "#eff6ff",
+
+                border:
+                  "1px solid #bfdbfe",
+
+                color:
+                  "#1d4ed8",
+
+                fontSize:
+                  11.5,
+
+                fontWeight:
+                  750,
+
+                lineHeight:
+                  1.55,
+              }}
+            >
+              Personal WCHR selected. This passenger service will be tracked
+              normally, but no AeroStation wheelchair inventory unit will be
+              reserved.
+            </div>
+          )}
+
+          {selectedInventory &&
+            !isPersonalWheelchair && (
+              <div
+                style={{
+                  marginTop:
+                    10,
+
+                  display:
+                    "grid",
+
+                  gridTemplateColumns:
+                    isMobile
+                      ? "1fr"
+                      : "repeat(2, minmax(0, 1fr))",
+
+                  gap:
+                    8,
+                }}
+              >
+                <InfoField
+                  label="Selected Wheelchair"
+                  value={`WCHR ${getInventoryNumber(
+                    selectedInventory
+                  )}`}
+                  tone="green"
+                />
+
+                <InfoField
+                  label="Current Location"
+                  value={
+                    selectedInventory.location ||
+                    "Not Reported"
+                  }
+                  tone="green"
+                />
+              </div>
+            )}
+        </div>
+
+        {/* ==================================================== */}
+        {/* SERVICE SETTINGS */}
+        {/* ==================================================== */}
+
+        <div
+          style={{
+            marginTop:
+              17,
+
+            display:
+              "grid",
+
+            gridTemplateColumns:
+              isMobile
+                ? "1fr"
+                : "repeat(2, minmax(0, 1fr))",
+
+            gap:
+              12,
+          }}
+        >
+          <div>
+            <FieldLabel>
+              WCHR Type *
+            </FieldLabel>
 
             <SelectInput
-              label="WCHR Type"
-              required
               value={
                 wchType
               }
               onChange={
                 setWchType
               }
-              options={
-                WCHR_TYPES
-              }
               disabled={
                 submitting
               }
-            />
+            >
+              {WCHR_TYPES.map(
+                (
+                  type
+                ) => (
+                  <option
+                    key={
+                      type
+                    }
+                    value={
+                      type
+                    }
+                  >
+                    {type}
+                  </option>
+                )
+              )}
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>
+              Pickup Location *
+            </FieldLabel>
 
             <SelectInput
-              label="Pickup Location"
-              required
               value={
                 startLocation
               }
               onChange={
                 setStartLocation
               }
-              options={
-                START_LOCATIONS
-              }
               disabled={
                 submitting
               }
-            />
+            >
+              {START_LOCATIONS.map(
+                (
+                  location
+                ) => (
+                  <option
+                    key={
+                      location
+                    }
+                    value={
+                      location
+                    }
+                  >
+                    {location}
+                  </option>
+                )
+              )}
+            </SelectInput>
           </div>
+        </div>
 
-          {/* ================================================== */}
-          {/* IMPORTANT INFO */}
-          {/* ================================================== */}
+        {/* ==================================================== */}
+        {/* PREVIEW */}
+        {/* ==================================================== */}
 
-          <div
-            style={{
-              background:
-                "#eff6ff",
-              border:
-                "1px solid #bfdbfe",
-              borderRadius: 15,
-              padding:
-                "12px 14px",
-              color:
-                "#1d4ed8",
-              fontSize: 12,
-              lineHeight: 1.6,
-              fontWeight: 750,
-            }}
-          >
-            When you select <b>Declare Ready for Pickup</b>, the wheelchair
-            becomes unavailable for other passengers, the service timer starts,
-            and the wheelchair immediately appears in the WCHR Dispatch Center
-            waiting for an agent assignment.
-          </div>
+        {selectedFlight &&
+          selectedWheelchairId && (
+            <div
+              style={{
+                marginTop:
+                  18,
 
-          {/* ================================================== */}
-          {/* PREVIEW */}
-          {/* ================================================== */}
+                borderRadius:
+                  17,
 
-          {selectedFlight &&
-            cleanWheelchairNumber(
-              wheelchairNumber
-            ) && (
+                padding:
+                  isMobile
+                    ? 13
+                    : 16,
+
+                background:
+                  "#f8fafc",
+
+                border:
+                  "1px solid #e2e8f0",
+              }}
+            >
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    isMobile
-                      ? "1fr 1fr"
-                      : "repeat(4, minmax(0, 1fr))",
-                  gap: 8,
+                  fontSize:
+                    10,
+
+                  fontWeight:
+                    900,
+
+                  color:
+                    "#64748b",
+
+                  textTransform:
+                    "uppercase",
+
+                  letterSpacing:
+                    "0.07em",
                 }}
               >
-                <StatusPill
+                Service Preview
+              </div>
+
+              <div
+                style={{
+                  marginTop:
+                    10,
+
+                  display:
+                    "grid",
+
+                  gridTemplateColumns:
+                    isMobile
+                      ? "1fr"
+                      : "repeat(4, minmax(0, 1fr))",
+
+                  gap:
+                    8,
+                }}
+              >
+                <InfoField
+                  label="Passenger"
+                  value={
+                    normalizePassengerName(
+                      passengerName
+                    ) ||
+                    "Pending"
+                  }
+                />
+
+                <InfoField
+                  label="Flight"
+                  value={`${safeUpper(
+                    selectedFlight.airline
+                  )} ${safeUpper(
+                    selectedFlight.flight_number
+                  )}`}
+                />
+
+                <InfoField
                   label="Wheelchair"
                   value={
-                    cleanWheelchairNumber(
-                      wheelchairNumber
-                    )
+                    isPersonalWheelchair
+                      ? "Personal WCHR"
+                      : `WCHR ${wheelchairNumber}`
                   }
-                  tone="slate"
                 />
 
-                <StatusPill
-                  label="Flight"
-                  value={`${airline} ${flightNumber}`}
-                  tone="slate"
-                />
-
-                <StatusPill
+                <InfoField
                   label="Pickup"
                   value={
                     startLocation
                   }
-                  tone="blue"
-                />
-
-                <StatusPill
-                  label="Next Status"
-                  value="Ready for Pickup"
-                  tone="green"
                 />
               </div>
-            )}
 
-          {/* ================================================== */}
-          {/* BUTTON */}
-          {/* ================================================== */}
+              <div
+                style={{
+                  marginTop:
+                    11,
 
-          <ActionButton
-            type="submit"
-            variant="success"
-            disabled={
-              submitting ||
-              flightsLoading ||
-              !dailyFlights.length ||
-              !formValid
-            }
-            style={{
-              width: "100%",
-              minHeight: 48,
-              fontSize: 14,
-            }}
-          >
-            {submitting
-              ? "Creating WCHR Service..."
-              : "Declare Ready for Pickup"}
-          </ActionButton>
-        </form>
-      </PageCard>
+                  padding:
+                    "10px 12px",
 
-      {/* ====================================================== */}
-      {/* LAST CREATED */}
-      {/* ====================================================== */}
+                  borderRadius:
+                    13,
 
-      {lastCreatedService && (
-        <PageCard
+                  background:
+                    "#eff6ff",
+
+                  border:
+                    "1px solid #bfdbfe",
+
+                  color:
+                    "#1d4ed8",
+
+                  fontSize:
+                    11.5,
+
+                  lineHeight:
+                    1.55,
+
+                  fontWeight:
+                    750,
+                }}
+              >
+                When you click <b>Mark Ready for Pickup</b>, the operational
+                timer begins immediately. The service will appear live in WCHR
+                Dispatch for assignment to an available agent.
+              </div>
+            </div>
+          )}
+
+        {/* ==================================================== */}
+        {/* SUBMIT */}
+        {/* ==================================================== */}
+
+        <div
           style={{
-            padding:
+            marginTop:
+              18,
+
+            display:
+              "flex",
+
+            flexDirection:
               isMobile
-                ? 16
-                : 20,
-            border:
-              "1px solid #bbf7d0",
-            background:
-              "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)",
+                ? "column"
+                : "row",
+
+            justifyContent:
+              "space-between",
+
+            alignItems:
+              isMobile
+                ? "stretch"
+                : "center",
+
+            gap:
+              10,
           }}
         >
           <div
             style={{
-              fontSize: 10,
-              fontWeight: 900,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.08em",
-              color:
-                "#166534",
-            }}
-          >
-            Last Service Created
-          </div>
-
-          <h2
-            style={{
-              margin:
-                "5px 0 12px",
               fontSize:
-                isMobile
-                  ? 19
-                  : 22,
-              fontWeight: 900,
+                11,
+
               color:
-                "#0f172a",
+                "#64748b",
+
+              lineHeight:
+                1.5,
+
+              maxWidth:
+                620,
             }}
           >
-            WCHR{" "}
-            {
-              lastCreatedService.wheelchairNumber
-            }{" "}
-            · READY FOR PICKUP
-          </h2>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                isMobile
-                  ? "1fr 1fr"
-                  : "repeat(4, minmax(0, 1fr))",
-              gap: 8,
-            }}
-          >
-            <StatusPill
-              label="Passenger"
-              value={
-                lastCreatedService.passengerName
-              }
-              tone="slate"
-            />
-
-            <StatusPill
-              label="Flight"
-              value={`${lastCreatedService.airline} ${lastCreatedService.flightNumber}`}
-              tone="slate"
-            />
-
-            <StatusPill
-              label="Location"
-              value={
-                lastCreatedService.location
-              }
-              tone="blue"
-            />
-
-            <StatusPill
-              label="Status"
-              value="Waiting for Agent"
-              tone="green"
-            />
+            The employee will not be assigned from this page. Agent assignment
+            is controlled exclusively from WCHR Dispatch.
           </div>
-        </PageCard>
-      )}
+
+          <ActionButton
+            variant="success"
+            onClick={
+              handleSubmit
+            }
+            disabled={
+              submitting ||
+              !formReady
+            }
+            style={{
+              width:
+                isMobile
+                  ? "100%"
+                  : "auto",
+
+              minHeight:
+                46,
+
+              padding:
+                "11px 18px",
+            }}
+          >
+            {submitting
+              ? "Preparing WCHR..."
+              : "Mark Ready for Pickup"}
+          </ActionButton>
+        </div>
+      </PageCard>
+
+      {/* ====================================================== */}
+      {/* PROCESS EXPLANATION */}
+      {/* ====================================================== */}
+
+      <PageCard
+        style={{
+          padding:
+            isMobile
+              ? 15
+              : 18,
+        }}
+      >
+        <div
+          style={{
+            fontSize:
+              10,
+
+            color:
+              "#1769aa",
+
+            fontWeight:
+              900,
+
+            textTransform:
+              "uppercase",
+
+            letterSpacing:
+              "0.07em",
+          }}
+        >
+          Operational Flow
+        </div>
+
+        <div
+          style={{
+            marginTop:
+              10,
+
+            display:
+              "grid",
+
+            gridTemplateColumns:
+              isMobile
+                ? "1fr"
+                : "repeat(4, minmax(0, 1fr))",
+
+            gap:
+              8,
+          }}
+        >
+          <InfoField
+            label="1 · Intake"
+            value="Passenger + Flight + WCHR"
+          />
+
+          <InfoField
+            label="2 · Ready"
+            value="Timer Starts"
+          />
+
+          <InfoField
+            label="3 · Dispatch"
+            value="Supervisor Assigns Agent"
+          />
+
+          <InfoField
+            label="4 · Agent"
+            value="Journey Begins"
+          />
+        </div>
+      </PageCard>
 
       {/* ====================================================== */}
       {/* FOOTER */}
@@ -2550,15 +3349,18 @@ export default function WCHRScan() {
         style={{
           textAlign:
             "center",
+
           padding:
             "2px 8px 10px",
-          fontSize: 10,
+
+          fontSize:
+            10,
+
           color:
             "#94a3b8",
         }}
       >
-        {APP_NAME} ·{" "}
-        {APP_SUBTITLE}
+        {APP_NAME} · {APP_SUBTITLE}
       </div>
     </div>
   );
