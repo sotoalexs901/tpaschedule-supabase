@@ -267,6 +267,62 @@ function getCoverageStyle(level) {
   return { background: "#f8fafc", border: "1px solid #e2e8f0", color: "#475569" };
 }
 
+function parseCabinTime(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[.]/g, ":");
+
+  let match = cleaned.match(/^(\d{1,2}):(\d{2})$/);
+  if (match) {
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return hour * 60 + minute;
+    }
+  }
+
+  match = cleaned.match(/^(\d{3,4})$/);
+  if (match) {
+    const digits = match[1].padStart(4, "0");
+    const hour = Number(digits.slice(0, 2));
+    const minute = Number(digits.slice(2));
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return hour * 60 + minute;
+    }
+  }
+
+  return null;
+}
+
+function getCabinInterval(slot) {
+  const start = parseCabinTime(slot?.start);
+  let end = parseCabinTime(slot?.end);
+
+  if (start == null || end == null) return null;
+  if (end <= start) end += 24 * 60;
+
+  return { start, end };
+}
+
+function formatCabinTime(minutes) {
+  const normalized = ((Number(minutes) % 1440) + 1440) % 1440;
+  const hour = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function cabinIntervalsOverlap(a, b) {
+  return a.start < b.end && b.start < a.end;
+}
+
+function cabinEmployeeKey(slot) {
+  return normalizeLookup(slot?.employeeId || slot?.employeeName);
+}
+
 export default function TimeOffRequestsAdminPage() {
   const { user } = useUser();
   const { isMobile, isTablet } = useViewport();
@@ -319,6 +375,7 @@ export default function TimeOffRequestsAdminPage() {
 
   const loadCabinCoverage = async (requestList) => {
     const cabinRequests = (requestList || []).filter(isCabinRequest);
+
     if (!cabinRequests.length) {
       setCoverageByRequest({});
       return;
@@ -328,23 +385,33 @@ export default function TimeOffRequestsAdminPage() {
 
     try {
       const schedulesSnap = await getDocs(collection(db, "cabinSchedules"));
+
       const approvedSchedules = schedulesSnap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((item) => normalizeLookup(item.status) === "approved");
 
       const scheduleByWeek = {};
+
       approvedSchedules.forEach((schedule) => {
-        const weekStart = String(schedule.weekStartDate || schedule.weekStart || "").trim();
+        const weekStart = String(
+          schedule.weekStartDate || schedule.weekStart || ""
+        ).trim();
+
         if (!weekStart) return;
+
         const existing = scheduleByWeek[weekStart];
-        const currentSeconds = schedule.updatedAt?.seconds || schedule.createdAt?.seconds || 0;
-        const existingSeconds = existing?.updatedAt?.seconds || existing?.createdAt?.seconds || 0;
+        const currentSeconds =
+          schedule.updatedAt?.seconds || schedule.createdAt?.seconds || 0;
+        const existingSeconds =
+          existing?.updatedAt?.seconds || existing?.createdAt?.seconds || 0;
+
         if (!existing || currentSeconds >= existingSeconds) {
           scheduleByWeek[weekStart] = schedule;
         }
       });
 
       const neededScheduleIds = new Set();
+
       cabinRequests.forEach((req) => {
         enumerateDates(req.startDate, req.endDate).forEach((date) => {
           const schedule = scheduleByWeek[getWeekStartMonday(date)];
@@ -353,6 +420,7 @@ export default function TimeOffRequestsAdminPage() {
       });
 
       const slotsBySchedule = {};
+
       await Promise.all(
         Array.from(neededScheduleIds).map(async (scheduleId) => {
           const snap = await getDocs(
@@ -361,77 +429,235 @@ export default function TimeOffRequestsAdminPage() {
               where("scheduleId", "==", scheduleId)
             )
           );
-          slotsBySchedule[scheduleId] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+          slotsBySchedule[scheduleId] = snap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }));
         })
       );
 
       const next = {};
 
       cabinRequests.forEach((req) => {
-        next[req.id] = enumerateDates(req.startDate, req.endDate).map((date) => {
-          const weekStart = getWeekStartMonday(date);
-          const schedule = scheduleByWeek[weekStart];
-          const d = parseLocalDate(date);
-          const dayKey = d ? CABIN_DAY_KEY_BY_JS_DAY[d.getDay()] : "";
+        next[req.id] = enumerateDates(req.startDate, req.endDate).map(
+          (date) => {
+            const weekStart = getWeekStartMonday(date);
+            const schedule = scheduleByWeek[weekStart];
+            const parsedDate = parseLocalDate(date);
+            const dayKey = parsedDate
+              ? CABIN_DAY_KEY_BY_JS_DAY[parsedDate.getDay()]
+              : "";
 
-          if (!schedule) {
-            return { date, weekStart, dayKey, level: "NO_SCHEDULE", scheduled: 0, remaining: 0, employeeScheduled: false };
+            if (!schedule) {
+              return {
+                date,
+                weekStart,
+                dayKey,
+                level: "NO_SCHEDULE",
+                employeeScheduled: false,
+                employeeShifts: [],
+              };
+            }
+
+            const daySlots = (slotsBySchedule[schedule.id] || []).filter(
+              (slot) =>
+                normalizeLookup(slot.dayKey) === dayKey &&
+                !slot.draftDeleteCandidate &&
+                (slot.employeeId || slot.employeeName)
+            );
+
+            const reqId = normalizeLookup(req.employeeId);
+            const reqName = normalizeLookup(req.employeeName);
+
+            const employeeSlots = daySlots.filter((slot) => {
+              const slotId = normalizeLookup(slot.employeeId);
+              const slotName = normalizeLookup(slot.employeeName);
+
+              if (reqId && slotId === reqId) return true;
+              return !!reqName && slotName === reqName;
+            });
+
+            const employeeShifts = employeeSlots
+              .map((slot) => {
+                const interval = getCabinInterval(slot);
+                if (!interval) return null;
+
+                const overlappingSlots = daySlots
+                  .map((candidate) => {
+                    const candidateInterval = getCabinInterval(candidate);
+                    if (!candidateInterval) return null;
+
+                    return {
+                      ...candidate,
+                      interval: candidateInterval,
+                    };
+                  })
+                  .filter(
+                    (candidate) =>
+                      candidate &&
+                      cabinIntervalsOverlap(candidate.interval, interval)
+                  );
+
+                const boundaries = new Set([interval.start, interval.end]);
+
+                overlappingSlots.forEach((candidate) => {
+                  boundaries.add(
+                    Math.max(interval.start, candidate.interval.start)
+                  );
+                  boundaries.add(
+                    Math.min(interval.end, candidate.interval.end)
+                  );
+                });
+
+                const points = Array.from(boundaries)
+                  .filter(
+                    (point) => point >= interval.start && point <= interval.end
+                  )
+                  .sort((a, b) => a - b);
+
+                const segments = [];
+
+                for (let i = 0; i < points.length - 1; i += 1) {
+                  const segmentStart = points[i];
+                  const segmentEnd = points[i + 1];
+
+                  if (segmentEnd <= segmentStart) continue;
+
+                  const coveringSlots = overlappingSlots.filter(
+                    (candidate) =>
+                      candidate.interval.start < segmentEnd &&
+                      candidate.interval.end > segmentStart
+                  );
+
+                  const uniqueEmployees = new Map();
+
+                  coveringSlots.forEach((candidate) => {
+                    const key = cabinEmployeeKey(candidate);
+                    if (!key) return;
+
+                    if (!uniqueEmployees.has(key)) {
+                      uniqueEmployees.set(key, candidate);
+                    }
+                  });
+
+                  const requesterPresent = Array.from(
+                    uniqueEmployees.values()
+                  ).some((candidate) => {
+                    const candidateId = normalizeLookup(candidate.employeeId);
+                    const candidateName = normalizeLookup(
+                      candidate.employeeName
+                    );
+
+                    if (reqId && candidateId === reqId) return true;
+                    return !!reqName && candidateName === reqName;
+                  });
+
+                  const roleCounts = {
+                    supervisors: 0,
+                    lav: 0,
+                    agents: 0,
+                  };
+
+                  uniqueEmployees.forEach((candidate) => {
+                    const role = normalizeLookup(candidate.role);
+
+                    if (role === "supervisor") {
+                      roleCounts.supervisors += 1;
+                    } else if (role === "lav") {
+                      roleCounts.lav += 1;
+                    } else {
+                      roleCounts.agents += 1;
+                    }
+                  });
+
+                  segments.push({
+                    start: segmentStart,
+                    end: segmentEnd,
+                    scheduled: uniqueEmployees.size,
+                    remaining: Math.max(
+                      0,
+                      uniqueEmployees.size - (requesterPresent ? 1 : 0)
+                    ),
+                    requesterPresent,
+                    ...roleCounts,
+                  });
+                }
+
+                const minimumRemaining = segments.length
+                  ? Math.min(...segments.map((segment) => segment.remaining))
+                  : 0;
+
+                let shiftLevel = "OK";
+
+                if (minimumRemaining < 5) {
+                  shiftLevel = "CRITICAL";
+                } else if (minimumRemaining === 5) {
+                  shiftLevel = "CAUTION";
+                }
+
+                return {
+                  role: String(slot.role || "Agent"),
+                  start: String(slot.start || ""),
+                  end: String(slot.end || ""),
+                  displayShift: `${formatCabinTime(
+                    interval.start
+                  )}-${formatCabinTime(interval.end)}`,
+                  minimumRemaining,
+                  level: shiftLevel,
+                  segments,
+                };
+              })
+              .filter(Boolean);
+
+            if (!employeeShifts.length) {
+              return {
+                date,
+                weekStart,
+                dayKey,
+                scheduleId: schedule.id,
+                level: "NOT_SCHEDULED",
+                employeeScheduled: false,
+                employeeShifts: [],
+              };
+            }
+
+            let level = "OK";
+
+            if (
+              employeeShifts.some((shift) => shift.level === "CRITICAL")
+            ) {
+              level = "CRITICAL";
+            } else if (
+              employeeShifts.some((shift) => shift.level === "CAUTION")
+            ) {
+              level = "CAUTION";
+            }
+
+            const minimumRemaining = Math.min(
+              ...employeeShifts.map((shift) => shift.minimumRemaining)
+            );
+
+            return {
+              date,
+              weekStart,
+              dayKey,
+              scheduleId: schedule.id,
+              level,
+              employeeScheduled: true,
+              employeeShifts,
+              minimumRemaining,
+            };
           }
-
-          const daySlots = (slotsBySchedule[schedule.id] || []).filter(
-            (slot) =>
-              slot.dayKey === dayKey &&
-              !slot.draftDeleteCandidate &&
-              (slot.employeeId || slot.employeeName)
-          );
-
-          const unique = new Map();
-          daySlots.forEach((slot) => {
-            const key = normalizeLookup(slot.employeeId || slot.employeeName);
-            if (!key) return;
-            if (!unique.has(key)) unique.set(key, slot);
-          });
-
-          const reqId = normalizeLookup(req.employeeId);
-          const reqName = normalizeLookup(req.employeeName);
-          const employeeScheduled = Array.from(unique.entries()).some(([key, slot]) => {
-            if (reqId && key === reqId) return true;
-            const slotName = normalizeLookup(slot.employeeName);
-            return !!reqName && slotName === reqName;
-          });
-
-          const scheduled = unique.size;
-          const remaining = Math.max(0, scheduled - (employeeScheduled ? 1 : 0));
-          const roleCounts = { supervisors: 0, lav: 0, agents: 0 };
-          unique.forEach((slot) => {
-            const role = normalizeLookup(slot.role);
-            if (role === "supervisor") roleCounts.supervisors += 1;
-            else if (role === "lav") roleCounts.lav += 1;
-            else roleCounts.agents += 1;
-          });
-
-          let level = "OK";
-          if (employeeScheduled && remaining < 5) level = "CRITICAL";
-          else if (employeeScheduled && remaining === 5) level = "CAUTION";
-
-          return {
-            date,
-            weekStart,
-            dayKey,
-            scheduleId: schedule.id,
-            level,
-            scheduled,
-            remaining,
-            employeeScheduled,
-            ...roleCounts,
-          };
-        });
+        );
       });
 
       setCoverageByRequest(next);
     } catch (err) {
       console.error("Error loading Cabin Service coverage:", err);
-      setStatusMessage("Requests loaded, but Cabin Service coverage could not be analyzed.");
+      setStatusMessage(
+        "Requests loaded, but Cabin Service coverage could not be analyzed."
+      );
     } finally {
       setCoverageLoading(false);
     }
@@ -513,14 +739,24 @@ export default function TimeOffRequestsAdminPage() {
       return;
     }
 
+    if (
+      isCabinRequest(req) &&
+      (coverageLoading || !coverageByRequest[req.id])
+    ) {
+      setStatusMessage(
+        "Cabin Service shift coverage is still loading. Please try again in a moment."
+      );
+      return;
+    }
+
     const note = notesById[req.id] || "";
     const coverage = coverageByRequest[req.id] || [];
     const criticalDates = coverage.filter((item) => item.level === "CRITICAL");
     const cautionDates = coverage.filter((item) => item.level === "CAUTION");
     const coverageWarning = criticalDates.length
-      ? `\n\nCRITICAL COVERAGE: ${criticalDates.map((item) => `${formatCoverageDate(item.date)} (${item.remaining} remaining)`).join(", ")}. Management coverage/replacement will be required.`
+      ? `\n\nCRITICAL COVERAGE: ${criticalDates.map((item) => `${formatCoverageDate(item.date)} (${item.minimumRemaining} minimum remaining)`).join(", ")}. Management coverage/replacement will be required.`
       : cautionDates.length
-      ? `\n\nCAUTION: ${cautionDates.map((item) => `${formatCoverageDate(item.date)} (${item.remaining} remaining)`).join(", ")}. This reaches minimum coverage.`
+      ? `\n\nCAUTION: ${cautionDates.map((item) => `${formatCoverageDate(item.date)} (${item.minimumRemaining} minimum remaining)`).join(", ")}. This reaches minimum coverage.`
       : "";
     const confirmText = `Approve day-off for ${req.employeeName} (${req.reasonType}) from ${req.startDate} to ${req.endDate}?${coverageWarning}`;
 
@@ -587,7 +823,7 @@ export default function TimeOffRequestsAdminPage() {
           severity: "HIGH",
           priority: "HIGH",
           title: "Delta Cabin Service Coverage Required",
-          message: `${req.employeeName || "Employee"} was approved off. Coverage is below 5 on ${criticalDates.map((item) => `${formatCoverageDate(item.date)} (${item.remaining} remaining)`).join(", ")}. Management coverage or replacement is required.`,
+          message: `${req.employeeName || "Employee"} was approved off. Coverage is below 5 on ${criticalDates.map((item) => `${formatCoverageDate(item.date)} (${item.minimumRemaining} minimum remaining)`).join(", ")}. Management coverage or replacement is required.`,
           source: "TimeOffRequestsAdminPage",
           sourceId: req.id,
           department: req.department || "DL Cabin Service",
@@ -1226,9 +1462,9 @@ export default function TimeOffRequestsAdminPage() {
                                     ? "CAUTION - MINIMUM COVERAGE"
                                     : item.level === "NO_SCHEDULE"
                                     ? "NO APPROVED SCHEDULE FOUND"
-                                    : item.employeeScheduled
-                                    ? "COVERAGE OK"
-                                    : "EMPLOYEE NOT SCHEDULED";
+                                    : item.level === "NOT_SCHEDULED"
+                                    ? "EMPLOYEE NOT SCHEDULED"
+                                    : "COVERAGE OK";
 
                                 return (
                                   <div
@@ -1244,14 +1480,71 @@ export default function TimeOffRequestsAdminPage() {
                                     <div style={{ fontWeight: 900 }}>
                                       {formatCoverageDate(item.date)} {"\u00B7"} {label}
                                     </div>
-                                    {item.level !== "NO_SCHEDULE" && (
-                                      <div style={{ marginTop: 3, fontWeight: 700 }}>
-                                        Scheduled: {item.scheduled} {"\u00B7"} Supervisors: {item.supervisors} {"\u00B7"} LAV: {item.lav} {"\u00B7"} Agents: {item.agents}
-                                        {item.employeeScheduled
-                                          ? ` | Remaining if approved: ${item.remaining}`
-                                          : " | Requested employee is not assigned that day."}
-                                      </div>
-                                    )}
+                                    {item.level !== "NO_SCHEDULE" &&
+                                      !item.employeeScheduled && (
+                                        <div
+                                          style={{
+                                            marginTop: 3,
+                                            fontWeight: 700,
+                                          }}
+                                        >
+                                          Requested employee is not assigned that day.
+                                        </div>
+                                      )}
+
+                                    {item.employeeScheduled &&
+                                      (item.employeeShifts || []).map(
+                                        (shift, shiftIndex) => (
+                                          <div
+                                            key={`${req.id}-${item.date}-shift-${shiftIndex}`}
+                                            style={{
+                                              marginTop: 7,
+                                              paddingTop: 7,
+                                              borderTop:
+                                                "1px solid rgba(15,23,42,0.10)",
+                                            }}
+                                          >
+                                            <div style={{ fontWeight: 900 }}>
+                                              {shift.role || "Agent"} {"\u00B7"}{" "}
+                                              Shift {shift.displayShift} {"\u00B7"}{" "}
+                                              Minimum remaining:{" "}
+                                              {shift.minimumRemaining}
+                                            </div>
+
+                                            <div
+                                              style={{
+                                                marginTop: 4,
+                                                display: "grid",
+                                                gap: 3,
+                                                fontWeight: 700,
+                                              }}
+                                            >
+                                              {(shift.segments || []).map(
+                                                (segment, segmentIndex) => (
+                                                  <div
+                                                    key={`${req.id}-${item.date}-${shiftIndex}-${segmentIndex}`}
+                                                  >
+                                                    {formatCabinTime(
+                                                      segment.start
+                                                    )}
+                                                    -
+                                                    {formatCabinTime(
+                                                      segment.end
+                                                    )}{" "}
+                                                    {"\u2192"}{" "}
+                                                    {segment.remaining} remaining{" "}
+                                                    {"\u00B7"} Sup:{" "}
+                                                    {segment.supervisors}{" "}
+                                                    {"\u00B7"} LAV:{" "}
+                                                    {segment.lav} {"\u00B7"} Agents:{" "}
+                                                    {segment.agents}
+                                                  </div>
+                                                )
+                                              )}
+                                            </div>
+                                          </div>
+                                        )
+                                      )}
                                     {item.level === "CRITICAL" && (
                                       <div style={{ marginTop: 3, fontWeight: 900 }}>
                                         Management coverage or replacement required if approved.
