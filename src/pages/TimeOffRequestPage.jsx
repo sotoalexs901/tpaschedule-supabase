@@ -232,6 +232,29 @@ function isEmployeeActive(employee) {
   return true;
 }
 
+function isAgentEmployee(employee) {
+  if (!employee) return false;
+
+  const role = normalizeText(
+    employee.role ||
+      employee.userRole ||
+      employee.employeeRole ||
+      ""
+  );
+
+  const position = normalizeText(
+    employee.position ||
+      employee.title ||
+      ""
+  );
+
+  return (
+    role === "agent" ||
+    position === "agent" ||
+    position.includes("agent")
+  );
+}
+
 function getRequestStatus(value) {
   const status = normalizeText(value || "pending");
 
@@ -431,6 +454,12 @@ export default function TimeOffRequestPage() {
   const isDutyManager =
     normalizeText(user?.role) === "duty_manager";
 
+  const isSupervisor =
+    normalizeText(user?.role) === "supervisor";
+
+  const canRequestForEmployee =
+    isDutyManager || isSupervisor;
+
   const [employee, setEmployee] = useState(null);
   const [employeeLoading, setEmployeeLoading] = useState(true);
 
@@ -558,7 +587,7 @@ export default function TimeOffRequestPage() {
     let cancelled = false;
 
     async function loadEmployees() {
-      if (!isDutyManager) {
+      if (!canRequestForEmployee) {
         setAllEmployees([]);
         setEmployeesLoading(false);
         return;
@@ -577,6 +606,17 @@ export default function TimeOffRequestPage() {
             ...item.data(),
           }))
           .filter(isEmployeeActive)
+          .filter((item) => {
+            if (item.id === employee?.id) {
+              return false;
+            }
+
+            if (isSupervisor) {
+              return isAgentEmployee(item);
+            }
+
+            return true;
+          })
           .sort((a, b) =>
             getEmployeeName(a).localeCompare(
               getEmployeeName(b)
@@ -587,7 +627,7 @@ export default function TimeOffRequestPage() {
           setAllEmployees(list);
         }
       } catch (err) {
-        console.error("Error loading employees for Duty Manager:", err);
+        console.error("Error loading employees for Time Off request:", err);
 
         if (!cancelled) {
           setAllEmployees([]);
@@ -607,7 +647,11 @@ export default function TimeOffRequestPage() {
     return () => {
       cancelled = true;
     };
-  }, [isDutyManager]);
+  }, [
+    canRequestForEmployee,
+    isSupervisor,
+    employee?.id,
+  ]);
 
   const selectedEmployee = useMemo(() => {
     if (!selectedEmployeeId) return null;
@@ -620,7 +664,7 @@ export default function TimeOffRequestPage() {
   }, [allEmployees, selectedEmployeeId]);
 
   const targetEmployee =
-    isDutyManager && requestMode === "EMPLOYEE"
+    canRequestForEmployee && requestMode === "EMPLOYEE"
       ? selectedEmployee
       : employee;
 
@@ -825,7 +869,8 @@ export default function TimeOffRequestPage() {
           warningThreshold: MONTHLY_WARNING_THRESHOLD,
           monthlyMaximum: MONTHLY_MAX_REQUESTS,
           submittedForEmployee:
-            isDutyManager && requestMode === "EMPLOYEE",
+            canRequestForEmployee &&
+            requestMode === "EMPLOYEE",
         },
       });
     } catch (alertErr) {
@@ -846,8 +891,10 @@ export default function TimeOffRequestPage() {
 
     if (!employeeId || !targetEmployee) {
       setError(
-        isDutyManager && requestMode === "EMPLOYEE"
-          ? "Please select an employee before submitting the request."
+        canRequestForEmployee && requestMode === "EMPLOYEE"
+          ? isSupervisor
+            ? "Please select an agent before submitting the request."
+            : "Please select an employee before submitting the request."
           : "Your employee profile is not linked to this account. Please contact Management."
       );
       return;
@@ -945,7 +992,8 @@ export default function TimeOffRequestPage() {
       }
 
       const submittedForEmployee =
-        isDutyManager && requestMode === "EMPLOYEE";
+        canRequestForEmployee &&
+        requestMode === "EMPLOYEE";
 
       const requestRef = await addDoc(
         collection(db, "timeOffRequests"),
@@ -968,25 +1016,63 @@ export default function TimeOffRequestPage() {
           requestedByRole: user?.role || "",
 
           requestSource: submittedForEmployee
-            ? "DUTY_MANAGER_FOR_EMPLOYEE"
+            ? isDutyManager
+              ? "DUTY_MANAGER_FOR_EMPLOYEE"
+              : "SUPERVISOR_FOR_AGENT"
             : "SELF_SERVICE",
 
           requestedForSelf: !submittedForEmployee,
           submittedForEmployee,
-          submittedByDutyManager: submittedForEmployee,
-          submittedByDutyManagerId: submittedForEmployee
+
+          submittedByManagement: submittedForEmployee,
+          submittedByManagementId: submittedForEmployee
             ? user?.id || ""
             : "",
-          submittedByDutyManagerName: submittedForEmployee
+          submittedByManagementName: submittedForEmployee
             ? getVisibleUserName(user)
             : "",
-          submittedByDutyManagerUsername: submittedForEmployee
+          submittedByManagementUsername: submittedForEmployee
             ? user?.username || user?.loginUsername || ""
             : "",
+          submittedByManagementRole: submittedForEmployee
+            ? user?.role || ""
+            : "",
+
+          submittedByDutyManager:
+            submittedForEmployee && isDutyManager,
+          submittedByDutyManagerId:
+            submittedForEmployee && isDutyManager
+              ? user?.id || ""
+              : "",
+          submittedByDutyManagerName:
+            submittedForEmployee && isDutyManager
+              ? getVisibleUserName(user)
+              : "",
+          submittedByDutyManagerUsername:
+            submittedForEmployee && isDutyManager
+              ? user?.username || user?.loginUsername || ""
+              : "",
+
+          submittedBySupervisor:
+            submittedForEmployee && isSupervisor,
+          submittedBySupervisorId:
+            submittedForEmployee && isSupervisor
+              ? user?.id || ""
+              : "",
+          submittedBySupervisorName:
+            submittedForEmployee && isSupervisor
+              ? getVisibleUserName(user)
+              : "",
+          submittedBySupervisorUsername:
+            submittedForEmployee && isSupervisor
+              ? user?.username || user?.loginUsername || ""
+              : "",
 
           createdAt: serverTimestamp(),
           createdVia: submittedForEmployee
-            ? "duty_manager_on_behalf"
+            ? isDutyManager
+              ? "duty_manager_on_behalf"
+              : "supervisor_on_behalf"
             : "authenticated_profile",
 
           managementSubmissionPushStatus: "PENDING",
@@ -1094,7 +1180,8 @@ export default function TimeOffRequestPage() {
       : Boolean(selectedEmployee);
 
   const requestHistoryTitle =
-    isDutyManager && requestMode === "EMPLOYEE"
+    canRequestForEmployee &&
+    requestMode === "EMPLOYEE"
       ? `${employeeName} Time Off Requests`
       : "My Time Off Requests";
 
@@ -1181,6 +1268,8 @@ export default function TimeOffRequestPage() {
           >
             {isDutyManager
               ? "Submit Time Off for yourself or on behalf of an employee, and track Management decisions from the same page."
+              : isSupervisor
+              ? "Submit Time Off for yourself or on behalf of an agent, and track Management decisions from the same page."
               : "Submit PTO, Sick, Personal or other time off requests and track Management decisions from the same page."}
           </p>
 
@@ -1264,7 +1353,7 @@ export default function TimeOffRequestPage() {
           </div>
         </PageCard>
 
-        {isDutyManager && (
+        {canRequestForEmployee && (
           <PageCard style={{ padding: isMobile ? 14 : 18 }}>
             <div
               style={{
@@ -1336,7 +1425,7 @@ export default function TimeOffRequestPage() {
                 }}
               >
                 <div style={{ fontWeight: 900, fontSize: 14 }}>
-                  Employee Time Off
+                  {isSupervisor ? "Agent Time Off" : "Employee Time Off"}
                 </div>
                 <div
                   style={{
@@ -1345,14 +1434,18 @@ export default function TimeOffRequestPage() {
                     color: "#64748b",
                   }}
                 >
-                  Submit on behalf of an employee.
+                  {isSupervisor
+                    ? "Submit on behalf of an agent."
+                    : "Submit on behalf of an employee."}
                 </div>
               </button>
             </div>
 
             {requestMode === "EMPLOYEE" && (
               <div style={{ marginTop: 14 }}>
-                <FieldLabel>Select Employee</FieldLabel>
+                <FieldLabel>
+                  {isSupervisor ? "Select Agent" : "Select Employee"}
+                </FieldLabel>
 
                 <SelectInput
                   value={selectedEmployeeId}
@@ -1366,6 +1459,8 @@ export default function TimeOffRequestPage() {
                   <option value="">
                     {employeesLoading
                       ? "Loading employees..."
+                      : isSupervisor
+                      ? "Select agent"
                       : "Select employee"}
                   </option>
 
@@ -1428,7 +1523,9 @@ export default function TimeOffRequestPage() {
             </p>
           </div>
 
-          {isDutyManager && requestMode === "EMPLOYEE" && targetEmployee && (
+          {canRequestForEmployee &&
+            requestMode === "EMPLOYEE" &&
+            targetEmployee && (
             <div
               style={{
                 marginBottom: 13,
@@ -1443,7 +1540,8 @@ export default function TimeOffRequestPage() {
               }}
             >
               You are submitting this request for <b>{employeeName}</b>. The
-              request will record you as the Duty Manager who submitted it.
+              request will record you as the{" "}
+              {isDutyManager ? "Duty Manager" : "Supervisor"} who submitted it.
             </div>
           )}
 
@@ -1687,16 +1785,23 @@ export default function TimeOffRequestPage() {
                 ? "Submitting..."
                 : employeeLoading
                 ? "Loading Employee Profile..."
-                : isDutyManager && requestMode === "EMPLOYEE" && !selectedEmployee
-                ? "Select Employee First"
+                : canRequestForEmployee &&
+                  requestMode === "EMPLOYEE" &&
+                  !selectedEmployee
+                ? isSupervisor
+                  ? "Select Agent First"
+                  : "Select Employee First"
                 : requestsLoading
                 ? "Loading Requests..."
                 : checkingMonthlyLimit
                 ? "Checking Monthly Limit..."
                 : monthlyLimitReached
                 ? `Maximum ${MONTHLY_MAX_REQUESTS} Requests Reached`
-                : isDutyManager && requestMode === "EMPLOYEE"
-                ? "Submit Employee Request"
+                : canRequestForEmployee &&
+                  requestMode === "EMPLOYEE"
+                ? isSupervisor
+                  ? "Submit Agent Request"
+                  : "Submit Employee Request"
                 : "Submit Request"}
             </button>
           </form>
@@ -1777,8 +1882,10 @@ export default function TimeOffRequestPage() {
                 lineHeight: 1.6,
               }}
             >
-              {isDutyManager && requestMode === "EMPLOYEE"
-                ? "Select an employee to view their Time Off request history."
+              {canRequestForEmployee && requestMode === "EMPLOYEE"
+                ? isSupervisor
+                  ? "Select an agent to view their Time Off request history."
+                  : "Select an employee to view their Time Off request history."
                 : "Employee profile not available."}
             </div>
           ) : myRequests.length === 0 ? (
@@ -1803,7 +1910,10 @@ export default function TimeOffRequestPage() {
                   key={request.id}
                   request={request}
                   isMobile={isMobile}
-                  showSubmittedBy={isDutyManager && requestMode === "EMPLOYEE"}
+                  showSubmittedBy={
+                    canRequestForEmployee &&
+                    requestMode === "EMPLOYEE"
+                  }
                 />
               ))}
             </div>
