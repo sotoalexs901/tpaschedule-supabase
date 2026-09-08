@@ -66,6 +66,18 @@ function normalizeAirline(value) {
   return safeUpper(value).replace(/\s+/g, "");
 }
 
+function buildDailyFlightKey(airline, flightNumber, dateKey) {
+  const cleanAirline = normalizeAirline(airline);
+  const cleanFlightNumber = normalizeFlightNumber(flightNumber);
+  const cleanDateKey = safeText(dateKey);
+
+  if (!cleanAirline || !cleanFlightNumber || !cleanDateKey) {
+    return "";
+  }
+
+  return `${cleanDateKey}-${cleanAirline}-${cleanFlightNumber}`;
+}
+
 function useViewport() {
   const [width, setWidth] = useState(() =>
     typeof window !== "undefined"
@@ -114,7 +126,7 @@ function formatDateTime(value) {
   const millis = getMillis(value);
 
   if (!millis) {
-    return "—";
+    return "â";
   }
 
   return new Date(millis).toLocaleString(
@@ -781,7 +793,7 @@ function InfoField({
           wordBreak: "break-word",
         }}
       >
-        {value || "—"}
+        {value || "â"}
       </div>
     </div>
   );
@@ -838,8 +850,8 @@ function DailyFlightCard({
               color: "#0f172a",
             }}
           >
-            {flight.airline || "—"}{" "}
-            {flight.flight_number || "—"}
+            {flight.airline || "â"}{" "}
+            {flight.flight_number || "â"}
           </div>
 
           <div
@@ -850,7 +862,7 @@ function DailyFlightCard({
               fontWeight: 700,
             }}
           >
-            {flight.flight_date || "—"}
+            {flight.service_date || flight.flight_date || "â"}
           </div>
         </div>
 
@@ -999,7 +1011,7 @@ function InventoryCard({
               color: "#0f172a",
             }}
           >
-            WCHR {wheelchairNumber || "—"}
+            WCHR {wheelchairNumber || "â"}
           </div>
 
           <div
@@ -1181,7 +1193,7 @@ function AgentCard({
         >
           Assigned WCHR{" "}
           {agent.active_wheelchair_number ||
-            "—"}
+            "â"}
         </div>
       )}
 
@@ -1278,7 +1290,7 @@ function ReadyWheelchairCard({
           >
             WCHR{" "}
             {report.wheelchair_number ||
-              "—"}
+              "â"}
           </div>
 
           <div
@@ -1577,22 +1589,15 @@ export default function WchrDispatchPage() {
   useEffect(() => {
     setLoadingFlights(true);
 
-    const flightsQuery =
-      query(
+    // Read the collection live and accept both the legacy `flight_date` field
+    // and the new canonical `service_date` field. This keeps Dispatch and
+    // Passenger Intake on one daily-flight source without breaking older rows.
+    const unsubscribe =
+      onSnapshot(
         collection(
           db,
           DAILY_FLIGHTS_COLLECTION
         ),
-        where(
-          "flight_date",
-          "==",
-          todayKey
-        )
-      );
-
-    const unsubscribe =
-      onSnapshot(
-        flightsQuery,
         (snapshot) => {
           const rows =
             snapshot.docs
@@ -1600,6 +1605,15 @@ export default function WchrDispatchPage() {
                 id: item.id,
                 ...item.data(),
               }))
+              .filter((flight) => {
+                const flightDate =
+                  safeText(
+                    flight.service_date ||
+                      flight.flight_date
+                  );
+
+                return flightDate === todayKey;
+              })
               .sort((a, b) => {
                 const airlineCompare =
                   safeUpper(
@@ -1884,12 +1898,24 @@ export default function WchrDispatchPage() {
   const openFlights =
     useMemo(
       () =>
-        dailyFlights.filter(
-          (flight) =>
+        dailyFlights.filter((flight) => {
+          const status =
             safeUpper(
               flight.status || "OPEN"
-            ) === "OPEN"
-        ),
+            );
+
+          const active =
+            flight.active !== false;
+
+          const selectable =
+            flight.selectable_for_wchr !== false;
+
+          return (
+            status === "OPEN" &&
+            active &&
+            selectable
+          );
+        }),
       [dailyFlights]
     );
 
@@ -1963,14 +1989,29 @@ export default function WchrDispatchPage() {
       try {
         setSavingFlight(true);
 
+        const flightKey =
+          buildDailyFlightKey(
+            airline,
+            flightNumber,
+            todayKey
+          );
+
         await addDoc(
           collection(
             db,
             DAILY_FLIGHTS_COLLECTION
           ),
           {
+            // `service_date` is the canonical field used by the new WCHR flow.
+            // `flight_date` remains for backwards compatibility with older pages.
+            service_date:
+              todayKey,
+
             flight_date:
               todayKey,
+
+            flight_key:
+              flightKey,
 
             airline,
 
@@ -1983,6 +2024,15 @@ export default function WchrDispatchPage() {
               "OPEN",
 
             active:
+              true,
+
+            selectable_for_wchr:
+              true,
+
+            source:
+              "WCHR_DISPATCH",
+
+            selectable_for_wchr:
               true,
 
             created_at:
@@ -2065,6 +2115,9 @@ export default function WchrDispatchPage() {
               "CLOSED",
 
             active:
+              false,
+
+            selectable_for_wchr:
               false,
 
             closed_at:
@@ -2533,7 +2586,7 @@ export default function WchrDispatchPage() {
 
       const wheelchairNumber =
         selectedReport.wheelchair_number ||
-        "—";
+        "â";
 
       const confirmed =
         window.confirm(
@@ -2971,7 +3024,7 @@ export default function WchrDispatchPage() {
                   letterSpacing: "0.14em",
                 }}
               >
-                {APP_NAME} · WCHR Dispatch
+                {APP_NAME} Â· WCHR Dispatch
               </div>
 
               <h1
@@ -3149,8 +3202,8 @@ export default function WchrDispatchPage() {
                 lineHeight: 1.55,
               }}
             >
-              Only OPEN flights listed here will be available for new WCHR
-              passenger services.
+              Only OPEN flights listed here are authorized for new WCHR passenger
+              services. Passenger Intake must select one of these flights.
             </p>
           </div>
 
@@ -3761,8 +3814,8 @@ export default function WchrDispatchPage() {
               {selectedReport
                 ? `WCHR ${
                     selectedReport.wheelchair_number ||
-                    "—"
-                  } · ${
+                    "â"
+                  } Â· ${
                     selectedReport.passenger_name ||
                     "Passenger"
                   }`
@@ -4195,8 +4248,8 @@ export default function WchrDispatchPage() {
             >
               WCHR{" "}
               {selectedReport.wheelchair_number ||
-                "—"}{" "}
-              →{" "}
+                "â"}{" "}
+              â{" "}
               {getAgentName(
                 selectedAgent
               )}
@@ -4323,7 +4376,7 @@ export default function WchrDispatchPage() {
           color: "#94a3b8",
         }}
       >
-        {APP_NAME} · {APP_SUBTITLE}
+        {APP_NAME} Â· {APP_SUBTITLE}
       </div>
     </div>
   );
