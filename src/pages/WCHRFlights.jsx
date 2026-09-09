@@ -1657,6 +1657,464 @@ function SegmentsTable({
 }
 
 // ============================================================
+// BRANDED PRINT VIEW
+// ============================================================
+
+function escapePrintHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function buildWchrPrintableHtml(report, timeline = [], segments = []) {
+  const logoUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/icons/aerostation-icon.png`
+      : "/icons/aerostation-icon.png";
+
+  const serviceStatus = getServiceStatusLabel(report);
+  const passengerName = report?.passenger_name || "Passenger";
+  const reportId = report?.report_id || report?.id || "â";
+  const flightLabel = [report?.airline, report?.flight_number]
+    .filter(Boolean)
+    .join(" ") || "â";
+  const agentName =
+    report?.wchr_agent_name ||
+    report?.assigned_wchr_agent ||
+    report?.employee_name ||
+    "â";
+  const wheelchairLabel =
+    report?.wheelchair_number ||
+    (isPersonalWheelchair(report) ? "Personal WCHR" : "â");
+
+  const card = (label, value) => `
+    <div class="card">
+      <div class="card-label">${escapePrintHtml(label)}</div>
+      <div class="card-value">${escapePrintHtml(value || "â")}</div>
+    </div>
+  `;
+
+  const timelineRows = timeline.length
+    ? timeline
+        .map((event) => {
+          const eventType =
+            safeUpper(event?.event_type).replaceAll("_", " ") || "EVENT";
+          const details = [
+            event?.location ? `Location: ${event.location}` : "",
+            event?.employee_name ? `By: ${event.employee_name}` : "",
+            event?.notes || event?.note || "",
+          ]
+            .filter(Boolean)
+            .join(" | ");
+
+          return `
+            <tr>
+              <td>${escapePrintHtml(formatDateTime(event?.created_at))}</td>
+              <td><strong>${escapePrintHtml(eventType)}</strong></td>
+              <td>${escapePrintHtml(details || "â")}</td>
+            </tr>
+          `;
+        })
+        .join("")
+    : `<tr><td colspan="3" class="empty-cell">No tracking events recorded.</td></tr>`;
+
+  const segmentRows = segments.length
+    ? segments
+        .map((segment) => `
+          <tr>
+            <td>${escapePrintHtml(segment?.segment_number || "â")}</td>
+            <td>${escapePrintHtml(segment?.agent_name || "â")}</td>
+            <td>
+              ${escapePrintHtml(segment?.start_location || "â")}
+              <div class="subtext">${escapePrintHtml(
+                formatDateTime(segment?.started_at)
+              )}</div>
+            </td>
+            <td>
+              ${escapePrintHtml(segment?.end_location || "â")}
+              <div class="subtext">${escapePrintHtml(
+                formatDateTime(segment?.ended_at)
+              )}</div>
+            </td>
+            <td>${escapePrintHtml(
+              safeUpper(segment?.segment_result || segment?.segment_status)
+                .replaceAll("_", " ") || "â"
+            )}</td>
+          </tr>
+        `)
+        .join("")
+    : `<tr><td colspan="5" class="empty-cell">No service segment records available.</td></tr>`;
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapePrintHtml(APP_NAME)} - WCHR Passenger Service Report</title>
+        <style>
+          * { box-sizing: border-box; }
+
+          @page {
+            size: auto;
+            margin: 12mm;
+          }
+
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            color: #111827;
+            background: #ffffff;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .page {
+            width: 100%;
+          }
+
+          .brand-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding-bottom: 16px;
+            margin-bottom: 18px;
+            border-bottom: 2px solid #e5eef7;
+          }
+
+          .brand-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+          }
+
+          .brand-logo {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            border: 1px solid #dbeafe;
+            background: #ffffff;
+            object-fit: contain;
+          }
+
+          .brand-name {
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #1769aa;
+          }
+
+          .brand-subtitle {
+            margin-top: 3px;
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 700;
+          }
+
+          .document-label {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            text-align: right;
+          }
+
+          .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 18px;
+          }
+
+          .title {
+            margin: 0;
+            font-size: 27px;
+            line-height: 1.1;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+          }
+
+          .subtitle {
+            margin-top: 6px;
+            font-size: 14px;
+            color: #475569;
+            font-weight: 700;
+          }
+
+          .status {
+            display: inline-block;
+            padding: 7px 11px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            border: 1px solid #cfe7fb;
+            background: #edf7ff;
+            color: #1769aa;
+            white-space: nowrap;
+          }
+
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+          }
+
+          .card {
+            background: #f8fbff;
+            border: 1px solid #dbeafe;
+            border-radius: 12px;
+            padding: 11px 12px;
+            min-width: 0;
+          }
+
+          .card-label,
+          .section-label {
+            font-size: 10px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }
+
+          .card-value {
+            margin-top: 5px;
+            font-size: 13px;
+            line-height: 1.35;
+            font-weight: 800;
+            color: #0f172a;
+            overflow-wrap: anywhere;
+          }
+
+          .metrics {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 9px;
+            margin-bottom: 18px;
+          }
+
+          .metric {
+            padding: 11px 12px;
+            border-radius: 12px;
+            background: #f8fbff;
+            border: 1px solid #dbeafe;
+          }
+
+          .metric-value {
+            margin-top: 5px;
+            font-size: 16px;
+            font-weight: 900;
+            color: #0f172a;
+          }
+
+          .section {
+            margin-top: 18px;
+            page-break-inside: avoid;
+          }
+
+          .section-title {
+            margin: 0 0 8px;
+            font-size: 15px;
+            font-weight: 800;
+            color: #0f172a;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+
+          th,
+          td {
+            border: 1px solid #dbeafe;
+            padding: 8px 9px;
+            text-align: left;
+            vertical-align: top;
+            font-size: 10.5px;
+            line-height: 1.4;
+          }
+
+          th {
+            background: #f8fbff;
+            font-size: 9.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #475569;
+          }
+
+          .subtext {
+            margin-top: 3px;
+            font-size: 9.5px;
+            color: #64748b;
+          }
+
+          .empty-cell {
+            text-align: center;
+            color: #64748b;
+            font-weight: 700;
+          }
+
+          .print-footer {
+            margin-top: 28px;
+            padding-top: 12px;
+            border-top: 1px solid #e2e8f0;
+            color: #94a3b8;
+            font-size: 9px;
+            text-align: center;
+          }
+
+          @media print {
+            .brand-header,
+            .header,
+            .grid,
+            .metrics,
+            .section,
+            table,
+            tr,
+            td,
+            th {
+              break-inside: avoid;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="page">
+          <div class="brand-header">
+            <div class="brand-left">
+              <img
+                class="brand-logo"
+                src="${escapePrintHtml(logoUrl)}"
+                alt="${escapePrintHtml(APP_NAME)}"
+              />
+
+              <div>
+                <div class="brand-name">${escapePrintHtml(APP_NAME)}</div>
+                <div class="brand-subtitle">${escapePrintHtml(APP_SUBTITLE)}</div>
+              </div>
+            </div>
+
+            <div class="document-label">
+              WCHR Passenger Service Report
+            </div>
+          </div>
+
+          <div class="header">
+            <div>
+              <h1 class="title">${escapePrintHtml(passengerName)}</h1>
+              <div class="subtitle">
+                ${escapePrintHtml(flightLabel)} &middot; ${escapePrintHtml(reportId)}
+              </div>
+            </div>
+
+            <div class="status">${escapePrintHtml(serviceStatus)}</div>
+          </div>
+
+          <div class="grid">
+            ${card("Report ID", reportId)}
+            ${card("Passenger", passengerName)}
+            ${card("Flight", flightLabel)}
+            ${card("PNR", report?.pnr || "â")}
+            ${card("WCHR Type", report?.wch_type || "â")}
+            ${card("Wheelchair", wheelchairLabel)}
+            ${card("Assigned Agent", agentName)}
+            ${card("Current Location", report?.current_location || "â")}
+            ${card("Created", formatDateTime(report?.submitted_at || report?.created_at))}
+            ${card("Ready for Pickup", formatDateTime(report?.ready_for_pickup_at))}
+            ${card("Assigned", formatDateTime(report?.assigned_at))}
+            ${card("Picked Up", formatDateTime(report?.picked_up_at || report?.pickup_at))}
+            ${card("Gate Arrival", formatDateTime(report?.gate_arrived_at))}
+            ${card("Boarding Started", formatDateTime(getBoardingStartedAt(report)))}
+            ${card("Passenger Boarded", formatDateTime(getBoardedAt(report)))}
+            ${card("Passenger Delivered", formatDateTime(getPassengerDeliveredAt(report)))}
+            ${card("Stored", formatDateTime(report?.stored_at))}
+            ${card("Last Update", formatDateTime(report?.last_updated_at || report?.last_location_update_at))}
+          </div>
+
+          <div class="metrics">
+            <div class="metric">
+              <div class="section-label">Counter to Gate</div>
+              <div class="metric-value">${escapePrintHtml(
+                formatMinutes(getCounterToGateMinutes(report))
+              )}</div>
+            </div>
+
+            <div class="metric">
+              <div class="section-label">Gate to Boarding</div>
+              <div class="metric-value">${escapePrintHtml(
+                formatMinutes(getGateToBoardingMinutes(report))
+              )}</div>
+            </div>
+
+            <div class="metric">
+              <div class="section-label">Boarding to Boarded</div>
+              <div class="metric-value">${escapePrintHtml(
+                formatMinutes(getBoardingToBoardedMinutes(report))
+              )}</div>
+            </div>
+
+            <div class="metric">
+              <div class="section-label">Gate to Boarded / Delivered</div>
+              <div class="metric-value">${escapePrintHtml(
+                formatMinutes(getGateToBoardedMinutes(report))
+              )}</div>
+            </div>
+
+            <div class="metric">
+              <div class="section-label">Total Passenger Service</div>
+              <div class="metric-value">${escapePrintHtml(
+                formatMinutes(getTotalServiceMinutes(report))
+              )}</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2 class="section-title">Service Timeline</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Date / Time</th>
+                  <th>Event</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>${timelineRows}</tbody>
+            </table>
+          </div>
+
+          <div class="section">
+            <h2 class="section-title">Service Segments</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Segment</th>
+                  <th>Agent</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody>${segmentRows}</tbody>
+            </table>
+          </div>
+
+          <div class="print-footer">
+            ${escapePrintHtml(APP_NAME)} &middot; ${escapePrintHtml(APP_SUBTITLE)}
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+// ============================================================
 // MAIN PAGE
 // ============================================================
 
@@ -1748,11 +2206,6 @@ export default function WCHRFlights() {
     lookupReportId,
     setLookupReportId,
   ] = useState("");
-
-  const [
-    printingReport,
-    setPrintingReport,
-  ] = useState(false);
 
   // ==========================================================
   // LIVE REPORTS FOR DATE
@@ -2700,31 +3153,41 @@ export default function WCHRFlights() {
   // PRINT SELECTED SERVICE ONLY
   // ==========================================================
 
-  const handlePrintSelectedReport =
-    () => {
-      if (!selectedReport) {
-        return;
-      }
+  const handlePrintSelectedReport = () => {
+    if (!selectedReport) {
+      return;
+    }
 
-      setPrintingReport(
-        true
+    const html = buildWchrPrintableHtml(
+      selectedReport,
+      timeline,
+      segments
+    );
+
+    const printWindow = window.open(
+      "",
+      "_blank",
+      "width=1200,height=900"
+    );
+
+    if (!printWindow) {
+      setStatusMessage(
+        "Pop-up blocked. Please allow pop-ups to print the WCHR report."
       );
+      return;
+    }
 
-      window.setTimeout(
-        () => {
-          window.print();
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
 
-          window.setTimeout(
-            () =>
-              setPrintingReport(
-                false
-              ),
-            250
-          );
-        },
-        80
-      );
+    const triggerPrint = () => {
+      printWindow.focus();
+      printWindow.print();
     };
+
+    window.setTimeout(triggerPrint, 500);
+  };
 
   // ==========================================================
   // EXPORTS
@@ -2797,39 +3260,6 @@ export default function WCHRFlights() {
           "border-box",
       }}
     >
-      {printingReport && (
-        <style>
-          {`
-            @media print {
-              body * {
-                visibility: hidden !important;
-              }
-
-              #wchr-selected-service-print,
-              #wchr-selected-service-print * {
-                visibility: visible !important;
-              }
-
-              #wchr-selected-service-print {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 20px !important;
-                box-shadow: none !important;
-                border: none !important;
-                background: #ffffff !important;
-              }
-
-              .wchr-no-print {
-                display: none !important;
-              }
-            }
-          `}
-        </style>
-      )}
-
       {/* HERO */}
 
       <div
