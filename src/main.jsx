@@ -1,4 +1,4 @@
-// src/main.jsx
+/ src/main.jsx
 
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
@@ -63,6 +63,9 @@ import MyWCHRReports from "./pages/MyWCHRReports.jsx";
 import WCHRFlights from "./pages/WCHRFlights.jsx";
 import WCHRMonthlyClose from "./pages/WCHRMonthlyClose.jsx";
 import WchrDutyFollowUpPage from "./pages/WchrDutyFollowUpPage.jsx";
+import WchrOperationsHubPage from "./pages/WchrOperationsHubPage.jsx";
+import WchrAgentOperationsPage from "./pages/WchrAgentOperationsPage.jsx";
+import WchrDispatchPage from "./pages/WchrDispatchPage.jsx";
 
 import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
@@ -832,10 +835,10 @@ function AppRouter() {
             }
           />
 
-          {/* WCHR */}
+          {/* WCHR OPERATIONS */}
 
           <Route
-            path="wchr/scan"
+            path="wchr"
             element={
               <ProtectedRoute
                 roles={[
@@ -846,7 +849,55 @@ function AppRouter() {
                 ]}
                 blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
+                <WchrOperationsHubPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="wchr/agent-operations"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "agent",
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
+                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+              >
+                <WchrAgentOperationsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="wchr/intake"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+              >
                 <WCHRScan />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Legacy WCHR intake route kept for compatibility. */}
+
+          <Route
+            path="wchr/scan"
+            element={<Navigate to="/wchr/intake" replace />}
+          />
+
+          <Route
+            path="wchr/dispatch"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+              >
+                <WchrDispatchPage />
               </ProtectedRoute>
             }
           />
