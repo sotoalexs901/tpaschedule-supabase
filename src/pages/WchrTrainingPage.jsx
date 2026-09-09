@@ -41,7 +41,7 @@ const SCENARIOS = {
 const OB_STEPS = [
   {
     key: "supervisor_assigns",
-    emoji: "👨‍💼 ➜ 🧑‍🦽 ➜ 👤",
+    emoji: "\u{1F468}\u200D\u{1F4BC} \u279C \u{1F9D1}\u200D\u{1F9BD} \u279C \u{1F464}",
     status: "ASSIGNED",
     en: {
       title: "Supervisor Assigns the WCHR Service",
@@ -80,7 +80,7 @@ const OB_STEPS = [
   },
   {
     key: "accept_assignment",
-    emoji: "📱 ✅ 👤",
+    emoji: "\u{1F4F1} \u2705 \u{1F464}",
     status: "ACCEPTED",
     en: {
       title: "Agent Accepts the Assignment",
@@ -119,7 +119,7 @@ const OB_STEPS = [
   },
   {
     key: "pickup",
-    emoji: "🎫 👤 🧑‍🦽",
+    emoji: "\u{1F3AB} \u{1F464} \u{1F9D1}\u200D\u{1F9BD}",
     status: "AT PICKUP",
     en: {
       title: "Pick Up the Passenger",
@@ -158,7 +158,7 @@ const OB_STEPS = [
   },
   {
     key: "start_transit",
-    emoji: "🎫 ━━━ 👤🧑‍🦽 ━━━ ✈️",
+    emoji: "\u{1F3AB} --- \u{1F464}\u{1F9D1}\u200D\u{1F9BD} --- \u2708\uFE0F",
     status: "IN TRANSIT",
     en: {
       title: "Start Transit",
@@ -197,7 +197,7 @@ const OB_STEPS = [
   },
   {
     key: "journey",
-    emoji: "👤🧑‍🦽 ➡️ ➡️ ➡️ ✈️",
+    emoji: "\u{1F464}\u{1F9D1}\u200D\u{1F9BD} \u27A1\uFE0F \u27A1\uFE0F \u27A1\uFE0F \u2708\uFE0F",
     status: "IN TRANSIT",
     en: {
       title: "Transport the Passenger to the Gate",
@@ -236,7 +236,7 @@ const OB_STEPS = [
   },
   {
     key: "arrived_gate",
-    emoji: "✈️ ✅ 👤",
+    emoji: "\u2708\uFE0F \u2705 \u{1F464}",
     status: "AT GATE",
     en: {
       title: "Arrived at Gate",
@@ -278,7 +278,7 @@ const OB_STEPS = [
 const IB_STEPS = [
   {
     key: "supervisor_prepares",
-    emoji: "👨‍💼 📝 🛬",
+    emoji: "\u{1F468}\u200D\u{1F4BC} \u{1F4DD} \u{1F6EC}",
     status: "IB WAITING",
     en: {
       title: "Supervisor Prepares the IB Passenger",
@@ -317,7 +317,7 @@ const IB_STEPS = [
   },
   {
     key: "accept_pax",
-    emoji: "🙋 ✅ 🛬",
+    emoji: "\u{1F64B} \u2705 \u{1F6EC}",
     status: "IB ACCEPTED",
     en: {
       title: "Accept Pax",
@@ -354,7 +354,7 @@ const IB_STEPS = [
   },
   {
     key: "select_wchr",
-    emoji: "🧑‍🦽 🔢 ✅",
+    emoji: "\u{1F9D1}\u200D\u{1F9BD} \u{1F522} \u2705",
     status: "WCHR SELECTED",
     en: {
       title: "Select the WCHR Number",
@@ -393,7 +393,7 @@ const IB_STEPS = [
   },
   {
     key: "destination",
-    emoji: "📍 🏢 🚗",
+    emoji: "\u{1F4CD} \u{1F3E2} \u{1F697}",
     status: "DESTINATION SET",
     en: {
       title: "Select the Final Destination",
@@ -432,7 +432,7 @@ const IB_STEPS = [
   },
   {
     key: "ib_start_transit",
-    emoji: "🛃 👤🧑‍🦽 ➡️",
+    emoji: "\u{1F6C3} \u{1F464}\u{1F9D1}\u200D\u{1F9BD} \u27A1\uFE0F",
     status: "IB IN TRANSIT",
     en: {
       title: "Start Transit at CBP",
@@ -471,7 +471,7 @@ const IB_STEPS = [
   },
   {
     key: "ib_journey",
-    emoji: "🛃 ━━━ 👤🧑‍🦽 ━━━ 🏢",
+    emoji: "\u{1F6C3} --- \u{1F464}\u{1F9D1}\u200D\u{1F9BD} --- \u{1F3E2}",
     status: "IB IN TRANSIT",
     en: {
       title: "Transport Passenger to Destination",
@@ -510,7 +510,7 @@ const IB_STEPS = [
   },
   {
     key: "delivered",
-    emoji: "🏁 👤 ✅ 🧑‍🦽",
+    emoji: "\u{1F3C1} \u{1F464} \u2705 \u{1F9D1}\u200D\u{1F9BD}",
     status: "PENDING STORAGE",
     en: {
       title: "Delivered",
@@ -547,7 +547,7 @@ const IB_STEPS = [
   },
   {
     key: "storage",
-    emoji: "🧑‍🦽 ➡️ 🅿️",
+    emoji: "\u{1F9D1}\u200D\u{1F9BD} \u27A1\uFE0F \u{1F17F}\uFE0F",
     status: "PENDING STORAGE",
     en: {
       title: "Store the WCHR",
@@ -586,7 +586,7 @@ const IB_STEPS = [
   },
   {
     key: "available",
-    emoji: "🧑‍🦽 ✅   👤 ✅",
+    emoji: "\u{1F9D1}\u200D\u{1F9BD} \u2705   \u{1F464} \u2705",
     status: "AVAILABLE",
     en: {
       title: "WCHR and Agent Available",
@@ -969,7 +969,7 @@ export default function WchrTrainingPage() {
               }}
             >
               <ScenarioCard
-                icon="🛫 🧑‍🦽"
+                icon={`${String.fromCodePoint(0x1F6EB)} ${String.fromCodePoint(0x1F9D1, 0x200D, 0x1F9BD)}`}
                 title={SCENARIOS.OB[language].title}
                 subtitle={SCENARIOS.OB[language].subtitle}
                 description={SCENARIOS.OB[language].description}
@@ -977,7 +977,7 @@ export default function WchrTrainingPage() {
               />
 
               <ScenarioCard
-                icon="🛬 🧑‍🦽"
+                icon={`${String.fromCodePoint(0x1F6EC)} ${String.fromCodePoint(0x1F9D1, 0x200D, 0x1F9BD)}`}
                 title={SCENARIOS.IB[language].title}
                 subtitle={SCENARIOS.IB[language].subtitle}
                 description={SCENARIOS.IB[language].description}
@@ -1036,7 +1036,7 @@ export default function WchrTrainingPage() {
                   textAlign: "center",
                 }}
               >
-                <div style={{ fontSize: 42 }}>🏆</div>
+                <div style={{ fontSize: 42 }}>{String.fromCodePoint(0x1F3C6)}</div>
                 <div
                   style={{
                     marginTop: 8,
@@ -1214,7 +1214,7 @@ export default function WchrTrainingPage() {
                   lineHeight: 1.6,
                 }}
               >
-                💡 {currentText.instruction}
+                {"\u{1F4A1}"} {currentText.instruction}
               </div>
             </div>
 
@@ -1311,8 +1311,8 @@ export default function WchrTrainingPage() {
                 }}
               >
                 {answerState === "correct"
-                  ? `✅ ${currentText.success}`
-                  : `❌ ${currentText.error}`}
+                  ? `\u2705 ${currentText.success}`
+                  : `\u274C ${currentText.error}`}
               </div>
             )}
 
@@ -1421,7 +1421,7 @@ export default function WchrTrainingPage() {
               border: "1px solid #a7f3d0",
             }}
           >
-            <div style={{ fontSize: 48 }}>✅</div>
+            <div style={{ fontSize: 48 }}>{"\u2705"}</div>
             <div
               style={{
                 marginTop: 8,
