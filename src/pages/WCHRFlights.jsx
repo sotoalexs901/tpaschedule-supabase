@@ -4,10 +4,17 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
+  addDoc,
   collection,
+  deleteDoc,
+  doc,
   getDocs,
+  onSnapshot,
   query,
+  serverTimestamp,
+  setDoc,
   Timestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 
@@ -27,6 +34,7 @@ import {
 const REPORTS_COLLECTION = "wch_reports";
 const TRACKING_EVENTS_COLLECTION = "wch_tracking_events";
 const SERVICE_SEGMENTS_COLLECTION = "service_segments";
+const INVENTORY_COLLECTION = "wchr_inventory";
 
 const REPORT_FILTERS = [
   { value: "ALL", label: "All Services" },
@@ -95,25 +103,6 @@ function toDate(value) {
 
   if (typeof value?.toDate === "function") {
     return value.toDate();
-  }
-
-  if (
-    typeof value === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(value)
-  ) {
-    const [year, month, day] = value
-      .split("-")
-      .map(Number);
-
-    return new Date(
-      year,
-      month - 1,
-      day,
-      0,
-      0,
-      0,
-      0
-    );
   }
 
   const parsed = new Date(value);
@@ -1218,6 +1207,71 @@ function InfoField({
   );
 }
 
+function SelectInput({
+  value,
+  onChange,
+  children,
+  disabled = false,
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) =>
+        onChange(event.target.value)
+      }
+      disabled={disabled}
+      style={{
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        border: "1px solid #dbeafe",
+        borderRadius: 13,
+        padding: "11px 13px",
+        background: disabled ? "#f8fafc" : "#ffffff",
+        color: "#0f172a",
+        fontSize: 13,
+        fontFamily: "inherit",
+        outline: "none",
+      }}
+    >
+      {children}
+    </select>
+  );
+}
+
+function TextArea({
+  value,
+  onChange,
+  placeholder = "",
+  disabled = false,
+}) {
+  return (
+    <textarea
+      rows={3}
+      value={value}
+      onChange={(event) =>
+        onChange(event.target.value)
+      }
+      placeholder={placeholder}
+      disabled={disabled}
+      style={{
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        border: "1px solid #dbeafe",
+        borderRadius: 13,
+        padding: "11px 13px",
+        background: disabled ? "#f8fafc" : "#ffffff",
+        color: "#0f172a",
+        fontSize: 13,
+        fontFamily: "inherit",
+        resize: "vertical",
+        outline: "none",
+      }}
+    />
+  );
+}
+
 function FilterButton({
   active,
   label,
@@ -1249,7 +1303,7 @@ function FilterButton({
         cursor: "pointer",
       }}
     >
-      {label} {" | "} {count}
+      {label} | {count}
     </button>
   );
 }
@@ -1549,106 +1603,86 @@ export default function WCHRFlights() {
     setError,
   ] = useState("");
 
+  const [
+    statusMessage,
+    setStatusMessage,
+  ] = useState("");
+
+  const [
+    busyAction,
+    setBusyAction,
+  ] = useState("");
+
+  const [
+    managerNote,
+    setManagerNote,
+  ] = useState("");
+
+  const [
+    storeLocation,
+    setStoreLocation,
+  ] = useState("Wheelchair Storage");
+
+  const [
+    lookupReportId,
+    setLookupReportId,
+  ] = useState("");
+
   // ==========================================================
-  // LOAD REPORTS FOR DATE
+  // LIVE REPORTS FOR DATE
   // ==========================================================
 
   useEffect(() => {
-    let mounted = true;
+    setLoading(true);
+    setError("");
 
-    async function loadReports() {
-      try {
-        setLoading(true);
-        setError("");
+    const start = Timestamp.fromDate(
+      startOfDay(selectedDate)
+    );
 
-        const start =
-          Timestamp.fromDate(
-            startOfDay(
-              selectedDate
-            )
+    const end = Timestamp.fromDate(
+      endOfDay(selectedDate)
+    );
+
+    const reportQuery = query(
+      collection(db, REPORTS_COLLECTION),
+      where("submitted_at", ">=", start),
+      where("submitted_at", "<=", end)
+    );
+
+    const unsubscribe = onSnapshot(
+      reportQuery,
+      (snapshot) => {
+        const rows = snapshot.docs
+          .map((item) => ({
+            id: item.id,
+            ...item.data(),
+          }))
+          .sort(
+            (a, b) =>
+              getMillis(a.submitted_at) -
+              getMillis(b.submitted_at)
           );
 
-        const end =
-          Timestamp.fromDate(
-            endOfDay(
-              selectedDate
-            )
-          );
-
-        const reportQuery =
-          query(
-            collection(
-              db,
-              REPORTS_COLLECTION
-            ),
-            where(
-              "submitted_at",
-              ">=",
-              start
-            ),
-            where(
-              "submitted_at",
-              "<=",
-              end
-            )
-          );
-
-        const snapshot =
-          await getDocs(
-            reportQuery
-          );
-
-        const rows =
-          snapshot.docs
-            .map((item) => ({
-              id: item.id,
-              ...item.data(),
-            }))
-            .sort(
-              (a, b) =>
-                getMillis(
-                  a.submitted_at
-                ) -
-                getMillis(
-                  b.submitted_at
-                )
-            );
-
-        if (!mounted) return;
-
-        setAllDayReports(
-          rows
-        );
-      } catch (loadError) {
+        setAllDayReports(rows);
+        setLoading(false);
+      },
+      (loadError) => {
         console.error(
-          "WCHR report load error:",
+          "WCHR report live listener error:",
           loadError
         );
 
-        if (mounted) {
-          setAllDayReports(
-            []
-          );
-
-          setError(
-            loadError?.message ||
+        setAllDayReports([]);
+        setLoading(false);
+        setError(
+          loadError?.message ||
             "Could not load WCHR reports."
-          );
-        }
-      } finally {
-        if (mounted) {
-          setLoading(
-            false
-          );
-        }
+        );
       }
-    }
+    );
 
-    loadReports();
-
-    return () => {
-      mounted = false;
-    };
+    return () => unsubscribe();
   }, [selectedDate]);
 
   // ==========================================================
@@ -1759,6 +1793,20 @@ export default function WCHRFlights() {
         selectedReportId,
       ]
     );
+
+  const lookupReport = useMemo(
+    () =>
+      allDayReports.find(
+        (report) => report.id === lookupReportId
+      ) || null,
+    [allDayReports, lookupReportId]
+  );
+
+  const canManageService =
+    user?.role === "station_manager" ||
+    user?.role === "duty_manager" ||
+    user?.role === "supervisor";
+
 
   // ==========================================================
   // CLEAN SELECTION WHEN FILTER CHANGES
@@ -1892,7 +1940,7 @@ export default function WCHRFlights() {
     };
   }, [selectedReportId]);
 
-  // ==========================================================
+  // ==========================================================\n  // SERVICE MANAGEMENT ACTIONS\n  // ==========================================================\n\n  const addManagementTimelineNote = async (report, note) => {\n    await addDoc(\n      collection(db, TRACKING_EVENTS_COLLECTION),\n      {\n        report_doc_id: report.id,\n        report_id: report.report_id || report.id,\n        wheelchair_number: report.wheelchair_number || "",\n        passenger_name: report.passenger_name || "",\n        airline: report.airline || "",\n        flight_number: report.flight_number || "",\n        event_type: "MANAGEMENT_NOTE",\n        location: report.current_location || "",\n        notes: note,\n        employee_id: user?.id || user?.uid || "",\n        employee_name: getVisibleName(user),\n        created_at: serverTimestamp(),\n      }\n    );\n  };\n\n  const handleAddManagementNote = async () => {\n    const note = safeText(managerNote);\n\n    if (!selectedReport || !note) {\n      setError("Select a WCHR and write a note first.");\n      return;\n    }\n\n    try {\n      setBusyAction("note");\n      setError("");\n      setStatusMessage("");\n\n      await addManagementTimelineNote(\n        selectedReport,\n        note\n      );\n\n      await updateDoc(\n        doc(db, REPORTS_COLLECTION, selectedReport.id),\n        {\n          management_note: note,\n          management_note_at: serverTimestamp(),\n          management_note_by: getVisibleName(user),\n          last_updated_at: serverTimestamp(),\n          last_updated_by: getVisibleName(user),\n        }\n      );\n\n      setManagerNote("");\n      setStatusMessage("Operational note saved to the WCHR timeline.");\n\n      const eventSnapshot = await getDocs(\n        query(\n          collection(db, TRACKING_EVENTS_COLLECTION),\n          where("report_doc_id", "==", selectedReport.id)\n        )\n      );\n\n      setTimeline(\n        eventSnapshot.docs\n          .map((item) => ({ id: item.id, ...item.data() }))\n          .sort(\n            (a, b) =>\n              getMillis(a.created_at) - getMillis(b.created_at)\n          )\n      );\n    } catch (actionError) {\n      console.error("WCHR management note error:", actionError);\n      setError(\n        actionError?.message ||\n          "Unable to save the operational note."\n      );\n    } finally {\n      setBusyAction("");\n    }\n  };\n\n  const handleStoreWheelchair = async () => {\n    if (!selectedReport || !canManageService) return;\n\n    if (getServiceStatus(selectedReport) === "STORED") {\n      setStatusMessage("This wheelchair is already stored.");\n      return;\n    }\n\n    const location = safeText(storeLocation) || "Wheelchair Storage";\n\n    const confirmed = window.confirm(\n      `Mark WCHR ${selectedReport.wheelchair_number || ""} as STORED at ${location}?`\n    );\n\n    if (!confirmed) return;\n\n    try {\n      setBusyAction("store");\n      setError("");\n      setStatusMessage("");\n\n      await updateDoc(\n        doc(db, REPORTS_COLLECTION, selectedReport.id),\n        {\n          service_status: "STORED",\n          tracking_status: "STORED",\n          stored_location: location,\n          stored_at: serverTimestamp(),\n          current_location: location,\n          is_active: false,\n          alerts_enabled: false,\n          last_updated_at: serverTimestamp(),\n          last_updated_by: getVisibleName(user),\n          last_updated_by_id: user?.id || user?.uid || "",\n        }\n      );\n\n      const inventoryId = safeText(\n        selectedReport.inventory_doc_id\n      );\n\n      if (inventoryId && !isPersonalWheelchair(selectedReport)) {\n        await setDoc(\n          doc(db, INVENTORY_COLLECTION, inventoryId),\n          {\n            wheelchair_number: selectedReport.wheelchair_number || "",\n            status: "AVAILABLE",\n            is_available: true,\n            available_for_handoff: false,\n            location,\n            report_doc_id: "",\n            assigned_report_doc_id: "",\n            report_id: "",\n            assigned_report_id: "",\n            passenger_name: "",\n            airline: "",\n            flight_number: "",\n            pnr: "",\n            current_agent_id: "",\n            current_agent_name: "",\n            stored_at: serverTimestamp(),\n            updated_at: serverTimestamp(),\n          },\n          { merge: true }\n        );\n      }\n\n      await addDoc(\n        collection(db, TRACKING_EVENTS_COLLECTION),\n        {\n          report_doc_id: selectedReport.id,\n          report_id: selectedReport.report_id || selectedReport.id,\n          wheelchair_number: selectedReport.wheelchair_number || "",\n          passenger_name: selectedReport.passenger_name || "",\n          airline: selectedReport.airline || "",\n          flight_number: selectedReport.flight_number || "",\n          event_type: "WCHR_STORED",\n          location,\n          notes: `WCHR stored at ${location} by ${getVisibleName(user)}.`,\n          employee_id: user?.id || user?.uid || "",\n          employee_name: getVisibleName(user),\n          created_at: serverTimestamp(),\n        }\n      );\n\n      setStatusMessage(\n        `WCHR ${selectedReport.wheelchair_number || ""} marked as stored.`\n      );\n    } catch (actionError) {\n      console.error("WCHR store error:", actionError);\n      setError(\n        actionError?.message ||\n          "Unable to store the wheelchair."\n      );\n    } finally {\n      setBusyAction("");\n    }\n  };\n\n  const handleDeleteReport = async () => {\n    if (!selectedReport || !canManageService) return;\n\n    const confirmed = window.confirm(\n      `Delete WCHR report ${selectedReport.report_id || selectedReport.id}? This cannot be undone.`\n    );\n\n    if (!confirmed) return;\n\n    try {\n      setBusyAction("delete");\n      setError("");\n      setStatusMessage("");\n\n      const [eventSnapshot, segmentSnapshot] = await Promise.all([\n        getDocs(\n          query(\n            collection(db, TRACKING_EVENTS_COLLECTION),\n            where("report_doc_id", "==", selectedReport.id)\n          )\n        ),\n        getDocs(\n          query(\n            collection(db, SERVICE_SEGMENTS_COLLECTION),\n            where("report_doc_id", "==", selectedReport.id)\n          )\n        ),\n      ]);\n\n      await Promise.all([\n        ...eventSnapshot.docs.map((item) => deleteDoc(item.ref)),\n        ...segmentSnapshot.docs.map((item) => deleteDoc(item.ref)),\n      ]);\n\n      await deleteDoc(\n        doc(db, REPORTS_COLLECTION, selectedReport.id)\n      );\n\n      setSelectedReportId("");\n      setLookupReportId("");\n      setTimeline([]);\n      setSegments([]);\n      setStatusMessage("WCHR report deleted.");\n    } catch (actionError) {\n      console.error("WCHR delete error:", actionError);\n      setError(\n        actionError?.message ||\n          "Unable to delete the WCHR report."\n      );\n    } finally {\n      setBusyAction("");\n    }\n  };\n\n  // ==========================================================
   // EXPORTS
   // ==========================================================
 
@@ -2060,7 +2108,7 @@ export default function WCHRFlights() {
                     "0.14em",
                 }}
               >
-                {APP_NAME} {" | "} WCHR Reports
+                {APP_NAME} | WCHR Reports
               </div>
 
               <h1
@@ -2180,6 +2228,25 @@ export default function WCHRFlights() {
             }}
           >
             {error}
+          </div>
+        </PageCard>
+      )}
+
+      {statusMessage && (
+        <PageCard style={{ padding: 14 }}>
+          <div
+            style={{
+              borderRadius: 14,
+              padding: "11px 13px",
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+              color: "#065f46",
+              fontSize: 13,
+              fontWeight: 800,
+              lineHeight: 1.5,
+            }}
+          >
+            {statusMessage}
           </div>
         </PageCard>
       )}
@@ -2393,7 +2460,7 @@ export default function WCHRFlights() {
         />
       </div>
 
-      {/* FILTERS */}
+      {/* LIVE WCHR LOOKUP */}\n\n      <PageCard\n        style={{\n          padding: isMobile ? 15 : 19,\n        }}\n      >\n        <div\n          style={{\n            display: "grid",\n            gridTemplateColumns:\n              isMobile || isTablet\n                ? "1fr"\n                : "1.2fr 1fr",\n            gap: 12,\n            alignItems: "end",\n          }}\n        >\n          <div>\n            <div\n              style={{\n                fontSize: 10,\n                fontWeight: 900,\n                color: "#1769aa",\n                textTransform: "uppercase",\n                letterSpacing: "0.07em",\n                marginBottom: 6,\n              }}\n            >\n              Operational Lookup\n            </div>\n\n            <SelectInput\n              value={lookupReportId}\n              onChange={(value) => {\n                setLookupReportId(value);\n\n                const report = allDayReports.find(\n                  (item) => item.id === value\n                );\n\n                if (report) {\n                  const airline = safeUpper(report.airline) || "-";\n                  const flightNumber = safeUpper(report.flight_number) || "NO_FLIGHT";\n                  setSelectedFlightKey(\n                    `${getReportDateKey(report)}-${airline}-${flightNumber}`\n                  );\n                  setSelectedReportId(report.id);\n                }\n              }}\n            >\n              <option value="">Select WCHR / passenger / employee</option>\n              {allDayReports.map((report) => (\n                <option key={report.id} value={report.id}>\n                  {`WCHR ${report.wheelchair_number || "Personal"} | ${report.passenger_name || "Passenger"} | ${report.wchr_agent_name || report.assigned_wchr_agent || report.employee_name || "Unassigned"}`}\n                </option>\n              ))}\n            </SelectInput>\n          </div>\n\n          {lookupReport && (\n            <div\n              style={{\n                display: "grid",\n                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",\n                gap: 8,\n              }}\n            >\n              <InfoField\n                label="Last Location"\n                value={lookupReport.current_location || lookupReport.last_location}\n              />\n              <InfoField\n                label="Employee"\n                value={\n                  lookupReport.wchr_agent_name ||\n                  lookupReport.assigned_wchr_agent ||\n                  lookupReport.employee_name ||\n                  "Unassigned"\n                }\n              />\n              <InfoField\n                label="Status"\n                value={getServiceStatusLabel(lookupReport)}\n              />\n              <InfoField\n                label="Last Update"\n                value={formatDateTime(\n                  lookupReport.last_location_update_at ||\n                    lookupReport.last_updated_at ||\n                    lookupReport.gate_arrived_at ||\n                    lookupReport.submitted_at\n                )}\n              />\n            </div>\n          )}\n        </div>\n      </PageCard>\n\n      {/* FILTERS */}
 
       <PageCard
         style={{
@@ -2616,7 +2683,7 @@ export default function WCHRFlights() {
                               flight.report_date
                             )
                           : "\u2014"}{" "}
-                        {" | "} {flight.total} passenger service
+                        | {flight.total} passenger service
                         {flight.total === 1
                           ? ""
                           : "s"}
@@ -3181,7 +3248,7 @@ export default function WCHRFlights() {
             />
           </div>
 
-          <div
+          {canManageService && (\n            <div\n              style={{\n                marginTop: 16,\n                padding: isMobile ? 13 : 16,\n                borderRadius: 16,\n                background: needs30MinuteAlert(selectedReport)\n                  ? "#fff7f7"\n                  : "#f8fbff",\n                border: needs30MinuteAlert(selectedReport)\n                  ? "1px solid #fecdd3"\n                  : "1px solid #dbeafe",\n              }}\n            >\n              <div\n                style={{\n                  fontSize: 10,\n                  fontWeight: 900,\n                  color: needs30MinuteAlert(selectedReport)\n                    ? "#b91c1c"\n                    : "#1769aa",\n                  textTransform: "uppercase",\n                  letterSpacing: "0.07em",\n                }}\n              >\n                Management Controls\n              </div>\n\n              <div\n                style={{\n                  marginTop: 6,\n                  fontSize: 12,\n                  color: "#64748b",\n                  lineHeight: 1.5,\n                }}\n              >\n                {needs30MinuteAlert(selectedReport)\n                  ? "30+ minute alert is active. Add an operational note explaining the current status, then continue monitoring or store the wheelchair when the service is complete."\n                  : "Add operational notes, confirm wheelchair storage, or delete an incorrect report."}\n              </div>\n\n              <div style={{ marginTop: 12 }}>\n                <TextArea\n                  value={managerNote}\n                  onChange={setManagerNote}\n                  disabled={Boolean(busyAction)}\n                  placeholder="Example: Passenger at gate, agent checking status, TSA delay, restroom request, waiting to board..."\n                />\n              </div>\n\n              <div\n                style={{\n                  marginTop: 10,\n                  display: "grid",\n                  gridTemplateColumns:\n                    isMobile\n                      ? "1fr"\n                      : "1fr auto auto auto",\n                  gap: 8,\n                  alignItems: "end",\n                }}\n              >\n                <SelectInput\n                  value={storeLocation}\n                  onChange={setStoreLocation}\n                  disabled={Boolean(busyAction)}\n                >\n                  <option value="Wheelchair Storage">Wheelchair Storage</option>\n                  <option value="Counter">Counter</option>\n                  <option value="Main Terminal">Main Terminal</option>\n                  <option value="Gate F87">Gate F87</option>\n                  <option value="Gate F88">Gate F88</option>\n                  <option value="Other">Other</option>\n                </SelectInput>\n\n                <ActionButton\n                  variant="primary"\n                  disabled={Boolean(busyAction) || !safeText(managerNote)}\n                  onClick={handleAddManagementNote}\n                >\n                  {busyAction === "note" ? "Saving Note..." : "Add Note"}\n                </ActionButton>\n\n                <ActionButton\n                  variant="success"\n                  disabled={\n                    Boolean(busyAction) ||\n                    getServiceStatus(selectedReport) === "STORED"\n                  }\n                  onClick={handleStoreWheelchair}\n                >\n                  {busyAction === "store" ? "Storing..." : "Store WCHR"}\n                </ActionButton>\n\n                <ActionButton\n                  variant="warning"\n                  disabled={Boolean(busyAction)}\n                  onClick={handleDeleteReport}\n                >\n                  {busyAction === "delete" ? "Deleting..." : "Delete Report"}\n                </ActionButton>\n              </div>\n            </div>\n          )}\n\n          <div
             style={{
               marginTop: 18,
               display: "grid",
@@ -3388,7 +3455,7 @@ export default function WCHRFlights() {
           fontSize: 10,
         }}
       >
-        {APP_NAME} {" | "} {APP_SUBTITLE} {" | "} Report view for {getVisibleName(user)}
+        {APP_NAME} | {APP_SUBTITLE} | Report view for {getVisibleName(user)}
       </div>
     </div>
   );
