@@ -1538,6 +1538,31 @@ export default function WchrDispatchPage() {
     setActiveReports,
   ] = useState([]);
 
+  const [
+    bulkSelectedIds,
+    setBulkSelectedIds,
+  ] = useState([]);
+
+  const [
+    bulkStatus,
+    setBulkStatus,
+  ] = useState("");
+
+  const [
+    bulkLocation,
+    setBulkLocation,
+  ] = useState("");
+
+  const [
+    bulkReassignMap,
+    setBulkReassignMap,
+  ] = useState({});
+
+  const [
+    bulkSaving,
+    setBulkSaving,
+  ] = useState(false);
+
   // ============================================================
   // DAILY FLIGHTS
   // ============================================================
@@ -3573,6 +3598,893 @@ export default function WchrDispatchPage() {
       }
     };
 
+
+  // ============================================================
+  // BULK WCHR CONTROL - UP TO 30 SERVICES
+  // ============================================================
+
+  const toggleBulkReport =
+    (reportId) => {
+      setBulkSelectedIds(
+        (previous) => {
+          if (
+            previous.includes(
+              reportId
+            )
+          ) {
+            setBulkReassignMap(
+              (current) => {
+                const next = {
+                  ...current,
+                };
+
+                delete next[
+                  reportId
+                ];
+
+                return next;
+              }
+            );
+
+            return previous.filter(
+              (id) =>
+                id !==
+                reportId
+            );
+          }
+
+          if (
+            previous.length >=
+            30
+          ) {
+            setError(
+              "You can select a maximum of 30 WCHRs at one time."
+            );
+
+            return previous;
+          }
+
+          return [
+            ...previous,
+            reportId,
+          ];
+        }
+      );
+    };
+
+  const clearBulkSelection =
+    () => {
+      setBulkSelectedIds(
+        []
+      );
+
+      setBulkStatus(
+        ""
+      );
+
+      setBulkLocation(
+        ""
+      );
+
+      setBulkReassignMap(
+        {}
+      );
+    };
+
+  function getInventoryStatusFromServiceStatus(
+    status
+  ) {
+    const normalized =
+      safeUpper(
+        status
+      );
+
+    if (
+      normalized ===
+      "READY_FOR_PICKUP"
+    ) {
+      return "READY_FOR_PICKUP";
+    }
+
+    if (
+      [
+        "ASSIGNED",
+        "ACCEPTED",
+        "PICKED_UP",
+        "IN_TRANSIT",
+      ].includes(
+        normalized
+      )
+    ) {
+      return normalized ===
+        "IN_TRANSIT"
+        ? "IN_SERVICE"
+        : normalized;
+    }
+
+    if (
+      normalized ===
+      "AT_GATE"
+    ) {
+      return "AT_GATE";
+    }
+
+    if (
+      normalized ===
+      "BOARDING"
+    ) {
+      return "BOARDING";
+    }
+
+    if (
+      normalized ===
+      "BOARDED"
+    ) {
+      return "BOARDED";
+    }
+
+    if (
+      normalized ===
+      "PENDING_STORAGE"
+    ) {
+      return "PENDING_STORAGE";
+    }
+
+    if (
+      normalized ===
+        "STORED" ||
+      normalized ===
+        "COMPLETED"
+    ) {
+      return "AVAILABLE";
+    }
+
+    return normalized ||
+      "AVAILABLE";
+  }
+
+  const handleBulkApply =
+    async () => {
+      setError("");
+      setMessage("");
+
+      const selectedRows =
+        activeReports.filter(
+          (report) =>
+            bulkSelectedIds.includes(
+              report.id
+            )
+        );
+
+      if (
+        selectedRows.length ===
+        0
+      ) {
+        setError(
+          "Select at least one WCHR."
+        );
+
+        return;
+      }
+
+      if (
+        selectedRows.length >
+        30
+      ) {
+        setError(
+          "A maximum of 30 WCHRs can be updated at one time."
+        );
+
+        return;
+      }
+
+      const normalizedStatus =
+        safeUpper(
+          bulkStatus
+        );
+
+      const normalizedLocation =
+        cleanText(
+          bulkLocation
+        );
+
+      const reassignEntries =
+        selectedRows
+          .map(
+            (report) => ({
+              report,
+              targetAgentId:
+                cleanText(
+                  bulkReassignMap[
+                    report.id
+                  ]
+                ),
+            })
+          )
+          .filter(
+            (entry) =>
+              entry.targetAgentId
+          );
+
+      if (
+        !normalizedStatus &&
+        !normalizedLocation &&
+        reassignEntries.length ===
+          0
+      ) {
+        setError(
+          "Choose a Status, enter a Location, or select a new agent for at least one WCHR."
+        );
+
+        return;
+      }
+
+      // One active WCHR per agent.
+      const targetIds =
+        reassignEntries.map(
+          (entry) =>
+            entry.targetAgentId
+        );
+
+      const duplicateTarget =
+        targetIds.some(
+          (id, index) =>
+            targetIds.indexOf(
+              id
+            ) !== index
+        );
+
+      if (
+        duplicateTarget
+      ) {
+        setError(
+          "The same available agent cannot receive more than one active WCHR in the same bulk update."
+        );
+
+        return;
+      }
+
+      for (
+        const entry of
+        reassignEntries
+      ) {
+        const target =
+          availableAgents.find(
+            (agent) =>
+              agent.id ===
+              entry.targetAgentId
+          );
+
+        if (!target) {
+          setError(
+            "One of the selected reassignment agents is no longer available. Refresh the selection and try again."
+          );
+
+          return;
+        }
+      }
+
+      let managementNote =
+        "";
+
+      if (
+        reassignEntries.length >
+        0
+      ) {
+        managementNote =
+          cleanText(
+            window.prompt(
+              "Bulk reassignment reason / operational note (required):"
+            )
+          );
+
+        if (
+          !managementNote
+        ) {
+          setError(
+            "A note is required when reassigning WCHRs."
+          );
+
+          return;
+        }
+      }
+
+      const confirmed =
+        window.confirm(
+          `Apply bulk changes to ${selectedRows.length} WCHR${
+            selectedRows.length ===
+            1
+              ? ""
+              : "s"
+          }?`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        setBulkSaving(
+          true
+        );
+
+        let updatedCount =
+          0;
+
+        for (
+          const report of
+          selectedRows
+        ) {
+          const targetAgentId =
+            cleanText(
+              bulkReassignMap[
+                report.id
+              ]
+            );
+
+          const targetAgent =
+            targetAgentId
+              ? availableAgents.find(
+                  (agent) =>
+                    agent.id ===
+                    targetAgentId
+                )
+              : null;
+
+          const currentAgentId =
+            cleanText(
+              report.wchr_agent_id ||
+                report.assigned_agent_id
+            );
+
+          const currentAgentName =
+            report.wchr_agent_name ||
+            report.assigned_wchr_agent ||
+            "";
+
+          const finalStatus =
+            normalizedStatus ||
+            safeUpper(
+              report.service_status ||
+                report.tracking_status
+            );
+
+          const finalLocation =
+            normalizedLocation ||
+            cleanText(
+              report.current_location ||
+                report.gate_location ||
+                report.ready_location ||
+                "Counter"
+            );
+
+          const deliveredToGate =
+            [
+              "AT_GATE",
+              "BOARDING",
+              "BOARDED",
+              "PENDING_STORAGE",
+              "STORED",
+              "COMPLETED",
+            ].includes(
+              finalStatus
+            );
+
+          const finishing =
+            [
+              "STORED",
+              "COMPLETED",
+            ].includes(
+              finalStatus
+            );
+
+          if (
+            targetAgent &&
+            currentAgentId
+          ) {
+            await releaseAgentFromReport(
+              report,
+              managementNote
+            );
+          }
+
+          if (
+            finishing &&
+            currentAgentId &&
+            !targetAgent
+          ) {
+            await releaseAgentFromReport(
+              report,
+              `Bulk status changed to ${finalStatus}.`
+            );
+          }
+
+          const reportPatch =
+            {
+              last_updated_at:
+                serverTimestamp(),
+
+              last_updated_by:
+                getVisibleName(
+                  user
+                ),
+
+              last_updated_by_id:
+                user?.id ||
+                user?.uid ||
+                "",
+            };
+
+          if (
+            normalizedLocation
+          ) {
+            reportPatch.current_location =
+              finalLocation;
+
+            reportPatch.last_location_update_at =
+              serverTimestamp();
+          }
+
+          if (
+            normalizedStatus
+          ) {
+            reportPatch.service_status =
+              finalStatus;
+
+            reportPatch.tracking_status =
+              finalStatus;
+
+            reportPatch.assignment_status =
+              finalStatus;
+
+            reportPatch.transport_alert_active =
+              !deliveredToGate;
+
+            if (
+              deliveredToGate
+            ) {
+              // Transport alert is permanently disabled after Gate.
+              reportPatch.alert_after_minutes =
+                15;
+
+              reportPatch.gate_monitoring_required =
+                !finishing;
+            }
+
+            if (
+              finalStatus ===
+              "AT_GATE"
+            ) {
+              reportPatch.passenger_delivered_to_gate =
+                true;
+
+              reportPatch.passenger_delivered_to_gate_at =
+                serverTimestamp();
+
+              reportPatch.gate_arrived_at =
+                serverTimestamp();
+
+              reportPatch.gate_location =
+                finalLocation;
+
+              reportPatch.gate_monitoring_started_at =
+                serverTimestamp();
+
+              reportPatch.gate_check_interval_minutes =
+                15;
+
+              reportPatch.alerts_enabled =
+                true;
+
+              reportPatch.is_active =
+                true;
+            }
+
+            if (
+              finishing
+            ) {
+              reportPatch.alerts_enabled =
+                false;
+
+              reportPatch.gate_followup_enabled =
+                false;
+
+              reportPatch.gate_monitoring_required =
+                false;
+
+              reportPatch.is_active =
+                false;
+
+              reportPatch.ready_for_pickup =
+                false;
+            }
+          }
+
+          if (
+            targetAgent
+          ) {
+            const newAgentName =
+              getAgentName(
+                targetAgent
+              );
+
+            reportPatch.previous_agent_id =
+              currentAgentId;
+
+            reportPatch.previous_agent_name =
+              currentAgentName;
+
+            reportPatch.reassigned_from_agent_id =
+              currentAgentId;
+
+            reportPatch.reassigned_from_agent_name =
+              currentAgentName;
+
+            reportPatch.reassigned_to_agent_id =
+              targetAgent.id;
+
+            reportPatch.reassigned_to_agent_name =
+              newAgentName;
+
+            reportPatch.reassignment_note =
+              managementNote;
+
+            reportPatch.reassigned_at =
+              serverTimestamp();
+
+            reportPatch.reassigned_by_user_id =
+              user?.id ||
+              user?.uid ||
+              "";
+
+            reportPatch.reassigned_by_name =
+              getVisibleName(
+                user
+              );
+
+            reportPatch.wchr_agent_id =
+              targetAgent.id;
+
+            reportPatch.assigned_agent_id =
+              targetAgent.id;
+
+            reportPatch.wchr_agent_name =
+              newAgentName;
+
+            reportPatch.assigned_wchr_agent =
+              newAgentName;
+
+            reportPatch.assigned_by_user_id =
+              user?.id ||
+              user?.uid ||
+              "";
+
+            reportPatch.assigned_by_username =
+              user?.username ||
+              "";
+
+            reportPatch.assigned_by_name =
+              getVisibleName(
+                user
+              );
+
+            reportPatch.assigned_by_role =
+              user?.role ||
+              "";
+
+            reportPatch.assigned_at =
+              serverTimestamp();
+
+            reportPatch.assignmentPushStatus =
+              "PENDING";
+
+            reportPatch.assignmentPushError =
+              "";
+
+            if (
+              !normalizedStatus
+            ) {
+              reportPatch.service_status =
+                WCHR_SERVICE_STATUS.ASSIGNED;
+
+              reportPatch.tracking_status =
+                WCHR_SERVICE_STATUS.ASSIGNED;
+
+              reportPatch.assignment_status =
+                "ASSIGNED";
+
+              reportPatch.is_active =
+                true;
+
+              reportPatch.alerts_enabled =
+                true;
+
+              reportPatch.transport_alert_active =
+                true;
+            }
+          }
+
+          await updateDoc(
+            doc(
+              db,
+              "wch_reports",
+              report.id
+            ),
+            reportPatch
+          );
+
+          if (
+            targetAgent
+          ) {
+            const newAgentName =
+              getAgentName(
+                targetAgent
+              );
+
+            await updateDoc(
+              doc(
+                db,
+                "wchr_agent_shifts",
+                targetAgent.id
+              ),
+              {
+                availability_status:
+                  WCHR_AGENT_AVAILABILITY.BUSY,
+
+                active_report_id:
+                  report.id,
+
+                active_wheelchair_number:
+                  safeUpper(
+                    report.wheelchair_number
+                  ),
+
+                active_passenger_name:
+                  cleanText(
+                    report.passenger_name
+                  ),
+
+                active_pnr:
+                  safeUpper(
+                    report.pnr
+                  ),
+
+                active_flight_number:
+                  safeUpper(
+                    report.flight_number
+                  ),
+
+                active_airline:
+                  safeUpper(
+                    report.airline
+                  ),
+
+                active_service_status:
+                  normalizedStatus ||
+                  WCHR_SERVICE_STATUS.ASSIGNED,
+
+                assigned_at:
+                  serverTimestamp(),
+
+                current_location:
+                  finalLocation,
+
+                updated_at:
+                  serverTimestamp(),
+              }
+            );
+
+            triggerWchrAssignmentPush(
+              report.id
+            ).catch(
+              (pushError) => {
+                console.error(
+                  "Bulk WCHR reassignment push error:",
+                  pushError
+                );
+              }
+            );
+          }
+
+          const inventoryItem =
+            inventory.find(
+              (item) =>
+                getInventoryNumber(
+                  item
+                ) ===
+                safeUpper(
+                  report.wheelchair_number
+                )
+            );
+
+          if (
+            inventoryItem
+          ) {
+            const inventoryPatch =
+              {
+                location:
+                  finalLocation,
+
+                current_location:
+                  finalLocation,
+
+                updated_at:
+                  serverTimestamp(),
+              };
+
+            if (
+              normalizedStatus
+            ) {
+              const inventoryStatus =
+                getInventoryStatusFromServiceStatus(
+                  finalStatus
+                );
+
+              inventoryPatch.status =
+                inventoryStatus;
+
+              inventoryPatch.is_available =
+                inventoryStatus ===
+                  "AVAILABLE";
+
+              inventoryPatch.available_for_handoff =
+                false;
+            }
+
+            if (
+              targetAgent
+            ) {
+              inventoryPatch.current_agent_id =
+                targetAgent.id;
+
+              inventoryPatch.current_agent_name =
+                getAgentName(
+                  targetAgent
+                );
+
+              inventoryPatch.report_doc_id =
+                report.id;
+
+              inventoryPatch.assigned_report_doc_id =
+                report.id;
+
+              inventoryPatch.is_available =
+                false;
+            }
+
+            if (
+              finishing
+            ) {
+              inventoryPatch.status =
+                "AVAILABLE";
+
+              inventoryPatch.is_available =
+                true;
+
+              inventoryPatch.current_agent_id =
+                "";
+
+              inventoryPatch.current_agent_name =
+                "";
+
+              inventoryPatch.report_doc_id =
+                "";
+
+              inventoryPatch.assigned_report_doc_id =
+                "";
+
+              inventoryPatch.report_id =
+                "";
+
+              inventoryPatch.assigned_report_id =
+                "";
+
+              inventoryPatch.passenger_name =
+                "";
+
+              inventoryPatch.airline =
+                "";
+
+              inventoryPatch.flight_number =
+                "";
+
+              inventoryPatch.pnr =
+                "";
+            }
+
+            await updateDoc(
+              doc(
+                db,
+                INVENTORY_COLLECTION,
+                inventoryItem.id
+              ),
+              inventoryPatch
+            );
+          }
+
+          await addWchrTimelineEvent({
+            reportId:
+              report.id,
+
+            eventType:
+              "BULK_MANAGEMENT_UPDATE",
+
+            wheelchairNumber:
+              report.wheelchair_number ||
+              "",
+
+            agentId:
+              targetAgent?.id ||
+              currentAgentId ||
+              "",
+
+            agentName:
+              targetAgent
+                ? getAgentName(
+                    targetAgent
+                  )
+                : currentAgentName,
+
+            location:
+              finalLocation,
+
+            note:
+              [
+                normalizedStatus
+                  ? `Status changed to ${finalStatus}.`
+                  : "",
+
+                normalizedLocation
+                  ? `Location changed to ${finalLocation}.`
+                  : "",
+
+                targetAgent
+                  ? `Reassigned to ${getAgentName(
+                      targetAgent
+                    )}. Reason: ${managementNote}`
+                  : "",
+              ]
+                .filter(
+                  Boolean
+                )
+                .join(
+                  " "
+                ),
+
+            user,
+          });
+
+          updatedCount +=
+            1;
+        }
+
+        clearBulkSelection();
+
+        setMessage(
+          `${updatedCount} WCHR${
+            updatedCount ===
+            1
+              ? ""
+              : "s"
+          } updated successfully.`
+        );
+      } catch (err) {
+        console.error(
+          "Bulk WCHR update error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to complete the bulk WCHR update."
+        );
+      } finally {
+        setBulkSaving(
+          false
+        );
+      }
+    };
+
   // ============================================================
   // SELECTED OBJECTS
   // ============================================================
@@ -5035,6 +5947,208 @@ export default function WchrDispatchPage() {
           </p>
         </div>
 
+        {activeReports.length > 0 && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 13,
+              borderRadius: 16,
+              background: "#f8fbff",
+              border: "1px solid #dbeafe",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 900,
+                    color: "#1769aa",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.07em",
+                  }}
+                >
+                  Bulk Control
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 3,
+                    fontSize: 12,
+                    color: "#475569",
+                    fontWeight: 750,
+                  }}
+                >
+                  {bulkSelectedIds.length}/30 WCHRs selected
+                </div>
+              </div>
+
+              <ActionButton
+                variant="secondary"
+                disabled={
+                  bulkSaving ||
+                  bulkSelectedIds.length ===
+                    0
+                }
+                onClick={
+                  clearBulkSelection
+                }
+                style={{
+                  padding: "7px 10px",
+                  fontSize: 11,
+                }}
+              >
+                Clear Selection
+              </ActionButton>
+            </div>
+
+            <div
+              style={{
+                marginTop: 11,
+                display: "grid",
+                gridTemplateColumns:
+                  isMobile ||
+                  isTablet
+                    ? "1fr"
+                    : "0.8fr 1fr auto",
+                gap: 9,
+                alignItems: "end",
+              }}
+            >
+              <div>
+                <FieldLabel>
+                  Change Status
+                </FieldLabel>
+
+                <select
+                  value={
+                    bulkStatus
+                  }
+                  disabled={
+                    bulkSaving
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setBulkStatus(
+                      event.target.value
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    minHeight: 44,
+                    boxSizing: "border-box",
+                    border: "1px solid #dbeafe",
+                    borderRadius: 13,
+                    padding: "10px 12px",
+                    background: "#ffffff",
+                    color: "#0f172a",
+                    fontSize: 13,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <option value="">
+                    No Status Change
+                  </option>
+                  <option value="ASSIGNED">
+                    Assigned
+                  </option>
+                  <option value="PICKED_UP">
+                    Picked Up
+                  </option>
+                  <option value="IN_TRANSIT">
+                    In Transit
+                  </option>
+                  <option value="AT_GATE">
+                    At Gate / Delivered to Gate
+                  </option>
+                  <option value="BOARDING">
+                    Boarding
+                  </option>
+                  <option value="BOARDED">
+                    Boarded
+                  </option>
+                  <option value="PENDING_STORAGE">
+                    Pending Storage
+                  </option>
+                  <option value="STORED">
+                    Stored
+                  </option>
+                  <option value="COMPLETED">
+                    Completed
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <FieldLabel>
+                  Change Location
+                </FieldLabel>
+
+                <TextInput
+                  value={
+                    bulkLocation
+                  }
+                  onChange={
+                    setBulkLocation
+                  }
+                  placeholder="Example: Gate F87, Counter, Wheelchair Storage"
+                  disabled={
+                    bulkSaving
+                  }
+                />
+              </div>
+
+              <ActionButton
+                variant="primary"
+                disabled={
+                  bulkSaving ||
+                  bulkSelectedIds.length ===
+                    0
+                }
+                onClick={
+                  handleBulkApply
+                }
+                style={{
+                  minHeight: 44,
+                  width:
+                    isMobile ||
+                    isTablet
+                      ? "100%"
+                      : "auto",
+                }}
+              >
+                {bulkSaving
+                  ? "Applying..."
+                  : `Apply to ${bulkSelectedIds.length || 0}`}
+              </ActionButton>
+            </div>
+
+            <div
+              style={{
+                marginTop: 9,
+                fontSize: 10.5,
+                lineHeight: 1.55,
+                color: "#64748b",
+                fontWeight: 700,
+              }}
+            >
+              Select up to 30 WCHRs below. Status and Location apply to all
+              selected WCHRs. Reassignment is selected individually for each
+              WCHR so one active agent cannot accidentally receive multiple
+              services.
+            </div>
+          </div>
+        )}
+
         {activeReports.length ===
         0 ? (
           <div
@@ -5084,7 +6198,11 @@ export default function WchrDispatchPage() {
                     }
                     style={{
                       border:
-                        alert
+                        bulkSelectedIds.includes(
+                          report.id
+                        )
+                          ? "2px solid #1769aa"
+                          : alert
                           ? "2px solid #fca5a5"
                           : "1px solid #e2e8f0",
                       borderRadius: 16,
@@ -5095,6 +6213,49 @@ export default function WchrDispatchPage() {
                           : "#ffffff",
                     }}
                   >
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 9,
+                        cursor: "pointer",
+                        fontSize: 11,
+                        fontWeight: 850,
+                        color: "#1769aa",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={
+                          bulkSelectedIds.includes(
+                            report.id
+                          )
+                        }
+                        disabled={
+                          bulkSaving ||
+                          (
+                            !bulkSelectedIds.includes(
+                              report.id
+                            ) &&
+                            bulkSelectedIds.length >=
+                              30
+                          )
+                        }
+                        onChange={() =>
+                          toggleBulkReport(
+                            report.id
+                          )
+                        }
+                        style={{
+                          width: 16,
+                          height: 16,
+                        }}
+                      />
+
+                      Select for Bulk Control
+                    </label>
+
                     <div
                       style={{
                         display: "flex",
@@ -5220,6 +6381,76 @@ export default function WchrDispatchPage() {
                         }}
                       >
                         Delivered at Gate - 30 minute transport alert disabled.
+                      </div>
+                    )}
+
+                    {bulkSelectedIds.includes(
+                      report.id
+                    ) && !delivered && (
+                      <div
+                        style={{
+                          marginTop: 10,
+                        }}
+                      >
+                        <FieldLabel>
+                          Bulk Reassign To
+                        </FieldLabel>
+
+                        <select
+                          value={
+                            bulkReassignMap[
+                              report.id
+                            ] || ""
+                          }
+                          disabled={
+                            bulkSaving
+                          }
+                          onChange={(
+                            event
+                          ) =>
+                            setBulkReassignMap(
+                              (previous) => ({
+                                ...previous,
+                                [report.id]:
+                                  event.target.value,
+                              })
+                            )
+                          }
+                          style={{
+                            width: "100%",
+                            minHeight: 42,
+                            boxSizing: "border-box",
+                            border: "1px solid #dbeafe",
+                            borderRadius: 12,
+                            padding: "9px 11px",
+                            background: "#ffffff",
+                            color: "#0f172a",
+                            fontSize: 12,
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          <option value="">
+                            Keep Current Agent
+                          </option>
+
+                          {availableAgents.map(
+                            (agent) => (
+                              <option
+                                key={
+                                  agent.id
+                                }
+                                value={
+                                  agent.id
+                                }
+                              >
+                                {getAgentName(
+                                  agent
+                                )} - {agent.current_location ||
+                                  "Location not reported"}
+                              </option>
+                            )
+                          )}
+                        </select>
                       </div>
                     )}
 
