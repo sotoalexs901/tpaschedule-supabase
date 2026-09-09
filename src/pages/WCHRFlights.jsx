@@ -165,6 +165,10 @@ function formatMinutes(value) {
     return "\u2014";
   }
 
+  if (value > 0 && value < 1) {
+    return "<1 min";
+  }
+
   if (value < 60) {
     return `${value} min`;
   }
@@ -198,6 +202,29 @@ function getVisibleName(user) {
     user?.username ||
     "Management"
   );
+}
+
+function normalizeRole(value) {
+  return safeText(value)
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function getInventoryDocumentId(report) {
+  const explicitId = safeText(report?.inventory_doc_id);
+
+  if (explicitId) return explicitId;
+
+  const number = safeText(report?.wheelchair_number);
+
+  if (!number || isPersonalWheelchair(report)) {
+    return "";
+  }
+
+  return number
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-");
 }
 
 // ============================================================
@@ -301,28 +328,66 @@ function getServiceEnd(report) {
 }
 
 function getTotalServiceMinutes(report) {
-  return minutesBetween(
-    getTimerStart(report),
-    getServiceEnd(report)
+  const start = getMillis(
+    getTimerStart(report)
+  );
+
+  if (!start) return null;
+
+  const serviceEnd =
+    getServiceEnd(report);
+
+  const end = serviceEnd
+    ? getMillis(serviceEnd)
+    : Date.now();
+
+  if (!end || end < start) {
+    return null;
+  }
+
+  return Math.max(
+    0,
+    (end - start) / 60000
   );
 }
 
 function getCounterToGateMinutes(report) {
-  return minutesBetween(
-    report?.pickup_at ||
+  const start = getMillis(
+    report?.picked_up_at ||
+      report?.pickup_at ||
       report?.ready_for_pickup_at ||
-      report?.submitted_at,
-    report?.gate_arrived_at
+      report?.submitted_at
   );
+
+  const end = getMillis(
+    report?.gate_arrived_at ||
+      report?.passenger_delivered_to_gate_at
+  );
+
+  if (!start || !end || end < start) {
+    return null;
+  }
+
+  return (end - start) / 60000;
 }
 
 function getGateToBoardedMinutes(report) {
-  return minutesBetween(
-    report?.gate_arrived_at,
+  const start = getMillis(
+    report?.gate_arrived_at ||
+      report?.passenger_delivered_to_gate_at
+  );
+
+  const end = getMillis(
     report?.boarded_at ||
       report?.delivered_at ||
       report?.dropoff_at
   );
+
+  if (!start || !end || end < start) {
+    return null;
+  }
+
+  return (end - start) / 60000;
 }
 
 function needs30MinuteAlert(report) {
@@ -966,6 +1031,14 @@ function ActionButton({
         "#ffffff",
       border:
         "1px solid #f59e0b",
+    },
+    danger: {
+      background:
+        "#dc2626",
+      color:
+        "#ffffff",
+      border:
+        "1px solid #dc2626",
     },
   };
 
@@ -1802,10 +1875,13 @@ export default function WCHRFlights() {
     [allDayReports, lookupReportId]
   );
 
+  const normalizedRole =
+    normalizeRole(user?.role);
+
   const canManageService =
-    user?.role === "station_manager" ||
-    user?.role === "duty_manager" ||
-    user?.role === "supervisor";
+    normalizedRole === "station_manager" ||
+    normalizedRole === "duty_manager" ||
+    normalizedRole === "supervisor";
 
 
   // ==========================================================
@@ -2059,9 +2135,10 @@ export default function WCHRFlights() {
         }
       );
 
-      const inventoryId = safeText(
-        selectedReport.inventory_doc_id
-      );
+      const inventoryId =
+        getInventoryDocumentId(
+          selectedReport
+        );
 
       if (inventoryId && !isPersonalWheelchair(selectedReport)) {
         await setDoc(
@@ -2112,9 +2189,12 @@ export default function WCHRFlights() {
       );
     } catch (actionError) {
       console.error("WCHR store error:", actionError);
+      const rawMessage =
+        String(actionError?.message || "");
+
       setError(
-        actionError?.message ||
-          "Unable to store the wheelchair."
+        rawMessage ||
+          "Unable to store the wheelchair. Check Firestore write permissions for wch_reports and wchr_inventory."
       );
     } finally {
       setBusyAction("");
@@ -3510,6 +3590,14 @@ export default function WCHRFlights() {
             />
 
             <InfoField
+              label="Accepted"
+              value={formatDateTime(
+                selectedReport.assignment_accepted_at ||
+                  selectedReport.accepted_at
+              )}
+            />
+
+            <InfoField
               label="Picked Up"
               value={formatDateTime(
                 selectedReport.picked_up_at ||
@@ -3518,9 +3606,17 @@ export default function WCHRFlights() {
             />
 
             <InfoField
+              label="In Transit"
+              value={formatDateTime(
+                selectedReport.in_transit_at
+              )}
+            />
+
+            <InfoField
               label="Gate Arrival"
               value={formatDateTime(
-                selectedReport.gate_arrived_at
+                selectedReport.gate_arrived_at ||
+                  selectedReport.passenger_delivered_to_gate_at
               )}
             />
 
@@ -3677,7 +3773,7 @@ export default function WCHRFlights() {
                 </ActionButton>
 
                 <ActionButton
-                  variant="warning"
+                  variant="danger"
                   disabled={Boolean(busyAction)}
                   onClick={handleDeleteReport}
                 >
