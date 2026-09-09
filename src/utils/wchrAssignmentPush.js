@@ -1,4 +1,4 @@
-// src/utils/wchrAssignmentPush.js
+/ src/utils/wchrAssignmentPush.js
 
 import { db } from "../firebase";
 
@@ -257,7 +257,7 @@ export async function triggerWchrAssignmentPush(
     ].filter(Boolean);
 
     const body =
-      bodyParts.join(" · ");
+      bodyParts.join(" | ");
 
     // ----------------------------------------------------------
     // NO PUSH ENDPOINT
@@ -513,6 +513,350 @@ export async function triggerWchrAssignmentPush(
         assignmentPushError:
           error?.message ||
           "Unknown WCHR assignment push error.",
+      }
+    );
+
+    return {
+      success: false,
+      skipped: false,
+      reason:
+        "UNEXPECTED_ERROR",
+      error:
+        error?.message ||
+        "Unknown error",
+    };
+  }
+}
+
+
+
+// ============================================================
+// DELIVERY / GATE NOTIFICATION TO ASSIGNING SUPERVISOR
+// ============================================================
+
+function getAssigningSupervisor(report) {
+  return {
+    userId: cleanText(
+      report?.assigned_by_user_id ||
+        report?.assigned_by_userId ||
+        report?.assignedByUserId ||
+        ""
+    ),
+    username: cleanText(
+      report?.assigned_by_username ||
+        report?.assignedByUsername ||
+        ""
+    ),
+    name: cleanText(
+      report?.assigned_by_name ||
+        report?.assignedByName ||
+        "WCHR Supervisor"
+    ),
+  };
+}
+
+async function markDeliveryPushResult(
+  reportId,
+  patch
+) {
+  if (!reportId) return;
+
+  try {
+    await updateDoc(
+      doc(db, "wch_reports", reportId),
+      {
+        ...patch,
+        deliveryPushUpdatedAt:
+          serverTimestamp(),
+      }
+    );
+  } catch (error) {
+    console.warn(
+      "Could not update WCHR delivery push status:",
+      error
+    );
+  }
+}
+
+export async function triggerWchrDeliveryPush(
+  reportId
+) {
+  const cleanReportId =
+    cleanText(reportId);
+
+  if (!cleanReportId) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "MISSING_REPORT_ID",
+    };
+  }
+
+  try {
+    const reportSnap = await getDoc(
+      doc(
+        db,
+        "wch_reports",
+        cleanReportId
+      )
+    );
+
+    if (!reportSnap.exists()) {
+      return {
+        success: false,
+        skipped: true,
+        reason: "REPORT_NOT_FOUND",
+      };
+    }
+
+    const report = {
+      id: reportSnap.id,
+      ...reportSnap.data(),
+    };
+
+    const supervisor =
+      getAssigningSupervisor(report);
+
+    if (
+      !supervisor.userId &&
+      !supervisor.username
+    ) {
+      await markDeliveryPushResult(
+        cleanReportId,
+        {
+          deliveryPushStatus: "SKIPPED",
+          deliveryPushError:
+            "No assigning supervisor user ID or username found on report.",
+        }
+      );
+
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "NO_ASSIGNING_SUPERVISOR",
+      };
+    }
+
+    if (!WCHR_ASSIGNMENT_PUSH_URL) {
+      await markDeliveryPushResult(
+        cleanReportId,
+        {
+          deliveryPushStatus:
+            "NOT_CONFIGURED",
+          deliveryPushError:
+            "VITE_WCHR_ASSIGNMENT_PUSH_URL is missing.",
+        }
+      );
+
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "PUSH_URL_NOT_CONFIGURED",
+      };
+    }
+
+    const wheelchairNumber =
+      getWheelchairNumber(report);
+
+    const passengerName =
+      cleanText(
+        report.passenger_name
+      );
+
+    const flightLabel =
+      getFlightLabel(report);
+
+    const gateLocation =
+      cleanText(
+        report.gate_location ||
+          report.current_location ||
+          report.gate ||
+          ""
+      );
+
+    const agentName =
+      getAgentName(report);
+
+    const title =
+      "WCHR Delivered to Gate";
+
+    const body = [
+      wheelchairNumber
+        ? `WCHR ${wheelchairNumber}`
+        : "Wheelchair service",
+      passengerName
+        ? `Passenger: ${passengerName}`
+        : "",
+      agentName
+        ? `Agent: ${agentName}`
+        : "",
+      flightLabel || "",
+      gateLocation
+        ? `Delivered: ${gateLocation}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+    await markDeliveryPushResult(
+      cleanReportId,
+      {
+        deliveryPushStatus:
+          "PROCESSING",
+        deliveryPushError: "",
+        deliveryPushTargetUserId:
+          supervisor.userId,
+        deliveryPushTargetUsername:
+          supervisor.username,
+        deliveryPushTargetName:
+          supervisor.name,
+      }
+    );
+
+    const response = await fetch(
+      WCHR_ASSIGNMENT_PUSH_URL,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          type:
+            "WCHR_DELIVERED_TO_GATE",
+          reportId:
+            cleanReportId,
+          reportDocId:
+            cleanReportId,
+
+          userId:
+            supervisor.userId,
+          username:
+            supervisor.username,
+          supervisorName:
+            supervisor.name,
+
+          wheelchairNumber,
+          passengerName,
+          agentName,
+          airline:
+            safeUpper(
+              report.airline
+            ),
+          flightNumber:
+            safeUpper(
+              report.flight_number
+            ),
+          gateLocation,
+
+          title,
+          body,
+
+          targetPath:
+            "/wchr/dispatch",
+
+          data: {
+            type:
+              "WCHR_DELIVERED_TO_GATE",
+            reportId:
+              cleanReportId,
+            wheelchairNumber,
+            gateLocation,
+          },
+        }),
+      }
+    );
+
+    let responseData = {};
+
+    try {
+      responseData =
+        await response.json();
+    } catch {
+      responseData = {};
+    }
+
+    if (!response.ok) {
+      const serverError =
+        cleanText(
+          responseData?.error ||
+            responseData?.message
+        ) ||
+        `Push endpoint returned HTTP ${response.status}.`;
+
+      await markDeliveryPushResult(
+        cleanReportId,
+        {
+          deliveryPushStatus:
+            "FAILED",
+          deliveryPushError:
+            serverError,
+          deliveryPushHttpStatus:
+            response.status,
+        }
+      );
+
+      return {
+        success: false,
+        skipped: false,
+        reason: "SERVER_ERROR",
+        error: serverError,
+      };
+    }
+
+    const successCount =
+      Number(
+        responseData?.successCount ??
+          responseData?.sent ??
+          responseData?.success ??
+          0
+      ) || 0;
+
+    const failureCount =
+      Number(
+        responseData?.failureCount ??
+          responseData?.failed ??
+          0
+      ) || 0;
+
+    await markDeliveryPushResult(
+      cleanReportId,
+      {
+        deliveryPushStatus:
+          "SENT",
+        deliveryPushError: "",
+        deliveryPushSentAt:
+          serverTimestamp(),
+        deliveryPushSuccessCount:
+          successCount,
+        deliveryPushFailureCount:
+          failureCount,
+      }
+    );
+
+    return {
+      success: true,
+      skipped: false,
+      successCount,
+      failureCount,
+      response: responseData,
+    };
+  } catch (error) {
+    console.error(
+      "WCHR delivery push error:",
+      error
+    );
+
+    await markDeliveryPushResult(
+      cleanReportId,
+      {
+        deliveryPushStatus:
+          "FAILED",
+        deliveryPushError:
+          error?.message ||
+          "Unknown WCHR delivery push error.",
       }
     );
 
