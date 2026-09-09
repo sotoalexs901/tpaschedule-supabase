@@ -878,7 +878,7 @@ export default function WchrOperationsHubPage() {
     const list = [];
 
     list.push({
-      icon: "ð¢",
+      icon: "AG",
       title: "WCHR Agent Operations",
       description:
         "Punch In, manage availability, follow your assignment and update the journey.",
@@ -900,7 +900,7 @@ export default function WchrOperationsHubPage() {
     });
 
     list.push({
-      icon: "â",
+      icon: "NEW",
       title: "New WCHR Service",
       description:
         "Create a passenger wheelchair service from approved daily flights and available inventory.",
@@ -912,7 +912,7 @@ export default function WchrOperationsHubPage() {
     });
 
     list.push({
-      icon: "ðï¸",
+      icon: "DSP",
       title: "WCHR Dispatch Center",
       description:
         "Assign ready wheelchair services to punched-in and available WCHR agents.",
@@ -930,7 +930,7 @@ export default function WchrOperationsHubPage() {
     });
 
     list.push({
-      icon: "ð",
+      icon: "REP",
       title: "My WCHR Reports",
       description:
         "Review wheelchair services associated with your AeroStation Hub profile.",
@@ -942,7 +942,7 @@ export default function WchrOperationsHubPage() {
     });
 
     list.push({
-      icon: "ð",
+      icon: "FLT",
       title: "WCHR Flight Reports",
       description:
         "Review passenger service history, flight summaries, employee performance and billing records.",
@@ -961,7 +961,7 @@ export default function WchrOperationsHubPage() {
     });
 
     list.push({
-      icon: "ð¨",
+      icon: "ALT",
       title: "WCHR Duty Follow-Up",
       description:
         "Review operational exceptions, pending actions and supervisor follow-up items.",
@@ -980,7 +980,7 @@ export default function WchrOperationsHubPage() {
     });
 
     list.push({
-      icon: "ð",
+      icon: "MTH",
       title: "WCHR Billing & Monthly Close",
       description:
         "Review monthly WCHR activity, billing records and operational close information.",
@@ -1145,7 +1145,7 @@ export default function WchrOperationsHubPage() {
                     "rgba(255,255,255,0.72)",
                 }}
               >
-                {APP_NAME} Â· WCHR Operations
+                {APP_NAME} {" | "} WCHR Operations
               </div>
 
               <h1
@@ -1656,7 +1656,7 @@ export default function WchrOperationsHubPage() {
           color: "#94a3b8",
         }}
       >
-        {APP_NAME} Â· {APP_SUBTITLE}
+        {APP_NAME} {" | "} {APP_SUBTITLE}
       </div>
     </div>
   );
