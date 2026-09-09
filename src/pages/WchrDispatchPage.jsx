@@ -225,6 +225,24 @@ function isInventoryLocked(item) {
   ].includes(status);
 }
 
+
+function inventoryBelongsToReport(item, report) {
+  if (!item || !report?.id) return false;
+
+  const linkedReportId =
+    cleanText(
+      item.report_doc_id ||
+        item.assigned_report_doc_id ||
+        item.active_report_id
+    );
+
+  return (
+    Boolean(linkedReportId) &&
+    linkedReportId ===
+      cleanText(report.id)
+  );
+}
+
 function getServiceStatusLabel(value) {
   const status = safeUpper(value);
 
@@ -3375,10 +3393,10 @@ export default function WchrDispatchPage() {
 
       const confirmed =
         window.confirm(
-          `Complete WCHR ${
+          `Complete this WCHR service manually?\n\nOnly this selected service/report will be closed. If WCHR ${
             report.wheelchair_number ||
             ""
-          } manually and release the assigned agent?`
+          } is already being used by a newer active service, that current service and inventory assignment will NOT be changed.`
         );
 
       if (!confirmed) {
@@ -3481,7 +3499,13 @@ export default function WchrDispatchPage() {
               )
           );
 
-        if (inventoryItem) {
+        if (
+          inventoryItem &&
+          inventoryBelongsToReport(
+            inventoryItem,
+            report
+          )
+        ) {
           await updateDoc(
             doc(
               db,
@@ -3543,6 +3567,18 @@ export default function WchrDispatchPage() {
               updated_at:
                 serverTimestamp(),
             }
+          );
+        } else if (
+          inventoryItem &&
+          !inventoryBelongsToReport(
+            inventoryItem,
+            report
+          )
+        ) {
+          console.warn(
+            `Historical WCHR service ${report.id} was completed without releasing inventory because WCHR ${
+              report.wheelchair_number || ""
+            } is currently linked to a different active report.`
           );
         }
 
@@ -4355,51 +4391,82 @@ export default function WchrDispatchPage() {
             if (
               finishing
             ) {
-              inventoryPatch.status =
-                "AVAILABLE";
+              if (
+                inventoryBelongsToReport(
+                  inventoryItem,
+                  report
+                )
+              ) {
+                inventoryPatch.status =
+                  "AVAILABLE";
 
-              inventoryPatch.is_available =
-                true;
+                inventoryPatch.is_available =
+                  true;
 
-              inventoryPatch.current_agent_id =
-                "";
+                inventoryPatch.current_agent_id =
+                  "";
 
-              inventoryPatch.current_agent_name =
-                "";
+                inventoryPatch.current_agent_name =
+                  "";
 
-              inventoryPatch.report_doc_id =
-                "";
+                inventoryPatch.report_doc_id =
+                  "";
 
-              inventoryPatch.assigned_report_doc_id =
-                "";
+                inventoryPatch.assigned_report_doc_id =
+                  "";
 
-              inventoryPatch.report_id =
-                "";
+                inventoryPatch.report_id =
+                  "";
 
-              inventoryPatch.assigned_report_id =
-                "";
+                inventoryPatch.assigned_report_id =
+                  "";
 
-              inventoryPatch.passenger_name =
-                "";
+                inventoryPatch.passenger_name =
+                  "";
 
-              inventoryPatch.airline =
-                "";
+                inventoryPatch.airline =
+                  "";
 
-              inventoryPatch.flight_number =
-                "";
+                inventoryPatch.flight_number =
+                  "";
 
-              inventoryPatch.pnr =
-                "";
+                inventoryPatch.pnr =
+                  "";
+              } else {
+                // Historical service only: do not touch the current inventory assignment.
+                delete inventoryPatch.status;
+                delete inventoryPatch.is_available;
+                delete inventoryPatch.current_agent_id;
+                delete inventoryPatch.current_agent_name;
+                delete inventoryPatch.report_doc_id;
+                delete inventoryPatch.assigned_report_doc_id;
+                delete inventoryPatch.report_id;
+                delete inventoryPatch.assigned_report_id;
+                delete inventoryPatch.passenger_name;
+                delete inventoryPatch.airline;
+                delete inventoryPatch.flight_number;
+                delete inventoryPatch.pnr;
+                delete inventoryPatch.location;
+                delete inventoryPatch.current_location;
+              }
             }
 
-            await updateDoc(
-              doc(
-                db,
-                INVENTORY_COLLECTION,
-                inventoryItem.id
-              ),
-              inventoryPatch
-            );
+            if (
+              !finishing ||
+              inventoryBelongsToReport(
+                inventoryItem,
+                report
+              )
+            ) {
+              await updateDoc(
+                doc(
+                  db,
+                  INVENTORY_COLLECTION,
+                  inventoryItem.id
+                ),
+                inventoryPatch
+              );
+            }
           }
 
           await addWchrTimelineEvent({
