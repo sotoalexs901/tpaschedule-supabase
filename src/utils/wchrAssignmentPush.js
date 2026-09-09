@@ -1,4 +1,4 @@
-/ src/utils/wchrAssignmentPush.js
+// src/utils/wchrAssignmentPush.js
 
 import { db } from "../firebase";
 
