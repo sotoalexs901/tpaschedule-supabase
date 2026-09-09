@@ -128,7 +128,7 @@ function getTimestampMillis(value) {
 function formatTimestamp(value) {
   const millis = getTimestampMillis(value);
 
-  if (!millis) return "â";
+  if (!millis) return "\u2014";
 
   const date = new Date(millis);
 
@@ -469,7 +469,7 @@ function InfoField({ label, value }) {
           wordBreak: "break-word",
         }}
       >
-        {value || "â"}
+        {value || "\u2014"}
       </div>
     </div>
   );
@@ -585,7 +585,7 @@ function ServiceStep({
           fontWeight: 900,
         }}
       >
-        {completed ? "â" : number}
+        {completed ? "OK" : number}
       </div>
 
       <div style={{ minWidth: 0 }}>
@@ -1720,7 +1720,7 @@ export default function WchrAgentOperationsPage() {
                     "rgba(255,255,255,0.72)",
                 }}
               >
-                {APP_NAME} Â· WCHR Operations
+                {APP_NAME} {" | "} WCHR Operations
               </div>
 
               <h1
@@ -1904,7 +1904,7 @@ export default function WchrAgentOperationsPage() {
                   employee.department,
                 ]
                   .filter(Boolean)
-                  .join(" Â· ")}
+                  .join(" | ")}
               </div>
             )}
           </div>
@@ -2243,10 +2243,12 @@ export default function WchrAgentOperationsPage() {
                     justifyContent: "center",
                     background: "#ecfdf5",
                     border: "1px solid #bbf7d0",
-                    fontSize: 27,
+                    fontSize: 13,
+                    fontWeight: 900,
+                    color: "#166534",
                   }}
                 >
-                  â¿
+                  WCHR
                 </div>
 
                 <h2
@@ -2341,7 +2343,7 @@ export default function WchrAgentOperationsPage() {
                     Wheelchair{" "}
                     {activeReport.wheelchair_number ||
                       shift?.active_wheelchair_number ||
-                      "â"}
+                      "\u2014"}
                   </h2>
 
                   <div
@@ -2507,7 +2509,7 @@ export default function WchrAgentOperationsPage() {
                   value={
                     activeReport.current_location ||
                     shift?.current_location ||
-                    "â"
+                    "\u2014"
                   }
                 />
 
@@ -2894,7 +2896,7 @@ export default function WchrAgentOperationsPage() {
           fontSize: 10,
         }}
       >
-        {APP_NAME} Â· {APP_SUBTITLE}
+        {APP_NAME} {" | "} {APP_SUBTITLE}
       </div>
     </div>
   );
