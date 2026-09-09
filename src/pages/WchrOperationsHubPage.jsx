@@ -752,7 +752,7 @@ export default function WchrOperationsHubPage() {
       user?.loginUsername,
     ]
       .map((value) =>
-        safeText(value)
+        cleanText(value)
       )
       .filter(Boolean);
 
@@ -766,7 +766,7 @@ export default function WchrOperationsHubPage() {
           agent.username,
         ]
           .map((value) =>
-            safeText(value)
+            cleanText(value)
           )
           .filter(Boolean);
 
