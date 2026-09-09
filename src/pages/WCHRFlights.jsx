@@ -97,6 +97,25 @@ function toDate(value) {
     return value.toDate();
   }
 
+  if (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
+    const [year, month, day] = value
+      .split("-")
+      .map(Number);
+
+    return new Date(
+      year,
+      month - 1,
+      day,
+      0,
+      0,
+      0,
+      0
+    );
+  }
+
   const parsed = new Date(value);
 
   return Number.isNaN(parsed.getTime())
@@ -112,7 +131,7 @@ function getMillis(value) {
 function formatDateTime(value) {
   const date = toDate(value);
 
-  if (!date) return "â";
+  if (!date) return "\u2014";
 
   return date.toLocaleString(undefined, {
     month: "short",
@@ -154,7 +173,7 @@ function formatMinutes(value) {
     value === undefined ||
     Number.isNaN(value)
   ) {
-    return "â";
+    return "\u2014";
   }
 
   if (value < 60) {
@@ -337,8 +356,6 @@ function needs30MinuteAlert(report) {
     ) || 30;
 
   const reference =
-    report?.last_location_update_at ||
-    report?.last_updated_at ||
     getTimerStart(report);
 
   return minutesSince(reference) >= limit;
@@ -654,7 +671,7 @@ function buildFlights(rows) {
   for (const report of rows) {
     const airline =
       safeUpper(report.airline) ||
-      "â";
+      "\u2014";
 
     const flightNumber =
       safeUpper(report.flight_number) ||
@@ -1195,7 +1212,7 @@ function InfoField({
             "break-word",
         }}
       >
-        {value || "â"}
+        {value || "\u2014"}
       </div>
     </div>
   );
@@ -1232,7 +1249,7 @@ function FilterButton({
         cursor: "pointer",
       }}
     >
-      {label} Â· {count}
+      {label} {" | "} {count}
     </button>
   );
 }
@@ -1330,7 +1347,7 @@ function Timeline({
                     "",
                 ]
                   .filter(Boolean)
-                  .join(" Â· ")}
+                  .join(" | ")}
               </div>
             </div>
           </div>
@@ -1410,15 +1427,15 @@ function SegmentsTable({
               <tr key={segment.id}>
                 <td style={tdStyle}>
                   {segment.segment_number ||
-                    "â"}
+                    "\u2014"}
                 </td>
                 <td style={tdStyle}>
                   {segment.agent_name ||
-                    "â"}
+                    "\u2014"}
                 </td>
                 <td style={tdStyle}>
                   {segment.start_location ||
-                    "â"}
+                    "\u2014"}
                   <div
                     style={{
                       marginTop: 3,
@@ -1433,7 +1450,7 @@ function SegmentsTable({
                 </td>
                 <td style={tdStyle}>
                   {segment.end_location ||
-                    "â"}
+                    "\u2014"}
                   <div
                     style={{
                       marginTop: 3,
@@ -1453,7 +1470,7 @@ function SegmentsTable({
                   ).replaceAll(
                     "_",
                     " "
-                  ) || "â"}
+                  ) || "\u2014"}
                 </td>
               </tr>
             )
@@ -1706,7 +1723,7 @@ export default function WCHRFlights() {
           const airline =
             safeUpper(
               report.airline
-            ) || "â";
+            ) || "\u2014";
 
           const flightNumber =
             safeUpper(
@@ -2043,7 +2060,7 @@ export default function WCHRFlights() {
                     "0.14em",
                 }}
               >
-                {APP_NAME} Â· WCHR Reports
+                {APP_NAME} {" | "} WCHR Reports
               </div>
 
               <h1
@@ -2122,7 +2139,7 @@ export default function WCHRFlights() {
               variant="secondary"
               onClick={() =>
                 navigate(
-                  "/dashboard"
+                  "/wchr"
                 )
               }
               style={{
@@ -2598,8 +2615,8 @@ export default function WCHRFlights() {
                           ? toMMDDYYYY(
                               flight.report_date
                             )
-                          : "â"}{" "}
-                        Â· {flight.total} passenger service
+                          : "\u2014"}{" "}
+                        {" | "} {flight.total} passenger service
                         {flight.total === 1
                           ? ""
                           : "s"}
@@ -2853,7 +2870,7 @@ export default function WCHRFlights() {
                           report
                         )
                           ? "Personal WCHR"
-                          : "â")
+                          : "\u2014")
                       }
                     />
 
@@ -3049,7 +3066,7 @@ export default function WCHRFlights() {
                   selectedReport
                 )
                   ? "Personal WCHR"
-                  : "â")
+                  : "\u2014")
               }
             />
 
@@ -3371,7 +3388,7 @@ export default function WCHRFlights() {
           fontSize: 10,
         }}
       >
-        {APP_NAME} Â· {APP_SUBTITLE} Â· Report view for {getVisibleName(user)}
+        {APP_NAME} {" | "} {APP_SUBTITLE} {" | "} Report view for {getVisibleName(user)}
       </div>
     </div>
   );
