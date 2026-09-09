@@ -1394,6 +1394,27 @@ export default function WchrOperationsHubPage() {
         </div>
       </div>
 
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          onClick={() => navigate("/dashboard")}
+          style={{
+            border: "1px solid #cfe7fb",
+            borderRadius: 12,
+            padding: "10px 14px",
+            background: "#ffffff",
+            color: "#1769aa",
+            fontFamily: "inherit",
+            fontSize: 12,
+            fontWeight: 900,
+            cursor: "pointer",
+          }}
+        >
+          Back to Dashboard
+        </button>
+      </div>
+
       {/* METRICS */}
 
       <div
