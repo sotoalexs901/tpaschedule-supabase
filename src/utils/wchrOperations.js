@@ -109,6 +109,7 @@ export function buildAgentShiftPayload({
   employee,
   user,
   trackingConsent = false,
+  startingLocation = "",
 }) {
   const agentId = getEmployeeIdentifier(employee, user);
 
@@ -154,7 +155,8 @@ export function buildAgentShiftPayload({
     active_report_id: "",
     active_wheelchair_number: "",
 
-    current_location: "",
+    current_location: cleanText(startingLocation),
+    last_location_update_at: serverTimestamp(),
 
     live_tracking_consent:
       trackingConsent === true,
@@ -175,12 +177,21 @@ export async function punchInWchrAgent({
   employee,
   user,
   trackingConsent = false,
+  startingLocation = "",
 }) {
   const agentId = getEmployeeIdentifier(employee, user);
 
   if (!agentId) {
     throw new Error(
       "Unable to identify the employee for WCHR Punch In."
+    );
+  }
+
+  const cleanStartingLocation = cleanText(startingLocation);
+
+  if (!cleanStartingLocation) {
+    throw new Error(
+      "Starting location is required for WCHR Punch In."
     );
   }
 
@@ -214,6 +225,7 @@ export async function punchInWchrAgent({
     employee,
     user,
     trackingConsent,
+    startingLocation: cleanStartingLocation,
   });
 
   await setDoc(
@@ -244,6 +256,9 @@ export async function punchInWchrAgent({
 
       live_tracking_consent:
         trackingConsent === true,
+
+      current_location:
+        cleanStartingLocation,
 
       created_at:
         serverTimestamp(),
