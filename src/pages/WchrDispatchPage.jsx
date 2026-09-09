@@ -257,6 +257,10 @@ function getServiceStatusLabel(value) {
     PENDING_STORAGE: "Pending Storage",
     STORED: "Stored",
     COMPLETED: "Completed",
+    IB_WAITING: "IB Waiting for Agent",
+    IB_ACCEPTED: "IB Accepted",
+    IB_IN_TRANSIT: "IB In Transit",
+    IB_DELIVERED: "IB Delivered",
   };
 
   return (
@@ -1515,6 +1519,157 @@ function ReadyWheelchairCard({
 }
 
 // ============================================================
+// INBOUND PASSENGER CARD
+// ============================================================
+
+function InboundPassengerCard({
+  report,
+  busy = false,
+  onRemove,
+}) {
+  const status = safeUpper(
+    report?.ib_status ||
+      report?.service_status ||
+      "IB_WAITING"
+  );
+
+  const accepted = Boolean(
+    report?.ib_accepted_at ||
+      report?.wchr_agent_id ||
+      report?.assigned_agent_id
+  );
+
+  const delivered = Boolean(
+    report?.ib_delivered_at ||
+      status === "IB_DELIVERED"
+  );
+
+  const statusLabel = delivered
+    ? "Delivered"
+    : accepted
+    ? "Accepted by Agent"
+    : "Waiting for Agent";
+
+  const statusStyle = delivered
+    ? {
+        background: "#ecfdf5",
+        color: "#166534",
+        border: "#bbf7d0",
+      }
+    : accepted
+    ? {
+        background: "#eff6ff",
+        color: "#1d4ed8",
+        border: "#bfdbfe",
+      }
+    : {
+        background: "#fffbeb",
+        color: "#92400e",
+        border: "#fde68a",
+      };
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${statusStyle.border}`,
+        borderRadius: 16,
+        padding: 13,
+        background: "#ffffff",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 950,
+              color: "#0f172a",
+              lineHeight: 1.35,
+            }}
+          >
+            {report.passenger_name || "Passenger"}
+          </div>
+
+          <div
+            style={{
+              marginTop: 3,
+              fontSize: 11.5,
+              color: "#64748b",
+              fontWeight: 700,
+            }}
+          >
+            {[report.airline, report.flight_number]
+              .filter(Boolean)
+              .join(" ") || "Flight not listed"}
+          </div>
+        </div>
+
+        <span
+          style={{
+            display: "inline-flex",
+            padding: "6px 9px",
+            borderRadius: 999,
+            background: statusStyle.background,
+            color: statusStyle.color,
+            border: `1px solid ${statusStyle.border}`,
+            fontSize: 10,
+            fontWeight: 900,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {statusLabel}
+        </span>
+      </div>
+
+      <div
+        style={{
+          marginTop: 11,
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 7,
+        }}
+      >
+        <InfoField label="PNR" value={report.pnr} />
+        <InfoField label="Type" value={report.wch_type} />
+        <InfoField label="Pickup" value={report.ib_pickup_location || "CBP"} />
+        <InfoField
+          label="Agent"
+          value={
+            report.wchr_agent_name ||
+            report.assigned_wchr_agent ||
+            "Not accepted yet"
+          }
+        />
+      </div>
+
+      {!accepted && !delivered && (
+        <div style={{ marginTop: 10 }}>
+          <ActionButton
+            variant="danger"
+            disabled={busy}
+            onClick={() => onRemove(report)}
+            style={{
+              padding: "7px 10px",
+              fontSize: 10.5,
+            }}
+          >
+            {busy ? "Removing..." : "Remove Passenger"}
+          </ActionButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN
 // ============================================================
 
@@ -1619,6 +1774,45 @@ export default function WchrDispatchPage() {
     loadingFlights,
     setLoadingFlights,
   ] = useState(true);
+
+  // ============================================================
+  // INBOUND PASSENGER PREPARATION
+  // ============================================================
+
+  const [
+    ibPassengers,
+    setIbPassengers,
+  ] = useState([]);
+
+  const [
+    ibFlightId,
+    setIbFlightId,
+  ] = useState("");
+
+  const [
+    ibPassengerName,
+    setIbPassengerName,
+  ] = useState("");
+
+  const [
+    ibPnr,
+    setIbPnr,
+  ] = useState("");
+
+  const [
+    ibWchType,
+    setIbWchType,
+  ] = useState("WCHR");
+
+  const [
+    savingIbPassenger,
+    setSavingIbPassenger,
+  ] = useState(false);
+
+  const [
+    busyIbPassengerId,
+    setBusyIbPassengerId,
+  ] = useState("");
 
   // ============================================================
   // INVENTORY
@@ -2018,6 +2212,42 @@ export default function WchrDispatchPage() {
               ...item.data(),
             }));
 
+          const inboundRows =
+            allRows
+              .filter((report) => {
+                const direction =
+                  safeUpper(report.service_direction);
+
+                const serviceDate =
+                  safeText(
+                    report.service_date ||
+                      report.flight_date
+                  );
+
+                const status =
+                  safeUpper(
+                    report.ib_status ||
+                      report.service_status ||
+                      report.tracking_status
+                  );
+
+                const finished =
+                  Boolean(report.ib_delivered_at) ||
+                  status === "IB_DELIVERED" ||
+                  status === "COMPLETED";
+
+                return (
+                  direction === "IB" &&
+                  serviceDate === todayKey &&
+                  !finished
+                );
+              })
+              .sort(
+                (a, b) =>
+                  getMillis(a.created_at || a.submitted_at) -
+                  getMillis(b.created_at || b.submitted_at)
+              );
+
           const activeRows =
             allRows
               .filter((report) => {
@@ -2062,6 +2292,7 @@ export default function WchrDispatchPage() {
 
           setReports(rows);
           setActiveReports(activeRows);
+          setIbPassengers(inboundRows);
           setLoadingReports(false);
         },
         (err) => {
@@ -2080,7 +2311,7 @@ export default function WchrDispatchPage() {
 
     return () =>
       unsubscribe();
-  }, []);
+  }, [todayKey]);
 
   // ============================================================
   // FLIGHT MANAGEMENT
@@ -2472,6 +2703,180 @@ export default function WchrDispatchPage() {
         setBusyFlightId("");
       }
     };
+
+  // ============================================================
+  // INBOUND PASSENGER PREPARATION
+  // ============================================================
+
+  const handleAddInboundPassenger = async () => {
+    setError("");
+    setMessage("");
+
+    const selectedFlight =
+      openFlights.find(
+        (flight) => flight.id === ibFlightId
+      ) || null;
+
+    const passengerName = safeText(ibPassengerName);
+    const pnr = safeUpper(ibPnr);
+    const wchType = safeUpper(ibWchType || "WCHR");
+
+    if (!selectedFlight) {
+      setError("Select the inbound flight first.");
+      return;
+    }
+
+    if (!passengerName) {
+      setError("Passenger name is required.");
+      return;
+    }
+
+    if (!pnr) {
+      setError("PNR is required.");
+      return;
+    }
+
+    const duplicate = ibPassengers.some((report) => {
+      return (
+        safeUpper(report.pnr) === pnr &&
+        normalizeFlightNumber(report.flight_number) ===
+          normalizeFlightNumber(selectedFlight.flight_number)
+      );
+    });
+
+    if (duplicate) {
+      setError(
+        `${passengerName} / ${pnr} is already listed for this inbound flight.`
+      );
+      return;
+    }
+
+    try {
+      setSavingIbPassenger(true);
+
+      await addDoc(
+        collection(db, "wch_reports"),
+        {
+          service_direction: "IB",
+          service_type: "INBOUND_WCHR",
+          service_date: todayKey,
+          flight_date: todayKey,
+
+          daily_flight_id: selectedFlight.id,
+          flight_key:
+            selectedFlight.flight_key ||
+            buildDailyFlightKey(
+              selectedFlight.airline,
+              selectedFlight.flight_number,
+              todayKey
+            ),
+
+          airline: safeUpper(selectedFlight.airline),
+          flight_number: safeUpper(selectedFlight.flight_number),
+          gate: safeUpper(selectedFlight.gate),
+
+          passenger_name: passengerName,
+          pnr,
+          wch_type: wchType,
+
+          ib_pickup_location: "CBP",
+          ib_destination: "",
+          current_location: "CBP",
+
+          ib_passenger_available: true,
+          ib_status: "IB_WAITING",
+          service_status: "IB_WAITING",
+          tracking_status: "IB_WAITING",
+
+          ready_for_pickup: false,
+          is_active: true,
+
+          // IMPORTANT: IB service time does not begin here.
+          // The timer starts only when the agent presses Start Transit.
+          timer_started_at: null,
+          ib_transit_started_at: null,
+          alerts_enabled: false,
+          transport_alert_active: false,
+
+          wchr_agent_id: "",
+          assigned_agent_id: "",
+          wchr_agent_name: "",
+          assigned_wchr_agent: "",
+          wheelchair_number: "",
+          inventory_doc_id: "",
+
+          created_at: serverTimestamp(),
+          submitted_at: serverTimestamp(),
+          created_by_user_id: user?.id || user?.uid || "",
+          created_by_username: user?.username || "",
+          created_by_name: getVisibleName(user),
+          created_by_role: user?.role || "",
+          last_updated_at: serverTimestamp(),
+          last_updated_by: getVisibleName(user),
+          last_updated_by_id: user?.id || user?.uid || "",
+        }
+      );
+
+      setIbPassengerName("");
+      setIbPnr("");
+      setIbWchType("WCHR");
+
+      setMessage(
+        `${passengerName} added to the inbound CBP passenger list. The passenger is now available for a WCHR agent to accept.`
+      );
+    } catch (err) {
+      console.error("Add inbound WCHR passenger error:", err);
+      setError(
+        err?.message ||
+          "Unable to add the inbound passenger."
+      );
+    } finally {
+      setSavingIbPassenger(false);
+    }
+  };
+
+  const handleRemoveInboundPassenger = async (report) => {
+    if (!report?.id) return;
+
+    if (
+      report?.ib_accepted_at ||
+      report?.wchr_agent_id ||
+      report?.assigned_agent_id
+    ) {
+      setError(
+        "This inbound passenger has already been accepted by an agent and cannot be removed from the waiting list."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove ${report.passenger_name || "this passenger"} from the inbound CBP waiting list?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyIbPassengerId(report.id);
+      setError("");
+      setMessage("");
+
+      await deleteDoc(
+        doc(db, "wch_reports", report.id)
+      );
+
+      setMessage(
+        `${report.passenger_name || "Passenger"} removed from the inbound waiting list.`
+      );
+    } catch (err) {
+      console.error("Remove inbound WCHR passenger error:", err);
+      setError(
+        err?.message ||
+          "Unable to remove the inbound passenger."
+      );
+    } finally {
+      setBusyIbPassengerId("");
+    }
+  };
 
   // ============================================================
   // INVENTORY METRICS
@@ -5595,6 +6000,260 @@ export default function WchrDispatchPage() {
             )}
           </div>
         )}
+      </PageCard>
+
+      {/* ====================================================== */}
+      {/* INBOUND PASSENGER PREPARATION */}
+      {/* ====================================================== */}
+
+      <PageCard
+        style={{
+          padding: isMobile ? 15 : 19,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            justifyContent: "space-between",
+            alignItems: isMobile ? "stretch" : "flex-start",
+            gap: 14,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 900,
+                color: "#7c3aed",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              IB Arrival Preparation
+            </div>
+
+            <h2
+              style={{
+                margin: "4px 0 3px",
+                fontSize: isMobile ? 19 : 22,
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              Inbound CBP Passenger List
+            </h2>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 760,
+                fontSize: 12,
+                color: "#64748b",
+                lineHeight: 1.55,
+              }}
+            >
+              Add inbound WCHR passengers before arrival. These names will be
+              available to punched-in WCHR agents. No service timer starts here;
+              the IB timer will begin only when the agent accepts the passenger,
+              selects a company wheelchair and presses Start Transit from CBP.
+            </p>
+          </div>
+
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "7px 11px",
+              borderRadius: 999,
+              background: "#f5f3ff",
+              border: "1px solid #ddd6fe",
+              color: "#6d28d9",
+              fontSize: 11,
+              fontWeight: 900,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {ibPassengers.filter(
+              (report) =>
+                !report.ib_accepted_at &&
+                !report.wchr_agent_id &&
+                !report.assigned_agent_id
+            ).length} WAITING
+          </span>
+        </div>
+
+        <div
+          style={{
+            marginTop: 16,
+            padding: isMobile ? 12 : 14,
+            borderRadius: 17,
+            background: "#faf8ff",
+            border: "1px solid #e9d5ff",
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                isMobile || isTablet
+                  ? "1fr"
+                  : "1.2fr 1.2fr 0.85fr 0.75fr auto",
+              gap: 10,
+              alignItems: "end",
+            }}
+          >
+            <div>
+              <FieldLabel>Inbound Flight *</FieldLabel>
+              <select
+                value={ibFlightId}
+                onChange={(event) => setIbFlightId(event.target.value)}
+                disabled={savingIbPassenger}
+                style={{
+                  width: "100%",
+                  minHeight: 44,
+                  boxSizing: "border-box",
+                  border: "1px solid #d8b4fe",
+                  borderRadius: 13,
+                  padding: "10px 12px",
+                  background: "#ffffff",
+                  color: "#0f172a",
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              >
+                <option value="">Select flight</option>
+                {openFlights.map((flight) => (
+                  <option key={flight.id} value={flight.id}>
+                    {flight.airline || ""} {flight.flight_number || ""}
+                    {flight.gate ? ` Â· ${flight.gate}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <FieldLabel>Passenger Name *</FieldLabel>
+              <TextInput
+                value={ibPassengerName}
+                onChange={setIbPassengerName}
+                placeholder="Passenger full name"
+                disabled={savingIbPassenger}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>PNR *</FieldLabel>
+              <TextInput
+                value={ibPnr}
+                onChange={setIbPnr}
+                placeholder="ABC123"
+                disabled={savingIbPassenger}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>WCHR Type</FieldLabel>
+              <select
+                value={ibWchType}
+                onChange={(event) => setIbWchType(event.target.value)}
+                disabled={savingIbPassenger}
+                style={{
+                  width: "100%",
+                  minHeight: 44,
+                  boxSizing: "border-box",
+                  border: "1px solid #dbeafe",
+                  borderRadius: 13,
+                  padding: "10px 12px",
+                  background: "#ffffff",
+                  color: "#0f172a",
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              >
+                <option value="WCHR">WCHR</option>
+                <option value="WCHS">WCHS</option>
+                <option value="WCHC">WCHC</option>
+              </select>
+            </div>
+
+            <ActionButton
+              variant="success"
+              onClick={handleAddInboundPassenger}
+              disabled={
+                savingIbPassenger ||
+                !ibFlightId ||
+                !safeText(ibPassengerName) ||
+                !safeText(ibPnr)
+              }
+              style={{
+                minHeight: 44,
+                width: isMobile || isTablet ? "100%" : "auto",
+              }}
+            >
+              {savingIbPassenger
+                ? "Adding..."
+                : "Add IB Passenger"}
+            </ActionButton>
+          </div>
+        </div>
+
+        {ibPassengers.length === 0 ? (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 18,
+              textAlign: "center",
+              borderRadius: 14,
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              color: "#64748b",
+              fontSize: 12,
+              fontWeight: 750,
+            }}
+          >
+            No inbound WCHR passengers are prepared for today.
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: 14,
+              display: "grid",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : "repeat(auto-fit, minmax(235px, 1fr))",
+              gap: 9,
+            }}
+          >
+            {ibPassengers.map((report) => (
+              <InboundPassengerCard
+                key={report.id}
+                report={report}
+                busy={busyIbPassengerId === report.id}
+                onRemove={handleRemoveInboundPassenger}
+              />
+            ))}
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 12,
+            padding: "10px 12px",
+            borderRadius: 13,
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            color: "#1d4ed8",
+            fontSize: 11.5,
+            lineHeight: 1.55,
+            fontWeight: 750,
+          }}
+        >
+          In this first step Dispatch only prepares the passenger list. The WCHR
+          number and final destination are intentionally left blank so the agent
+          can select them at CBP when the passenger is physically accepted.
+        </div>
       </PageCard>
 
       {/* ====================================================== */}
