@@ -1433,7 +1433,7 @@ export default function WchrOperationsHubPage() {
           label="Agents Active"
           value={
             loadingAgents
-              ? "â"
+              ? "Ã¢ÂÂ"
               : agents.length
           }
           tone="slate"
@@ -1443,7 +1443,7 @@ export default function WchrOperationsHubPage() {
           label="Available"
           value={
             loadingAgents
-              ? "â"
+              ? "Ã¢ÂÂ"
               : availableAgents.length
           }
           tone="green"
@@ -1463,7 +1463,7 @@ export default function WchrOperationsHubPage() {
           label="At Gate"
           value={
             loadingReports
-              ? "â"
+              ? "Ã¢ÂÂ"
               : atGateServices.length
           }
           tone="amber"
@@ -1473,7 +1473,7 @@ export default function WchrOperationsHubPage() {
           label="Pending Storage"
           value={
             loadingReports
-              ? "â"
+              ? "Ã¢ÂÂ"
               : pendingStorage.length
           }
           tone="amber"
@@ -1483,7 +1483,7 @@ export default function WchrOperationsHubPage() {
           label="30+ Min Alerts"
           value={
             loadingReports
-              ? "â"
+              ? "Ã¢ÂÂ"
               : alertServices.length
           }
           tone="red"
@@ -2266,6 +2266,40 @@ export default function WchrOperationsHubPage() {
               />
             )
           )}
+        </div>
+      </PageCard>
+
+
+      {/* WCHR TRAINING */}
+      <PageCard
+        style={{
+          padding: isMobile ? 16 : 20,
+          overflow: "hidden",
+          position: "relative",
+          background: "linear-gradient(135deg, #f8fbff 0%, #ffffff 52%, #f0fdf4 100%)",
+          border: "1px solid #bfdbfe",
+        }}
+      >
+        <div style={{ position: "absolute", width: 150, height: 150, borderRadius: 999, right: -45, top: -65, background: "rgba(23,105,170,0.06)", pointerEvents: "none" }} />
+        <div style={{ position: "relative", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 13, minWidth: 0 }}>
+            <div style={{ width: 52, height: 52, flex: "0 0 52px", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", background: "#eff6ff", border: "1px solid #bfdbfe", fontSize: 27 }} aria-hidden="true">ð</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 900, color: "#1769aa", textTransform: "uppercase", letterSpacing: "0.09em" }}>WCHR Interactive Training</div>
+              <h2 style={{ margin: "4px 0 0", fontSize: isMobile ? 19 : 22, color: "#0f172a", fontWeight: 950, lineHeight: 1.2 }}>Entrenemos Juntos</h2>
+              <div style={{ marginTop: 2, fontSize: 13, color: "#1769aa", fontWeight: 850 }}>Let's Train Together</div>
+              <p style={{ margin: "7px 0 0", maxWidth: 760, fontSize: 12, color: "#64748b", lineHeight: 1.55 }}>
+                Practice WCHR services step by step with guided scenarios in English or Spanish, including supervisor assignment, agent acceptance, passenger transport, gate arrival, inbound service and wheelchair storage.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/wchr/training")}
+            style={{ border: "none", borderRadius: 13, padding: "12px 17px", background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 58%, #4fb6e9 100%)", color: "#ffffff", fontFamily: "inherit", fontSize: 12.5, fontWeight: 900, cursor: "pointer", width: isMobile ? "100%" : "auto", minWidth: isMobile ? 0 : 175, boxShadow: "0 10px 24px rgba(23,105,170,0.18)" }}
+          >
+            Start Training â
+          </button>
         </div>
       </PageCard>
 
