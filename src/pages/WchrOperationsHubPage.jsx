@@ -2283,7 +2283,7 @@ export default function WchrOperationsHubPage() {
         <div style={{ position: "absolute", width: 150, height: 150, borderRadius: 999, right: -45, top: -65, background: "rgba(23,105,170,0.06)", pointerEvents: "none" }} />
         <div style={{ position: "relative", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 13, minWidth: 0 }}>
-            <div style={{ width: 52, height: 52, flex: "0 0 52px", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", background: "#eff6ff", border: "1px solid #bfdbfe", fontSize: 27 }} aria-hidden="true">ð</div>
+            <div style={{ width: 52, height: 52, flex: "0 0 52px", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", background: "#eff6ff", border: "1px solid #bfdbfe", fontSize: 27 }} aria-hidden="true">{"\u{1F393}"}</div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 10, fontWeight: 900, color: "#1769aa", textTransform: "uppercase", letterSpacing: "0.09em" }}>WCHR Interactive Training</div>
               <h2 style={{ margin: "4px 0 0", fontSize: isMobile ? 19 : 22, color: "#0f172a", fontWeight: 950, lineHeight: 1.2 }}>Entrenemos Juntos</h2>
@@ -2298,7 +2298,7 @@ export default function WchrOperationsHubPage() {
             onClick={() => navigate("/wchr/training")}
             style={{ border: "none", borderRadius: 13, padding: "12px 17px", background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 58%, #4fb6e9 100%)", color: "#ffffff", fontFamily: "inherit", fontSize: 12.5, fontWeight: 900, cursor: "pointer", width: isMobile ? "100%" : "auto", minWidth: isMobile ? 0 : 175, boxShadow: "0 10px 24px rgba(23,105,170,0.18)" }}
           >
-            Start Training â
+            Start Training {"\u2192"}
           </button>
         </div>
       </PageCard>
