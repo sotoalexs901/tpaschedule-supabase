@@ -7,6 +7,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -210,6 +211,18 @@ function shouldShow30MinuteAlert(report, now) {
   return getServiceMinutes(report, now) >= Number(
     report?.alert_after_minutes || 30
   );
+}
+
+
+function isInventoryLocked(item) {
+  const status = getInventoryStatus(item);
+
+  return [
+    "READY_FOR_PICKUP",
+    "IN_USE",
+    "AT_GATE",
+    "PENDING_STORAGE",
+  ].includes(status);
 }
 
 function getServiceStatusLabel(value) {
@@ -993,6 +1006,9 @@ function DailyFlightCard({
 
 function InventoryCard({
   item,
+  onEdit,
+  onDelete,
+  busy = false,
 }) {
   const wheelchairNumber =
     getInventoryNumber(item);
@@ -1084,6 +1100,42 @@ function InventoryCard({
           )}
         </div>
       )}
+
+      <div
+        style={{
+          marginTop: 10,
+          display: "flex",
+          gap: 7,
+          flexWrap: "wrap",
+        }}
+      >
+        <ActionButton
+          variant="secondary"
+          disabled={busy}
+          onClick={() => onEdit(item)}
+          style={{
+            padding: "7px 10px",
+            fontSize: 10.5,
+          }}
+        >
+          Edit / Location
+        </ActionButton>
+
+        <ActionButton
+          variant="danger"
+          disabled={
+            busy ||
+            isInventoryLocked(item)
+          }
+          onClick={() => onDelete(item)}
+          style={{
+            padding: "7px 10px",
+            fontSize: 10.5,
+          }}
+        >
+          Delete
+        </ActionButton>
+      </div>
     </div>
   );
 }
@@ -1481,6 +1533,11 @@ export default function WchrDispatchPage() {
     setReports,
   ] = useState([]);
 
+  const [
+    activeReports,
+    setActiveReports,
+  ] = useState([]);
+
   // ============================================================
   // DAILY FLIGHTS
   // ============================================================
@@ -1538,6 +1595,21 @@ export default function WchrDispatchPage() {
     inventoryFilter,
     setInventoryFilter,
   ] = useState("ALL");
+
+  const [
+    inventoryNumberInput,
+    setInventoryNumberInput,
+  ] = useState("");
+
+  const [
+    inventoryLocationInput,
+    setInventoryLocationInput,
+  ] = useState("Wheelchair Storage");
+
+  const [
+    busyInventoryId,
+    setBusyInventoryId,
+  ] = useState("");
 
   // ============================================================
   // SELECTION
@@ -1897,7 +1969,56 @@ export default function WchrDispatchPage() {
                   )
               );
 
+          const allRows =
+            snapshot.docs.map((item) => ({
+              id: item.id,
+              ...item.data(),
+            }));
+
+          const activeRows =
+            allRows
+              .filter((report) => {
+                const status =
+                  safeUpper(
+                    report.service_status ||
+                      report.tracking_status
+                  );
+
+                const assigned =
+                  Boolean(
+                    cleanText(
+                      report.wchr_agent_id ||
+                        report.assigned_agent_id
+                    )
+                  );
+
+                const finished =
+                  [
+                    "STORED",
+                    "COMPLETED",
+                  ].includes(status) ||
+                  Boolean(
+                    report.stored_at ||
+                      report.completed_at
+                  );
+
+                return (
+                  assigned &&
+                  !finished
+                );
+              })
+              .sort(
+                (a, b) =>
+                  getMillis(
+                    getWheelchairTimerStart(a)
+                  ) -
+                  getMillis(
+                    getWheelchairTimerStart(b)
+                  )
+              );
+
           setReports(rows);
+          setActiveReports(activeRows);
           setLoadingReports(false);
         },
         (err) => {
@@ -2422,6 +2543,1035 @@ export default function WchrDispatchPage() {
       inventory,
       inventoryFilter,
     ]);
+
+
+  // ============================================================
+  // INVENTORY MANAGEMENT
+  // ============================================================
+
+  const handleAddInventory =
+    async () => {
+      setError("");
+      setMessage("");
+
+      const wheelchairNumber =
+        safeUpper(
+          inventoryNumberInput
+        );
+
+      const location =
+        cleanText(
+          inventoryLocationInput
+        ) ||
+        "Wheelchair Storage";
+
+      if (!wheelchairNumber) {
+        setError(
+          "Wheelchair number is required."
+        );
+        return;
+      }
+
+      const duplicate =
+        inventory.some(
+          (item) =>
+            getInventoryNumber(
+              item
+            ) ===
+            wheelchairNumber
+        );
+
+      if (duplicate) {
+        setError(
+          `WCHR ${wheelchairNumber} already exists in inventory.`
+        );
+        return;
+      }
+
+      try {
+        setBusyInventoryId(
+          "NEW"
+        );
+
+        await addDoc(
+          collection(
+            db,
+            INVENTORY_COLLECTION
+          ),
+          {
+            wheelchair_number:
+              wheelchairNumber,
+
+            number:
+              wheelchairNumber,
+
+            location,
+
+            current_location:
+              location,
+
+            status:
+              "AVAILABLE",
+
+            is_available:
+              true,
+
+            maintenance:
+              false,
+
+            available_for_handoff:
+              false,
+
+            created_at:
+              serverTimestamp(),
+
+            created_by_user_id:
+              user?.id ||
+              user?.uid ||
+              "",
+
+            created_by_name:
+              getVisibleName(
+                user
+              ),
+
+            updated_at:
+              serverTimestamp(),
+          }
+        );
+
+        setInventoryNumberInput(
+          ""
+        );
+
+        setMessage(
+          `WCHR ${wheelchairNumber} added to inventory.`
+        );
+      } catch (err) {
+        console.error(
+          "Add WCHR inventory error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to add wheelchair."
+        );
+      } finally {
+        setBusyInventoryId(
+          ""
+        );
+      }
+    };
+
+  const handleEditInventory =
+    async (item) => {
+      const currentNumber =
+        getInventoryNumber(
+          item
+        );
+
+      const nextNumber =
+        safeUpper(
+          window.prompt(
+            "Wheelchair number:",
+            currentNumber
+          )
+        );
+
+      if (!nextNumber) {
+        return;
+      }
+
+      const duplicate =
+        inventory.some(
+          (row) =>
+            row.id !== item.id &&
+            getInventoryNumber(
+              row
+            ) ===
+              nextNumber
+        );
+
+      if (duplicate) {
+        setError(
+          `WCHR ${nextNumber} already exists in inventory.`
+        );
+        return;
+      }
+
+      const nextLocation =
+        cleanText(
+          window.prompt(
+            "Current wheelchair location:",
+            item.location ||
+              item.current_location ||
+              "Wheelchair Storage"
+          )
+        );
+
+      if (!nextLocation) {
+        return;
+      }
+
+      try {
+        setBusyInventoryId(
+          item.id
+        );
+
+        setError("");
+        setMessage("");
+
+        await updateDoc(
+          doc(
+            db,
+            INVENTORY_COLLECTION,
+            item.id
+          ),
+          {
+            wheelchair_number:
+              nextNumber,
+
+            number:
+              nextNumber,
+
+            location:
+              nextLocation,
+
+            current_location:
+              nextLocation,
+
+            updated_at:
+              serverTimestamp(),
+
+            updated_by_user_id:
+              user?.id ||
+              user?.uid ||
+              "",
+
+            updated_by_name:
+              getVisibleName(
+                user
+              ),
+          }
+        );
+
+        setMessage(
+          `WCHR ${nextNumber} updated.`
+        );
+      } catch (err) {
+        console.error(
+          "Edit WCHR inventory error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to update wheelchair."
+        );
+      } finally {
+        setBusyInventoryId(
+          ""
+        );
+      }
+    };
+
+  const handleDeleteInventory =
+    async (item) => {
+      const wheelchairNumber =
+        getInventoryNumber(
+          item
+        );
+
+      if (
+        isInventoryLocked(
+          item
+        )
+      ) {
+        setError(
+          `WCHR ${wheelchairNumber} is linked to an active service and cannot be deleted.`
+        );
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          `Delete WCHR ${wheelchairNumber} from company inventory?`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        setBusyInventoryId(
+          item.id
+        );
+
+        setError("");
+        setMessage("");
+
+        await deleteDoc(
+          doc(
+            db,
+            INVENTORY_COLLECTION,
+            item.id
+          )
+        );
+
+        setMessage(
+          `WCHR ${wheelchairNumber} deleted from inventory.`
+        );
+      } catch (err) {
+        console.error(
+          "Delete WCHR inventory error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to delete wheelchair."
+        );
+      } finally {
+        setBusyInventoryId(
+          ""
+        );
+      }
+    };
+
+  // ============================================================
+  // SERVICE MANAGEMENT
+  // ============================================================
+
+  const releaseAgentFromReport =
+    async (
+      report,
+      note = ""
+    ) => {
+      const agentId =
+        cleanText(
+          report?.wchr_agent_id ||
+            report?.assigned_agent_id
+        );
+
+      if (!agentId) {
+        return;
+      }
+
+      const agentRef =
+        doc(
+          db,
+          "wchr_agent_shifts",
+          agentId
+        );
+
+      const agentSnap =
+        await getDoc(
+          agentRef
+        );
+
+      if (
+        !agentSnap.exists()
+      ) {
+        return;
+      }
+
+      const shift =
+        agentSnap.data() ||
+        {};
+
+      if (
+        cleanText(
+          shift.active_report_id
+        ) &&
+        cleanText(
+          shift.active_report_id
+        ) !==
+          cleanText(
+            report.id
+          )
+      ) {
+        return;
+      }
+
+      await updateDoc(
+        agentRef,
+        {
+          availability_status:
+            WCHR_AGENT_AVAILABILITY.AVAILABLE,
+
+          active_report_id:
+            "",
+
+          active_wheelchair_number:
+            "",
+
+          active_passenger_name:
+            "",
+
+          active_pnr:
+            "",
+
+          active_flight_number:
+            "",
+
+          active_airline:
+            "",
+
+          active_service_status:
+            "",
+
+          last_assignment_note:
+            cleanText(
+              note
+            ),
+
+          updated_at:
+            serverTimestamp(),
+        }
+      );
+    };
+
+  const handleReassignReport =
+    async (report) => {
+      const oldAgentId =
+        cleanText(
+          report.wchr_agent_id ||
+            report.assigned_agent_id
+        );
+
+      const candidates =
+        availableAgents.filter(
+          (agent) =>
+            agent.id !==
+            oldAgentId
+        );
+
+      if (
+        candidates.length ===
+        0
+      ) {
+        setError(
+          "No other available WCHR agent is currently available."
+        );
+        return;
+      }
+
+      const roster =
+        candidates
+          .map(
+            (agent, index) =>
+              `${index + 1}. ${getAgentName(
+                agent
+              )}`
+          )
+          .join("\n");
+
+      const choice =
+        Number(
+          window.prompt(
+            `Select the new agent number:\n\n${roster}`
+          )
+        );
+
+      if (
+        !Number.isInteger(
+          choice
+        ) ||
+        choice < 1 ||
+        choice >
+          candidates.length
+      ) {
+        return;
+      }
+
+      const note =
+        cleanText(
+          window.prompt(
+            "Reassignment reason / operational note (required):"
+          )
+        );
+
+      if (!note) {
+        setError(
+          "A reassignment note is required."
+        );
+        return;
+      }
+
+      const newAgent =
+        candidates[
+          choice - 1
+        ];
+
+      const newAgentName =
+        getAgentName(
+          newAgent
+        );
+
+      const oldAgentName =
+        report.wchr_agent_name ||
+        report.assigned_wchr_agent ||
+        "Previous Agent";
+
+      const confirmed =
+        window.confirm(
+          `Reassign WCHR ${
+            report.wheelchair_number ||
+            ""
+          } from ${oldAgentName} to ${newAgentName}?`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        setAssigning(true);
+
+        setError("");
+        setMessage("");
+
+        await releaseAgentFromReport(
+          report,
+          note
+        );
+
+        await updateDoc(
+          doc(
+            db,
+            "wch_reports",
+            report.id
+          ),
+          {
+            previous_agent_id:
+              oldAgentId,
+
+            previous_agent_name:
+              oldAgentName,
+
+            reassigned_from_agent_id:
+              oldAgentId,
+
+            reassigned_from_agent_name:
+              oldAgentName,
+
+            reassigned_to_agent_id:
+              newAgent.id,
+
+            reassigned_to_agent_name:
+              newAgentName,
+
+            reassignment_note:
+              note,
+
+            reassigned_at:
+              serverTimestamp(),
+
+            reassigned_by_user_id:
+              user?.id ||
+              user?.uid ||
+              "",
+
+            reassigned_by_username:
+              user?.username ||
+              "",
+
+            reassigned_by_name:
+              getVisibleName(
+                user
+              ),
+
+            wchr_agent_id:
+              newAgent.id,
+
+            assigned_agent_id:
+              newAgent.id,
+
+            wchr_agent_name:
+              newAgentName,
+
+            assigned_wchr_agent:
+              newAgentName,
+
+            assigned_by_user_id:
+              user?.id ||
+              user?.uid ||
+              "",
+
+            assigned_by_username:
+              user?.username ||
+              "",
+
+            assigned_by_name:
+              getVisibleName(
+                user
+              ),
+
+            assigned_by_role:
+              user?.role ||
+              "",
+
+            assigned_at:
+              serverTimestamp(),
+
+            assignment_status:
+              "ASSIGNED",
+
+            assignmentPushStatus:
+              "PENDING",
+
+            assignmentPushError:
+              "",
+
+            service_status:
+              WCHR_SERVICE_STATUS.ASSIGNED,
+
+            tracking_status:
+              WCHR_SERVICE_STATUS.ASSIGNED,
+
+            is_active:
+              true,
+
+            alerts_enabled:
+              true,
+
+            transport_alert_active:
+              true,
+
+            last_updated_at:
+              serverTimestamp(),
+
+            last_updated_by:
+              getVisibleName(
+                user
+              ),
+
+            last_updated_by_id:
+              user?.id ||
+              user?.uid ||
+              "",
+          }
+        );
+
+        await updateDoc(
+          doc(
+            db,
+            "wchr_agent_shifts",
+            newAgent.id
+          ),
+          {
+            availability_status:
+              WCHR_AGENT_AVAILABILITY.BUSY,
+
+            active_report_id:
+              report.id,
+
+            active_wheelchair_number:
+              safeUpper(
+                report.wheelchair_number
+              ),
+
+            active_passenger_name:
+              cleanText(
+                report.passenger_name
+              ),
+
+            active_pnr:
+              safeUpper(
+                report.pnr
+              ),
+
+            active_flight_number:
+              safeUpper(
+                report.flight_number
+              ),
+
+            active_airline:
+              safeUpper(
+                report.airline
+              ),
+
+            active_service_status:
+              WCHR_SERVICE_STATUS.ASSIGNED,
+
+            assigned_at:
+              serverTimestamp(),
+
+            current_location:
+              report.current_location ||
+              report.ready_location ||
+              newAgent.current_location ||
+              "Counter",
+
+            updated_at:
+              serverTimestamp(),
+          }
+        );
+
+        const inventoryItem =
+          inventory.find(
+            (item) =>
+              getInventoryNumber(
+                item
+              ) ===
+              safeUpper(
+                report.wheelchair_number
+              )
+          );
+
+        if (inventoryItem) {
+          await updateDoc(
+            doc(
+              db,
+              INVENTORY_COLLECTION,
+              inventoryItem.id
+            ),
+            {
+              status:
+                "ASSIGNED",
+
+              is_available:
+                false,
+
+              current_agent_id:
+                newAgent.id,
+
+              current_agent_name:
+                newAgentName,
+
+              report_doc_id:
+                report.id,
+
+              assigned_report_doc_id:
+                report.id,
+
+              updated_at:
+                serverTimestamp(),
+            }
+          );
+        }
+
+        await addWchrTimelineEvent({
+          reportId:
+            report.id,
+
+          eventType:
+            "WCHR_REASSIGNED",
+
+          wheelchairNumber:
+            report.wheelchair_number ||
+            "",
+
+          agentId:
+            newAgent.id,
+
+          agentName:
+            newAgentName,
+
+          location:
+            report.current_location ||
+            report.ready_location ||
+            "Counter",
+
+          note:
+            `Reassigned from ${oldAgentName} to ${newAgentName}. Reason: ${note}`,
+
+          user,
+        });
+
+        triggerWchrAssignmentPush(
+          report.id
+        ).catch(
+          (pushError) => {
+            console.error(
+              "WCHR reassignment push error:",
+              pushError
+            );
+          }
+        );
+
+        setMessage(
+          `WCHR ${
+            report.wheelchair_number ||
+            ""
+          } reassigned to ${newAgentName}.`
+        );
+      } catch (err) {
+        console.error(
+          "Reassign WCHR error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to reassign the wheelchair."
+        );
+      } finally {
+        setAssigning(
+          false
+        );
+      }
+    };
+
+  const handleForceComplete =
+    async (report) => {
+      const note =
+        cleanText(
+          window.prompt(
+            "Supervisor completion note / reason (required):"
+          )
+        );
+
+      if (!note) {
+        setError(
+          "A supervisor completion note is required."
+        );
+        return;
+      }
+
+      const finalLocation =
+        cleanText(
+          window.prompt(
+            "Final wheelchair location:",
+            report.current_location ||
+              report.gate_location ||
+              report.gate ||
+              "Wheelchair Storage"
+          )
+        );
+
+      if (!finalLocation) {
+        setError(
+          "Final location is required."
+        );
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          `Complete WCHR ${
+            report.wheelchair_number ||
+            ""
+          } manually and release the assigned agent?`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        setAssigning(
+          true
+        );
+
+        setError("");
+        setMessage("");
+
+        await releaseAgentFromReport(
+          report,
+          note
+        );
+
+        await updateDoc(
+          doc(
+            db,
+            "wch_reports",
+            report.id
+          ),
+          {
+            service_status:
+              "COMPLETED",
+
+            tracking_status:
+              "COMPLETED",
+
+            assignment_status:
+              "COMPLETED",
+
+            is_active:
+              false,
+
+            ready_for_pickup:
+              false,
+
+            alerts_enabled:
+              false,
+
+            transport_alert_active:
+              false,
+
+            gate_followup_enabled:
+              false,
+
+            supervisor_completed:
+              true,
+
+            supervisor_completion_note:
+              note,
+
+            supervisor_completed_at:
+              serverTimestamp(),
+
+            supervisor_completed_by_user_id:
+              user?.id ||
+              user?.uid ||
+              "",
+
+            supervisor_completed_by_username:
+              user?.username ||
+              "",
+
+            supervisor_completed_by_name:
+              getVisibleName(
+                user
+              ),
+
+            current_location:
+              finalLocation,
+
+            last_updated_at:
+              serverTimestamp(),
+
+            last_updated_by:
+              getVisibleName(
+                user
+              ),
+
+            last_updated_by_id:
+              user?.id ||
+              user?.uid ||
+              "",
+          }
+        );
+
+        const inventoryItem =
+          inventory.find(
+            (item) =>
+              getInventoryNumber(
+                item
+              ) ===
+              safeUpper(
+                report.wheelchair_number
+              )
+          );
+
+        if (inventoryItem) {
+          await updateDoc(
+            doc(
+              db,
+              INVENTORY_COLLECTION,
+              inventoryItem.id
+            ),
+            {
+              status:
+                "AVAILABLE",
+
+              is_available:
+                true,
+
+              available_for_handoff:
+                false,
+
+              ready_for_pickup:
+                false,
+
+              location:
+                finalLocation,
+
+              current_location:
+                finalLocation,
+
+              report_doc_id:
+                "",
+
+              assigned_report_doc_id:
+                "",
+
+              report_id:
+                "",
+
+              assigned_report_id:
+                "",
+
+              passenger_name:
+                "",
+
+              airline:
+                "",
+
+              flight_number:
+                "",
+
+              pnr:
+                "",
+
+              current_agent_id:
+                "",
+
+              current_agent_name:
+                "",
+
+              completed_at:
+                serverTimestamp(),
+
+              updated_at:
+                serverTimestamp(),
+            }
+          );
+        }
+
+        await addWchrTimelineEvent({
+          reportId:
+            report.id,
+
+          eventType:
+            "SUPERVISOR_FORCE_COMPLETE",
+
+          wheelchairNumber:
+            report.wheelchair_number ||
+            "",
+
+          agentId:
+            report.wchr_agent_id ||
+            report.assigned_agent_id ||
+            "",
+
+          agentName:
+            report.wchr_agent_name ||
+            report.assigned_wchr_agent ||
+            "",
+
+          location:
+            finalLocation,
+
+          note,
+
+          user,
+        });
+
+        setMessage(
+          `WCHR ${
+            report.wheelchair_number ||
+            ""
+          } completed manually and the agent was released.`
+        );
+      } catch (err) {
+        console.error(
+          "Force complete WCHR error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to complete the wheelchair service."
+        );
+      } finally {
+        setAssigning(
+          false
+        );
+      }
+    };
 
   // ============================================================
   // SELECTED OBJECTS
@@ -3523,6 +4673,86 @@ export default function WchrDispatchPage() {
         <div
           style={{
             marginTop: 15,
+            padding: 12,
+            borderRadius: 15,
+            background: "#f8fbff",
+            border: "1px solid #dbeafe",
+            display: "grid",
+            gridTemplateColumns:
+              isMobile ||
+              isTablet
+                ? "1fr"
+                : "0.7fr 1fr auto",
+            gap: 9,
+            alignItems: "end",
+          }}
+        >
+          <div>
+            <FieldLabel>
+              New WCHR Number
+            </FieldLabel>
+
+            <TextInput
+              value={
+                inventoryNumberInput
+              }
+              onChange={
+                setInventoryNumberInput
+              }
+              placeholder="46"
+              disabled={
+                busyInventoryId ===
+                "NEW"
+              }
+            />
+          </div>
+
+          <div>
+            <FieldLabel>
+              Starting Location
+            </FieldLabel>
+
+            <TextInput
+              value={
+                inventoryLocationInput
+              }
+              onChange={
+                setInventoryLocationInput
+              }
+              placeholder="Wheelchair Storage"
+              disabled={
+                busyInventoryId ===
+                "NEW"
+              }
+            />
+          </div>
+
+          <ActionButton
+            variant="success"
+            onClick={
+              handleAddInventory
+            }
+            disabled={
+              busyInventoryId ===
+                "NEW" ||
+              !cleanText(
+                inventoryNumberInput
+              )
+            }
+            style={{
+              minHeight: 45,
+            }}
+          >
+            {busyInventoryId ===
+            "NEW"
+              ? "Adding..."
+              : "Add WCHR"}
+          </ActionButton>
+        </div>
+
+        <div
+          style={{
+            marginTop: 15,
             display: "grid",
             gridTemplateColumns:
               isMobile
@@ -3715,6 +4945,16 @@ export default function WchrDispatchPage() {
                 <InventoryCard
                   key={item.id}
                   item={item}
+                  busy={
+                    busyInventoryId ===
+                    item.id
+                  }
+                  onEdit={
+                    handleEditInventory
+                  }
+                  onDelete={
+                    handleDeleteInventory
+                  }
                 />
               )
             )}
@@ -3740,6 +4980,301 @@ export default function WchrDispatchPage() {
           <b>Personal WCHR</b> option so they do not consume an AeroStation
           inventory number.
         </div>
+      </PageCard>
+
+      {/* ====================================================== */}
+      {/* ACTIVE SERVICE MANAGEMENT */}
+      {/* ====================================================== */}
+
+      <PageCard
+        style={{
+          padding:
+            isMobile
+              ? 15
+              : 19,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 900,
+              color: "#1769aa",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            Supervisor Control
+          </div>
+
+          <h2
+            style={{
+              margin: "4px 0 3px",
+              fontSize:
+                isMobile
+                  ? 19
+                  : 22,
+              fontWeight: 900,
+              color: "#0f172a",
+            }}
+          >
+            Active WCHR Services
+          </h2>
+
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              color: "#64748b",
+              lineHeight: 1.55,
+            }}
+          >
+            Reassign an active service with a required operational note, or
+            complete it manually when the assigned agent did not finish the
+            workflow.
+          </p>
+        </div>
+
+        {activeReports.length ===
+        0 ? (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 18,
+              textAlign: "center",
+              borderRadius: 14,
+              background: "#ecfdf5",
+              border: "1px solid #bbf7d0",
+              color: "#166534",
+              fontSize: 12,
+              fontWeight: 750,
+            }}
+          >
+            No assigned WCHR services require supervisor management.
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: 14,
+              display: "grid",
+              gridTemplateColumns:
+                isMobile
+                  ? "1fr"
+                  : "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: 9,
+            }}
+          >
+            {activeReports.map(
+              (report) => {
+                const delivered =
+                  isDeliveredToGate(
+                    report
+                  );
+
+                const alert =
+                  shouldShow30MinuteAlert(
+                    report,
+                    now
+                  );
+
+                return (
+                  <div
+                    key={
+                      report.id
+                    }
+                    style={{
+                      border:
+                        alert
+                          ? "2px solid #fca5a5"
+                          : "1px solid #e2e8f0",
+                      borderRadius: 16,
+                      padding: 13,
+                      background:
+                        alert
+                          ? "#fff7f8"
+                          : "#ffffff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 15,
+                            fontWeight: 950,
+                            color: "#0f172a",
+                          }}
+                        >
+                          WCHR{" "}
+                          {report.wheelchair_number ||
+                            "\u2014"}
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 3,
+                            fontSize: 11,
+                            color: "#64748b",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {report.passenger_name ||
+                            "Passenger"}{" "}
+                          {" | "}
+                          {report.airline ||
+                            ""}{" "}
+                          {report.flight_number ||
+                            ""}
+                        </div>
+                      </div>
+
+                      <span
+                        style={{
+                          padding: "6px 9px",
+                          borderRadius: 999,
+                          background:
+                            delivered
+                              ? "#ecfdf5"
+                              : "#eff6ff",
+                          border:
+                            delivered
+                              ? "1px solid #bbf7d0"
+                              : "1px solid #bfdbfe",
+                          color:
+                            delivered
+                              ? "#166534"
+                              : "#1769aa",
+                          fontSize: 10,
+                          fontWeight: 900,
+                        }}
+                      >
+                        {getServiceStatusLabel(
+                          report.service_status ||
+                            report.tracking_status
+                        )}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 10,
+                        display: "grid",
+                        gridTemplateColumns:
+                          "1fr 1fr",
+                        gap: 7,
+                      }}
+                    >
+                      <InfoField
+                        label="Assigned Agent"
+                        value={
+                          report.wchr_agent_name ||
+                          report.assigned_wchr_agent
+                        }
+                      />
+
+                      <InfoField
+                        label="Elapsed"
+                        value={formatElapsedTime(
+                          getServiceElapsedSeconds(
+                            report,
+                            now
+                          )
+                        )}
+                      />
+                    </div>
+
+                    {alert && (
+                      <div
+                        style={{
+                          marginTop: 9,
+                          padding: "8px 10px",
+                          borderRadius: 11,
+                          background: "#fff1f2",
+                          border: "1px solid #fecdd3",
+                          color: "#9f1239",
+                          fontSize: 10.5,
+                          fontWeight: 900,
+                        }}
+                      >
+                        30+ MINUTE TRANSPORT ALERT
+                      </div>
+                    )}
+
+                    {delivered && (
+                      <div
+                        style={{
+                          marginTop: 9,
+                          padding: "8px 10px",
+                          borderRadius: 11,
+                          background: "#ecfdf5",
+                          border: "1px solid #bbf7d0",
+                          color: "#166534",
+                          fontSize: 10.5,
+                          fontWeight: 850,
+                        }}
+                      >
+                        Delivered at Gate - 30 minute transport alert disabled.
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        marginTop: 11,
+                        display: "flex",
+                        gap: 7,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      {!delivered && (
+                        <ActionButton
+                          variant="warning"
+                          disabled={
+                            assigning
+                          }
+                          onClick={() =>
+                            handleReassignReport(
+                              report
+                            )
+                          }
+                          style={{
+                            padding: "8px 10px",
+                            fontSize: 11,
+                          }}
+                        >
+                          Reassign
+                        </ActionButton>
+                      )}
+
+                      <ActionButton
+                        variant="danger"
+                        disabled={
+                          assigning
+                        }
+                        onClick={() =>
+                          handleForceComplete(
+                            report
+                          )
+                        }
+                        style={{
+                          padding: "8px 10px",
+                          fontSize: 11,
+                        }}
+                      >
+                        Complete Manually
+                      </ActionButton>
+                    </div>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        )}
       </PageCard>
 
       {/* ====================================================== */}
