@@ -965,10 +965,18 @@ export default function WchrAgentOperationsPage() {
       setError("");
       setMessage("");
 
+      const startingLocation = cleanText(selectedLocation);
+
+      if (!startingLocation) {
+        setError("Please select your starting location before Punch In.");
+        return;
+      }
+
       await punchInWchrAgent({
         employee,
         user,
         trackingConsent,
+        startingLocation,
       });
 
       setMessage(
@@ -1983,6 +1991,31 @@ export default function WchrAgentOperationsPage() {
           >
             Punch In to become visible to WCHR Supervisors as an active agent.
           </p>
+
+          <div style={{ marginBottom: 14 }}>
+            <FieldLabel>Starting Location</FieldLabel>
+            <SelectInput
+              value={selectedLocation}
+              disabled={busyAction === "punch-in"}
+              onChange={(event) => setSelectedLocation(event.target.value)}
+            >
+              {AGENT_LOCATIONS.map((location) => (
+                <option key={location} value={location}>
+                  {location}
+                </option>
+              ))}
+            </SelectInput>
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 11,
+                lineHeight: 1.5,
+                color: "#64748b",
+              }}
+            >
+              Select where you are starting your WCHR shift. This location will be visible immediately in Dispatch.
+            </div>
+          </div>
 
           <div
             style={{
