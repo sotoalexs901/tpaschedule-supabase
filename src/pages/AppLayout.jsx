@@ -881,6 +881,13 @@ export default function AppLayout() {
       user?.role === "station_manager"
     );
 
+  const canManageWchrTraining =
+    !isDLCabinService &&
+    (
+      user?.role === "duty_manager" ||
+      user?.role === "station_manager"
+    );
+
   const canSubmitEmployeePerformance =
     user?.role === "supervisor" ||
     user?.role === "duty_manager" ||
@@ -1256,6 +1263,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canManageWchrTraining) {
+      wchr.push({
+        to: "/wchr/training-management",
+        label: "WCHR Training Management",
+        icon: "\u{1F393}",
+      });
+    }
+
     if (canManageOperationalReportForm) {
       admin.push({
         to: "/operational-report/form-builder",
@@ -1314,6 +1329,7 @@ export default function AppLayout() {
     canAccessOperationalReportAdmin,
     canManageOperationalReportForm,
     canAccessWchrTools,
+    canManageWchrTraining,
     canAccessWchrFlightReport,
     canAccessWchrDutyFollowUp,
     canAccessWchrMonthlyClose,
