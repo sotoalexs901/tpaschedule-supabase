@@ -1,4 +1,4 @@
-// src/pages/WCHRFlights.jsx
+ src/pages/WCHRFlights.jsx
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -290,12 +290,80 @@ function getTimerStart(report) {
   );
 }
 
-function getServiceEnd(report) {
+function getBoardingStartedAt(report) {
   return (
-    report?.stored_at ||
+    report?.boarding_started_at ||
+    report?.boarding_at ||
+    report?.boarding_declared_at ||
+    null
+  );
+}
+
+function getBoardedAt(report) {
+  const direct =
     report?.boarded_at ||
+    report?.passenger_boarded_at ||
+    report?.boarding_completed_at ||
+    null;
+
+  if (direct) {
+    return direct;
+  }
+
+  // Legacy-safe fallback:
+  // older records sometimes changed the status to BOARDED without saving boarded_at.
+  if (
+    safeUpper(
+      report?.service_status ||
+        report?.tracking_status
+    ) === "BOARDED"
+  ) {
+    return (
+      report?.last_updated_at ||
+      report?.last_location_update_at ||
+      null
+    );
+  }
+
+  return null;
+}
+
+function getPassengerDeliveredAt(report) {
+  const direct =
+    report?.passenger_delivered_at ||
     report?.delivered_at ||
     report?.dropoff_at ||
+    report?.main_terminal_delivered_at ||
+    null;
+
+  if (direct) {
+    return direct;
+  }
+
+  if (
+    report?.passenger_delivered === true ||
+    safeUpper(
+      report?.service_status ||
+        report?.tracking_status
+    ) === "COMPLETED"
+  ) {
+    return (
+      report?.last_updated_at ||
+      report?.last_location_update_at ||
+      null
+    );
+  }
+
+  return null;
+}
+
+function getServiceEnd(report) {
+  // Passenger service time ends when the passenger is boarded
+  // OR delivered to Main Terminal. Storage is an inventory event
+  // and must not extend passenger service time.
+  return (
+    getBoardedAt(report) ||
+    getPassengerDeliveredAt(report) ||
     null
   );
 }
@@ -319,9 +387,22 @@ function getCounterToGateMinutes(report) {
 function getGateToBoardedMinutes(report) {
   return minutesBetween(
     report?.gate_arrived_at,
-    report?.boarded_at ||
-      report?.delivered_at ||
-      report?.dropoff_at
+    getBoardedAt(report) ||
+      getPassengerDeliveredAt(report)
+  );
+}
+
+function getGateToBoardingMinutes(report) {
+  return minutesBetween(
+    report?.gate_arrived_at,
+    getBoardingStartedAt(report)
+  );
+}
+
+function getBoardingToBoardedMinutes(report) {
+  return minutesBetween(
+    getBoardingStartedAt(report),
+    getBoardedAt(report)
   );
 }
 
@@ -496,13 +577,16 @@ function downloadOperationalCSV(
     "Assigned",
     "Picked Up",
     "Gate Arrival",
+    "Boarding Started",
     "Boarded",
     "Passenger Delivered",
     "Stored",
     "Current Location",
     "Counter to Gate",
-    "Gate to Boarded",
-    "Total Service Time",
+    "Gate to Boarding",
+    "Boarding to Boarded",
+    "Gate to Boarded / Delivered",
+    "Total Passenger Service Time",
   ];
 
   const body = rows.map(
@@ -539,11 +623,13 @@ function downloadOperationalCSV(
         report.gate_arrived_at
       ),
       formatDateTime(
-        report.boarded_at
+        getBoardingStartedAt(report)
       ),
       formatDateTime(
-        report.delivered_at ||
-        report.dropoff_at
+        getBoardedAt(report)
+      ),
+      formatDateTime(
+        getPassengerDeliveredAt(report)
       ),
       formatDateTime(
         report.stored_at
@@ -551,6 +637,12 @@ function downloadOperationalCSV(
       report.current_location,
       formatMinutes(
         getCounterToGateMinutes(report)
+      ),
+      formatMinutes(
+        getGateToBoardingMinutes(report)
+      ),
+      formatMinutes(
+        getBoardingToBoardedMinutes(report)
       ),
       formatMinutes(
         getGateToBoardedMinutes(report)
@@ -867,7 +959,7 @@ function buildEmployeeStats(rows) {
     }
 
     if (
-      report.boarded_at ||
+      getBoardedAt(report) ||
       getServiceStatus(report) ===
         "BOARDED"
     ) {
@@ -1657,6 +1749,11 @@ export default function WCHRFlights() {
     setLookupReportId,
   ] = useState("");
 
+  const [
+    printingReport,
+    setPrintingReport,
+  ] = useState(false);
+
   // ==========================================================
   // LIVE REPORTS FOR DATE
   // ==========================================================
@@ -2204,6 +2301,431 @@ export default function WCHRFlights() {
     }
   };
 
+
+
+  // ==========================================================
+  // PASSENGER COMPLETION TIMESTAMPS
+  // ==========================================================
+
+  const handleDeclareBoarding =
+    async () => {
+      if (
+        !selectedReport ||
+        !canManageService
+      ) {
+        return;
+      }
+
+      if (
+        getBoardingStartedAt(
+          selectedReport
+        )
+      ) {
+        setStatusMessage(
+          "Boarding start time is already recorded."
+        );
+        return;
+      }
+
+      try {
+        setBusyAction(
+          "boarding"
+        );
+        setError("");
+        setStatusMessage("");
+
+        await updateDoc(
+          doc(
+            db,
+            REPORTS_COLLECTION,
+            selectedReport.id
+          ),
+          {
+            service_status:
+              "BOARDING",
+            tracking_status:
+              "BOARDING",
+            boarding_started_at:
+              serverTimestamp(),
+            boarding_declared_by:
+              getVisibleName(
+                user
+              ),
+            boarding_declared_by_id:
+              user?.id ||
+              user?.uid ||
+              "",
+            transport_alert_active:
+              false,
+            last_updated_at:
+              serverTimestamp(),
+            last_updated_by:
+              getVisibleName(
+                user
+              ),
+          }
+        );
+
+        await addDoc(
+          collection(
+            db,
+            TRACKING_EVENTS_COLLECTION
+          ),
+          {
+            report_doc_id:
+              selectedReport.id,
+            report_id:
+              selectedReport.report_id ||
+              selectedReport.id,
+            wheelchair_number:
+              selectedReport.wheelchair_number ||
+              "",
+            passenger_name:
+              selectedReport.passenger_name ||
+              "",
+            airline:
+              selectedReport.airline ||
+              "",
+            flight_number:
+              selectedReport.flight_number ||
+              "",
+            event_type:
+              "BOARDING_STARTED",
+            location:
+              selectedReport.current_location ||
+              selectedReport.gate_location ||
+              "",
+            notes:
+              `Boarding started. Declared by ${getVisibleName(
+                user
+              )}.`,
+            employee_id:
+              user?.id ||
+              user?.uid ||
+              "",
+            employee_name:
+              getVisibleName(
+                user
+              ),
+            created_at:
+              serverTimestamp(),
+          }
+        );
+
+        setStatusMessage(
+          "Boarding start time recorded."
+        );
+      } catch (actionError) {
+        console.error(
+          "WCHR boarding timestamp error:",
+          actionError
+        );
+        setError(
+          actionError?.message ||
+            "Unable to record boarding start."
+        );
+      } finally {
+        setBusyAction("");
+      }
+    };
+
+  const handleDeclareBoarded =
+    async () => {
+      if (
+        !selectedReport ||
+        !canManageService
+      ) {
+        return;
+      }
+
+      if (
+        getBoardedAt(
+          selectedReport
+        )
+      ) {
+        setStatusMessage(
+          "Passenger boarded time is already recorded."
+        );
+        return;
+      }
+
+      try {
+        setBusyAction(
+          "boarded"
+        );
+        setError("");
+        setStatusMessage("");
+
+        await updateDoc(
+          doc(
+            db,
+            REPORTS_COLLECTION,
+            selectedReport.id
+          ),
+          {
+            service_status:
+              "BOARDED",
+            tracking_status:
+              "BOARDED",
+            boarded_at:
+              serverTimestamp(),
+            passenger_boarded_at:
+              serverTimestamp(),
+            boarded_declared_by:
+              getVisibleName(
+                user
+              ),
+            boarded_declared_by_id:
+              user?.id ||
+              user?.uid ||
+              "",
+            transport_alert_active:
+              false,
+            alerts_enabled:
+              false,
+            is_active:
+              false,
+            last_updated_at:
+              serverTimestamp(),
+            last_updated_by:
+              getVisibleName(
+                user
+              ),
+          }
+        );
+
+        await addDoc(
+          collection(
+            db,
+            TRACKING_EVENTS_COLLECTION
+          ),
+          {
+            report_doc_id:
+              selectedReport.id,
+            report_id:
+              selectedReport.report_id ||
+              selectedReport.id,
+            wheelchair_number:
+              selectedReport.wheelchair_number ||
+              "",
+            passenger_name:
+              selectedReport.passenger_name ||
+              "",
+            airline:
+              selectedReport.airline ||
+              "",
+            flight_number:
+              selectedReport.flight_number ||
+              "",
+            event_type:
+              "PASSENGER_BOARDED",
+            location:
+              selectedReport.current_location ||
+              selectedReport.gate_location ||
+              "",
+            notes:
+              `Passenger boarded. Declared by ${getVisibleName(
+                user
+              )}. Passenger service timer stopped.`,
+            employee_id:
+              user?.id ||
+              user?.uid ||
+              "",
+            employee_name:
+              getVisibleName(
+                user
+              ),
+            created_at:
+              serverTimestamp(),
+          }
+        );
+
+        setStatusMessage(
+          "Passenger boarded time recorded. Service timer is complete."
+        );
+      } catch (actionError) {
+        console.error(
+          "WCHR boarded timestamp error:",
+          actionError
+        );
+        setError(
+          actionError?.message ||
+            "Unable to record passenger boarded time."
+        );
+      } finally {
+        setBusyAction("");
+      }
+    };
+
+  const handleDeclareDelivered =
+    async () => {
+      if (
+        !selectedReport ||
+        !canManageService
+      ) {
+        return;
+      }
+
+      if (
+        getPassengerDeliveredAt(
+          selectedReport
+        )
+      ) {
+        setStatusMessage(
+          "Passenger delivery time is already recorded."
+        );
+        return;
+      }
+
+      const location =
+        safeText(
+          selectedReport.current_location
+        ) ||
+        "Main Terminal";
+
+      try {
+        setBusyAction(
+          "delivered"
+        );
+        setError("");
+        setStatusMessage("");
+
+        await updateDoc(
+          doc(
+            db,
+            REPORTS_COLLECTION,
+            selectedReport.id
+          ),
+          {
+            passenger_delivered:
+              true,
+            passenger_delivered_at:
+              serverTimestamp(),
+            delivered_at:
+              serverTimestamp(),
+            delivered_location:
+              location,
+            dropoff_at:
+              serverTimestamp(),
+            dropoff_location:
+              location,
+            service_status:
+              "PENDING_STORAGE",
+            tracking_status:
+              "PENDING_STORAGE",
+            transport_alert_active:
+              false,
+            alerts_enabled:
+              false,
+            is_active:
+              false,
+            delivered_declared_by:
+              getVisibleName(
+                user
+              ),
+            delivered_declared_by_id:
+              user?.id ||
+              user?.uid ||
+              "",
+            last_updated_at:
+              serverTimestamp(),
+            last_updated_by:
+              getVisibleName(
+                user
+              ),
+          }
+        );
+
+        await addDoc(
+          collection(
+            db,
+            TRACKING_EVENTS_COLLECTION
+          ),
+          {
+            report_doc_id:
+              selectedReport.id,
+            report_id:
+              selectedReport.report_id ||
+              selectedReport.id,
+            wheelchair_number:
+              selectedReport.wheelchair_number ||
+              "",
+            passenger_name:
+              selectedReport.passenger_name ||
+              "",
+            airline:
+              selectedReport.airline ||
+              "",
+            flight_number:
+              selectedReport.flight_number ||
+              "",
+            event_type:
+              "PASSENGER_DELIVERED",
+            location,
+            notes:
+              `Passenger delivered at ${location}. Declared by ${getVisibleName(
+                user
+              )}. Passenger service timer stopped.`,
+            employee_id:
+              user?.id ||
+              user?.uid ||
+              "",
+            employee_name:
+              getVisibleName(
+                user
+              ),
+            created_at:
+              serverTimestamp(),
+          }
+        );
+
+        setStatusMessage(
+          "Passenger delivery time recorded. Service timer is complete."
+        );
+      } catch (actionError) {
+        console.error(
+          "WCHR passenger delivery timestamp error:",
+          actionError
+        );
+        setError(
+          actionError?.message ||
+            "Unable to record passenger delivery time."
+        );
+      } finally {
+        setBusyAction("");
+      }
+    };
+
+  // ==========================================================
+  // PRINT SELECTED SERVICE ONLY
+  // ==========================================================
+
+  const handlePrintSelectedReport =
+    () => {
+      if (!selectedReport) {
+        return;
+      }
+
+      setPrintingReport(
+        true
+      );
+
+      window.setTimeout(
+        () => {
+          window.print();
+
+          window.setTimeout(
+            () =>
+              setPrintingReport(
+                false
+              ),
+            250
+          );
+        },
+        80
+      );
+    };
+
   // ==========================================================
   // EXPORTS
   // ==========================================================
@@ -2275,6 +2797,39 @@ export default function WCHRFlights() {
           "border-box",
       }}
     >
+      {printingReport && (
+        <style>
+          {`
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+
+              #wchr-selected-service-print,
+              #wchr-selected-service-print * {
+                visibility: visible !important;
+              }
+
+              #wchr-selected-service-print {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 20px !important;
+                box-shadow: none !important;
+                border: none !important;
+                background: #ffffff !important;
+              }
+
+              .wchr-no-print {
+                display: none !important;
+              }
+            }
+          `}
+        </style>
+      )}
+
       {/* HERO */}
 
       <div
@@ -3336,14 +3891,15 @@ export default function WCHRFlights() {
       {/* SELECTED SERVICE REPORT */}
 
       {selectedReport && (
-        <PageCard
-          style={{
-            padding:
-              isMobile
-                ? 15
-                : 20,
-          }}
-        >
+        <div id="wchr-selected-service-print">
+          <PageCard
+            style={{
+              padding:
+                isMobile
+                  ? 15
+                  : 20,
+            }}
+          >
           <div
             style={{
               display: "flex",
@@ -3423,8 +3979,8 @@ export default function WCHRFlights() {
 
             <ActionButton
               variant="secondary"
-              onClick={() =>
-                window.print()
+              onClick={
+                handlePrintSelectedReport
               }
               style={{
                 width:
@@ -3554,17 +4110,29 @@ export default function WCHRFlights() {
             />
 
             <InfoField
-              label="Boarded"
+              label="Boarding Started"
               value={formatDateTime(
-                selectedReport.boarded_at
+                getBoardingStartedAt(
+                  selectedReport
+                )
+              )}
+            />
+
+            <InfoField
+              label="Passenger Boarded"
+              value={formatDateTime(
+                getBoardedAt(
+                  selectedReport
+                )
               )}
             />
 
             <InfoField
               label="Passenger Delivered"
               value={formatDateTime(
-                selectedReport.delivered_at ||
-                selectedReport.dropoff_at
+                getPassengerDeliveredAt(
+                  selectedReport
+                )
               )}
             />
 
@@ -3585,7 +4153,25 @@ export default function WCHRFlights() {
             />
 
             <InfoField
-              label="Gate to Boarded"
+              label="Gate to Boarding"
+              value={formatMinutes(
+                getGateToBoardingMinutes(
+                  selectedReport
+                )
+              )}
+            />
+
+            <InfoField
+              label="Boarding to Boarded"
+              value={formatMinutes(
+                getBoardingToBoardedMinutes(
+                  selectedReport
+                )
+              )}
+            />
+
+            <InfoField
+              label="Gate to Boarded / Delivered"
               value={formatMinutes(
                 getGateToBoardedMinutes(
                   selectedReport
@@ -3594,7 +4180,7 @@ export default function WCHRFlights() {
             />
 
             <InfoField
-              label="Total Service Time"
+              label="Total Passenger Service"
               value={formatMinutes(
                 getTotalServiceMinutes(
                   selectedReport
@@ -3613,6 +4199,7 @@ export default function WCHRFlights() {
 
           {canManageService && (
             <div
+              className="wchr-no-print"
               style={{
                 marginTop: 16,
                 padding: isMobile ? 13 : 16,
@@ -3650,6 +4237,75 @@ export default function WCHRFlights() {
                 {needs30MinuteAlert(selectedReport)
                   ? "30+ minute alert is active. Add an operational note explaining the current status, then continue monitoring or store the wheelchair when the service is complete."
                   : "Add operational notes, confirm wheelchair storage, or delete an incorrect report."}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "grid",
+                  gridTemplateColumns:
+                    isMobile
+                      ? "1fr"
+                      : "repeat(3, minmax(0, 1fr))",
+                  gap: 8,
+                }}
+              >
+                <ActionButton
+                  variant="secondary"
+                  disabled={
+                    Boolean(busyAction) ||
+                    Boolean(
+                      getBoardingStartedAt(
+                        selectedReport
+                      )
+                    )
+                  }
+                  onClick={
+                    handleDeclareBoarding
+                  }
+                >
+                  {busyAction === "boarding"
+                    ? "Recording..."
+                    : "Start Boarding"}
+                </ActionButton>
+
+                <ActionButton
+                  variant="success"
+                  disabled={
+                    Boolean(busyAction) ||
+                    Boolean(
+                      getBoardedAt(
+                        selectedReport
+                      )
+                    )
+                  }
+                  onClick={
+                    handleDeclareBoarded
+                  }
+                >
+                  {busyAction === "boarded"
+                    ? "Recording..."
+                    : "Passenger Boarded"}
+                </ActionButton>
+
+                <ActionButton
+                  variant="warning"
+                  disabled={
+                    Boolean(busyAction) ||
+                    Boolean(
+                      getPassengerDeliveredAt(
+                        selectedReport
+                      )
+                    )
+                  }
+                  onClick={
+                    handleDeclareDelivered
+                  }
+                >
+                  {busyAction === "delivered"
+                    ? "Recording..."
+                    : "Delivered Main Terminal"}
+                </ActionButton>
               </div>
 
               <div style={{ marginTop: 12 }}>
@@ -3776,7 +4432,8 @@ export default function WCHRFlights() {
               />
             </div>
           </div>
-        </PageCard>
+          </PageCard>
+        </div>
       )}
 
       {/* EMPLOYEE PERFORMANCE */}
