@@ -1,4 +1,4 @@
-/ src/main.jsx
+// src/main.jsx
 
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
