@@ -1,5 +1,5 @@
 // src/pages/WchrTrainingPage.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const LANGUAGES = {
@@ -749,6 +749,876 @@ function ScenarioCard({ icon, title, subtitle, description, onClick }) {
   );
 }
 
+
+function TrainingVisual({ scenario, stepKey, language }) {
+  const isSpanish = language === "es";
+
+  const ICONS = {
+    supervisor: "\u{1F468}\u200D\u{1F4BC}",
+    agent: "\u{1F464}",
+    wheelchair: "\u{1F9D1}\u200D\u{1F9BD}",
+    passenger: "\u{1F9CD}",
+    phone: "\u{1F4F1}",
+    counter: "\u{1F3AB}",
+    gate: "\u2708\uFE0F",
+    cbp: "\u{1F6C3}",
+    building: "\u{1F3E2}",
+    rental: "\u{1F697}",
+    storage: "\u{1F17F}\uFE0F",
+    check: "\u2705",
+    arrow: "\u27A1\uFE0F",
+  };
+
+  const obTransitPosition = {
+    start_transit: "25%",
+    journey: "62%",
+    arrived_gate: "88%",
+  };
+
+  const ibTransitPosition = {
+    ib_start_transit: "24%",
+    ib_journey: "62%",
+    delivered: "88%",
+  };
+
+  const shell = {
+    borderRadius: 20,
+    border: "1px solid #dbeafe",
+    background:
+      "linear-gradient(135deg, #f8fbff 0%, #ffffff 52%, #eff6ff 100%)",
+    padding: 18,
+    overflow: "hidden",
+    position: "relative",
+  };
+
+  const stationBox = {
+    width: 118,
+    minHeight: 82,
+    borderRadius: 16,
+    border: "1px solid #bfdbfe",
+    background: "#ffffff",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    padding: 10,
+    boxShadow: "0 8px 18px rgba(15,23,42,0.05)",
+    zIndex: 2,
+  };
+
+  const labelStyle = {
+    fontSize: 11,
+    color: "#475569",
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    textAlign: "center",
+  };
+
+  if (scenario === "OB" && stepKey === "supervisor_assigns") {
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr auto 1fr",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <div style={stationBox}>
+            <div style={{ fontSize: 34 }}>{ICONS.supervisor}</div>
+            <div style={labelStyle}>
+              {isSpanish ? "Supervisor" : "Supervisor"}
+            </div>
+          </div>
+
+          <div style={{ fontSize: 24 }}>{ICONS.arrow}</div>
+
+          <div
+            style={{
+              ...stationBox,
+              background: "#edf7ff",
+            }}
+          >
+            <div style={{ fontSize: 30 }}>{ICONS.phone}</div>
+            <div style={labelStyle}>
+              {isSpanish ? "Nueva Asignacion" : "New Assignment"}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "#1769aa",
+                fontWeight: 900,
+                textAlign: "center",
+              }}
+            >
+              WCHR #12
+            </div>
+          </div>
+
+          <div style={{ fontSize: 24 }}>{ICONS.arrow}</div>
+
+          <div style={stationBox}>
+            <div style={{ fontSize: 34 }}>{ICONS.agent}</div>
+            <div style={labelStyle}>
+              {isSpanish ? "Agente WCHR" : "WCHR Agent"}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === "OB" && stepKey === "accept_assignment") {
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            maxWidth: 360,
+            margin: "0 auto",
+            background: "#ffffff",
+            border: "1px solid #bfdbfe",
+            borderRadius: 20,
+            padding: 16,
+            boxShadow: "0 12px 26px rgba(15,23,42,0.06)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 900,
+              color: "#1769aa",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            My Active Assignment
+          </div>
+          <div style={{ marginTop: 10, fontSize: 24 }}>
+            {ICONS.phone} {ICONS.wheelchair}
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 15,
+              fontWeight: 900,
+              color: "#0f172a",
+            }}
+          >
+            WCHR #12 · Passenger Ready
+          </div>
+          <div
+            style={{
+              marginTop: 5,
+              fontSize: 12,
+              color: "#64748b",
+            }}
+          >
+            {isSpanish ? "Pickup: Counter" : "Pickup: Counter"}
+          </div>
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 12px",
+              borderRadius: 12,
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+              color: "#047857",
+              fontWeight: 900,
+              textAlign: "center",
+            }}
+          >
+            {ICONS.check} Accept Assignment
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === "OB" && stepKey === "pickup") {
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            minHeight: 120,
+          }}
+        >
+          <div style={stationBox}>
+            <div style={{ fontSize: 32 }}>{ICONS.counter}</div>
+            <div style={labelStyle}>Counter</div>
+            <div style={{ fontSize: 26 }}>{ICONS.passenger}</div>
+          </div>
+
+          <div
+            style={{
+              fontSize: 34,
+              animation: "wchrAgentApproach 1.8s ease-in-out infinite alternate",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {ICONS.agent} {ICONS.wheelchair} {ICONS.arrow}
+          </div>
+
+          <div
+            style={{
+              ...stationBox,
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+            }}
+          >
+            <div style={{ fontSize: 28 }}>{ICONS.check}</div>
+            <div style={{ ...labelStyle, color: "#047857" }}>Pick Up</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    scenario === "OB" &&
+    ["start_transit", "journey", "arrived_gate"].includes(stepKey)
+  ) {
+    const left = obTransitPosition[stepKey] || "25%";
+    return (
+      <div style={{ ...shell, minHeight: 170 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            position: "relative",
+            minHeight: 130,
+          }}
+        >
+          <div style={stationBox}>
+            <div style={{ fontSize: 32 }}>{ICONS.counter}</div>
+            <div style={labelStyle}>Counter</div>
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: 96,
+              right: 96,
+              top: 67,
+              height: 4,
+              borderRadius: 999,
+              background:
+                "linear-gradient(90deg, #bfdbfe 0%, #5aa9e6 55%, #1769aa 100%)",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              left,
+              top: 44,
+              transform: "translateX(-50%)",
+              fontSize: 33,
+              whiteSpace: "nowrap",
+              transition: "left 0.8s ease",
+              animation:
+                stepKey === "journey"
+                  ? "wchrTransitPulse 1.4s ease-in-out infinite"
+                  : "none",
+              zIndex: 3,
+            }}
+          >
+            {ICONS.agent}{ICONS.wheelchair}{ICONS.passenger}
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              top: 84,
+              fontSize: 11,
+              color: "#64748b",
+              fontWeight: 900,
+              background: "#ffffff",
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid #dbeafe",
+              zIndex: 2,
+            }}
+          >
+            {stepKey === "arrived_gate"
+              ? isSpanish
+                ? "Llegada confirmada"
+                : "Arrival confirmed"
+              : isSpanish
+              ? "Timer de traslado activo"
+              : "Transit timer active"}
+          </div>
+
+          <div style={stationBox}>
+            <div style={{ fontSize: 32 }}>{ICONS.gate}</div>
+            <div style={labelStyle}>Gate</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === "IB" && stepKey === "supervisor_prepares") {
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
+            gap: 12,
+            alignItems: "center",
+          }}
+        >
+          <div style={stationBox}>
+            <div style={{ fontSize: 34 }}>{ICONS.supervisor}</div>
+            <div style={labelStyle}>Supervisor</div>
+          </div>
+          <div style={{ fontSize: 25 }}>{ICONS.arrow}</div>
+          <div
+            style={{
+              ...stationBox,
+              minWidth: 190,
+              background: "#edf7ff",
+            }}
+          >
+            <div style={{ fontSize: 31 }}>{ICONS.cbp} {ICONS.passenger}</div>
+            <div style={labelStyle}>
+              {isSpanish ? "Pasajero IB Disponible" : "IB Passenger Available"}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === "IB" && stepKey === "accept_pax") {
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            maxWidth: 390,
+            margin: "0 auto",
+            border: "1px solid #bfdbfe",
+            borderRadius: 18,
+            background: "#fff",
+            padding: 16,
+          }}
+        >
+          <div style={{ ...labelStyle, color: "#1769aa" }}>
+            Available CBP Passengers
+          </div>
+          <div style={{ marginTop: 10, fontSize: 29 }}>
+            {ICONS.cbp} {ICONS.passenger}
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontWeight: 900,
+              color: "#0f172a",
+            }}
+          >
+            Maria Perez · IB Arrival
+          </div>
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 12px",
+              borderRadius: 12,
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+              textAlign: "center",
+              color: "#047857",
+              fontWeight: 900,
+            }}
+          >
+            {ICONS.check} Accept Pax
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === "IB" && stepKey === "select_wchr") {
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, minmax(0,1fr))",
+            gap: 10,
+          }}
+        >
+          {[12, 18, 27].map((number) => (
+            <div
+              key={number}
+              style={{
+                padding: 14,
+                borderRadius: 16,
+                background: number === 12 ? "#ecfdf5" : "#ffffff",
+                border:
+                  number === 12
+                    ? "1px solid #86efac"
+                    : "1px solid #dbeafe",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 28 }}>{ICONS.wheelchair}</div>
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 13,
+                  fontWeight: 900,
+                  color: number === 12 ? "#047857" : "#334155",
+                }}
+              >
+                WCHR #{number}
+              </div>
+              <div
+                style={{
+                  marginTop: 3,
+                  fontSize: 10,
+                  color: "#64748b",
+                  fontWeight: 800,
+                }}
+              >
+                AVAILABLE
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === "IB" && stepKey === "destination") {
+    const destinations = [
+      [ICONS.building, "Main Terminal"],
+      [ICONS.rental, "Rental Car"],
+      [ICONS.building, "First Floor Red"],
+      [ICONS.building, "First Floor Blue"],
+    ];
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+            gap: 10,
+          }}
+        >
+          {destinations.map(([icon, label], index) => (
+            <div
+              key={label}
+              style={{
+                padding: 13,
+                borderRadius: 15,
+                border:
+                  index === 0 ? "1px solid #86efac" : "1px solid #dbeafe",
+                background: index === 0 ? "#ecfdf5" : "#ffffff",
+                fontSize: 12,
+                fontWeight: 900,
+                color: index === 0 ? "#047857" : "#334155",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 25 }}>{icon}</div>
+              <div style={{ marginTop: 5 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    scenario === "IB" &&
+    ["ib_start_transit", "ib_journey", "delivered"].includes(stepKey)
+  ) {
+    const left = ibTransitPosition[stepKey] || "25%";
+    return (
+      <div style={{ ...shell, minHeight: 170 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            position: "relative",
+            minHeight: 130,
+          }}
+        >
+          <div style={stationBox}>
+            <div style={{ fontSize: 32 }}>{ICONS.cbp}</div>
+            <div style={labelStyle}>CBP</div>
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: 96,
+              right: 96,
+              top: 67,
+              height: 4,
+              borderRadius: 999,
+              background:
+                "linear-gradient(90deg, #bfdbfe 0%, #5aa9e6 55%, #1769aa 100%)",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              left,
+              top: 44,
+              transform: "translateX(-50%)",
+              fontSize: 33,
+              whiteSpace: "nowrap",
+              transition: "left 0.8s ease",
+              animation:
+                stepKey === "ib_journey"
+                  ? "wchrTransitPulse 1.4s ease-in-out infinite"
+                  : "none",
+              zIndex: 3,
+            }}
+          >
+            {ICONS.agent}{ICONS.wheelchair}{ICONS.passenger}
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              top: 84,
+              fontSize: 11,
+              color: "#64748b",
+              fontWeight: 900,
+              background: "#fff",
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid #dbeafe",
+              zIndex: 2,
+            }}
+          >
+            {stepKey === "delivered"
+              ? isSpanish
+                ? "Timer detenido"
+                : "Timer stopped"
+              : isSpanish
+              ? "CBP → destino"
+              : "CBP → destination"}
+          </div>
+
+          <div style={stationBox}>
+            <div style={{ fontSize: 32 }}>{ICONS.building}</div>
+            <div style={labelStyle}>Main Terminal</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === "IB" && stepKey === "storage") {
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            minHeight: 120,
+          }}
+        >
+          <div style={stationBox}>
+            <div style={{ fontSize: 30 }}>{ICONS.building}</div>
+            <div style={labelStyle}>
+              {isSpanish ? "Pasajero Entregado" : "Passenger Delivered"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              fontSize: 34,
+              animation: "wchrStorageMove 1.8s ease-in-out infinite alternate",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {ICONS.agent}{ICONS.wheelchair}{ICONS.arrow}
+          </div>
+
+          <div
+            style={{
+              ...stationBox,
+              background: "#fffbeb",
+              border: "1px solid #fde68a",
+            }}
+          >
+            <div style={{ fontSize: 30 }}>{ICONS.storage}</div>
+            <div style={{ ...labelStyle, color: "#92400e" }}>
+              WCHR Storage
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === "IB" && stepKey === "available") {
+    return (
+      <div style={shell}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 34 }}>{ICONS.wheelchair}</div>
+            <div
+              style={{
+                marginTop: 6,
+                color: "#047857",
+                fontWeight: 900,
+              }}
+            >
+              WCHR AVAILABLE {ICONS.check}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 34 }}>{ICONS.agent}</div>
+            <div
+              style={{
+                marginTop: 6,
+                color: "#047857",
+                fontWeight: 900,
+              }}
+            >
+              AGENT AVAILABLE {ICONS.check}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={shell}>
+      <div
+        style={{
+          minHeight: 110,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 38,
+        }}
+      >
+        {scenario === "IB"
+          ? `${ICONS.cbp} ${ICONS.agent}${ICONS.wheelchair}`
+          : `${ICONS.agent}${ICONS.wheelchair} ${ICONS.gate}`}
+      </div>
+    </div>
+  );
+}
+
+
+function formatTrainingTimer(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function ActionSimulator({
+  scenario,
+  stepKey,
+  language,
+  options,
+  selectedAnswer,
+  answerState,
+  onAction,
+  elapsedSeconds,
+}) {
+  const es = language === "es";
+
+  const headerByStep = {
+    supervisor_assigns: es ? "Nueva asignacion recibida" : "New assignment received",
+    accept_assignment: es ? "My Active Assignment" : "My Active Assignment",
+    pickup: es ? "Pasajero listo para pickup" : "Passenger ready for pickup",
+    start_transit: es ? "Servicio listo para iniciar traslado" : "Service ready to start transit",
+    journey: es ? "Servicio activo" : "Active service",
+    arrived_gate: es ? "Llegada al gate" : "Gate arrival",
+    supervisor_prepares: es ? "Pasajero IB disponible" : "IB passenger available",
+    accept_pax: es ? "Available CBP Passengers" : "Available CBP Passengers",
+    select_wchr: es ? "Seleccion de WCHR" : "Select WCHR",
+    destination: es ? "Seleccion de destino" : "Select destination",
+    ib_start_transit: es ? "Listo para salir de CBP" : "Ready to leave CBP",
+    ib_journey: es ? "Servicio IB activo" : "Active IB service",
+    delivered: es ? "Entrega de pasajero" : "Passenger delivery",
+    storage: es ? "Storage pendiente" : "Storage pending",
+    available: es ? "Servicio completado" : "Service completed",
+  };
+
+  const showTimer = [
+    "start_transit",
+    "journey",
+    "arrived_gate",
+    "ib_start_transit",
+    "ib_journey",
+    "delivered",
+  ].includes(stepKey);
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        border: "1px solid #cfe7fb",
+        borderRadius: 20,
+        background: "#f8fbff",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          padding: "12px 14px",
+          background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 100%)",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              opacity: 0.78,
+            }}
+          >
+            {es ? "Simulacion del sistema" : "System simulation"}
+          </div>
+          <div style={{ marginTop: 2, fontSize: 14, fontWeight: 900 }}>
+            {headerByStep[stepKey] || (es ? "Accion requerida" : "Action required")}
+          </div>
+        </div>
+
+        {showTimer && (
+          <div
+            style={{
+              padding: "7px 10px",
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.14)",
+              border: "1px solid rgba(255,255,255,0.22)",
+              fontSize: 12,
+              fontWeight: 900,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            Timer {formatTrainingTimer(elapsedSeconds)}
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 10,
+          }}
+        >
+          {options.map((option, index) => {
+            const selected = selectedAnswer === option.label;
+            const good = selected && answerState === "correct";
+            const bad = selected && answerState === "incorrect";
+
+            return (
+              <button
+                key={`${stepKey}-${option.label}`}
+                type="button"
+                onClick={() => onAction(option)}
+                style={{
+                  minHeight: 52,
+                  borderRadius: 14,
+                  padding: "11px 13px",
+                  border: good
+                    ? "1px solid #86efac"
+                    : bad
+                    ? "1px solid #fecdd3"
+                    : index === 0
+                    ? "1px solid #9ecff1"
+                    : "1px solid #dbeafe",
+                  background: good
+                    ? "#ecfdf5"
+                    : bad
+                    ? "#fff1f2"
+                    : index === 0
+                    ? "linear-gradient(135deg, #edf7ff 0%, #ffffff 100%)"
+                    : "#ffffff",
+                  color: good ? "#047857" : bad ? "#be123c" : "#0f172a",
+                  fontFamily: "inherit",
+                  fontSize: 12.5,
+                  fontWeight: 900,
+                  cursor: "pointer",
+                  boxShadow: selected ? "0 8px 18px rgba(15,23,42,0.07)" : "none",
+                  transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                }}
+              >
+                {good ? "\u2705 " : bad ? "\u274C " : ""}
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 11,
+            color: "#64748b",
+            lineHeight: 1.5,
+            textAlign: "center",
+          }}
+        >
+          {es
+            ? "Pulsa la misma accion que utilizarias en AeroStation Hub."
+            : "Tap the same action you would use in AeroStation Hub."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WchrTrainingPage() {
   const navigate = useNavigate();
 
@@ -757,6 +1627,7 @@ export default function WchrTrainingPage() {
   const [stepIndex, setStepIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState("");
   const [answerState, setAnswerState] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [completedScenarios, setCompletedScenarios] = useState({
     OB: false,
     IB: false,
@@ -773,6 +1644,32 @@ export default function WchrTrainingPage() {
 
   const progress =
     steps.length > 0 ? Math.round(((stepIndex + 1) / steps.length) * 100) : 0;
+
+  useEffect(() => {
+    if (!currentStep) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const activeTimerSteps = new Set([
+      "start_transit",
+      "journey",
+      "ib_start_transit",
+      "ib_journey",
+    ]);
+
+    if (currentStep.key === "start_transit" || currentStep.key === "ib_start_transit") {
+      setElapsedSeconds(0);
+    }
+
+    if (!activeTimerSteps.has(currentStep.key)) return;
+
+    const interval = window.setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [currentStep?.key]);
 
   const resetAnswer = () => {
     setSelectedAnswer("");
@@ -1133,27 +2030,22 @@ export default function WchrTrainingPage() {
           </PageCard>
 
           <PageCard style={{ padding: 20 }}>
+            <TrainingVisual
+              scenario={scenario}
+              stepKey={currentStep.key}
+              language={language}
+            />
+
             <div
               style={{
-                minHeight: 250,
-                borderRadius: 20,
-                background:
-                  "linear-gradient(135deg, #f8fbff 0%, #ffffff 54%, #eff6ff 100%)",
-                border: "1px solid #dbeafe",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-                alignItems: "center",
+                marginTop: 18,
                 textAlign: "center",
-                padding: 24,
-                overflow: "hidden",
               }}
             >
               <div
                 style={{
-                  fontSize: 58,
+                  fontSize: 42,
                   lineHeight: 1.2,
-                  animation: "wchrTrainingFloat 2s ease-in-out infinite",
                 }}
               >
                 {currentStep.emoji}
@@ -1220,10 +2112,19 @@ export default function WchrTrainingPage() {
 
             <style>
               {`
-                @keyframes wchrTrainingFloat {
-                  0% { transform: translateX(-8px); }
-                  50% { transform: translateX(8px); }
-                  100% { transform: translateX(-8px); }
+                @keyframes wchrAgentApproach {
+                  from { transform: translateX(-12px); }
+                  to { transform: translateX(12px); }
+                }
+
+                @keyframes wchrTransitPulse {
+                  0%, 100% { transform: translateX(-50%) scale(1); }
+                  50% { transform: translateX(-50%) scale(1.08); }
+                }
+
+                @keyframes wchrStorageMove {
+                  from { transform: translateX(-12px); }
+                  to { transform: translateX(12px); }
                 }
               `}
             </style>
@@ -1240,56 +2141,16 @@ export default function WchrTrainingPage() {
               {currentText.prompt}
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                marginTop: 14,
-              }}
-            >
-              {currentText.options.map((option) => {
-                const selected = selectedAnswer === option.label;
-                const isCorrectSelected =
-                  selected && answerState === "correct";
-                const isIncorrectSelected =
-                  selected && answerState === "incorrect";
-
-                return (
-                  <button
-                    key={option.label}
-                    type="button"
-                    onClick={() => handleAnswer(option)}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      borderRadius: 15,
-                      padding: "13px 15px",
-                      fontFamily: "inherit",
-                      fontSize: 13,
-                      fontWeight: 800,
-                      cursor: "pointer",
-                      background: isCorrectSelected
-                        ? "#ecfdf5"
-                        : isIncorrectSelected
-                        ? "#fff1f2"
-                        : "#ffffff",
-                      border: isCorrectSelected
-                        ? "1px solid #86efac"
-                        : isIncorrectSelected
-                        ? "1px solid #fecdd3"
-                        : "1px solid #dbeafe",
-                      color: isCorrectSelected
-                        ? "#047857"
-                        : isIncorrectSelected
-                        ? "#be123c"
-                        : "#334155",
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
+            <ActionSimulator
+              scenario={scenario}
+              stepKey={currentStep.key}
+              language={language}
+              options={currentText.options}
+              selectedAnswer={selectedAnswer}
+              answerState={answerState}
+              onAction={handleAnswer}
+              elapsedSeconds={elapsedSeconds}
+            />
 
             {answerState && (
               <div
