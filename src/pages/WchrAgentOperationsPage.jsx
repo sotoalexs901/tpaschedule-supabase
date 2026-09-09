@@ -9,6 +9,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -68,7 +69,11 @@ const AGENT_LOCATIONS = [
   "Gate F90",
   "Jet Bridge",
   "Aircraft",
+  "CBP",
   "Main Terminal",
+  "Rental Car",
+  "First Floor Red Side",
+  "First Floor Blue Side",
   "Wheelchair Storage",
   "Other",
 ];
@@ -78,6 +83,20 @@ const GATE_LOCATIONS = AGENT_LOCATIONS.filter((location) =>
 );
 
 const WCHR_INVENTORY_COLLECTION = "wchr_inventory";
+
+const IB_DESTINATIONS = [
+  "Main Terminal",
+  "Rental Car",
+  "First Floor Red Side",
+  "First Floor Blue Side",
+];
+
+const IB_STATUS = {
+  WAITING: "IB_WAITING",
+  ACCEPTED: "IB_ACCEPTED",
+  IN_TRANSIT: "IB_IN_TRANSIT",
+  DELIVERED: "IB_DELIVERED",
+};
 
 const SERVICE_STATUS_ORDER = {
   READY_FOR_PICKUP: 1,
@@ -90,6 +109,10 @@ const SERVICE_STATUS_ORDER = {
   BOARDED: 8,
   PENDING_STORAGE: 9,
   STORED: 10,
+  IB_WAITING: 1,
+  IB_ACCEPTED: 2,
+  IB_IN_TRANSIT: 3,
+  IB_DELIVERED: 4,
 };
 
 // ============================================================
@@ -148,6 +171,10 @@ function formatTimestamp(value) {
 }
 
 function getAssignmentTimerStart(report) {
+  if (safeUpper(report?.service_direction) === "IB") {
+    return report?.ib_transit_started_at || report?.timer_started_at || null;
+  }
+
   return (
     report?.timer_started_at ||
     report?.ready_for_pickup_at ||
@@ -212,6 +239,10 @@ function getServiceStatusLabel(value) {
     STORED: "Stored",
     COMPLETED: "Passenger Delivered",
     CANCELLED: "Cancelled",
+    IB_WAITING: "IB Waiting for Agent",
+    IB_ACCEPTED: "IB Passenger Accepted",
+    IB_IN_TRANSIT: "IB In Transit",
+    IB_DELIVERED: "IB Delivered",
   };
 
   return labels[status] || status || "In Progress";
@@ -234,6 +265,27 @@ function statusAtLeast(currentStatus, expectedStatus) {
 
 function isGateLocation(location) {
   return GATE_LOCATIONS.includes(cleanText(location));
+}
+
+function getTodayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function getInventoryWheelchairNumber(item) {
+  return cleanText(
+    item?.wheelchair_number ||
+      item?.number ||
+      item?.wchr_number ||
+      item?.wheelchairNumber
+  );
+}
+
+function isInventoryAvailable(item) {
+  const status = safeUpper(item?.status);
+  return item?.is_available === true || status === "AVAILABLE";
 }
 
 function useViewport() {
@@ -644,6 +696,15 @@ export default function WchrAgentOperationsPage() {
 
   const [activeReport, setActiveReport] = useState(null);
 
+  const [ibAvailablePassengers, setIbAvailablePassengers] = useState([]);
+  const [ibPassengersLoading, setIbPassengersLoading] = useState(true);
+  const [availableInventory, setAvailableInventory] = useState([]);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+  const [selectedIbWheelchairId, setSelectedIbWheelchairId] = useState("");
+  const [selectedIbDestination, setSelectedIbDestination] = useState(
+    IB_DESTINATIONS[0]
+  );
+
   const [trackingConsent, setTrackingConsent] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState("Counter");
   const [locationNote, setLocationNote] = useState("");
@@ -888,6 +949,114 @@ export default function WchrAgentOperationsPage() {
   }, [activeReportId]);
 
   // ============================================================
+  // LIVE IB PASSENGER LIST
+  // ============================================================
+
+  useEffect(() => {
+    const ibQuery = query(
+      collection(db, "wch_reports"),
+      where("service_direction", "==", "IB")
+    );
+
+    setIbPassengersLoading(true);
+
+    const unsubscribe = onSnapshot(
+      ibQuery,
+      (snapshot) => {
+        const todayKey = getTodayKey();
+        const rows = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .filter((report) => {
+            const reportDate = cleanText(report.service_date || report.flight_date);
+            const status = safeUpper(
+              report.ib_status || report.service_status || report.tracking_status
+            );
+
+            return (
+              reportDate === todayKey &&
+              report.ib_passenger_available === true &&
+              status === IB_STATUS.WAITING &&
+              !cleanText(report.assigned_agent_id || report.wchr_agent_id)
+            );
+          })
+          .sort((a, b) => {
+            const flightCompare = cleanText(a.flight_number).localeCompare(
+              cleanText(b.flight_number)
+            );
+            if (flightCompare !== 0) return flightCompare;
+            return cleanText(a.passenger_name).localeCompare(cleanText(b.passenger_name));
+          });
+
+        setIbAvailablePassengers(rows);
+        setIbPassengersLoading(false);
+      },
+      (err) => {
+        console.error("IB passenger listener error:", err);
+        setIbPassengersLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // ============================================================
+  // LIVE AVAILABLE WCHR INVENTORY
+  // ============================================================
+
+  useEffect(() => {
+    setInventoryLoading(true);
+
+    const unsubscribe = onSnapshot(
+      collection(db, WCHR_INVENTORY_COLLECTION),
+      (snapshot) => {
+        const rows = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .filter((item) => {
+            const number = safeUpper(getInventoryWheelchairNumber(item));
+            return number && number !== "PERSONAL_WCHR" && isInventoryAvailable(item);
+          })
+          .sort((a, b) =>
+            getInventoryWheelchairNumber(a).localeCompare(
+              getInventoryWheelchairNumber(b),
+              undefined,
+              { numeric: true, sensitivity: "base" }
+            )
+          );
+
+        setAvailableInventory(rows);
+        setInventoryLoading(false);
+      },
+      (err) => {
+        console.error("WCHR inventory listener error:", err);
+        setInventoryLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (safeUpper(activeReport?.service_direction) !== "IB") {
+      setSelectedIbWheelchairId("");
+      setSelectedIbDestination(IB_DESTINATIONS[0]);
+      return;
+    }
+
+    setSelectedIbWheelchairId(
+      cleanText(activeReport?.inventory_doc_id || activeReport?.inventory_id)
+    );
+    setSelectedIbDestination(
+      cleanText(activeReport?.ib_destination) || IB_DESTINATIONS[0]
+    );
+  }, [
+    activeReport?.id,
+    activeReport?.service_direction,
+    activeReport?.inventory_doc_id,
+    activeReport?.inventory_id,
+    activeReport?.ib_destination,
+  ]);
+
+  // ============================================================
   // DERIVED VALUES
   // ============================================================
 
@@ -931,6 +1100,8 @@ export default function WchrAgentOperationsPage() {
 
   const assignmentOver30 =
     assignmentMinutes >= 30 &&
+    (safeUpper(activeReport?.service_direction) !== "IB" ||
+      Boolean(activeReport?.ib_transit_started_at)) &&
     ![
       "AT_GATE",
       "BOARDING",
@@ -938,6 +1109,7 @@ export default function WchrAgentOperationsPage() {
       "PENDING_STORAGE",
       "STORED",
       "COMPLETED",
+      IB_STATUS.DELIVERED,
     ].includes(
       currentServiceStatus
     ) &&
@@ -969,6 +1141,36 @@ export default function WchrAgentOperationsPage() {
     currentServiceStatus,
     WCHR_SERVICE_STATUS.AT_GATE
   );
+
+  const isInboundReport =
+    safeUpper(activeReport?.service_direction) === "IB";
+
+  const inboundStatus = safeUpper(
+    activeReport?.ib_status || currentServiceStatus
+  );
+
+  const ibHasAccepted =
+    isInboundReport &&
+    (Boolean(activeReport?.ib_accepted_at) ||
+      [IB_STATUS.ACCEPTED, IB_STATUS.IN_TRANSIT, IB_STATUS.DELIVERED].includes(
+        inboundStatus
+      ));
+
+  const ibIsInTransit =
+    isInboundReport &&
+    (Boolean(activeReport?.ib_transit_started_at) ||
+      [IB_STATUS.IN_TRANSIT, IB_STATUS.DELIVERED].includes(inboundStatus));
+
+  const ibIsDelivered =
+    isInboundReport &&
+    (Boolean(activeReport?.ib_delivered_at) || inboundStatus === IB_STATUS.DELIVERED);
+
+  const ibTransitElapsedSeconds =
+    isInboundReport && activeReport?.ib_transit_started_at && !ibIsDelivered
+      ? getElapsedSeconds(activeReport.ib_transit_started_at, now)
+      : isInboundReport
+      ? Number(activeReport?.ib_transit_seconds || 0)
+      : 0;
 
   // ============================================================
   // PUNCH IN
@@ -1331,6 +1533,417 @@ export default function WchrAgentOperationsPage() {
   }
 
   // ============================================================
+  // IB ARRIVAL - ACCEPT PASSENGER
+  // ============================================================
+
+  const handleAcceptInboundPassenger = async (report) => {
+    if (!agentId || !employee || !isPunchedIn) {
+      setError("Punch In before accepting an inbound passenger.");
+      return;
+    }
+
+    if (isBusy || activeReportId) {
+      setError("Complete your current WCHR service before accepting another passenger.");
+      return;
+    }
+
+    if (availability !== WCHR_AGENT_AVAILABILITY.AVAILABLE) {
+      setError("Set your availability to Available before accepting an inbound passenger.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Accept ${report?.passenger_name || "this passenger"} from CBP?`
+    );
+    if (!confirmed) return;
+
+    try {
+      setBusyAction(`ib-accept:${report.id}`);
+      setError("");
+      setMessage("");
+
+      const reportRef = doc(db, "wch_reports", report.id);
+      const shiftRef = doc(db, "wchr_agent_shifts", agentId);
+
+      await runTransaction(db, async (transaction) => {
+        const reportSnap = await transaction.get(reportRef);
+        const shiftSnap = await transaction.get(shiftRef);
+
+        if (!reportSnap.exists()) throw new Error("This inbound passenger is no longer available.");
+        if (!shiftSnap.exists()) throw new Error("Your active WCHR shift was not found.");
+
+        const freshReport = reportSnap.data() || {};
+        const freshShift = shiftSnap.data() || {};
+        const freshStatus = safeUpper(freshReport.ib_status || freshReport.service_status);
+
+        if (
+          freshReport.ib_passenger_available !== true ||
+          freshStatus !== IB_STATUS.WAITING ||
+          cleanText(freshReport.assigned_agent_id || freshReport.wchr_agent_id)
+        ) {
+          throw new Error("Another agent already accepted this passenger. Select another passenger.");
+        }
+
+        if (safeUpper(freshShift.status) !== WCHR_AGENT_STATUS.ACTIVE) {
+          throw new Error("Your WCHR shift is no longer active. Punch In again before accepting a passenger.");
+        }
+
+        if (
+          cleanText(freshShift.active_report_id) ||
+          safeUpper(freshShift.availability_status) !== WCHR_AGENT_AVAILABILITY.AVAILABLE
+        ) {
+          throw new Error("You are no longer available for a new WCHR assignment.");
+        }
+
+        transaction.update(reportRef, {
+          ib_passenger_available: false,
+          ib_status: IB_STATUS.ACCEPTED,
+          service_status: IB_STATUS.ACCEPTED,
+          tracking_status: IB_STATUS.ACCEPTED,
+          assigned_agent_id: agentId,
+          wchr_agent_id: agentId,
+          assigned_agent_name: getEmployeeName(employee),
+          assigned_wchr_agent: getEmployeeName(employee),
+          wchr_agent_name: getEmployeeName(employee),
+          assigned_agent_active: true,
+          ib_accepted_at: serverTimestamp(),
+          assignment_accepted_at: serverTimestamp(),
+          assignment_accepted_by_agent_id: agentId,
+          assignment_accepted_by_agent_name: getEmployeeName(employee),
+          current_location: "CBP",
+          last_location_update_at: serverTimestamp(),
+          last_updated_at: serverTimestamp(),
+          last_updated_by: getVisibleUserName(user),
+          last_updated_by_id: user?.id || user?.uid || "",
+        });
+
+        transaction.update(shiftRef, {
+          availability_status: WCHR_AGENT_AVAILABILITY.BUSY,
+          active_report_id: report.id,
+          active_wheelchair_number: "",
+          active_passenger_name: freshReport.passenger_name || "",
+          active_pnr: freshReport.pnr || "",
+          active_flight_number: freshReport.flight_number || "",
+          active_airline: freshReport.airline || "",
+          active_service_status: IB_STATUS.ACCEPTED,
+          current_location: "CBP",
+          assignment_accepted_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+      });
+
+      await addWchrTimelineEvent({
+        reportId: report.id,
+        eventType: "IB_PASSENGER_ACCEPTED",
+        wheelchairNumber: "",
+        agentId,
+        agentName: getEmployeeName(employee),
+        location: "CBP",
+        note: `${getEmployeeName(employee)} accepted ${report?.passenger_name || "the inbound passenger"} at CBP. Transit timer has not started yet.`,
+        user,
+      });
+
+      setSelectedLocation("CBP");
+      setSelectedIbWheelchairId("");
+      setSelectedIbDestination(IB_DESTINATIONS[0]);
+      setMessage(`${report?.passenger_name || "Passenger"} accepted. Select an available WCHR and destination, then press Start Transit when you physically leave CBP.`);
+    } catch (err) {
+      console.error("Accept inbound passenger error:", err);
+      setError(err?.message || "Unable to accept this inbound passenger.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const handleStartInboundTransit = async () => {
+    if (!activeReport || !agentId || !isInboundReport) {
+      setError("No inbound passenger is currently accepted.");
+      return;
+    }
+    if (!ibHasAccepted) {
+      setError("Accept the inbound passenger before starting transit.");
+      return;
+    }
+    if (ibIsInTransit) {
+      setError("Inbound transit has already started.");
+      return;
+    }
+    if (!selectedIbWheelchairId) {
+      setError("Select an available WCHR number before starting transit.");
+      return;
+    }
+    if (!selectedIbDestination) {
+      setError("Select the passenger destination before starting transit.");
+      return;
+    }
+
+    const selectedInventoryItem = availableInventory.find(
+      (item) => item.id === selectedIbWheelchairId
+    );
+    const selectedWheelchairNumber = getInventoryWheelchairNumber(selectedInventoryItem);
+
+    if (!selectedWheelchairNumber) {
+      setError("The selected WCHR is no longer available. Please select another one.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Start transit for ${activeReport.passenger_name || "this passenger"}?\n\nWCHR ${selectedWheelchairNumber}\nCBP -> ${selectedIbDestination}\n\nThe service timer will start now.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("ib-start-transit");
+      setError("");
+      setMessage("");
+
+      const reportRef = doc(db, "wch_reports", activeReport.id);
+      const shiftRef = doc(db, "wchr_agent_shifts", agentId);
+      const inventoryRef = doc(db, WCHR_INVENTORY_COLLECTION, selectedIbWheelchairId);
+
+      await runTransaction(db, async (transaction) => {
+        const reportSnap = await transaction.get(reportRef);
+        const shiftSnap = await transaction.get(shiftRef);
+        const inventorySnap = await transaction.get(inventoryRef);
+
+        if (!reportSnap.exists()) throw new Error("Inbound passenger report not found.");
+        if (!shiftSnap.exists()) throw new Error("Your WCHR shift was not found.");
+        if (!inventorySnap.exists()) throw new Error("The selected WCHR no longer exists in inventory.");
+
+        const freshReport = reportSnap.data() || {};
+        const freshInventory = inventorySnap.data() || {};
+
+        if (cleanText(freshReport.assigned_agent_id || freshReport.wchr_agent_id) !== agentId) {
+          throw new Error("This passenger is no longer assigned to you.");
+        }
+        if (safeUpper(freshReport.ib_status || freshReport.service_status) !== IB_STATUS.ACCEPTED) {
+          throw new Error("This inbound passenger is not ready to start transit.");
+        }
+        if (!isInventoryAvailable(freshInventory)) {
+          throw new Error("Another agent already selected this WCHR. Please choose another available WCHR.");
+        }
+
+        transaction.update(reportRef, {
+          wheelchair_number: selectedWheelchairNumber,
+          inventory_doc_id: selectedIbWheelchairId,
+          inventory_id: selectedIbWheelchairId,
+          ib_pickup_location: "CBP",
+          pickup_location: "CBP",
+          current_location: "CBP",
+          ib_destination: selectedIbDestination,
+          ib_status: IB_STATUS.IN_TRANSIT,
+          service_status: IB_STATUS.IN_TRANSIT,
+          tracking_status: IB_STATUS.IN_TRANSIT,
+          ib_transit_started_at: serverTimestamp(),
+          timer_started_at: serverTimestamp(),
+          picked_up_at: serverTimestamp(),
+          pickup_at: serverTimestamp(),
+          in_transit_at: serverTimestamp(),
+          picked_up_by_agent_id: agentId,
+          picked_up_by_agent_name: getEmployeeName(employee),
+          ready_for_pickup: false,
+          is_active: true,
+          alerts_enabled: true,
+          transport_alert_active: true,
+          alert_after_minutes: 30,
+          last_location_update_at: serverTimestamp(),
+          last_updated_at: serverTimestamp(),
+          last_updated_by: getVisibleUserName(user),
+          last_updated_by_id: user?.id || user?.uid || "",
+        });
+
+        transaction.update(shiftRef, {
+          availability_status: WCHR_AGENT_AVAILABILITY.BUSY,
+          active_report_id: activeReport.id,
+          active_wheelchair_number: selectedWheelchairNumber,
+          active_service_status: IB_STATUS.IN_TRANSIT,
+          current_location: "CBP",
+          picked_up_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+
+        transaction.update(inventoryRef, {
+          status: "IN_SERVICE",
+          is_available: false,
+          current_location: "CBP",
+          location: "CBP",
+          current_agent_id: agentId,
+          current_agent_name: getEmployeeName(employee),
+          report_doc_id: activeReport.id,
+          assigned_report_doc_id: activeReport.id,
+          report_id: activeReport.id,
+          assigned_report_id: activeReport.id,
+          passenger_name: freshReport.passenger_name || "",
+          airline: freshReport.airline || "",
+          flight_number: freshReport.flight_number || "",
+          pnr: freshReport.pnr || "",
+          updated_at: serverTimestamp(),
+        });
+      });
+
+      await addWchrTimelineEvent({
+        reportId: activeReport.id,
+        eventType: "IB_TRANSIT_STARTED",
+        wheelchairNumber: selectedWheelchairNumber,
+        agentId,
+        agentName: getEmployeeName(employee),
+        location: "CBP",
+        note: `Inbound transit started from CBP to ${selectedIbDestination}. WCHR ${selectedWheelchairNumber}.`,
+        user,
+      });
+
+      setSelectedLocation("CBP");
+      setMessage(`Transit started. Timer is now running from CBP to ${selectedIbDestination}.`);
+    } catch (err) {
+      console.error("Start inbound transit error:", err);
+      setError(err?.message || "Unable to start inbound transit.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const handleDeliverInboundPassenger = async () => {
+    if (!activeReport || !agentId || !isInboundReport) {
+      setError("No inbound passenger is currently active.");
+      return;
+    }
+    if (!ibIsInTransit) {
+      setError("Start Transit before marking the passenger as Delivered.");
+      return;
+    }
+    if (ibIsDelivered) {
+      setError("This inbound passenger has already been delivered.");
+      return;
+    }
+
+    const destination = cleanText(activeReport.ib_destination) || cleanText(selectedIbDestination);
+    if (!IB_DESTINATIONS.includes(destination)) {
+      setError("Select a valid passenger destination before delivery.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Confirm ${activeReport.passenger_name || "passenger"} delivered to ${destination}?\n\nThis will stop the transit timer and release WCHR ${activeReport.wheelchair_number || ""}.`
+    );
+    if (!confirmed) return;
+
+    const startedMillis = getTimestampMillis(activeReport.ib_transit_started_at);
+    const elapsedSeconds = startedMillis
+      ? Math.max(0, Math.floor((Date.now() - startedMillis) / 1000))
+      : 0;
+
+    try {
+      setBusyAction("ib-delivered");
+      setError("");
+      setMessage("");
+
+      const reportRef = doc(db, "wch_reports", activeReport.id);
+      const shiftRef = doc(db, "wchr_agent_shifts", agentId);
+      const inventoryId = cleanText(activeReport.inventory_doc_id || activeReport.inventory_id);
+      const inventoryRef = inventoryId ? doc(db, WCHR_INVENTORY_COLLECTION, inventoryId) : null;
+
+      await runTransaction(db, async (transaction) => {
+        const reportSnap = await transaction.get(reportRef);
+        const shiftSnap = await transaction.get(shiftRef);
+        const inventorySnap = inventoryRef ? await transaction.get(inventoryRef) : null;
+
+        if (!reportSnap.exists()) throw new Error("Inbound passenger report not found.");
+        if (!shiftSnap.exists()) throw new Error("Your WCHR shift was not found.");
+
+        const freshReport = reportSnap.data() || {};
+        if (safeUpper(freshReport.ib_status || freshReport.service_status) !== IB_STATUS.IN_TRANSIT) {
+          throw new Error("This inbound service is no longer in transit.");
+        }
+
+        transaction.update(reportRef, {
+          ib_status: IB_STATUS.DELIVERED,
+          service_status: IB_STATUS.DELIVERED,
+          tracking_status: IB_STATUS.DELIVERED,
+          ib_destination: destination,
+          current_location: destination,
+          ib_delivered_at: serverTimestamp(),
+          delivered_at: serverTimestamp(),
+          completed_at: serverTimestamp(),
+          ib_transit_seconds: elapsedSeconds,
+          ib_transit_minutes: Number((elapsedSeconds / 60).toFixed(2)),
+          passenger_delivered: true,
+          assigned_agent_active: false,
+          agent_transport_completed: true,
+          agent_transport_completed_at: serverTimestamp(),
+          ib_passenger_available: false,
+          is_active: false,
+          alerts_enabled: false,
+          transport_alert_active: false,
+          last_location_update_at: serverTimestamp(),
+          last_updated_at: serverTimestamp(),
+          last_updated_by: getVisibleUserName(user),
+          last_updated_by_id: user?.id || user?.uid || "",
+        });
+
+        transaction.update(shiftRef, {
+          availability_status: WCHR_AGENT_AVAILABILITY.AVAILABLE,
+          current_location: destination,
+          active_report_id: "",
+          active_wheelchair_number: "",
+          active_passenger_name: "",
+          active_pnr: "",
+          active_flight_number: "",
+          active_airline: "",
+          active_service_status: "",
+          last_assignment_report_id: activeReport.id,
+          last_assignment_wheelchair_number: activeReport.wheelchair_number || "",
+          last_assignment_completed_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+
+        if (inventoryRef && inventorySnap?.exists()) {
+          transaction.update(inventoryRef, {
+            status: "AVAILABLE",
+            is_available: true,
+            available_for_handoff: false,
+            ready_for_pickup: false,
+            location: destination,
+            current_location: destination,
+            current_agent_id: "",
+            current_agent_name: "",
+            report_doc_id: "",
+            assigned_report_doc_id: "",
+            report_id: "",
+            assigned_report_id: "",
+            passenger_name: "",
+            airline: "",
+            flight_number: "",
+            pnr: "",
+            updated_at: serverTimestamp(),
+          });
+        }
+      });
+
+      await addWchrTimelineEvent({
+        reportId: activeReport.id,
+        eventType: "IB_PASSENGER_DELIVERED",
+        wheelchairNumber: activeReport.wheelchair_number || "",
+        agentId,
+        agentName: getEmployeeName(employee),
+        location: destination,
+        note: `Inbound passenger delivered from CBP to ${destination}. Transit time: ${formatElapsedTime(elapsedSeconds)}.`,
+        user,
+      });
+
+      setSelectedLocation(destination);
+      setSelectedIbWheelchairId("");
+      setSelectedIbDestination(IB_DESTINATIONS[0]);
+      setLocationNote("");
+      setMessage(`Passenger delivered to ${destination}. Transit completed in ${formatElapsedTime(elapsedSeconds)}. You are now AVAILABLE.`);
+    } catch (err) {
+      console.error("Deliver inbound passenger error:", err);
+      setError(err?.message || "Unable to complete inbound delivery.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  // ============================================================
   // LOCATION UPDATE
   // ============================================================
 
@@ -1373,11 +1986,12 @@ export default function WchrAgentOperationsPage() {
 
       await syncAssignedInventory({
         status:
-          safeUpper(
-            activeReport.service_status ||
-              activeReport.tracking_status
-          ) ===
-          WCHR_SERVICE_STATUS.IN_TRANSIT
+          safeUpper(activeReport?.service_direction) === "IB"
+            ? "IN_SERVICE"
+            : safeUpper(
+                activeReport.service_status ||
+                  activeReport.tracking_status
+              ) === WCHR_SERVICE_STATUS.IN_TRANSIT
             ? "IN_SERVICE"
             : safeUpper(
                 activeReport.service_status ||
@@ -1986,7 +2600,7 @@ export default function WchrAgentOperationsPage() {
                     "rgba(255,255,255,0.85)",
                 }}
               >
-                Punch In, manage availability and complete your assigned WCHR journey from pickup to gate.
+                Punch In, manage availability, complete outbound WCHR journeys and accept inbound CBP passengers for delivery to the terminal.
               </div>
 
               <div
@@ -2485,6 +3099,47 @@ export default function WchrAgentOperationsPage() {
             )}
           </PageCard>
 
+          {/* AVAILABLE INBOUND PASSENGERS */}
+          {!activeReport && (
+            <PageCard style={{ padding: isMobile ? 16 : 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 900, color: "#1769aa", textTransform: "uppercase", letterSpacing: "0.08em" }}>IB Arrival</div>
+                  <h2 style={{ margin: "4px 0 0", color: "#0f172a", fontSize: isMobile ? 18 : 20, fontWeight: 900 }}>Available CBP Passengers</h2>
+                  <p style={{ margin: "5px 0 0", color: "#64748b", fontSize: 12.5, lineHeight: 1.55, maxWidth: 700 }}>
+                    Select a passenger already entered by the supervisor. Accept Pax reserves that passenger to you. The transit timer does not start until you press Start Transit.
+                  </p>
+                </div>
+                <span style={{ display: "inline-flex", padding: "7px 11px", borderRadius: 999, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", fontSize: 11, fontWeight: 900 }}>
+                  {ibPassengersLoading ? "Loading..." : `${ibAvailablePassengers.length} available`}
+                </span>
+              </div>
+
+              {ibPassengersLoading ? (
+                <div style={{ padding: 14, borderRadius: 14, background: "#f8fbff", border: "1px solid #dbeafe", color: "#64748b", fontSize: 12.5, fontWeight: 750 }}>Loading inbound passenger list...</div>
+              ) : ibAvailablePassengers.length === 0 ? (
+                <div style={{ padding: 14, borderRadius: 14, background: "#f8fafc", border: "1px solid #e2e8f0", color: "#64748b", fontSize: 12.5, fontWeight: 750 }}>No inbound passengers are waiting at CBP right now.</div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(250px, 1fr))", gap: 10 }}>
+                  {ibAvailablePassengers.map((report) => (
+                    <div key={report.id} style={{ padding: 14, borderRadius: 16, background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)", border: "1px solid #bfdbfe", minWidth: 0 }}>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", wordBreak: "break-word" }}>{report.passenger_name || "Passenger"}</div>
+                      <div style={{ marginTop: 7, display: "grid", gap: 4, color: "#475569", fontSize: 12, fontWeight: 700 }}>
+                        <div>Flight: {[report.airline, report.flight_number].filter(Boolean).join(" ") || "â"}</div>
+                        <div>PNR: {report.pnr || "â"}</div>
+                        <div>Type: {report.wch_type || "WCHR"}</div>
+                        <div>Pickup: CBP</div>
+                      </div>
+                      <ActionButton variant="success" onClick={() => handleAcceptInboundPassenger(report)} disabled={Boolean(busyAction) || availability !== WCHR_AGENT_AVAILABILITY.AVAILABLE} style={{ marginTop: 12, width: "100%" }}>
+                        {busyAction === `ib-accept:${report.id}` ? "Accepting Pax..." : "Accept Pax"}
+                      </ActionButton>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </PageCard>
+          )}
+
           {/* NO ASSIGNMENT */}
           {!activeReport && (
             <PageCard
@@ -2539,7 +3194,7 @@ export default function WchrAgentOperationsPage() {
                     lineHeight: 1.6,
                   }}
                 >
-                  You are active and waiting for a WCHR Supervisor to assign your next passenger.
+                  You are active and ready for the next service. Outbound WCHR may be assigned by a Supervisor, while inbound CBP passengers can be accepted from the list above.
                 </p>
 
                 {availability ===
@@ -2597,7 +3252,7 @@ export default function WchrAgentOperationsPage() {
                       letterSpacing: "0.08em",
                     }}
                   >
-                    Active WCHR Assignment
+                    {isInboundReport ? "Active IB Arrival Service" : "Active WCHR Assignment"}
                   </div>
 
                   <h2
@@ -2608,10 +3263,13 @@ export default function WchrAgentOperationsPage() {
                       fontWeight: 900,
                     }}
                   >
-                    Wheelchair{" "}
-                    {activeReport.wheelchair_number ||
-                      shift?.active_wheelchair_number ||
-                      "\u2014"}
+                    {isInboundReport
+                      ? activeReport.passenger_name || "Inbound Passenger"
+                      : `Wheelchair ${
+                          activeReport.wheelchair_number ||
+                          shift?.active_wheelchair_number ||
+                          "â"
+                        }`}
                   </h2>
 
                   <div
@@ -2674,7 +3332,7 @@ export default function WchrAgentOperationsPage() {
                         : "#1769aa",
                     }}
                   >
-                    Service Timer
+                    {isInboundReport ? "CBP Transit Timer" : "Service Timer"}
                   </div>
 
                   <div
@@ -2691,7 +3349,7 @@ export default function WchrAgentOperationsPage() {
                     }}
                   >
                     {formatElapsedTime(
-                      assignmentElapsedSeconds
+                      isInboundReport ? ibTransitElapsedSeconds : assignmentElapsedSeconds
                     )}
                   </div>
 
@@ -2806,12 +3464,82 @@ export default function WchrAgentOperationsPage() {
                 <InfoField
                   label="Accepted"
                   value={formatTimestamp(
-                    activeReport.assignment_accepted_at
+                    isInboundReport
+                      ? activeReport.ib_accepted_at || activeReport.assignment_accepted_at
+                      : activeReport.assignment_accepted_at
                   )}
                 />
+
+                {isInboundReport && (
+                  <>
+                    <InfoField label="Destination" value={activeReport.ib_destination || selectedIbDestination || "Not selected"} />
+                    <InfoField label="Transit Started" value={formatTimestamp(activeReport.ib_transit_started_at)} />
+                  </>
+                )}
               </div>
 
               {/* SERVICE FLOW */}
+              {isInboundReport ? (
+                <div style={{ marginTop: 18, padding: isMobile ? 13 : 16, borderRadius: 17, background: "#ffffff", border: "1px solid #e2e8f0" }}>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: "#0f172a" }}>IB Arrival Service Progress</h3>
+                  <p style={{ margin: "4px 0 13px", color: "#64748b", fontSize: 12, lineHeight: 1.55 }}>
+                    Passenger accepted at CBP. Select an available wheelchair and destination. Start Transit only when you physically leave CBP with the passenger; that is when the service timer begins.
+                  </p>
+
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4, minmax(0, 1fr))", gap: 9 }}>
+                    <ServiceStep number="1" title="Accept Pax" subtitle="Passenger selected from the supervisor's IB list and reserved to you." completed={ibHasAccepted} active={!ibHasAccepted} />
+                    <ServiceStep number="2" title="Select WCHR" subtitle="Choose the wheelchair number from available inventory. No manual entry." completed={Boolean(activeReport.wheelchair_number)} active={ibHasAccepted && !ibIsInTransit} />
+                    <ServiceStep number="3" title="Start Transit" subtitle="Starts the real CBP-to-destination service timer." completed={ibIsInTransit} active={ibHasAccepted && !ibIsInTransit} />
+                    <ServiceStep number="4" title="Delivered" subtitle="Stops the timer, records destination and releases the WCHR and agent." completed={ibIsDelivered} active={ibIsInTransit && !ibIsDelivered} />
+                  </div>
+
+                  {!ibIsInTransit && (
+                    <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 11 }}>
+                      <div>
+                        <FieldLabel>WCHR Number</FieldLabel>
+                        <SelectInput value={selectedIbWheelchairId} disabled={Boolean(busyAction) || inventoryLoading} onChange={(event) => setSelectedIbWheelchairId(event.target.value)}>
+                          <option value="">{inventoryLoading ? "Loading available WCHR..." : "Select available WCHR"}</option>
+                          {availableInventory.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {getInventoryWheelchairNumber(item)}{item.current_location || item.location ? ` - ${item.current_location || item.location}` : ""}
+                            </option>
+                          ))}
+                        </SelectInput>
+                        <div style={{ marginTop: 6, fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>Only wheelchairs currently marked AVAILABLE appear here.</div>
+                      </div>
+                      <div>
+                        <FieldLabel>Passenger Destination</FieldLabel>
+                        <SelectInput value={selectedIbDestination} disabled={Boolean(busyAction)} onChange={(event) => setSelectedIbDestination(event.target.value)}>
+                          {IB_DESTINATIONS.map((destination) => (<option key={destination} value={destination}>{destination}</option>))}
+                        </SelectInput>
+                      </div>
+                    </div>
+                  )}
+
+                  {ibIsInTransit && !ibIsDelivered && (
+                    <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                      <InfoField label="WCHR" value={activeReport.wheelchair_number || "â"} />
+                      <InfoField label="From" value="CBP" />
+                      <InfoField label="Destination" value={activeReport.ib_destination || selectedIbDestination} />
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 9 }}>
+                    <ActionButton variant="primary" disabled={Boolean(busyAction) || !ibHasAccepted || ibIsInTransit || !selectedIbWheelchairId || !selectedIbDestination} onClick={handleStartInboundTransit}>
+                      {busyAction === "ib-start-transit" ? "Starting Transit..." : ibIsInTransit ? "Transit Started" : "Start Transit"}
+                    </ActionButton>
+                    <ActionButton variant="success" disabled={Boolean(busyAction) || !ibIsInTransit || ibIsDelivered} onClick={handleDeliverInboundPassenger}>
+                      {busyAction === "ib-delivered" ? "Completing Delivery..." : ibIsDelivered ? "Delivered" : `Delivered to ${activeReport.ib_destination || selectedIbDestination}`}
+                    </ActionButton>
+                  </div>
+
+                  {!ibIsInTransit && (
+                    <div style={{ marginTop: 11, padding: "10px 12px", borderRadius: 12, background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: 11.5, fontWeight: 800, lineHeight: 1.55 }}>
+                      Accept Pax does not start service time. Selecting a WCHR also does not start service time. The KPI begins only when Start Transit is pressed at CBP.
+                    </div>
+                  )}
+                </div>
+              ) : (
               <div
                 style={{
                   marginTop: 18,
@@ -2957,6 +3685,8 @@ export default function WchrAgentOperationsPage() {
                 </div>
               </div>
 
+              )}
+
               {/* LOCATION + NOTES */}
               <div
                 style={{
@@ -3099,7 +3829,7 @@ export default function WchrAgentOperationsPage() {
                   </ActionButton>
                 </div>
 
-                {hasPickedUp && !isAtGate && (
+                {!isInboundReport && hasPickedUp && !isAtGate && (
                   <div
                     style={{
                       marginTop: 11,
@@ -3132,7 +3862,9 @@ export default function WchrAgentOperationsPage() {
                   fontWeight: 750,
                 }}
               >
-                You currently have an active wheelchair assignment. You cannot accept another WCHR or Punch Out until the passenger reaches the gate or WCHR Management releases the assignment. New assignments must be accepted before pickup begins.
+                {isInboundReport
+                  ? "You currently have an active inbound passenger. You cannot accept another passenger or Punch Out until the passenger is delivered to the selected destination or WCHR Management releases the service."
+                  : "You currently have an active wheelchair assignment. You cannot accept another WCHR or Punch Out until the passenger reaches the gate or WCHR Management releases the assignment. New assignments must be accepted before pickup begins."}
               </div>
             </PageCard>
           )}
