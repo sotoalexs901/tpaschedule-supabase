@@ -121,6 +121,28 @@ export function buildAgentShiftPayload({
       cleanText(user?.employeeId) ||
       "",
 
+    // Direct AeroStation Hub user linkage for Push notifications.
+    user_id:
+      cleanText(
+        user?.id ||
+          user?.uid ||
+          ""
+      ),
+
+    userId:
+      cleanText(
+        user?.id ||
+          user?.uid ||
+          ""
+      ),
+
+    aerostation_user_id:
+      cleanText(
+        user?.id ||
+          user?.uid ||
+          ""
+      ),
+
     agent_name:
       cleanText(
         employee?.name ||
@@ -132,6 +154,20 @@ export function buildAgentShiftPayload({
       cleanText(
         user?.username ||
           user?.loginUsername ||
+          employee?.loginUsername
+      ),
+
+    login_username:
+      cleanText(
+        user?.username ||
+          user?.loginUsername ||
+          employee?.loginUsername
+      ),
+
+    loginUsername:
+      cleanText(
+        user?.loginUsername ||
+          user?.username ||
           employee?.loginUsername
       ),
 
@@ -155,8 +191,8 @@ export function buildAgentShiftPayload({
     active_report_id: "",
     active_wheelchair_number: "",
 
-    current_location: cleanText(startingLocation),
-    last_location_update_at: serverTimestamp(),
+    current_location:
+      cleanText(startingLocation),
 
     live_tracking_consent:
       trackingConsent === true,
@@ -187,14 +223,6 @@ export async function punchInWchrAgent({
     );
   }
 
-  const cleanStartingLocation = cleanText(startingLocation);
-
-  if (!cleanStartingLocation) {
-    throw new Error(
-      "Starting location is required for WCHR Punch In."
-    );
-  }
-
   const shiftRef = doc(
     db,
     "wchr_agent_shifts",
@@ -210,12 +238,85 @@ export async function punchInWchrAgent({
       safeUpper(existing.status) ===
       WCHR_AGENT_STATUS.ACTIVE
     ) {
+      const refreshedIdentity = {
+        user_id:
+          cleanText(
+            user?.id ||
+              user?.uid ||
+              ""
+          ),
+
+        userId:
+          cleanText(
+            user?.id ||
+              user?.uid ||
+              ""
+          ),
+
+        aerostation_user_id:
+          cleanText(
+            user?.id ||
+              user?.uid ||
+              ""
+          ),
+
+        employee_id:
+          cleanText(employee?.id) ||
+          cleanText(user?.employeeId) ||
+          existing.employee_id ||
+          "",
+
+        username:
+          cleanText(
+            user?.username ||
+              user?.loginUsername ||
+              employee?.loginUsername ||
+              existing.username
+          ),
+
+        login_username:
+          cleanText(
+            user?.username ||
+              user?.loginUsername ||
+              employee?.loginUsername ||
+              existing.login_username
+          ),
+
+        loginUsername:
+          cleanText(
+            user?.loginUsername ||
+              user?.username ||
+              employee?.loginUsername ||
+              existing.loginUsername
+          ),
+
+        last_activity_at:
+          serverTimestamp(),
+
+        updated_at:
+          serverTimestamp(),
+      };
+
+      if (cleanText(startingLocation)) {
+        refreshedIdentity.current_location =
+          cleanText(startingLocation);
+      }
+
+      await setDoc(
+        shiftRef,
+        refreshedIdentity,
+        {
+          merge: true,
+        }
+      );
+
       return {
         alreadyActive: true,
         agentId,
         shift: {
           id: shiftRef.id,
           ...existing,
+          ...refreshedIdentity,
         },
       };
     }
@@ -225,7 +326,7 @@ export async function punchInWchrAgent({
     employee,
     user,
     trackingConsent,
-    startingLocation: cleanStartingLocation,
+    startingLocation,
   });
 
   await setDoc(
@@ -249,16 +350,18 @@ export async function punchInWchrAgent({
         payload.agent_name,
       username:
         payload.username,
+      user_id:
+        payload.user_id,
       department:
         payload.department,
+
+      starting_location:
+        payload.current_location,
 
       event_type: "PUNCH_IN",
 
       live_tracking_consent:
         trackingConsent === true,
-
-      current_location:
-        cleanStartingLocation,
 
       created_at:
         serverTimestamp(),
