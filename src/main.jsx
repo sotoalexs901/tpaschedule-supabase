@@ -66,6 +66,7 @@ import WchrDutyFollowUpPage from "./pages/WchrDutyFollowUpPage.jsx";
 import WchrOperationsHubPage from "./pages/WchrOperationsHubPage.jsx";
 import WchrAgentOperationsPage from "./pages/WchrAgentOperationsPage.jsx";
 import WchrDispatchPage from "./pages/WchrDispatchPage.jsx";
+import WchrTrainingPage from "./pages/WchrTrainingPage.jsx";
 
 import CabinServicePage from "./pages/CabinServicePage.jsx";
 import CabinSavedSchedulesPage from "./pages/CabinSavedSchedulesPage.jsx";
@@ -867,6 +868,23 @@ function AppRouter() {
                 blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
                 <WchrAgentOperationsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="wchr/training"
+            element={
+              <ProtectedRoute
+                roles={[
+                  "agent",
+                  "supervisor",
+                  "duty_manager",
+                  "station_manager",
+                ]}
+                blockedDepartments={["DL Cabin Service", "Cabin Service"]}
+              >
+                <WchrTrainingPage />
               </ProtectedRoute>
             }
           />
