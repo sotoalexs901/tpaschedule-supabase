@@ -1248,42 +1248,11 @@ export default function AppLayout() {
     }
 
     if (canAccessWchrTools) {
-      wchr.push(
-        {
-          to: "/wchr/scan",
-          label: "Scan Boarding Pass",
-          icon: "\u{1F3AB}",
-        },
-        {
-          to: "/wchr/my-reports",
-          label: "My Reports",
-          icon: "\u{1F4C4}",
-        }
-      );
-    }
-
-    if (canAccessWchrFlightReport) {
       wchr.push({
-        to: "/wchr/admin/flights",
-        label: "WCHR Flight Report",
+        to: "/wchr",
+        label: "WCHR Operations",
         icon: "\u{267F}",
-      });
-    }
-
-    if (canAccessWchrDutyFollowUp) {
-      wchr.push({
-        to: "/wchr/duty-follow-up",
-        label: "WCHR Duty Follow-Up",
-        icon: "\u{1F6A8}",
         badgeValue: wchrFollowUps,
-      });
-    }
-
-    if (canAccessWchrMonthlyClose) {
-      wchr.push({
-        to: "/wchr/monthly-close",
-        label: "WCHR Billing & Monthly Close",
-        icon: "\u{1F4CA}",
       });
     }
 
@@ -1585,13 +1554,13 @@ export default function AppLayout() {
                 label="WCHR"
                 value={wchrFollowUps}
                 active={wchrFollowUps > 0}
-                onClick={() => navigate("/wchr/duty-follow-up")}
+                onClick={() => navigate("/wchr")}
                 title={
                   wchrFollowUps > 0
                     ? `${wchrFollowUps} open WCHR Duty Follow-Up${
                         wchrFollowUps === 1 ? "" : "s"
-                      }. Open WCHR Duty Follow-Up.`
-                    : "No open WCHR Duty Follow-Ups"
+                      }. Open WCHR Operations.`
+                    : "Open WCHR Operations"
                 }
               />
             )}
