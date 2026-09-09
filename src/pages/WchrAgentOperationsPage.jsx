@@ -39,6 +39,10 @@ import {
   formatElapsedTime,
 } from "../utils/wchrOperations.js";
 
+import {
+  triggerWchrDeliveryPush,
+} from "../utils/wchrAssignmentPush.js";
+
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -1611,6 +1615,17 @@ export default function WchrAgentOperationsPage() {
           serverTimestamp(),
 
         updated_at: serverTimestamp(),
+      });
+
+      // Push is intentionally fire-and-forget.
+      // A notification failure must never block the WCHR operation.
+      triggerWchrDeliveryPush(
+        activeReport.id
+      ).catch((pushError) => {
+        console.warn(
+          "WCHR delivery push failed:",
+          pushError
+        );
       });
 
       setLocationNote("");
