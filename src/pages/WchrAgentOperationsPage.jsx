@@ -77,6 +77,8 @@ const GATE_LOCATIONS = AGENT_LOCATIONS.filter((location) =>
   location.startsWith("Gate F")
 );
 
+const WCHR_INVENTORY_COLLECTION = "wchr_inventory";
+
 const SERVICE_STATUS_ORDER = {
   READY_FOR_PICKUP: 1,
   ASSIGNED: 2,
@@ -929,8 +931,22 @@ export default function WchrAgentOperationsPage() {
 
   const assignmentOver30 =
     assignmentMinutes >= 30 &&
-    currentServiceStatus !==
-      WCHR_SERVICE_STATUS.STORED;
+    ![
+      "AT_GATE",
+      "BOARDING",
+      "BOARDED",
+      "PENDING_STORAGE",
+      "STORED",
+      "COMPLETED",
+    ].includes(
+      currentServiceStatus
+    ) &&
+    activeReport?.passenger_delivered_to_gate !==
+      true &&
+    !activeReport?.gate_arrived_at &&
+    !activeReport?.passenger_delivered_to_gate_at &&
+    activeReport?.transport_alert_active !==
+      false;
 
   const hasAccepted =
     Boolean(activeReport?.assignment_accepted_at) ||
@@ -1074,6 +1090,175 @@ export default function WchrAgentOperationsPage() {
   };
 
   // ============================================================
+  // WCHR INVENTORY SYNC
+  // ============================================================
+
+  async function findAssignedInventoryItem(report) {
+    if (!report) return null;
+
+    const directInventoryId =
+      cleanText(
+        report.inventory_doc_id ||
+          report.inventory_id ||
+          report.wchr_inventory_id
+      );
+
+    if (directInventoryId) {
+      const directRef = doc(
+        db,
+        WCHR_INVENTORY_COLLECTION,
+        directInventoryId
+      );
+
+      const directSnapshot =
+        await getDoc(directRef);
+
+      if (directSnapshot.exists()) {
+        return {
+          id: directSnapshot.id,
+          ref: directRef,
+          ...directSnapshot.data(),
+        };
+      }
+    }
+
+    const wheelchairNumber =
+      safeUpper(
+        report.wheelchair_number ||
+          shift?.active_wheelchair_number
+      );
+
+    if (
+      !wheelchairNumber ||
+      wheelchairNumber ===
+        "PERSONAL_WCHR"
+    ) {
+      return null;
+    }
+
+    const inventorySnapshot =
+      await getDocs(
+        collection(
+          db,
+          WCHR_INVENTORY_COLLECTION
+        )
+      );
+
+    const match =
+      inventorySnapshot.docs.find(
+        (item) => {
+          const data =
+            item.data() || {};
+
+          return (
+            safeUpper(
+              data.wheelchair_number ||
+                data.number ||
+                data.wchr_number ||
+                data.wheelchairNumber
+            ) ===
+            wheelchairNumber
+          );
+        }
+      );
+
+    if (!match) {
+      return null;
+    }
+
+    return {
+      id: match.id,
+      ref: match.ref,
+      ...match.data(),
+    };
+  }
+
+  async function syncAssignedInventory({
+    status,
+    location,
+    release = false,
+  }) {
+    const inventoryItem =
+      await findAssignedInventoryItem(
+        activeReport
+      );
+
+    if (!inventoryItem) {
+      return;
+    }
+
+    const cleanLocation =
+      cleanText(location) ||
+      activeReport?.current_location ||
+      shift?.current_location ||
+      "Counter";
+
+    const patch = {
+      status,
+      location: cleanLocation,
+      current_location:
+        cleanLocation,
+      updated_at:
+        serverTimestamp(),
+    };
+
+    if (release) {
+      Object.assign(patch, {
+        status: "AVAILABLE",
+        is_available: true,
+        available_for_handoff:
+          false,
+        ready_for_pickup:
+          false,
+        current_agent_id: "",
+        current_agent_name: "",
+        report_doc_id: "",
+        assigned_report_doc_id:
+          "",
+        report_id: "",
+        assigned_report_id: "",
+        passenger_name: "",
+        airline: "",
+        flight_number: "",
+        pnr: "",
+      });
+    } else {
+      Object.assign(patch, {
+        is_available: false,
+        current_agent_id:
+          agentId || "",
+        current_agent_name:
+          getEmployeeName(
+            employee
+          ),
+        report_doc_id:
+          activeReport?.id ||
+          "",
+        assigned_report_doc_id:
+          activeReport?.id ||
+          "",
+        passenger_name:
+          activeReport?.passenger_name ||
+          "",
+        airline:
+          activeReport?.airline ||
+          "",
+        flight_number:
+          activeReport?.flight_number ||
+          "",
+        pnr:
+          activeReport?.pnr ||
+          "",
+      });
+    }
+
+    await updateDoc(
+      inventoryItem.ref,
+      patch
+    );
+  }
+
+  // ============================================================
   // COMMON REPORT + SHIFT UPDATE
   // ============================================================
 
@@ -1185,6 +1370,22 @@ export default function WchrAgentOperationsPage() {
             user?.id || user?.uid || "",
         }
       );
+
+      await syncAssignedInventory({
+        status:
+          safeUpper(
+            activeReport.service_status ||
+              activeReport.tracking_status
+          ) ===
+          WCHR_SERVICE_STATUS.IN_TRANSIT
+            ? "IN_SERVICE"
+            : safeUpper(
+                activeReport.service_status ||
+                  activeReport.tracking_status ||
+                  "ASSIGNED"
+              ),
+        location,
+      });
 
       await addWchrTimelineEvent({
         reportId: activeReport.id,
@@ -1407,6 +1608,11 @@ export default function WchrAgentOperationsPage() {
           } picked up at ${location}.`,
       });
 
+      await syncAssignedInventory({
+        status: "PICKED_UP",
+        location,
+      });
+
       setLocationNote("");
       setMessage(
         `WCHR ${
@@ -1472,6 +1678,11 @@ export default function WchrAgentOperationsPage() {
         eventNote:
           cleanText(locationNote) ||
           `Passenger and WCHR are in transit. Current location: ${location}.`,
+      });
+
+      await syncAssignedInventory({
+        status: "IN_SERVICE",
+        location,
       });
 
       setLocationNote("");
@@ -1567,7 +1778,11 @@ export default function WchrAgentOperationsPage() {
         agent_transport_completed_at: serverTimestamp(),
 
         is_active: true,
+
+        // The 30-minute transport alert ends permanently at Gate.
+        // Supervisor gate monitoring continues separately every 15 minutes.
         alerts_enabled: true,
+        transport_alert_active: false,
         alert_after_minutes: 15,
 
         last_location_update_at: serverTimestamp(),
@@ -1575,6 +1790,11 @@ export default function WchrAgentOperationsPage() {
         last_updated_by: getVisibleUserName(user),
         last_updated_by_id:
           user?.id || user?.uid || "",
+      });
+
+      await syncAssignedInventory({
+        status: "AT_GATE",
+        location: gateLocation,
       });
 
       await addWchrTimelineEvent({
