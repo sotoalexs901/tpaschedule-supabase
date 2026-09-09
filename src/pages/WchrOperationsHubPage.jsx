@@ -7,6 +7,7 @@ import {
   collection,
   onSnapshot,
   query,
+  Timestamp,
   where,
 } from "firebase/firestore";
 
@@ -147,6 +148,84 @@ function getMillis(value) {
   return Number.isNaN(parsed.getTime())
     ? 0
     : parsed.getTime();
+}
+
+function startOfToday() {
+  const now = new Date();
+
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0,
+    0,
+    0,
+    0
+  );
+}
+
+function endOfToday() {
+  const now = new Date();
+
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
+}
+
+function formatElapsedFrom(value) {
+  const millis = getMillis(value);
+
+  if (!millis) return "\u2014";
+
+  const totalSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - millis) / 1000)
+  );
+
+  const hours = Math.floor(
+    totalSeconds / 3600
+  );
+
+  const minutes = Math.floor(
+    (totalSeconds % 3600) / 60
+  );
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes} min`;
+}
+
+function getAgentName(agent) {
+  return (
+    agent?.agent_name ||
+    agent?.employee_name ||
+    agent?.display_name ||
+    agent?.name ||
+    agent?.login_username ||
+    agent?.username ||
+    agent?.id ||
+    "Unknown Agent"
+  );
+}
+
+function getReportTimerStart(report) {
+  return (
+    report?.timer_started_at ||
+    report?.ready_for_pickup_at ||
+    report?.assigned_at ||
+    report?.pickup_at ||
+    report?.submitted_at ||
+    report?.created_at ||
+    null
+  );
 }
 
 function minutesSince(value) {
@@ -651,21 +730,56 @@ export default function WchrOperationsHubPage() {
       return undefined;
     }
 
+    const todayStart =
+      Timestamp.fromDate(
+        startOfToday()
+      );
+
+    const todayEnd =
+      Timestamp.fromDate(
+        endOfToday()
+      );
+
+    const reportsQuery =
+      query(
+        collection(
+          db,
+          "wch_reports"
+        ),
+        where(
+          "submitted_at",
+          ">=",
+          todayStart
+        ),
+        where(
+          "submitted_at",
+          "<=",
+          todayEnd
+        )
+      );
+
     const unsubscribe = onSnapshot(
-      collection(
-        db,
-        "wch_reports"
-      ),
+      reportsQuery,
       (snapshot) => {
-        setReports(
-          snapshot.docs.map(
-            (item) => ({
+        const rows =
+          snapshot.docs
+            .map((item) => ({
               id: item.id,
               ...item.data(),
-            })
-          )
-        );
+            }))
+            .sort(
+              (a, b) =>
+                getMillis(
+                  a.submitted_at ||
+                    a.created_at
+                ) -
+                getMillis(
+                  b.submitted_at ||
+                    b.created_at
+                )
+            );
 
+        setReports(rows);
         setLoadingReports(false);
       },
       (error) => {
@@ -674,6 +788,7 @@ export default function WchrOperationsHubPage() {
           error
         );
 
+        setReports([]);
         setLoadingReports(false);
       }
     );
@@ -737,6 +852,34 @@ export default function WchrOperationsHubPage() {
           needs30MinuteAlert(report)
       ),
     [reports]
+  );
+
+  const inProcessReports = useMemo(
+    () =>
+      reports.filter(
+        (report) => {
+          const status =
+            getServiceStatus(report);
+
+          return (
+            status !== "STORED"
+          );
+        }
+      ),
+    [reports]
+  );
+
+  const assignedAgents = useMemo(
+    () =>
+      agents.filter(
+        (agent) =>
+          Boolean(
+            cleanText(
+              agent.active_report_id
+            )
+          )
+      ),
+    [agents]
   );
 
   // ==========================================================
@@ -918,11 +1061,11 @@ export default function WchrOperationsHubPage() {
         "Assign ready wheelchair services to punched-in and available WCHR agents.",
       route: "/wchr/dispatch",
       badge:
-        activeServices.length > 0
-          ? `${activeServices.length} ACTIVE`
+        inProcessReports.length > 0
+          ? `${inProcessReports.length} IN PROCESS`
           : "DISPATCH",
       badgeTone:
-        activeServices.length > 0
+        inProcessReports.length > 0
           ? "amber"
           : "blue",
       visible:
@@ -1002,6 +1145,7 @@ export default function WchrOperationsHubPage() {
     isDutyOrStation,
     isSupervisorOrAbove,
     activeServices.length,
+    inProcessReports.length,
     alertServices.length,
   ]);
 
@@ -1285,11 +1429,11 @@ export default function WchrOperationsHubPage() {
         />
 
         <MetricCard
-          label="Active Services"
+          label="In Process Today"
           value={
             loadingReports
-              ? "â"
-              : activeServices.length
+              ? "\u2014"
+              : inProcessReports.length
           }
           tone="blue"
         />
@@ -1531,6 +1675,495 @@ export default function WchrOperationsHubPage() {
             >
               Open Agent Operations
             </button>
+          </div>
+        </PageCard>
+      )}
+
+      {/* LIVE OPERATIONS */}
+
+      {isSupervisorOrAbove && (
+        <PageCard
+          style={{
+            padding:
+              isMobile
+                ? 15
+                : 19,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              flexDirection:
+                isMobile
+                  ? "column"
+                  : "row",
+              justifyContent:
+                "space-between",
+              gap: 10,
+              alignItems:
+                isMobile
+                  ? "stretch"
+                  : "center",
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 900,
+                  color: "#1769aa",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Live Operations
+              </div>
+
+              <h2
+                style={{
+                  margin: "4px 0 0",
+                  fontSize:
+                    isMobile
+                      ? 18
+                      : 20,
+                  color: "#0f172a",
+                  fontWeight: 900,
+                }}
+              >
+                Active Agents & WCHRs in Process
+              </h2>
+
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 12,
+                  color: "#64748b",
+                  lineHeight: 1.5,
+                }}
+              >
+                This section shows only today's punched-in agents and today's wheelchair services that are not yet stored.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                navigate(
+                  "/wchr/dispatch"
+                )
+              }
+              style={{
+                border: "none",
+                borderRadius: 12,
+                padding: "10px 14px",
+                background:
+                  "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
+                color: "#ffffff",
+                fontFamily: "inherit",
+                fontSize: 12,
+                fontWeight: 900,
+                cursor: "pointer",
+                width:
+                  isMobile
+                    ? "100%"
+                    : "auto",
+              }}
+            >
+              Open Dispatch
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                isMobile ||
+                isTablet
+                  ? "1fr"
+                  : "0.9fr 1.1fr",
+              gap: 14,
+              alignItems: "start",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 9,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 900,
+                    color: "#0f172a",
+                  }}
+                >
+                  Punched-In Agents
+                </div>
+
+                <span
+                  style={{
+                    borderRadius: 999,
+                    padding: "5px 9px",
+                    background: "#ecfdf5",
+                    border: "1px solid #bbf7d0",
+                    color: "#166534",
+                    fontSize: 10,
+                    fontWeight: 900,
+                  }}
+                >
+                  {agents.length}
+                </span>
+              </div>
+
+              {loadingAgents ? (
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 13,
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                    color: "#64748b",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  Loading active agents...
+                </div>
+              ) : agents.length === 0 ? (
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 13,
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    color: "#64748b",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  No WCHR agents are punched in.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 8,
+                    maxHeight: 390,
+                    overflowY: "auto",
+                  }}
+                >
+                  {agents.map((agent) => {
+                    const hasAssignment =
+                      Boolean(
+                        cleanText(
+                          agent.active_report_id
+                        )
+                      );
+
+                    const availability =
+                      safeUpper(
+                        agent.availability_status
+                      );
+
+                    return (
+                      <div
+                        key={agent.id}
+                        style={{
+                          padding: "11px 12px",
+                          borderRadius: 14,
+                          background:
+                            hasAssignment
+                              ? "#fff7ed"
+                              : availability ===
+                                WCHR_AGENT_AVAILABILITY.AVAILABLE
+                              ? "#ecfdf5"
+                              : "#f8fafc",
+                          border:
+                            hasAssignment
+                              ? "1px solid #fed7aa"
+                              : availability ===
+                                WCHR_AGENT_AVAILABILITY.AVAILABLE
+                              ? "1px solid #bbf7d0"
+                              : "1px solid #e2e8f0",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 12.5,
+                                fontWeight: 900,
+                                color: "#0f172a",
+                              }}
+                            >
+                              {getAgentName(agent)}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 3,
+                                fontSize: 10.5,
+                                color: "#64748b",
+                                lineHeight: 1.4,
+                              }}
+                            >
+                              {agent.current_location ||
+                                "Location not reported"}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              textAlign: "right",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 900,
+                                color:
+                                  hasAssignment
+                                    ? "#9a3412"
+                                    : "#166534",
+                              }}
+                            >
+                              {hasAssignment
+                                ? "BUSY"
+                                : availability ||
+                                  "ACTIVE"}
+                            </div>
+
+                            {hasAssignment && (
+                              <div
+                                style={{
+                                  marginTop: 3,
+                                  fontSize: 10.5,
+                                  color: "#9a3412",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                WCHR{" "}
+                                {agent.active_wheelchair_number ||
+                                  "\u2014"}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 9,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 900,
+                    color: "#0f172a",
+                  }}
+                >
+                  Today's WCHRs in Process
+                </div>
+
+                <span
+                  style={{
+                    borderRadius: 999,
+                    padding: "5px 9px",
+                    background: "#fff7ed",
+                    border: "1px solid #fed7aa",
+                    color: "#9a3412",
+                    fontSize: 10,
+                    fontWeight: 900,
+                  }}
+                >
+                  {inProcessReports.length}
+                </span>
+              </div>
+
+              {loadingReports ? (
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 13,
+                    background: "#f8fbff",
+                    border: "1px solid #dbeafe",
+                    color: "#64748b",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  Loading today's WCHR services...
+                </div>
+              ) : inProcessReports.length === 0 ? (
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 13,
+                    background: "#ecfdf5",
+                    border: "1px solid #bbf7d0",
+                    color: "#166534",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  No wheelchair services are currently in process today.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 8,
+                    maxHeight: 390,
+                    overflowY: "auto",
+                  }}
+                >
+                  {inProcessReports.map((report) => {
+                    const status =
+                      getServiceStatus(
+                        report
+                      );
+
+                    const agentName =
+                      report.wchr_agent_name ||
+                      report.assigned_wchr_agent ||
+                      report.employee_name ||
+                      "Unassigned";
+
+                    return (
+                      <div
+                        key={report.id}
+                        style={{
+                          padding: "11px 12px",
+                          borderRadius: 14,
+                          background:
+                            needs30MinuteAlert(report)
+                              ? "#fff1f2"
+                              : "#f8fbff",
+                          border:
+                            needs30MinuteAlert(report)
+                              ? "1px solid #fecdd3"
+                              : "1px solid #dbeafe",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <div
+                            style={{
+                              minWidth: 0,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 12.5,
+                                fontWeight: 900,
+                                color: "#0f172a",
+                              }}
+                            >
+                              WCHR{" "}
+                              {report.wheelchair_number ||
+                                "\u2014"}{" "}
+                              |{" "}
+                              {report.passenger_name ||
+                                "Passenger"}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 3,
+                                fontSize: 10.5,
+                                color: "#64748b",
+                                lineHeight: 1.45,
+                              }}
+                            >
+                              {[
+                                report.airline,
+                                report.flight_number,
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              {" | "}
+                              {agentName}
+                              {" | "}
+                              {report.current_location ||
+                                report.ready_location ||
+                                "Location pending"}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              textAlign: "right",
+                              flexShrink: 0,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: 900,
+                                color:
+                                  needs30MinuteAlert(report)
+                                    ? "#b91c1c"
+                                    : "#1769aa",
+                              }}
+                            >
+                              {status.replaceAll(
+                                "_",
+                                " "
+                              )}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 3,
+                                fontSize: 10.5,
+                                fontWeight: 850,
+                                color: "#475569",
+                              }}
+                            >
+                              {formatElapsedFrom(
+                                getReportTimerStart(
+                                  report
+                                )
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </PageCard>
       )}
