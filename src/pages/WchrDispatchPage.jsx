@@ -189,6 +189,29 @@ function getServiceMinutes(report, now) {
   );
 }
 
+function isDeliveredToGate(report) {
+  const serviceStatus = safeUpper(report?.service_status);
+  const trackingStatus = safeUpper(report?.tracking_status);
+
+  return Boolean(
+    report?.gate_arrived_at ||
+    report?.passenger_delivered_to_gate_at ||
+    report?.passenger_delivered_to_gate === true ||
+    ["AT_GATE", "BOARDING", "BOARDED", "PENDING_STORAGE", "STORED", "COMPLETED"].includes(serviceStatus) ||
+    ["AT_GATE", "BOARDING", "BOARDED", "PENDING_STORAGE", "STORED", "COMPLETED"].includes(trackingStatus)
+  );
+}
+
+function shouldShow30MinuteAlert(report, now) {
+  if (isDeliveredToGate(report)) return false;
+  if (report?.alerts_enabled === false) return false;
+  if (report?.transport_alert_active === false) return false;
+
+  return getServiceMinutes(report, now) >= Number(
+    report?.alert_after_minutes || 30
+  );
+}
+
 function getServiceStatusLabel(value) {
   const status = safeUpper(value);
 
@@ -1240,7 +1263,7 @@ function ReadyWheelchairCard({
     );
 
   const alert =
-    minutes >= 30;
+    shouldShow30MinuteAlert(report, now);
 
   return (
     <button
@@ -2492,10 +2515,10 @@ export default function WchrDispatchPage() {
       () =>
         reports.filter(
           (report) =>
-            getServiceMinutes(
+            shouldShow30MinuteAlert(
               report,
               now
-            ) >= 30
+            )
         ),
       [
         reports,
@@ -3833,7 +3856,7 @@ export default function WchrDispatchPage() {
                 ? `WCHR ${
                     selectedReport.wheelchair_number ||
                     "\u2014"
-                  } Â· ${
+                  } ${
                     selectedReport.passenger_name ||
                     "Passenger"
                   }`
