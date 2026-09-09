@@ -38,11 +38,15 @@ const INVENTORY_COLLECTION = "wchr_inventory";
 
 const REPORT_FILTERS = [
   { value: "ALL", label: "All Services" },
-  { value: "ACTIVE", label: "Active" },
+  { value: "ACTIVE", label: "OB Active" },
   { value: "AT_GATE", label: "At Gate" },
   { value: "BOARDED", label: "Boarded" },
   { value: "PENDING_STORAGE", label: "Pending Storage" },
   { value: "STORED", label: "Stored" },
+  { value: "IB_WAITING", label: "IB Waiting" },
+  { value: "IB_ACCEPTED", label: "IB Accepted" },
+  { value: "IB_IN_TRANSIT", label: "IB In Transit" },
+  { value: "IB_DELIVERED", label: "IB Delivered" },
   { value: "ALERT", label: "30+ Min Alert" },
 ];
 
@@ -204,7 +208,59 @@ function getVisibleName(user) {
 // SERVICE STATUS HELPERS
 // ============================================================
 
+function isInboundReport(report) {
+  return (
+    safeUpper(report?.service_direction) === "IB" ||
+    Boolean(report?.ib_status) ||
+    Boolean(report?.ib_accepted_at) ||
+    Boolean(report?.ib_transit_started_at) ||
+    Boolean(report?.ib_delivered_at)
+  );
+}
+
+function getInboundStatus(report) {
+  if (!isInboundReport(report)) return "";
+
+  const direct = safeUpper(
+    report?.ib_status ||
+      report?.service_status ||
+      report?.tracking_status
+  );
+
+  if (direct === "IB_DELIVERED" || report?.ib_delivered_at) {
+    return "IB_DELIVERED";
+  }
+
+  if (direct === "IB_IN_TRANSIT" || report?.ib_transit_started_at) {
+    return "IB_IN_TRANSIT";
+  }
+
+  if (direct === "IB_ACCEPTED" || report?.ib_accepted_at) {
+    return "IB_ACCEPTED";
+  }
+
+  return "IB_WAITING";
+}
+
+function getInboundTransitMinutes(report) {
+  if (!isInboundReport(report)) return null;
+
+  const storedMinutes = Number(report?.ib_transit_minutes);
+  if (Number.isFinite(storedMinutes) && storedMinutes >= 0) {
+    return Math.round(storedMinutes);
+  }
+
+  return minutesBetween(
+    report?.ib_transit_started_at || report?.timer_started_at,
+    report?.ib_delivered_at || report?.delivered_at || report?.dropoff_at
+  );
+}
+
 function getServiceStatus(report) {
+  if (isInboundReport(report)) {
+    return getInboundStatus(report);
+  }
+
   const trackingStatus =
     safeUpper(
       report?.service_status ||
@@ -274,12 +330,20 @@ function getServiceStatusLabel(report) {
     BOARDED: "Boarded",
     PENDING_STORAGE: "Pending Storage",
     STORED: "Stored",
+    IB_WAITING: "IB Waiting",
+    IB_ACCEPTED: "IB Accepted",
+    IB_IN_TRANSIT: "IB In Transit",
+    IB_DELIVERED: "IB Delivered",
   };
 
   return labels[status] || status;
 }
 
 function getTimerStart(report) {
+  if (isInboundReport(report)) {
+    return report?.ib_transit_started_at || report?.timer_started_at || null;
+  }
+
   return (
     report?.timer_started_at ||
     report?.ready_for_pickup_at ||
@@ -330,6 +394,7 @@ function getBoardedAt(report) {
 
 function getPassengerDeliveredAt(report) {
   const direct =
+    report?.ib_delivered_at ||
     report?.passenger_delivered_at ||
     report?.delivered_at ||
     report?.dropoff_at ||
@@ -358,6 +423,15 @@ function getPassengerDeliveredAt(report) {
 }
 
 function getServiceEnd(report) {
+  if (isInboundReport(report)) {
+    return (
+      report?.ib_delivered_at ||
+      report?.delivered_at ||
+      report?.dropoff_at ||
+      null
+    );
+  }
+
   // Passenger service time ends when the passenger is boarded
   // OR delivered to Main Terminal. Storage is an inventory event
   // and must not extend passenger service time.
@@ -369,6 +443,10 @@ function getServiceEnd(report) {
 }
 
 function getTotalServiceMinutes(report) {
+  if (isInboundReport(report)) {
+    return getInboundTransitMinutes(report);
+  }
+
   return minutesBetween(
     getTimerStart(report),
     getServiceEnd(report)
@@ -571,6 +649,7 @@ function downloadOperationalCSV(
     "Wheelchair",
     "Personal WCHR",
     "Agent",
+    "Service Direction",
     "Service Status",
     "Created",
     "Ready for Pickup",
@@ -580,6 +659,11 @@ function downloadOperationalCSV(
     "Boarding Started",
     "Boarded",
     "Passenger Delivered",
+    "IB Accepted",
+    "IB Transit Started",
+    "IB Destination",
+    "IB Delivered",
+    "IB Transit Time",
     "Stored",
     "Current Location",
     "Counter to Gate",
@@ -604,6 +688,7 @@ function downloadOperationalCSV(
       report.wchr_agent_name ||
         report.assigned_wchr_agent ||
         report.employee_name,
+      isInboundReport(report) ? "IB" : "OB",
       getServiceStatusLabel(report),
       formatDateTime(
         report.submitted_at ||
@@ -631,6 +716,11 @@ function downloadOperationalCSV(
       formatDateTime(
         getPassengerDeliveredAt(report)
       ),
+      formatDateTime(report.ib_accepted_at),
+      formatDateTime(report.ib_transit_started_at),
+      report.ib_destination || report.delivered_location || report.dropoff_location || "",
+      formatDateTime(report.ib_delivered_at),
+      formatMinutes(getInboundTransitMinutes(report)),
       formatDateTime(
         report.stored_at
       ),
@@ -680,6 +770,9 @@ function downloadBillingCSV(
     "WCHR Number",
     "Personal WCHR",
     "Agent Name",
+    "Service Direction",
+    "IB Destination",
+    "IB Transit Minutes",
   ];
 
   const body = rows.map(
@@ -702,7 +795,11 @@ function downloadBillingCSV(
           : "No",
         report.wchr_agent_name ||
           report.assigned_wchr_agent ||
+          report.assigned_agent_name ||
           report.employee_name,
+        isInboundReport(report) ? "IB" : "OB",
+        report.ib_destination || "",
+        getInboundTransitMinutes(report) ?? "",
       ]
         .map(escapeCsv)
         .join(",");
@@ -736,6 +833,22 @@ function buildSummary(rows) {
         summary.active += 1;
       }
 
+      if (status === "IB_WAITING") {
+        summary.ibWaiting += 1;
+      }
+
+      if (status === "IB_ACCEPTED") {
+        summary.ibAccepted += 1;
+      }
+
+      if (status === "IB_IN_TRANSIT") {
+        summary.ibInTransit += 1;
+      }
+
+      if (status === "IB_DELIVERED") {
+        summary.ibDelivered += 1;
+      }
+
       if (status === "AT_GATE") {
         summary.atGate += 1;
       }
@@ -765,6 +878,10 @@ function buildSummary(rows) {
     {
       total: 0,
       active: 0,
+      ibWaiting: 0,
+      ibAccepted: 0,
+      ibInTransit: 0,
+      ibDelivered: 0,
       atGate: 0,
       boarded: 0,
       pendingStorage: 0,
@@ -803,6 +920,10 @@ function buildFlights(rows) {
           getReportDate(report),
         total: 0,
         active: 0,
+        ib_waiting: 0,
+        ib_accepted: 0,
+        ib_in_transit: 0,
+        ib_delivered: 0,
         at_gate: 0,
         boarded: 0,
         pending_storage: 0,
@@ -822,6 +943,22 @@ function buildFlights(rows) {
 
     if (status === "ACTIVE") {
       item.active += 1;
+    }
+
+    if (status === "IB_WAITING") {
+      item.ib_waiting += 1;
+    }
+
+    if (status === "IB_ACCEPTED") {
+      item.ib_accepted += 1;
+    }
+
+    if (status === "IB_IN_TRANSIT") {
+      item.ib_in_transit += 1;
+    }
+
+    if (status === "IB_DELIVERED") {
+      item.ib_delivered += 1;
     }
 
     if (status === "AT_GATE") {
@@ -915,15 +1052,11 @@ function buildEmployeeStats(rows) {
 
   for (const report of rows) {
     const agentName =
-      safeText(
-        report.wchr_agent_name
-      ) ||
-      safeText(
-        report.assigned_wchr_agent
-      ) ||
-      safeText(
-        report.employee_name
-      ) ||
+      safeText(report.wchr_agent_name) ||
+      safeText(report.assigned_wchr_agent) ||
+      safeText(report.assigned_agent_name) ||
+      safeText(report.assignment_accepted_by_agent_name) ||
+      safeText(report.employee_name) ||
       "Unknown";
 
     const key =
@@ -1236,6 +1369,26 @@ function StatusBadge({
       background: "#f0fdf4",
       color: "#166534",
       border: "#86efac",
+    },
+    IB_WAITING: {
+      background: "#f8fafc",
+      color: "#475569",
+      border: "#cbd5e1",
+    },
+    IB_ACCEPTED: {
+      background: "#eef2ff",
+      color: "#4338ca",
+      border: "#c7d2fe",
+    },
+    IB_IN_TRANSIT: {
+      background: "#eff6ff",
+      color: "#1d4ed8",
+      border: "#93c5fd",
+    },
+    IB_DELIVERED: {
+      background: "#ecfdf5",
+      color: "#047857",
+      border: "#a7f3d0",
     },
   };
 
@@ -1689,6 +1842,10 @@ function buildWchrPrintableHtml(report, timeline = [], segments = []) {
   const wheelchairLabel =
     report?.wheelchair_number ||
     (isPersonalWheelchair(report) ? "Personal WCHR" : "â");
+  const inbound = isInboundReport(report);
+  const serviceDirection = inbound ? "IB Arrival" : "OB Departure";
+  const inboundDestination =
+    report?.ib_destination || report?.delivered_location || report?.dropoff_location || "â";
 
   const card = (label, value) => `
     <div class="card">
@@ -1894,7 +2051,7 @@ function buildWchrPrintableHtml(report, timeline = [], segments = []) {
 
           .metrics {
             display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
             gap: 9px;
             margin-bottom: 18px;
           }
@@ -2025,7 +2182,12 @@ function buildWchrPrintableHtml(report, timeline = [], segments = []) {
             ${card("WCHR Type", report?.wch_type || "â")}
             ${card("Wheelchair", wheelchairLabel)}
             ${card("Assigned Agent", agentName)}
+            ${card("Service Direction", serviceDirection)}
             ${card("Current Location", report?.current_location || "â")}
+            ${inbound ? card("IB Accepted", formatDateTime(report?.ib_accepted_at)) : ""}
+            ${inbound ? card("Transit Started at CBP", formatDateTime(report?.ib_transit_started_at)) : ""}
+            ${inbound ? card("Destination", inboundDestination) : ""}
+            ${inbound ? card("IB Delivered", formatDateTime(report?.ib_delivered_at)) : ""}
             ${card("Created", formatDateTime(report?.submitted_at || report?.created_at))}
             ${card("Ready for Pickup", formatDateTime(report?.ready_for_pickup_at))}
             ${card("Assigned", formatDateTime(report?.assigned_at))}
@@ -2039,6 +2201,13 @@ function buildWchrPrintableHtml(report, timeline = [], segments = []) {
           </div>
 
           <div class="metrics">
+            ${inbound ? `
+            <div class="metric">
+              <div class="section-label">CBP to Destination</div>
+              <div class="metric-value">${escapePrintHtml(
+                formatMinutes(getInboundTransitMinutes(report))
+              )}</div>
+            </div>` : ""}
             <div class="metric">
               <div class="section-label">Counter to Gate</div>
               <div class="metric-value">${escapePrintHtml(
@@ -3660,9 +3829,7 @@ export default function WCHRFlights() {
           gridTemplateColumns:
             isMobile
               ? "repeat(2, minmax(0, 1fr))"
-              : isTablet
-              ? "repeat(4, minmax(0, 1fr))"
-              : "repeat(7, minmax(0, 1fr))",
+              : "repeat(auto-fit, minmax(125px, 1fr))",
           gap: 9,
         }}
       >
@@ -3699,6 +3866,30 @@ export default function WCHRFlights() {
         <MetricCard
           label="Stored"
           value={summary.stored}
+          tone="green"
+        />
+
+        <MetricCard
+          label="IB Waiting"
+          value={summary.ibWaiting}
+          tone="slate"
+        />
+
+        <MetricCard
+          label="IB Accepted"
+          value={summary.ibAccepted}
+          tone="blue"
+        />
+
+        <MetricCard
+          label="IB Transit"
+          value={summary.ibInTransit}
+          tone="blue"
+        />
+
+        <MetricCard
+          label="IB Delivered"
+          value={summary.ibDelivered}
           tone="green"
         />
 
@@ -3763,7 +3954,7 @@ export default function WCHRFlights() {
               <option value="">Select WCHR / passenger / employee</option>
               {allDayReports.map((report) => (
                 <option key={report.id} value={report.id}>
-                  {`WCHR ${report.wheelchair_number || "Personal"} | ${report.passenger_name || "Passenger"} | ${report.wchr_agent_name || report.assigned_wchr_agent || report.employee_name || "Unassigned"}`}
+                  {`${isInboundReport(report) ? "IB" : "OB"} | WCHR ${report.wheelchair_number || "Pending"} | ${report.passenger_name || "Passenger"} | ${report.wchr_agent_name || report.assigned_wchr_agent || report.assigned_agent_name || report.employee_name || "Unassigned"}`}
                 </option>
               ))}
             </SelectInput>
@@ -3860,6 +4051,22 @@ export default function WCHRFlights() {
               ) {
                 count =
                   summary.stored;
+              } else if (
+                item.value === "IB_WAITING"
+              ) {
+                count = summary.ibWaiting;
+              } else if (
+                item.value === "IB_ACCEPTED"
+              ) {
+                count = summary.ibAccepted;
+              } else if (
+                item.value === "IB_IN_TRANSIT"
+              ) {
+                count = summary.ibInTransit;
+              } else if (
+                item.value === "IB_DELIVERED"
+              ) {
+                count = summary.ibDelivered;
               } else if (
                 item.value ===
                 "ALERT"
@@ -4046,6 +4253,54 @@ export default function WCHRFlights() {
                           "wrap",
                       }}
                     >
+                      {flight.ib_waiting > 0 && (
+                        <span
+                          style={miniPillStyle(
+                            "#f8fafc",
+                            "#475569",
+                            "#cbd5e1"
+                          )}
+                        >
+                          IB Waiting {flight.ib_waiting}
+                        </span>
+                      )}
+
+                      {flight.ib_accepted > 0 && (
+                        <span
+                          style={miniPillStyle(
+                            "#eef2ff",
+                            "#4338ca",
+                            "#c7d2fe"
+                          )}
+                        >
+                          IB Accepted {flight.ib_accepted}
+                        </span>
+                      )}
+
+                      {flight.ib_in_transit > 0 && (
+                        <span
+                          style={miniPillStyle(
+                            "#eff6ff",
+                            "#1d4ed8",
+                            "#93c5fd"
+                          )}
+                        >
+                          IB Transit {flight.ib_in_transit}
+                        </span>
+                      )}
+
+                      {flight.ib_delivered > 0 && (
+                        <span
+                          style={miniPillStyle(
+                            "#ecfdf5",
+                            "#047857",
+                            "#a7f3d0"
+                          )}
+                        >
+                          IB Delivered {flight.ib_delivered}
+                        </span>
+                      )}
+
                       {flight.active >
                         0 && (
                         <span
@@ -4491,8 +4746,14 @@ export default function WCHRFlights() {
               value={
                 selectedReport.wchr_agent_name ||
                 selectedReport.assigned_wchr_agent ||
+                selectedReport.assigned_agent_name ||
                 selectedReport.employee_name
               }
+            />
+
+            <InfoField
+              label="Service Direction"
+              value={isInboundReport(selectedReport) ? "IB Arrival" : "OB Departure"}
             />
 
             <InfoField
@@ -4502,6 +4763,40 @@ export default function WCHRFlights() {
               }
             />
 
+            {isInboundReport(selectedReport) && (
+              <>
+                <InfoField
+                  label="IB Accepted"
+                  value={formatDateTime(selectedReport.ib_accepted_at)}
+                />
+
+                <InfoField
+                  label="Transit Started at CBP"
+                  value={formatDateTime(selectedReport.ib_transit_started_at)}
+                />
+
+                <InfoField
+                  label="IB Destination"
+                  value={
+                    selectedReport.ib_destination ||
+                    selectedReport.delivered_location ||
+                    selectedReport.dropoff_location ||
+                    "â"
+                  }
+                />
+
+                <InfoField
+                  label="IB Delivered"
+                  value={formatDateTime(selectedReport.ib_delivered_at)}
+                />
+
+                <InfoField
+                  label="CBP to Destination"
+                  value={formatMinutes(getInboundTransitMinutes(selectedReport))}
+                />
+              </>
+            )}
+
             <InfoField
               label="Created"
               value={formatDateTime(
@@ -4510,104 +4805,71 @@ export default function WCHRFlights() {
               )}
             />
 
-            <InfoField
-              label="Ready for Pickup"
-              value={formatDateTime(
-                selectedReport.ready_for_pickup_at
-              )}
-            />
+            {!isInboundReport(selectedReport) && (
+              <>
+                <InfoField
+                  label="Ready for Pickup"
+                  value={formatDateTime(selectedReport.ready_for_pickup_at)}
+                />
 
-            <InfoField
-              label="Assigned"
-              value={formatDateTime(
-                selectedReport.assigned_at
-              )}
-            />
+                <InfoField
+                  label="Assigned"
+                  value={formatDateTime(selectedReport.assigned_at)}
+                />
 
-            <InfoField
-              label="Picked Up"
-              value={formatDateTime(
-                selectedReport.picked_up_at ||
-                selectedReport.pickup_at
-              )}
-            />
+                <InfoField
+                  label="Picked Up"
+                  value={formatDateTime(
+                    selectedReport.picked_up_at || selectedReport.pickup_at
+                  )}
+                />
 
-            <InfoField
-              label="Gate Arrival"
-              value={formatDateTime(
-                selectedReport.gate_arrived_at
-              )}
-            />
+                <InfoField
+                  label="Gate Arrival"
+                  value={formatDateTime(selectedReport.gate_arrived_at)}
+                />
 
-            <InfoField
-              label="Boarding Started"
-              value={formatDateTime(
-                getBoardingStartedAt(
-                  selectedReport
-                )
-              )}
-            />
+                <InfoField
+                  label="Boarding Started"
+                  value={formatDateTime(getBoardingStartedAt(selectedReport))}
+                />
 
-            <InfoField
-              label="Passenger Boarded"
-              value={formatDateTime(
-                getBoardedAt(
-                  selectedReport
-                )
-              )}
-            />
+                <InfoField
+                  label="Passenger Boarded"
+                  value={formatDateTime(getBoardedAt(selectedReport))}
+                />
 
-            <InfoField
-              label="Passenger Delivered"
-              value={formatDateTime(
-                getPassengerDeliveredAt(
-                  selectedReport
-                )
-              )}
-            />
+                <InfoField
+                  label="Passenger Delivered"
+                  value={formatDateTime(getPassengerDeliveredAt(selectedReport))}
+                />
 
-            <InfoField
-              label="Stored"
-              value={formatDateTime(
-                selectedReport.stored_at
-              )}
-            />
+                <InfoField
+                  label="Stored"
+                  value={formatDateTime(selectedReport.stored_at)}
+                />
 
-            <InfoField
-              label="Counter to Gate"
-              value={formatMinutes(
-                getCounterToGateMinutes(
-                  selectedReport
-                )
-              )}
-            />
+                <InfoField
+                  label="Counter to Gate"
+                  value={formatMinutes(getCounterToGateMinutes(selectedReport))}
+                />
 
-            <InfoField
-              label="Gate to Boarding"
-              value={formatMinutes(
-                getGateToBoardingMinutes(
-                  selectedReport
-                )
-              )}
-            />
+                <InfoField
+                  label="Gate to Boarding"
+                  value={formatMinutes(getGateToBoardingMinutes(selectedReport))}
+                />
 
-            <InfoField
-              label="Boarding to Boarded"
-              value={formatMinutes(
-                getBoardingToBoardedMinutes(
-                  selectedReport
-                )
-              )}
-            />
+                <InfoField
+                  label="Boarding to Boarded"
+                  value={formatMinutes(getBoardingToBoardedMinutes(selectedReport))}
+                />
 
-            <InfoField
-              label="Gate to Boarded / Delivered"
-              value={formatMinutes(
-                getGateToBoardedMinutes(
-                  selectedReport
-                )
-              )}
-            />
+                <InfoField
+                  label="Gate to Boarded / Delivered"
+                  value={formatMinutes(getGateToBoardedMinutes(selectedReport))}
+                />
+              </>
+            )}
 
             <InfoField
               label="Total Passenger Service"
@@ -4664,24 +4926,29 @@ export default function WCHRFlights() {
                   lineHeight: 1.5,
                 }}
               >
-                {needs30MinuteAlert(selectedReport)
+                {isInboundReport(selectedReport)
+                  ? needs30MinuteAlert(selectedReport)
+                    ? "IB transit has exceeded 30 minutes. Review the CBP-to-destination movement and add an operational note if needed."
+                    : "Inbound service is controlled by the WCHR agent. Management can review the live transit, add notes, or delete an incorrect report."
+                  : needs30MinuteAlert(selectedReport)
                   ? "30+ minute alert is active. Add an operational note explaining the current status, then continue monitoring or store the wheelchair when the service is complete."
                   : "Add operational notes, confirm wheelchair storage, or delete an incorrect report."}
               </div>
 
-              <div
-                style={{
-                  marginTop: 12,
-                  display: "grid",
-                  gridTemplateColumns:
-                    isMobile
-                      ? "1fr"
-                      : "repeat(3, minmax(0, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <ActionButton
-                  variant="secondary"
+              {!isInboundReport(selectedReport) && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "grid",
+                    gridTemplateColumns:
+                      isMobile
+                        ? "1fr"
+                        : "repeat(3, minmax(0, 1fr))",
+                    gap: 8,
+                  }}
+                >
+                  <ActionButton
+                    variant="secondary"
                   disabled={
                     Boolean(busyAction) ||
                     Boolean(
@@ -4735,15 +5002,20 @@ export default function WCHRFlights() {
                   {busyAction === "delivered"
                     ? "Recording..."
                     : "Delivered Main Terminal"}
-                </ActionButton>
-              </div>
+                  </ActionButton>
+                </div>
+              )}
 
               <div style={{ marginTop: 12 }}>
                 <TextArea
                   value={managerNote}
                   onChange={setManagerNote}
                   disabled={Boolean(busyAction)}
-                  placeholder="Example: Passenger at gate, agent checking status, TSA delay, restroom request, waiting to board..."
+                  placeholder={
+                    isInboundReport(selectedReport)
+                      ? "Example: Passenger accepted at CBP, transit delay, elevator congestion, destination access issue..."
+                      : "Example: Passenger at gate, agent checking status, TSA delay, restroom request, waiting to board..."
+                  }
                 />
               </div>
 
@@ -4759,18 +5031,29 @@ export default function WCHRFlights() {
                   alignItems: "end",
                 }}
               >
-                <SelectInput
-                  value={storeLocation}
-                  onChange={setStoreLocation}
-                  disabled={Boolean(busyAction)}
-                >
-                  <option value="Wheelchair Storage">Wheelchair Storage</option>
-                  <option value="Counter">Counter</option>
-                  <option value="Main Terminal">Main Terminal</option>
-                  <option value="Gate F87">Gate F87</option>
-                  <option value="Gate F88">Gate F88</option>
-                  <option value="Other">Other</option>
-                </SelectInput>
+                {!isInboundReport(selectedReport) ? (
+                  <SelectInput
+                    value={storeLocation}
+                    onChange={setStoreLocation}
+                    disabled={Boolean(busyAction)}
+                  >
+                    <option value="Wheelchair Storage">Wheelchair Storage</option>
+                    <option value="Counter">Counter</option>
+                    <option value="Main Terminal">Main Terminal</option>
+                    <option value="Gate F87">Gate F87</option>
+                    <option value="Gate F88">Gate F88</option>
+                    <option value="Other">Other</option>
+                  </SelectInput>
+                ) : (
+                  <InfoField
+                    label="IB Destination"
+                    value={
+                      selectedReport.ib_destination ||
+                      selectedReport.current_location ||
+                      "Pending"
+                    }
+                  />
+                )}
 
                 <ActionButton
                   variant="primary"
@@ -4780,16 +5063,18 @@ export default function WCHRFlights() {
                   {busyAction === "note" ? "Saving Note..." : "Add Note"}
                 </ActionButton>
 
-                <ActionButton
-                  variant="success"
-                  disabled={
-                    Boolean(busyAction) ||
-                    getServiceStatus(selectedReport) === "STORED"
-                  }
-                  onClick={handleStoreWheelchair}
-                >
-                  {busyAction === "store" ? "Storing..." : "Store WCHR"}
-                </ActionButton>
+                {!isInboundReport(selectedReport) && (
+                  <ActionButton
+                    variant="success"
+                    disabled={
+                      Boolean(busyAction) ||
+                      getServiceStatus(selectedReport) === "STORED"
+                    }
+                    onClick={handleStoreWheelchair}
+                  >
+                    {busyAction === "store" ? "Storing..." : "Store WCHR"}
+                  </ActionButton>
+                )}
 
                 <ActionButton
                   variant="warning"
