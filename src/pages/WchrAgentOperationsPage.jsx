@@ -91,6 +91,16 @@ const IB_DESTINATIONS = [
   "First Floor Blue Side",
 ];
 
+const WCHR_STORAGE_LOCATIONS = [
+  "Wheelchair Storage",
+  "Main Terminal",
+  "Rental Car",
+  "First Floor Red Side",
+  "First Floor Blue Side",
+  "Airside F",
+  "Other",
+];
+
 const IB_STATUS = {
   WAITING: "IB_WAITING",
   ACCEPTED: "IB_ACCEPTED",
@@ -704,6 +714,9 @@ export default function WchrAgentOperationsPage() {
   const [selectedIbDestination, setSelectedIbDestination] = useState(
     IB_DESTINATIONS[0]
   );
+  const [selectedStorageLocation, setSelectedStorageLocation] = useState(
+    WCHR_STORAGE_LOCATIONS[0]
+  );
 
   const [trackingConsent, setTrackingConsent] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState("Counter");
@@ -1039,6 +1052,7 @@ export default function WchrAgentOperationsPage() {
     if (safeUpper(activeReport?.service_direction) !== "IB") {
       setSelectedIbWheelchairId("");
       setSelectedIbDestination(IB_DESTINATIONS[0]);
+      setSelectedStorageLocation(WCHR_STORAGE_LOCATIONS[0]);
       return;
     }
 
@@ -1816,14 +1830,17 @@ export default function WchrAgentOperationsPage() {
       return;
     }
 
-    const destination = cleanText(activeReport.ib_destination) || cleanText(selectedIbDestination);
+    const destination =
+      cleanText(activeReport.ib_destination) ||
+      cleanText(selectedIbDestination);
+
     if (!IB_DESTINATIONS.includes(destination)) {
       setError("Select a valid passenger destination before delivery.");
       return;
     }
 
     const confirmed = window.confirm(
-      `Confirm ${activeReport.passenger_name || "passenger"} delivered to ${destination}?\n\nThis will stop the transit timer and release WCHR ${activeReport.wheelchair_number || ""}.`
+      `Confirm ${activeReport.passenger_name || "passenger"} delivered to ${destination}?\n\nThis will stop the passenger transit timer. WCHR ${activeReport.wheelchair_number || ""} will remain assigned to you until you store it and press Store WCHR.`
     );
     if (!confirmed) return;
 
@@ -1839,39 +1856,223 @@ export default function WchrAgentOperationsPage() {
 
       const reportRef = doc(db, "wch_reports", activeReport.id);
       const shiftRef = doc(db, "wchr_agent_shifts", agentId);
-      const inventoryId = cleanText(activeReport.inventory_doc_id || activeReport.inventory_id);
-      const inventoryRef = inventoryId ? doc(db, WCHR_INVENTORY_COLLECTION, inventoryId) : null;
+      const inventoryId = cleanText(
+        activeReport.inventory_doc_id || activeReport.inventory_id
+      );
+      const inventoryRef = inventoryId
+        ? doc(db, WCHR_INVENTORY_COLLECTION, inventoryId)
+        : null;
 
       await runTransaction(db, async (transaction) => {
         const reportSnap = await transaction.get(reportRef);
         const shiftSnap = await transaction.get(shiftRef);
-        const inventorySnap = inventoryRef ? await transaction.get(inventoryRef) : null;
+        const inventorySnap = inventoryRef
+          ? await transaction.get(inventoryRef)
+          : null;
 
-        if (!reportSnap.exists()) throw new Error("Inbound passenger report not found.");
-        if (!shiftSnap.exists()) throw new Error("Your WCHR shift was not found.");
+        if (!reportSnap.exists()) {
+          throw new Error("Inbound passenger report not found.");
+        }
+        if (!shiftSnap.exists()) {
+          throw new Error("Your WCHR shift was not found.");
+        }
 
         const freshReport = reportSnap.data() || {};
-        if (safeUpper(freshReport.ib_status || freshReport.service_status) !== IB_STATUS.IN_TRANSIT) {
+
+        if (
+          safeUpper(freshReport.ib_status || freshReport.service_status) !==
+          IB_STATUS.IN_TRANSIT
+        ) {
           throw new Error("This inbound service is no longer in transit.");
         }
 
         transaction.update(reportRef, {
+          // Passenger journey is complete, but the WCHR journey is not.
           ib_status: IB_STATUS.DELIVERED,
-          service_status: IB_STATUS.DELIVERED,
-          tracking_status: IB_STATUS.DELIVERED,
+          service_status: "PENDING_STORAGE",
+          tracking_status: "PENDING_STORAGE",
           ib_destination: destination,
           current_location: destination,
+
           ib_delivered_at: serverTimestamp(),
           delivered_at: serverTimestamp(),
-          completed_at: serverTimestamp(),
           ib_transit_seconds: elapsedSeconds,
           ib_transit_minutes: Number((elapsedSeconds / 60).toFixed(2)),
           passenger_delivered: true,
-          assigned_agent_active: false,
+
+          // Keep the assignment active until the wheelchair is stored.
+          assigned_agent_active: true,
           agent_transport_completed: true,
           agent_transport_completed_at: serverTimestamp(),
           ib_passenger_available: false,
+          pending_storage: true,
+          storage_required: true,
+          is_active: true,
+
+          alerts_enabled: false,
+          transport_alert_active: false,
+
+          last_location_update_at: serverTimestamp(),
+          last_updated_at: serverTimestamp(),
+          last_updated_by: getVisibleUserName(user),
+          last_updated_by_id: user?.id || user?.uid || "",
+        });
+
+        transaction.update(shiftRef, {
+          availability_status: WCHR_AGENT_AVAILABILITY.BUSY,
+          current_location: destination,
+          active_report_id: activeReport.id,
+          active_wheelchair_number: activeReport.wheelchair_number || "",
+          active_passenger_name: "",
+          active_pnr: "",
+          active_flight_number: "",
+          active_airline: "",
+          active_service_status: "PENDING_STORAGE",
+          updated_at: serverTimestamp(),
+        });
+
+        if (inventoryRef && inventorySnap?.exists()) {
+          transaction.update(inventoryRef, {
+            status: "PENDING_STORAGE",
+            is_available: false,
+            available_for_handoff: false,
+            ready_for_pickup: false,
+            location: destination,
+            current_location: destination,
+            current_agent_id: agentId,
+            current_agent_name: getEmployeeName(employee),
+            report_doc_id: activeReport.id,
+            assigned_report_doc_id: activeReport.id,
+            report_id: activeReport.id,
+            assigned_report_id: activeReport.id,
+            passenger_name: "",
+            updated_at: serverTimestamp(),
+          });
+        }
+      });
+
+      await addWchrTimelineEvent({
+        reportId: activeReport.id,
+        eventType: "IB_PASSENGER_DELIVERED",
+        wheelchairNumber: activeReport.wheelchair_number || "",
+        agentId,
+        agentName: getEmployeeName(employee),
+        location: destination,
+        note: `Inbound passenger delivered from CBP to ${destination}. Transit time: ${formatElapsedTime(elapsedSeconds)}. WCHR remains assigned pending storage.`,
+        user,
+      });
+
+      setSelectedLocation(destination);
+      setSelectedStorageLocation(WCHR_STORAGE_LOCATIONS[0]);
+      setLocationNote("");
+      setMessage(
+        `Passenger delivered to ${destination}. Transit completed in ${formatElapsedTime(elapsedSeconds)}. WCHR ${activeReport.wheelchair_number || ""} is still assigned to you. Select the storage location and press Store WCHR when the chair is physically stored.`
+      );
+    } catch (err) {
+      console.error("Deliver inbound passenger error:", err);
+      setError(err?.message || "Unable to complete inbound delivery.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  // ============================================================
+  // IB ARRIVAL - STORE WCHR + RELEASE AGENT
+  // ============================================================
+
+  const handleStoreInboundWheelchair = async () => {
+    if (!activeReport || !agentId || !isInboundReport) {
+      setError("No inbound WCHR is currently assigned.");
+      return;
+    }
+
+    if (!ibIsDelivered) {
+      setError("Deliver the passenger before storing the WCHR.");
+      return;
+    }
+
+    if (safeUpper(currentServiceStatus) === "STORED") {
+      setError("This WCHR has already been stored.");
+      return;
+    }
+
+    const storageLocation = cleanText(selectedStorageLocation);
+
+    if (!storageLocation) {
+      setError("Select the WCHR storage location.");
+      return;
+    }
+
+    const wheelchairNumber =
+      cleanText(activeReport.wheelchair_number) ||
+      cleanText(shift?.active_wheelchair_number);
+
+    const confirmed = window.confirm(
+      `Confirm WCHR ${wheelchairNumber || ""} is physically stored at ${storageLocation}?\n\nThe wheelchair will become AVAILABLE in inventory and you will become AVAILABLE for another service.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("ib-store-wchr");
+      setError("");
+      setMessage("");
+
+      const reportRef = doc(db, "wch_reports", activeReport.id);
+      const shiftRef = doc(db, "wchr_agent_shifts", agentId);
+      const inventoryId = cleanText(
+        activeReport.inventory_doc_id || activeReport.inventory_id
+      );
+      const inventoryRef = inventoryId
+        ? doc(db, WCHR_INVENTORY_COLLECTION, inventoryId)
+        : null;
+
+      await runTransaction(db, async (transaction) => {
+        const reportSnap = await transaction.get(reportRef);
+        const shiftSnap = await transaction.get(shiftRef);
+        const inventorySnap = inventoryRef
+          ? await transaction.get(inventoryRef)
+          : null;
+
+        if (!reportSnap.exists()) {
+          throw new Error("Inbound passenger report not found.");
+        }
+        if (!shiftSnap.exists()) {
+          throw new Error("Your WCHR shift was not found.");
+        }
+
+        const freshReport = reportSnap.data() || {};
+
+        if (!freshReport.ib_delivered_at) {
+          throw new Error("The passenger must be delivered before the WCHR can be stored.");
+        }
+
+        if (
+          cleanText(freshReport.assigned_agent_id || freshReport.wchr_agent_id) !==
+          agentId
+        ) {
+          throw new Error("This WCHR service is no longer assigned to you.");
+        }
+
+        if (safeUpper(freshReport.service_status) === "STORED") {
+          throw new Error("This WCHR has already been stored.");
+        }
+
+        transaction.update(reportRef, {
+          ib_status: IB_STATUS.DELIVERED,
+          service_status: "STORED",
+          tracking_status: "STORED",
+          current_location: storageLocation,
+          stored_location: storageLocation,
+          storage_location: storageLocation,
+          stored_at: serverTimestamp(),
+          storage_completed_at: serverTimestamp(),
+          stored_by_agent_id: agentId,
+          stored_by_agent_name: getEmployeeName(employee),
+          pending_storage: false,
+          storage_required: false,
+          assigned_agent_active: false,
           is_active: false,
+          completed_at: serverTimestamp(),
           alerts_enabled: false,
           transport_alert_active: false,
           last_location_update_at: serverTimestamp(),
@@ -1882,7 +2083,8 @@ export default function WchrAgentOperationsPage() {
 
         transaction.update(shiftRef, {
           availability_status: WCHR_AGENT_AVAILABILITY.AVAILABLE,
-          current_location: destination,
+          current_location: storageLocation,
+
           active_report_id: "",
           active_wheelchair_number: "",
           active_passenger_name: "",
@@ -1890,8 +2092,9 @@ export default function WchrAgentOperationsPage() {
           active_flight_number: "",
           active_airline: "",
           active_service_status: "",
+
           last_assignment_report_id: activeReport.id,
-          last_assignment_wheelchair_number: activeReport.wheelchair_number || "",
+          last_assignment_wheelchair_number: wheelchairNumber || "",
           last_assignment_completed_at: serverTimestamp(),
           updated_at: serverTimestamp(),
         });
@@ -1902,8 +2105,13 @@ export default function WchrAgentOperationsPage() {
             is_available: true,
             available_for_handoff: false,
             ready_for_pickup: false,
-            location: destination,
-            current_location: destination,
+            location: storageLocation,
+            current_location: storageLocation,
+            stored_location: storageLocation,
+            stored_at: serverTimestamp(),
+            last_stored_by_agent_id: agentId,
+            last_stored_by_agent_name: getEmployeeName(employee),
+
             current_agent_id: "",
             current_agent_name: "",
             report_doc_id: "",
@@ -1921,23 +2129,26 @@ export default function WchrAgentOperationsPage() {
 
       await addWchrTimelineEvent({
         reportId: activeReport.id,
-        eventType: "IB_PASSENGER_DELIVERED",
-        wheelchairNumber: activeReport.wheelchair_number || "",
+        eventType: "WCHR_STORED",
+        wheelchairNumber: wheelchairNumber || "",
         agentId,
         agentName: getEmployeeName(employee),
-        location: destination,
-        note: `Inbound passenger delivered from CBP to ${destination}. Transit time: ${formatElapsedTime(elapsedSeconds)}.`,
+        location: storageLocation,
+        note: `WCHR ${wheelchairNumber || ""} stored at ${storageLocation}. Wheelchair and agent released for the next service.`,
         user,
       });
 
-      setSelectedLocation(destination);
+      setSelectedLocation(storageLocation);
       setSelectedIbWheelchairId("");
       setSelectedIbDestination(IB_DESTINATIONS[0]);
+      setSelectedStorageLocation(WCHR_STORAGE_LOCATIONS[0]);
       setLocationNote("");
-      setMessage(`Passenger delivered to ${destination}. Transit completed in ${formatElapsedTime(elapsedSeconds)}. You are now AVAILABLE.`);
+      setMessage(
+        `WCHR ${wheelchairNumber || ""} stored at ${storageLocation}. The wheelchair is AVAILABLE in inventory and you are AVAILABLE for another service.`
+      );
     } catch (err) {
-      console.error("Deliver inbound passenger error:", err);
-      setError(err?.message || "Unable to complete inbound delivery.");
+      console.error("Store inbound WCHR error:", err);
+      setError(err?.message || "Unable to store and release the WCHR.");
     } finally {
       setBusyAction("");
     }
@@ -3125,8 +3336,8 @@ export default function WchrAgentOperationsPage() {
                     <div key={report.id} style={{ padding: 14, borderRadius: 16, background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)", border: "1px solid #bfdbfe", minWidth: 0 }}>
                       <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", wordBreak: "break-word" }}>{report.passenger_name || "Passenger"}</div>
                       <div style={{ marginTop: 7, display: "grid", gap: 4, color: "#475569", fontSize: 12, fontWeight: 700 }}>
-                        <div>Flight: {[report.airline, report.flight_number].filter(Boolean).join(" ") || "â"}</div>
-                        <div>PNR: {report.pnr || "â"}</div>
+                        <div>Flight: {[report.airline, report.flight_number].filter(Boolean).join(" ") || "Ã¢ÂÂ"}</div>
+                        <div>PNR: {report.pnr || "Ã¢ÂÂ"}</div>
                         <div>Type: {report.wch_type || "WCHR"}</div>
                         <div>Pickup: CBP</div>
                       </div>
@@ -3268,7 +3479,7 @@ export default function WchrAgentOperationsPage() {
                       : `Wheelchair ${
                           activeReport.wheelchair_number ||
                           shift?.active_wheelchair_number ||
-                          "â"
+                          "Ã¢ÂÂ"
                         }`}
                   </h2>
 
@@ -3483,14 +3694,15 @@ export default function WchrAgentOperationsPage() {
                 <div style={{ marginTop: 18, padding: isMobile ? 13 : 16, borderRadius: 17, background: "#ffffff", border: "1px solid #e2e8f0" }}>
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: "#0f172a" }}>IB Arrival Service Progress</h3>
                   <p style={{ margin: "4px 0 13px", color: "#64748b", fontSize: 12, lineHeight: 1.55 }}>
-                    Passenger accepted at CBP. Select an available wheelchair and destination. Start Transit only when you physically leave CBP with the passenger; that is when the service timer begins.
+                    Passenger accepted at CBP. Select an available wheelchair and destination. Start Transit only when you physically leave CBP with the passenger. After delivery, the WCHR remains assigned to you until it is physically stored.
                   </p>
 
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4, minmax(0, 1fr))", gap: 9 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(5, minmax(0, 1fr))", gap: 9 }}>
                     <ServiceStep number="1" title="Accept Pax" subtitle="Passenger selected from the supervisor's IB list and reserved to you." completed={ibHasAccepted} active={!ibHasAccepted} />
                     <ServiceStep number="2" title="Select WCHR" subtitle="Choose the wheelchair number from available inventory. No manual entry." completed={Boolean(activeReport.wheelchair_number)} active={ibHasAccepted && !ibIsInTransit} />
                     <ServiceStep number="3" title="Start Transit" subtitle="Starts the real CBP-to-destination service timer." completed={ibIsInTransit} active={ibHasAccepted && !ibIsInTransit} />
-                    <ServiceStep number="4" title="Delivered" subtitle="Stops the timer, records destination and releases the WCHR and agent." completed={ibIsDelivered} active={ibIsInTransit && !ibIsDelivered} />
+                    <ServiceStep number="4" title="Delivered" subtitle="Stops the CBP transit timer. The WCHR remains assigned pending storage." completed={ibIsDelivered} active={ibIsInTransit && !ibIsDelivered} />
+                    <ServiceStep number="5" title="Store WCHR" subtitle="Select the storage location, physically store the chair, then release it to inventory." completed={safeUpper(currentServiceStatus) === "STORED"} active={ibIsDelivered && safeUpper(currentServiceStatus) !== "STORED"} />
                   </div>
 
                   {!ibIsInTransit && (
@@ -3518,7 +3730,7 @@ export default function WchrAgentOperationsPage() {
 
                   {ibIsInTransit && !ibIsDelivered && (
                     <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-                      <InfoField label="WCHR" value={activeReport.wheelchair_number || "â"} />
+                      <InfoField label="WCHR" value={activeReport.wheelchair_number || "Ã¢ÂÂ"} />
                       <InfoField label="From" value="CBP" />
                       <InfoField label="Destination" value={activeReport.ib_destination || selectedIbDestination} />
                     </div>
@@ -3529,9 +3741,46 @@ export default function WchrAgentOperationsPage() {
                       {busyAction === "ib-start-transit" ? "Starting Transit..." : ibIsInTransit ? "Transit Started" : "Start Transit"}
                     </ActionButton>
                     <ActionButton variant="success" disabled={Boolean(busyAction) || !ibIsInTransit || ibIsDelivered} onClick={handleDeliverInboundPassenger}>
-                      {busyAction === "ib-delivered" ? "Completing Delivery..." : ibIsDelivered ? "Delivered" : `Delivered to ${activeReport.ib_destination || selectedIbDestination}`}
+                      {busyAction === "ib-delivered" ? "Completing Delivery..." : ibIsDelivered ? "Passenger Delivered" : `Delivered to ${activeReport.ib_destination || selectedIbDestination}`}
                     </ActionButton>
                   </div>
+
+                  {ibIsDelivered && safeUpper(currentServiceStatus) !== "STORED" && (
+                    <div style={{ marginTop: 14, padding: isMobile ? 13 : 15, borderRadius: 15, background: "#fff7ed", border: "1px solid #fed7aa" }}>
+                      <div style={{ fontSize: 10, fontWeight: 900, color: "#9a3412", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                        WCHR Pending Storage
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 13, fontWeight: 850, color: "#7c2d12", lineHeight: 1.5 }}>
+                        Passenger delivery is complete. WCHR {activeReport.wheelchair_number || "â"} remains assigned to you and is NOT available for another service until storage is confirmed.
+                      </div>
+
+                      <div style={{ marginTop: 12 }}>
+                        <FieldLabel>WCHR Storage Location</FieldLabel>
+                        <SelectInput
+                          value={selectedStorageLocation}
+                          disabled={Boolean(busyAction)}
+                          onChange={(event) => setSelectedStorageLocation(event.target.value)}
+                        >
+                          {WCHR_STORAGE_LOCATIONS.map((location) => (
+                            <option key={location} value={location}>
+                              {location}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      </div>
+
+                      <ActionButton
+                        variant="warning"
+                        disabled={Boolean(busyAction) || !selectedStorageLocation}
+                        onClick={handleStoreInboundWheelchair}
+                        style={{ marginTop: 11, width: "100%" }}
+                      >
+                        {busyAction === "ib-store-wchr"
+                          ? "Storing WCHR..."
+                          : `Store WCHR ${activeReport.wheelchair_number || ""}`}
+                      </ActionButton>
+                    </div>
+                  )}
 
                   {!ibIsInTransit && (
                     <div style={{ marginTop: 11, padding: "10px 12px", borderRadius: 12, background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: 11.5, fontWeight: 800, lineHeight: 1.55 }}>
@@ -3863,7 +4112,9 @@ export default function WchrAgentOperationsPage() {
                 }}
               >
                 {isInboundReport
-                  ? "You currently have an active inbound passenger. You cannot accept another passenger or Punch Out until the passenger is delivered to the selected destination or WCHR Management releases the service."
+                  ? ibIsDelivered
+                    ? "Passenger delivery is complete, but the WCHR is still assigned to you. You cannot accept another passenger or Punch Out until the wheelchair is physically stored and Store WCHR is confirmed."
+                    : "You currently have an active inbound passenger. You cannot accept another passenger or Punch Out until the passenger is delivered and the assigned WCHR is stored, or WCHR Management releases the service."
                   : "You currently have an active wheelchair assignment. You cannot accept another WCHR or Punch Out until the passenger reaches the gate or WCHR Management releases the assignment. New assignments must be accepted before pickup begins."}
               </div>
             </PageCard>
