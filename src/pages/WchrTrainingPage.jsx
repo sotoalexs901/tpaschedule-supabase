@@ -1,6 +1,9 @@
 // src/pages/WchrTrainingPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db } from "../firebase";
+import { useUser } from "../UserContext.jsx";
 
 const LANGUAGES = {
   en: "English",
@@ -1619,8 +1622,265 @@ function ActionSimulator({
   );
 }
 
+
+const REAL_WORLD_CHALLENGES = {
+  OB: [
+    {
+      id: "gate_change",
+      title: { en: "Gate Change", es: "Cambio de Gate" },
+      alert: {
+        en: "Operations updates the flight from Gate F87 to Gate F88 while the passenger is in transit.",
+        es: "Operaciones cambia el vuelo de Gate F87 a Gate F88 mientras el pasajero esta en transito.",
+      },
+      question: {
+        en: "What should you do?",
+        es: "Que debes hacer?",
+      },
+      choices: [
+        {
+          label: { en: "Update Current Location / destination gate and continue to F88", es: "Actualizar Current Location / gate de destino y continuar a F88" },
+          correct: true,
+        },
+        {
+          label: { en: "Press Arrived at Gate for F87", es: "Presionar Arrived at Gate para F87" },
+          correct: false,
+        },
+        {
+          label: { en: "End the service immediately", es: "Terminar el servicio inmediatamente" },
+          correct: false,
+        },
+      ],
+      success: {
+        en: "Correct. Keep the active journey accurate and deliver the passenger to the actual assigned gate.",
+        es: "Correcto. Manten el journey actualizado y entrega al pasajero en el gate realmente asignado.",
+      },
+    },
+    {
+      id: "thirty_minute",
+      title: { en: "30+ Minute Service Alert", es: "Alerta de Servicio 30+ Minutos" },
+      alert: {
+        en: "The active transport has reached 31 minutes because of terminal congestion.",
+        es: "El traslado activo llego a 31 minutos debido a congestion en el terminal.",
+      },
+      question: {
+        en: "What is the correct response?",
+        es: "Cual es la respuesta correcta?",
+      },
+      choices: [
+        {
+          label: { en: "Continue safely, keep location/journey updated and follow the operational alert process", es: "Continuar de forma segura, mantener location/journey actualizado y seguir el proceso de alerta operacional" },
+          correct: true,
+        },
+        {
+          label: { en: "Mark Arrived at Gate before arrival to stop the timer", es: "Marcar Arrived at Gate antes de llegar para detener el timer" },
+          correct: false,
+        },
+        {
+          label: { en: "Cancel the passenger service", es: "Cancelar el servicio del pasajero" },
+          correct: false,
+        },
+      ],
+      success: {
+        en: "Correct. Never falsify a milestone to improve the time. Operational timestamps must match the real service.",
+        es: "Correcto. Nunca marques un milestone falso para mejorar el tiempo. Los timestamps deben coincidir con el servicio real.",
+      },
+    },
+  ],
+  IB: [
+    {
+      id: "wrong_wchr",
+      title: { en: "Wheelchair No Longer Available", es: "Silla Ya No Disponible" },
+      alert: {
+        en: "WCHR #12 was selected, but inventory now shows it is assigned to another active service.",
+        es: "Se selecciono WCHR #12, pero el inventario ahora muestra que esta asignada a otro servicio activo.",
+      },
+      question: {
+        en: "What should you do?",
+        es: "Que debes hacer?",
+      },
+      choices: [
+        {
+          label: { en: "Select another WCHR marked AVAILABLE", es: "Seleccionar otra WCHR marcada AVAILABLE" },
+          correct: true,
+        },
+        {
+          label: { en: "Use WCHR #12 anyway", es: "Usar WCHR #12 de todas formas" },
+          correct: false,
+        },
+        {
+          label: { en: "Type a wheelchair number manually", es: "Escribir manualmente un numero de silla" },
+          correct: false,
+        },
+      ],
+      success: {
+        en: "Correct. Only a wheelchair currently AVAILABLE in inventory should be assigned.",
+        es: "Correcto. Solo debe asignarse una silla que actualmente aparezca AVAILABLE en inventario.",
+      },
+    },
+    {
+      id: "destination_change",
+      title: { en: "Passenger Changes Destination", es: "Pasajero Cambia el Destino" },
+      alert: {
+        en: "Before leaving CBP, the passenger requests Rental Car instead of Main Terminal.",
+        es: "Antes de salir de CBP, el pasajero solicita Rental Car en lugar de Main Terminal.",
+      },
+      question: {
+        en: "What should happen before Start Transit?",
+        es: "Que debe ocurrir antes de Start Transit?",
+      },
+      choices: [
+        {
+          label: { en: "Update the destination to Rental Car, then Start Transit when physically leaving CBP", es: "Actualizar el destino a Rental Car y luego Start Transit al salir fisicamente de CBP" },
+          correct: true,
+        },
+        {
+          label: { en: "Keep Main Terminal and correct it after Delivered", es: "Mantener Main Terminal y corregirlo despues de Delivered" },
+          correct: false,
+        },
+        {
+          label: { en: "Start Transit first and decide later", es: "Hacer Start Transit primero y decidir despues" },
+          correct: false,
+        },
+      ],
+      success: {
+        en: "Correct. The destination should reflect the real requested destination before transit begins.",
+        es: "Correcto. El destino debe reflejar el destino real solicitado antes de comenzar el traslado.",
+      },
+    },
+    {
+      id: "pending_storage",
+      title: { en: "Passenger Delivered — WCHR Still Active", es: "Pasajero Entregado — WCHR Sigue Activa" },
+      alert: {
+        en: "The passenger has been delivered, but the wheelchair has not yet been returned to storage.",
+        es: "El pasajero fue entregado, pero la silla aun no ha sido llevada al storage.",
+      },
+      question: {
+        en: "Can the agent accept another passenger now?",
+        es: "Puede el agente aceptar otro pasajero ahora?",
+      },
+      choices: [
+        {
+          label: { en: "No. Store the WCHR first and confirm Store WCHR", es: "No. Primero guardar la WCHR y confirmar Store WCHR" },
+          correct: true,
+        },
+        {
+          label: { en: "Yes. Delivered makes the agent AVAILABLE", es: "Si. Delivered hace al agente AVAILABLE" },
+          correct: false,
+        },
+      ],
+      success: {
+        en: "Correct. Delivered ends the passenger timer, but the agent remains BUSY and the WCHR remains assigned until Store WCHR.",
+        es: "Correcto. Delivered termina el timer del pasajero, pero el agente permanece BUSY y la WCHR sigue asignada hasta Store WCHR.",
+      },
+    },
+  ],
+};
+
+function ChallengePanel({ scenario, language, onComplete, onCorrect, onWrong }) {
+  const challenges = REAL_WORLD_CHALLENGES[scenario] || [];
+  const [index, setIndex] = React.useState(0);
+  const [feedback, setFeedback] = React.useState("");
+  const [selected, setSelected] = React.useState("");
+  const current = challenges[index];
+
+  if (!current) {
+    return (
+      <div style={{ padding: 18, borderRadius: 18, background: "#ecfdf5", border: "1px solid #a7f3d0", textAlign: "center" }}>
+        <div style={{ fontSize: 34 }}>{"\u2705"}</div>
+        <div style={{ marginTop: 6, fontSize: 18, fontWeight: 900, color: "#065f46" }}>
+          {language === "es" ? "Practica Operacional Completada" : "Operational Practice Completed"}
+        </div>
+        <button type="button" onClick={onComplete} style={{ marginTop: 14, border: "none", borderRadius: 13, padding: "11px 16px", background: "#1769aa", color: "#fff", fontWeight: 900, cursor: "pointer" }}>
+          {language === "es" ? "Continuar" : "Continue"} {"\u2192"}
+        </button>
+      </div>
+    );
+  }
+
+  const choose = (choice, i) => {
+    if (feedback === "correct") return;
+
+    setSelected(String(i));
+
+    if (choice.correct) {
+      setFeedback("correct");
+      onCorrect?.();
+    } else {
+      setFeedback("incorrect");
+      onWrong?.();
+    }
+  };
+
+  return (
+    <div style={{ padding: 18, borderRadius: 20, background: "linear-gradient(135deg,#fff7ed 0%,#ffffff 60%,#eff6ff 100%)", border: "1px solid #fed7aa" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 900, color: "#c2410c", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            {language === "es" ? "Situacion Inesperada" : "Unexpected Situation"}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+            {"\u26A0\uFE0F"} {current.title[language]}
+          </div>
+        </div>
+        <div style={{ padding: "6px 10px", borderRadius: 999, background: "#fff", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 11, fontWeight: 900 }}>
+          {index + 1}/{challenges.length}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 13, padding: 13, borderRadius: 14, background: "#fff", border: "1px solid #ffedd5", color: "#475569", lineHeight: 1.6, fontSize: 13 }}>
+        {current.alert[language]}
+      </div>
+
+      <div style={{ marginTop: 14, fontWeight: 900, color: "#0f172a" }}>
+        {current.question[language]}
+      </div>
+
+      <div style={{ display: "grid", gap: 9, marginTop: 10 }}>
+        {current.choices.map((choice, i) => {
+          const active = selected === String(i);
+          return (
+            <button key={i} type="button" onClick={() => choose(choice, i)} style={{
+              textAlign: "left", padding: "12px 13px", borderRadius: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 800,
+              border: active ? (choice.correct ? "1px solid #86efac" : "1px solid #fecaca") : "1px solid #dbeafe",
+              background: active ? (choice.correct ? "#ecfdf5" : "#fff1f2") : "#fff",
+              color: active ? (choice.correct ? "#047857" : "#be123c") : "#334155"
+            }}>
+              {choice.label[language]}
+            </button>
+          );
+        })}
+      </div>
+
+      {feedback && (
+        <div style={{
+          marginTop: 12, padding: 12, borderRadius: 13, fontSize: 13, fontWeight: 800, lineHeight: 1.55,
+          background: feedback === "correct" ? "#ecfdf5" : "#fff1f2",
+          border: feedback === "correct" ? "1px solid #a7f3d0" : "1px solid #fecdd3",
+          color: feedback === "correct" ? "#065f46" : "#9f1239"
+        }}>
+          {feedback === "correct"
+            ? `\u2705 ${current.success[language]}`
+            : language === "es"
+            ? "\u274C Esa accion no corresponde al procedimiento. Intenta nuevamente."
+            : "\u274C That action does not match the procedure. Try again."}
+        </div>
+      )}
+
+      {feedback === "correct" && (
+        <button type="button" onClick={() => { setIndex((v) => v + 1); setFeedback(""); setSelected(""); }} style={{
+          marginTop: 13, border: "none", borderRadius: 13, padding: "11px 15px",
+          background: "linear-gradient(135deg,#0f4c81,#1769aa)", color: "#fff", fontWeight: 900, cursor: "pointer"
+        }}>
+          {language === "es" ? "Siguiente Situacion" : "Next Situation"} {"\u2192"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function WchrTrainingPage() {
   const navigate = useNavigate();
+  const { user } = useUser();
 
   const [language, setLanguage] = useState("en");
   const [scenario, setScenario] = useState("");
@@ -1631,6 +1891,13 @@ export default function WchrTrainingPage() {
   const [completedScenarios, setCompletedScenarios] = useState({
     OB: false,
     IB: false,
+  });
+  const [challengeMode, setChallengeMode] = useState(false);
+  const [savingCompletion, setSavingCompletion] = useState(false);
+  const [completionMessage, setCompletionMessage] = useState("");
+  const [scenarioStats, setScenarioStats] = useState({
+    OB: { correct: 0, incorrect: 0, score: null, completedAt: "" },
+    IB: { correct: 0, incorrect: 0, score: null, completedAt: "" },
   });
 
   const steps = useMemo(() => {
@@ -1679,6 +1946,13 @@ export default function WchrTrainingPage() {
   const startScenario = (value) => {
     setScenario(value);
     setStepIndex(0);
+    setChallengeMode(false);
+    setCompletionMessage("");
+    setCompletedScenarios((prev) => ({ ...prev, [value]: false }));
+    setScenarioStats((prev) => ({
+      ...prev,
+      [value]: { correct: 0, incorrect: 0, score: null, completedAt: "" },
+    }));
     resetAnswer();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -1686,13 +1960,35 @@ export default function WchrTrainingPage() {
   const goBackToScenarios = () => {
     setScenario("");
     setStepIndex(0);
+    setChallengeMode(false);
     resetAnswer();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleAnswer = (option) => {
+    if (!scenario || answerState === "correct") return;
+
     setSelectedAnswer(option.label);
-    setAnswerState(option.correct ? "correct" : "incorrect");
+
+    if (option.correct) {
+      setAnswerState("correct");
+      setScenarioStats((prev) => ({
+        ...prev,
+        [scenario]: {
+          ...prev[scenario],
+          correct: Number(prev[scenario]?.correct || 0) + 1,
+        },
+      }));
+    } else {
+      setAnswerState("incorrect");
+      setScenarioStats((prev) => ({
+        ...prev,
+        [scenario]: {
+          ...prev[scenario],
+          incorrect: Number(prev[scenario]?.incorrect || 0) + 1,
+        },
+      }));
+    }
   };
 
   const handleNext = () => {
@@ -1704,10 +2000,109 @@ export default function WchrTrainingPage() {
       return;
     }
 
-    setCompletedScenarios((prev) => ({
-      ...prev,
-      [scenario]: true,
-    }));
+    setChallengeMode(true);
+  };
+
+  const calculateScenarioScore = (scenarioKey) => {
+    const stats = scenarioStats[scenarioKey] || { correct: 0, incorrect: 0 };
+    const attempts = Number(stats.correct || 0) + Number(stats.incorrect || 0);
+
+    if (attempts <= 0) return 0;
+
+    return Math.max(
+      0,
+      Math.min(100, Math.round((Number(stats.correct || 0) / attempts) * 100))
+    );
+  };
+
+  const saveScenarioCompletion = async (scenarioKey) => {
+    const score = calculateScenarioScore(scenarioKey);
+    const completedAtClient = new Date().toISOString();
+    const employeeName =
+      user?.employeeName ||
+      user?.displayName ||
+      user?.fullName ||
+      user?.name ||
+      user?.username ||
+      "Unknown Employee";
+
+    const stats = scenarioStats[scenarioKey] || {
+      correct: 0,
+      incorrect: 0,
+    };
+
+    try {
+      setSavingCompletion(true);
+      setCompletionMessage("");
+
+      await addDoc(collection(db, "wchr_training_completions"), {
+        employeeId: user?.employeeId || "",
+        userId: user?.id || "",
+        username: user?.username || "",
+        employeeName,
+        role: user?.role || "",
+        department: user?.department || "",
+        scenario: scenarioKey,
+        scenarioLabel:
+          scenarioKey === "OB"
+            ? "Outbound Counter to Gate"
+            : "Inbound CBP to Destination to Storage",
+        language,
+        correctAnswers: Number(stats.correct || 0),
+        incorrectAnswers: Number(stats.incorrect || 0),
+        score,
+        passed: score >= 80,
+        trainingVersion: "WCHR_INTERACTIVE_V5",
+        completedAt: serverTimestamp(),
+        completedAtClient,
+      });
+
+      setScenarioStats((prev) => ({
+        ...prev,
+        [scenarioKey]: {
+          ...prev[scenarioKey],
+          score,
+          completedAt: completedAtClient,
+        },
+      }));
+
+      setCompletedScenarios((prev) => ({
+        ...prev,
+        [scenarioKey]: true,
+      }));
+
+      setCompletionMessage(
+        language === "es"
+          ? "Resultado guardado correctamente en el historial de entrenamiento."
+          : "Training result saved successfully."
+      );
+    } catch (error) {
+      console.error("Error saving WCHR training completion:", error);
+
+      // Do not lose the employee's completed training screen if Firestore fails.
+      setScenarioStats((prev) => ({
+        ...prev,
+        [scenarioKey]: {
+          ...prev[scenarioKey],
+          score,
+          completedAt: completedAtClient,
+        },
+      }));
+
+      setCompletedScenarios((prev) => ({
+        ...prev,
+        [scenarioKey]: true,
+      }));
+
+      setCompletionMessage(
+        language === "es"
+          ? "El entrenamiento fue completado, pero no se pudo guardar el resultado en Firestore."
+          : "Training was completed, but the result could not be saved to Firestore."
+      );
+    } finally {
+      setSavingCompletion(false);
+      setChallengeMode(false);
+    }
   };
 
   const scenarioComplete = scenario && completedScenarios[scenario];
@@ -1963,7 +2358,7 @@ export default function WchrTrainingPage() {
         </>
       )}
 
-      {scenario && currentStep && !scenarioComplete && (
+      {scenario && currentStep && !scenarioComplete && !challengeMode && (
         <>
           <PageCard style={{ padding: 20 }}>
             <div
@@ -2271,6 +2666,48 @@ export default function WchrTrainingPage() {
         </>
       )}
 
+      {scenario && challengeMode && !scenarioComplete && (
+        <PageCard style={{ padding: 20 }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#1769aa", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              {language === "es" ? "Modo Escenario Real" : "Real Scenario Mode"}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
+              {scenario === "OB" ? "Flight AV 219 · Gate F87" : "Inbound Arrival · CBP"}
+            </div>
+            <div style={{ marginTop: 5, fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
+              {scenario === "OB"
+                ? (language === "es" ? "Passenger: Maria Perez · WCHR #12 · Agent: Training User" : "Passenger: Maria Perez · WCHR #12 · Agent: Training User")
+                : (language === "es" ? "Passenger: Maria Perez · WCHR #12 · Destination: Main Terminal" : "Passenger: Maria Perez · WCHR #12 · Destination: Main Terminal")}
+            </div>
+          </div>
+
+          <ChallengePanel
+            scenario={scenario}
+            language={language}
+            onCorrect={() =>
+              setScenarioStats((prev) => ({
+                ...prev,
+                [scenario]: {
+                  ...prev[scenario],
+                  correct: Number(prev[scenario]?.correct || 0) + 1,
+                },
+              }))
+            }
+            onWrong={() =>
+              setScenarioStats((prev) => ({
+                ...prev,
+                [scenario]: {
+                  ...prev[scenario],
+                  incorrect: Number(prev[scenario]?.incorrect || 0) + 1,
+                },
+              }))
+            }
+            onComplete={() => saveScenarioCompletion(scenario)}
+          />
+        </PageCard>
+      )}
+
       {scenario && scenarioComplete && (
         <PageCard style={{ padding: 22 }}>
           <div
@@ -2312,6 +2749,80 @@ export default function WchrTrainingPage() {
                 ? "You completed the Inbound CBP → Destination → Storage workflow."
                 : "Completaste el flujo Inbound CBP → Destino → Storage."}
             </div>
+
+            <div
+              style={{
+                margin: "18px auto 0",
+                maxWidth: 760,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 10,
+              }}
+            >
+              <div style={{ padding: 14, borderRadius: 14, background: "#ffffff", border: "1px solid #a7f3d0" }}>
+                <div style={{ fontSize: 10, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  {language === "es" ? "Empleado" : "Employee"}
+                </div>
+                <div style={{ marginTop: 5, fontSize: 14, fontWeight: 900, color: "#0f172a" }}>
+                  {user?.employeeName || user?.displayName || user?.fullName || user?.name || user?.username || "Training User"}
+                </div>
+              </div>
+
+              <div style={{ padding: 14, borderRadius: 14, background: "#ffffff", border: "1px solid #a7f3d0" }}>
+                <div style={{ fontSize: 10, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Score
+                </div>
+                <div style={{ marginTop: 5, fontSize: 22, fontWeight: 950, color: Number(scenarioStats[scenario]?.score || 0) >= 80 ? "#047857" : "#be123c" }}>
+                  {Number(scenarioStats[scenario]?.score || 0)}%
+                </div>
+              </div>
+
+              <div style={{ padding: 14, borderRadius: 14, background: "#ffffff", border: "1px solid #a7f3d0" }}>
+                <div style={{ fontSize: 10, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  {language === "es" ? "Resultado" : "Result"}
+                </div>
+                <div style={{ marginTop: 5, fontSize: 14, fontWeight: 950, color: Number(scenarioStats[scenario]?.score || 0) >= 80 ? "#047857" : "#be123c" }}>
+                  {Number(scenarioStats[scenario]?.score || 0) >= 80
+                    ? language === "es" ? "APROBADO" : "PASSED"
+                    : language === "es" ? "REPASAR" : "REVIEW"}
+                </div>
+              </div>
+
+              <div style={{ padding: 14, borderRadius: 14, background: "#ffffff", border: "1px solid #a7f3d0" }}>
+                <div style={{ fontSize: 10, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  {language === "es" ? "Fecha" : "Date"}
+                </div>
+                <div style={{ marginTop: 5, fontSize: 12, fontWeight: 900, color: "#0f172a" }}>
+                  {scenarioStats[scenario]?.completedAt
+                    ? new Date(scenarioStats[scenario].completedAt).toLocaleString()
+                    : "—"}
+                </div>
+              </div>
+            </div>
+
+            {completionMessage && (
+              <div
+                style={{
+                  margin: "12px auto 0",
+                  maxWidth: 760,
+                  padding: "11px 13px",
+                  borderRadius: 13,
+                  background: completionMessage.toLowerCase().includes("could not") || completionMessage.toLowerCase().includes("no se pudo")
+                    ? "#fff7ed"
+                    : "#ecfdf5",
+                  border: completionMessage.toLowerCase().includes("could not") || completionMessage.toLowerCase().includes("no se pudo")
+                    ? "1px solid #fdba74"
+                    : "1px solid #a7f3d0",
+                  color: completionMessage.toLowerCase().includes("could not") || completionMessage.toLowerCase().includes("no se pudo")
+                    ? "#9a3412"
+                    : "#065f46",
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                {completionMessage}
+              </div>
+            )}
 
             <div
               style={{
