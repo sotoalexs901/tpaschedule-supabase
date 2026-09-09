@@ -22,7 +22,10 @@ import {
 // you can place that URL here instead.
 
 const WCHR_ASSIGNMENT_PUSH_URL =
-  import.meta.env.VITE_WCHR_ASSIGNMENT_PUSH_URL || "";
+  String(
+    import.meta.env.VITE_WCHR_ASSIGNMENT_PUSH_URL ||
+      "/.netlify/functions/send-wchr-assignment-push"
+  ).trim();
 
 // ============================================================
 // HELPERS
@@ -264,26 +267,19 @@ export async function triggerWchrAssignmentPush(
     // ----------------------------------------------------------
 
     if (!WCHR_ASSIGNMENT_PUSH_URL) {
-      console.warn(
-        "VITE_WCHR_ASSIGNMENT_PUSH_URL is not configured."
-      );
-
       await markAssignmentPushResult(
         cleanReportId,
         {
-          assignmentPushStatus:
-            "NOT_CONFIGURED",
-
+          assignmentPushStatus: "FAILED",
           assignmentPushError:
-            "VITE_WCHR_ASSIGNMENT_PUSH_URL is missing.",
+            "WCHR Push endpoint could not be resolved.",
         }
       );
 
       return {
         success: false,
         skipped: true,
-        reason:
-          "PUSH_URL_NOT_CONFIGURED",
+        reason: "PUSH_URL_NOT_CONFIGURED",
       };
     }
 
@@ -379,7 +375,7 @@ export async function triggerWchrAssignmentPush(
             body,
 
             targetPath:
-              "/wchr/agent",
+              "/wchr/agent-operations",
 
             data: {
               type:
@@ -470,17 +466,38 @@ export async function triggerWchrAssignmentPush(
           0
       ) || 0;
 
+    const assignmentStatus =
+      successCount > 0
+        ? "SENT"
+        : responseData?.noTokens
+        ? "NO_TOKENS"
+        : responseData?.noUsers
+        ? "NO_USER"
+        : "NO_DELIVERY";
+
     await markAssignmentPushResult(
       cleanReportId,
       {
         assignmentPushStatus:
-          "SENT",
+          assignmentStatus,
 
         assignmentPushError:
-          "",
+          successCount > 0
+            ? ""
+            : cleanText(
+                responseData?.error ||
+                  responseData?.message ||
+                  (responseData?.noTokens
+                    ? "No enabled Push token was found for the assigned agent."
+                    : responseData?.noUsers
+                    ? "No matching AeroStation Hub user was found for the assigned agent."
+                    : "The Push endpoint returned successfully, but no notification was delivered.")
+              ),
 
         assignmentPushSentAt:
-          serverTimestamp(),
+          successCount > 0
+            ? serverTimestamp()
+            : null,
 
         assignmentPushSuccessCount:
           successCount,
@@ -491,7 +508,8 @@ export async function triggerWchrAssignmentPush(
     );
 
     return {
-      success: true,
+      success:
+        successCount > 0,
       skipped: false,
       successCount,
       failureCount,
@@ -642,18 +660,16 @@ export async function triggerWchrDeliveryPush(
       await markDeliveryPushResult(
         cleanReportId,
         {
-          deliveryPushStatus:
-            "NOT_CONFIGURED",
+          deliveryPushStatus: "FAILED",
           deliveryPushError:
-            "VITE_WCHR_ASSIGNMENT_PUSH_URL is missing.",
+            "WCHR Push endpoint could not be resolved.",
         }
       );
 
       return {
         success: false,
         skipped: true,
-        reason:
-          "PUSH_URL_NOT_CONFIGURED",
+        reason: "PUSH_URL_NOT_CONFIGURED",
       };
     }
 
@@ -821,14 +837,36 @@ export async function triggerWchrDeliveryPush(
           0
       ) || 0;
 
+    const deliveryStatus =
+      successCount > 0
+        ? "SENT"
+        : responseData?.noTokens
+        ? "NO_TOKENS"
+        : responseData?.noUsers
+        ? "NO_USER"
+        : "NO_DELIVERY";
+
     await markDeliveryPushResult(
       cleanReportId,
       {
         deliveryPushStatus:
-          "SENT",
-        deliveryPushError: "",
+          deliveryStatus,
+        deliveryPushError:
+          successCount > 0
+            ? ""
+            : cleanText(
+                responseData?.error ||
+                  responseData?.message ||
+                  (responseData?.noTokens
+                    ? "No enabled Push token was found for the assigning supervisor."
+                    : responseData?.noUsers
+                    ? "No matching AeroStation Hub user was found for the assigning supervisor."
+                    : "The Push endpoint returned successfully, but no notification was delivered.")
+              ),
         deliveryPushSentAt:
-          serverTimestamp(),
+          successCount > 0
+            ? serverTimestamp()
+            : null,
         deliveryPushSuccessCount:
           successCount,
         deliveryPushFailureCount:
@@ -837,7 +875,8 @@ export async function triggerWchrDeliveryPush(
     );
 
     return {
-      success: true,
+      success:
+        successCount > 0,
       skipped: false,
       successCount,
       failureCount,
