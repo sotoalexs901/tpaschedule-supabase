@@ -66,6 +66,10 @@ function normalizeAirline(value) {
   return safeUpper(value).replace(/\s+/g, "");
 }
 
+function safeText(value) {
+  return String(value || "").trim();
+}
+
 function buildDailyFlightKey(airline, flightNumber, dateKey) {
   const cleanAirline = normalizeAirline(airline);
   const cleanFlightNumber = normalizeFlightNumber(flightNumber);
@@ -126,7 +130,7 @@ function formatDateTime(value) {
   const millis = getMillis(value);
 
   if (!millis) {
-    return "â";
+    return "\u2014";
   }
 
   return new Date(millis).toLocaleString(
@@ -793,7 +797,7 @@ function InfoField({
           wordBreak: "break-word",
         }}
       >
-        {value || "â"}
+        {value || "\u2014"}
       </div>
     </div>
   );
@@ -850,8 +854,8 @@ function DailyFlightCard({
               color: "#0f172a",
             }}
           >
-            {flight.airline || "â"}{" "}
-            {flight.flight_number || "â"}
+            {flight.airline || "\u2014"}{" "}
+            {flight.flight_number || "\u2014"}
           </div>
 
           <div
@@ -862,7 +866,7 @@ function DailyFlightCard({
               fontWeight: 700,
             }}
           >
-            {flight.service_date || flight.flight_date || "â"}
+            {flight.service_date || flight.flight_date || "\u2014"}
           </div>
         </div>
 
@@ -1011,7 +1015,7 @@ function InventoryCard({
               color: "#0f172a",
             }}
           >
-            WCHR {wheelchairNumber || "â"}
+            WCHR {wheelchairNumber || "\u2014"}
           </div>
 
           <div
@@ -1193,7 +1197,7 @@ function AgentCard({
         >
           Assigned WCHR{" "}
           {agent.active_wheelchair_number ||
-            "â"}
+            "\u2014"}
         </div>
       )}
 
@@ -1290,7 +1294,7 @@ function ReadyWheelchairCard({
           >
             WCHR{" "}
             {report.wheelchair_number ||
-              "â"}
+              "\u2014"}
           </div>
 
           <div
@@ -2032,9 +2036,6 @@ export default function WchrDispatchPage() {
             source:
               "WCHR_DISPATCH",
 
-            selectable_for_wchr:
-              true,
-
             created_at:
               serverTimestamp(),
 
@@ -2074,10 +2075,24 @@ export default function WchrDispatchPage() {
           err
         );
 
-        setError(
-          err?.message ||
-            "Unable to add the flight."
+        const rawMessage = String(
+          err?.message || ""
         );
+
+        if (
+          rawMessage
+            .toLowerCase()
+            .includes("missing or insufficient permissions")
+        ) {
+          setError(
+            "Unable to add the flight because Firestore permissions are blocking wchr_daily_flights."
+          );
+        } else {
+          setError(
+            rawMessage ||
+              "Unable to add the flight."
+          );
+        }
       } finally {
         setSavingFlight(false);
       }
@@ -2179,6 +2194,9 @@ export default function WchrDispatchPage() {
               "OPEN",
 
             active:
+              true,
+
+            selectable_for_wchr:
               true,
 
             reopened_at:
@@ -2586,7 +2604,7 @@ export default function WchrDispatchPage() {
 
       const wheelchairNumber =
         selectedReport.wheelchair_number ||
-        "â";
+        "\u2014";
 
       const confirmed =
         window.confirm(
@@ -3024,7 +3042,7 @@ export default function WchrDispatchPage() {
                   letterSpacing: "0.14em",
                 }}
               >
-                {APP_NAME} Â· WCHR Dispatch
+                {APP_NAME} {" | "} WCHR Dispatch
               </div>
 
               <h1
@@ -3814,7 +3832,7 @@ export default function WchrDispatchPage() {
               {selectedReport
                 ? `WCHR ${
                     selectedReport.wheelchair_number ||
-                    "â"
+                    "\u2014"
                   } Â· ${
                     selectedReport.passenger_name ||
                     "Passenger"
@@ -4248,8 +4266,8 @@ export default function WchrDispatchPage() {
             >
               WCHR{" "}
               {selectedReport.wheelchair_number ||
-                "â"}{" "}
-              â{" "}
+                "\u2014"}{" "}
+              {"\u2192"}{" "}
               {getAgentName(
                 selectedAgent
               )}
@@ -4376,7 +4394,7 @@ export default function WchrDispatchPage() {
           color: "#94a3b8",
         }}
       >
-        {APP_NAME} Â· {APP_SUBTITLE}
+        {APP_NAME} {" | "} {APP_SUBTITLE}
       </div>
     </div>
   );
