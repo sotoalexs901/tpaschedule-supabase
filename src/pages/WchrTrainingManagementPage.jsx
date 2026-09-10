@@ -1,6 +1,6 @@
 // src/pages/WchrTrainingManagementPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
@@ -30,6 +30,190 @@ function formatDate(value, fallback = "") {
   return "—";
 }
 
+
+function buildCertificateHtml(record) {
+  const employeeName = record.employeeName || "Employee";
+  const scenario =
+    record.scenario === "OB"
+      ? "Outbound WCHR Service - Counter to Gate"
+      : "Inbound WCHR Service - CBP to Destination to Storage";
+
+  const score = Number(record.score || 0);
+  const result = record.passed ? "PASSED" : "REVIEW REQUIRED";
+  const completedDate = formatDate(
+    record.completedAt,
+    record.completedAtClient
+  );
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>WCHR Training Certificate</title>
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            padding: 28px;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #0f172a;
+            background: #eef6ff;
+          }
+          .certificate {
+            max-width: 1000px;
+            min-height: 700px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 12px solid #0f5c91;
+            padding: 18px;
+            box-shadow: 0 18px 50px rgba(15,23,42,0.14);
+          }
+          .inner {
+            min-height: 640px;
+            border: 2px solid #6ec6e8;
+            padding: 44px 54px;
+            text-align: center;
+            position: relative;
+          }
+          .brand {
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: .18em;
+            text-transform: uppercase;
+            color: #1769aa;
+          }
+          .title {
+            margin: 30px 0 10px;
+            font-size: 44px;
+            font-weight: 900;
+            color: #0f172a;
+          }
+          .subtitle {
+            font-size: 18px;
+            color: #64748b;
+            margin-bottom: 34px;
+          }
+          .name {
+            font-size: 36px;
+            font-weight: 900;
+            color: #0f5c91;
+            border-bottom: 2px solid #dbeafe;
+            display: inline-block;
+            padding: 0 22px 8px;
+            margin-bottom: 24px;
+          }
+          .text {
+            font-size: 18px;
+            line-height: 1.7;
+            color: #334155;
+            max-width: 760px;
+            margin: 0 auto;
+          }
+          .scenario {
+            margin-top: 18px;
+            font-size: 21px;
+            font-weight: 800;
+            color: #1769aa;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-top: 34px;
+          }
+          .card {
+            border: 1px solid #dbeafe;
+            background: #f8fbff;
+            border-radius: 14px;
+            padding: 16px;
+          }
+          .label {
+            font-size: 11px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+          }
+          .value {
+            margin-top: 6px;
+            font-size: 18px;
+            font-weight: 900;
+          }
+          .footer {
+            margin-top: 50px;
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            font-size: 13px;
+            color: #64748b;
+          }
+          .signature {
+            flex: 1;
+            padding-top: 12px;
+            border-top: 1px solid #94a3b8;
+          }
+          @media print {
+            body {
+              background: #ffffff;
+              padding: 0;
+            }
+            .certificate {
+              box-shadow: none;
+              border-width: 10px;
+              max-width: none;
+            }
+            @page {
+              size: landscape;
+              margin: 0.35in;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="certificate">
+          <div class="inner">
+            <div class="brand">AeroStation Hub · TPA WCHR Operations</div>
+            <div class="title">Certificate of Completion</div>
+            <div class="subtitle">WCHR Interactive Training Program</div>
+
+            <div class="text">This certificate is presented to</div>
+            <div class="name">${employeeName}</div>
+
+            <div class="text">
+              for completing the guided WCHR operational training scenario:
+            </div>
+
+            <div class="scenario">${scenario}</div>
+
+            <div class="grid">
+              <div class="card">
+                <div class="label">Score</div>
+                <div class="value">${score}%</div>
+              </div>
+
+              <div class="card">
+                <div class="label">Result</div>
+                <div class="value">${result}</div>
+              </div>
+
+              <div class="card">
+                <div class="label">Completed</div>
+                <div class="value">${completedDate}</div>
+              </div>
+            </div>
+
+            <div class="footer">
+              <div class="signature">WCHR Training Program</div>
+              <div class="signature">TPA Eulen Operations</div>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
 export default function WchrTrainingManagementPage() {
   const { user } = useUser();
   const [rows, setRows] = useState([]);
@@ -37,6 +221,64 @@ export default function WchrTrainingManagementPage() {
   const [error, setError] = useState("");
   const [scenarioFilter, setScenarioFilter] = useState("ALL");
   const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState("");
+
+  const handlePrintCertificate = (record) => {
+    const html = buildCertificateHtml(record);
+
+    const printWindow = window.open(
+      "",
+      "_blank",
+      "width=1200,height=900"
+    );
+
+    if (!printWindow) {
+      window.alert(
+        "Pop-up blocked. Please allow pop-ups to open and print the certificate."
+      );
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 350);
+  };
+
+  const handleDeleteTrainingRecord = async (record) => {
+    const employeeName = record.employeeName || "this employee";
+    const scenarioLabel =
+      record.scenario === "OB" ? "Outbound" : "Inbound";
+
+    const ok = window.confirm(
+      `Delete the ${scenarioLabel} training completion record for ${employeeName}? This action cannot be undone.`
+    );
+
+    if (!ok) return;
+
+    try {
+      setDeletingId(record.id);
+
+      await deleteDoc(
+        doc(db, "wchr_training_completions", record.id)
+      );
+
+      setRows((prev) =>
+        prev.filter((item) => item.id !== record.id)
+      );
+    } catch (err) {
+      console.error("Error deleting training completion:", err);
+      window.alert(
+        "Could not delete the training completion record."
+      );
+    } finally {
+      setDeletingId("");
+    }
+  };
 
   const canManage =
     user?.role === "station_manager" || user?.role === "duty_manager";
@@ -303,6 +545,7 @@ export default function WchrTrainingManagementPage() {
                     "Incorrect",
                     "Language",
                     "Completed",
+                    "Actions",
                   ].map((label) => (
                     <th
                       key={label}
@@ -369,6 +612,60 @@ export default function WchrTrainingManagementPage() {
                     </td>
                     <td style={tdStyle}>
                       {formatDate(row.completedAt, row.completedAtClient)}
+                    </td>
+                    <td style={tdStyle}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handlePrintCertificate(row)}
+                          style={{
+                            border: "1px solid #bfdbfe",
+                            background: "#eff6ff",
+                            color: "#1769aa",
+                            borderRadius: 10,
+                            padding: "8px 10px",
+                            fontSize: 11,
+                            fontWeight: 900,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Certificate / Print
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTrainingRecord(row)}
+                          disabled={deletingId === row.id}
+                          style={{
+                            border: "1px solid #fecdd3",
+                            background:
+                              deletingId === row.id
+                                ? "#ffe4e6"
+                                : "#fff1f2",
+                            color: "#be123c",
+                            borderRadius: 10,
+                            padding: "8px 10px",
+                            fontSize: 11,
+                            fontWeight: 900,
+                            cursor:
+                              deletingId === row.id
+                                ? "not-allowed"
+                                : "pointer",
+                            opacity:
+                              deletingId === row.id ? 0.7 : 1,
+                          }}
+                        >
+                          {deletingId === row.id
+                            ? "Deleting..."
+                            : "Delete Record"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
