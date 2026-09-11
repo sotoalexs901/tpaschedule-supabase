@@ -597,7 +597,9 @@ function cloneReportForEdit(report) {
     needsFollowUp: Boolean(report?.needsFollowUp),
     managerNote: report?.managerNote || "",
     returnReason: report?.returnReason || "",
-    submittedAtLocal: toDateTimeLocalValue(report?.createdAt),
+    submittedAtLocal: toDateTimeLocalValue(
+      report?.officialSubmittedAt || report?.administrativeSubmitDate || report?.createdAt
+    ),
     answers: JSON.parse(JSON.stringify(report?.answers || {})),
     followUpItems: Array.isArray(report?.followUpItems)
       ? report.followUpItems.map((item) => ({
@@ -1288,8 +1290,9 @@ export default function EmployeePerformanceManagementPage() {
     try {
       setSavingId(selectedReport.id);
 
-      const originalCreatedAt = selectedReport?.createdAt || null;
+      const originalCreatedAt = selectedReport?.originalCreatedAt || selectedReport?.createdAt || null;
       const editedCreatedAt = dateTimeLocalToDate(editForm.submittedAtLocal);
+      const editedSubmittedIso = editedCreatedAt ? editedCreatedAt.toISOString() : "";
 
       const editedFollowUpHistory = Array.isArray(editForm.followUpHistory)
         ? editForm.followUpHistory.map((item) => {
@@ -1334,8 +1337,8 @@ export default function EmployeePerformanceManagementPage() {
               createdAt: editedCreatedAt,
               originalCreatedAt:
                 selectedReport?.originalCreatedAt || originalCreatedAt,
-              officialSubmittedAt: editedCreatedAt,
-              administrativeSubmitDate: editedCreatedAt,
+              officialSubmittedAt: editedSubmittedIso,
+              administrativeSubmitDate: editedSubmittedIso,
               submissionDateEditedBy: getVisibleUserName(user),
               submissionDateEditedAt: serverTimestamp(),
             }
@@ -1359,8 +1362,8 @@ export default function EmployeePerformanceManagementPage() {
                 ...(editedCreatedAt
                   ? {
                       createdAt: editedCreatedAt,
-                      officialSubmittedAt: editedCreatedAt,
-                      administrativeSubmitDate: editedCreatedAt,
+                      officialSubmittedAt: editedSubmittedIso,
+                      administrativeSubmitDate: editedSubmittedIso,
                     }
                   : {}),
                 followUpHistory: editedFollowUpHistory,
@@ -1397,6 +1400,16 @@ export default function EmployeePerformanceManagementPage() {
           ...editForm,
           createdAt:
             dateTimeLocalToDate(editForm.submittedAtLocal) ||
+            selectedReport.createdAt,
+          officialSubmittedAt:
+            dateTimeLocalToIso(editForm.submittedAtLocal) ||
+            selectedReport.officialSubmittedAt ||
+            selectedReport.administrativeSubmitDate ||
+            selectedReport.createdAt,
+          administrativeSubmitDate:
+            dateTimeLocalToIso(editForm.submittedAtLocal) ||
+            selectedReport.administrativeSubmitDate ||
+            selectedReport.officialSubmittedAt ||
             selectedReport.createdAt,
           followUpHistory: Array.isArray(editForm.followUpHistory)
             ? editForm.followUpHistory.map((item) => ({
@@ -1713,7 +1726,9 @@ export default function EmployeePerformanceManagementPage() {
             ${infoCard("Manager Status", managerStatus)}
             ${infoCard("Needs Follow Up", report.needsFollowUp ? "Yes" : "No")}
             ${infoCard("Duty Manager", dutyManagerName)}
-            ${infoCard("Submitted Date & Time", formatDateTime(report.createdAt))}
+            ${infoCard("Submitted Date & Time", formatDateTime(
+              report.officialSubmittedAt || report.administrativeSubmitDate || report.createdAt
+            ))}
             ${infoCard("Updated Date & Time", formatDateTime(report.updatedAt))}
             ${infoCard("Manager Reviewed By", report.managerReviewedBy)}
             ${infoCard("Manager Reviewed At", formatDateTime(report.managerReviewedAt))}
@@ -1849,7 +1864,7 @@ export default function EmployeePerformanceManagementPage() {
             fontWeight: 700,
           }}
         >
-          TPA OPS Â· Management of Reports
+          TPA OPS ÃÂ· Management of Reports
         </p>
 
         <h1
@@ -2111,7 +2126,7 @@ export default function EmployeePerformanceManagementPage() {
                             color: "#64748b",
                           }}
                         >
-                          {group.employees.length} employee(s) Â· {group.totalReports} report(s)
+                          {group.employees.length} employee(s) ÃÂ· {group.totalReports} report(s)
                         </div>
                       </div>
 
@@ -2221,7 +2236,7 @@ export default function EmployeePerformanceManagementPage() {
                                               color: "#0f172a",
                                             }}
                                           >
-                                            {report.templateLabel || "-"} Â·{" "}
+                                            {report.templateLabel || "-"} ÃÂ·{" "}
                                             {formatMonthValue(report.month)}
                                           </div>
                                           <div
@@ -2231,7 +2246,7 @@ export default function EmployeePerformanceManagementPage() {
                                               color: "#64748b",
                                             }}
                                           >
-                                            {safeText(report.department) || "-"} Â· Status:{" "}
+                                            {safeText(report.department) || "-"} ÃÂ· Status:{" "}
                                             {getStatusLabel(report.managerStatus || "submitted")}
                                           </div>
                                         </div>
@@ -2330,8 +2345,8 @@ export default function EmployeePerformanceManagementPage() {
                       color: "#64748b",
                     }}
                   >
-                    {selectedReport.templateLabel || "-"} Â·{" "}
-                    {formatMonthValue(selectedReport.month)} Â· Supervisor:{" "}
+                    {selectedReport.templateLabel || "-"} ÃÂ·{" "}
+                    {formatMonthValue(selectedReport.month)} ÃÂ· Supervisor:{" "}
                     {selectedReport.supervisorName || "-"}
                   </p>
                 </div>
@@ -2427,7 +2442,11 @@ export default function EmployeePerformanceManagementPage() {
                 />
                 <InfoCard
                   label="Sent"
-                  value={formatDateTime(selectedReport.createdAt)}
+                  value={formatDateTime(
+                    selectedReport.officialSubmittedAt ||
+                      selectedReport.administrativeSubmitDate ||
+                      selectedReport.createdAt
+                  )}
                   tone="default"
                 />
                 <InfoCard
@@ -2592,8 +2611,8 @@ export default function EmployeePerformanceManagementPage() {
                           </div>
                         ) : (
                           <div style={{ fontSize: 14, color: "#7c2d12" }}>
-                            â¢ {item.en || item.es}
-                            {item.note ? ` â ${item.note}` : ""}
+                            Ã¢ÂÂ¢ {item.en || item.es}
+                            {item.note ? ` Ã¢ÂÂ ${item.note}` : ""}
                           </div>
                         )}
                       </div>
@@ -2906,7 +2925,7 @@ export default function EmployeePerformanceManagementPage() {
                                   color: "#64748b",
                                 }}
                               >
-                                {item.byUserName || "-"} Â·{" "}
+                                {item.byUserName || "-"} ÃÂ·{" "}
                                 {item.createdAt
                                   ? formatDateTime(item.createdAt)
                                   : "-"}
