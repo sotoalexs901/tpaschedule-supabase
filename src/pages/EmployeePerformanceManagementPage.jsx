@@ -12,6 +12,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 
 function PageCard({ children, style = {} }) {
   return (
