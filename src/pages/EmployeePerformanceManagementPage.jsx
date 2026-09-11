@@ -1334,10 +1334,13 @@ export default function EmployeePerformanceManagementPage() {
               createdAt: editedCreatedAt,
               originalCreatedAt:
                 selectedReport?.originalCreatedAt || originalCreatedAt,
+              officialSubmittedAt: editedCreatedAt,
+              administrativeSubmitDate: editedCreatedAt,
               submissionDateEditedBy: getVisibleUserName(user),
               submissionDateEditedAt: serverTimestamp(),
             }
           : {}),
+        officialFollowUpHistory: editedFollowUpHistory,
         historyDateEditedBy: getVisibleUserName(user),
         historyDateEditedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -1353,6 +1356,15 @@ export default function EmployeePerformanceManagementPage() {
             ? {
                 ...item,
                 ...updatedPayload,
+                ...(editedCreatedAt
+                  ? {
+                      createdAt: editedCreatedAt,
+                      officialSubmittedAt: editedCreatedAt,
+                      administrativeSubmitDate: editedCreatedAt,
+                    }
+                  : {}),
+                followUpHistory: editedFollowUpHistory,
+                officialFollowUpHistory: editedFollowUpHistory,
                 updatedAt: new Date(),
                 managerEditedBy: getVisibleUserName(user),
                 managerEditedAt: new Date(),
@@ -1743,13 +1755,17 @@ export default function EmployeePerformanceManagementPage() {
           <div class="section">
             <h2 class="section-title">Administrative / Audit Information</h2>
             <div class="audit-box">
-              <strong>Original Submit Date:</strong> ${htmlText(
-                formatDateTime(report.originalCreatedAt)
+              <strong>Official Submit Date & Time:</strong> ${htmlText(
+                formatDateTime(
+                  report.officialSubmittedAt ||
+                  report.administrativeSubmitDate ||
+                  report.createdAt
+                )
               )}<br/>
-              <strong>Submission Date Edited By:</strong> ${htmlText(
+              <strong>Administrative Date Entered By:</strong> ${htmlText(
                 report.submissionDateEditedBy
               )}<br/>
-              <strong>Submission Date Edited At:</strong> ${htmlText(
+              <strong>Administrative Correction Recorded At:</strong> ${htmlText(
                 formatDateTime(report.submissionDateEditedAt)
               )}<br/>
               <strong>History Date Edited By:</strong> ${htmlText(
