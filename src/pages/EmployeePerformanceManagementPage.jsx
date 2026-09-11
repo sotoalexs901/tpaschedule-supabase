@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  addDoc,
   collection,
   doc,
   getDocs,
@@ -324,6 +325,67 @@ function formatDateTime(value) {
   }
 }
 
+
+function toDateObject(value) {
+  if (!value) return null;
+
+  try {
+    if (typeof value?.toDate === "function") {
+      return value.toDate();
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  } catch {
+    return null;
+  }
+}
+
+function toDateTimeLocalValue(value) {
+  const date = toDateObject(value);
+  if (!date) return "";
+
+  const pad = (number) => String(number).padStart(2, "0");
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function dateTimeLocalToDate(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return null;
+
+  const date = new Date(clean);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateTimeLocalToIso(value) {
+  const date = dateTimeLocalToDate(value);
+  return date ? date.toISOString() : "";
+}
+
+function getEmployeeLoginName(employee) {
+  return (
+    employee?.loginUsername ||
+    employee?.username ||
+    employee?.userName ||
+    ""
+  );
+}
+
+function getAnyUserName(record) {
+  return (
+    record?.displayName ||
+    record?.fullName ||
+    record?.name ||
+    record?.employeeName ||
+    record?.username ||
+    record?.loginUsername ||
+    ""
+  );
+}
+
 function formatScore(value) {
   return Number(value || 0).toFixed(2);
 }
@@ -534,6 +596,7 @@ function cloneReportForEdit(report) {
     needsFollowUp: Boolean(report?.needsFollowUp),
     managerNote: report?.managerNote || "",
     returnReason: report?.returnReason || "",
+    submittedAtLocal: toDateTimeLocalValue(report?.createdAt),
     answers: JSON.parse(JSON.stringify(report?.answers || {})),
     followUpItems: Array.isArray(report?.followUpItems)
       ? report.followUpItems.map((item) => ({
@@ -541,6 +604,12 @@ function cloneReportForEdit(report) {
           en: item?.en || "",
           es: item?.es || "",
           note: item?.note || "",
+        }))
+      : [],
+    followUpHistory: Array.isArray(report?.followUpHistory)
+      ? report.followUpHistory.map((item) => ({
+          ...item,
+          createdAtLocal: toDateTimeLocalValue(item?.createdAt),
         }))
       : [],
   };
@@ -563,6 +632,7 @@ export default function EmployeePerformanceManagementPage() {
   const [returnReason, setReturnReason] = useState("");
   const [selectedDutyManagerId, setSelectedDutyManagerId] = useState("");
   const [employees, setEmployees] = useState([]);
+  const [platformUsers, setPlatformUsers] = useState([]);
   const [isEditingReport, setIsEditingReport] = useState(false);
   const [editForm, setEditForm] = useState(null);
 
@@ -592,7 +662,7 @@ export default function EmployeePerformanceManagementPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [reportsSnap, employeesSnap] = await Promise.all([
+        const [reportsSnap, employeesSnap, usersSnap] = await Promise.all([
           getDocs(
             query(
               collection(db, "employeePerformanceReports"),
@@ -600,6 +670,7 @@ export default function EmployeePerformanceManagementPage() {
             )
           ),
           getDocs(collection(db, "employees")),
+          getDocs(collection(db, "users")),
         ]);
 
         const rows = reportsSnap.docs.map((d) => ({
@@ -614,8 +685,14 @@ export default function EmployeePerformanceManagementPage() {
           }))
           .filter((emp) => emp.active !== false);
 
+        const userRows = usersSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
         setReports(rows);
         setEmployees(employeeRows);
+        setPlatformUsers(userRows);
       } catch (err) {
         console.error("Error loading EPR management:", err);
         setStatusMessage("Could not load performance reports.");
@@ -635,18 +712,70 @@ export default function EmployeePerformanceManagementPage() {
   const dutyManagers = useMemo(() => {
     return employees
       .filter((emp) => isDutyManagerUser(emp))
-      .map((emp) => ({
-        id: emp.id,
-        name:
+      .map((emp) => {
+        const employeeName =
           emp.name ||
           emp.fullName ||
           emp.employeeName ||
           emp.displayName ||
           emp.username ||
-          "Unnamed Duty Manager",
-      }))
+          "Unnamed Duty Manager";
+
+        const employeeUsername = normalizeRoleLike(getEmployeeLoginName(emp));
+        const employeeNameNormalized = normalizeRoleLike(employeeName);
+
+        const matchingUser =
+          platformUsers.find((platformUser) => {
+            const userEmployeeId = String(
+              platformUser?.employeeId ||
+                platformUser?.employee_id ||
+                ""
+            ).trim();
+
+            if (userEmployeeId && userEmployeeId === emp.id) {
+              return true;
+            }
+
+            const platformUsername = normalizeRoleLike(
+              platformUser?.username || platformUser?.loginUsername || ""
+            );
+
+            if (
+              employeeUsername &&
+              platformUsername &&
+              employeeUsername === platformUsername
+            ) {
+              return true;
+            }
+
+            const platformName = normalizeRoleLike(getAnyUserName(platformUser));
+
+            return (
+              employeeNameNormalized &&
+              platformName &&
+              employeeNameNormalized === platformName
+            );
+          }) || null;
+
+        return {
+          id: emp.id,
+          name: employeeName,
+          username:
+            getEmployeeLoginName(emp) ||
+            matchingUser?.username ||
+            matchingUser?.loginUsername ||
+            "",
+          notificationUserId:
+            emp.userId ||
+            emp.user_id ||
+            emp.linkedUserId ||
+            emp.authUserId ||
+            matchingUser?.id ||
+            "",
+        };
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [employees]);
+  }, [employees, platformUsers]);
 
   const departmentOptions = useMemo(() => {
     const set = new Set();
@@ -943,7 +1072,16 @@ export default function EmployeePerformanceManagementPage() {
     try {
       setSavingId(report.id);
 
-      const duty = dutyManagers.find((item) => item.id === selectedDutyManagerId);
+      const duty = dutyManagers.find(
+        (item) => item.id === selectedDutyManagerId
+      );
+
+      if (!duty) {
+        setStatusMessage("Could not find the selected duty manager.");
+        setStatusTone("red");
+        return;
+      }
+
       const history = Array.isArray(report?.followUpHistory)
         ? [...report.followUpHistory]
         : [];
@@ -968,6 +1106,53 @@ export default function EmployeePerformanceManagementPage() {
         updatedAt: serverTimestamp(),
       });
 
+      let notificationSent = false;
+      let notificationWarning = "";
+
+      if (duty.notificationUserId) {
+        try {
+          const employeeName = report?.employeeName || "Employee";
+          const monthLabel = formatMonthValue(report?.month);
+
+          const notificationPayload = {
+            userId: duty.notificationUserId,
+            read: false,
+            type: "employee_performance_follow_up_assigned",
+            title: "Employee Performance Follow Up Assigned",
+            message: `${getVisibleUserName(
+              user
+            )} assigned you an Employee Performance follow-up for ${employeeName} (${monthLabel}).`,
+            body: `${getVisibleUserName(
+              user
+            )} assigned you an Employee Performance follow-up for ${employeeName} (${monthLabel}).`,
+            link: "/employee-performance-management",
+            route: "/employee-performance-management",
+            path: "/employee-performance-management",
+            reportId: report.id,
+            employeeName,
+            month: report?.month || "",
+            assignedDutyManagerId: selectedDutyManagerId,
+            assignedDutyManagerName: duty?.name || "",
+            assignedByUserId: user?.id || "",
+            assignedByName: getVisibleUserName(user),
+            createdAt: serverTimestamp(),
+          };
+
+          await addDoc(collection(db, "notifications"), notificationPayload);
+          notificationSent = true;
+        } catch (notificationError) {
+          console.error(
+            "Error sending duty manager assignment notification:",
+            notificationError
+          );
+          notificationWarning =
+            " The case was assigned, but the notification could not be created.";
+        }
+      } else {
+        notificationWarning =
+          " The case was assigned, but this Duty Manager is not linked to a platform user ID, so no notification was created.";
+      }
+
       setReports((prev) =>
         prev.map((item) =>
           item.id === report.id
@@ -988,8 +1173,12 @@ export default function EmployeePerformanceManagementPage() {
         )
       );
 
-      setStatusMessage("Duty manager assigned correctly for follow up.");
-      setStatusTone("green");
+      setStatusMessage(
+        notificationSent
+          ? `Duty manager assigned and notification sent to ${duty.name}.`
+          : `Duty manager assigned correctly.${notificationWarning}`
+      );
+      setStatusTone(notificationSent ? "green" : "amber");
     } catch (err) {
       console.error("Error assigning duty manager:", err);
       setStatusMessage("Could not assign duty manager.");
@@ -1059,6 +1248,22 @@ export default function EmployeePerformanceManagementPage() {
     });
   }
 
+  function updateFollowUpHistoryDate(index, value) {
+    setEditForm((prev) => {
+      const history = [...(prev?.followUpHistory || [])];
+
+      history[index] = {
+        ...(history[index] || {}),
+        createdAtLocal: value,
+      };
+
+      return {
+        ...prev,
+        followUpHistory: history,
+      };
+    });
+  }
+
   function addFollowUpItem() {
     setEditForm((prev) => ({
       ...prev,
@@ -1082,6 +1287,26 @@ export default function EmployeePerformanceManagementPage() {
     try {
       setSavingId(selectedReport.id);
 
+      const originalCreatedAt = selectedReport?.createdAt || null;
+      const editedCreatedAt = dateTimeLocalToDate(editForm.submittedAtLocal);
+
+      const editedFollowUpHistory = Array.isArray(editForm.followUpHistory)
+        ? editForm.followUpHistory.map((item) => {
+            const {
+              createdAtLocal,
+              ...rest
+            } = item || {};
+
+            return {
+              ...rest,
+              createdAt:
+                dateTimeLocalToIso(createdAtLocal) ||
+                rest.createdAt ||
+                new Date().toISOString(),
+            };
+          })
+        : [];
+
       const updatedPayload = {
         employeeName: editForm.employeeName || "",
         department: editForm.department || "",
@@ -1102,6 +1327,18 @@ export default function EmployeePerformanceManagementPage() {
               }))
               .filter((item) => safeText(item.en || item.es || item.note))
           : [],
+        followUpHistory: editedFollowUpHistory,
+        ...(editedCreatedAt
+          ? {
+              createdAt: editedCreatedAt,
+              originalCreatedAt:
+                selectedReport?.originalCreatedAt || originalCreatedAt,
+              submissionDateEditedBy: getVisibleUserName(user),
+              submissionDateEditedAt: serverTimestamp(),
+            }
+          : {}),
+        historyDateEditedBy: getVisibleUserName(user),
+        historyDateEditedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         managerEditedBy: getVisibleUserName(user),
         managerEditedAt: serverTimestamp(),
@@ -1179,7 +1416,7 @@ export default function EmployeePerformanceManagementPage() {
               (item) => `
                 <li style="margin-bottom:8px;">
                   <strong>${item.en || item.es || "-"}</strong>
-                  ${item.note ? ` — ${item.note}` : ""}
+                  ${item.note ? ` â ${item.note}` : ""}
                 </li>
               `
             )
@@ -1244,7 +1481,7 @@ export default function EmployeePerformanceManagementPage() {
           <div class="top">
             <h1>Employee Performance Report</h1>
             <div style="font-size:14px;color:#475569;">
-              ${report.templateLabel || "-"} · ${formatMonthValue(report.month)} · Supervisor: ${report.supervisorName || "-"}
+              ${report.templateLabel || "-"} Â· ${formatMonthValue(report.month)} Â· Supervisor: ${report.supervisorName || "-"}
             </div>
           </div>
 
@@ -1323,7 +1560,7 @@ export default function EmployeePerformanceManagementPage() {
             fontWeight: 700,
           }}
         >
-          TPA OPS · Management of Reports
+          TPA OPS Â· Management of Reports
         </p>
 
         <h1
@@ -1347,8 +1584,9 @@ export default function EmployeePerformanceManagementPage() {
           }}
         >
           Review reports by supervisor, open employee details, return reports to
-          supervisors, assign follow up to a duty manager, edit received EPRs,
-          and export them as PDF for printing.
+          supervisors, assign follow up to a duty manager with notification,
+          correct supervisor submission and follow-up history timestamps, edit
+          received EPRs, and export them as PDF for printing.
         </p>
       </div>
 
@@ -1584,7 +1822,7 @@ export default function EmployeePerformanceManagementPage() {
                             color: "#64748b",
                           }}
                         >
-                          {group.employees.length} employee(s) · {group.totalReports} report(s)
+                          {group.employees.length} employee(s) Â· {group.totalReports} report(s)
                         </div>
                       </div>
 
@@ -1694,7 +1932,7 @@ export default function EmployeePerformanceManagementPage() {
                                               color: "#0f172a",
                                             }}
                                           >
-                                            {report.templateLabel || "-"} ·{" "}
+                                            {report.templateLabel || "-"} Â·{" "}
                                             {formatMonthValue(report.month)}
                                           </div>
                                           <div
@@ -1704,7 +1942,7 @@ export default function EmployeePerformanceManagementPage() {
                                               color: "#64748b",
                                             }}
                                           >
-                                            {safeText(report.department) || "-"} · Status:{" "}
+                                            {safeText(report.department) || "-"} Â· Status:{" "}
                                             {getStatusLabel(report.managerStatus || "submitted")}
                                           </div>
                                         </div>
@@ -1803,8 +2041,8 @@ export default function EmployeePerformanceManagementPage() {
                       color: "#64748b",
                     }}
                   >
-                    {selectedReport.templateLabel || "-"} ·{" "}
-                    {formatMonthValue(selectedReport.month)} · Supervisor:{" "}
+                    {selectedReport.templateLabel || "-"} Â·{" "}
+                    {formatMonthValue(selectedReport.month)} Â· Supervisor:{" "}
                     {selectedReport.supervisorName || "-"}
                   </p>
                 </div>
@@ -1984,6 +2222,28 @@ export default function EmployeePerformanceManagementPage() {
                         <option value="yes">Yes</option>
                       </SelectInput>
                     </div>
+
+                    <div>
+                      <FieldLabel>Supervisor Submit Date & Time</FieldLabel>
+                      <TextInput
+                        type="datetime-local"
+                        value={editForm.submittedAtLocal || ""}
+                        onChange={(e) =>
+                          updateEditField("submittedAtLocal", e.target.value)
+                        }
+                      />
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 11,
+                          color: "#64748b",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Administrative correction. The original timestamp is preserved
+                        the first time this value is changed.
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2043,8 +2303,8 @@ export default function EmployeePerformanceManagementPage() {
                           </div>
                         ) : (
                           <div style={{ fontSize: 14, color: "#7c2d12" }}>
-                            • {item.en || item.es}
-                            {item.note ? ` — ${item.note}` : ""}
+                            â¢ {item.en || item.es}
+                            {item.note ? ` â ${item.note}` : ""}
                           </div>
                         )}
                       </div>
@@ -2304,10 +2564,20 @@ export default function EmployeePerformanceManagementPage() {
                   Follow Up History
                 </div>
 
-                {Array.isArray(selectedReport.followUpHistory) &&
-                selectedReport.followUpHistory.length > 0 ? (
+                {Array.isArray(
+                  isEditingReport
+                    ? editForm?.followUpHistory
+                    : selectedReport.followUpHistory
+                ) &&
+                (isEditingReport
+                  ? editForm?.followUpHistory
+                  : selectedReport.followUpHistory
+                ).length > 0 ? (
                   <div style={{ display: "grid", gap: 10 }}>
-                    {selectedReport.followUpHistory.map((item, index) => (
+                    {(isEditingReport
+                      ? editForm.followUpHistory
+                      : selectedReport.followUpHistory
+                    ).map((item, index) => (
                       <div
                         key={`${selectedReport.id}-hist-${index}`}
                         style={{
@@ -2319,41 +2589,121 @@ export default function EmployeePerformanceManagementPage() {
                       >
                         <div
                           style={{
-                            fontSize: 13,
-                            fontWeight: 800,
-                            color: "#0f172a",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            alignItems: "flex-start",
                           }}
                         >
-                          {String(item.type || "").replace(/_/g, " ").toUpperCase()}
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 800,
+                                color: "#0f172a",
+                              }}
+                            >
+                              {String(item.type || "")
+                                .replace(/_/g, " ")
+                                .toUpperCase()}
+                            </div>
+
+                            {!isEditingReport && (
+                              <div
+                                style={{
+                                  marginTop: 4,
+                                  fontSize: 12,
+                                  color: "#64748b",
+                                }}
+                              >
+                                {item.byUserName || "-"} Â·{" "}
+                                {item.createdAt
+                                  ? formatDateTime(item.createdAt)
+                                  : "-"}
+                              </div>
+                            )}
+                          </div>
+
+                          {isEditingReport && (
+                            <div
+                              style={{
+                                width: "min(100%, 270px)",
+                              }}
+                            >
+                              <FieldLabel>History Date & Time</FieldLabel>
+                              <TextInput
+                                type="datetime-local"
+                                value={item.createdAtLocal || ""}
+                                onChange={(e) =>
+                                  updateFollowUpHistoryDate(
+                                    index,
+                                    e.target.value
+                                  )
+                                }
+                              />
+                            </div>
+                          )}
                         </div>
-                        <div
-                          style={{
-                            marginTop: 4,
-                            fontSize: 12,
-                            color: "#64748b",
-                          }}
-                        >
-                          {item.byUserName || "-"} ·{" "}
-                          {item.createdAt ? formatDateTime(item.createdAt) : "-"}
-                        </div>
+
+                        {isEditingReport && (
+                          <div
+                            style={{
+                              marginTop: 7,
+                              fontSize: 12,
+                              color: "#64748b",
+                            }}
+                          >
+                            Recorded by: {item.byUserName || "-"}
+                          </div>
+                        )}
+
                         {item.note ? (
-                          <div style={{ marginTop: 6, fontSize: 14, color: "#334155" }}>
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontSize: 14,
+                              color: "#334155",
+                            }}
+                          >
                             <strong>Note:</strong> {item.note}
                           </div>
                         ) : null}
+
                         {item.actionTaken ? (
-                          <div style={{ marginTop: 6, fontSize: 14, color: "#334155" }}>
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontSize: 14,
+                              color: "#334155",
+                            }}
+                          >
                             <strong>Action:</strong> {item.actionTaken}
                           </div>
                         ) : null}
+
                         {item.details ? (
-                          <div style={{ marginTop: 6, fontSize: 14, color: "#334155" }}>
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontSize: 14,
+                              color: "#334155",
+                            }}
+                          >
                             <strong>Details:</strong> {item.details}
                           </div>
                         ) : null}
+
                         {item.dutyManagerName ? (
-                          <div style={{ marginTop: 6, fontSize: 14, color: "#334155" }}>
-                            <strong>Duty Manager:</strong> {item.dutyManagerName}
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontSize: 14,
+                              color: "#334155",
+                            }}
+                          >
+                            <strong>Duty Manager:</strong>{" "}
+                            {item.dutyManagerName}
                           </div>
                         ) : null}
                       </div>
@@ -2399,6 +2749,22 @@ export default function EmployeePerformanceManagementPage() {
                         </option>
                       ))}
                     </SelectInput>
+                    {selectedDutyManagerId && (
+                      <div
+                        style={{
+                          marginTop: 7,
+                          fontSize: 11,
+                          color: "#64748b",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {dutyManagers.find(
+                          (dm) => dm.id === selectedDutyManagerId
+                        )?.notificationUserId
+                          ? "A platform notification will be sent when this case is assigned."
+                          : "This employee is not linked to a platform user ID. Assignment will still save, but notification cannot be created."}
+                      </div>
+                    )}
                   </div>
 
                   <div
