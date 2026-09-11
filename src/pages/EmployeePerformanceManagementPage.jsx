@@ -1767,40 +1767,6 @@ export default function EmployeePerformanceManagementPage() {
             ${historyHtml}
           </div>
 
-          <div class="section">
-            <h2 class="section-title">Administrative / Audit Information</h2>
-            <div class="audit-box">
-              <strong>Official Submit Date & Time:</strong> ${htmlText(
-                formatDateTime(
-                  report.officialSubmittedAt ||
-                  report.administrativeSubmitDate ||
-                  report.createdAt
-                )
-              )}<br/>
-              <strong>Administrative Date Entered By:</strong> ${htmlText(
-                report.submissionDateEditedBy
-              )}<br/>
-              <strong>Administrative Correction Recorded At:</strong> ${htmlText(
-                formatDateTime(report.submissionDateEditedAt)
-              )}<br/>
-              <strong>History Date Edited By:</strong> ${htmlText(
-                report.historyDateEditedBy
-              )}<br/>
-              <strong>History Date Edited At:</strong> ${htmlText(
-                formatDateTime(report.historyDateEditedAt)
-              )}<br/>
-              <strong>Manager Edited By:</strong> ${htmlText(
-                report.managerEditedBy
-              )}<br/>
-              <strong>Manager Edited At:</strong> ${htmlText(
-                formatDateTime(report.managerEditedAt)
-              )}<br/>
-              <strong>Follow Up Duty Manager ID:</strong> ${htmlText(
-                report.followUpDutyManagerId || report.assignedDutyManagerId
-              )}
-            </div>
-          </div>
-
           <div class="print-footer">
             ${escapeHtml(APP_NAME)} &middot; ${escapeHtml(APP_SUBTITLE)}
           </div>
