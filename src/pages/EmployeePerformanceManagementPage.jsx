@@ -1382,146 +1382,418 @@ export default function EmployeePerformanceManagementPage() {
       ? {
           ...selectedReport,
           ...editForm,
+          createdAt:
+            dateTimeLocalToDate(editForm.submittedAtLocal) ||
+            selectedReport.createdAt,
+          followUpHistory: Array.isArray(editForm.followUpHistory)
+            ? editForm.followUpHistory.map((item) => ({
+                ...item,
+                createdAt:
+                  dateTimeLocalToIso(item?.createdAtLocal) ||
+                  item?.createdAt ||
+                  "",
+              }))
+            : selectedReport.followUpHistory,
         }
       : selectedReport;
 
+    const logoUrl = `${window.location.origin}/icons/aerostation-icon.png`;
     const questions = getQuestionsForReport(report);
 
-    const questionsHtml = questions
-      .map((question, index) => {
-        const answer = report?.answers?.[question.id] || {};
-        return `
-          <div style="border:1px solid #dbeafe;border-radius:12px;padding:12px;margin-bottom:10px;">
-            <div style="font-size:14px;font-weight:700;color:#0f172a;">
-              ${index + 1}. ${question.en || question.es || question.id}
-            </div>
-            <div style="margin-top:8px;font-size:13px;color:#334155;">
-              <strong>Answer:</strong> ${getRatingLabel(answer.rating)}
-            </div>
-            <div style="margin-top:4px;font-size:13px;color:#334155;">
-              <strong>Weight:</strong> ${question.weight ?? "-"}
-            </div>
-            <div style="margin-top:4px;font-size:13px;color:#334155;">
-              <strong>Note:</strong> ${answer.note || "-"}
-            </div>
-          </div>
-        `;
-      })
-      .join("");
+    const escapeHtml = (value) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    const htmlText = (value, fallback = "-") => {
+      const clean = String(value ?? "").trim();
+      return escapeHtml(clean || fallback).replace(/\n/g, "<br/>");
+    };
+
+    const infoCard = (label, value) => `
+      <div class="card">
+        <div class="card-label">${escapeHtml(label)}</div>
+        <div class="card-value">${htmlText(value)}</div>
+      </div>
+    `;
+
+    const questionsHtml = questions.length
+      ? questions
+          .map((question, index) => {
+            const answer = report?.answers?.[question.id] || {};
+            const questionText = question.en || question.es || question.id;
+            const spanishText =
+              question.es && question.es !== questionText
+                ? `<div class="question-es">${htmlText(question.es)}</div>`
+                : "";
+
+            return `
+              <div class="question-block">
+                <div class="question-title">
+                  ${index + 1}. ${htmlText(questionText)}
+                </div>
+                ${spanishText}
+                <div class="answer-grid">
+                  <div>
+                    <span class="mini-label">Answer</span>
+                    <span class="answer-value">${htmlText(
+                      getRatingLabel(answer.rating)
+                    )}</span>
+                  </div>
+                  <div>
+                    <span class="mini-label">Weight</span>
+                    <span class="answer-value">${htmlText(
+                      question.weight ?? "-"
+                    )}</span>
+                  </div>
+                </div>
+                <div class="note-box">
+                  <span class="mini-label">Supervisor Note</span>
+                  <div>${htmlText(answer.note)}</div>
+                </div>
+              </div>
+            `;
+          })
+          .join("")
+      : `<div class="empty-box">No questions available.</div>`;
 
     const followUpHtml =
-      Array.isArray(report?.followUpItems) && report.followUpItems.length > 0
+      Array.isArray(report?.followUpItems) && report.followUpItems.length
         ? report.followUpItems
             .map(
-              (item) => `
-                <li style="margin-bottom:8px;">
-                  <strong>${item.en || item.es || "-"}</strong>
-                  ${item.note ? ` â ${item.note}` : ""}
-                </li>
+              (item, index) => `
+                <div class="followup-item">
+                  <div class="followup-number">${index + 1}</div>
+                  <div>
+                    <div class="followup-title">${htmlText(
+                      item.en || item.es
+                    )}</div>
+                    ${
+                      item.es && item.es !== item.en
+                        ? `<div class="followup-es">${htmlText(item.es)}</div>`
+                        : ""
+                    }
+                    <div class="followup-note"><strong>Note:</strong> ${htmlText(
+                      item.note
+                    )}</div>
+                  </div>
+                </div>
               `
             )
             .join("")
-        : `<li>No follow-up questions.</li>`;
+        : `<div class="empty-box">No follow-up questions.</div>`;
 
-    const printWindow = window.open("", "_blank", "width=1100,height=800");
-    if (!printWindow) return;
+    const historyHtml =
+      Array.isArray(report?.followUpHistory) && report.followUpHistory.length
+        ? report.followUpHistory
+            .map(
+              (item, index) => `
+                <div class="history-item">
+                  <div class="history-head">
+                    <div>
+                      <div class="history-type">${htmlText(
+                        String(item?.type || "Activity")
+                          .replace(/_/g, " ")
+                          .toUpperCase()
+                      )}</div>
+                      <div class="history-user">By ${htmlText(
+                        item?.byUserName || item?.byUsername || "-"
+                      )}</div>
+                    </div>
+                    <div class="history-date">${htmlText(
+                      formatDateTime(item?.createdAt)
+                    )}</div>
+                  </div>
+                  ${
+                    item?.dutyManagerName
+                      ? `<div class="history-line"><strong>Duty Manager:</strong> ${htmlText(
+                          item.dutyManagerName
+                        )}</div>`
+                      : ""
+                  }
+                  ${
+                    item?.note
+                      ? `<div class="history-line"><strong>Note:</strong> ${htmlText(
+                          item.note
+                        )}</div>`
+                      : ""
+                  }
+                  ${
+                    item?.actionTaken
+                      ? `<div class="history-line"><strong>Action:</strong> ${htmlText(
+                          item.actionTaken
+                        )}</div>`
+                      : ""
+                  }
+                  ${
+                    item?.details
+                      ? `<div class="history-line"><strong>Details:</strong> ${htmlText(
+                          item.details
+                        )}</div>`
+                      : ""
+                  }
+                </div>
+              `
+            )
+            .join("")
+        : `<div class="empty-box">No follow-up history.</div>`;
 
-    printWindow.document.write(`
+    const managerStatus = getStatusLabel(report.managerStatus || "submitted");
+    const dutyManagerName =
+      report.followUpDutyManagerName || report.assignedDutyManagerName || "-";
+
+    const html = `
+      <!DOCTYPE html>
       <html>
         <head>
-          <title>EPR ${report.employeeName || ""}</title>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(APP_NAME)} - Employee Performance Report</title>
           <style>
+            * { box-sizing: border-box; }
             body {
-              font-family: Arial, sans-serif;
+              font-family: Arial, Helvetica, sans-serif;
+              margin: 24px;
               color: #111827;
-              padding: 24px;
+              background: #ffffff;
             }
-            h1, h2, h3 { margin: 0 0 12px; }
-            .top {
-              margin-bottom: 18px;
-              border-bottom: 2px solid #dbeafe;
-              padding-bottom: 12px;
+            .brand-header {
+              display:flex; align-items:center; justify-content:space-between;
+              gap:18px; padding-bottom:16px; margin-bottom:18px;
+              border-bottom:2px solid #e5eef7;
+            }
+            .brand-left { display:flex; align-items:center; gap:12px; }
+            .brand-logo {
+              width:52px; height:52px; border-radius:14px;
+              border:1px solid #dbeafe; background:#fff; object-fit:contain;
+            }
+            .brand-name {
+              font-size:12px; font-weight:800; letter-spacing:.12em;
+              text-transform:uppercase; color:#1769aa;
+            }
+            .brand-subtitle { margin-top:3px; font-size:11px; color:#64748b; font-weight:700; }
+            .document-label {
+              font-size:11px; color:#64748b; font-weight:700;
+              text-transform:uppercase; letter-spacing:.08em; text-align:right;
+            }
+            .header {
+              display:flex; justify-content:space-between; align-items:flex-start;
+              gap:16px; margin-bottom:18px;
+            }
+            .title { font-size:27px; font-weight:800; margin:0; letter-spacing:-.03em; }
+            .subtitle { margin-top:6px; font-size:14px; color:#475569; font-weight:700; }
+            .status {
+              display:inline-block; padding:7px 11px; border-radius:999px;
+              font-size:11px; font-weight:800; border:1px solid #bfdbfe;
+              background:#eff6ff; color:#1d4ed8;
             }
             .grid {
-              display: grid;
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-              gap: 12px;
-              margin-bottom: 18px;
+              display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+              gap:10px; margin-bottom:16px;
             }
             .card {
-              border: 1px solid #dbeafe;
-              border-radius: 12px;
-              padding: 12px;
+              background:#f8fbff; border:1px solid #dbeafe;
+              border-radius:12px; padding:11px 12px; min-width:0;
+              break-inside:avoid; page-break-inside:avoid;
             }
-            .label {
-              font-size: 11px;
-              font-weight: bold;
-              color: #64748b;
-              text-transform: uppercase;
-              margin-bottom: 6px;
+            .card-label, .section-label, .mini-label {
+              font-size:10px; font-weight:800; color:#64748b;
+              text-transform:uppercase; letter-spacing:.08em;
             }
-            .value {
-              font-size: 14px;
-              font-weight: 700;
-              color: #0f172a;
-              white-space: pre-wrap;
+            .card-value { margin-top:5px; font-size:14px; font-weight:800; color:#0f172a; word-break:break-word; }
+            .section { margin-top:20px; }
+            .section-title {
+              font-size:17px; font-weight:800; color:#0f172a;
+              margin:0 0 10px; padding-bottom:7px; border-bottom:1px solid #dbeafe;
             }
-            .section {
-              margin-top: 22px;
+            .text-box {
+              border:1px solid #dbeafe; border-radius:12px; padding:12px;
+              background:#f8fbff; line-height:1.55; font-size:12px;
+              break-inside:avoid; page-break-inside:avoid;
             }
-            ul {
-              padding-left: 20px;
+            .comments-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+            .question-block {
+              border:1px solid #dbeafe; border-radius:12px; padding:12px;
+              margin-bottom:10px; break-inside:avoid; page-break-inside:avoid;
+            }
+            .question-title { font-size:13px; font-weight:800; color:#0f172a; line-height:1.45; }
+            .question-es { margin-top:4px; font-size:11px; color:#64748b; font-style:italic; }
+            .answer-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; }
+            .answer-value { display:block; margin-top:3px; font-size:12px; font-weight:800; color:#0f172a; }
+            .note-box { margin-top:10px; background:#f8fbff; border-radius:9px; padding:9px 10px; font-size:12px; line-height:1.5; }
+            .followup-item {
+              display:grid; grid-template-columns:28px 1fr; gap:10px;
+              border:1px solid #dbeafe; border-radius:12px; padding:11px;
+              margin-bottom:9px; break-inside:avoid; page-break-inside:avoid;
+            }
+            .followup-number {
+              width:26px; height:26px; border-radius:999px; background:#1769aa;
+              color:#fff; display:flex; align-items:center; justify-content:center;
+              font-size:11px; font-weight:800;
+            }
+            .followup-title { font-size:12px; font-weight:800; color:#0f172a; }
+            .followup-es { margin-top:3px; font-size:11px; color:#64748b; font-style:italic; }
+            .followup-note { margin-top:6px; font-size:12px; color:#334155; line-height:1.5; }
+            .history-item {
+              border:1px solid #dbeafe; border-radius:12px; padding:11px 12px;
+              margin-bottom:9px; background:#fbfdff;
+              break-inside:avoid; page-break-inside:avoid;
+            }
+            .history-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+            .history-type { font-size:11px; font-weight:900; color:#0f172a; letter-spacing:.03em; }
+            .history-user, .history-date { margin-top:3px; font-size:10.5px; color:#64748b; font-weight:700; }
+            .history-date { text-align:right; white-space:nowrap; }
+            .history-line { margin-top:7px; font-size:12px; color:#334155; line-height:1.5; }
+            .audit-box {
+              border:1px solid #e2e8f0; border-radius:12px; padding:12px;
+              background:#f8fafc; font-size:11px; color:#475569; line-height:1.65;
+            }
+            .empty-box { border:1px dashed #cbd5e1; border-radius:12px; padding:12px; color:#64748b; font-size:12px; }
+            .print-footer {
+              margin-top:28px; padding-top:12px; border-top:1px solid #e2e8f0;
+              color:#94a3b8; font-size:9px; text-align:center;
             }
             @media print {
-              body { padding: 12px; }
+              body { margin:14px; }
+              .section { break-inside:auto; }
+              .brand-header, .header, .card, .question-block, .followup-item, .history-item { page-break-inside:avoid; }
             }
+            @page { margin: 0.45in; }
           </style>
         </head>
         <body>
-          <div class="top">
-            <h1>Employee Performance Report</h1>
-            <div style="font-size:14px;color:#475569;">
-              ${report.templateLabel || "-"} Â· ${formatMonthValue(report.month)} Â· Supervisor: ${report.supervisorName || "-"}
+          <div class="brand-header">
+            <div class="brand-left">
+              <img class="brand-logo" src="${logoUrl}" alt="${escapeHtml(APP_NAME)}" />
+              <div>
+                <div class="brand-name">${escapeHtml(APP_NAME)}</div>
+                <div class="brand-subtitle">${escapeHtml(APP_SUBTITLE)}</div>
+              </div>
             </div>
+            <div class="document-label">Employee Performance Management Report</div>
+          </div>
+
+          <div class="header">
+            <div>
+              <h1 class="title">Employee Performance Report</h1>
+              <div class="subtitle">
+                ${htmlText(report.employeeName)} &middot; ${htmlText(
+      formatMonthValue(report.month)
+    )} &middot; ${htmlText(report.templateLabel)}
+              </div>
+            </div>
+            <div class="status">${htmlText(managerStatus)}</div>
           </div>
 
           <div class="grid">
-            <div class="card"><div class="label">Employee</div><div class="value">${report.employeeName || "-"}</div></div>
-            <div class="card"><div class="label">Department</div><div class="value">${report.department || "-"}</div></div>
-            <div class="card"><div class="label">Role</div><div class="value">${report.roleTitle || "-"}</div></div>
-            <div class="card"><div class="label">Score</div><div class="value">${formatScore(report.score)} / 100</div></div>
-            <div class="card"><div class="label">Status</div><div class="value">${getStatusLabel(report.managerStatus || "submitted")}</div></div>
-            <div class="card"><div class="label">Follow Up</div><div class="value">${report.needsFollowUp ? "Yes" : "No"}</div></div>
-            <div class="card"><div class="label">Duty Manager</div><div class="value">${report.followUpDutyManagerName || report.assignedDutyManagerName || "-"}</div></div>
-            <div class="card"><div class="label">Sent</div><div class="value">${formatDateTime(report.createdAt)}</div></div>
+            ${infoCard("Employee", report.employeeName)}
+            ${infoCard("Department", report.department)}
+            ${infoCard("Role / Position", report.roleTitle)}
+            ${infoCard("Month", formatMonthValue(report.month))}
+            ${infoCard("Template", report.templateLabel)}
+            ${infoCard("Supervisor", report.supervisorName)}
+            ${infoCard("Supervisor Username", report.supervisorUsername)}
+            ${infoCard("Supervisor User ID", report.supervisorUserId)}
+            ${infoCard("Score", `${formatScore(report.score)} / 100`)}
+            ${infoCard("Manager Status", managerStatus)}
+            ${infoCard("Needs Follow Up", report.needsFollowUp ? "Yes" : "No")}
+            ${infoCard("Duty Manager", dutyManagerName)}
+            ${infoCard("Submitted Date & Time", formatDateTime(report.createdAt))}
+            ${infoCard("Updated Date & Time", formatDateTime(report.updatedAt))}
+            ${infoCard("Manager Reviewed By", report.managerReviewedBy)}
+            ${infoCard("Manager Reviewed At", formatDateTime(report.managerReviewedAt))}
           </div>
 
           <div class="section">
-            <h2>Comments</h2>
-            <div class="grid">
-              <div class="card"><div class="label">Company</div><div class="value">${report.commentsCompany || "-"}</div></div>
-              <div class="card"><div class="label">Employee</div><div class="value">${report.commentsEmployee || "-"}</div></div>
-              <div class="card"><div class="label">Manager Note</div><div class="value">${report.managerNote || "-"}</div></div>
-              <div class="card"><div class="label">Return Reason</div><div class="value">${report.returnReason || "-"}</div></div>
+            <h2 class="section-title">Comments & Management Notes</h2>
+            <div class="comments-grid">
+              <div class="text-box"><div class="section-label">Company Comments</div><div style="margin-top:7px;">${htmlText(
+                report.commentsCompany
+              )}</div></div>
+              <div class="text-box"><div class="section-label">Employee Comments</div><div style="margin-top:7px;">${htmlText(
+                report.commentsEmployee
+              )}</div></div>
+              <div class="text-box"><div class="section-label">Manager Note</div><div style="margin-top:7px;">${htmlText(
+                report.managerNote
+              )}</div></div>
+              <div class="text-box"><div class="section-label">Return Reason</div><div style="margin-top:7px;">${htmlText(
+                report.returnReason
+              )}</div></div>
             </div>
           </div>
 
           <div class="section">
-            <h2>Follow Up Questions</h2>
-            <ul>${followUpHtml}</ul>
+            <h2 class="section-title">Follow Up Questions</h2>
+            ${followUpHtml}
           </div>
 
           <div class="section">
-            <h2>Questions and Answers</h2>
-            ${questionsHtml || "<div>No details available.</div>"}
+            <h2 class="section-title">Performance Questions & Answers</h2>
+            ${questionsHtml}
+          </div>
+
+          <div class="section">
+            <h2 class="section-title">Follow Up History</h2>
+            ${historyHtml}
+          </div>
+
+          <div class="section">
+            <h2 class="section-title">Administrative / Audit Information</h2>
+            <div class="audit-box">
+              <strong>Original Submit Date:</strong> ${htmlText(
+                formatDateTime(report.originalCreatedAt)
+              )}<br/>
+              <strong>Submission Date Edited By:</strong> ${htmlText(
+                report.submissionDateEditedBy
+              )}<br/>
+              <strong>Submission Date Edited At:</strong> ${htmlText(
+                formatDateTime(report.submissionDateEditedAt)
+              )}<br/>
+              <strong>History Date Edited By:</strong> ${htmlText(
+                report.historyDateEditedBy
+              )}<br/>
+              <strong>History Date Edited At:</strong> ${htmlText(
+                formatDateTime(report.historyDateEditedAt)
+              )}<br/>
+              <strong>Manager Edited By:</strong> ${htmlText(
+                report.managerEditedBy
+              )}<br/>
+              <strong>Manager Edited At:</strong> ${htmlText(
+                formatDateTime(report.managerEditedAt)
+              )}<br/>
+              <strong>Follow Up Duty Manager ID:</strong> ${htmlText(
+                report.followUpDutyManagerId || report.assignedDutyManagerId
+              )}
+            </div>
+          </div>
+
+          <div class="print-footer">
+            ${escapeHtml(APP_NAME)} &middot; ${escapeHtml(APP_SUBTITLE)}
           </div>
         </body>
       </html>
-    `);
+    `;
 
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+
+    if (!printWindow) {
+      setStatusMessage("Pop-up blocked. Please allow pop-ups to export/print.");
+      setStatusTone("red");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
     printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+
+    const triggerPrint = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    setTimeout(triggerPrint, 400);
   }
 
   if (!canAccess) {
