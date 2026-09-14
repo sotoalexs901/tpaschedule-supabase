@@ -84,7 +84,8 @@ import WchrPoiReportsAdminPage from "./pages/WchrPoiReportsAdminPage.jsx";
 
 import SupervisorRegulatedGarbagePage from "./pages/SupervisorRegulatedGarbagePage.jsx";
 import RegulatedGarbageAdminPage from "./pages/RegulatedGarbageAdminPage.jsx";
-import { RegulatedGarbageCompliancePage, RegulatedGarbageComplianceAdminPage } from "./pages/RGCompliance.jsx";
+import RegulatedGarbageCompliancePage from "./pages/RGCompliancePage.jsx";
+import RegulatedGarbageComplianceAdminPage from "./pages/RGComplianceAdminPage.js";
 
 import MonthlyEmployeePerformanceReportPage from "./pages/MonthlyEmployeePerformanceReportPage.jsx";
 import EmployeePerformanceManagementPage from "./pages/EmployeePerformanceManagementPage.jsx";
