@@ -84,6 +84,8 @@ import WchrPoiReportsAdminPage from "./pages/WchrPoiReportsAdminPage.jsx";
 
 import SupervisorRegulatedGarbagePage from "./pages/SupervisorRegulatedGarbagePage.jsx";
 import RegulatedGarbageAdminPage from "./pages/RegulatedGarbageAdminPage.jsx";
+import RegulatedGarbageCompliancePage from "./pages/RegulatedGarbageCompliancePage.jsx";
+import RegulatedGarbageComplianceAdminPage from "./pages/RegulatedGarbageComplianceAdminPage.jsx";
 
 import MonthlyEmployeePerformanceReportPage from "./pages/MonthlyEmployeePerformanceReportPage.jsx";
 import EmployeePerformanceManagementPage from "./pages/EmployeePerformanceManagementPage.jsx";
@@ -646,6 +648,27 @@ function AppRouter() {
                 roles={["supervisor", "duty_manager", "station_manager"]}
               >
                 <SupervisorRegulatedGarbagePage />
+              </ProtectedRoute>
+            }
+          />
+
+
+          <Route
+            path="regulated-garbage/compliance"
+            element={
+              <ProtectedRoute
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
+              >
+                <RegulatedGarbageCompliancePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="regulated-garbage/compliance-admin"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <RegulatedGarbageComplianceAdminPage />
               </ProtectedRoute>
             }
           />
