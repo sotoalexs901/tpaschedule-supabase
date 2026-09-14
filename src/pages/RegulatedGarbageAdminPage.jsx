@@ -52,14 +52,14 @@ function safeNumber(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "â";
+  if (!value) return "-";
   try {
     if (typeof value?.toDate === "function") {
       return value.toDate().toLocaleString();
     }
     return new Date(value).toLocaleString();
   } catch {
-    return "â";
+    return "-";
   }
 }
 
@@ -91,7 +91,7 @@ function formatBooleanLabel(value) {
   if (value === true) return "Yes";
   if (value === false) return "No";
   const text = String(value || "").trim();
-  if (!text) return "â";
+  if (!text) return "-";
   return text;
 }
 
@@ -301,7 +301,7 @@ function TextInfoCard({ label, value }) {
           lineHeight: 1.6,
         }}
       >
-        {String(value ?? "â")}
+        {String(value ?? "-")}
       </div>
     </div>
   );
@@ -492,6 +492,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
   const [complianceEffectiveDate, setComplianceEffectiveDate] = useState("");
   const [complianceFile, setComplianceFile] = useState(null);
   const [savingCompliance, setSavingCompliance] = useState(false);
+  const [spillChecklistOpen, setSpillChecklistOpen] = useState(false);
+  const [selectedComplianceReportId, setSelectedComplianceReportId] = useState("");
 
   const [selectedAlertId, setSelectedAlertId] = useState("");
   const [selectedReportId, setSelectedReportId] = useState("");
@@ -624,6 +626,12 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
   const activeComplianceRows = useMemo(
     () => complianceRows.filter((row) => row.archived !== true),
     [complianceRows]
+  );
+
+  const selectedComplianceReport = useMemo(
+    () =>
+      reportRows.find((row) => row.id === selectedComplianceReportId) || null,
+    [reportRows, selectedComplianceReportId]
   );
 
   const currentComplianceYear = new Date().getFullYear();
@@ -1403,8 +1411,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
           }}
         >
           {complianceOnly
-            ? "TPA OPS Â· Regulated Garbage Compliance"
-            : "TPA OPS Â· Regulated Garbage Admin"}
+            ? "TPA OPS | Regulated Garbage Compliance"
+            : "TPA OPS | Regulated Garbage Admin"}
         </p>
 
         <h1
@@ -1508,7 +1516,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                   opacity: 0.82,
                 }}
               >
-                TPA Â· REGULATED GARBAGE COMPLIANCE
+                TPA | REGULATED GARBAGE COMPLIANCE
               </div>
               <h2 style={{ margin: "7px 0 5px", fontSize: isMobile ? 22 : 28 }}>
                 Compliance Center
@@ -1522,6 +1530,36 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                   Read-only access
                 </div>
               )}
+            </div>
+          </PageCard>
+
+          <PageCard style={{ padding: isMobile ? 14 : 18 }}>
+            <div
+              style={{
+                borderRadius: 16,
+                padding: isMobile ? "13px 14px" : "15px 18px",
+                background: "#fff7ed",
+                border: "1px solid #fdba74",
+                color: "#7c2d12",
+                lineHeight: 1.55,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  marginBottom: 5,
+                }}
+              >
+                Sensitive Security Information (SSI) - Restricted Access
+              </div>
+              <div style={{ fontSize: isMobile ? 12 : 13, fontWeight: 650 }}>
+                This information is provided only for authorized inspection and compliance review.
+                Do not copy, photograph, share, distribute, or use these records outside an authorized
+                inspection, compliance review, or legitimate company business purpose.
+              </div>
             </div>
           </PageCard>
 
@@ -1659,50 +1697,331 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
             </PageCard>
           )}
 
-          <PageCard style={{ padding: isMobile ? 16 : 22 }}>
-            <h3 style={{ marginTop: 0, color: "#0f172a" }}>
-              Spill Kit / Regulated Garbage Checklists
-            </h3>
-            <div style={{ color: "#64748b", marginBottom: 12 }}>
-              Latest {COMPLIANCE_REPORT_LIMIT} checklist records Â· Read only
-            </div>
-            {complianceLoading && complianceOnly ? (
-              <div>Loading...</div>
-            ) : visibleReports.length === 0 ? (
-              <div>No checklist records available.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 9 }}>
-                {visibleReports.slice(0, COMPLIANCE_REPORT_LIMIT).map((row) => (
-                  <div
-                    key={row.id}
-                    style={{
-                      padding: "12px 14px",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 14,
-                      background: "#ffffff",
-                    }}
-                  >
+          <PageCard style={{ padding: 0, overflow: "hidden" }}>
+            <button
+              type="button"
+              onClick={() => setSpillChecklistOpen((open) => !open)}
+              aria-expanded={spillChecklistOpen}
+              style={{
+                width: "100%",
+                border: "none",
+                background: spillChecklistOpen ? "#edf7ff" : "#ffffff",
+                padding: isMobile ? "16px 17px" : "18px 22px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+                textAlign: "left",
+                cursor: "pointer",
+                color: "#0f172a",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: isMobile ? 17 : 19, fontWeight: 900 }}>
+                  Spill Kit / Regulated Garbage Checklists
+                </div>
+                <div style={{ marginTop: 4, color: "#64748b", fontSize: 12.5 }}>
+                  Latest {COMPLIANCE_REPORT_LIMIT} checklist records | Read only
+                </div>
+              </div>
+              <div
+                style={{
+                  minWidth: 34,
+                  height: 34,
+                  borderRadius: 999,
+                  background: "#1769aa",
+                  color: "#ffffff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 20,
+                  fontWeight: 900,
+                }}
+              >
+                {spillChecklistOpen ? "-" : "+"}
+              </div>
+            </button>
+
+            {spillChecklistOpen && (
+              <div style={{ padding: isMobile ? "0 14px 16px" : "0 20px 20px" }}>
+                <div
+                  style={{
+                    paddingTop: 14,
+                    borderTop: "1px solid #dbeafe",
+                  }}
+                >
+                  {complianceLoading && complianceOnly ? (
+                    <div style={{ padding: 12, color: "#64748b" }}>Loading checklist records...</div>
+                  ) : visibleReports.length === 0 ? (
+                    <div style={{ padding: 12, color: "#64748b" }}>No checklist records available.</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 9 }}>
+                      {visibleReports.slice(0, COMPLIANCE_REPORT_LIMIT).map((row) => {
+                        const isSelected = selectedComplianceReportId === row.id;
+
+                        return (
+                          <button
+                            type="button"
+                            key={row.id}
+                            onClick={() =>
+                              setSelectedComplianceReportId((current) =>
+                                current === row.id ? "" : row.id
+                              )
+                            }
+                            style={{
+                              width: "100%",
+                              padding: "13px 14px",
+                              border: isSelected
+                                ? "2px solid #1769aa"
+                                : "1px solid #e2e8f0",
+                              borderRadius: 14,
+                              background: isSelected ? "#f0f8ff" : "#ffffff",
+                              cursor: "pointer",
+                              textAlign: "left",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 10,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <strong style={{ color: "#0f172a", fontSize: 14 }}>
+                                {row.reportDate || formatDateTime(row.createdAt)}
+                              </strong>
+                              <span style={{ fontSize: 12, color: "#64748b" }}>
+                                {row.reviewStatus || row.status || "submitted"}
+                              </span>
+                            </div>
+                            <div style={{ marginTop: 5, color: "#334155", fontSize: 13 }}>
+                              {row.supervisorName || row.submittedByName || "-"} | {row.airline || "-"}
+                              {row.internationalCart ? ` | ${row.internationalCart}` : ""}
+                            </div>
+                            <div
+                              style={{
+                                marginTop: 7,
+                                fontSize: 11.5,
+                                color: "#1769aa",
+                                fontWeight: 800,
+                              }}
+                            >
+                              {isSelected ? "Hide full checklist" : "View full checklist"}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {selectedComplianceReport && (
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        flexWrap: "wrap",
+                        marginTop: 16,
+                        borderRadius: 18,
+                        padding: isMobile ? 14 : 18,
+                        background: "#f8fbff",
+                        border: "1px solid #dbeafe",
                       }}
                     >
-                      <strong style={{ color: "#0f172a" }}>
-                        {row.reportDate || formatDateTime(row.createdAt)}
-                      </strong>
-                      <span style={{ fontSize: 12, color: "#64748b" }}>
-                        {row.reviewStatus || row.status || "submitted"}
-                      </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: 12,
+                          flexWrap: "wrap",
+                          marginBottom: 14,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
+                            Full Spill Kit Checklist
+                          </div>
+                          <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
+                            Submitted {formatDateTime(selectedComplianceReport.createdAt)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedComplianceReportId("")}
+                          style={{
+                            border: "1px solid #cfe7fb",
+                            background: "#ffffff",
+                            color: "#1769aa",
+                            borderRadius: 10,
+                            padding: "7px 10px",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: isMobile
+                            ? "1fr"
+                            : "repeat(auto-fit, minmax(190px, 1fr))",
+                          gap: 10,
+                          marginBottom: 14,
+                        }}
+                      >
+                        <TextInfoCard
+                          label="Supervisor"
+                          value={
+                            selectedComplianceReport.supervisorName ||
+                            selectedComplianceReport.reportedBySupervisorName ||
+                            selectedComplianceReport.submittedByName ||
+                            "-"
+                          }
+                        />
+                        <TextInfoCard
+                          label="Airline"
+                          value={selectedComplianceReport.airline || "-"}
+                        />
+                        <TextInfoCard
+                          label="International Cart"
+                          value={
+                            selectedComplianceReport.internationalCart ||
+                            selectedComplianceReport.cartType ||
+                            "-"
+                          }
+                        />
+                        <TextInfoCard
+                          label="Report Date"
+                          value={selectedComplianceReport.reportDate || "-"}
+                        />
+                        <TextInfoCard
+                          label="Shift"
+                          value={selectedComplianceReport.shift || "-"}
+                        />
+                        <TextInfoCard
+                          label="Status"
+                          value={
+                            selectedComplianceReport.reviewStatus ||
+                            selectedComplianceReport.status ||
+                            "submitted"
+                          }
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: "#0f172a" }}>
+                          Checklist Items
+                        </div>
+
+                        {selectedComplianceReport.items &&
+                        Object.keys(selectedComplianceReport.items).length > 0 ? (
+                          Object.entries(selectedComplianceReport.items).map(
+                            ([itemKey, itemValue]) => (
+                              <div
+                                key={itemKey}
+                                style={{
+                                  border: "1px solid #dbeafe",
+                                  borderRadius: 15,
+                                  background: "#ffffff",
+                                  padding: 13,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: 14,
+                                    fontWeight: 900,
+                                    color: "#0f172a",
+                                    marginBottom: 9,
+                                  }}
+                                >
+                                  {prettifyItemKey(itemKey)}
+                                </div>
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: isMobile
+                                      ? "1fr"
+                                      : "repeat(auto-fit, minmax(170px, 1fr))",
+                                    gap: 9,
+                                  }}
+                                >
+                                  <TextInfoCard
+                                    label="Available"
+                                    value={formatBooleanLabel(itemValue?.available)}
+                                  />
+                                  <TextInfoCard
+                                    label="Office Stock At Submission"
+                                    value={safeNumber(itemValue?.officeStockAtSubmission)}
+                                  />
+                                  <TextInfoCard
+                                    label="Collected From Office"
+                                    value={formatBooleanLabel(itemValue?.collectedFromOffice)}
+                                  />
+                                  <TextInfoCard
+                                    label="Estimated Restock Date"
+                                    value={itemValue?.estimatedRestockDate || "-"}
+                                  />
+                                  <TextInfoCard
+                                    label="Replacement Date"
+                                    value={itemValue?.replacementDate || "-"}
+                                  />
+                                  <TextInfoCard
+                                    label="Cannot Replace Reason"
+                                    value={itemValue?.cannotReplaceReason || "-"}
+                                  />
+                                </div>
+                                <div style={{ marginTop: 9 }}>
+                                  <TextInfoCard
+                                    label="Additional Notes"
+                                    value={itemValue?.additionalNotes || "-"}
+                                  />
+                                </div>
+                              </div>
+                            )
+                          )
+                        ) : (
+                          <div
+                            style={{
+                              border: "1px solid #dbeafe",
+                              borderRadius: 14,
+                              background: "#ffffff",
+                              padding: 14,
+                              color: "#64748b",
+                            }}
+                          >
+                            No structured checklist items were found in this record.
+                          </div>
+                        )}
+
+                        {(selectedComplianceReport.notes || selectedComplianceReport.signature) && (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: isMobile
+                                ? "1fr"
+                                : "repeat(auto-fit, minmax(220px, 1fr))",
+                              gap: 10,
+                            }}
+                          >
+                            {selectedComplianceReport.notes && (
+                              <TextInfoCard
+                                label="General Notes"
+                                value={selectedComplianceReport.notes}
+                              />
+                            )}
+                            {selectedComplianceReport.signature && (
+                              <TextInfoCard
+                                label="Supervisor Signature"
+                                value={selectedComplianceReport.signature}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ marginTop: 5, color: "#334155", fontSize: 13 }}>
-                      {row.supervisorName || row.submittedByName || "â"} Â· {row.airline || "â"}
-                      {row.internationalCart ? ` Â· ${row.internationalCart}` : ""}
-                    </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
             )}
           </PageCard>
@@ -1738,7 +2057,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                       </div>
                       <div style={{ marginTop: 3, fontSize: 12, color: "#64748b" }}>
                         {formatDateTime(row.uploadedAt)}
-                        {row.version ? ` Â· ${row.version}` : ""}
+                        {row.version ? ` | ${row.version}` : ""}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
@@ -1788,7 +2107,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
 
           <PageCard style={{ padding: isMobile ? 16 : 22 }}>
             <h3 style={{ marginTop: 0, color: "#0f172a" }}>
-              Employee Training Records Â· Last 3 Years
+              Employee Training Records | Last 3 Years
             </h3>
             <div style={{ display: "grid", gap: 12 }}>
               {visibleTrainingYears.map((year) => (
@@ -1882,7 +2201,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                       {item.row.title || item.row.fileName || item.title}
                     </div>
                     <div style={{ marginTop: 5, fontSize: 12, color: "#64748b" }}>
-                      {item.row.version ? `${item.row.version} Â· ` : ""}
+                      {item.row.version ? `${item.row.version} | ` : ""}
                       {item.row.effectiveDate || formatDateTime(item.row.uploadedAt)}
                     </div>
                     <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
@@ -1945,8 +2264,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                         <strong>{row.title || row.fileName || "Document"}</strong>
                         <div style={{ color: "#64748b", fontSize: 12, marginTop: 3 }}>
                           {complianceDocumentLabel(row.documentType)}
-                          {row.year ? ` Â· ${row.year}` : ""}
-                          {row.version ? ` Â· ${row.version}` : ""}
+                          {row.year ? ` | ${row.year}` : ""}
+                          {row.version ? ` | ${row.version}` : ""}
                         </div>
                       </div>
                       <button
@@ -2043,8 +2362,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                         marginTop: 4,
                       }}
                     >
-                      {item.airline || "â"} Â· {item.internationalCart || item.cartType || "â"} Â·{" "}
-                      {item.reportDate || "â"}
+                      {item.airline || "-"} | {item.internationalCart || item.cartType || "-"} |{" "}
+                      {item.reportDate || "-"}
                     </div>
 
                     <div
@@ -2055,7 +2374,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                         fontWeight: 700,
                       }}
                     >
-                      Supervisor: {item.supervisorName || item.reportedBySupervisorName || "â"}
+                      Supervisor: {item.supervisorName || item.reportedBySupervisorName || "-"}
                     </div>
                   </div>
                 ))}
@@ -2084,9 +2403,9 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                       color: "#64748b",
                     }}
                   >
-                    {selectedReport.airline || "â"} Â·{" "}
-                    {selectedReport.internationalCart || selectedReport.cartType || "â"} Â·{" "}
-                    {selectedReport.reportDate || "â"}
+                    {selectedReport.airline || "-"} |{" "}
+                    {selectedReport.internationalCart || selectedReport.cartType || "-"} |{" "}
+                    {selectedReport.reportDate || "-"}
                   </p>
                 </div>
 
@@ -2101,7 +2420,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                 >
                   <TextInfoCard
                     label="Supervisor"
-                    value={selectedReport.supervisorName || selectedReport.reportedBySupervisorName || "â"}
+                    value={selectedReport.supervisorName || selectedReport.reportedBySupervisorName || "-"}
                   />
                   <TextInfoCard
                     label="Created"
@@ -2113,7 +2432,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                   />
                   <TextInfoCard
                     label="Restock Status"
-                    value={selectedReport.restockStatus || "â"}
+                    value={selectedReport.restockStatus || "-"}
                   />
                 </div>
 
@@ -2224,19 +2543,19 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                   >
                     <TextInfoCard
                       label="Supervisor"
-                      value={selectedReport.supervisorName || selectedReport.reportedBySupervisorName || "â"}
+                      value={selectedReport.supervisorName || selectedReport.reportedBySupervisorName || "-"}
                     />
                     <TextInfoCard
                       label="Airline"
-                      value={selectedReport.airline || "â"}
+                      value={selectedReport.airline || "-"}
                     />
                     <TextInfoCard
                       label="Cart"
-                      value={selectedReport.internationalCart || selectedReport.cartType || "â"}
+                      value={selectedReport.internationalCart || selectedReport.cartType || "-"}
                     />
                     <TextInfoCard
                       label="Report Date"
-                      value={selectedReport.reportDate || "â"}
+                      value={selectedReport.reportDate || "-"}
                     />
                     <TextInfoCard
                       label="Created"
@@ -2302,22 +2621,22 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                             />
                             <TextInfoCard
                               label="Estimated Restock Date"
-                              value={itemValue?.estimatedRestockDate || "â"}
+                              value={itemValue?.estimatedRestockDate || "-"}
                             />
                             <TextInfoCard
                               label="Replacement Date"
-                              value={itemValue?.replacementDate || "â"}
+                              value={itemValue?.replacementDate || "-"}
                             />
                             <TextInfoCard
                               label="Cannot Replace Reason"
-                              value={itemValue?.cannotReplaceReason || "â"}
+                              value={itemValue?.cannotReplaceReason || "-"}
                             />
                           </div>
 
                           <div style={{ marginTop: 10 }}>
                             <TextInfoCard
                               label="Additional Notes"
-                              value={itemValue?.additionalNotes || "â"}
+                              value={itemValue?.additionalNotes || "-"}
                             />
                           </div>
                         </div>
@@ -2437,8 +2756,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                       {row.productLabel}
                     </div>
                     <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
-                      Qty: {safeNumber(row.stockQty)} Â· Min: {safeNumber(row.minimumQty)} Â·{" "}
-                      {row.location || "â"}
+                      Qty: {safeNumber(row.stockQty)} | Min: {safeNumber(row.minimumQty)} |{" "}
+                      {row.location || "-"}
                     </div>
                   </div>
                 ))}
@@ -2650,8 +2969,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                         marginTop: 4,
                       }}
                     >
-                      {item.airline || "â"} Â· {item.cartType || "â"} Â·{" "}
-                      {item.reportDate || "â"}
+                      {item.airline || "-"} | {item.cartType || "-"} |{" "}
+                      {item.reportDate || "-"}
                     </div>
 
                     <div
@@ -2662,7 +2981,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                         fontWeight: 700,
                       }}
                     >
-                      Reported by {item.reportedBySupervisorName || "â"}
+                      Reported by {item.reportedBySupervisorName || "-"}
                     </div>
                   </div>
                 ))}
@@ -2692,8 +3011,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                         color: "#64748b",
                       }}
                     >
-                      {selectedAlert.productLabel} Â· {selectedAlert.airline || "â"} Â·{" "}
-                      {selectedAlert.cartType || "â"}
+                      {selectedAlert.productLabel} | {selectedAlert.airline || "-"} |{" "}
+                      {selectedAlert.cartType || "-"}
                     </p>
                   </div>
 
@@ -2708,7 +3027,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                   >
                     <TextInfoCard
                       label="Alert Type"
-                      value={selectedAlert.alertType || "â"}
+                      value={selectedAlert.alertType || "-"}
                     />
                     <TextInfoCard
                       label="Office Stock at Submission"
@@ -2716,7 +3035,7 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                     />
                     <TextInfoCard
                       label="Estimated Restock"
-                      value={selectedAlert.estimatedRestockDate || "â"}
+                      value={selectedAlert.estimatedRestockDate || "-"}
                     />
                   </div>
 
@@ -2895,8 +3214,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                             fontWeight: 700,
                           }}
                         >
-                          Submitted by {selectedReport.supervisorName || "â"} Â·{" "}
-                          {selectedReport.reportDate || "â"}
+                          Submitted by {selectedReport.supervisorName || "-"} |{" "}
+                          {selectedReport.reportDate || "-"}
                         </div>
                         <div
                           style={{
@@ -2905,8 +3224,8 @@ export default function RegulatedGarbageAdminPage({ complianceOnly = false }) {
                             color: "#0f172a",
                           }}
                         >
-                          {selectedReport.airline || "â"} Â·{" "}
-                          {selectedReport.internationalCart || "â"}
+                          {selectedReport.airline || "-"} |{" "}
+                          {selectedReport.internationalCart || "-"}
                         </div>
                         <div
                           style={{
