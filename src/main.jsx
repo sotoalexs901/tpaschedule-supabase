@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import "./styles.css";
 
 import { UserProvider, useUser } from "./UserContext.jsx";
@@ -111,9 +111,18 @@ function ProtectedRoute({
   blockedUsernames = [],
 }) {
   const { user } = useUser();
+  const location = useLocation();
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    const returnPath = `${location.pathname}${location.search || ""}${location.hash || ""}`;
+
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: returnPath }}
+      />
+    );
   }
 
   if (roles && !roles.includes(user.role)) {
