@@ -206,6 +206,18 @@ export default function RegulatedGarbageCompliancePage() {
     return map;
   }, [documents, visibleTrainingYears.join("|")]);
 
+  const collectionLogs = useMemo(
+    () =>
+      documents
+        .filter(
+          (item) =>
+            item.documentType === "collection_log" &&
+            item.archived !== true
+        )
+        .slice(0, REPORT_LIMIT),
+    [documents]
+  );
+
   const trainingProgram = useMemo(
     () =>
       documents.find(
@@ -250,8 +262,8 @@ export default function RegulatedGarbageCompliancePage() {
           Regulated Garbage Compliance Center
         </h1>
         <p style={{ margin: 0, maxWidth: 840, fontSize: 13, lineHeight: 1.65, opacity: 0.9 }}>
-          Read-only compliance records, employee training documentation, company training program,
-          and current USDA monitoring documentation.
+          Read-only compliance records, collection log PDFs, employee training documentation,
+          company training program, and current USDA monitoring documentation.
         </p>
         <div style={{ marginTop: 5, fontSize: 10.5, fontWeight: 700, opacity: 0.72 }}>
           {APP_SUBTITLE}
@@ -313,22 +325,56 @@ export default function RegulatedGarbageCompliancePage() {
         <SectionHeader
           icon="🗑️"
           title="Regulated Garbage Collection Logs"
-          subtitle="Latest 100 collection logs will display here once the existing Collection Log source is connected."
-          right={<Pill>Read only</Pill>}
+          subtitle="Latest 100 collection log PDFs uploaded by Management."
+          right={<Pill>{collectionLogs.length} PDF{collectionLogs.length === 1 ? "" : "s"}</Pill>}
         />
-        <div
-          style={{
-            padding: 14,
-            borderRadius: 14,
-            background: "#f8fafc",
-            border: "1px dashed #cbd5e1",
-            color: "#64748b",
-            fontSize: 13,
-            lineHeight: 1.6,
-          }}
-        >
-          Source not configured yet. This intentionally avoids guessing the production Firestore collection.
-        </div>
+
+        {collectionLogs.length === 0 ? (
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              background: "#f8fafc",
+              border: "1px dashed #cbd5e1",
+              color: "#64748b",
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            No Regulated Garbage Collection Logs have been uploaded yet.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {collectionLogs.map((document) => (
+              <div
+                key={document.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  padding: 13,
+                  borderRadius: 14,
+                  border: "1px solid #e2e8f0",
+                  background: "#ffffff",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 850, color: "#0f172a" }}>
+                    {safeText(document.title, document.fileName || "Collection Log")}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 11.5, color: "#64748b" }}>
+                    Uploaded {formatDateTime(document.uploadedAt)}
+                    {document.effectiveDate ? ` · Date ${document.effectiveDate}` : ""}
+                    {document.version ? ` · ${document.version}` : ""}
+                  </div>
+                </div>
+                <OpenDocumentButton document={document} />
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card style={{ padding: isMobile ? 15 : 20 }}>
