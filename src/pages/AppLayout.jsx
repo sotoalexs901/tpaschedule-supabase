@@ -1200,7 +1200,7 @@ export default function AppLayout() {
     // so every Duty Manager and Station Manager sees the entry.
     if (isManagementUser) {
       managementReports.push({
-        to: "/regulated-garbage/compliance-admin",
+        to: "/regulated-garbage/reports?tab=compliance",
         label: "Regulated Garbage Compliance Docs",
         icon: "\u{1F4DA}",
       });
