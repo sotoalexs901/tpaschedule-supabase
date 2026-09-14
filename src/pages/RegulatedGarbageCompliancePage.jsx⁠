@@ -1,0 +1,504 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  collection,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+} from "firebase/firestore";
+import { db } from "../firebase";
+import { useUser } from "../UserContext.jsx";
+import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+
+const REPORT_LIMIT = 100;
+const DOCUMENTS_COLLECTION = "regulated_garbage_compliance_documents";
+
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return { isMobile: width < 768, isTablet: width >= 768 && width < 1100 };
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  try {
+    const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+    return date.toLocaleString();
+  } catch {
+    return "—";
+  }
+}
+
+function safeText(value, fallback = "—") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function Card({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.94)",
+        border: "1px solid #e2e8f0",
+        borderRadius: 22,
+        boxShadow: "0 14px 36px rgba(15,23,42,0.06)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Pill({ children }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 999,
+        padding: "5px 9px",
+        background: "#edf7ff",
+        border: "1px solid #cfe7fb",
+        color: "#1769aa",
+        fontWeight: 800,
+        fontSize: 11,
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function SectionHeader({ icon, title, subtitle, right }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: 12,
+        flexWrap: "wrap",
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
+        <div style={{ fontSize: 24, lineHeight: 1 }}>{icon}</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>{title}</div>
+          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5, color: "#64748b" }}>
+            {subtitle}
+          </div>
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function OpenDocumentButton({ document }) {
+  if (!document?.fileUrl) {
+    return <span style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8" }}>Not uploaded</span>;
+  }
+
+  return (
+    <a
+      href={document.fileUrl}
+      target="_blank"
+      rel="noreferrer"
+      style={{
+        display: "inline-flex",
+        textDecoration: "none",
+        borderRadius: 12,
+        padding: "9px 12px",
+        background: "#1769aa",
+        color: "#fff",
+        fontSize: 12,
+        fontWeight: 850,
+      }}
+    >
+      View PDF
+    </a>
+  );
+}
+
+export default function RegulatedGarbageCompliancePage() {
+  const { user } = useUser();
+  const { isMobile } = useViewport();
+
+  const [reports, setReports] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const canAccess = ["agent", "supervisor", "duty_manager", "station_manager"].includes(
+    user?.role
+  );
+
+  useEffect(() => {
+    if (!canAccess) {
+      setLoading(false);
+      return;
+    }
+
+    async function loadComplianceData() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const [reportSnap, documentSnap] = await Promise.all([
+          getDocs(
+            query(
+              collection(db, "regulated_garbage_reports"),
+              orderBy("createdAt", "desc"),
+              limit(REPORT_LIMIT)
+            )
+          ),
+          getDocs(
+            query(
+              collection(db, DOCUMENTS_COLLECTION),
+              orderBy("uploadedAt", "desc")
+            )
+          ),
+        ]);
+
+        setReports(
+          reportSnap.docs
+            .map((item) => ({ id: item.id, ...item.data() }))
+            .filter((item) => item.archived !== true)
+        );
+
+        setDocuments(documentSnap.docs.map((item) => ({ id: item.id, ...item.data() })));
+      } catch (loadError) {
+        console.error("Regulated Garbage compliance load error:", loadError);
+        setError(loadError?.message || "Could not load compliance records.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadComplianceData();
+  }, [canAccess]);
+
+  const currentYear = new Date().getFullYear();
+  const visibleTrainingYears = [currentYear, currentYear - 1, currentYear - 2];
+
+  const employeeTrainingByYear = useMemo(() => {
+    const map = {};
+    visibleTrainingYears.forEach((year) => {
+      map[year] = documents.filter(
+        (item) =>
+          item.documentType === "employee_training_record" &&
+          Number(item.year) === year &&
+          item.archived !== true
+      );
+    });
+    return map;
+  }, [documents, visibleTrainingYears.join("|")]);
+
+  const trainingProgram = useMemo(
+    () =>
+      documents.find(
+        (item) =>
+          item.documentType === "training_program" &&
+          item.active !== false &&
+          item.archived !== true
+      ) || null,
+    [documents]
+  );
+
+  const usdaChecklist = useMemo(
+    () =>
+      documents.find(
+        (item) =>
+          item.documentType === "usda_monitoring_checklist" &&
+          item.active !== false &&
+          item.archived !== true
+      ) || null,
+    [documents]
+  );
+
+  if (!canAccess) {
+    return <Card style={{ padding: 20 }}>You do not have permission to view compliance records.</Card>;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 18, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+      <div
+        style={{
+          background: "linear-gradient(135deg, #0f4c81 0%, #1769aa 58%, #5aa9e6 100%)",
+          color: "#fff",
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 18 : 26,
+          boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
+        }}
+      >
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", opacity: 0.78 }}>
+          {APP_NAME} · TPA COMPLIANCE
+        </div>
+        <h1 style={{ margin: "8px 0 5px", fontSize: isMobile ? 25 : 34, lineHeight: 1.05 }}>
+          Regulated Garbage Compliance Center
+        </h1>
+        <p style={{ margin: 0, maxWidth: 840, fontSize: 13, lineHeight: 1.65, opacity: 0.9 }}>
+          Read-only compliance records, employee training documentation, company training program,
+          and current USDA monitoring documentation.
+        </p>
+        <div style={{ marginTop: 5, fontSize: 10.5, fontWeight: 700, opacity: 0.72 }}>
+          {APP_SUBTITLE}
+        </div>
+      </div>
+
+      {error && (
+        <Card style={{ padding: 16, borderColor: "#fecaca", background: "#fff1f2", color: "#b91c1c" }}>
+          {error}
+        </Card>
+      )}
+
+      <Card style={{ padding: isMobile ? 15 : 20 }}>
+        <SectionHeader
+          icon="🧯"
+          title="Spill Kit / Regulated Garbage Checklist Records"
+          subtitle={`Latest ${REPORT_LIMIT} submitted checklists. Read-only compliance evidence.`}
+          right={<Pill>{reports.length} records</Pill>}
+        />
+
+        {loading ? (
+          <div style={{ color: "#64748b", fontWeight: 700 }}>Loading records...</div>
+        ) : reports.length === 0 ? (
+          <div style={{ color: "#64748b" }}>No checklist records found.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 9 }}>
+            {reports.map((report) => (
+              <button
+                key={report.id}
+                type="button"
+                onClick={() => setSelectedReport(report)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  borderRadius: 15,
+                  padding: "12px 14px",
+                  fontFamily: "inherit",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <strong style={{ color: "#0f172a" }}>
+                    {safeText(report.airline)} · {safeText(report.internationalCart)}
+                  </strong>
+                  <Pill>{safeText(report.reviewStatus || report.status, "submitted")}</Pill>
+                </div>
+                <div style={{ marginTop: 5, fontSize: 12.5, color: "#64748b" }}>
+                  {safeText(report.reportDate)} · Supervisor: {safeText(report.supervisorName)} · Submitted {formatDateTime(report.createdAt)}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card style={{ padding: isMobile ? 15 : 20 }}>
+        <SectionHeader
+          icon="🗑️"
+          title="Regulated Garbage Collection Logs"
+          subtitle="Latest 100 collection logs will display here once the existing Collection Log source is connected."
+          right={<Pill>Read only</Pill>}
+        />
+        <div
+          style={{
+            padding: 14,
+            borderRadius: 14,
+            background: "#f8fafc",
+            border: "1px dashed #cbd5e1",
+            color: "#64748b",
+            fontSize: 13,
+            lineHeight: 1.6,
+          }}
+        >
+          Source not configured yet. This intentionally avoids guessing the production Firestore collection.
+        </div>
+      </Card>
+
+      <Card style={{ padding: isMobile ? 15 : 20 }}>
+        <SectionHeader
+          icon="🎓"
+          title="Employee Training Records"
+          subtitle="Training evidence for the latest three calendar years."
+          right={<Pill>{visibleTrainingYears.join(" · ")}</Pill>}
+        />
+
+        <div style={{ display: "grid", gap: 12 }}>
+          {visibleTrainingYears.map((year) => {
+            const rows = employeeTrainingByYear[year] || [];
+            return (
+              <div key={year} style={{ border: "1px solid #e2e8f0", borderRadius: 16, padding: 14 }}>
+                <div style={{ fontSize: 17, fontWeight: 900, color: "#0f172a", marginBottom: 9 }}>{year}</div>
+                {rows.length === 0 ? (
+                  <div style={{ fontSize: 12.5, color: "#94a3b8" }}>No training records uploaded for this year.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {rows.map((document) => (
+                      <div
+                        key={document.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                          flexWrap: "wrap",
+                          padding: "10px 11px",
+                          background: "#f8fbff",
+                          borderRadius: 12,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 800, color: "#0f172a" }}>{safeText(document.title, "Employee Training Record")}</div>
+                          <div style={{ marginTop: 3, fontSize: 11.5, color: "#64748b" }}>
+                            Uploaded {formatDateTime(document.uploadedAt)}
+                          </div>
+                        </div>
+                        <OpenDocumentButton document={document} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 18 }}>
+        <Card style={{ padding: isMobile ? 15 : 20 }}>
+          <SectionHeader
+            icon="📘"
+            title="Regulated Garbage Training Program"
+            subtitle="Current company training program."
+          />
+          <div style={{ fontWeight: 850, color: "#0f172a" }}>
+            {trainingProgram?.title || "No current document uploaded"}
+          </div>
+          {trainingProgram?.effectiveDate && (
+            <div style={{ marginTop: 5, fontSize: 12, color: "#64748b" }}>
+              Effective: {trainingProgram.effectiveDate}
+            </div>
+          )}
+          <div style={{ marginTop: 12 }}><OpenDocumentButton document={trainingProgram} /></div>
+        </Card>
+
+        <Card style={{ padding: isMobile ? 15 : 20 }}>
+          <SectionHeader
+            icon="✅"
+            title="USDA Monitoring Checklist"
+            subtitle="Current monitoring checklist maintained by Management."
+          />
+          <div style={{ fontWeight: 850, color: "#0f172a" }}>
+            {usdaChecklist?.title || "No current document uploaded"}
+          </div>
+          {usdaChecklist?.effectiveDate && (
+            <div style={{ marginTop: 5, fontSize: 12, color: "#64748b" }}>
+              Effective: {usdaChecklist.effectiveDate}
+            </div>
+          )}
+          <div style={{ marginTop: 12 }}><OpenDocumentButton document={usdaChecklist} /></div>
+        </Card>
+      </div>
+
+      {selectedReport && (
+        <div
+          onClick={() => setSelectedReport(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 99999,
+            background: "rgba(15,23,42,0.46)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 900,
+              maxHeight: "90vh",
+              overflowY: "auto",
+              background: "#fff",
+              borderRadius: 22,
+              padding: isMobile ? 16 : 22,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+              <div>
+                <h2 style={{ margin: 0, color: "#0f172a" }}>Checklist Detail</h2>
+                <div style={{ marginTop: 5, fontSize: 12.5, color: "#64748b" }}>
+                  {safeText(selectedReport.airline)} · {safeText(selectedReport.internationalCart)} · {safeText(selectedReport.reportDate)}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedReport(null)}
+                style={{ border: "1px solid #cbd5e1", background: "#fff", borderRadius: 10, padding: "8px 11px", cursor: "pointer" }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+              {[
+                ["Supervisor", selectedReport.supervisorName],
+                ["Shift", selectedReport.shift],
+                ["Submitted", formatDateTime(selectedReport.createdAt)],
+                ["Signature", selectedReport.signature],
+                ["Status", selectedReport.reviewStatus || selectedReport.status],
+                ["Follow Up", selectedReport.followUpRequired ? "Yes" : "No"],
+              ].map(([label, value]) => (
+                <div key={label} style={{ padding: 12, borderRadius: 13, background: "#f8fbff", border: "1px solid #dbeafe" }}>
+                  <div style={{ fontSize: 10, textTransform: "uppercase", color: "#64748b", fontWeight: 800 }}>{label}</div>
+                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{safeText(value)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 16, display: "grid", gap: 9 }}>
+              <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>Items</div>
+              {selectedReport.items && Object.keys(selectedReport.items).length > 0 ? (
+                Object.entries(selectedReport.items).map(([key, value]) => (
+                  <div key={key} style={{ padding: 12, border: "1px solid #e2e8f0", borderRadius: 13 }}>
+                    <div style={{ fontWeight: 850, color: "#0f172a" }}>{key.replace(/_/g, " ")}</div>
+                    <div style={{ marginTop: 5, fontSize: 12.5, color: "#475569", lineHeight: 1.6 }}>
+                      {value?.available !== undefined && <>Available: {safeText(value.available)} · </>}
+                      {value?.quantityOnCart !== undefined && <>Qty on cart: {safeText(value.quantityOnCart)} · </>}
+                      {value?.collectedFromOffice !== undefined && <>Collected from office: {value.collectedFromOffice ? "Yes" : "No"}</>}
+                    </div>
+                    {(value?.additionalNotes || value?.lowStockReason || value?.cannotReplaceReason) && (
+                      <div style={{ marginTop: 6, fontSize: 12.5, color: "#64748b" }}>
+                        {value.additionalNotes || value.lowStockReason || value.cannotReplaceReason}
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div style={{ color: "#64748b" }}>No structured checklist items found.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
