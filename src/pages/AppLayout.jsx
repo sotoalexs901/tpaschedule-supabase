@@ -1193,6 +1193,12 @@ export default function AppLayout() {
         label: "Regulated Garbage Reports",
         icon: "\u{1F5D1}",
       });
+
+      managementReports.push({
+        to: "/regulated-garbage/compliance-admin",
+        label: "Regulated Garbage Compliance Docs",
+        icon: "\u{1F4DA}",
+      });
     }
 
     if (
