@@ -14,7 +14,6 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 
 const DOCUMENTS_COLLECTION = "regulated_garbage_compliance_documents";
-const storage = getStorage();
 
 function safeName(name) {
   return String(name || "document.pdf")
@@ -44,18 +43,36 @@ export default function RegulatedGarbageComplianceAdminPage() {
   const requiresYear = documentType === "employee_training_record";
 
   async function loadRows() {
-    const snap = await getDocs(
-      query(collection(db, DOCUMENTS_COLLECTION), orderBy("uploadedAt", "desc"))
-    );
-    setRows(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+    try {
+      const snap = await getDocs(
+        query(collection(db, DOCUMENTS_COLLECTION), orderBy("uploadedAt", "desc"))
+      );
+
+      setRows(
+        snap.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        }))
+      );
+    } catch (loadError) {
+      console.error("Compliance documents load error:", loadError);
+
+      // Keep the page accessible even when this new collection has not yet
+      // been added to Firestore rules. The error is shown on screen so
+      // Management can distinguish access/rules problems from routing issues.
+      setRows([]);
+      setError(
+        loadError?.code === "permission-denied" ||
+        String(loadError?.message || "").toLowerCase().includes("permission")
+          ? "The Compliance Admin page opened correctly, but Firestore is blocking access to regulated_garbage_compliance_documents. Update the Firestore rules for this collection."
+          : loadError?.message || "Could not load compliance documents."
+      );
+    }
   }
 
   useEffect(() => {
     if (!canManage) return;
-    loadRows().catch((loadError) => {
-      console.error("Compliance documents load error:", loadError);
-      setError(loadError?.message || "Could not load compliance documents.");
-    });
+    loadRows();
   }, [canManage]);
 
   const activeRows = useMemo(() => rows.filter((row) => row.archived !== true), [rows]);
@@ -112,6 +129,11 @@ export default function RegulatedGarbageComplianceAdminPage() {
           : documentType;
 
       const path = `regulated-garbage/compliance/${folder}/${Date.now()}-${safeName(file.name)}`;
+
+      // Initialize Firebase Storage only when an upload is actually requested.
+      // This prevents the entire admin page from failing to render if Storage
+      // is not yet configured or allowed in the current environment.
+      const storage = getStorage();
       const fileRef = storageRef(storage, path);
 
       await uploadBytes(fileRef, file, {
@@ -193,7 +215,7 @@ export default function RegulatedGarbageComplianceAdminPage() {
         </div>
         <h1 style={{ margin: "8px 0 5px", fontSize: 30 }}>Compliance Documents Management</h1>
         <p style={{ margin: 0, opacity: 0.9 }}>
-          Upload Employee Training Records, the current company Training Program, and the current USDA Monitoring Checklist.
+          Upload Collection Logs, Employee Training Records, the current company Training Program, and the current USDA Monitoring Checklist.
         </p>
       </div>
 
