@@ -1,7 +1,7 @@
 // src/pages/LoginPage.jsx
 
 import React, { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   collection,
   doc,
@@ -51,7 +51,17 @@ function normalizeSupervisorPosition(value) {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, setUser } = useUser();
+
+  const requestedReturnPath = String(location.state?.from || "").trim();
+
+  const returnPath =
+    requestedReturnPath.startsWith("/") &&
+    !requestedReturnPath.startsWith("//") &&
+    requestedReturnPath !== "/login"
+      ? requestedReturnPath
+      : "/dashboard";
 
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
@@ -65,9 +75,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (user) {
-      navigate("/dashboard", { replace: true });
+      navigate(returnPath, { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, returnPath]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -192,7 +202,7 @@ export default function LoginPage() {
 
       setUser(mergedUser);
 
-      navigate("/dashboard", {
+      navigate(returnPath, {
         replace: true,
       });
     } catch (err) {
@@ -240,7 +250,7 @@ export default function LoginPage() {
 
       setUser(acceptedUser);
 
-      navigate("/dashboard", {
+      navigate(returnPath, {
         replace: true,
       });
     } catch (err) {
