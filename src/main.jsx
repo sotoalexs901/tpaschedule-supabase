@@ -84,8 +84,7 @@ import WchrPoiReportsAdminPage from "./pages/WchrPoiReportsAdminPage.jsx";
 
 import SupervisorRegulatedGarbagePage from "./pages/SupervisorRegulatedGarbagePage.jsx";
 import RegulatedGarbageAdminPage from "./pages/RegulatedGarbageAdminPage.jsx";
-import RegulatedGarbageCompliancePage from "./pages/RGCompliancePage.jsx";
-import RegulatedGarbageComplianceAdminPage from "./pages/RGComplianceAdminPage.jsx";
+import { RegulatedGarbageCompliancePage, RegulatedGarbageComplianceAdminPage } from "./pages/RGCompliance.jsx";
 
 import MonthlyEmployeePerformanceReportPage from "./pages/MonthlyEmployeePerformanceReportPage.jsx";
 import EmployeePerformanceManagementPage from "./pages/EmployeePerformanceManagementPage.jsx";
@@ -1272,4 +1271,4 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </React.StrictMode>
 );
 
-// END main.
+// END main.jsx
