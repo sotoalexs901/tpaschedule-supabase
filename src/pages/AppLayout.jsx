@@ -1193,7 +1193,12 @@ export default function AppLayout() {
         label: "Regulated Garbage Reports",
         icon: "\u{1F5D1}",
       });
+    }
 
+    // Regulated Garbage Compliance Center administration.
+    // Keep this independent from the report-management permission helper
+    // so every Duty Manager and Station Manager sees the entry.
+    if (isManagementUser) {
       managementReports.push({
         to: "/regulated-garbage/compliance-admin",
         label: "Regulated Garbage Compliance Docs",
