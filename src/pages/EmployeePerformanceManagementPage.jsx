@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -648,23 +649,21 @@ export default function EmployeePerformanceManagementPage() {
   }, [statusMessage]);
 
   useEffect(() => {
-    async function loadData() {
+    if (!canAccess) {
+      setLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+
+    async function loadDirectoryData() {
       try {
-        const [reportsSnap, employeesSnap, usersSnap] = await Promise.all([
-          getDocs(
-            query(
-              collection(db, "employeePerformanceReports"),
-              orderBy("createdAt", "desc")
-            )
-          ),
+        const [employeesSnap, usersSnap] = await Promise.all([
           getDocs(collection(db, "employees")),
           getDocs(collection(db, "users")),
         ]);
 
-        const rows = reportsSnap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
+        if (!active) return;
 
         const employeeRows = employeesSnap.docs
           .map((d) => ({
@@ -678,23 +677,45 @@ export default function EmployeePerformanceManagementPage() {
           ...d.data(),
         }));
 
-        setReports(rows);
         setEmployees(employeeRows);
         setPlatformUsers(userRows);
       } catch (err) {
-        console.error("Error loading EPR management:", err);
-        setStatusMessage("Could not load performance reports.");
+        console.error("Error loading EPR management directory data:", err);
+        setStatusMessage("Could not load EPR employee/user directory data.");
         setStatusTone("red");
-      } finally {
-        setLoading(false);
       }
     }
 
-    if (canAccess) {
-      loadData();
-    } else {
-      setLoading(false);
-    }
+    loadDirectoryData();
+
+    const reportsQuery = query(
+      collection(db, "employeePerformanceReports"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      reportsQuery,
+      (reportsSnap) => {
+        const rows = reportsSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
+        setReports(rows);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Error listening to EPR management reports:", err);
+        setStatusMessage("Could not load performance reports.");
+        setStatusTone("red");
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [canAccess]);
 
   const dutyManagers = useMemo(() => {
@@ -993,9 +1014,9 @@ export default function EmployeePerformanceManagementPage() {
             body: `${currentReport?.employeeName || "Employee"} - ${formatMonthValue(
               currentReport?.month
             )}: ${statusLabel}.`,
-            link: "/monthly-employee-performance-report",
-            route: "/monthly-employee-performance-report",
-            path: "/monthly-employee-performance-report",
+            link: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
+            route: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
+            path: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
             reportId,
             employeeName: currentReport?.employeeName || "",
             month: currentReport?.month || "",
@@ -1084,9 +1105,9 @@ export default function EmployeePerformanceManagementPage() {
           body: `${report?.employeeName || "Employee"} - ${formatMonthValue(
             report?.month
           )} was returned to you for correction.`,
-          link: "/monthly-employee-performance-report",
-          route: "/monthly-employee-performance-report",
-          path: "/monthly-employee-performance-report",
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
           reportId: report.id,
           employeeName: report?.employeeName || "",
           month: report?.month || "",
@@ -1221,9 +1242,9 @@ export default function EmployeePerformanceManagementPage() {
             body: `${getVisibleUserName(user)} ${
               isReassignment ? "reassigned" : "assigned"
             } you the EPR follow-up for ${employeeName} (${monthLabel}).`,
-            link: "/monthly-employee-performance-report",
-            route: "/monthly-employee-performance-report",
-            path: "/monthly-employee-performance-report",
+            link: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
+            route: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
+            path: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
             reportId: report.id,
             employeeName,
             month: report?.month || "",
@@ -1254,9 +1275,9 @@ export default function EmployeePerformanceManagementPage() {
           title: isReassignment ? "EPR Follow Up Reassigned" : "EPR Follow Up Assigned",
           message: publicMessage,
           body: publicMessage,
-          link: "/monthly-employee-performance-report",
-          route: "/monthly-employee-performance-report",
-          path: "/monthly-employee-performance-report",
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
           reportId: report.id,
           employeeName: report?.employeeName || "",
           month: report?.month || "",
@@ -1897,7 +1918,7 @@ export default function EmployeePerformanceManagementPage() {
             fontWeight: 700,
           }}
         >
-          TPA OPS ÃÂÃÂ· Management of Reports
+          TPA OPS | Management of Reports
         </p>
 
         <h1
@@ -2159,7 +2180,7 @@ export default function EmployeePerformanceManagementPage() {
                             color: "#64748b",
                           }}
                         >
-                          {group.employees.length} employee(s) ÃÂÃÂ· {group.totalReports} report(s)
+                          {group.employees.length} employee(s) | {group.totalReports} report(s)
                         </div>
                       </div>
 
@@ -2269,7 +2290,7 @@ export default function EmployeePerformanceManagementPage() {
                                               color: "#0f172a",
                                             }}
                                           >
-                                            {report.templateLabel || "-"} ÃÂÃÂ·{" "}
+                                            {report.templateLabel || "-"} |{" "}
                                             {formatMonthValue(report.month)}
                                           </div>
                                           <div
@@ -2279,7 +2300,7 @@ export default function EmployeePerformanceManagementPage() {
                                               color: "#64748b",
                                             }}
                                           >
-                                            {safeText(report.department) || "-"} ÃÂÃÂ· Status:{" "}
+                                            {safeText(report.department) || "-"} | Status:{" "}
                                             {getStatusLabel(report.managerStatus || "submitted")}
                                           </div>
                                         </div>
@@ -2378,8 +2399,8 @@ export default function EmployeePerformanceManagementPage() {
                       color: "#64748b",
                     }}
                   >
-                    {selectedReport.templateLabel || "-"} ÃÂÃÂ·{" "}
-                    {formatMonthValue(selectedReport.month)} ÃÂÃÂ· Supervisor:{" "}
+                    {selectedReport.templateLabel || "-"} |{" "}
+                    {formatMonthValue(selectedReport.month)} | Supervisor:{" "}
                     {selectedReport.supervisorName || "-"}
                   </p>
                 </div>
@@ -2619,8 +2640,8 @@ export default function EmployeePerformanceManagementPage() {
                           </div>
                         ) : (
                           <div style={{ fontSize: 14, color: "#7c2d12" }}>
-                            ÃÂ¢ÃÂÃÂ¢ {item.en || item.es}
-                            {item.note ? ` ÃÂ¢ÃÂÃÂ ${item.note}` : ""}
+                            â¢ {item.en || item.es}
+                            {item.note ? ` â ${item.note}` : ""}
                           </div>
                         )}
                       </div>
