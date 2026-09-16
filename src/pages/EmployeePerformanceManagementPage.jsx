@@ -327,45 +327,6 @@ function formatDateTime(value) {
 }
 
 
-function toDateObject(value) {
-  if (!value) return null;
-
-  try {
-    if (typeof value?.toDate === "function") {
-      return value.toDate();
-    }
-
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  } catch {
-    return null;
-  }
-}
-
-function toDateTimeLocalValue(value) {
-  const date = toDateObject(value);
-  if (!date) return "";
-
-  const pad = (number) => String(number).padStart(2, "0");
-
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function dateTimeLocalToDate(value) {
-  const clean = String(value || "").trim();
-  if (!clean) return null;
-
-  const date = new Date(clean);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function dateTimeLocalToIso(value) {
-  const date = dateTimeLocalToDate(value);
-  return date ? date.toISOString() : "";
-}
-
 function getEmployeeLoginName(employee) {
   return (
     employee?.loginUsername ||
@@ -462,6 +423,39 @@ function buildHistoryEntry(type, byUser, note = "", extra = {}) {
     createdAt: new Date().toISOString(),
     ...extra,
   };
+}
+
+function buildSupervisorTimelineEntry(type, byUser, message, extra = {}) {
+  return {
+    type,
+    byUserId: byUser?.id || "",
+    byUserName: getVisibleUserName(byUser),
+    byUserRole: byUser?.role || "",
+    message: normalizeText(message),
+    createdAt: new Date().toISOString(),
+    ...extra,
+  };
+}
+
+function appendSupervisorTimeline(report, entry) {
+  const current = Array.isArray(report?.supervisorTimeline)
+    ? [...report.supervisorTimeline]
+    : [];
+  current.push(entry);
+  return current;
+}
+
+async function createUserNotification(userId, payload) {
+  if (!userId) return false;
+
+  await addDoc(collection(db, "notifications"), {
+    userId,
+    read: false,
+    createdAt: serverTimestamp(),
+    ...payload,
+  });
+
+  return true;
 }
 
 function normalizeRoleLike(value) {
@@ -597,9 +591,6 @@ function cloneReportForEdit(report) {
     needsFollowUp: Boolean(report?.needsFollowUp),
     managerNote: report?.managerNote || "",
     returnReason: report?.returnReason || "",
-    submittedAtLocal: toDateTimeLocalValue(
-      report?.officialSubmittedAt || report?.administrativeSubmitDate || report?.createdAt
-    ),
     answers: JSON.parse(JSON.stringify(report?.answers || {})),
     followUpItems: Array.isArray(report?.followUpItems)
       ? report.followUpItems.map((item) => ({
@@ -607,12 +598,6 @@ function cloneReportForEdit(report) {
           en: item?.en || "",
           es: item?.es || "",
           note: item?.note || "",
-        }))
-      : [],
-    followUpHistory: Array.isArray(report?.followUpHistory)
-      ? report.followUpHistory.map((item) => ({
-          ...item,
-          createdAtLocal: toDateTimeLocalValue(item?.createdAt),
         }))
       : [],
   };
@@ -968,15 +953,57 @@ export default function EmployeePerformanceManagementPage() {
         )
       );
 
+      const statusLabel = getStatusLabel(nextStatus);
+      const publicMessageMap = {
+        approved: `${getVisibleUserName(user)} reviewed and approved this EPR.`,
+        follow_up: `${getVisibleUserName(user)} marked this EPR for follow up.`,
+        recognized: `${getVisibleUserName(user)} completed a positive management review on this EPR.`,
+        closed: `${getVisibleUserName(user)} closed this EPR case.`,
+        follow_up_completed: `${getVisibleUserName(user)} completed the follow up review.`,
+      };
+
+      const publicMessage =
+        publicMessageMap[nextStatus] ||
+        `${getVisibleUserName(user)} updated the case status to ${statusLabel}.`;
+
+      const supervisorTimeline = appendSupervisorTimeline(
+        currentReport,
+        buildSupervisorTimelineEntry(nextStatus, user, publicMessage)
+      );
+
       await updateDoc(doc(db, "employeePerformanceReports", reportId), {
         managerStatus: nextStatus,
         managerReviewedBy: getVisibleUserName(user),
         managerReviewedAt: serverTimestamp(),
         managerNote: managerNote || "",
         followUpHistory: history,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
         ...extra,
       });
+
+      if (["closed", "approved", "recognized"].includes(nextStatus)) {
+        try {
+          await createUserNotification(currentReport?.supervisorId || "", {
+            type: "employee_performance_status_update",
+            title: "EPR Status Updated",
+            message: `${currentReport?.employeeName || "Employee"} - ${formatMonthValue(
+              currentReport?.month
+            )}: ${statusLabel}.`,
+            body: `${currentReport?.employeeName || "Employee"} - ${formatMonthValue(
+              currentReport?.month
+            )}: ${statusLabel}.`,
+            link: "/monthly-employee-performance-report",
+            route: "/monthly-employee-performance-report",
+            path: "/monthly-employee-performance-report",
+            reportId,
+            employeeName: currentReport?.employeeName || "",
+            month: currentReport?.month || "",
+          });
+        } catch (notificationError) {
+          console.error("Error notifying supervisor about EPR status:", notificationError);
+        }
+      }
 
       setReports((prev) =>
         prev.map((item) =>
@@ -988,6 +1015,7 @@ export default function EmployeePerformanceManagementPage() {
                 managerReviewedAt: new Date(),
                 managerNote: managerNote || "",
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
                 ...extra,
               }
@@ -995,7 +1023,7 @@ export default function EmployeePerformanceManagementPage() {
         )
       );
 
-      setStatusMessage(`Report updated to ${getStatusLabel(nextStatus)}.`);
+      setStatusMessage(`Report updated to ${statusLabel}.`);
       setStatusTone("green");
     } catch (err) {
       console.error("Error updating EPR manager status:", err);
@@ -1023,6 +1051,16 @@ export default function EmployeePerformanceManagementPage() {
 
       history.push(buildHistoryEntry("returned_to_supervisor", user, reason));
 
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "returned_to_supervisor",
+          user,
+          `${getVisibleUserName(user)} returned this EPR to the supervisor for correction.`,
+          { publicDetails: reason }
+        )
+      );
+
       await updateDoc(doc(db, "employeePerformanceReports", report.id), {
         managerStatus: "returned_to_supervisor",
         managerReviewedBy: getVisibleUserName(user),
@@ -1032,8 +1070,30 @@ export default function EmployeePerformanceManagementPage() {
         returnedBy: getVisibleUserName(user),
         returnedAt: serverTimestamp(),
         followUpHistory: history,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: "employee_performance_returned_to_supervisor",
+          title: "EPR Returned for Correction",
+          message: `${report?.employeeName || "Employee"} - ${formatMonthValue(
+            report?.month
+          )} was returned to you for correction.`,
+          body: `${report?.employeeName || "Employee"} - ${formatMonthValue(
+            report?.month
+          )} was returned to you for correction.`,
+          link: "/monthly-employee-performance-report",
+          route: "/monthly-employee-performance-report",
+          path: "/monthly-employee-performance-report",
+          reportId: report.id,
+          employeeName: report?.employeeName || "",
+          month: report?.month || "",
+        });
+      } catch (notificationError) {
+        console.error("Error notifying supervisor about returned EPR:", notificationError);
+      }
 
       setReports((prev) =>
         prev.map((item) =>
@@ -1048,13 +1108,14 @@ export default function EmployeePerformanceManagementPage() {
                 returnedBy: getVisibleUserName(user),
                 returnedAt: new Date(),
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
               }
             : item
         )
       );
 
-      setStatusMessage("Returned correctly to supervisor.");
+      setStatusMessage("Returned correctly to supervisor and notification sent.");
       setStatusTone("green");
     } catch (err) {
       console.error("Error returning report:", err);
@@ -1085,15 +1146,42 @@ export default function EmployeePerformanceManagementPage() {
         return;
       }
 
+      const previousDutyManagerId =
+        report.followUpDutyManagerId || report.assignedDutyManagerId || "";
+      const isReassignment =
+        Boolean(previousDutyManagerId) && previousDutyManagerId !== selectedDutyManagerId;
+
       const history = Array.isArray(report?.followUpHistory)
         ? [...report.followUpHistory]
         : [];
 
       history.push(
-        buildHistoryEntry("follow_up_assigned", user, managerNote, {
-          dutyManagerId: selectedDutyManagerId,
-          dutyManagerName: duty?.name || "",
-        })
+        buildHistoryEntry(
+          isReassignment ? "follow_up_reassigned" : "follow_up_assigned",
+          user,
+          managerNote,
+          {
+            dutyManagerId: selectedDutyManagerId,
+            dutyManagerUserId: duty?.notificationUserId || "",
+            dutyManagerName: duty?.name || "",
+          }
+        )
+      );
+
+      const publicMessage = isReassignment
+        ? `${getVisibleUserName(user)} reassigned this EPR follow up to ${duty.name} (Duty Manager).`
+        : `${getVisibleUserName(user)} assigned this EPR follow up to ${duty.name} (Duty Manager).`;
+
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          isReassignment ? "follow_up_reassigned" : "follow_up_assigned",
+          user,
+          publicMessage,
+          {
+            dutyManagerName: duty?.name || "",
+          }
+        )
       );
 
       await updateDoc(doc(db, "employeePerformanceReports", report.id), {
@@ -1102,14 +1190,17 @@ export default function EmployeePerformanceManagementPage() {
         managerReviewedAt: serverTimestamp(),
         managerNote: managerNote || "",
         followUpDutyManagerId: selectedDutyManagerId,
+        followUpDutyManagerUserId: duty?.notificationUserId || "",
         followUpDutyManagerName: duty?.name || "",
         assignedDutyManagerId: selectedDutyManagerId,
+        assignedDutyManagerUserId: duty?.notificationUserId || "",
         assignedDutyManagerName: duty?.name || "",
         followUpHistory: history,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
 
-      let notificationSent = false;
+      let dutyNotificationSent = false;
       let notificationWarning = "";
 
       if (duty.notificationUserId) {
@@ -1117,20 +1208,22 @@ export default function EmployeePerformanceManagementPage() {
           const employeeName = report?.employeeName || "Employee";
           const monthLabel = formatMonthValue(report?.month);
 
-          const notificationPayload = {
-            userId: duty.notificationUserId,
-            read: false,
-            type: "employee_performance_follow_up_assigned",
-            title: "Employee Performance Follow Up Assigned",
-            message: `${getVisibleUserName(
-              user
-            )} assigned you an Employee Performance follow-up for ${employeeName} (${monthLabel}).`,
-            body: `${getVisibleUserName(
-              user
-            )} assigned you an Employee Performance follow-up for ${employeeName} (${monthLabel}).`,
-            link: "/employee-performance-management",
-            route: "/employee-performance-management",
-            path: "/employee-performance-management",
+          await createUserNotification(duty.notificationUserId, {
+            type: isReassignment
+              ? "employee_performance_follow_up_reassigned"
+              : "employee_performance_follow_up_assigned",
+            title: isReassignment
+              ? "EPR Follow Up Reassigned to You"
+              : "New EPR Follow Up Assigned",
+            message: `${getVisibleUserName(user)} ${
+              isReassignment ? "reassigned" : "assigned"
+            } you the EPR follow-up for ${employeeName} (${monthLabel}).`,
+            body: `${getVisibleUserName(user)} ${
+              isReassignment ? "reassigned" : "assigned"
+            } you the EPR follow-up for ${employeeName} (${monthLabel}).`,
+            link: "/monthly-employee-performance-report",
+            route: "/monthly-employee-performance-report",
+            path: "/monthly-employee-performance-report",
             reportId: report.id,
             employeeName,
             month: report?.month || "",
@@ -1138,22 +1231,38 @@ export default function EmployeePerformanceManagementPage() {
             assignedDutyManagerName: duty?.name || "",
             assignedByUserId: user?.id || "",
             assignedByName: getVisibleUserName(user),
-            createdAt: serverTimestamp(),
-          };
-
-          await addDoc(collection(db, "notifications"), notificationPayload);
-          notificationSent = true;
+          });
+          dutyNotificationSent = true;
         } catch (notificationError) {
           console.error(
             "Error sending duty manager assignment notification:",
             notificationError
           );
           notificationWarning =
-            " The case was assigned, but the notification could not be created.";
+            " The assignment was saved, but the Duty Manager notification could not be created.";
         }
       } else {
         notificationWarning =
-          " The case was assigned, but this Duty Manager is not linked to a platform user ID, so no notification was created.";
+          " The assignment was saved, but this Duty Manager is not linked to a platform user ID.";
+      }
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: isReassignment
+            ? "employee_performance_follow_up_reassigned_supervisor"
+            : "employee_performance_follow_up_assigned_supervisor",
+          title: isReassignment ? "EPR Follow Up Reassigned" : "EPR Follow Up Assigned",
+          message: publicMessage,
+          body: publicMessage,
+          link: "/monthly-employee-performance-report",
+          route: "/monthly-employee-performance-report",
+          path: "/monthly-employee-performance-report",
+          reportId: report.id,
+          employeeName: report?.employeeName || "",
+          month: report?.month || "",
+        });
+      } catch (notificationError) {
+        console.error("Error notifying supervisor about Duty Manager assignment:", notificationError);
       }
 
       setReports((prev) =>
@@ -1166,10 +1275,13 @@ export default function EmployeePerformanceManagementPage() {
                 managerReviewedAt: new Date(),
                 managerNote: managerNote || "",
                 followUpDutyManagerId: selectedDutyManagerId,
+                followUpDutyManagerUserId: duty?.notificationUserId || "",
                 followUpDutyManagerName: duty?.name || "",
                 assignedDutyManagerId: selectedDutyManagerId,
+                assignedDutyManagerUserId: duty?.notificationUserId || "",
                 assignedDutyManagerName: duty?.name || "",
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
               }
             : item
@@ -1177,11 +1289,11 @@ export default function EmployeePerformanceManagementPage() {
       );
 
       setStatusMessage(
-        notificationSent
-          ? `Duty manager assigned and notification sent to ${duty.name}.`
-          : `Duty manager assigned correctly.${notificationWarning}`
+        dutyNotificationSent
+          ? `${isReassignment ? "Duty Manager reassigned" : "Duty Manager assigned"} and notification sent to ${duty.name}.`
+          : `${isReassignment ? "Duty Manager reassigned" : "Duty Manager assigned"}.${notificationWarning}`
       );
-      setStatusTone(notificationSent ? "green" : "amber");
+      setStatusTone(dutyNotificationSent ? "green" : "amber");
     } catch (err) {
       console.error("Error assigning duty manager:", err);
       setStatusMessage("Could not assign duty manager.");
@@ -1251,21 +1363,6 @@ export default function EmployeePerformanceManagementPage() {
     });
   }
 
-  function updateFollowUpHistoryDate(index, value) {
-    setEditForm((prev) => {
-      const history = [...(prev?.followUpHistory || [])];
-
-      history[index] = {
-        ...(history[index] || {}),
-        createdAtLocal: value,
-      };
-
-      return {
-        ...prev,
-        followUpHistory: history,
-      };
-    });
-  }
 
   function addFollowUpItem() {
     setEditForm((prev) => ({
@@ -1290,26 +1387,34 @@ export default function EmployeePerformanceManagementPage() {
     try {
       setSavingId(selectedReport.id);
 
-      const originalCreatedAt = selectedReport?.originalCreatedAt || selectedReport?.createdAt || null;
-      const editedCreatedAt = dateTimeLocalToDate(editForm.submittedAtLocal);
-      const editedSubmittedIso = editedCreatedAt ? editedCreatedAt.toISOString() : "";
+      const managerNoteChanged =
+        normalizeText(editForm.managerNote) !== normalizeText(selectedReport.managerNote);
 
-      const editedFollowUpHistory = Array.isArray(editForm.followUpHistory)
-        ? editForm.followUpHistory.map((item) => {
-            const {
-              createdAtLocal,
-              ...rest
-            } = item || {};
-
-            return {
-              ...rest,
-              createdAt:
-                dateTimeLocalToIso(createdAtLocal) ||
-                rest.createdAt ||
-                new Date().toISOString(),
-            };
-          })
+      const internalHistory = Array.isArray(selectedReport?.followUpHistory)
+        ? [...selectedReport.followUpHistory]
         : [];
+
+      let supervisorTimeline = Array.isArray(selectedReport?.supervisorTimeline)
+        ? [...selectedReport.supervisorTimeline]
+        : [];
+
+      if (managerNoteChanged) {
+        internalHistory.push(
+          buildHistoryEntry(
+            "manager_internal_note_updated",
+            user,
+            editForm.managerNote || ""
+          )
+        );
+
+        supervisorTimeline.push(
+          buildSupervisorTimelineEntry(
+            "manager_internal_note_updated",
+            user,
+            `${getVisibleUserName(user)} added an internal management update to this EPR.`
+          )
+        );
+      }
 
       const updatedPayload = {
         employeeName: editForm.employeeName || "",
@@ -1331,27 +1436,17 @@ export default function EmployeePerformanceManagementPage() {
               }))
               .filter((item) => safeText(item.en || item.es || item.note))
           : [],
-        followUpHistory: editedFollowUpHistory,
-        ...(editedCreatedAt
-          ? {
-              createdAt: editedCreatedAt,
-              originalCreatedAt:
-                selectedReport?.originalCreatedAt || originalCreatedAt,
-              officialSubmittedAt: editedSubmittedIso,
-              administrativeSubmitDate: editedSubmittedIso,
-              submissionDateEditedBy: getVisibleUserName(user),
-              submissionDateEditedAt: serverTimestamp(),
-            }
-          : {}),
-        officialFollowUpHistory: editedFollowUpHistory,
-        historyDateEditedBy: getVisibleUserName(user),
-        historyDateEditedAt: serverTimestamp(),
+        followUpHistory: internalHistory,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
         managerEditedBy: getVisibleUserName(user),
         managerEditedAt: serverTimestamp(),
       };
 
-      await updateDoc(doc(db, "employeePerformanceReports", selectedReport.id), updatedPayload);
+      await updateDoc(
+        doc(db, "employeePerformanceReports", selectedReport.id),
+        updatedPayload
+      );
 
       setReports((prev) =>
         prev.map((item) =>
@@ -1359,15 +1454,8 @@ export default function EmployeePerformanceManagementPage() {
             ? {
                 ...item,
                 ...updatedPayload,
-                ...(editedCreatedAt
-                  ? {
-                      createdAt: editedCreatedAt,
-                      officialSubmittedAt: editedSubmittedIso,
-                      administrativeSubmitDate: editedSubmittedIso,
-                    }
-                  : {}),
-                followUpHistory: editedFollowUpHistory,
-                officialFollowUpHistory: editedFollowUpHistory,
+                followUpHistory: internalHistory,
+                supervisorTimeline,
                 updatedAt: new Date(),
                 managerEditedBy: getVisibleUserName(user),
                 managerEditedAt: new Date(),
@@ -1398,28 +1486,9 @@ export default function EmployeePerformanceManagementPage() {
       ? {
           ...selectedReport,
           ...editForm,
-          createdAt:
-            dateTimeLocalToDate(editForm.submittedAtLocal) ||
-            selectedReport.createdAt,
-          officialSubmittedAt:
-            dateTimeLocalToIso(editForm.submittedAtLocal) ||
-            selectedReport.officialSubmittedAt ||
-            selectedReport.administrativeSubmitDate ||
-            selectedReport.createdAt,
-          administrativeSubmitDate:
-            dateTimeLocalToIso(editForm.submittedAtLocal) ||
-            selectedReport.administrativeSubmitDate ||
-            selectedReport.officialSubmittedAt ||
-            selectedReport.createdAt,
-          followUpHistory: Array.isArray(editForm.followUpHistory)
-            ? editForm.followUpHistory.map((item) => ({
-                ...item,
-                createdAt:
-                  dateTimeLocalToIso(item?.createdAtLocal) ||
-                  item?.createdAt ||
-                  "",
-              }))
-            : selectedReport.followUpHistory,
+          createdAt: selectedReport.createdAt,
+          followUpHistory: selectedReport.followUpHistory,
+          supervisorTimeline: selectedReport.supervisorTimeline,
         }
       : selectedReport;
 
@@ -1726,9 +1795,7 @@ export default function EmployeePerformanceManagementPage() {
             ${infoCard("Manager Status", managerStatus)}
             ${infoCard("Needs Follow Up", report.needsFollowUp ? "Yes" : "No")}
             ${infoCard("Duty Manager", dutyManagerName)}
-            ${infoCard("Submitted Date & Time", formatDateTime(
-              report.officialSubmittedAt || report.administrativeSubmitDate || report.createdAt
-            ))}
+            ${infoCard("Submitted Date & Time", formatDateTime(report.createdAt))}
             ${infoCard("Updated Date & Time", formatDateTime(report.updatedAt))}
             ${infoCard("Manager Reviewed By", report.managerReviewedBy)}
             ${infoCard("Manager Reviewed At", formatDateTime(report.managerReviewedAt))}
@@ -1830,7 +1897,7 @@ export default function EmployeePerformanceManagementPage() {
             fontWeight: 700,
           }}
         >
-          TPA OPS ÃÂ· Management of Reports
+          TPA OPS ÃÂÃÂ· Management of Reports
         </p>
 
         <h1
@@ -1854,9 +1921,9 @@ export default function EmployeePerformanceManagementPage() {
           }}
         >
           Review reports by supervisor, open employee details, return reports to
-          supervisors, assign follow up to a duty manager with notification,
-          correct supervisor submission and follow-up history timestamps, edit
-          received EPRs, and export them as PDF for printing.
+          supervisors, assign and reassign follow up to duty managers with
+          notifications, maintain internal management notes, review the complete
+          follow-up history, and export EPRs as PDF for printing.
         </p>
       </div>
 
@@ -2092,7 +2159,7 @@ export default function EmployeePerformanceManagementPage() {
                             color: "#64748b",
                           }}
                         >
-                          {group.employees.length} employee(s) ÃÂ· {group.totalReports} report(s)
+                          {group.employees.length} employee(s) ÃÂÃÂ· {group.totalReports} report(s)
                         </div>
                       </div>
 
@@ -2202,7 +2269,7 @@ export default function EmployeePerformanceManagementPage() {
                                               color: "#0f172a",
                                             }}
                                           >
-                                            {report.templateLabel || "-"} ÃÂ·{" "}
+                                            {report.templateLabel || "-"} ÃÂÃÂ·{" "}
                                             {formatMonthValue(report.month)}
                                           </div>
                                           <div
@@ -2212,7 +2279,7 @@ export default function EmployeePerformanceManagementPage() {
                                               color: "#64748b",
                                             }}
                                           >
-                                            {safeText(report.department) || "-"} ÃÂ· Status:{" "}
+                                            {safeText(report.department) || "-"} ÃÂÃÂ· Status:{" "}
                                             {getStatusLabel(report.managerStatus || "submitted")}
                                           </div>
                                         </div>
@@ -2311,8 +2378,8 @@ export default function EmployeePerformanceManagementPage() {
                       color: "#64748b",
                     }}
                   >
-                    {selectedReport.templateLabel || "-"} ÃÂ·{" "}
-                    {formatMonthValue(selectedReport.month)} ÃÂ· Supervisor:{" "}
+                    {selectedReport.templateLabel || "-"} ÃÂÃÂ·{" "}
+                    {formatMonthValue(selectedReport.month)} ÃÂÃÂ· Supervisor:{" "}
                     {selectedReport.supervisorName || "-"}
                   </p>
                 </div>
@@ -2408,11 +2475,7 @@ export default function EmployeePerformanceManagementPage() {
                 />
                 <InfoCard
                   label="Sent"
-                  value={formatDateTime(
-                    selectedReport.officialSubmittedAt ||
-                      selectedReport.administrativeSubmitDate ||
-                      selectedReport.createdAt
-                  )}
+                  value={formatDateTime(selectedReport.createdAt)}
                   tone="default"
                 />
                 <InfoCard
@@ -2497,27 +2560,6 @@ export default function EmployeePerformanceManagementPage() {
                       </SelectInput>
                     </div>
 
-                    <div>
-                      <FieldLabel>Supervisor Submit Date & Time</FieldLabel>
-                      <TextInput
-                        type="datetime-local"
-                        value={editForm.submittedAtLocal || ""}
-                        onChange={(e) =>
-                          updateEditField("submittedAtLocal", e.target.value)
-                        }
-                      />
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 11,
-                          color: "#64748b",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        Administrative correction. The original timestamp is preserved
-                        the first time this value is changed.
-                      </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -2577,8 +2619,8 @@ export default function EmployeePerformanceManagementPage() {
                           </div>
                         ) : (
                           <div style={{ fontSize: 14, color: "#7c2d12" }}>
-                            Ã¢ÂÂ¢ {item.en || item.es}
-                            {item.note ? ` Ã¢ÂÂ ${item.note}` : ""}
+                            ÃÂ¢ÃÂÃÂ¢ {item.en || item.es}
+                            {item.note ? ` ÃÂ¢ÃÂÃÂ ${item.note}` : ""}
                           </div>
                         )}
                       </div>
@@ -2838,20 +2880,10 @@ export default function EmployeePerformanceManagementPage() {
                   Follow Up History
                 </div>
 
-                {Array.isArray(
-                  isEditingReport
-                    ? editForm?.followUpHistory
-                    : selectedReport.followUpHistory
-                ) &&
-                (isEditingReport
-                  ? editForm?.followUpHistory
-                  : selectedReport.followUpHistory
-                ).length > 0 ? (
+                {Array.isArray(selectedReport.followUpHistory) &&
+                selectedReport.followUpHistory.length > 0 ? (
                   <div style={{ display: "grid", gap: 10 }}>
-                    {(isEditingReport
-                      ? editForm.followUpHistory
-                      : selectedReport.followUpHistory
-                    ).map((item, index) => (
+                    {selectedReport.followUpHistory.map((item, index) => (
                       <div
                         key={`${selectedReport.id}-hist-${index}`}
                         style={{
@@ -2882,55 +2914,20 @@ export default function EmployeePerformanceManagementPage() {
                                 .replace(/_/g, " ")
                                 .toUpperCase()}
                             </div>
-
-                            {!isEditingReport && (
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 12,
-                                  color: "#64748b",
-                                }}
-                              >
-                                {item.byUserName || "-"} ÃÂ·{" "}
-                                {item.createdAt
-                                  ? formatDateTime(item.createdAt)
-                                  : "-"}
-                              </div>
-                            )}
-                          </div>
-
-                          {isEditingReport && (
                             <div
                               style={{
-                                width: "min(100%, 270px)",
+                                marginTop: 4,
+                                fontSize: 12,
+                                color: "#64748b",
                               }}
                             >
-                              <FieldLabel>History Date & Time</FieldLabel>
-                              <TextInput
-                                type="datetime-local"
-                                value={item.createdAtLocal || ""}
-                                onChange={(e) =>
-                                  updateFollowUpHistoryDate(
-                                    index,
-                                    e.target.value
-                                  )
-                                }
-                              />
+                              {item.byUserName || "-"} Â·{" "}
+                              {item.createdAt
+                                ? formatDateTime(item.createdAt)
+                                : "-"}
                             </div>
-                          )}
-                        </div>
-
-                        {isEditingReport && (
-                          <div
-                            style={{
-                              marginTop: 7,
-                              fontSize: 12,
-                              color: "#64748b",
-                            }}
-                          >
-                            Recorded by: {item.byUserName || "-"}
                           </div>
-                        )}
+                        </div>
 
                         {item.note ? (
                           <div
@@ -2940,7 +2937,7 @@ export default function EmployeePerformanceManagementPage() {
                               color: "#334155",
                             }}
                           >
-                            <strong>Note:</strong> {item.note}
+                            <strong>Internal Note:</strong> {item.note}
                           </div>
                         ) : null}
 
