@@ -14,10 +14,12 @@ import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import { triggerEprPush } from "../utils/eprPush.js";
 
-function PageCard({ children, style = {} }) {
+function PageCard({ children, style = {}, ...props }) {
   return (
     <div
+      {...props}
       style={{
         background: "rgba(255,255,255,0.92)",
         border: "1px solid rgba(255,255,255,0.96)",
@@ -184,6 +186,8 @@ function InfoCard({ label, value, tone = "default" }) {
     red: { bg: "#fff1f2", border: "#fecdd3", color: "#9f1239" },
     blue: { bg: "#edf7ff", border: "#cfe7fb", color: "#1769aa" },
     amber: { bg: "#fff7ed", border: "#fdba74", color: "#9a3412" },
+    brown: { bg: "#f5eee8", border: "#d6b79c", color: "#7c4a2d" },
+    deepblue: { bg: "#e6f0ff", border: "#93b4e8", color: "#123f78" },
   };
 
   const current = tones[tone] || tones.default;
@@ -362,22 +366,22 @@ function getPerformanceTone(score) {
 
 function getStatusTone(status) {
   const s = String(status || "").toLowerCase();
-  if (
-    s === "approved" ||
-    s === "recognized" ||
-    s === "closed" ||
-    s === "follow_up_completed"
-  ) {
-    return "green";
-  }
+
+  if (s === "submitted") return "blue";
+  if (s === "under_review") return "brown";
+  if (s === "follow_up_in_progress" || s === "follow_up_accepted") return "green";
+  if (s === "closed") return "deepblue";
+  if (s === "returned_to_supervisor") return "red";
   if (
     s === "follow_up" ||
     s === "follow_up_assigned" ||
-    s === "follow_up_in_progress" ||
     s === "follow_up_resubmitted" ||
-    s === "returned_to_supervisor"
+    s === "resubmitted_to_manager"
   ) {
     return "amber";
+  }
+  if (s === "approved" || s === "recognized" || s === "follow_up_completed") {
+    return "green";
   }
   if (s === "draft") return "default";
   return "blue";
@@ -386,6 +390,7 @@ function getStatusTone(status) {
 function getStatusLabel(status) {
   const s = String(status || "").toLowerCase();
   if (s === "submitted") return "Submitted";
+  if (s === "under_review") return "Under Review";
   if (s === "approved") return "Approved";
   if (s === "follow_up") return "Follow Up";
   if (s === "recognized") return "Recognized";
@@ -393,10 +398,29 @@ function getStatusLabel(status) {
   if (s === "draft") return "Draft";
   if (s === "returned_to_supervisor") return "Returned to Supervisor";
   if (s === "follow_up_assigned") return "Follow Up Assigned";
-  if (s === "follow_up_in_progress") return "Follow Up In Progress";
+  if (s === "follow_up_in_progress" || s === "follow_up_accepted") return "Accepted";
   if (s === "follow_up_resubmitted") return "Resubmitted to Manager";
   if (s === "follow_up_completed") return "Follow Up Completed";
+  if (s === "resubmitted_to_manager") return "Resubmitted to Manager";
   return status || "-";
+}
+
+function getReportVisualStyle(status, selected = false) {
+  const tone = getStatusTone(status);
+  const palette = {
+    blue: { background: "#edf7ff", border: "#cfe7fb" },
+    brown: { background: "#f5eee8", border: "#d6b79c" },
+    green: { background: "#ecfdf5", border: "#a7f3d0" },
+    deepblue: { background: "#e6f0ff", border: "#93b4e8" },
+    amber: { background: "#fff7ed", border: "#fdba74" },
+    red: { background: "#fff1f2", border: "#fecdd3" },
+    default: { background: "#ffffff", border: "#e2e8f0" },
+  };
+  const current = palette[tone] || palette.default;
+  return {
+    background: selected ? current.background : current.background,
+    border: `1px solid ${current.border}`,
+  };
 }
 
 function safeText(value) {
@@ -627,6 +651,7 @@ export default function EmployeePerformanceManagementPage() {
 
   const [expandedSupervisors, setExpandedSupervisors] = useState({});
   const [expandedEmployees, setExpandedEmployees] = useState({});
+  const [selectedEmployeeName, setSelectedEmployeeName] = useState("");
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
@@ -784,6 +809,53 @@ export default function EmployeePerformanceManagementPage() {
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
+  }, [employees, platformUsers]);
+
+  const employeeNotificationTargets = useMemo(() => {
+    const map = {};
+
+    employees.forEach((emp) => {
+      const employeeName =
+        emp.name || emp.fullName || emp.employeeName || emp.displayName || emp.username || "";
+      const employeeUsername = normalizeRoleLike(getEmployeeLoginName(emp));
+      const employeeNameNormalized = normalizeRoleLike(employeeName);
+
+      const matchingUser =
+        platformUsers.find((platformUser) => {
+          const linkedEmployeeId = String(
+            platformUser?.employeeId || platformUser?.employee_id || ""
+          ).trim();
+          if (linkedEmployeeId && linkedEmployeeId === emp.id) return true;
+
+          const platformUsername = normalizeRoleLike(
+            platformUser?.username || platformUser?.loginUsername || ""
+          );
+          if (employeeUsername && platformUsername && employeeUsername === platformUsername) {
+            return true;
+          }
+
+          const platformName = normalizeRoleLike(getAnyUserName(platformUser));
+          return (
+            employeeNameNormalized &&
+            platformName &&
+            employeeNameNormalized === platformName
+          );
+        }) || null;
+
+      map[emp.id] = {
+        employeeId: emp.id,
+        employeeName,
+        notificationUserId:
+          emp.userId ||
+          emp.user_id ||
+          emp.linkedUserId ||
+          emp.authUserId ||
+          matchingUser?.id ||
+          "",
+      };
+    });
+
+    return map;
   }, [employees, platformUsers]);
 
   const departmentOptions = useMemo(() => {
@@ -957,6 +1029,132 @@ export default function EmployeePerformanceManagementPage() {
       }));
   }, [filteredReports]);
 
+  const dashboardTotals = useMemo(() => {
+    const uniqueEmployees = new Set(
+      filteredReports.map((report) => safeText(report.employeeName)).filter(Boolean)
+    );
+
+    const followUpEmployees = new Set(
+      filteredReports
+        .filter((report) =>
+          report.needsFollowUp === true ||
+          [
+            "follow_up",
+            "follow_up_assigned",
+            "follow_up_in_progress",
+            "follow_up_resubmitted",
+            "returned_to_supervisor",
+          ].includes(String(report.managerStatus || "").toLowerCase())
+        )
+        .map((report) => safeText(report.employeeName))
+        .filter(Boolean)
+    );
+
+    const supervisors = new Set(
+      filteredReports.map((report) => safeText(report.supervisorName)).filter(Boolean)
+    );
+
+    const pendingReview = filteredReports.filter((report) =>
+      ["submitted", "under_review"].includes(
+        String(report.managerStatus || "submitted").toLowerCase()
+      )
+    ).length;
+
+    return {
+      employees: uniqueEmployees.size,
+      followUpEmployees: followUpEmployees.size,
+      supervisors: supervisors.size,
+      reports: filteredReports.length,
+      pendingReview,
+    };
+  }, [filteredReports]);
+
+  const employeeReportHistory = useMemo(() => {
+    if (!selectedEmployeeName) return [];
+
+    return filteredReports
+      .filter(
+        (report) => safeText(report.employeeName) === selectedEmployeeName
+      )
+      .sort((a, b) => {
+        const monthA = String(a.month || "");
+        const monthB = String(b.month || "");
+        if (monthA !== monthB) return monthB.localeCompare(monthA);
+
+        const dateA =
+          typeof a?.createdAt?.toDate === "function"
+            ? a.createdAt.toDate().getTime()
+            : new Date(a?.createdAt || 0).getTime();
+        const dateB =
+          typeof b?.createdAt?.toDate === "function"
+            ? b.createdAt.toDate().getTime()
+            : new Date(b?.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+  }, [filteredReports, selectedEmployeeName]);
+
+  async function openReportForReview(report) {
+    if (!report?.id) return;
+
+    setSelectedReportId(report.id);
+
+    const currentStatus = String(report.managerStatus || "submitted").toLowerCase();
+    if (user?.role !== "station_manager" || currentStatus !== "submitted") {
+      return;
+    }
+
+    try {
+      const history = Array.isArray(report.followUpHistory)
+        ? [...report.followUpHistory]
+        : [];
+      history.push(buildHistoryEntry("under_review", user, ""));
+
+      const publicMessage = `${getVisibleUserName(user)} opened this EPR and placed the case under review.`;
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry("under_review", user, publicMessage)
+      );
+
+      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
+        managerStatus: "under_review",
+        openedByUserId: user?.id || "",
+        openedByName: getVisibleUserName(user),
+        openedByRole: user?.role || "",
+        openedAt: serverTimestamp(),
+        followUpHistory: history,
+        supervisorTimeline,
+        updatedAt: serverTimestamp(),
+      });
+
+      try {
+        await createUserNotification(report.supervisorId || "", {
+          type: "employee_performance_under_review",
+          title: "EPR Under Review",
+          message: `${report.employeeName || "Employee"} - ${formatMonthValue(
+            report.month
+          )}: Station Management opened the EPR for review.`,
+          body: `${report.employeeName || "Employee"} - ${formatMonthValue(
+            report.month
+          )}: Station Management opened the EPR for review.`,
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          reportId: report.id,
+          employeeName: report.employeeName || "",
+          month: report.month || "",
+        });
+      } catch (notificationError) {
+        console.error("Error notifying supervisor that EPR is under review:", notificationError);
+      }
+
+      triggerEprPush(report.id, "under_review");
+    } catch (err) {
+      console.error("Error placing EPR under review:", err);
+      setStatusMessage("The EPR opened, but Under Review status could not be saved.");
+      setStatusTone("amber");
+    }
+  }
+
   async function updateManagerStatus(reportId, nextStatus, extra = {}) {
     try {
       setSavingId(reportId);
@@ -976,6 +1174,7 @@ export default function EmployeePerformanceManagementPage() {
 
       const statusLabel = getStatusLabel(nextStatus);
       const publicMessageMap = {
+        under_review: `${getVisibleUserName(user)} opened this EPR and placed it under review.`,
         approved: `${getVisibleUserName(user)} reviewed and approved this EPR.`,
         follow_up: `${getVisibleUserName(user)} marked this EPR for follow up.`,
         recognized: `${getVisibleUserName(user)} completed a positive management review on this EPR.`,
@@ -1003,6 +1202,10 @@ export default function EmployeePerformanceManagementPage() {
         ...extra,
       });
 
+      if (["approved", "closed", "recognized"].includes(nextStatus)) {
+        triggerEprPush(reportId, nextStatus);
+      }
+
       if (["closed", "approved", "recognized"].includes(nextStatus)) {
         try {
           await createUserNotification(currentReport?.supervisorId || "", {
@@ -1023,6 +1226,50 @@ export default function EmployeePerformanceManagementPage() {
           });
         } catch (notificationError) {
           console.error("Error notifying supervisor about EPR status:", notificationError);
+        }
+      }
+
+      if (nextStatus === "recognized") {
+        const employeeTarget = employeeNotificationTargets[currentReport?.employeeId || ""];
+        const employeeUserId = employeeTarget?.notificationUserId || "";
+        const recognitionMessage = `Excellent EPR for ${formatMonthValue(
+          currentReport?.month
+        )} - way to go!`;
+
+        if (employeeUserId) {
+          try {
+            await createUserNotification(employeeUserId, {
+              type: "employee_performance_recognition",
+              title: "Great EPR!",
+              message: recognitionMessage,
+              body: recognitionMessage,
+              link: "/notifications",
+              route: "/notifications",
+              path: "/notifications",
+              reportId,
+              employeeName: currentReport?.employeeName || "",
+              month: currentReport?.month || "",
+              senderName: "AeroStation Hub - No Reply",
+            });
+
+            await addDoc(collection(db, "messages"), {
+              toUserId: employeeUserId,
+              toUserName: currentReport?.employeeName || "",
+              fromUserId: "system-noreply",
+              fromUserName: "AeroStation Hub - No Reply",
+              subject: `Excellent EPR - ${formatMonthValue(currentReport?.month)}`,
+              body: recognitionMessage,
+              read: false,
+              category: "employee_performance_recognition",
+              noReply: true,
+              createdAt: serverTimestamp(),
+            });
+          } catch (employeeNotificationError) {
+            console.error(
+              "Error sending EPR recognition notification to employee:",
+              employeeNotificationError
+            );
+          }
         }
       }
 
@@ -1094,6 +1341,8 @@ export default function EmployeePerformanceManagementPage() {
         supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
+
+      triggerEprPush(report.id, "returned");
 
       try {
         await createUserNotification(report?.supervisorId || "", {
@@ -1220,6 +1469,11 @@ export default function EmployeePerformanceManagementPage() {
         supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
+
+      triggerEprPush(
+        report.id,
+        isReassignment ? "reassigned" : "assigned"
+      );
 
       let dutyNotificationSent = false;
       let notificationWarning = "";
@@ -1825,7 +2079,7 @@ export default function EmployeePerformanceManagementPage() {
           <div class="section">
             <h2 class="section-title">Comments & Management Notes</h2>
             <div class="comments-grid">
-              <div class="text-box"><div class="section-label">Company Comments</div><div style="margin-top:7px;">${htmlText(
+              <div class="text-box"><div class="section-label">Supervisor Comment</div><div style="margin-top:7px;">${htmlText(
                 report.commentsCompany
               )}</div></div>
               <div class="text-box"><div class="section-label">Employee Comments</div><div style="margin-top:7px;">${htmlText(
@@ -2039,6 +2293,7 @@ export default function EmployeePerformanceManagementPage() {
             >
               <option value="all">All</option>
               <option value="submitted">Submitted</option>
+              <option value="under_review">Under Review</option>
               <option value="approved">Approved</option>
               <option value="follow_up">Follow Up</option>
               <option value="follow_up_assigned">Follow Up Assigned</option>
@@ -2085,292 +2340,417 @@ export default function EmployeePerformanceManagementPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
           gap: 14,
         }}
       >
-        <InfoCard label="Reports" value={String(totals.total)} />
-        <InfoCard label="Follow Up" value={String(totals.followUps)} tone="amber" />
-        <InfoCard label="Approved / Closed" value={String(totals.approved)} tone="green" />
         <InfoCard
-          label="Average Score"
-          value={formatScore(totals.avgScore)}
-          tone={getPerformanceTone(totals.avgScore)}
+          label="Employees Received"
+          value={String(dashboardTotals.employees)}
+          tone="blue"
+        />
+        <InfoCard
+          label="Employees Follow Up"
+          value={String(dashboardTotals.followUpEmployees)}
+          tone="amber"
+        />
+        <InfoCard
+          label="Supervisors Submitted"
+          value={String(dashboardTotals.supervisors)}
+        />
+        <InfoCard
+          label="Pending Review"
+          value={String(dashboardTotals.pendingReview)}
+          tone={dashboardTotals.pendingReview > 0 ? "amber" : "green"}
+        />
+        <InfoCard
+          label="Total EPRs"
+          value={String(dashboardTotals.reports)}
         />
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            selectedReport ? "minmax(360px, 0.9fr) minmax(460px, 1.1fr)" : "1fr",
-          gap: 18,
-          alignItems: "start",
-        }}
-      >
-        <PageCard style={{ padding: 20 }}>
-          <div style={{ marginBottom: 14 }}>
+      <PageCard style={{ padding: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            marginBottom: 16,
+          }}
+        >
+          <div>
             <h2
               style={{
                 margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
+                fontSize: 21,
+                fontWeight: 900,
                 color: "#0f172a",
               }}
             >
-              Received Reports
+              Supervisors & Submitted Employees
             </h2>
             <p
               style={{
-                margin: "4px 0 0",
+                margin: "5px 0 0",
                 fontSize: 13,
                 color: "#64748b",
+                lineHeight: 1.6,
               }}
             >
-              Organized by supervisor. Click a supervisor, then an employee, then a report.
+              Select an employee under a supervisor to see every EPR received for
+              that employee, including reports submitted by other supervisors.
             </p>
           </div>
 
-          {loading ? (
-            <div style={{ color: "#64748b" }}>Loading...</div>
-          ) : groupedBySupervisor.length === 0 ? (
-            <div style={{ color: "#64748b" }}>No reports found.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              {groupedBySupervisor.map((group) => {
-                const supervisorExpanded = !!expandedSupervisors[group.supervisorName];
+          {selectedEmployeeName && (
+            <ActionButton
+              variant="secondary"
+              onClick={() => setSelectedEmployeeName("")}
+            >
+              Clear Employee
+            </ActionButton>
+          )}
+        </div>
 
-                return (
-                  <div
-                    key={group.supervisorName}
-                    style={{
-                      border: "1px solid #dbeafe",
-                      borderRadius: 18,
-                      padding: 14,
-                      background: "#ffffff",
-                    }}
-                  >
+        {loading ? (
+          <div style={{ color: "#64748b", fontWeight: 700 }}>Loading...</div>
+        ) : groupedBySupervisor.length === 0 ? (
+          <div style={{ color: "#64748b", fontWeight: 700 }}>No reports found.</div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {groupedBySupervisor.map((group) => (
+              <div
+                key={group.supervisorName}
+                style={{
+                  border: "1px solid #dbeafe",
+                  borderRadius: 18,
+                  padding: 15,
+                  background: "#ffffff",
+                  boxShadow: "0 8px 20px rgba(15,23,42,0.04)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    alignItems: "center",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div>
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        marginBottom: supervisorExpanded ? 10 : 0,
+                        fontSize: 16,
+                        fontWeight: 900,
+                        color: "#0f172a",
                       }}
                     >
-                      <div
-                        onClick={() => toggleSupervisor(group.supervisorName)}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 16,
-                            fontWeight: 900,
-                            color: "#0f172a",
-                          }}
-                        >
-                          {group.supervisorName}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 4,
-                            fontSize: 13,
-                            color: "#64748b",
-                          }}
-                        >
-                          {group.employees.length} employee(s) | {group.totalReports} report(s)
-                        </div>
-                      </div>
+                      {group.supervisorName}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 12,
+                        color: "#64748b",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {group.employees.length} employee(s) | {group.totalReports} EPR(s)
+                    </div>
+                  </div>
 
-                      <ActionButton
-                        variant="secondary"
-                        onClick={() => toggleSupervisor(group.supervisorName)}
+                  <span
+                    style={{
+                      minWidth: 34,
+                      height: 34,
+                      borderRadius: 999,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "#edf7ff",
+                      color: "#1769aa",
+                      border: "1px solid #cfe7fb",
+                      fontSize: 12,
+                      fontWeight: 900,
+                    }}
+                  >
+                    {group.totalReports}
+                  </span>
+                </div>
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  {group.employees.map((emp) => {
+                    const employeeSelected = selectedEmployeeName === emp.employeeName;
+                    const needsFollowUpCount = emp.reports.filter(
+                      (report) => report.needsFollowUp === true
+                    ).length;
+
+                    return (
+                      <button
+                        key={`${group.supervisorName}-${emp.employeeName}`}
+                        type="button"
+                        onClick={() => setSelectedEmployeeName(emp.employeeName)}
+                        style={{
+                          width: "100%",
+                          border: employeeSelected
+                            ? "1px solid #7cc5f6"
+                            : "1px solid #e2e8f0",
+                          borderRadius: 13,
+                          background: employeeSelected ? "#edf7ff" : "#f8fafc",
+                          padding: "11px 12px",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
                       >
-                        {supervisorExpanded ? "Hide" : "View Employees"}
-                      </ActionButton>
+                        <span>
+                          <span
+                            style={{
+                              display: "block",
+                              fontSize: 14,
+                              color: "#0f172a",
+                              fontWeight: 850,
+                            }}
+                          >
+                            {emp.employeeName}
+                          </span>
+                          <span
+                            style={{
+                              display: "block",
+                              marginTop: 3,
+                              fontSize: 11,
+                              color: "#64748b",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {emp.reports.length} report(s)
+                            {needsFollowUpCount > 0
+                              ? ` | ${needsFollowUpCount} follow up`
+                              : ""}
+                          </span>
+                        </span>
+
+                        <span
+                          style={{
+                            fontSize: 18,
+                            color: employeeSelected ? "#1769aa" : "#94a3b8",
+                            fontWeight: 900,
+                          }}
+                        >
+                          âº
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </PageCard>
+
+      {selectedEmployeeName && (
+        <PageCard style={{ padding: 20 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 900,
+                  color: "#1769aa",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Employee Report History
+              </div>
+              <h2
+                style={{
+                  margin: "5px 0 0",
+                  fontSize: 22,
+                  color: "#0f172a",
+                  fontWeight: 900,
+                }}
+              >
+                {selectedEmployeeName}
+              </h2>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 13,
+                  color: "#64748b",
+                }}
+              >
+                All EPRs matching the current filters, regardless of which supervisor submitted them.
+              </p>
+            </div>
+
+            <span
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                background: "#edf7ff",
+                color: "#1769aa",
+                border: "1px solid #cfe7fb",
+                fontSize: 12,
+                fontWeight: 900,
+              }}
+            >
+              {employeeReportHistory.length} report(s)
+            </span>
+          </div>
+
+          {employeeReportHistory.length === 0 ? (
+            <div style={{ color: "#64748b", fontWeight: 700 }}>
+              No reports found for this employee.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                gap: 10,
+              }}
+            >
+              {employeeReportHistory.map((report) => (
+                <button
+                  key={report.id}
+                  type="button"
+                  onClick={() => openReportForReview(report)}
+                  style={{
+                    cursor: "pointer",
+                    textAlign: "left",
+                    ...getReportVisualStyle(
+                      report.managerStatus || "submitted",
+                      selectedReportId === report.id
+                    ),
+                    borderRadius: 15,
+                    padding: 14,
+                    boxShadow:
+                      selectedReportId === report.id
+                        ? "0 0 0 2px rgba(23,105,170,0.10)"
+                        : "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 900,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {formatMonthValue(report.month)}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 12,
+                          color: "#475569",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Supervisor: {report.supervisorName || "-"}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 3,
+                          fontSize: 12,
+                          color: "#64748b",
+                        }}
+                      >
+                        {report.templateLabel || "-"} | {report.department || "-"}
+                      </div>
                     </div>
 
-                    {supervisorExpanded && (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {group.employees.map((emp) => {
-                          const employeeKey = `${group.supervisorName}__${emp.employeeName}`;
-                          const employeeExpanded = !!expandedEmployees[employeeKey];
-
-                          return (
-                            <div
-                              key={employeeKey}
-                              style={{
-                                border: "1px solid #e2e8f0",
-                                borderRadius: 14,
-                                padding: 12,
-                                background: "#f8fbff",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  gap: 10,
-                                  flexWrap: "wrap",
-                                  alignItems: "center",
-                                }}
-                              >
-                                <div
-                                  onClick={() =>
-                                    toggleEmployee(group.supervisorName, emp.employeeName)
-                                  }
-                                  style={{ cursor: "pointer" }}
-                                >
-                                  <div
-                                    style={{
-                                      fontSize: 14,
-                                      fontWeight: 800,
-                                      color: "#0f172a",
-                                    }}
-                                  >
-                                    {emp.employeeName}
-                                  </div>
-                                  <div
-                                    style={{
-                                      marginTop: 4,
-                                      fontSize: 12,
-                                      color: "#64748b",
-                                    }}
-                                  >
-                                    {emp.reports.length} report(s)
-                                  </div>
-                                </div>
-
-                                <ActionButton
-                                  variant="secondary"
-                                  onClick={() =>
-                                    toggleEmployee(group.supervisorName, emp.employeeName)
-                                  }
-                                >
-                                  {employeeExpanded ? "Hide Reports" : "View Reports"}
-                                </ActionButton>
-                              </div>
-
-                              {employeeExpanded && (
-                                <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                                  {emp.reports.map((report) => (
-                                    <div
-                                      key={report.id}
-                                      onClick={() => setSelectedReportId(report.id)}
-                                      style={{
-                                        cursor: "pointer",
-                                        border:
-                                          selectedReportId === report.id
-                                            ? "1px solid #bfe0fb"
-                                            : "1px solid #e2e8f0",
-                                        background:
-                                          selectedReportId === report.id
-                                            ? "#edf7ff"
-                                            : "#ffffff",
-                                        borderRadius: 12,
-                                        padding: 12,
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          justifyContent: "space-between",
-                                          gap: 10,
-                                          flexWrap: "wrap",
-                                          alignItems: "center",
-                                        }}
-                                      >
-                                        <div>
-                                          <div
-                                            style={{
-                                              fontSize: 14,
-                                              fontWeight: 800,
-                                              color: "#0f172a",
-                                            }}
-                                          >
-                                            {report.templateLabel || "-"} |{" "}
-                                            {formatMonthValue(report.month)}
-                                          </div>
-                                          <div
-                                            style={{
-                                              marginTop: 4,
-                                              fontSize: 12,
-                                              color: "#64748b",
-                                            }}
-                                          >
-                                            {safeText(report.department) || "-"} | Status:{" "}
-                                            {getStatusLabel(report.managerStatus || "submitted")}
-                                          </div>
-                                        </div>
-
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            gap: 8,
-                                            flexWrap: "wrap",
-                                            alignItems: "center",
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              display: "inline-flex",
-                                              padding: "5px 10px",
-                                              borderRadius: 999,
-                                              fontSize: 12,
-                                              fontWeight: 800,
-                                              background: "#f8fbff",
-                                              border: "1px solid #dbeafe",
-                                              color: "#1769aa",
-                                            }}
-                                          >
-                                            {formatScore(report.score)}
-                                          </span>
-
-                                          <span
-                                            style={{
-                                              display: "inline-flex",
-                                              padding: "5px 10px",
-                                              borderRadius: 999,
-                                              fontSize: 12,
-                                              fontWeight: 800,
-                                              background:
-                                                report.needsFollowUp === true
-                                                  ? "#fff7ed"
-                                                  : "#ecfdf5",
-                                              border:
-                                                report.needsFollowUp === true
-                                                  ? "1px solid #fdba74"
-                                                  : "1px solid #a7f3d0",
-                                              color:
-                                                report.needsFollowUp === true
-                                                  ? "#9a3412"
-                                                  : "#166534",
-                                            }}
-                                          >
-                                            {report.needsFollowUp ? "Follow Up" : "OK"}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 900,
+                          color: "#1769aa",
+                        }}
+                      >
+                        {formatScore(report.score)}
                       </div>
-                    )}
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: "#475569",
+                        }}
+                      >
+                        {getStatusLabel(report.managerStatus || "submitted")}
+                      </div>
+                    </div>
                   </div>
-                );
-              })}
+                </button>
+              ))}
             </div>
           )}
         </PageCard>
+      )}
 
         {selectedReport && (
-          <PageCard style={{ padding: 20 }}>
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9998,
+              background: "rgba(15,23,42,0.42)",
+              backdropFilter: "blur(3px)",
+              WebkitBackdropFilter: "blur(3px)",
+              padding: "24px 16px",
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "center",
+              overflowY: "auto",
+            }}
+            onClick={() => {
+              if (!isEditingReport) setSelectedReportId("");
+            }}
+          >
+          <PageCard
+            style={{
+              padding: 20,
+              width: "min(1180px, 96vw)",
+              maxHeight: "calc(100vh - 48px)",
+              overflowY: "auto",
+              boxShadow: "0 30px 80px rgba(15,23,42,0.28)",
+              border: "1px solid rgba(255,255,255,0.98)",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
             <div style={{ display: "grid", gap: 16 }}>
               <div
                 style={{
@@ -2406,6 +2786,15 @@ export default function EmployeePerformanceManagementPage() {
                 </div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {!isEditingReport && (
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => setSelectedReportId("")}
+                    >
+                      Close Profile
+                    </ActionButton>
+                  )}
+
                   {!isEditingReport ? (
                     <ActionButton variant="secondary" onClick={startEditingReport}>
                       Edit Received EPR
@@ -2498,6 +2887,16 @@ export default function EmployeePerformanceManagementPage() {
                   label="Sent"
                   value={formatDateTime(selectedReport.createdAt)}
                   tone="default"
+                />
+                <InfoCard
+                  label="Opened By"
+                  value={selectedReport.openedByName || "Not opened yet"}
+                  tone={selectedReport.openedByName ? "brown" : "default"}
+                />
+                <InfoCard
+                  label="Opened At"
+                  value={selectedReport.openedAt ? formatDateTime(selectedReport.openedAt) : "-"}
+                  tone={selectedReport.openedAt ? "brown" : "default"}
                 />
                 <InfoCard
                   label="Duty Manager"
@@ -2695,7 +3094,7 @@ export default function EmployeePerformanceManagementPage() {
                 {isEditingReport ? (
                   <div style={{ display: "grid", gap: 12 }}>
                     <div>
-                      <FieldLabel>Company Comments</FieldLabel>
+                      <FieldLabel>Supervisor Comment</FieldLabel>
                       <TextArea
                         value={editForm.commentsCompany}
                         onChange={(e) => updateEditField("commentsCompany", e.target.value)}
@@ -2729,7 +3128,7 @@ export default function EmployeePerformanceManagementPage() {
                 ) : (
                   <div style={{ display: "grid", gap: 10, color: "#334155", fontSize: 14 }}>
                     <div>
-                      <strong>Company:</strong> {selectedReport.commentsCompany || "-"}
+                      <strong>Supervisor Comment:</strong> {selectedReport.commentsCompany || "-"}
                     </div>
                     <div>
                       <strong>Employee:</strong> {selectedReport.commentsEmployee || "-"}
@@ -3120,8 +3519,8 @@ export default function EmployeePerformanceManagementPage() {
               )}
             </div>
           </PageCard>
+          </div>
         )}
-      </div>
     </div>
   );
 }
