@@ -5,6 +5,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -489,6 +490,36 @@ function appendSupervisorTimeline(report, entry) {
   return timeline;
 }
 
+function getAssignedDutyManagerDisplay(report) {
+  const directName = normalizeText(
+    report?.followUpDutyManagerName || report?.assignedDutyManagerName || ""
+  );
+
+  if (directName) return directName;
+
+  const publicTimeline = Array.isArray(report?.supervisorTimeline)
+    ? [...report.supervisorTimeline].reverse()
+    : [];
+
+  const timelineMatch = publicTimeline.find((item) =>
+    normalizeText(item?.dutyManagerName)
+  );
+
+  if (timelineMatch?.dutyManagerName) {
+    return timelineMatch.dutyManagerName;
+  }
+
+  const internalHistory = Array.isArray(report?.followUpHistory)
+    ? [...report.followUpHistory].reverse()
+    : [];
+
+  const historyMatch = internalHistory.find((item) =>
+    normalizeText(item?.dutyManagerName)
+  );
+
+  return historyMatch?.dutyManagerName || "-";
+}
+
 function getRecentMonthValues(count = 3) {
   const now = new Date();
   const values = [];
@@ -740,7 +771,7 @@ const LABELS = {
     managementTab: "Management",
     draftsTab: "Drafts",
     returnedTab: "Returned Reports",
-    myReportsTab: "My Reports Â· 3 Months",
+    myReportsTab: "My Reports | 3 Months",
     followUpTab: "My Follow Up Cases",
     draftsSaved: "Saved Drafts",
     saveDraft: "Save Draft",
@@ -803,7 +834,7 @@ const LABELS = {
     managementTab: "Management",
     draftsTab: "Borradores",
     returnedTab: "Reportes Retornados",
-    myReportsTab: "Mis Reportes Â· 3 Meses",
+    myReportsTab: "Mis Reportes | 3 Meses",
     followUpTab: "Mis Casos de Seguimiento",
     draftsSaved: "Borradores Guardados",
     saveDraft: "Guardar Borrador",
@@ -986,6 +1017,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const [selectedReportId, setSelectedReportId] = useState("");
   const [editingReportId, setEditingReportId] = useState("");
   const [editingDraftId, setEditingDraftId] = useState("");
+  const [myReportsMonth, setMyReportsMonth] = useState(getCurrentMonthValue());
+  const [expandedSupervisorReportId, setExpandedSupervisorReportId] = useState("");
 
   const [managementEdit, setManagementEdit] = useState({});
   const [followUpEdit, setFollowUpEdit] = useState({});
@@ -1087,6 +1120,32 @@ export default function MonthlyEmployeePerformanceReportPage() {
     } else {
       setLoading(false);
     }
+  }, [canCreate, canManage]);
+
+  useEffect(() => {
+    if (!canCreate && !canManage) return undefined;
+
+    const reportsQuery = query(
+      collection(db, "employeePerformanceReports"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      reportsQuery,
+      (snapshot) => {
+        const liveReports = snapshot.docs.map((document) => ({
+          id: document.id,
+          ...document.data(),
+        }));
+
+        setReports(liveReports);
+      },
+      (snapshotError) => {
+        console.error("Error listening to EPR updates:", snapshotError);
+      }
+    );
+
+    return () => unsubscribe();
   }, [canCreate, canManage]);
 
   useEffect(() => {
@@ -1200,18 +1259,19 @@ export default function MonthlyEmployeePerformanceReportPage() {
     if (user?.role !== "supervisor") return [];
 
     const validMonths = new Set(recentThreeMonthValues);
+    const selectedMonth = validMonths.has(myReportsMonth)
+      ? myReportsMonth
+      : recentThreeMonthValues[0] || getCurrentMonthValue();
 
     return reports
       .filter(
         (report) =>
           String(report.supervisorId || "") === String(user?.id || "") &&
           normalizeLookup(report.managerStatus || "") !== "draft" &&
-          validMonths.has(String(report.month || ""))
+          validMonths.has(String(report.month || "")) &&
+          String(report.month || "") === selectedMonth
       )
       .sort((a, b) => {
-        const monthCompare = String(b.month || "").localeCompare(String(a.month || ""));
-        if (monthCompare !== 0) return monthCompare;
-
         const left =
           typeof a?.createdAt?.toDate === "function"
             ? a.createdAt.toDate().getTime()
@@ -1222,7 +1282,13 @@ export default function MonthlyEmployeePerformanceReportPage() {
             : new Date(b?.createdAt || 0).getTime();
         return right - left;
       });
-  }, [reports, user?.id, user?.role, recentThreeMonthValues]);
+  }, [
+    reports,
+    user?.id,
+    user?.role,
+    recentThreeMonthValues,
+    myReportsMonth,
+  ]);
 
   const supervisorNames = useMemo(() => {
     return Array.from(
@@ -1446,7 +1512,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
     setAnswers(nextAnswers);
 
     setStatusMessage(
-      `${t.draft} loaded: ${draft.employeeName || "-"} Â· ${formatMonthValue(
+      `${t.draft} loaded: ${draft.employeeName || "-"} | ${formatMonthValue(
         draft.month
       )}`
     );
@@ -2599,7 +2665,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
             fontWeight: 700,
           }}
         >
-          TPA OPS Â· EPR
+          TPA OPS | EPR
         </p>
 
         <h1
@@ -2710,7 +2776,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 }}
               >
                 {editingDraftId
-                  ? `${t.draft} Â· ${t.continueEditing}`
+                  ? `${t.draft} | ${t.continueEditing}`
                   : editingReportId
                   ? t.editReport
                   : t.createTab}
@@ -2830,7 +2896,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   color: "#0f172a",
                 }}
               >
-                {activeTemplate.label} Â· {formatMonthValue(form.month)}
+                {activeTemplate.label} | {formatMonthValue(form.month)}
               </h2>
               <p
                 style={{
@@ -3067,7 +3133,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#0f172a",
                         }}
                       >
-                        {draft.employeeName || "-"} Â· {formatMonthValue(draft.month)}
+                        {draft.employeeName || "-"} | {formatMonthValue(draft.month)}
                       </div>
 
                       <div
@@ -3077,7 +3143,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#64748b",
                         }}
                       >
-                        {t.template}: {draft.templateLabel || "-"} Â· {t.lastUpdated}:{" "}
+                        {t.template}: {draft.templateLabel || "-"} | {t.lastUpdated}:{" "}
                         {formatDateTime(draft.updatedAt)}
                       </div>
                     </div>
@@ -3104,39 +3170,81 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       {tab === "myreports" && user?.role === "supervisor" && (
         <PageCard style={{ padding: 22 }}>
-          <div style={{ marginBottom: 14 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 20,
-                fontWeight: 800,
-                color: "#0f172a",
-              }}
-            >
-              {t.myReportsTab}
-            </h2>
-            <p
-              style={{
-                margin: "5px 0 0",
-                color: "#64748b",
-                fontSize: 13,
-                lineHeight: 1.6,
-              }}
-            >
-              Submitted EPRs remain visible here for the current month and the two
-              previous months. Internal Duty/Station Manager notes are not shown;
-              only the operational follow-up timeline is visible.
-            </p>
+          <div
+            style={{
+              marginBottom: 16,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 14,
+              flexWrap: "wrap",
+              alignItems: "flex-end",
+            }}
+          >
+            <div style={{ maxWidth: 780 }}>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
+                {t.myReportsTab}
+              </h2>
+              <p
+                style={{
+                  margin: "5px 0 0",
+                  color: "#64748b",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                Review the EPRs you submitted during the last three months. Select
+                one month at a time to keep the page organized. You can reopen the
+                complete form you created and follow management activity without
+                exposing internal Duty/Station Manager notes.
+              </p>
+            </div>
+
+            <div style={{ minWidth: 230 }}>
+              <FieldLabel>Report Month</FieldLabel>
+              <SelectInput
+                value={myReportsMonth}
+                onChange={(event) => {
+                  setMyReportsMonth(event.target.value);
+                  setExpandedSupervisorReportId("");
+                }}
+              >
+                {recentThreeMonthValues.map((monthValue) => (
+                  <option key={monthValue} value={monthValue}>
+                    {formatMonthValue(monthValue)}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
           </div>
 
           {myRecentReports.length === 0 ? (
-            <div style={{ color: "#64748b", fontSize: 14 }}>
-              No submitted reports found in the last 3 months.
+            <div
+              style={{
+                color: "#64748b",
+                fontSize: 14,
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: 16,
+              }}
+            >
+              No submitted reports found for {formatMonthValue(myReportsMonth)}.
             </div>
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
               {myRecentReports.map((report) => {
                 const supervisorTimeline = getSupervisorVisibleTimeline(report);
+                const reportTemplate =
+                  TEMPLATE_MAP[report.templateKey] || TEMPLATE_MAP.passenger;
+                const isExpanded = expandedSupervisorReportId === report.id;
+                const assignedDutyManager = getAssignedDutyManagerDisplay(report);
 
                 return (
                   <div
@@ -3157,7 +3265,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                         alignItems: "flex-start",
                       }}
                     >
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div
                           style={{
                             fontSize: 17,
@@ -3165,7 +3273,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                             color: "#0f172a",
                           }}
                         >
-                          {report.employeeName || "-"} Â· {formatMonthValue(report.month)}
+                          {report.employeeName || "-"} | {formatMonthValue(report.month)}
                         </div>
                         <div
                           style={{
@@ -3174,7 +3282,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
                             color: "#64748b",
                           }}
                         >
-                          {report.templateLabel || "-"} Â· Submitted {formatDateTime(report.createdAt)}
+                          {report.templateLabel || "-"} | Submitted{" "}
+                          {formatDateTime(report.createdAt)}
                         </div>
                       </div>
 
@@ -3202,17 +3311,41 @@ export default function MonthlyEmployeePerformanceReportPage() {
                     >
                       <InfoCard
                         label={t.assignedDutyManager}
-                        value={
-                          report.followUpDutyManagerName ||
-                          report.assignedDutyManagerName ||
-                          "-"
-                        }
+                        value={assignedDutyManager}
+                        tone={assignedDutyManager !== "-" ? "blue" : "default"}
                       />
                       <InfoCard
                         label="Follow Up"
                         value={report.needsFollowUp ? "Yes" : "No"}
                         tone={report.needsFollowUp ? "amber" : "green"}
                       />
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 14,
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <ActionButton
+                        variant={isExpanded ? "secondary" : "primary"}
+                        onClick={() =>
+                          setExpandedSupervisorReportId((current) =>
+                            current === report.id ? "" : report.id
+                          )
+                        }
+                      >
+                        {isExpanded ? "Hide Full Report" : "View Full Report"}
+                      </ActionButton>
+
+                      <ActionButton
+                        variant="dark"
+                        onClick={() => printReportHtml(report, language)}
+                      >
+                        {t.print}
+                      </ActionButton>
                     </div>
 
                     {normalizeText(report.returnReason) && (
@@ -3229,6 +3362,195 @@ export default function MonthlyEmployeePerformanceReportPage() {
                         }}
                       >
                         <strong>Return Reason:</strong> {report.returnReason}
+                      </div>
+                    )}
+
+                    {isExpanded && (
+                      <div
+                        style={{
+                          marginTop: 16,
+                          display: "grid",
+                          gap: 14,
+                          borderTop: "1px solid #e2e8f0",
+                          paddingTop: 16,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(200px, 1fr))",
+                            gap: 10,
+                          }}
+                        >
+                          <InfoCard label="Employee" value={report.employeeName || "-"} />
+                          <InfoCard label="Department" value={report.department || "-"} />
+                          <InfoCard label="Role" value={report.roleTitle || "-"} />
+                          <InfoCard label="Template" value={report.templateLabel || "-"} />
+                          <InfoCard label="Supervisor" value={report.supervisorName || "-"} />
+                          <InfoCard
+                            label="Submitted"
+                            value={formatDateTime(report.createdAt)}
+                          />
+                        </div>
+
+                        <div
+                          style={{
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 16,
+                            padding: 14,
+                            background: "#ffffff",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 15,
+                              fontWeight: 900,
+                              color: "#0f172a",
+                              marginBottom: 10,
+                            }}
+                          >
+                            Comments Submitted by Supervisor
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              color: "#334155",
+                              lineHeight: 1.7,
+                            }}
+                          >
+                            <div>
+                              <strong>Company:</strong>{" "}
+                              {report.commentsCompany || "-"}
+                            </div>
+                            <div style={{ marginTop: 8 }}>
+                              <strong>Employee:</strong>{" "}
+                              {report.commentsEmployee || "-"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 16,
+                            overflow: "hidden",
+                            background: "#ffffff",
+                          }}
+                        >
+                          <div
+                            style={{
+                              padding: "13px 14px",
+                              background: "#f8fbff",
+                              fontSize: 15,
+                              fontWeight: 900,
+                              color: "#0f172a",
+                              borderBottom: "1px solid #e2e8f0",
+                            }}
+                          >
+                            Performance Form
+                          </div>
+
+                          <div style={{ display: "grid" }}>
+                            {reportTemplate.questions.map((question, index) => {
+                              const answer = report.answers?.[question.id] || {};
+                              const rating = normalizeLookup(answer.rating || "");
+                              const ratingLabel =
+                                rating === "exceeds"
+                                  ? t.exceeds
+                                  : rating === "meets"
+                                  ? t.meets
+                                  : rating === "below"
+                                  ? t.below
+                                  : "-";
+
+                              return (
+                                <div
+                                  key={`${report.id}-question-${question.id}`}
+                                  style={{
+                                    padding: 14,
+                                    background: index % 2 === 0 ? "#ffffff" : "#fbfdff",
+                                    borderBottom:
+                                      index === reportTemplate.questions.length - 1
+                                        ? "none"
+                                        : "1px solid #eef2f7",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: 14,
+                                      fontWeight: 800,
+                                      color: "#0f172a",
+                                      lineHeight: 1.55,
+                                    }}
+                                  >
+                                    {question.id}. {language === "es" ? question.es : question.en}
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      marginTop: 9,
+                                      display: "flex",
+                                      gap: 8,
+                                      flexWrap: "wrap",
+                                      alignItems: "center",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        padding: "5px 9px",
+                                        borderRadius: 999,
+                                        background:
+                                          rating === "below"
+                                            ? "#fff1f2"
+                                            : rating === "exceeds"
+                                            ? "#ecfdf5"
+                                            : "#edf7ff",
+                                        color:
+                                          rating === "below"
+                                            ? "#9f1239"
+                                            : rating === "exceeds"
+                                            ? "#166534"
+                                            : "#1769aa",
+                                        border: "1px solid #dbeafe",
+                                        fontSize: 12,
+                                        fontWeight: 900,
+                                      }}
+                                    >
+                                      {ratingLabel}
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontSize: 12,
+                                        color: "#64748b",
+                                        fontWeight: 700,
+                                      }}
+                                    >
+                                      Weight: {question.weight}
+                                    </span>
+                                  </div>
+
+                                  {normalizeText(answer.note) && (
+                                    <div
+                                      style={{
+                                        marginTop: 9,
+                                        background: "#fff7ed",
+                                        border: "1px solid #fed7aa",
+                                        borderRadius: 10,
+                                        padding: "9px 10px",
+                                        color: "#7c2d12",
+                                        fontSize: 13,
+                                        lineHeight: 1.55,
+                                      }}
+                                    >
+                                      <strong>Supervisor Note:</strong> {answer.note}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -3358,7 +3680,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#0f172a",
                         }}
                       >
-                        {report.employeeName || "-"} Â· {formatMonthValue(report.month)}
+                        {report.employeeName || "-"} | {formatMonthValue(report.month)}
                       </div>
 
                       <div
@@ -3435,7 +3757,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#0f172a",
                         }}
                       >
-                        {report.employeeName} Â· {formatMonthValue(report.month)}
+                        {report.employeeName} | {formatMonthValue(report.month)}
                       </div>
                       <div
                         style={{
@@ -3444,7 +3766,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#64748b",
                         }}
                       >
-                        {report.templateLabel || "-"} Â· Supervisor:{" "}
+                        {report.templateLabel || "-"} | Supervisor:{" "}
                         {report.supervisorName || "-"}
                       </div>
                       <div
@@ -3760,7 +4082,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                 color: "#0f172a",
                               }}
                             >
-                              {report.templateLabel} Â· {formatMonthValue(report.month)}
+                              {report.templateLabel} | {formatMonthValue(report.month)}
                             </div>
                             <div
                               style={{
