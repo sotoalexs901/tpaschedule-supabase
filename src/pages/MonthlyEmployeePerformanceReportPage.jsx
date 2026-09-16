@@ -469,10 +469,115 @@ function buildHistoryEntry(type, byUser, note = "", extra = {}) {
   };
 }
 
+function buildSupervisorTimelineEntry(type, byUser, message, extra = {}) {
+  return {
+    type,
+    byUserId: byUser?.id || "",
+    byUserName: getVisibleUserName(byUser),
+    byUserRole: byUser?.role || "",
+    message: normalizeText(message),
+    createdAt: new Date().toISOString(),
+    ...extra,
+  };
+}
+
+function appendSupervisorTimeline(report, entry) {
+  const timeline = Array.isArray(report?.supervisorTimeline)
+    ? [...report.supervisorTimeline]
+    : [];
+  timeline.push(entry);
+  return timeline;
+}
+
+function getRecentMonthValues(count = 3) {
+  const now = new Date();
+  const values = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
+    values.push(
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+    );
+  }
+
+  return values;
+}
+
+function getSupervisorVisibleTimeline(report) {
+  if (Array.isArray(report?.supervisorTimeline) && report.supervisorTimeline.length) {
+    return report.supervisorTimeline;
+  }
+
+  const internalHistory = Array.isArray(report?.followUpHistory)
+    ? report.followUpHistory
+    : [];
+
+  return internalHistory.map((item) => {
+    const type = normalizeLookup(item?.type);
+    let message = "Management updated this EPR case.";
+    const extra = {};
+
+    if (type === "follow up assigned" || type === "follow_up_assigned") {
+      message = `${item?.byUserName || "Management"} assigned this EPR follow up to ${
+        item?.dutyManagerName || "a Duty Manager"
+      }.`;
+    } else if (type === "follow up reassigned" || type === "follow_up_reassigned") {
+      message = `${item?.byUserName || "Management"} reassigned this EPR follow up to ${
+        item?.dutyManagerName || "a Duty Manager"
+      }.`;
+    } else if (type === "follow up accepted" || type === "follow_up_accepted") {
+      message = `${item?.byUserName || "Duty Manager"} accepted the follow-up case.`;
+    } else if (type === "follow up progress" || type === "follow_up_progress") {
+      message = `${item?.byUserName || "Duty Manager"} added an internal follow-up update to this case.`;
+    } else if (type === "returned to supervisor" || type === "returned_to_supervisor") {
+      message = `${item?.byUserName || "Management"} returned this EPR to the supervisor for correction.`;
+      extra.publicDetails = item?.note || report?.returnReason || "";
+    } else if (
+      type === "resubmitted to manager" ||
+      type === "resubmitted_to_manager"
+    ) {
+      message = "The supervisor corrected and resubmitted this EPR for management review.";
+    } else if (
+      type === "follow up resubmitted" ||
+      type === "follow_up_resubmitted"
+    ) {
+      message = `${item?.byUserName || "Duty Manager"} submitted the follow-up case for management review.`;
+    } else if (type === "closed") {
+      message = `${item?.byUserName || "Management"} closed this EPR case.`;
+    } else if (type === "approved") {
+      message = `${item?.byUserName || "Management"} approved this EPR.`;
+    } else if (type === "recognized") {
+      message = `${item?.byUserName || "Management"} completed a positive review on this EPR.`;
+    }
+
+    return {
+      type: item?.type || "activity",
+      byUserName: item?.byUserName || "",
+      byUserRole: item?.byUserRole || "",
+      message,
+      createdAt: item?.createdAt || "",
+      ...extra,
+    };
+  });
+}
+
+async function createUserNotification(userId, payload) {
+  if (!userId) return false;
+
+  await addDoc(collection(db, "notifications"), {
+    userId,
+    read: false,
+    createdAt: serverTimestamp(),
+    ...payload,
+  });
+
+  return true;
+}
+
 function printReportHtml(report, language = "en") {
   const title =
     language === "es"
-      ? "Reporte Mensual de Desempeño"
+      ? "Reporte Mensual de DesempeÃ±o"
       : "Monthly Employee Performance Report";
 
   const followUpItems = Array.isArray(report.followUpItems)
@@ -546,9 +651,9 @@ function printReportHtml(report, language = "en") {
               ? followUpItems
                   .map(
                     (item) =>
-                      `<div class="q">• ${
+                      `<div class="q">â¢ ${
                         item[language] || item.en || item.es || "-"
-                      }${item.note ? ` — ${item.note}` : ""}</div>`
+                      }${item.note ? ` â ${item.note}` : ""}</div>`
                   )
                   .join("")
               : "<div>No follow up items.</div>"
@@ -601,7 +706,7 @@ function printReportHtml(report, language = "en") {
               const a = answers[key] || {};
               return `
                 <div class="q">
-                  <strong>Q${key}</strong> — ${a.rating || "-"}${
+                  <strong>Q${key}</strong> â ${a.rating || "-"}${
                 a.note ? ` | ${a.note}` : ""
               }
                 </div>
@@ -635,6 +740,7 @@ const LABELS = {
     managementTab: "Management",
     draftsTab: "Drafts",
     returnedTab: "Returned Reports",
+    myReportsTab: "My Reports Â· 3 Months",
     followUpTab: "My Follow Up Cases",
     draftsSaved: "Saved Drafts",
     saveDraft: "Save Draft",
@@ -690,19 +796,20 @@ const LABELS = {
     draft: "Draft",
   },
   es: {
-    title: "Reporte Mensual de Desempeño del Empleado",
+    title: "Reporte Mensual de DesempeÃ±o del Empleado",
     subtitle:
-      "Supervisores y managers pueden completar EPR por mes. Duty managers y station managers administran seguimiento, retorno, felicitaciones, cierre de mes y notificación al empleado.",
+      "Supervisores y managers pueden completar EPR por mes. Duty managers y station managers administran seguimiento, retorno, felicitaciones, cierre de mes y notificaciÃ³n al empleado.",
     createTab: "Crear EPR",
     managementTab: "Management",
     draftsTab: "Borradores",
     returnedTab: "Reportes Retornados",
+    myReportsTab: "Mis Reportes Â· 3 Meses",
     followUpTab: "Mis Casos de Seguimiento",
     draftsSaved: "Borradores Guardados",
     saveDraft: "Guardar Borrador",
     continueEditing: "Continuar Editando",
     noDrafts: "No se encontraron borradores.",
-    lastUpdated: "Última Actualización",
+    lastUpdated: "Ãltima ActualizaciÃ³n",
     language: "Idioma",
     month: "Mes",
     employee: "Empleado",
@@ -714,7 +821,7 @@ const LABELS = {
     commentsEmployee: "Comentarios del Empleado",
     saveReport: "Guardar Performance Report",
     updateReport: "Actualizar Reporte",
-    score: "Puntuación Final",
+    score: "PuntuaciÃ³n Final",
     status: "Estado",
     followUpNeeded: "Requiere Seguimiento",
     questionsToFollow: "Preguntas que Requieren Seguimiento",
@@ -724,10 +831,10 @@ const LABELS = {
     openReport: "Abrir Reporte",
     editReport: "Editar Reporte",
     deleteReport: "Borrar Reporte",
-    cancelEdit: "Cancelar Edición",
+    cancelEdit: "Cancelar EdiciÃ³n",
     noReports: "No se encontraron reportes.",
-    lowScoreAlert: "Alerta de puntuación baja",
-    rating: "Calificación",
+    lowScoreAlert: "Alerta de puntuaciÃ³n baja",
+    rating: "CalificaciÃ³n",
     note: "Nota de Seguimiento",
     exceeds: "Supera",
     meets: "Cumple",
@@ -735,14 +842,14 @@ const LABELS = {
     managementFilters: "Filtros de Management",
     supervisor: "Supervisor",
     followUpStatus: "Estado de Seguimiento",
-    scoreBand: "Rango de Puntuación",
+    scoreBand: "Rango de PuntuaciÃ³n",
     all: "Todos",
     assignedDutyManager: "Duty Manager Asignado",
     assignDutyManager: "Asignar Duty Manager",
     congratulations: "Felicitaciones",
     closeMonth: "Cerrar Mes",
     managerNote: "Nota de Manager",
-    returnReason: "Razón del Retorno",
+    returnReason: "RazÃ³n del Retorno",
     returnToSupervisor: "Retornar al Supervisor",
     print: "Imprimir",
     closed: "Cerrado",
@@ -757,68 +864,68 @@ const LABELS = {
 
 const PASSENGER_SERVICE_QUESTIONS = [
   { id: "1", es: "Acepta la responsabilidad de las acciones y responde a las consecuencias.", en: "Accepts responsibility for actions and responds to consequences.", weight: 1 },
-  { id: "2", es: "Rara vez está ausente, llega puntualmente y trabaja las horas requeridas.", en: "Is rarely absent, arrives on time, and works required hours.", weight: 1 },
-  { id: "3", es: "Tiene capacidad para llevarse bien con compañeros y administración de manera cooperativa.", en: "Works cooperatively with coworkers and management.", weight: 1 },
-  { id: "4", es: "Muestra iniciativa, optimismo y cortesía de manera activa y respetuosa.", en: "Shows initiative, optimism, and courtesy in an active and respectful way.", weight: 1 },
+  { id: "2", es: "Rara vez estÃ¡ ausente, llega puntualmente y trabaja las horas requeridas.", en: "Is rarely absent, arrives on time, and works required hours.", weight: 1 },
+  { id: "3", es: "Tiene capacidad para llevarse bien con compaÃ±eros y administraciÃ³n de manera cooperativa.", en: "Works cooperatively with coworkers and management.", weight: 1 },
+  { id: "4", es: "Muestra iniciativa, optimismo y cortesÃ­a de manera activa y respetuosa.", en: "Shows initiative, optimism, and courtesy in an active and respectful way.", weight: 1 },
   { id: "5", es: "Aprende de sugerencias, acata instrucciones y ajusta su comportamiento.", en: "Learns from feedback, follows instructions, and adjusts behavior.", weight: 1 },
   { id: "6", es: "Responde adecuadamente a cambios en situaciones y expectativas.", en: "Responds well to changing situations and expectations.", weight: 1 },
-  { id: "7", es: "Sigue políticas y procedimientos de la organización.", en: "Follows organizational policies and procedures.", weight: 1 },
+  { id: "7", es: "Sigue polÃ­ticas y procedimientos de la organizaciÃ³n.", en: "Follows organizational policies and procedures.", weight: 1 },
   { id: "8", es: "Completa tareas y funciones propias del cargo cumpliendo tiempos.", en: "Completes duties and job tasks on time.", weight: 1 },
-  { id: "9", es: "Garantiza atención de alta calidad con respeto y amabilidad.", en: "Provides high-quality service with respect and kindness.", weight: 1 },
+  { id: "9", es: "Garantiza atenciÃ³n de alta calidad con respeto y amabilidad.", en: "Provides high-quality service with respect and kindness.", weight: 1 },
   { id: "10", es: "Es minucioso, preciso y limpio en el trabajo.", en: "Is thorough, accurate, and clean in the work performed.", weight: 1 },
   { id: "11", es: "Realiza correctamente el proceso de check-in, validando documentos, itinerario y requisitos del pasajero.", en: "Performs the check-in process correctly, validating documents, itinerary, and passenger requirements.", weight: 1 },
-  { id: "12", es: "Verifica correctamente pasaporte, identificación, visa y demás documentos requeridos antes de emitir el pase de abordar.", en: "Correctly verifies passport, ID, visa, and other required documents before issuing the boarding pass.", weight: 1 },
-  { id: "13", es: "Maneja con precisión el etiquetado de equipaje y confirma que el destino final sea correcto.", en: "Handles baggage tagging accurately and confirms the final destination is correct.", weight: 1 },
-  { id: "14", es: "Brinda instrucciones claras al pasajero sobre puertas, horario de abordaje, conexión y documentación.", en: "Provides clear instructions to the passenger about gate, boarding time, connection, and documentation.", weight: 1 },
-  { id: "15", es: "Gestiona filas y tiempos de atención de manera organizada, manteniendo flujo eficiente en counters.", en: "Manages lines and service times in an organized way, maintaining efficient flow at counters.", weight: 1 },
+  { id: "12", es: "Verifica correctamente pasaporte, identificaciÃ³n, visa y demÃ¡s documentos requeridos antes de emitir el pase de abordar.", en: "Correctly verifies passport, ID, visa, and other required documents before issuing the boarding pass.", weight: 1 },
+  { id: "13", es: "Maneja con precisiÃ³n el etiquetado de equipaje y confirma que el destino final sea correcto.", en: "Handles baggage tagging accurately and confirms the final destination is correct.", weight: 1 },
+  { id: "14", es: "Brinda instrucciones claras al pasajero sobre puertas, horario de abordaje, conexiÃ³n y documentaciÃ³n.", en: "Provides clear instructions to the passenger about gate, boarding time, connection, and documentation.", weight: 1 },
+  { id: "15", es: "Gestiona filas y tiempos de atenciÃ³n de manera organizada, manteniendo flujo eficiente en counters.", en: "Manages lines and service times in an organized way, maintaining efficient flow at counters.", weight: 1 },
   { id: "16", es: "Realiza anuncios de puerta de forma clara, profesional y a tiempo.", en: "Makes gate announcements clearly, professionally, and on time.", weight: 1 },
   { id: "17", es: "Controla correctamente el proceso de abordaje por zonas, prioridades o grupos asignados.", en: "Properly controls the boarding process by zones, priorities, or assigned groups.", weight: 1 },
-  { id: "18", es: "Resuelve adecuadamente situaciones de puerta como cambios de asiento, standby, upgrades o pasajeros tardíos.", en: "Properly resolves gate situations such as seat changes, standby, upgrades, or late passengers.", weight: 1 },
-  { id: "19", es: "Mantiene comunicación efectiva con operaciones, rampa, tripulación y otros equipos durante la salida del vuelo.", en: "Maintains effective communication with operations, ramp, crew, and other teams during flight departure.", weight: 1 },
-  { id: "20", es: "Cierra el vuelo correctamente asegurando conteo final, documentación y cumplimiento del procedimiento de salida.", en: "Closes the flight correctly, ensuring final count, documentation, and compliance with departure procedures.", weight: 1 },
+  { id: "18", es: "Resuelve adecuadamente situaciones de puerta como cambios de asiento, standby, upgrades o pasajeros tardÃ­os.", en: "Properly resolves gate situations such as seat changes, standby, upgrades, or late passengers.", weight: 1 },
+  { id: "19", es: "Mantiene comunicaciÃ³n efectiva con operaciones, rampa, tripulaciÃ³n y otros equipos durante la salida del vuelo.", en: "Maintains effective communication with operations, ramp, crew, and other teams during flight departure.", weight: 1 },
+  { id: "20", es: "Cierra el vuelo correctamente asegurando conteo final, documentaciÃ³n y cumplimiento del procedimiento de salida.", en: "Closes the flight correctly, ensuring final count, documentation, and compliance with departure procedures.", weight: 1 },
 ];
 
 const BAGGAGE_QUESTIONS = [
-  { id: "1", es: "Asistencia y Puntualidad. Mantiene un nivel adecuado de asistencia, puntualidad y cumplimiento del horario laboral establecido, de acuerdo con las políticas de la organización.", en: "Attendance and Punctuality. Maintains adequate attendance, punctuality, and compliance with the established work schedule according to company policies.", weight: 1 },
-  { id: "2", es: "Trabajo en Equipo y Relaciones Laborales. Demuestra capacidad para interactuar de manera profesional, respetuosa y cooperativa con compañeros de trabajo, supervisores y la administración.", en: "Teamwork and Working Relationships. Demonstrates the ability to interact professionally, respectfully, and cooperatively with coworkers, supervisors, and management.", weight: 1 },
-  { id: "3", es: "Actitud y Comportamiento Profesional. Mantiene una actitud positiva, mostrando iniciativa, disposición al trabajo, cortesía y respeto en el entorno laboral.", en: "Attitude and Professional Behavior. Maintains a positive attitude, showing initiative, willingness to work, courtesy, and respect in the workplace.", weight: 1 },
-  { id: "4", es: "Adaptabilidad y Responsabilidad. Demuestra apertura para recibir retroalimentación, seguir instrucciones, adaptarse a cambios operacionales y asumir responsabilidad por sus acciones y resultados.", en: "Adaptability and Accountability. Shows openness to feedback, follows instructions, adapts to operational changes, and takes responsibility for actions and results.", weight: 1 },
-  { id: "5", es: "Cumplimiento de Políticas y Procedimientos. Cumple consistentemente con las políticas, procedimientos y estándares establecidos por la organización.", en: "Compliance with Policies and Procedures. Consistently complies with the policies, procedures, and standards established by the organization.", weight: 1 },
-  { id: "6", es: "Tiene habilidades de comunicación transmitiendo información de manera efectiva y eficiente.", en: "Has communication skills, conveying information effectively and efficiently.", weight: 1 },
+  { id: "1", es: "Asistencia y Puntualidad. Mantiene un nivel adecuado de asistencia, puntualidad y cumplimiento del horario laboral establecido, de acuerdo con las polÃ­ticas de la organizaciÃ³n.", en: "Attendance and Punctuality. Maintains adequate attendance, punctuality, and compliance with the established work schedule according to company policies.", weight: 1 },
+  { id: "2", es: "Trabajo en Equipo y Relaciones Laborales. Demuestra capacidad para interactuar de manera profesional, respetuosa y cooperativa con compaÃ±eros de trabajo, supervisores y la administraciÃ³n.", en: "Teamwork and Working Relationships. Demonstrates the ability to interact professionally, respectfully, and cooperatively with coworkers, supervisors, and management.", weight: 1 },
+  { id: "3", es: "Actitud y Comportamiento Profesional. Mantiene una actitud positiva, mostrando iniciativa, disposiciÃ³n al trabajo, cortesÃ­a y respeto en el entorno laboral.", en: "Attitude and Professional Behavior. Maintains a positive attitude, showing initiative, willingness to work, courtesy, and respect in the workplace.", weight: 1 },
+  { id: "4", es: "Adaptabilidad y Responsabilidad. Demuestra apertura para recibir retroalimentaciÃ³n, seguir instrucciones, adaptarse a cambios operacionales y asumir responsabilidad por sus acciones y resultados.", en: "Adaptability and Accountability. Shows openness to feedback, follows instructions, adapts to operational changes, and takes responsibility for actions and results.", weight: 1 },
+  { id: "5", es: "Cumplimiento de PolÃ­ticas y Procedimientos. Cumple consistentemente con las polÃ­ticas, procedimientos y estÃ¡ndares establecidos por la organizaciÃ³n.", en: "Compliance with Policies and Procedures. Consistently complies with the policies, procedures, and standards established by the organization.", weight: 1 },
+  { id: "6", es: "Tiene habilidades de comunicaciÃ³n transmitiendo informaciÃ³n de manera efectiva y eficiente.", en: "Has communication skills, conveying information effectively and efficiently.", weight: 1 },
   { id: "7", es: "Tiene habilidades organizativas, capacidad para mantenerse centrado en la tarea y usar el tiempo de manera efectiva.", en: "Has organizational skills, ability to stay focused on tasks and use time effectively.", weight: 1 },
   { id: "8", es: "Proyecta una apariencia profesional y cuidada, correcto uso del uniforme manteniendo la buena imagen corporativa.", en: "Projects a professional appearance, uses the uniform correctly, and maintains the corporate image.", weight: 1 },
-  { id: "9", es: "Contribuye a un entorno seguro siguiendo los procedimientos establecidos de seguridad, prevención y autocuidado.", en: "Contributes to a safe environment by following established safety, prevention, and self-care procedures.", weight: 1 },
-  { id: "10", es: "Start of Day (Inicio de Turno). ¿El empleado ejecuta correctamente los procesos de inicio de turno, asegurando que los equipos funcionen, los sistemas estén activos y no existan pendientes críticos sin atender?", en: "Start of Day. Does the employee properly execute start-of-shift processes, ensuring equipment works, systems are active, and critical pending tasks are handled?", weight: 1 },
-  { id: "11", es: "Observing an Inbound Flight (Atención en Llegadas - Belt). ¿El empleado demuestra presencia activa en el área de carrusel, brinda orientación al pasajero, comunica retrasos oportunamente y gestiona la recolección de equipaje en tiempos establecidos?", en: "Observing an Inbound Flight (Arrivals - Belt). Does the employee show active presence at the carousel, guide passengers, communicate delays on time, and manage baggage collection within expected times?", weight: 1 },
-  { id: "12", es: "Creating a File – Delay (Creación de Reportes de Equipaje Demorado). ¿El empleado crea reportes de equipaje demorado de manera precisa y completa, asistiendo al cliente adecuadamente y documentando correctamente la información en el sistema?", en: "Creating a File – Delay. Does the employee create delayed baggage reports accurately and completely, assisting the customer properly and documenting the information correctly in the system?", weight: 1 },
-  { id: "13", es: "On-Hand (OHD Management). ¿El empleado gestiona correctamente los casos On-Hand asegurando documentación completa del equipaje dentro del tiempo establecido?", en: "On-Hand (OHD Management). Does the employee properly manage On-Hand cases, ensuring complete baggage documentation within the required timeframe?", weight: 1 },
-  { id: "14", es: "Delayed (AHL) File Management. ¿El empleado administra correctamente los archivos de equipaje demorado, asegurando que la información del pasajero, itinerario y equipaje esté completa y que el cliente reciba orientación adecuada?", en: "Delayed (AHL) File Management. Does the employee properly manage delayed baggage files, ensuring passenger, itinerary, and baggage information is complete and the customer receives proper guidance?", weight: 1 },
-  { id: "15", es: "Damage Handling (Equipaje Dañado). ¿El empleado maneja correctamente los casos de equipaje dañado, guiando al cliente según el proceso y documentando correctamente en el sistema?", en: "Damage Handling. Does the employee properly handle damaged baggage cases, guide the customer according to process, and document correctly in the system?", weight: 1 },
-  { id: "16", es: "Pilferage / Missing Articles. ¿El empleado gestiona correctamente los casos de artículos faltantes, documentando de forma precisa y brindando al cliente expectativas claras?", en: "Pilferage / Missing Articles. Does the employee properly manage missing-article cases, documenting accurately and giving the customer clear expectations?", weight: 1 },
-  { id: "17", es: "Special Items Handling (Car Seats / Strollers). ¿El empleado sigue correctamente el proceso para manejo de artículos especiales, incluyendo entrega, registro y control de inventario?", en: "Special Items Handling (Car Seats / Strollers). Does the employee properly follow the process for special items, including delivery, registration, and inventory control?", weight: 1 },
-  { id: "18", es: "Assistive Devices Handling - Delayed and Damage File. ¿El empleado cumple con los procedimientos establecidos para dispositivos de asistencia, incluyendo correcta categorización y soporte adecuado al cliente?", en: "Assistive Devices Handling - Delayed and Damage File. Does the employee follow established procedures for assistive devices, including correct categorization and proper customer support?", weight: 1 },
-  { id: "19", es: "Shipping to Warehouse (LZ). ¿El empleado sigue correctamente los procedimientos para envío de equipaje al warehouse, asegurando intentos previos de contacto y documentación completa en el sistema?", en: "Shipping to Warehouse (LZ). Does the employee properly follow procedures for shipping baggage to the warehouse, ensuring prior contact attempts and complete documentation in the system?", weight: 1 },
-  { id: "20", es: "Delivery Process (BDO / Entrega al Cliente). ¿El empleado gestiona correctamente el proceso de entrega de equipaje, asegurando verificación de datos, documentación correcta y coordinación eficiente con proveedores?", en: "Delivery Process (BDO / Customer Delivery). Does the employee properly manage baggage delivery, ensuring data verification, proper documentation, and efficient coordination with providers?", weight: 1 },
+  { id: "9", es: "Contribuye a un entorno seguro siguiendo los procedimientos establecidos de seguridad, prevenciÃ³n y autocuidado.", en: "Contributes to a safe environment by following established safety, prevention, and self-care procedures.", weight: 1 },
+  { id: "10", es: "Start of Day (Inicio de Turno). Â¿El empleado ejecuta correctamente los procesos de inicio de turno, asegurando que los equipos funcionen, los sistemas estÃ©n activos y no existan pendientes crÃ­ticos sin atender?", en: "Start of Day. Does the employee properly execute start-of-shift processes, ensuring equipment works, systems are active, and critical pending tasks are handled?", weight: 1 },
+  { id: "11", es: "Observing an Inbound Flight (AtenciÃ³n en Llegadas - Belt). Â¿El empleado demuestra presencia activa en el Ã¡rea de carrusel, brinda orientaciÃ³n al pasajero, comunica retrasos oportunamente y gestiona la recolecciÃ³n de equipaje en tiempos establecidos?", en: "Observing an Inbound Flight (Arrivals - Belt). Does the employee show active presence at the carousel, guide passengers, communicate delays on time, and manage baggage collection within expected times?", weight: 1 },
+  { id: "12", es: "Creating a File â Delay (CreaciÃ³n de Reportes de Equipaje Demorado). Â¿El empleado crea reportes de equipaje demorado de manera precisa y completa, asistiendo al cliente adecuadamente y documentando correctamente la informaciÃ³n en el sistema?", en: "Creating a File â Delay. Does the employee create delayed baggage reports accurately and completely, assisting the customer properly and documenting the information correctly in the system?", weight: 1 },
+  { id: "13", es: "On-Hand (OHD Management). Â¿El empleado gestiona correctamente los casos On-Hand asegurando documentaciÃ³n completa del equipaje dentro del tiempo establecido?", en: "On-Hand (OHD Management). Does the employee properly manage On-Hand cases, ensuring complete baggage documentation within the required timeframe?", weight: 1 },
+  { id: "14", es: "Delayed (AHL) File Management. Â¿El empleado administra correctamente los archivos de equipaje demorado, asegurando que la informaciÃ³n del pasajero, itinerario y equipaje estÃ© completa y que el cliente reciba orientaciÃ³n adecuada?", en: "Delayed (AHL) File Management. Does the employee properly manage delayed baggage files, ensuring passenger, itinerary, and baggage information is complete and the customer receives proper guidance?", weight: 1 },
+  { id: "15", es: "Damage Handling (Equipaje DaÃ±ado). Â¿El empleado maneja correctamente los casos de equipaje daÃ±ado, guiando al cliente segÃºn el proceso y documentando correctamente en el sistema?", en: "Damage Handling. Does the employee properly handle damaged baggage cases, guide the customer according to process, and document correctly in the system?", weight: 1 },
+  { id: "16", es: "Pilferage / Missing Articles. Â¿El empleado gestiona correctamente los casos de artÃ­culos faltantes, documentando de forma precisa y brindando al cliente expectativas claras?", en: "Pilferage / Missing Articles. Does the employee properly manage missing-article cases, documenting accurately and giving the customer clear expectations?", weight: 1 },
+  { id: "17", es: "Special Items Handling (Car Seats / Strollers). Â¿El empleado sigue correctamente el proceso para manejo de artÃ­culos especiales, incluyendo entrega, registro y control de inventario?", en: "Special Items Handling (Car Seats / Strollers). Does the employee properly follow the process for special items, including delivery, registration, and inventory control?", weight: 1 },
+  { id: "18", es: "Assistive Devices Handling - Delayed and Damage File. Â¿El empleado cumple con los procedimientos establecidos para dispositivos de asistencia, incluyendo correcta categorizaciÃ³n y soporte adecuado al cliente?", en: "Assistive Devices Handling - Delayed and Damage File. Does the employee follow established procedures for assistive devices, including correct categorization and proper customer support?", weight: 1 },
+  { id: "19", es: "Shipping to Warehouse (LZ). Â¿El empleado sigue correctamente los procedimientos para envÃ­o de equipaje al warehouse, asegurando intentos previos de contacto y documentaciÃ³n completa en el sistema?", en: "Shipping to Warehouse (LZ). Does the employee properly follow procedures for shipping baggage to the warehouse, ensuring prior contact attempts and complete documentation in the system?", weight: 1 },
+  { id: "20", es: "Delivery Process (BDO / Entrega al Cliente). Â¿El empleado gestiona correctamente el proceso de entrega de equipaje, asegurando verificaciÃ³n de datos, documentaciÃ³n correcta y coordinaciÃ³n eficiente con proveedores?", en: "Delivery Process (BDO / Customer Delivery). Does the employee properly manage baggage delivery, ensuring data verification, proper documentation, and efficient coordination with providers?", weight: 1 },
 ];
 
 const WCHR_QUESTIONS = [
   { id: "1", es: "Se responsabiliza por los pasajeros asignados y completa el servicio de principio a fin.", en: "Takes ownership of assigned passengers and completes service from start to finish.", weight: 1 },
-  { id: "2", es: "Llega a tiempo, mantiene buena asistencia y está listo para comenzar sus funciones puntualmente.", en: "Arrives on time, maintains attendance, and is ready to begin duties promptly.", weight: 1 },
+  { id: "2", es: "Llega a tiempo, mantiene buena asistencia y estÃ¡ listo para comenzar sus funciones puntualmente.", en: "Arrives on time, maintains attendance, and is ready to begin duties promptly.", weight: 1 },
   { id: "3", es: "Brinda asistencia de silla de ruedas de manera oportuna y sin demoras innecesarias.", en: "Provides timely wheelchair assistance without unnecessary delays.", weight: 1 },
-  { id: "4", es: "Verifica correctamente la información del pasajero antes del servicio.", en: "Accurately verifies passenger information before service.", weight: 1 },
-  { id: "5", es: "Ingresa y actualiza correctamente la información del pasajero en el sistema.", en: "Correctly inputs and updates passenger information in the system.", weight: 1 },
+  { id: "4", es: "Verifica correctamente la informaciÃ³n del pasajero antes del servicio.", en: "Accurately verifies passenger information before service.", weight: 1 },
+  { id: "5", es: "Ingresa y actualiza correctamente la informaciÃ³n del pasajero en el sistema.", en: "Correctly inputs and updates passenger information in the system.", weight: 1 },
   { id: "6", es: "Escolta de forma segura a los pasajeros por TSA, terminales y puertas.", en: "Safely escorts passengers through TSA, terminals, and gates.", weight: 1 },
   { id: "7", es: "Demuestra procedimientos correctos de seguridad al asistir pasajeros.", en: "Demonstrates proper safety procedures when assisting passengers.", weight: 1 },
   { id: "8", es: "Se comunica efectivamente con pasajeros y personal.", en: "Communicates effectively with passengers and staff.", weight: 1 },
-  { id: "9", es: "Muestra empatía y profesionalismo con los pasajeros.", en: "Shows empathy and professionalism with passengers.", weight: 1 },
-  { id: "10", es: "Mantiene una actitud respetuosa y cortés.", en: "Maintains a respectful and courteous attitude.", weight: 1 },
+  { id: "9", es: "Muestra empatÃ­a y profesionalismo con los pasajeros.", en: "Shows empathy and professionalism with passengers.", weight: 1 },
+  { id: "10", es: "Mantiene una actitud respetuosa y cortÃ©s.", en: "Maintains a respectful and courteous attitude.", weight: 1 },
   { id: "11", es: "Responde eficazmente a situaciones inesperadas.", en: "Responds effectively to unexpected situations.", weight: 1 },
-  { id: "12", es: "Sigue las políticas de la empresa y las regulaciones del aeropuerto.", en: "Follows company policies and airport regulations.", weight: 1 },
+  { id: "12", es: "Sigue las polÃ­ticas de la empresa y las regulaciones del aeropuerto.", en: "Follows company policies and airport regulations.", weight: 1 },
   { id: "13", es: "Trabaja eficientemente en un entorno de ritmo acelerado.", en: "Works efficiently in a fast-paced environment.", weight: 1 },
   { id: "14", es: "Completa tareas dentro de los tiempos esperados.", en: "Completes tasks within expected timeframes.", weight: 1 },
   { id: "15", es: "Mantiene limpias las sillas de ruedas y el equipo.", en: "Maintains cleanliness of wheelchairs and equipment.", weight: 1 },
-  { id: "16", es: "Demuestra trabajo en equipo y apoya a sus compañeros.", en: "Demonstrates teamwork and supports coworkers.", weight: 1 },
-  { id: "17", es: "Aplica retroalimentación y sigue instrucciones del supervisor.", en: "Applies feedback and follows supervisor instructions.", weight: 1 },
+  { id: "16", es: "Demuestra trabajo en equipo y apoya a sus compaÃ±eros.", en: "Demonstrates teamwork and supports coworkers.", weight: 1 },
+  { id: "17", es: "Aplica retroalimentaciÃ³n y sigue instrucciones del supervisor.", en: "Applies feedback and follows supervisor instructions.", weight: 1 },
   { id: "18", es: "Muestra iniciativa al asistir pasajeros.", en: "Shows initiative in assisting passengers.", weight: 1 },
   { id: "19", es: "Asegura la correcta entrega y relevo de pasajeros.", en: "Ensures proper handoff of passengers.", weight: 1 },
   { id: "20", es: "Mantiene el uniforme y una apariencia profesional adecuada.", en: "Maintains proper uniform and professional appearance.", weight: 1 },
@@ -870,6 +977,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const t = LABELS[language];
 
   const [employees, setEmployees] = useState([]);
+  const [platformUsers, setPlatformUsers] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
@@ -918,7 +1026,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [employeesSnap, reportsSnap] = await Promise.all([
+        const [employeesSnap, reportsSnap, usersSnap] = await Promise.all([
           getDocs(collection(db, "employees")),
           getDocs(
             query(
@@ -926,6 +1034,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
               orderBy("createdAt", "desc")
             )
           ),
+          getDocs(collection(db, "users")),
         ]);
 
         const employeeRows = employeesSnap.docs
@@ -956,7 +1065,13 @@ export default function MonthlyEmployeePerformanceReportPage() {
           ...d.data(),
         }));
 
+        const userRows = usersSnap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+
         setEmployees(employeeRows);
+        setPlatformUsers(userRows);
         setReports(reportRows);
       } catch (err) {
         console.error("Error loading EPR data:", err);
@@ -1024,12 +1139,90 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const needsFollowUp = calculatedScore < 70 || followUpItems.length > 0;
 
   const dutyManagers = useMemo(() => {
-    return employees.filter(
-      (emp) =>
-        normalizeLookup(emp.role) === "duty_manager" ||
-        normalizeLookup(emp.role) === "duty manager"
-    );
-  }, [employees]);
+    return employees
+      .filter(
+        (emp) =>
+          normalizeLookup(emp.role) === "duty_manager" ||
+          normalizeLookup(emp.role) === "duty manager"
+      )
+      .map((emp) => {
+        const matchingUser =
+          platformUsers.find((platformUser) => {
+            const platformEmployeeId = String(
+              platformUser?.employeeId || platformUser?.employee_id || ""
+            ).trim();
+
+            if (platformEmployeeId && platformEmployeeId === emp.id) return true;
+
+            const platformUsername = normalizeLookup(
+              platformUser?.username || platformUser?.loginUsername || ""
+            );
+            const employeeUsername = normalizeLookup(emp.username || "");
+
+            if (
+              platformUsername &&
+              employeeUsername &&
+              platformUsername === employeeUsername
+            ) {
+              return true;
+            }
+
+            const platformName = normalizeLookup(
+              platformUser?.displayName ||
+                platformUser?.fullName ||
+                platformUser?.name ||
+                ""
+            );
+
+            return platformName && platformName === normalizeLookup(emp.name);
+          }) || null;
+
+        return {
+          ...emp,
+          notificationUserId: matchingUser?.id || "",
+        };
+      });
+  }, [employees, platformUsers]);
+
+  const managementNotificationUsers = useMemo(() => {
+    return platformUsers.filter((platformUser) => {
+      const role = normalizeLookup(platformUser?.role || "").replace(/ /g, "_");
+      return (
+        platformUser?.active !== false &&
+        (role === "duty_manager" || role === "station_manager")
+      );
+    });
+  }, [platformUsers]);
+
+  const recentThreeMonthValues = useMemo(() => getRecentMonthValues(3), []);
+
+  const myRecentReports = useMemo(() => {
+    if (user?.role !== "supervisor") return [];
+
+    const validMonths = new Set(recentThreeMonthValues);
+
+    return reports
+      .filter(
+        (report) =>
+          String(report.supervisorId || "") === String(user?.id || "") &&
+          normalizeLookup(report.managerStatus || "") !== "draft" &&
+          validMonths.has(String(report.month || ""))
+      )
+      .sort((a, b) => {
+        const monthCompare = String(b.month || "").localeCompare(String(a.month || ""));
+        if (monthCompare !== 0) return monthCompare;
+
+        const left =
+          typeof a?.createdAt?.toDate === "function"
+            ? a.createdAt.toDate().getTime()
+            : new Date(a?.createdAt || 0).getTime();
+        const right =
+          typeof b?.createdAt?.toDate === "function"
+            ? b.createdAt.toDate().getTime()
+            : new Date(b?.createdAt || 0).getTime();
+        return right - left;
+      });
+  }, [reports, user?.id, user?.role, recentThreeMonthValues]);
 
   const supervisorNames = useMemo(() => {
     return Array.from(
@@ -1135,7 +1328,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
       .filter((r) => {
         if (!canHandleFollowUp) return false;
         if (
-          String(r.followUpDutyManagerId || "") !== String(user?.id || "") &&
+          String(r.followUpDutyManagerUserId || r.followUpDutyManagerId || "") !==
+            String(user?.id || "") &&
           user?.role !== "station_manager"
         ) {
           return false;
@@ -1252,13 +1446,52 @@ export default function MonthlyEmployeePerformanceReportPage() {
     setAnswers(nextAnswers);
 
     setStatusMessage(
-      `${t.draft} loaded: ${draft.employeeName || "-"} · ${formatMonthValue(
+      `${t.draft} loaded: ${draft.employeeName || "-"} Â· ${formatMonthValue(
         draft.month
       )}`
     );
     setStatusTone("blue");
 
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function notifyManagementAboutSubmission(reportId, reportData, isResubmission = false) {
+    if (user?.role !== "supervisor") return;
+
+    const employeeName = reportData?.employeeName || "Employee";
+    const monthLabel = formatMonthValue(reportData?.month);
+    const supervisorName = getVisibleUserName(user);
+
+    const title = isResubmission
+      ? "EPR Resubmitted by Supervisor"
+      : "New EPR Submitted";
+
+    const message = isResubmission
+      ? `${supervisorName} corrected and resubmitted the EPR for ${employeeName} (${monthLabel}).`
+      : `${supervisorName} submitted a new EPR for ${employeeName} (${monthLabel}).`;
+
+    await Promise.allSettled(
+      managementNotificationUsers
+        .filter((managerUser) => managerUser.id !== user?.id)
+        .map((managerUser) =>
+          createUserNotification(managerUser.id, {
+            type: isResubmission
+              ? "employee_performance_resubmitted"
+              : "employee_performance_submitted",
+            title,
+            message,
+            body: message,
+            link: "/employee-performance-management",
+            route: "/employee-performance-management",
+            path: "/employee-performance-management",
+            reportId,
+            employeeName,
+            month: reportData?.month || "",
+            submittedByUserId: user?.id || "",
+            submittedByName: supervisorName,
+          })
+        )
+    );
   }
 
   function resetCreateForm() {
@@ -1415,15 +1648,36 @@ export default function MonthlyEmployeePerformanceReportPage() {
         ? [...currentReport.followUpHistory]
         : [];
 
-      if (
+      let nextSupervisorTimeline = Array.isArray(currentReport?.supervisorTimeline)
+        ? [...currentReport.supervisorTimeline]
+        : [];
+
+      const isReturnedResubmission =
         normalizeLookup(currentReport?.managerStatus || "") ===
-        "returned_to_supervisor"
-      ) {
+        "returned_to_supervisor";
+
+      if (isReturnedResubmission) {
         nextHistory.push(
           buildHistoryEntry(
             "resubmitted_to_manager",
             user,
             "Supervisor corrected and resubmitted the report."
+          )
+        );
+
+        nextSupervisorTimeline.push(
+          buildSupervisorTimelineEntry(
+            "resubmitted_to_manager",
+            user,
+            "You corrected and resubmitted this EPR for management review."
+          )
+        );
+      } else if (!currentReport) {
+        nextSupervisorTimeline.push(
+          buildSupervisorTimelineEntry(
+            "submitted",
+            user,
+            "You submitted this EPR for management review."
           )
         );
       }
@@ -1448,6 +1702,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
         needsFollowUp,
         followUpItems,
         followUpHistory: nextHistory,
+        supervisorTimeline: nextSupervisorTimeline,
         returnReason: "",
         updatedAt: serverTimestamp(),
       };
@@ -1477,7 +1732,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
         setSelectedReportId(editingDraftId);
         setEditingDraftId("");
-        setStatusMessage("Performance report submitted correctly.");
+
+        await notifyManagementAboutSubmission(
+          editingDraftId,
+          { ...currentReport, ...updatePayload },
+          isReturnedResubmission
+        );
+
+        setStatusMessage("Performance report submitted correctly. Management was notified.");
         setStatusTone("green");
         resetCreateForm();
         return;
@@ -1511,7 +1773,19 @@ export default function MonthlyEmployeePerformanceReportPage() {
           )
         );
 
-        setStatusMessage("Performance report updated correctly.");
+        if (isReturnedResubmission) {
+          await notifyManagementAboutSubmission(
+            editingReportId,
+            { ...currentReport, ...updatePayload },
+            true
+          );
+        }
+
+        setStatusMessage(
+          isReturnedResubmission
+            ? "Performance report resubmitted correctly. Management was notified."
+            : "Performance report updated correctly."
+        );
         setStatusTone("green");
         resetCreateForm();
         return;
@@ -1543,7 +1817,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
       ]);
 
       setSelectedReportId(ref.id);
-      setStatusMessage("Performance report submitted correctly.");
+
+      await notifyManagementAboutSubmission(ref.id, payload, false);
+
+      setStatusMessage("Performance report submitted correctly. Duty and Station Managers were notified.");
       setStatusTone("green");
       resetCreateForm();
     } catch (err) {
@@ -1600,16 +1877,55 @@ export default function MonthlyEmployeePerformanceReportPage() {
         )
       );
 
+      const publicMessageMap = {
+        approved: `${getVisibleUserName(user)} reviewed and approved this EPR.`,
+        follow_up: `${getVisibleUserName(user)} marked this EPR for follow up.`,
+        recognized: `${getVisibleUserName(user)} completed a positive management review on this EPR.`,
+        closed: `${getVisibleUserName(user)} closed this EPR case.`,
+      };
+
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          nextStatus,
+          user,
+          publicMessageMap[nextStatus] ||
+            `${getVisibleUserName(user)} updated this EPR case.`
+        )
+      );
+
       const payload = {
         managerStatus: nextStatus,
         managerReviewedBy: getVisibleUserName(user),
         managerReviewedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         followUpHistory: history,
+        supervisorTimeline,
         ...extra,
       };
 
       await updateDoc(doc(db, "employeePerformanceReports", reportId), payload);
+
+      if (["approved", "recognized", "closed"].includes(nextStatus)) {
+        try {
+          await createUserNotification(report?.supervisorId || "", {
+            type: "employee_performance_status_update",
+            title: "EPR Status Updated",
+            message: `${report?.employeeName || "Employee"} - ${formatMonthValue(
+              report?.month
+            )}: ${getStatusLabel(nextStatus)}.`,
+            body: `${report?.employeeName || "Employee"} - ${formatMonthValue(
+              report?.month
+            )}: ${getStatusLabel(nextStatus)}.`,
+            link: "/monthly-employee-performance-report",
+            route: "/monthly-employee-performance-report",
+            path: "/monthly-employee-performance-report",
+            reportId,
+          });
+        } catch (notificationError) {
+          console.error("Error notifying supervisor about EPR status:", notificationError);
+        }
+      }
 
       setReports((prev) =>
         prev.map((item) =>
@@ -1621,6 +1937,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 managerReviewedBy: getVisibleUserName(user),
                 managerReviewedAt: new Date(),
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
               }
             : item
@@ -1644,34 +1961,110 @@ export default function MonthlyEmployeePerformanceReportPage() {
       );
       const duty = dutyManagers.find((item) => item.id === assignedDutyManagerId);
 
+      if (!assignedDutyManagerId || !duty) {
+        setStatusMessage("Select a Duty Manager first.");
+        setStatusTone("red");
+        return;
+      }
+
+      const previousDutyManagerId = report.followUpDutyManagerId || "";
+      const isReassignment =
+        Boolean(previousDutyManagerId) && previousDutyManagerId !== assignedDutyManagerId;
+
       const history = Array.isArray(report?.followUpHistory)
         ? [...report.followUpHistory]
         : [];
 
       history.push(
         buildHistoryEntry(
-          "follow_up_assigned",
+          isReassignment ? "follow_up_reassigned" : "follow_up_assigned",
           user,
           getManagementField(report, "managerNote"),
           {
-            dutyManagerId: assignedDutyManagerId || "",
+            dutyManagerId: assignedDutyManagerId,
+            dutyManagerUserId: duty?.notificationUserId || "",
             dutyManagerName: duty?.name || "",
           }
         )
       );
 
+      const publicMessage = isReassignment
+        ? `${getVisibleUserName(user)} reassigned this EPR follow up to ${duty.name} (Duty Manager).`
+        : `${getVisibleUserName(user)} assigned this EPR follow up to ${duty.name} (Duty Manager).`;
+
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          isReassignment ? "follow_up_reassigned" : "follow_up_assigned",
+          user,
+          publicMessage,
+          { dutyManagerName: duty?.name || "" }
+        )
+      );
+
       const payload = {
-        followUpDutyManagerId: assignedDutyManagerId || "",
+        followUpDutyManagerId: assignedDutyManagerId,
+        followUpDutyManagerUserId: duty?.notificationUserId || "",
         followUpDutyManagerName: duty?.name || "",
-        managerStatus: assignedDutyManagerId ? "follow_up_assigned" : report.managerStatus,
+        assignedDutyManagerId,
+        assignedDutyManagerUserId: duty?.notificationUserId || "",
+        assignedDutyManagerName: duty?.name || "",
+        managerStatus: "follow_up_assigned",
         managerNote: normalizeText(getManagementField(report, "managerNote")),
         followUpHistory: history,
+        supervisorTimeline,
       };
 
       await updateDoc(doc(db, "employeePerformanceReports", report.id), {
         ...payload,
         updatedAt: serverTimestamp(),
       });
+
+      if (duty?.notificationUserId) {
+        try {
+          await createUserNotification(duty.notificationUserId, {
+            type: isReassignment
+              ? "employee_performance_follow_up_reassigned"
+              : "employee_performance_follow_up_assigned",
+            title: isReassignment
+              ? "EPR Follow Up Reassigned to You"
+              : "New EPR Follow Up Assigned",
+            message: `${getVisibleUserName(user)} ${
+              isReassignment ? "reassigned" : "assigned"
+            } you the EPR follow-up for ${report.employeeName} (${formatMonthValue(
+              report.month
+            )}).`,
+            body: `${getVisibleUserName(user)} ${
+              isReassignment ? "reassigned" : "assigned"
+            } you the EPR follow-up for ${report.employeeName} (${formatMonthValue(
+              report.month
+            )}).`,
+            link: "/monthly-employee-performance-report",
+            route: "/monthly-employee-performance-report",
+            path: "/monthly-employee-performance-report",
+            reportId: report.id,
+            employeeName: report.employeeName || "",
+            month: report.month || "",
+          });
+        } catch (notificationError) {
+          console.error("Error notifying assigned Duty Manager:", notificationError);
+        }
+      }
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: "employee_performance_follow_up_assignment_update",
+          title: isReassignment ? "EPR Follow Up Reassigned" : "EPR Follow Up Assigned",
+          message: publicMessage,
+          body: publicMessage,
+          link: "/monthly-employee-performance-report",
+          route: "/monthly-employee-performance-report",
+          path: "/monthly-employee-performance-report",
+          reportId: report.id,
+        });
+      } catch (notificationError) {
+        console.error("Error notifying supervisor about assignment:", notificationError);
+      }
 
       setReports((prev) =>
         prev.map((item) =>
@@ -1685,7 +2078,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
         )
       );
 
-      setStatusMessage("Duty manager assigned correctly.");
+      setStatusMessage(
+        `${isReassignment ? "Duty Manager reassigned" : "Duty Manager assigned"} correctly. Notification sent.`
+      );
       setStatusTone("green");
     } catch (err) {
       console.error("Error assigning duty manager:", err);
@@ -1707,8 +2102,16 @@ export default function MonthlyEmployeePerformanceReportPage() {
         ? [...report.followUpHistory]
         : [];
 
-      history.push(
-        buildHistoryEntry("returned_to_supervisor", user, reason)
+      history.push(buildHistoryEntry("returned_to_supervisor", user, reason));
+
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "returned_to_supervisor",
+          user,
+          `${getVisibleUserName(user)} returned this EPR to you for correction.`,
+          { publicDetails: reason }
+        )
       );
 
       await updateDoc(doc(db, "employeePerformanceReports", report.id), {
@@ -1720,8 +2123,28 @@ export default function MonthlyEmployeePerformanceReportPage() {
         managerReviewedBy: getVisibleUserName(user),
         managerReviewedAt: serverTimestamp(),
         followUpHistory: history,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: "employee_performance_returned_to_supervisor",
+          title: "EPR Returned for Correction",
+          message: `${report.employeeName || "Employee"} - ${formatMonthValue(
+            report.month
+          )} was returned to you for correction.`,
+          body: `${report.employeeName || "Employee"} - ${formatMonthValue(
+            report.month
+          )} was returned to you for correction.`,
+          link: "/monthly-employee-performance-report",
+          route: "/monthly-employee-performance-report",
+          path: "/monthly-employee-performance-report",
+          reportId: report.id,
+        });
+      } catch (notificationError) {
+        console.error("Error notifying supervisor about returned EPR:", notificationError);
+      }
 
       setReports((prev) =>
         prev.map((item) =>
@@ -1736,13 +2159,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 managerReviewedBy: getVisibleUserName(user),
                 managerReviewedAt: new Date(),
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
               }
             : item
         )
       );
 
-      setStatusMessage("Returned correctly to supervisor.");
+      setStatusMessage("Returned correctly to supervisor. Notification sent.");
       setStatusTone("green");
     } catch (err) {
       console.error("Error returning report to supervisor:", err);
@@ -1798,6 +2222,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 managerStatus: "approved",
                 managerNote,
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
               }
             : item
@@ -1821,6 +2246,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
         : [];
       history.push(buildHistoryEntry("closed", user, managerNote));
 
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "closed",
+          user,
+          `${getVisibleUserName(user)} closed this EPR case.`
+        )
+      );
+
       await updateDoc(doc(db, "employeePerformanceReports", report.id), {
         monthClosed: true,
         closedMonthBy: getVisibleUserName(user),
@@ -1828,8 +2262,28 @@ export default function MonthlyEmployeePerformanceReportPage() {
         managerNote,
         managerStatus: report.needsFollowUp ? "follow_up" : "closed",
         followUpHistory: history,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: "employee_performance_closed",
+          title: "EPR Case Closed",
+          message: `${report.employeeName || "Employee"} - ${formatMonthValue(
+            report.month
+          )} was closed by ${getVisibleUserName(user)}.`,
+          body: `${report.employeeName || "Employee"} - ${formatMonthValue(
+            report.month
+          )} was closed by ${getVisibleUserName(user)}.`,
+          link: "/monthly-employee-performance-report",
+          route: "/monthly-employee-performance-report",
+          path: "/monthly-employee-performance-report",
+          reportId: report.id,
+        });
+      } catch (notificationError) {
+        console.error("Error notifying supervisor about closed EPR:", notificationError);
+      }
 
       if (report.employeeId) {
         await addDoc(collection(db, "messages"), {
@@ -1884,13 +2338,42 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       history.push(buildHistoryEntry("follow_up_accepted", user, note));
 
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "follow_up_accepted",
+          user,
+          `${getVisibleUserName(user)} (Duty Manager) accepted the follow-up case.`
+        )
+      );
+
       await updateDoc(doc(db, "employeePerformanceReports", report.id), {
         managerStatus: "follow_up_in_progress",
         followUpAcceptedBy: getVisibleUserName(user),
         followUpAcceptedAt: serverTimestamp(),
         followUpHistory: history,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: "employee_performance_follow_up_accepted",
+          title: "EPR Follow Up Accepted",
+          message: `${getVisibleUserName(user)} accepted the follow-up case for ${
+            report.employeeName || "Employee"
+          }.`,
+          body: `${getVisibleUserName(user)} accepted the follow-up case for ${
+            report.employeeName || "Employee"
+          }.`,
+          link: "/monthly-employee-performance-report",
+          route: "/monthly-employee-performance-report",
+          path: "/monthly-employee-performance-report",
+          reportId: report.id,
+        });
+      } catch (notificationError) {
+        console.error("Error notifying supervisor about accepted follow-up:", notificationError);
+      }
 
       setReports((prev) =>
         prev.map((item) =>
@@ -1901,6 +2384,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 followUpAcceptedBy: getVisibleUserName(user),
                 followUpAcceptedAt: new Date(),
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
               }
             : item
@@ -1938,6 +2422,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
         })
       );
 
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "follow_up_progress",
+          user,
+          `${getVisibleUserName(user)} added an internal follow-up update to this case.`
+        )
+      );
+
       await updateDoc(doc(db, "employeePerformanceReports", report.id), {
         managerStatus: "follow_up_in_progress",
         followUpLastAction: actionTaken,
@@ -1945,6 +2438,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
         followUpLastUpdatedBy: getVisibleUserName(user),
         followUpLastUpdatedAt: serverTimestamp(),
         followUpHistory: history,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
 
@@ -1959,6 +2453,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 followUpLastUpdatedBy: getVisibleUserName(user),
                 followUpLastUpdatedAt: new Date(),
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
               }
             : item
@@ -1996,6 +2491,15 @@ export default function MonthlyEmployeePerformanceReportPage() {
         })
       );
 
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "follow_up_resubmitted",
+          user,
+          `${getVisibleUserName(user)} submitted the follow-up case for Station Manager review.`
+        )
+      );
+
       await updateDoc(doc(db, "employeePerformanceReports", report.id), {
         managerStatus: "follow_up_resubmitted",
         followUpCompletedBy: getVisibleUserName(user),
@@ -2003,8 +2507,34 @@ export default function MonthlyEmployeePerformanceReportPage() {
         followUpLastAction: actionTaken,
         followUpLastDetails: details,
         followUpHistory: history,
+        supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
+
+      const stationManagers = managementNotificationUsers.filter(
+        (managerUser) =>
+          normalizeLookup(managerUser?.role || "").replace(/ /g, "_") ===
+          "station_manager"
+      );
+
+      await Promise.allSettled(
+        stationManagers.map((managerUser) =>
+          createUserNotification(managerUser.id, {
+            type: "employee_performance_follow_up_ready_for_review",
+            title: "EPR Follow Up Ready for Review",
+            message: `${getVisibleUserName(user)} submitted the follow-up for ${
+              report.employeeName || "Employee"
+            } (${formatMonthValue(report.month)}) for Station Manager review.`,
+            body: `${getVisibleUserName(user)} submitted the follow-up for ${
+              report.employeeName || "Employee"
+            } (${formatMonthValue(report.month)}) for Station Manager review.`,
+            link: "/employee-performance-management",
+            route: "/employee-performance-management",
+            path: "/employee-performance-management",
+            reportId: report.id,
+          })
+        )
+      );
 
       setReports((prev) =>
         prev.map((item) =>
@@ -2017,6 +2547,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 followUpLastAction: actionTaken,
                 followUpLastDetails: details,
                 followUpHistory: history,
+                supervisorTimeline,
                 updatedAt: new Date(),
               }
             : item
@@ -2068,7 +2599,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
             fontWeight: 700,
           }}
         >
-          TPA OPS · EPR
+          TPA OPS Â· EPR
         </p>
 
         <h1
@@ -2121,6 +2652,12 @@ export default function MonthlyEmployeePerformanceReportPage() {
             )}
 
             {user?.role === "supervisor" && (
+              <TabButton active={tab === "myreports"} onClick={() => setTab("myreports")}>
+                {t.myReportsTab}
+              </TabButton>
+            )}
+
+            {user?.role === "supervisor" && (
               <TabButton active={tab === "returned"} onClick={() => setTab("returned")}>
                 {t.returnedTab}
               </TabButton>
@@ -2146,7 +2683,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
             <FieldLabel>{t.language}</FieldLabel>
             <SelectInput value={language} onChange={(e) => setLanguage(e.target.value)}>
               <option value="en">English</option>
-              <option value="es">Español</option>
+              <option value="es">EspaÃ±ol</option>
             </SelectInput>
           </div>
         </div>
@@ -2173,7 +2710,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 }}
               >
                 {editingDraftId
-                  ? `${t.draft} · ${t.continueEditing}`
+                  ? `${t.draft} Â· ${t.continueEditing}`
                   : editingReportId
                   ? t.editReport
                   : t.createTab}
@@ -2293,7 +2830,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   color: "#0f172a",
                 }}
               >
-                {activeTemplate.label} · {formatMonthValue(form.month)}
+                {activeTemplate.label} Â· {formatMonthValue(form.month)}
               </h2>
               <p
                 style={{
@@ -2441,11 +2978,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   {followUpItems.length > 0 ? (
                     followUpItems.map((item) => (
                       <div key={item.id}>
-                        • {language === "es" ? item.es : item.en}
+                        â¢ {language === "es" ? item.es : item.en}
                       </div>
                     ))
                   ) : (
-                    <div>• Score under threshold.</div>
+                    <div>â¢ Score under threshold.</div>
                   )}
                 </div>
               </div>
@@ -2530,7 +3067,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#0f172a",
                         }}
                       >
-                        {draft.employeeName || "-"} · {formatMonthValue(draft.month)}
+                        {draft.employeeName || "-"} Â· {formatMonthValue(draft.month)}
                       </div>
 
                       <div
@@ -2540,7 +3077,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#64748b",
                         }}
                       >
-                        {t.template}: {draft.templateLabel || "-"} · {t.lastUpdated}:{" "}
+                        {t.template}: {draft.templateLabel || "-"} Â· {t.lastUpdated}:{" "}
                         {formatDateTime(draft.updatedAt)}
                       </div>
                     </div>
@@ -2560,6 +3097,214 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </PageCard>
+      )}
+
+      {tab === "myreports" && user?.role === "supervisor" && (
+        <PageCard style={{ padding: 22 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
+              {t.myReportsTab}
+            </h2>
+            <p
+              style={{
+                margin: "5px 0 0",
+                color: "#64748b",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            >
+              Submitted EPRs remain visible here for the current month and the two
+              previous months. Internal Duty/Station Manager notes are not shown;
+              only the operational follow-up timeline is visible.
+            </p>
+          </div>
+
+          {myRecentReports.length === 0 ? (
+            <div style={{ color: "#64748b", fontSize: 14 }}>
+              No submitted reports found in the last 3 months.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 14 }}>
+              {myRecentReports.map((report) => {
+                const supervisorTimeline = getSupervisorVisibleTimeline(report);
+
+                return (
+                  <div
+                    key={report.id}
+                    style={{
+                      border: "1px solid #dbeafe",
+                      borderRadius: 18,
+                      padding: 16,
+                      background: "#ffffff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 17,
+                            fontWeight: 900,
+                            color: "#0f172a",
+                          }}
+                        >
+                          {report.employeeName || "-"} Â· {formatMonthValue(report.month)}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 5,
+                            fontSize: 13,
+                            color: "#64748b",
+                          }}
+                        >
+                          {report.templateLabel || "-"} Â· Submitted {formatDateTime(report.createdAt)}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <InfoCard
+                          label={t.score}
+                          value={`${formatScore(report.score)} / 100`}
+                          tone={getPerformanceTone(report.score)}
+                        />
+                        <InfoCard
+                          label={t.status}
+                          value={getStatusLabel(report.managerStatus || "submitted")}
+                          tone={getStatusTone(report.managerStatus)}
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 14,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 10,
+                      }}
+                    >
+                      <InfoCard
+                        label={t.assignedDutyManager}
+                        value={
+                          report.followUpDutyManagerName ||
+                          report.assignedDutyManagerName ||
+                          "-"
+                        }
+                      />
+                      <InfoCard
+                        label="Follow Up"
+                        value={report.needsFollowUp ? "Yes" : "No"}
+                        tone={report.needsFollowUp ? "amber" : "green"}
+                      />
+                    </div>
+
+                    {normalizeText(report.returnReason) && (
+                      <div
+                        style={{
+                          marginTop: 14,
+                          background: "#fff7ed",
+                          border: "1px solid #fdba74",
+                          borderRadius: 14,
+                          padding: "12px 14px",
+                          color: "#9a3412",
+                          fontSize: 13,
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        <strong>Return Reason:</strong> {report.returnReason}
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        marginTop: 16,
+                        borderTop: "1px solid #e2e8f0",
+                        paddingTop: 14,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 900,
+                          color: "#0f172a",
+                          marginBottom: 10,
+                        }}
+                      >
+                        Follow Up Timeline
+                      </div>
+
+                      {supervisorTimeline.length === 0 ? (
+                        <div style={{ color: "#64748b", fontSize: 13 }}>
+                          No management follow-up activity yet.
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 9 }}>
+                          {supervisorTimeline.map((item, index) => (
+                            <div
+                              key={`${report.id}-public-history-${index}`}
+                              style={{
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 12,
+                                padding: 12,
+                                background: "#f8fbff",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: 800,
+                                  color: "#0f172a",
+                                  lineHeight: 1.5,
+                                }}
+                              >
+                                {item.message || "Case updated."}
+                              </div>
+                              <div
+                                style={{
+                                  marginTop: 4,
+                                  fontSize: 12,
+                                  color: "#64748b",
+                                }}
+                              >
+                                {formatDateTime(item.createdAt)}
+                              </div>
+                              {item.publicDetails ? (
+                                <div
+                                  style={{
+                                    marginTop: 7,
+                                    fontSize: 13,
+                                    color: "#9a3412",
+                                    lineHeight: 1.6,
+                                  }}
+                                >
+                                  {item.publicDetails}
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </PageCard>
@@ -2613,7 +3358,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#0f172a",
                         }}
                       >
-                        {report.employeeName || "-"} · {formatMonthValue(report.month)}
+                        {report.employeeName || "-"} Â· {formatMonthValue(report.month)}
                       </div>
 
                       <div
@@ -2690,7 +3435,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#0f172a",
                         }}
                       >
-                        {report.employeeName} · {formatMonthValue(report.month)}
+                        {report.employeeName} Â· {formatMonthValue(report.month)}
                       </div>
                       <div
                         style={{
@@ -2699,7 +3444,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                           color: "#64748b",
                         }}
                       >
-                        {report.templateLabel || "-"} · Supervisor:{" "}
+                        {report.templateLabel || "-"} Â· Supervisor:{" "}
                         {report.supervisorName || "-"}
                       </div>
                       <div
@@ -3015,7 +3760,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                 color: "#0f172a",
                               }}
                             >
-                              {report.templateLabel} · {formatMonthValue(report.month)}
+                              {report.templateLabel} Â· {formatMonthValue(report.month)}
                             </div>
                             <div
                               style={{
@@ -3024,7 +3769,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                 color: "#64748b",
                               }}
                             >
-                              {t.supervisor}: {report.supervisorName || "-"} ·{" "}
+                              {t.supervisor}: {report.supervisorName || "-"} Â·{" "}
                               {formatDateTime(report.createdAt)}
                             </div>
                           </div>
@@ -3246,11 +3991,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                       key={item.id}
                                       style={{ color: "#7c2d12", fontSize: 14 }}
                                     >
-                                      •{" "}
+                                      â¢{" "}
                                       {(language === "es" ? item.es : item.en) ||
                                         item.en ||
                                         item.es}
-                                      {item.note ? ` — ${item.note}` : ""}
+                                      {item.note ? ` â ${item.note}` : ""}
                                     </div>
                                   ))}
                                 </div>
@@ -3357,7 +4102,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                           color: "#64748b",
                                         }}
                                       >
-                                        {item.byUserName || "-"} ·{" "}
+                                        {item.byUserName || "-"} Â·{" "}
                                         {item.createdAt
                                           ? formatDateTime(item.createdAt)
                                           : "-"}
