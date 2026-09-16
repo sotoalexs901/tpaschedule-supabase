@@ -1432,6 +1432,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       if (action === "edit" && report) {
         loadReportIntoForm(report);
+      } else if (action === "followup") {
+        setTab("followups");
+      } else if (action === "myreports") {
+        setTab("myreports");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2123,9 +2127,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
           title: isReassignment ? "EPR Follow Up Reassigned" : "EPR Follow Up Assigned",
           message: publicMessage,
           body: publicMessage,
-          link: "/monthly-employee-performance-report",
-          route: "/monthly-employee-performance-report",
-          path: "/monthly-employee-performance-report",
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
           reportId: report.id,
         });
       } catch (notificationError) {
@@ -2203,9 +2207,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
           body: `${report.employeeName || "Employee"} - ${formatMonthValue(
             report.month
           )} was returned to you for correction.`,
-          link: "/monthly-employee-performance-report",
-          route: "/monthly-employee-performance-report",
-          path: "/monthly-employee-performance-report",
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
           reportId: report.id,
         });
       } catch (notificationError) {
@@ -2342,9 +2346,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
           body: `${report.employeeName || "Employee"} - ${formatMonthValue(
             report.month
           )} was closed by ${getVisibleUserName(user)}.`,
-          link: "/monthly-employee-performance-report",
-          route: "/monthly-employee-performance-report",
-          path: "/monthly-employee-performance-report",
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
           reportId: report.id,
         });
       } catch (notificationError) {
@@ -2432,9 +2436,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
           body: `${getVisibleUserName(user)} accepted the follow-up case for ${
             report.employeeName || "Employee"
           }.`,
-          link: "/monthly-employee-performance-report",
-          route: "/monthly-employee-performance-report",
-          path: "/monthly-employee-performance-report",
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
           reportId: report.id,
         });
       } catch (notificationError) {
@@ -2507,6 +2511,34 @@ export default function MonthlyEmployeePerformanceReportPage() {
         supervisorTimeline,
         updatedAt: serverTimestamp(),
       });
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: "employee_performance_follow_up_progress",
+          title: "EPR Follow Up Updated",
+          message: `${getVisibleUserName(
+            user
+          )} added a follow-up update to the EPR for ${
+            report.employeeName || "Employee"
+          } (${formatMonthValue(report.month)}).`,
+          body: `${getVisibleUserName(
+            user
+          )} added a follow-up update to the EPR for ${
+            report.employeeName || "Employee"
+          } (${formatMonthValue(report.month)}).`,
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          reportId: report.id,
+          employeeName: report.employeeName || "",
+          month: report.month || "",
+        });
+      } catch (notificationError) {
+        console.error(
+          "Error notifying supervisor about follow-up progress:",
+          notificationError
+        );
+      }
 
       setReports((prev) =>
         prev.map((item) =>
@@ -2601,6 +2633,34 @@ export default function MonthlyEmployeePerformanceReportPage() {
           })
         )
       );
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: "employee_performance_follow_up_sent_for_review",
+          title: "EPR Follow Up Sent for Final Review",
+          message: `${getVisibleUserName(
+            user
+          )} completed the assigned follow-up for ${
+            report.employeeName || "Employee"
+          } and sent the case to Station Manager for review.`,
+          body: `${getVisibleUserName(
+            user
+          )} completed the assigned follow-up for ${
+            report.employeeName || "Employee"
+          } and sent the case to Station Manager for review.`,
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          reportId: report.id,
+          employeeName: report.employeeName || "",
+          month: report.month || "",
+        });
+      } catch (notificationError) {
+        console.error(
+          "Error notifying supervisor about follow-up final review:",
+          notificationError
+        );
+      }
 
       setReports((prev) =>
         prev.map((item) =>
