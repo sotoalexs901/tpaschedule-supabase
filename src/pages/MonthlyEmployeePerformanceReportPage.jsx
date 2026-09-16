@@ -14,6 +14,7 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
+import { triggerEprPush } from "../utils/eprPush.js";
 
 /* -------------------- UI -------------------- */
 
@@ -208,6 +209,8 @@ function InfoCard({ label, value, tone = "default" }) {
     red: { bg: "#fff1f2", border: "#fecdd3", color: "#9f1239" },
     blue: { bg: "#edf7ff", border: "#cfe7fb", color: "#1769aa" },
     amber: { bg: "#fff7ed", border: "#fdba74", color: "#9a3412" },
+    brown: { bg: "#f5eee8", border: "#d6b79c", color: "#7c4a2d" },
+    deepblue: { bg: "#e6f0ff", border: "#93b4e8", color: "#123f78" },
   };
 
   const current = tones[tone] || tones.default;
@@ -420,23 +423,21 @@ function getFollowUpItems(answers, questions) {
 
 function getStatusTone(status) {
   const value = String(status || "").toLowerCase();
-  if (
-    value === "approved" ||
-    value === "recognized" ||
-    value === "closed" ||
-    value === "follow_up_completed"
-  ) {
-    return "green";
-  }
+  if (value === "submitted") return "blue";
+  if (value === "under_review") return "brown";
+  if (value === "follow_up_in_progress" || value === "follow_up_accepted") return "green";
+  if (value === "closed") return "deepblue";
+  if (value === "returned_to_supervisor") return "red";
   if (
     value === "follow_up" ||
     value === "follow_up_assigned" ||
-    value === "follow_up_in_progress" ||
     value === "follow_up_resubmitted" ||
-    value === "resubmitted_to_manager" ||
-    value === "returned_to_supervisor"
+    value === "resubmitted_to_manager"
   ) {
     return "amber";
+  }
+  if (value === "approved" || value === "recognized" || value === "follow_up_completed") {
+    return "green";
   }
   if (value === "draft") return "default";
   return "blue";
@@ -444,9 +445,10 @@ function getStatusTone(status) {
 
 function getStatusLabel(status) {
   const value = String(status || "").toLowerCase();
+  if (value === "under_review") return "Under Review";
   if (value === "returned_to_supervisor") return "Returned to Supervisor";
   if (value === "follow_up_assigned") return "Follow Up Assigned";
-  if (value === "follow_up_in_progress") return "Follow Up In Progress";
+  if (value === "follow_up_in_progress" || value === "follow_up_accepted") return "Accepted";
   if (value === "follow_up_completed") return "Follow Up Completed";
   if (value === "follow_up_resubmitted") return "Resubmitted to Manager";
   if (value === "resubmitted_to_manager") return "Resubmitted to Manager";
@@ -548,7 +550,9 @@ function getSupervisorVisibleTimeline(report) {
     let message = "Management updated this EPR case.";
     const extra = {};
 
-    if (type === "follow up assigned" || type === "follow_up_assigned") {
+    if (type === "under review" || type === "under_review") {
+      message = `${item?.byUserName || "Station Management"} opened this EPR and placed the case under review.`;
+    } else if (type === "follow up assigned" || type === "follow_up_assigned") {
       message = `${item?.byUserName || "Management"} assigned this EPR follow up to ${
         item?.dutyManagerName || "a Duty Manager"
       }.`;
@@ -663,7 +667,7 @@ function printReportHtml(report, language = "en") {
 
         <div class="card">
           <h3>Comments</h3>
-          <div><strong>Company:</strong> ${report.commentsCompany || "-"}</div>
+          <div><strong>Supervisor Comment:</strong> ${report.commentsCompany || "-"}</div>
           <div style="margin-top:8px;"><strong>Employee:</strong> ${
             report.commentsEmployee || "-"
           }</div>
@@ -785,7 +789,7 @@ const LABELS = {
     evaluator: "Evaluator",
     department: "Department",
     hireDate: "Hire Date",
-    commentsCompany: "Company Comments / Recommendations",
+    commentsCompany: "Supervisor Comment",
     commentsEmployee: "Employee Comments",
     saveReport: "Save Performance Report",
     updateReport: "Update Report",
@@ -848,7 +852,7 @@ const LABELS = {
     evaluator: "Evaluador",
     department: "Departamento",
     hireDate: "Fecha de Ingreso",
-    commentsCompany: "Comentarios / Recomendaciones de la Empresa",
+    commentsCompany: "Comentario del Supervisor",
     commentsEmployee: "Comentarios del Empleado",
     saveReport: "Guardar Performance Report",
     updateReport: "Actualizar Reporte",
@@ -1788,6 +1792,13 @@ export default function MonthlyEmployeePerformanceReportPage() {
           updatePayload
         );
 
+        triggerEprPush(
+          editingDraftId,
+          nextStatus === "resubmitted_to_manager"
+            ? "resubmitted_to_manager"
+            : "submitted"
+        );
+
         setReports((prev) =>
           prev.map((item) =>
             item.id === editingDraftId
@@ -1829,6 +1840,13 @@ export default function MonthlyEmployeePerformanceReportPage() {
         await updateDoc(
           doc(db, "employeePerformanceReports", editingReportId),
           updatePayload
+        );
+
+        triggerEprPush(
+          editingReportId,
+          updatePayload.managerStatus === "resubmitted_to_manager"
+            ? "resubmitted_to_manager"
+            : "submitted"
         );
 
         setReports((prev) =>
@@ -1875,6 +1893,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
       };
 
       const ref = await addDoc(collection(db, "employeePerformanceReports"), payload);
+
+      triggerEprPush(ref.id, "submitted");
 
       setReports((prev) => [
         {
@@ -1975,6 +1995,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
       };
 
       await updateDoc(doc(db, "employeePerformanceReports", reportId), payload);
+
+      if (["approved", "closed"].includes(nextStatus)) {
+        triggerEprPush(reportId, nextStatus);
+      }
 
       if (["approved", "recognized", "closed"].includes(nextStatus)) {
         try {
@@ -2089,6 +2113,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
         ...payload,
         updatedAt: serverTimestamp(),
       });
+
+      triggerEprPush(
+        report.id,
+        isReassignment ? "reassigned" : "assigned"
+      );
 
       if (duty?.notificationUserId) {
         try {
@@ -2215,6 +2244,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
       } catch (notificationError) {
         console.error("Error notifying supervisor about returned EPR:", notificationError);
       }
+
+      triggerEprPush(report.id, "returned");
 
       setReports((prev) =>
         prev.map((item) =>
@@ -2355,6 +2386,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
         console.error("Error notifying supervisor about closed EPR:", notificationError);
       }
 
+      triggerEprPush(report.id, "closed");
+
       if (report.employeeId) {
         await addDoc(collection(db, "messages"), {
           toUserId: report.employeeId,
@@ -2444,6 +2477,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
       } catch (notificationError) {
         console.error("Error notifying supervisor about accepted follow-up:", notificationError);
       }
+
+      triggerEprPush(report.id, "accepted");
 
       setReports((prev) =>
         prev.map((item) =>
@@ -2539,6 +2574,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
           notificationError
         );
       }
+
+      triggerEprPush(report.id, "progress");
 
       setReports((prev) =>
         prev.map((item) =>
@@ -2661,6 +2698,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
           notificationError
         );
       }
+
+      triggerEprPush(report.id, "follow_up_resubmitted");
 
       setReports((prev) =>
         prev.map((item) =>
@@ -3480,7 +3519,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                             }}
                           >
                             <div>
-                              <strong>Company:</strong>{" "}
+                              <strong>Supervisor Comment:</strong>{" "}
                               {report.commentsCompany || "-"}
                             </div>
                             <div style={{ marginTop: 8 }}>
@@ -4045,6 +4084,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   <option value="all">{t.all}</option>
                   <option value="draft">{t.draft}</option>
                   <option value="submitted">{t.submitted}</option>
+                  <option value="under_review">Under Review</option>
                   <option value="approved">{t.approved}</option>
                   <option value="follow_up">{t.followUp}</option>
                   <option value="follow_up_assigned">Follow Up Assigned</option>
@@ -4414,7 +4454,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                                 }}
                               >
                                 <div>
-                                  <strong>Company:</strong>{" "}
+                                  <strong>Supervisor Comment:</strong>{" "}
                                   {report.commentsCompany || "-"}
                                 </div>
                                 <div style={{ marginTop: 8 }}>
