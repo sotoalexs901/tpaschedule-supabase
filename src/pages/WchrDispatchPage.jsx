@@ -1329,7 +1329,11 @@ function SupervisorAgentCard({
   selected,
   onSelect,
   onPunchOut,
+  onClearAssignment,
+  onClearAndPunchOut,
   punchOutBusy,
+  clearBusy,
+  hasLiveReport,
   isMobile,
 }) {
   const punchedIn =
@@ -1349,8 +1353,16 @@ function SupervisorAgentCard({
     availability === WCHR_AGENT_AVAILABILITY.AVAILABLE &&
     !hasAssignment;
 
+  const staleAssignment =
+    punchedIn &&
+    hasAssignment &&
+    !hasLiveReport;
+
   const canSupervisorPunchOut =
     punchedIn && !hasAssignment;
+
+  const canForceClear =
+    punchedIn && staleAssignment;
 
   return (
     <div
@@ -1458,7 +1470,7 @@ function SupervisorAgentCard({
           flexWrap: "wrap",
         }}
       >
-        {canSupervisorPunchOut ? (
+        {canSupervisorPunchOut && (
           <ActionButton
             variant="danger"
             disabled={punchOutBusy}
@@ -1471,7 +1483,41 @@ function SupervisorAgentCard({
           >
             {punchOutBusy ? "Punching Out..." : "Supervisor Punch Out"}
           </ActionButton>
-        ) : hasAssignment ? (
+        )}
+
+        {canForceClear && (
+          <>
+            <ActionButton
+              variant="warning"
+              disabled={clearBusy}
+              onClick={() => onClearAssignment(agent)}
+              style={{
+                padding: "7px 10px",
+                fontSize: 10.5,
+                width: isMobile ? "100%" : "auto",
+              }}
+            >
+              {clearBusy ? "Clearing..." : "Remove Stale WCHR"}
+            </ActionButton>
+
+            <ActionButton
+              variant="danger"
+              disabled={clearBusy || punchOutBusy}
+              onClick={() => onClearAndPunchOut(agent)}
+              style={{
+                padding: "7px 10px",
+                fontSize: 10.5,
+                width: isMobile ? "100%" : "auto",
+              }}
+            >
+              {clearBusy || punchOutBusy
+                ? "Processing..."
+                : "Clear WCHR & Punch Out"}
+            </ActionButton>
+          </>
+        )}
+
+        {hasAssignment && hasLiveReport && (
           <div
             style={{
               width: "100%",
@@ -1485,9 +1531,29 @@ function SupervisorAgentCard({
               lineHeight: 1.45,
             }}
           >
-            Punch Out is locked while this agent has an active WCHR service.
+            A real active WCHR service is linked to this agent. Reassign or
+            complete that service before Punch Out.
           </div>
-        ) : null}
+        )}
+
+        {staleAssignment && (
+          <div
+            style={{
+              width: "100%",
+              padding: "7px 9px",
+              borderRadius: 10,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#9a3412",
+              fontSize: 10.5,
+              fontWeight: 800,
+              lineHeight: 1.45,
+            }}
+          >
+            Stale assignment detected. No matching active WCHR report was found,
+            so management can safely clear this assignment.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2035,6 +2101,11 @@ export default function WchrDispatchPage() {
   const [
     busyPunchOutAgentId,
     setBusyPunchOutAgentId,
+  ] = useState("");
+
+  const [
+    busyClearAgentId,
+    setBusyClearAgentId,
   ] = useState("");
 
   // ============================================================
@@ -3480,6 +3551,141 @@ export default function WchrDispatchPage() {
     };
 
 
+
+  function agentHasLiveReport(agent) {
+    if (!agent?.id) return false;
+
+    const activeReportId = cleanText(agent.active_report_id);
+
+    return activeReports.some((report) => {
+      const reportAgentId = cleanText(
+        report.wchr_agent_id || report.assigned_agent_id
+      );
+
+      return (
+        (activeReportId && report.id === activeReportId) ||
+        reportAgentId === agent.id
+      );
+    });
+  }
+
+  const clearStaleAgentAssignment = async (agent) => {
+    if (!agent?.id) {
+      throw new Error("Unable to identify this WCHR agent.");
+    }
+
+    if (agentHasLiveReport(agent)) {
+      throw new Error(
+        "This agent still has a real active WCHR service. Reassign or complete that service first."
+      );
+    }
+
+    await updateDoc(
+      doc(db, "wchr_agent_shifts", agent.id),
+      {
+        availability_status: WCHR_AGENT_AVAILABILITY.AVAILABLE,
+        active_report_id: "",
+        active_wheelchair_number: "",
+        active_passenger_name: "",
+        active_pnr: "",
+        active_flight_number: "",
+        active_airline: "",
+        active_service_status: "",
+        last_assignment_note: "Stale assignment cleared by supervisor.",
+        last_activity_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      }
+    );
+  };
+
+  const handleClearStaleAssignment = async (agent) => {
+    const wheelchair =
+      cleanText(agent?.active_wheelchair_number) || "assigned WCHR";
+
+    const confirmed = window.confirm(
+      `Remove ${wheelchair} from ${getAgentName(agent)}?\n\nNo active WCHR report is linked to this assignment. The agent will remain punched in and become Available.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyClearAgentId(agent.id);
+      setError("");
+      setMessage("");
+
+      await clearStaleAgentAssignment(agent);
+
+      setSelectedAgentId((current) =>
+        current === agent.id ? "" : current
+      );
+
+      setMessage(
+        `${wheelchair} was removed from ${getAgentName(
+          agent
+        )}. The agent is now Available.`
+      );
+    } catch (err) {
+      console.error("Clear stale WCHR assignment error:", err);
+      setError(
+        err?.message ||
+          "Unable to remove the stale WCHR assignment."
+      );
+    } finally {
+      setBusyClearAgentId("");
+    }
+  };
+
+  const handleClearAndPunchOut = async (agent) => {
+    const wheelchair =
+      cleanText(agent?.active_wheelchair_number) || "assigned WCHR";
+
+    const confirmed = window.confirm(
+      `Clear ${wheelchair} and Punch Out ${getAgentName(agent)}?\n\nThis is intended for a stale assignment when the agent forgot to finish/logout.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyClearAgentId(agent.id);
+      setBusyPunchOutAgentId(agent.id);
+      setError("");
+      setMessage("");
+
+      if (agentHasLiveReport(agent)) {
+        throw new Error(
+          "A real active WCHR service is now linked to this agent. Reassign or complete it first."
+        );
+      }
+
+      await clearStaleAgentAssignment(agent);
+
+      await punchOutWchrAgent({
+        agentId: agent.id,
+        user,
+        force: true,
+      });
+
+      setSelectedAgentId((current) =>
+        current === agent.id ? "" : current
+      );
+
+      setMessage(
+        `${wheelchair} was cleared and ${getAgentName(
+          agent
+        )} was punched out successfully.`
+      );
+    } catch (err) {
+      console.error("Clear and Punch Out WCHR agent error:", err);
+      setError(
+        err?.message ||
+          "Unable to clear the assignment and Punch Out this agent."
+      );
+    } finally {
+      setBusyClearAgentId("");
+      setBusyPunchOutAgentId("");
+    }
+  };
+
   // ============================================================
   // SUPERVISOR AGENT PUNCH OUT
   // ============================================================
@@ -3487,21 +3693,15 @@ export default function WchrDispatchPage() {
   const handleSupervisorPunchOut = async (agent) => {
     if (!agent?.id) return;
 
-    const hasAssignment =
-      Boolean(
-        cleanText(agent.active_report_id) ||
-        cleanText(agent.active_wheelchair_number)
-      );
-
-    if (hasAssignment) {
+    if (agentHasLiveReport(agent)) {
       setError(
-        "This agent still has an active WCHR service. Complete or reassign the service before Punch Out."
+        "This agent still has a real active WCHR service. Reassign or complete the service before Punch Out."
       );
       return;
     }
 
     const confirmed = window.confirm(
-      `Punch Out ${getAgentName(agent)} from WCHR operations?\n\nUse this only when the agent forgot to Punch Out at the end of the shift.`
+      `Punch Out ${getAgentName(agent)} from WCHR operations?\n\nIf stale WCHR fields remain, they will also be cleared.`
     );
 
     if (!confirmed) return;
@@ -3510,6 +3710,13 @@ export default function WchrDispatchPage() {
       setBusyPunchOutAgentId(agent.id);
       setError("");
       setMessage("");
+
+      if (
+        cleanText(agent.active_report_id) ||
+        cleanText(agent.active_wheelchair_number)
+      ) {
+        await clearStaleAgentAssignment(agent);
+      }
 
       await punchOutWchrAgent({
         agentId: agent.id,
@@ -7845,9 +8052,10 @@ export default function WchrDispatchPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Select available agents for assignments. Supervisors can also
-                Punch Out an agent who forgot to log out, as long as the agent
-                has no active WCHR service.
+                Select available agents for assignments. If an agent is stuck
+                as Busy with an old WCHR but there is no matching active service,
+                supervisors can remove the stale assignment or clear it and
+                Punch Out the agent.
               </p>
             </div>
 
@@ -7926,7 +8134,11 @@ export default function WchrDispatchPage() {
                       selected={agent.id === selectedAgentId}
                       onSelect={setSelectedAgentId}
                       onPunchOut={handleSupervisorPunchOut}
+                      onClearAssignment={handleClearStaleAssignment}
+                      onClearAndPunchOut={handleClearAndPunchOut}
                       punchOutBusy={busyPunchOutAgentId === agent.id}
+                      clearBusy={busyClearAgentId === agent.id}
+                      hasLiveReport={agentHasLiveReport(agent)}
                     />
                   )
                 )}
