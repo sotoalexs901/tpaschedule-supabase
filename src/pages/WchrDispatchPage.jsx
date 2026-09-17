@@ -32,6 +32,7 @@ import {
   addWchrTimelineEvent,
   formatElapsedTime,
   getElapsedSeconds,
+  punchOutWchrAgent,
 } from "../utils/wchrOperations.js";
 
 import {
@@ -69,6 +70,13 @@ function normalizeAirline(value) {
 
 function safeText(value) {
   return String(value || "").trim();
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 }
 
 function buildDailyFlightKey(airline, flightNumber, dateKey) {
@@ -507,6 +515,7 @@ function ActionButton({
       style={{
         borderRadius: 12,
         padding: "10px 14px",
+        minHeight: 40,
         fontSize: 13,
         fontWeight: 850,
         cursor: disabled
@@ -1053,8 +1062,8 @@ function InventoryCard({
       style={{
         border:
           "1px solid #e2e8f0",
-        borderRadius: 15,
-        padding: 12,
+        borderRadius: 14,
+        padding: 10,
         background:
           "#ffffff",
       }}
@@ -1311,6 +1320,176 @@ function AgentCard({
         </div>
       )}
     </button>
+  );
+}
+
+
+function SupervisorAgentCard({
+  agent,
+  selected,
+  onSelect,
+  onPunchOut,
+  punchOutBusy,
+  isMobile,
+}) {
+  const punchedIn =
+    safeUpper(agent.status) === WCHR_AGENT_STATUS.ACTIVE;
+
+  const availability =
+    safeUpper(agent.availability_status);
+
+  const hasAssignment =
+    Boolean(
+      cleanText(agent.active_report_id) ||
+      cleanText(agent.active_wheelchair_number)
+    );
+
+  const canReceive =
+    punchedIn &&
+    availability === WCHR_AGENT_AVAILABILITY.AVAILABLE &&
+    !hasAssignment;
+
+  const canSupervisorPunchOut =
+    punchedIn && !hasAssignment;
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        padding: isMobile ? 11 : 12,
+        borderRadius: 15,
+        background: selected ? "#edf7ff" : "#ffffff",
+        border: selected
+          ? "2px solid #5aa9e6"
+          : "1px solid #e2e8f0",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          if (canReceive) onSelect(agent.id);
+        }}
+        disabled={!canReceive}
+        style={{
+          width: "100%",
+          border: "none",
+          background: "transparent",
+          padding: 0,
+          margin: 0,
+          textAlign: "left",
+          cursor: canReceive ? "pointer" : "default",
+          fontFamily: "inherit",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 10,
+            alignItems: "flex-start",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 900,
+                color: "#0f172a",
+                lineHeight: 1.35,
+                wordBreak: "break-word",
+              }}
+            >
+              {getAgentName(agent)}
+            </div>
+
+            <div
+              style={{
+                marginTop: 3,
+                fontSize: 11.5,
+                color: "#64748b",
+              }}
+            >
+              {agent.current_location || "Location not reported"}
+            </div>
+          </div>
+
+          <StatusBadge status={availability} />
+        </div>
+
+        {hasAssignment && (
+          <div
+            style={{
+              marginTop: 9,
+              borderRadius: 11,
+              padding: "7px 9px",
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+              color: "#9a3412",
+              fontSize: 10.5,
+              fontWeight: 800,
+              lineHeight: 1.45,
+            }}
+          >
+            Active WCHR {agent.active_wheelchair_number || "â"}
+          </div>
+        )}
+
+        {canReceive && (
+          <div
+            style={{
+              marginTop: 9,
+              fontSize: 10,
+              fontWeight: 900,
+              color: "#166534",
+            }}
+          >
+            READY FOR ASSIGNMENT
+          </div>
+        )}
+      </button>
+
+      <div
+        style={{
+          marginTop: 9,
+          display: "flex",
+          gap: 7,
+          flexWrap: "wrap",
+        }}
+      >
+        {canSupervisorPunchOut ? (
+          <ActionButton
+            variant="danger"
+            disabled={punchOutBusy}
+            onClick={() => onPunchOut(agent)}
+            style={{
+              padding: "7px 10px",
+              fontSize: 10.5,
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
+            {punchOutBusy ? "Punching Out..." : "Supervisor Punch Out"}
+          </ActionButton>
+        ) : hasAssignment ? (
+          <div
+            style={{
+              width: "100%",
+              padding: "7px 9px",
+              borderRadius: 10,
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              color: "#64748b",
+              fontSize: 10.5,
+              fontWeight: 700,
+              lineHeight: 1.45,
+            }}
+          >
+            Punch Out is locked while this agent has an active WCHR service.
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -1846,6 +2025,16 @@ export default function WchrDispatchPage() {
   const [
     busyInventoryId,
     setBusyInventoryId,
+  ] = useState("");
+
+  const [
+    inventoryExpanded,
+    setInventoryExpanded,
+  ] = useState(false);
+
+  const [
+    busyPunchOutAgentId,
+    setBusyPunchOutAgentId,
   ] = useState("");
 
   // ============================================================
@@ -2736,11 +2925,14 @@ export default function WchrDispatchPage() {
       return;
     }
 
+    // Multiple WCHR passengers can share the same PNR.
+    // Only block an obvious duplicate of the SAME passenger on the SAME flight.
     const duplicate = ibPassengers.some((report) => {
       return (
         safeUpper(report.pnr) === pnr &&
         normalizeFlightNumber(report.flight_number) ===
-          normalizeFlightNumber(selectedFlight.flight_number)
+          normalizeFlightNumber(selectedFlight.flight_number) &&
+        normalizeText(report.passenger_name) === normalizeText(passengerName)
       );
     });
 
@@ -3286,6 +3478,63 @@ export default function WchrDispatchPage() {
         );
       }
     };
+
+
+  // ============================================================
+  // SUPERVISOR AGENT PUNCH OUT
+  // ============================================================
+
+  const handleSupervisorPunchOut = async (agent) => {
+    if (!agent?.id) return;
+
+    const hasAssignment =
+      Boolean(
+        cleanText(agent.active_report_id) ||
+        cleanText(agent.active_wheelchair_number)
+      );
+
+    if (hasAssignment) {
+      setError(
+        "This agent still has an active WCHR service. Complete or reassign the service before Punch Out."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Punch Out ${getAgentName(agent)} from WCHR operations?\n\nUse this only when the agent forgot to Punch Out at the end of the shift.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyPunchOutAgentId(agent.id);
+      setError("");
+      setMessage("");
+
+      await punchOutWchrAgent({
+        agentId: agent.id,
+        user,
+        force: true,
+      });
+
+      setSelectedAgentId((current) =>
+        current === agent.id ? "" : current
+      );
+
+      setMessage(
+        `${getAgentName(agent)} was punched out from WCHR operations.`
+      );
+    } catch (err) {
+      console.error("Supervisor WCHR Punch Out error:", err);
+
+      setError(
+        err?.message ||
+          "Unable to Punch Out this WCHR agent."
+      );
+    } finally {
+      setBusyPunchOutAgentId("");
+    }
+  };
 
   // ============================================================
   // SERVICE MANAGEMENT
@@ -5494,8 +5743,9 @@ export default function WchrDispatchPage() {
     <div
       style={{
         width: "100%",
-        maxWidth: 1500,
+        maxWidth: 1480,
         margin: "0 auto",
+        padding: isMobile ? "0 2px" : 0,
         display: "grid",
         gap:
           isMobile
@@ -5626,7 +5876,7 @@ export default function WchrDispatchPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Daily flights, wheelchair inventory, active agents and live
+                Daily flights, compact inventory, agent Punch Out and live
                 assignment control.
               </div>
 
@@ -6127,7 +6377,7 @@ export default function WchrDispatchPage() {
                 {openFlights.map((flight) => (
                   <option key={flight.id} value={flight.id}>
                     {flight.airline || ""} {flight.flight_number || ""}
-                    {flight.gate ? ` Â· ${flight.gate}` : ""}
+                    {flight.gate ? ` | ${flight.gate}` : ""}
                   </option>
                 ))}
               </select>
@@ -6250,9 +6500,11 @@ export default function WchrDispatchPage() {
             fontWeight: 750,
           }}
         >
-          In this first step Dispatch only prepares the passenger list. The WCHR
-          number and final destination are intentionally left blank so the agent
-          can select them at CBP when the passenger is physically accepted.
+          In this first step Dispatch only prepares the passenger list. More than
+          one WCHR passenger may use the same PNR; each passenger is stored as a
+          separate service. The WCHR number and final destination are intentionally
+          left blank so the agent can select them at CBP when the passenger is
+          physically accepted.
         </div>
       </PageCard>
 
@@ -6268,46 +6520,86 @@ export default function WchrDispatchPage() {
               : 19,
         }}
       >
-        <div>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 900,
-              color: "#1769aa",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}
-          >
-            Equipment Control
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 900,
+                color: "#1769aa",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Equipment Control
+            </div>
+
+            <h2
+              style={{
+                margin: "4px 0 3px",
+                fontSize: isMobile ? 19 : 22,
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              Wheelchair Inventory
+            </h2>
+
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                color: "#64748b",
+                lineHeight: 1.55,
+              }}
+            >
+              {inventorySummary.total} company WCHRs. Expand this section only
+              when you need to add, edit, relocate or delete inventory.
+            </p>
           </div>
 
-          <h2
+          <ActionButton
+            variant={inventoryExpanded ? "primary" : "secondary"}
+            onClick={() => setInventoryExpanded((value) => !value)}
             style={{
-              margin: "4px 0 3px",
-              fontSize:
-                isMobile
-                  ? 19
-                  : 22,
-              fontWeight: 900,
-              color: "#0f172a",
+              padding: "8px 11px",
+              fontSize: 11,
+              width: isMobile ? "100%" : "auto",
             }}
           >
-            Wheelchair Inventory
-          </h2>
-
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              color: "#64748b",
-              lineHeight: 1.55,
-            }}
-          >
-            This inventory is the source used to prevent duplicate or
-            nonexistent wheelchair numbers.
-          </p>
+            {inventoryExpanded ? "Hide Inventory" : "Manage Inventory"}
+          </ActionButton>
         </div>
 
+        <div
+          style={{
+            marginTop: 12,
+            display: "grid",
+            gridTemplateColumns: isMobile
+              ? "repeat(3, minmax(0, 1fr))"
+              : "repeat(7, minmax(0, 1fr))",
+            gap: 7,
+          }}
+        >
+          <MetricCard label="Total" value={inventorySummary.total} tone="slate" />
+          <MetricCard label="Available" value={inventorySummary.available} tone="green" />
+          <MetricCard label="Ready" value={inventorySummary.ready} tone="blue" />
+          <MetricCard label="In Service" value={inventorySummary.inService} tone="amber" />
+          <MetricCard label="At Gate" value={inventorySummary.atGate} tone="amber" />
+          <MetricCard label="Storage" value={inventorySummary.pendingStorage} tone="amber" />
+          <MetricCard label="Maint." value={inventorySummary.maintenance} tone="red" />
+        </div>
+
+        {inventoryExpanded && (
+          <>
         <div
           style={{
             marginTop: 15,
@@ -6386,74 +6678,6 @@ export default function WchrDispatchPage() {
               ? "Adding..."
               : "Add WCHR"}
           </ActionButton>
-        </div>
-
-        <div
-          style={{
-            marginTop: 15,
-            display: "grid",
-            gridTemplateColumns:
-              isMobile
-                ? "repeat(2, minmax(0, 1fr))"
-                : "repeat(7, minmax(0, 1fr))",
-            gap: 8,
-          }}
-        >
-          <MetricCard
-            label="Total"
-            value={
-              inventorySummary.total
-            }
-            tone="slate"
-          />
-
-          <MetricCard
-            label="Available"
-            value={
-              inventorySummary.available
-            }
-            tone="green"
-          />
-
-          <MetricCard
-            label="Ready"
-            value={
-              inventorySummary.ready
-            }
-            tone="blue"
-          />
-
-          <MetricCard
-            label="In Service"
-            value={
-              inventorySummary.inService
-            }
-            tone="amber"
-          />
-
-          <MetricCard
-            label="At Gate"
-            value={
-              inventorySummary.atGate
-            }
-            tone="amber"
-          />
-
-          <MetricCard
-            label="Pending Storage"
-            value={
-              inventorySummary.pendingStorage
-            }
-            tone="amber"
-          />
-
-          <MetricCard
-            label="Maintenance"
-            value={
-              inventorySummary.maintenance
-            }
-            tone="red"
-          />
         </div>
 
         <div
@@ -6562,16 +6786,10 @@ export default function WchrDispatchPage() {
               gridTemplateColumns:
                 isMobile
                   ? "1fr"
-                  : "repeat(auto-fit, minmax(210px, 1fr))",
-              gap: 8,
-              maxHeight:
-                isMobile
-                  ? "none"
-                  : 430,
-              overflowY:
-                isMobile
-                  ? "visible"
-                  : "auto",
+                  : "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 7,
+              maxHeight: isMobile ? 420 : 330,
+              overflowY: "auto",
               paddingRight:
                 isMobile
                   ? 0
@@ -6618,6 +6836,9 @@ export default function WchrDispatchPage() {
           <b>Personal WCHR</b> option so they do not consume an AeroStation
           inventory number.
         </div>
+          </>
+        )}
+
       </PageCard>
 
       {/* ====================================================== */}
@@ -7624,8 +7845,9 @@ export default function WchrDispatchPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Only available agents without an active wheelchair can be
-                selected for a new assignment.
+                Select available agents for assignments. Supervisors can also
+                Punch Out an agent who forgot to log out, as long as the agent
+                has no active WCHR service.
               </p>
             </div>
 
@@ -7697,19 +7919,14 @@ export default function WchrDispatchPage() {
               >
                 {agents.map(
                   (agent) => (
-                    <AgentCard
+                    <SupervisorAgentCard
                       key={agent.id}
                       agent={agent}
-                      isMobile={
-                        isMobile
-                      }
-                      selected={
-                        agent.id ===
-                        selectedAgentId
-                      }
-                      onSelect={
-                        setSelectedAgentId
-                      }
+                      isMobile={isMobile}
+                      selected={agent.id === selectedAgentId}
+                      onSelect={setSelectedAgentId}
+                      onPunchOut={handleSupervisorPunchOut}
+                      punchOutBusy={busyPunchOutAgentId === agent.id}
                     />
                   )
                 )}
