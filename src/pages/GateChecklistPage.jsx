@@ -171,6 +171,7 @@ function ActionButton({
   variant = "primary",
   type = "button",
   disabled = false,
+  style = {},
 }) {
   const variants = {
     primary: {
@@ -209,12 +210,14 @@ function ActionButton({
       style={{
         borderRadius: 12,
         padding: "10px 14px",
+        minHeight: 42,
         fontSize: 13,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
         opacity: disabled ? 0.7 : 1,
         ...variants[variant],
+        ...style,
       }}
     >
       {children}
@@ -566,6 +569,310 @@ function calculateNewStdAndDeadline(airline, blockIn, std) {
   };
 }
 
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+const DUPLICATE_TASK_FIELD_MAP = {
+  "First Pax Off": "firstPaxOff",
+  "Last Pax Off": "lastPaxOff",
+  "First Pax On": "firstPaxOn",
+  "Last Pax On": "lastPaxOn",
+  "Brake release time": "brakeReleaseTime",
+  "Push time": "pushTime",
+};
+
+function getMappedTaskField(task) {
+  return DUPLICATE_TASK_FIELD_MAP[String(task || "").trim()] || "";
+}
+
+function buildPrintableGateChecklistHtml({
+  form,
+  specials,
+  gateCheck,
+  delayAnnouncements,
+  checklistSections,
+  actuals,
+  currentStatus,
+  user,
+}) {
+  const card = (label, value) => `
+    <div class="info-card">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="value">${escapeHtml(value || "â")}</div>
+    </div>
+  `;
+
+  const mappedActual = (task, sectionIndex, taskIndex) => {
+    const field = getMappedTaskField(task);
+    if (field) return form?.[field] || "";
+    return actuals?.[`${sectionIndex}-${taskIndex}`] || "";
+  };
+
+  const checklistRows = (checklistSections || [])
+    .flatMap((section, sectionIndex) =>
+      (section.tasks || []).map(
+        (task, taskIndex) => `
+          <tr>
+            <td>${escapeHtml(section.time || "â")}</td>
+            <td>${escapeHtml(task || "â")}</td>
+            <td>${escapeHtml(mappedActual(task, sectionIndex, taskIndex) || "â")}</td>
+          </tr>
+        `
+      )
+    )
+    .join("");
+
+  const specialsRows = Object.entries(specials || {})
+    .filter(([, value]) => String(value || "").trim() !== "")
+    .map(
+      ([key, value]) => `
+        <tr>
+          <td>${escapeHtml(key)}</td>
+          <td>${escapeHtml(value)}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  const delayRows = (delayAnnouncements || [])
+    .filter((value) => String(value || "").trim() !== "")
+    .map((value) => `<li>${escapeHtml(value)}</li>`)
+    .join("");
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>AeroStation Hub - Gate Checklist</title>
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 24px;
+            color: #0f172a;
+            background: #fff;
+          }
+          .brand {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: flex-start;
+            border-bottom: 3px solid #1769aa;
+            padding-bottom: 14px;
+            margin-bottom: 18px;
+          }
+          .brand-kicker {
+            font-size: 11px;
+            font-weight: 800;
+            color: #1769aa;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+          }
+          h1 {
+            margin: 5px 0 0;
+            font-size: 28px;
+            line-height: 1.05;
+          }
+          .status {
+            padding: 7px 11px;
+            border-radius: 999px;
+            border: 1px solid #cfe7fb;
+            background: #edf7ff;
+            color: #1769aa;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+          }
+          .section {
+            margin-top: 16px;
+            page-break-inside: avoid;
+          }
+          .section-title {
+            margin: 0 0 9px;
+            font-size: 15px;
+            font-weight: 900;
+            color: #0f172a;
+            border-left: 4px solid #1769aa;
+            padding-left: 8px;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .info-card {
+            border: 1px solid #dbeafe;
+            background: #f8fbff;
+            border-radius: 10px;
+            padding: 9px 10px;
+          }
+          .label {
+            font-size: 9px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+          }
+          .value {
+            margin-top: 4px;
+            font-size: 12px;
+            font-weight: 800;
+            color: #0f172a;
+            word-break: break-word;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6px;
+          }
+          th, td {
+            border: 1px solid #cbd5e1;
+            padding: 7px 8px;
+            text-align: left;
+            vertical-align: top;
+            font-size: 10px;
+          }
+          th {
+            background: #f8fbff;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            font-size: 9px;
+          }
+          .notes {
+            border: 1px solid #dbeafe;
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: #f8fbff;
+            font-size: 11px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+          }
+          .footer {
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 9px;
+          }
+          @media print {
+            body { margin: 12px; }
+            .section { break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="brand">
+          <div>
+            <div class="brand-kicker">AeroStation Hub Â· Operational Management Platform</div>
+            <h1>Gate Checklist Report</h1>
+          </div>
+          <div class="status">${escapeHtml(currentStatus || "new")}</div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Flight Information</div>
+          <div class="grid">
+            ${card("Airline", form.airline)}
+            ${card("Flight", form.flight)}
+            ${card("Date", form.date)}
+            ${card("Aircraft", form.aircraft)}
+            ${card("Origin", form.origin)}
+            ${card("Destination", form.destination)}
+            ${card("Gate Agent", form.gateAgent)}
+            ${card("Expeditor", form.expeditor)}
+            ${card("Supervisor", form.supervisor)}
+            ${card("STD", form.std)}
+            ${card("New STD", form.newStd)}
+            ${card(form.airline === "SY" ? "D-10" : "D-15", form.boardingDeadline)}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Timing & Performance</div>
+          <div class="grid">
+            ${card("Block In", form.blockIn)}
+            ${card("Actual Arrival", form.actualArrivalTime)}
+            ${card("Actual Departure", form.actualDepartureTime)}
+            ${card("Brake Release", form.brakeReleaseTime)}
+            ${card("Push Time", form.pushTime)}
+            ${card("GPU Connected", form.gpuConnected)}
+            ${card("Gate Agent 1 Arrival", form.gateAgent1Arrival)}
+            ${card("Gate Agent 2 Arrival", form.gateAgent2Arrival)}
+            ${card("Delay", form.delay)}
+            ${card("Delay Minutes", form.delayTimeMinutes)}
+            ${card("Delay Code", form.delayCode)}
+            ${card("Controllable", form.controllable)}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Passenger & Baggage</div>
+          <div class="grid">
+            ${card("Final Total Pax", form.finalTotalPax)}
+            ${card("Total IB Pax", form.totalIbPax)}
+            ${card("First Pax Off", form.firstPaxOff)}
+            ${card("Last Pax Off", form.lastPaxOff)}
+            ${card("First Pax On", form.firstPaxOn)}
+            ${card("Last Pax On", form.lastPaxOn)}
+            ${card("Checked Bags", form.checkedBags)}
+            ${card("Not Loaded Bags", form.notLoadedBags)}
+            ${card("Gate Check Bags", gateCheck?.bags)}
+            ${card("Strollers / Car Seats", gateCheck?.strollersCarSeats)}
+            ${card("Gate Check WCHRs", gateCheck?.wchrs)}
+            ${card("Gate Check Other", gateCheck?.other)}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Specials</div>
+          <table>
+            <thead><tr><th>Type</th><th>Value</th></tr></thead>
+            <tbody>
+              ${specialsRows || `<tr><td colspan="2">No specials reported.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Delay Announcements</div>
+          ${delayRows ? `<ul>${delayRows}</ul>` : `<div class="notes">No delay announcements reported.</div>`}
+        </div>
+
+        <div class="section">
+          <div class="section-title">Operational Checklist</div>
+          <table>
+            <thead>
+              <tr><th style="width:16%">Time</th><th>Task</th><th style="width:22%">Actual</th></tr>
+            </thead>
+            <tbody>
+              ${checklistRows || `<tr><td colspan="3">No checklist data.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Notes</div>
+          <div class="notes">${escapeHtml(form.remarks || "No notes.")}</div>
+        </div>
+
+        <div class="footer">
+          AeroStation Hub Â· Generated by ${escapeHtml(getVisibleUserName(user))}
+        </div>
+      </body>
+    </html>
+  `;
+}
+
 function createInitialSpecials() {
   return BASE_SPECIALS.reduce((acc, item) => {
     acc[item] = "";
@@ -750,6 +1057,27 @@ export default function GateChecklistPage() {
     });
   }, [form.airline, form.blockIn, form.std]);
 
+  function getTaskActualValue(task, sectionIndex, taskIndex) {
+    const mappedField = getMappedTaskField(task);
+
+    if (mappedField) {
+      return form[mappedField] || "";
+    }
+
+    return actuals[`${sectionIndex}-${taskIndex}`] || "";
+  }
+
+  function updateTaskActual(task, sectionIndex, taskIndex, value) {
+    const mappedField = getMappedTaskField(task);
+
+    if (mappedField) {
+      updateField(mappedField, value);
+      return;
+    }
+
+    updateActual(sectionIndex, taskIndex, value);
+  }
+
   function clearDependentSections() {
     setSpecials(createInitialSpecials());
     setGateCheck(createInitialGateCheck());
@@ -897,8 +1225,33 @@ export default function GateChecklistPage() {
     setActuals((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handlePrint() {
-    window.print();
+  function handlePrintExportPdf() {
+    const html = buildPrintableGateChecklistHtml({
+      form,
+      specials,
+      gateCheck,
+      delayAnnouncements,
+      checklistSections,
+      actuals,
+      currentStatus,
+      user,
+    });
+
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+
+    if (!printWindow) {
+      setStatusMessage("Pop-up blocked. Please allow pop-ups to export/print PDF.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 400);
   }
 
   function buildPayload(nextStatus) {
@@ -953,7 +1306,18 @@ export default function GateChecklistPage() {
       specials,
       gateCheck,
       delayAnnouncements,
-      actuals,
+      actuals: checklistSections.reduce((acc, section, sectionIndex) => {
+        (section.tasks || []).forEach((task, taskIndex) => {
+          const key = `${sectionIndex}-${taskIndex}`;
+          const mappedField = getMappedTaskField(task);
+
+          acc[key] = mappedField
+            ? form[mappedField] || ""
+            : actuals[key] || "";
+        });
+
+        return acc;
+      }, {}),
       checklistSections,
 
       otpDepartureMinutes,
@@ -1204,7 +1568,45 @@ export default function GateChecklistPage() {
           : ["", "", "", ""]
       );
 
-      setActuals(data.actuals || {});
+      const loadedActuals = data.actuals || {};
+      setActuals(loadedActuals);
+
+      // Backward compatibility: if older reports saved duplicated checklist
+      // answers only inside actuals, copy them into the main fields.
+      const loadedSections = Array.isArray(data.checklistSections)
+        ? data.checklistSections
+        : buildChecklistByAirline(data.airline || "SY");
+
+      const mappedBackfill = {};
+      loadedSections.forEach((section, sectionIndex) => {
+        (section.tasks || []).forEach((task, taskIndex) => {
+          const mappedField = getMappedTaskField(task);
+          const oldValue = loadedActuals[`${sectionIndex}-${taskIndex}`];
+
+          if (
+            mappedField &&
+            oldValue &&
+            !String(
+              data[mappedField] ||
+                (mappedField === "brakeReleaseTime"
+                  ? data.brakeReleaseTime
+                  : mappedField === "pushTime"
+                  ? data.pushTime
+                  : "")
+            ).trim()
+          ) {
+            mappedBackfill[mappedField] = oldValue;
+          }
+        });
+      });
+
+      if (Object.keys(mappedBackfill).length) {
+        setForm((prev) => ({
+          ...prev,
+          ...mappedBackfill,
+        }));
+      }
+
       setStatusMessage(
         data.status === "closed"
           ? "Checklist loaded, but it is closed."
@@ -1223,7 +1625,7 @@ export default function GateChecklistPage() {
       style={{
         display: "grid",
         gap: isMobile ? 14 : 18,
-        fontFamily: "Arial, Helvetica, sans-serif",
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
         color: "#0f172a",
         width: "100%",
         maxWidth: "100%",
@@ -1357,7 +1759,7 @@ export default function GateChecklistPage() {
             opacity: 0.85,
           }}
         >
-          TPA OPS · Gate Checklist
+          AEROSTATION HUB Â· GATE CHECKLIST
         </div>
 
         <h1
@@ -1380,7 +1782,7 @@ export default function GateChecklistPage() {
             color: "rgba(255,255,255,0.92)",
           }}
         >
-          Printable gate checklist with 24-hour time selection, draft, submit,
+          AeroStation Hub operational gate checklist with 24-hour time selection, draft, submit,
           close flight, reopen, baggage counts, New STD, D-10/D-15, delay
           tracking, and pax flow.
         </p>
@@ -1425,7 +1827,7 @@ export default function GateChecklistPage() {
           </div>
 
           <div>
-            <FieldLabel>Aerolínea</FieldLabel>
+            <FieldLabel>AerolÃ­nea</FieldLabel>
             <SelectInput
               value={lookupAirline}
               onChange={(e) => setLookupAirline(e.target.value)}
@@ -1492,15 +1894,29 @@ export default function GateChecklistPage() {
               marginBottom: 14,
             }}
           >
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <ActionButton variant="primary" onClick={handlePrint}>
-                Print
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr 1fr"
+                  : "repeat(5, auto)",
+                gap: 8,
+                width: isMobile ? "100%" : "auto",
+              }}
+            >
+              <ActionButton
+                variant="primary"
+                onClick={handlePrintExportPdf}
+                style={{ width: isMobile ? "100%" : "auto" }}
+              >
+                Print / Export PDF
               </ActionButton>
 
               <ActionButton
                 variant="secondary"
                 onClick={handleSaveDraft}
                 disabled={saving || !canEdit}
+                style={{ width: "100%" }}
               >
                 {saving ? "Saving..." : "Save Draft"}
               </ActionButton>
@@ -1509,6 +1925,7 @@ export default function GateChecklistPage() {
                 variant="success"
                 onClick={handleSubmitChecklist}
                 disabled={saving || !canSubmit}
+                style={{ width: "100%" }}
               >
                 {saving ? "Submitting..." : "Submit Checklist"}
               </ActionButton>
@@ -1518,6 +1935,7 @@ export default function GateChecklistPage() {
                   variant="warning"
                   onClick={handleCloseFlight}
                   disabled={saving || isClosed}
+                  style={{ width: "100%" }}
                 >
                   {saving ? "Closing..." : "Close Flight"}
                 </ActionButton>
@@ -1528,6 +1946,7 @@ export default function GateChecklistPage() {
                   variant="danger"
                   onClick={handleReopenChecklist}
                   disabled={saving}
+                  style={{ width: "100%" }}
                 >
                   {saving ? "Reopening..." : "Reopen Checklist"}
                 </ActionButton>
@@ -1636,9 +2055,33 @@ export default function GateChecklistPage() {
                   }}
                 >
                   Enter Airline, Date and STD first. The rest of the checklist will unlock after STD is assigned.
+                  Repeated timing items (First/Last Pax Off, First/Last Pax On, Brake Release and Push)
+                  are synchronized automatically across the form.
                 </div>
               </PageCard>
             )}
+
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: 15,
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              Flight Information
+            </div>
+
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: 15,
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              Timing, Delay & Baggage
+            </div>
 
             <div
               className="print-grid-tight"
@@ -1774,15 +2217,6 @@ export default function GateChecklistPage() {
                   value={form.blockIn}
                   disabled={!canEdit || !stdUnlocked}
                   onChange={(e) => updateField("blockIn", e.target.value)}
-                />
-              </div>
-
-              <div>
-                <FieldLabel className="print-label">STD</FieldLabel>
-                <TimeInput
-                  value={form.std}
-                  disabled={!canEdit}
-                  onChange={(e) => updateField("std", e.target.value)}
                 />
               </div>
 
@@ -1924,7 +2358,7 @@ export default function GateChecklistPage() {
                                   alignItems: "start",
                                 }}
                               >
-                                <div>•</div>
+                                <div>â¢</div>
                                 <div>{task}</div>
                               </div>
                             ))}
@@ -1937,11 +2371,22 @@ export default function GateChecklistPage() {
                               <TimeInput
                                 key={`${sectionIndex}-${taskIndex}`}
                                 disabled={!canEdit || !stdUnlocked}
-                                value={actuals[`${sectionIndex}-${taskIndex}`] || ""}
+                                value={getTaskActualValue(task, sectionIndex, taskIndex)}
                                 onChange={(e) =>
-                                  updateActual(sectionIndex, taskIndex, e.target.value)
+                                  updateTaskActual(
+                                    task,
+                                    sectionIndex,
+                                    taskIndex,
+                                    e.target.value
+                                  )
                                 }
-                                style={{ padding: "8px 10px", fontSize: 12 }}
+                                style={{
+                                  padding: "8px 10px",
+                                  fontSize: 12,
+                                  background: getMappedTaskField(task)
+                                    ? "#f0fdf4"
+                                    : "#ffffff",
+                                }}
                               />
                             ))}
                           </div>
@@ -2183,6 +2628,19 @@ export default function GateChecklistPage() {
             </PageCard>
           </div>
         </PageCard>
+      </div>
+
+      <div
+        className="no-print"
+        style={{
+          textAlign: "center",
+          padding: "4px 0 12px",
+          fontSize: 11,
+          color: "#94a3b8",
+          fontWeight: 700,
+        }}
+      >
+        AeroStation Hub | Operational Management Platform
       </div>
     </div>
   );
