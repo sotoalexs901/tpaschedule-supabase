@@ -11,6 +11,24 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -22,6 +40,7 @@ function PageCard({ children, style = {} }) {
         width: "100%",
         maxWidth: "100%",
         minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -63,6 +82,7 @@ function TextInput(props) {
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
         boxSizing: "border-box",
+        minHeight: 46,
         ...props.style,
       }}
     />
@@ -86,6 +106,7 @@ function TimeInput(props) {
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
         boxSizing: "border-box",
+        minHeight: 46,
         ...props.style,
       }}
     />
@@ -107,6 +128,7 @@ function SelectInput(props) {
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
         boxSizing: "border-box",
+        minHeight: 46,
         ...props.style,
       }}
     />
@@ -131,6 +153,7 @@ function TextArea(props) {
         minHeight: 90,
         fontFamily: "inherit",
         boxSizing: "border-box",
+        minHeight: 100,
         ...props.style,
       }}
     />
@@ -143,6 +166,7 @@ function ActionButton({
   variant = "primary",
   disabled = false,
   type = "button",
+  style = {},
 }) {
   const variants = {
     primary: {
@@ -186,12 +210,14 @@ function ActionButton({
       style={{
         borderRadius: 12,
         padding: "10px 14px",
+        minHeight: 42,
         fontSize: 13,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.7 : 1,
         whiteSpace: "nowrap",
         ...variants[variant],
+        ...style,
       }}
     >
       {children}
@@ -455,7 +481,7 @@ function printReportDetails(report) {
   const html = `
     <html>
       <head>
-        <title>Gate Checklist Details</title>
+        <title>AeroStation Hub - Gate Checklist Details</title>
         <style>
           body {
             font-family: Arial, Helvetica, sans-serif;
@@ -512,7 +538,7 @@ function printReportDetails(report) {
         </style>
       </head>
       <body>
-        <h1>Gate Checklist Details</h1>
+        <h1>AeroStation Hub - Gate Checklist Details</h1>
 
         <div class="card">
           <div class="grid">
@@ -644,6 +670,10 @@ function printReportDetails(report) {
           <h3>Notes</h3>
           <div class="value">${report.remarks || "-"}</div>
         </div>
+
+        <div style="margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;text-align:center;color:#94a3b8;font-size:11px;">
+          AeroStation Hub | Operational Management Platform
+        </div>
       </body>
     </html>
   `;
@@ -660,6 +690,8 @@ function printReportDetails(report) {
 }
 
 export default function GateChecklistManagementPage() {
+  const { isMobile, isTablet } = useViewport();
+
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
@@ -679,6 +711,10 @@ export default function GateChecklistManagementPage() {
     periodType: "day",
     status: "all",
     monthClosed: "all",
+    delay: "all",
+    otp: "all",
+    supervisor: "",
+    search: "",
   });
 
   useEffect(() => {
@@ -705,6 +741,28 @@ export default function GateChecklistManagementPage() {
     loadReports();
   }, []);
 
+  const airlineOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        reports
+          .map((item) => String(item.airline || "").trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [reports]);
+
+  const supervisorOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        reports
+          .map((item) =>
+            String(item.supervisor || item.submittedBy || "").trim()
+          )
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [reports]);
+
   const filteredReports = useMemo(() => {
     return reports.filter((item) => {
       if (filters.airline !== "all" && item.airline !== filters.airline) {
@@ -728,6 +786,52 @@ export default function GateChecklistManagementPage() {
         const isClosed = !!item.monthClosed;
         if (filters.monthClosed === "closed" && !isClosed) return false;
         if (filters.monthClosed === "open" && isClosed) return false;
+      }
+
+      if (filters.delay !== "all") {
+        const hasDelay = String(item.delay || "No") === "Yes";
+        if (filters.delay === "yes" && !hasDelay) return false;
+        if (filters.delay === "no" && hasDelay) return false;
+      }
+
+      if (filters.otp !== "all") {
+        if (filters.otp === "otp" && item.isOtpDeparture !== true) return false;
+        if (filters.otp === "nonotp" && item.isOtpDeparture !== false) return false;
+      }
+
+      if (
+        filters.supervisor &&
+        !String(item.supervisor || item.submittedBy || "")
+          .toLowerCase()
+          .includes(filters.supervisor.toLowerCase().trim())
+      ) {
+        return false;
+      }
+
+      const searchValue = String(filters.search || "")
+        .trim()
+        .toLowerCase();
+
+      if (searchValue) {
+        const haystack = [
+          item.airline,
+          item.flight,
+          item.origin,
+          item.destination,
+          item.aircraft,
+          item.gateAgent,
+          item.expeditor,
+          item.supervisor,
+          item.submittedBy,
+          item.delayCode,
+          item.status,
+        ]
+          .map((value) => String(value || "").toLowerCase())
+          .join(" ");
+
+        if (!haystack.includes(searchValue)) {
+          return false;
+        }
       }
 
       if (filters.periodType === "day" && filters.date) {
@@ -845,6 +949,29 @@ export default function GateChecklistManagementPage() {
       0
     );
 
+    const delayedFlights = filteredReports.filter(
+      (item) => String(item.delay || "No") === "Yes"
+    ).length;
+
+    const controllableDelays = filteredReports.filter(
+      (item) =>
+        String(item.delay || "No") === "Yes" &&
+        String(item.controllable || "No") === "Yes"
+    ).length;
+
+    const totalDelayMinutes = filteredReports.reduce(
+      (sum, item) =>
+        sum +
+        (String(item.delay || "No") === "Yes"
+          ? safeNumber(item.delayTimeMinutes)
+          : 0),
+      0
+    );
+
+    const avgDelayMinutes = delayedFlights
+      ? totalDelayMinutes / delayedFlights
+      : 0;
+
     const otpPercent = getOtpPercent(otpFlights, flights);
     const stationMbrPercent = getMbrPercent(notLoadedBags, checkedBags);
 
@@ -857,6 +984,10 @@ export default function GateChecklistManagementPage() {
       stationMbrPercent,
       totalIbPax,
       totalOutPax,
+      delayedFlights,
+      controllableDelays,
+      totalDelayMinutes,
+      avgDelayMinutes,
     };
   }, [filteredReports]);
 
@@ -1127,10 +1258,11 @@ export default function GateChecklistManagementPage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
-        fontFamily: "Arial, Helvetica, sans-serif",
+        gap: isMobile ? 12 : 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
         width: "100%",
-        maxWidth: "100%",
+        maxWidth: 1480,
+        margin: "0 auto",
         minWidth: 0,
       }}
     >
@@ -1181,6 +1313,31 @@ export default function GateChecklistManagementPage() {
           .gcm-details-scroll table {
             min-width: 760px !important;
           }
+
+          .gcm-mobile-actions button {
+            width: 100% !important;
+          }
+
+          .gcm-kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .gcm-mobile-hide-table {
+            display: none !important;
+          }
+
+          .gcm-mobile-report-cards {
+            display: grid !important;
+          }
+        }
+
+        @media (min-width: 561px) {
+          .gcm-mobile-report-cards {
+            display: none !important;
+          }
         }
       `}</style>
 
@@ -1207,7 +1364,7 @@ export default function GateChecklistManagementPage() {
             opacity: 0.85,
           }}
         >
-          TPA OPS · Gate Checklist Management
+          AEROSTATION HUB Â· GATE CHECKLIST MANAGEMENT
         </div>
 
         <h1
@@ -1219,7 +1376,7 @@ export default function GateChecklistManagementPage() {
             wordBreak: "break-word",
           }}
         >
-          Gate Checklist Management / OTP / MBR / Pax Flow
+          Gate Checklist Management
         </h1>
 
         <p
@@ -1231,9 +1388,8 @@ export default function GateChecklistManagementPage() {
             wordBreak: "break-word",
           }}
         >
-          Filter by flight, airline, date range, week or month. Close months,
-          print, export, delete bad reports, edit missed data, and review OTP,
-          delays, bags and pax flow.
+          Operational dashboard for gate checklists, OTP, MBR, delays, baggage
+          performance and passenger flow. Review by day, week, month or custom range.
         </p>
       </div>
 
@@ -1265,11 +1421,27 @@ export default function GateChecklistManagementPage() {
             marginBottom: 14,
           }}
         >
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <ActionButton variant="primary" onClick={printManagementView}>
+          <div
+            className="gcm-mobile-actions"
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
+            <ActionButton
+              variant="primary"
+              onClick={printManagementView}
+              style={{ width: isMobile ? "100%" : "auto" }}
+            >
               Print
             </ActionButton>
-            <ActionButton variant="secondary" onClick={handleExportCurrentCsv}>
+            <ActionButton
+              variant="secondary"
+              onClick={handleExportCurrentCsv}
+              style={{ width: isMobile ? "100%" : "auto" }}
+            >
               Export CSV
             </ActionButton>
             {filters.month && (
@@ -1277,6 +1449,7 @@ export default function GateChecklistManagementPage() {
                 variant="warning"
                 onClick={() => handleCloseMonth(filters.month)}
                 disabled={workingId === filters.month}
+                style={{ width: isMobile ? "100%" : "auto" }}
               >
                 {workingId === filters.month ? "Closing..." : `Close Month ${filters.month}`}
               </ActionButton>
@@ -1287,8 +1460,10 @@ export default function GateChecklistManagementPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(210px, 1fr))",
+            gap: 12,
           }}
         >
           <div>
@@ -1314,10 +1489,12 @@ export default function GateChecklistManagementPage() {
                 setFilters((prev) => ({ ...prev, airline: e.target.value }))
               }
             >
-              <option value="all">All</option>
-              <option value="SY">SUN COUNTRY (SY)</option>
-              <option value="AV">AVIANCA (AV)</option>
-              <option value="WL">WORLD ATLANTIC (WL)</option>
+              <option value="all">All Airlines</option>
+              {airlineOptions.map((airline) => (
+                <option key={airline} value={airline}>
+                  {airline}
+                </option>
+              ))}
             </SelectInput>
           </div>
 
@@ -1359,6 +1536,62 @@ export default function GateChecklistManagementPage() {
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Delay</FieldLabel>
+            <SelectInput
+              value={filters.delay}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, delay: e.target.value }))
+              }
+            >
+              <option value="all">All</option>
+              <option value="yes">Delayed Only</option>
+              <option value="no">No Delay</option>
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>OTP</FieldLabel>
+            <SelectInput
+              value={filters.otp}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, otp: e.target.value }))
+              }
+            >
+              <option value="all">All</option>
+              <option value="otp">OTP Only</option>
+              <option value="nonotp">Non-OTP Only</option>
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Supervisor / Submitted By</FieldLabel>
+            <TextInput
+              list="gate-checklist-supervisors"
+              value={filters.supervisor}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, supervisor: e.target.value }))
+              }
+              placeholder="Search supervisor"
+            />
+            <datalist id="gate-checklist-supervisors">
+              {supervisorOptions.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+          </div>
+
+          <div>
+            <FieldLabel>Quick Search</FieldLabel>
+            <TextInput
+              value={filters.search}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, search: e.target.value }))
+              }
+              placeholder="Flight, route, agent, delay code..."
+            />
           </div>
 
           {filters.periodType === "day" && (
@@ -1426,38 +1659,94 @@ export default function GateChecklistManagementPage() {
             </>
           )}
         </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            display: "flex",
+            justifyContent: isMobile ? "stretch" : "flex-end",
+          }}
+        >
+          <ActionButton
+            variant="secondary"
+            onClick={() =>
+              setFilters({
+                airline: "all",
+                flight: "",
+                date: "",
+                weekStart: "",
+                month: "",
+                startDate: "",
+                endDate: "",
+                periodType: "day",
+                status: "all",
+                monthClosed: "all",
+                delay: "all",
+                otp: "all",
+                supervisor: "",
+                search: "",
+              })
+            }
+            style={{ width: isMobile ? "100%" : "auto" }}
+          >
+            Clear Filters
+          </ActionButton>
+        </div>
       </PageCard>
 
       <div
+        className="gcm-kpi-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 14,
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 10,
         }}
       >
-        <InfoCard label="Flights" value={String(totals.flights)} />
-        <InfoCard label="OTP Flights" value={String(totals.otpFlights)} tone="green" />
-        <InfoCard label="OTP %" value={formatPercent(totals.otpPercent)} tone="blue" />
-        <InfoCard label="Checked Bags" value={String(totals.checkedBags)} />
         <InfoCard
-          label="Not Loaded Bags"
+          label="Flights"
+          value={String(totals.flights)}
+        />
+        <InfoCard
+          label="OTP"
+          value={formatPercent(totals.otpPercent)}
+          tone={totals.otpPercent >= 90 ? "green" : "amber"}
+        />
+        <InfoCard
+          label="Delayed Flights"
+          value={String(totals.delayedFlights)}
+          tone={totals.delayedFlights > 0 ? "amber" : "green"}
+        />
+        <InfoCard
+          label="Avg Delay"
+          value={`${totals.avgDelayMinutes.toFixed(1)} min`}
+          tone={totals.avgDelayMinutes > 0 ? "amber" : "green"}
+        />
+        <InfoCard
+          label="Checked Bags"
+          value={String(totals.checkedBags)}
+        />
+        <InfoCard
+          label="Not Loaded"
           value={String(totals.notLoadedBags)}
           tone={totals.notLoadedBags > 0 ? "red" : "green"}
         />
         <InfoCard
-          label="Station MBR %"
+          label="Station MBR"
           value={formatPercent(totals.stationMbrPercent)}
           tone={totals.stationMbrPercent > 0 ? "amber" : "green"}
         />
-        <InfoCard label="Total IB Pax" value={String(totals.totalIbPax)} />
-        <InfoCard label="Total OUT Pax" value={String(totals.totalOutPax)} tone="blue" />
+        <InfoCard
+          label="Pax Flow"
+          value={`${totals.totalIbPax} IB | ${totals.totalOutPax} OUT`}
+          tone="blue"
+        />
       </div>
 
       {selectedMonthSummary && (
-        <PageCard className="gcm-card" style={{ padding: 20 }}>
+        <PageCard className="gcm-card" style={{ padding: isMobile ? 14 : 20 }}>
           <div style={{ marginBottom: 12 }}>
             <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
-              Monthly Closing Summary · {selectedMonthSummary.month}
+              Monthly Closing Summary Â· {selectedMonthSummary.month}
             </h2>
           </div>
 
@@ -1506,7 +1795,7 @@ export default function GateChecklistManagementPage() {
         </PageCard>
       )}
 
-      <PageCard className="gcm-card" style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: isMobile ? 14 : 20 }}>
         <div style={{ marginBottom: 12 }}>
           <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             OTP + MBR by Airline
@@ -1551,7 +1840,7 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard className="gcm-card" style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: isMobile ? 14 : 20 }}>
         <div style={{ marginBottom: 12 }}>
           <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Delay Summary
@@ -1596,7 +1885,7 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard className="gcm-card" style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: isMobile ? 14 : 20 }}>
         <div style={{ marginBottom: 12 }}>
           <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Pax Flow Summary
@@ -1639,7 +1928,7 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard className="gcm-card" style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: isMobile ? 14 : 20 }}>
         <div style={{ marginBottom: 12 }}>
           <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Monthly Summaries
@@ -1706,14 +1995,165 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard className="gcm-card" style={{ padding: 20 }}>
+      <PageCard className="gcm-card" style={{ padding: isMobile ? 14 : 20 }}>
         <div style={{ marginBottom: 12 }}>
           <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
             Submitted Checklists
           </h2>
+          <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+            {filteredReports.length} report(s) match the current filters.
+          </div>
         </div>
 
-        <div className="gcm-scroll" style={tableWrapStyle}>
+        <div
+          className="gcm-mobile-report-cards"
+          style={{
+            display: "none",
+            gap: 10,
+          }}
+        >
+          {filteredReports.length === 0 ? (
+            <div style={emptyTextStyle}>
+              {loading ? "Loading..." : "No reports found."}
+            </div>
+          ) : (
+            filteredReports.map((item) => {
+              const checked = safeNumber(item.checkedBags);
+              const notLoaded = safeNumber(item.notLoadedBags);
+              const mbrPercent = getMbrPercent(notLoaded, checked);
+
+              return (
+                <div
+                  key={`mobile-${item.id}`}
+                  style={{
+                    borderRadius: 16,
+                    border: "1px solid #dbeafe",
+                    background: selectedReportId === item.id ? "#edf7ff" : "#ffffff",
+                    padding: 13,
+                    display: "grid",
+                    gap: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>
+                        {item.airline || "-"} {item.flight || "-"}
+                      </div>
+                      <div style={{ marginTop: 3, fontSize: 11.5, color: "#64748b" }}>
+                        {item.date || "-"} | {item.origin || "-"} - {item.destination || "-"}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        padding: "5px 8px",
+                        borderRadius: 999,
+                        fontSize: 10.5,
+                        fontWeight: 900,
+                        background:
+                          item.isOtpDeparture === true ? "#ecfdf5" : "#fff7ed",
+                        color:
+                          item.isOtpDeparture === true ? "#166534" : "#9a3412",
+                        border: `1px solid ${
+                          item.isOtpDeparture === true ? "#a7f3d0" : "#fdba74"
+                        }`,
+                      }}
+                    >
+                      {item.isOtpDeparture === true ? "OTP" : "NON-OTP"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 7,
+                    }}
+                  >
+                    <DetailsRow label="STD" value={getStdValue(item) || "-"} />
+                    <DetailsRow label="Push" value={item.pushTime || "-"} />
+                    <DetailsRow label="OUT Pax" value={String(safeNumber(item.finalTotalPax))} />
+                    <DetailsRow label="IB Pax" value={String(safeNumber(item.totalIbPax))} />
+                    <DetailsRow label="Checked Bags" value={String(checked)} />
+                    <DetailsRow label="MBR %" value={formatPercent(mbrPercent)} />
+                  </div>
+
+                  {String(item.delay || "No") === "Yes" && (
+                    <div
+                      style={{
+                        padding: "9px 10px",
+                        borderRadius: 12,
+                        background: "#fff7ed",
+                        border: "1px solid #fdba74",
+                        color: "#9a3412",
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                      }}
+                    >
+                      Delay {safeNumber(item.delayTimeMinutes)} min
+                      {item.delayCode ? ` | ${item.delayCode}` : ""}
+                    </div>
+                  )}
+
+                  <div
+                    className="gcm-mobile-actions"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 7,
+                    }}
+                  >
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() =>
+                        setSelectedReportId((prev) =>
+                          prev === item.id ? "" : item.id
+                        )
+                      }
+                      style={{ width: "100%" }}
+                    >
+                      {selectedReportId === item.id ? "Hide" : "View"}
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="warning"
+                      onClick={() => startEditing(item)}
+                      style={{ width: "100%" }}
+                    >
+                      Edit
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="dark"
+                      onClick={() => printReportDetails(item)}
+                      style={{ width: "100%" }}
+                    >
+                      Print
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="danger"
+                      onClick={() => handleDeleteReport(item.id)}
+                      disabled={workingId === item.id}
+                      style={{ width: "100%" }}
+                    >
+                      {workingId === item.id ? "Deleting..." : "Delete"}
+                    </ActionButton>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="gcm-scroll gcm-mobile-hide-table" style={tableWrapStyle}>
           <table style={tableStyle}>
             <thead>
               <tr style={{ background: "#f8fbff" }}>
@@ -1841,7 +2281,7 @@ export default function GateChecklistManagementPage() {
       </PageCard>
 
       {selectedReport && (
-        <PageCard className="gcm-card" style={{ padding: 20 }}>
+        <PageCard className="gcm-card" style={{ padding: isMobile ? 14 : 20 }}>
           <div
             style={{
               display: "flex",
@@ -1865,20 +2305,30 @@ export default function GateChecklistManagementPage() {
                   wordBreak: "break-word",
                 }}
               >
-                {selectedReport.airline || "-"} · {selectedReport.flight || "-"} · {selectedReport.date || "-"}
+                {selectedReport.airline || "-"} Â· {selectedReport.flight || "-"} Â· {selectedReport.date || "-"}
               </p>
             </div>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div
+              className="gcm-mobile-actions"
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                width: isMobile ? "100%" : "auto",
+              }}
+            >
               <ActionButton
                 variant="dark"
                 onClick={() => printReportDetails(selectedReport)}
+                style={{ width: isMobile ? "100%" : "auto" }}
               >
                 Print Details
               </ActionButton>
               <ActionButton
                 variant="secondary"
                 onClick={() => setSelectedReportId("")}
+                style={{ width: isMobile ? "100%" : "auto" }}
               >
                 Close
               </ActionButton>
@@ -1904,8 +2354,10 @@ export default function GateChecklistManagementPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 12,
+                  gridTemplateColumns: isMobile
+                    ? "1fr"
+                    : "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 10,
                 }}
               >
                 <div>
@@ -2275,7 +2727,14 @@ export default function GateChecklistManagementPage() {
                 />
               </div>
 
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div
+                className="gcm-mobile-actions"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(2, auto)",
+                  gap: 8,
+                }}
+              >
                 <ActionButton
                   variant="success"
                   onClick={() => saveEditing(selectedReport.id)}
@@ -2297,8 +2756,10 @@ export default function GateChecklistManagementPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 12,
+                  gridTemplateColumns: isMobile
+                    ? "1fr"
+                    : "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 10,
                 }}
               >
                 <DetailsRow label="Airline" value={selectedReport.airline} />
@@ -2361,8 +2822,10 @@ export default function GateChecklistManagementPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                    gap: 10,
+                    gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(180px, 1fr))",
+                    gap: 8,
                   }}
                 >
                   {Object.entries(selectedReport.specials || {}).length ? (
@@ -2380,8 +2843,10 @@ export default function GateChecklistManagementPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 10,
+                    gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 8,
                   }}
                 >
                   <DetailsRow label="Bags" value={selectedReport.gateCheck?.bags} />
@@ -2470,6 +2935,18 @@ export default function GateChecklistManagementPage() {
           )}
         </PageCard>
       )}
+
+      <div
+        style={{
+          textAlign: "center",
+          padding: "6px 0 14px",
+          fontSize: 11,
+          color: "#94a3b8",
+          fontWeight: 700,
+        }}
+      >
+        AeroStation Hub | Operational Management Platform
+      </div>
     </div>
   );
 }
