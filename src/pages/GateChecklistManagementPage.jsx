@@ -1322,6 +1322,243 @@ export default function GateChecklistManagementPage() {
     downloadCsv("gate-checklist-management.csv", rows);
   }
 
+
+  function printAirlineKpiSheet(airlineCode) {
+    const airlineReports = filteredReports.filter(
+      (item) => String(item.airline || "") === String(airlineCode || "")
+    );
+
+    if (!airlineReports.length) {
+      setStatusMessage("No KPI data found for this airline and selected period.");
+      return;
+    }
+
+    const flights = airlineReports.length;
+    const otpFlights = airlineReports.filter(
+      (item) => item.isOtpDeparture === true
+    ).length;
+    const delayedFlights = airlineReports.filter(
+      (item) => String(item.delay || "No") === "Yes"
+    ).length;
+    const checkedBags = airlineReports.reduce(
+      (sum, item) => sum + safeNumber(item.checkedBags),
+      0
+    );
+    const notLoadedBags = airlineReports.reduce(
+      (sum, item) => sum + safeNumber(item.notLoadedBags),
+      0
+    );
+    const ibPax = airlineReports.reduce(
+      (sum, item) => sum + safeNumber(item.totalIbPax),
+      0
+    );
+    const outPax = airlineReports.reduce(
+      (sum, item) => sum + safeNumber(item.finalTotalPax),
+      0
+    );
+    const totalDelayMinutes = airlineReports.reduce(
+      (sum, item) =>
+        sum +
+        (String(item.delay || "No") === "Yes"
+          ? safeNumber(item.delayTimeMinutes)
+          : 0),
+      0
+    );
+
+    const avgDelay = delayedFlights
+      ? totalDelayMinutes / delayedFlights
+      : 0;
+
+    const otpPercent = getOtpPercent(otpFlights, flights);
+    const mbrPercent = getMbrPercent(notLoadedBags, checkedBags);
+
+    const airlineName = getAirlineDisplayName(airlineCode);
+    const periodLabel =
+      filters.periodType === "month" && filters.month
+        ? formatMonthLabel(filters.month)
+        : "Selected Period";
+
+    const delayedRows = airlineReports
+      .filter((item) => String(item.delay || "No") === "Yes")
+      .map(
+        (item) => `
+          <tr>
+            <td>${item.date || "-"}</td>
+            <td>${item.flight || "-"}</td>
+            <td>${item.origin || "-"} - ${item.destination || "-"}</td>
+            <td>${getStdValue(item) || "-"}</td>
+            <td>${item.pushTime || "-"}</td>
+            <td>${safeNumber(item.delayTimeMinutes)} min</td>
+            <td>${item.delayCode || "-"}</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${airlineName} KPI - ${periodLabel}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              margin: 24px;
+              color: #0f172a;
+              background: #fff;
+            }
+            .hero {
+              border-radius: 18px;
+              padding: 22px 24px;
+              color: #fff;
+              background: linear-gradient(135deg, #0f5c91 0%, #1f7cc1 55%, #6ec6e8 100%);
+              margin-bottom: 18px;
+            }
+            .kicker {
+              font-size: 10px;
+              font-weight: 900;
+              letter-spacing: .14em;
+              text-transform: uppercase;
+              opacity: .9;
+            }
+            h1 {
+              margin: 7px 0 3px;
+              font-size: 29px;
+            }
+            .subtitle {
+              font-size: 13px;
+              opacity: .95;
+            }
+            .kpis {
+              display: grid;
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+              gap: 10px;
+            }
+            .kpi {
+              border-radius: 14px;
+              border: 1px solid #dbeafe;
+              background: #f8fbff;
+              padding: 14px 15px;
+            }
+            .kpi .label {
+              font-size: 9px;
+              font-weight: 900;
+              color: #64748b;
+              text-transform: uppercase;
+              letter-spacing: .07em;
+            }
+            .kpi .value {
+              margin-top: 5px;
+              font-size: 22px;
+              font-weight: 900;
+              color: #0f172a;
+            }
+            .section {
+              margin-top: 18px;
+            }
+            .section h2 {
+              margin: 0 0 10px;
+              font-size: 17px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+            th, td {
+              border: 1px solid #dbeafe;
+              padding: 8px 9px;
+              text-align: left;
+              font-size: 10px;
+            }
+            th {
+              background: #f8fbff;
+              color: #475569;
+              text-transform: uppercase;
+              font-size: 9px;
+              letter-spacing: .05em;
+            }
+            .footer {
+              margin-top: 22px;
+              padding-top: 10px;
+              border-top: 1px solid #e2e8f0;
+              text-align: center;
+              color: #94a3b8;
+              font-size: 9px;
+            }
+            @media print {
+              body { margin: 12px; }
+              .hero, .kpi { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="hero">
+            <div class="kicker">AeroStation Hub Â· Operational KPI Report</div>
+            <h1>${airlineName}</h1>
+            <div class="subtitle">${periodLabel}</div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi"><div class="label">Flights</div><div class="value">${flights}</div></div>
+            <div class="kpi"><div class="label">OTP</div><div class="value">${formatPercent(otpPercent)}</div></div>
+            <div class="kpi"><div class="label">Delayed Flights</div><div class="value">${delayedFlights}</div></div>
+            <div class="kpi"><div class="label">Avg Delay</div><div class="value">${avgDelay.toFixed(1)} min</div></div>
+
+            <div class="kpi"><div class="label">Checked Bags</div><div class="value">${checkedBags}</div></div>
+            <div class="kpi"><div class="label">Not Loaded</div><div class="value">${notLoadedBags}</div></div>
+            <div class="kpi"><div class="label">MBR</div><div class="value">${formatPercent(mbrPercent)}</div></div>
+            <div class="kpi"><div class="label">Pax Flow</div><div class="value">${ibPax} IB | ${outPax} OUT</div></div>
+          </div>
+
+          <div class="section">
+            <h2>Delay Detail</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Flight</th>
+                  <th>Route</th>
+                  <th>STD</th>
+                  <th>Push</th>
+                  <th>Delay</th>
+                  <th>Code</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  delayedRows ||
+                  `<tr><td colspan="7">No delays for this selected period.</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <div class="footer">
+            AeroStation Hub | ${airlineName} | ${periodLabel}
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+
+    if (!printWindow) {
+      setStatusMessage("Pop-up blocked. Please allow pop-ups to print/export KPI.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 400);
+  }
+
   function startEditing(report) {
     setEditingReportId(report.id);
     setEditDraft(createEditDraft(report));
@@ -1407,6 +1644,44 @@ export default function GateChecklistManagementPage() {
     if (!filters.month) return null;
     return monthlySummaries.find((item) => item.month === filters.month) || null;
   }, [monthlySummaries, filters.month]);
+
+  const selectedAirlinePeriodSummary = useMemo(() => {
+    if (
+      filters.periodType !== "month" ||
+      !filters.month ||
+      filters.airline === "all"
+    ) {
+      return null;
+    }
+
+    return otpByAirline.find(
+      (item) => item.airline === filters.airline
+    ) || null;
+  }, [
+    filters.periodType,
+    filters.month,
+    filters.airline,
+    otpByAirline,
+  ]);
+
+  const selectedPeriodTitle = useMemo(() => {
+    if (filters.periodType === "month" && filters.month) {
+      const monthLabel = formatMonthLabel(filters.month);
+
+      if (filters.airline !== "all") {
+        return `${getAirlineDisplayName(filters.airline)} â ${monthLabel}`;
+      }
+
+      return `Station â ${monthLabel}`;
+    }
+
+    if (filters.airline !== "all") {
+      return `${getAirlineDisplayName(filters.airline)} â Selected Period`;
+    }
+
+    return "Station â Selected Period";
+  }, [filters.periodType, filters.month, filters.airline]);
+
 
   return (
     <div
@@ -1848,6 +2123,58 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
+      <PageCard
+        style={{
+          padding: isMobile ? 14 : 18,
+          background: "#ffffff",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 900,
+                color: "#1769aa",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Selected KPI View
+            </div>
+
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: isMobile ? 19 : 23,
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              {selectedPeriodTitle}
+            </div>
+          </div>
+
+          {filters.airline !== "all" && filteredReports.length > 0 && (
+            <ActionButton
+              variant="dark"
+              onClick={() => printAirlineKpiSheet(filters.airline)}
+              style={{ width: isMobile ? "100%" : "auto" }}
+            >
+              Print / Export KPI PDF
+            </ActionButton>
+          )}
+        </div>
+      </PageCard>
+
       <div
         className="gcm-kpi-grid"
         style={{
@@ -1896,19 +2223,30 @@ export default function GateChecklistManagementPage() {
         />
       </div>
 
-      {selectedMonthSummary && (
+      {selectedMonthSummary &&
+        !(filters.periodType === "month" && filters.airline !== "all") && (
         <PageCard className="gcm-card" style={{ padding: isMobile ? 14 : 20 }}>
           <div style={{ marginBottom: 12 }}>
-            <h2 className="gcm-section-title" style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
-              Monthly Closing Summary Â· {formatMonthYear(selectedMonthSummary.month)}
+            <h2
+              className="gcm-section-title"
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 900,
+                color: "#0f172a",
+              }}
+            >
+              Monthly Closing Summary Â· {formatMonthLabel(selectedMonthSummary.month)}
             </h2>
           </div>
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 14,
+              gridTemplateColumns: isMobile
+                ? "repeat(2, minmax(0, 1fr))"
+                : "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: 10,
             }}
           >
             <InfoCard label="Station Flights" value={String(selectedMonthSummary.flights)} />
@@ -1965,7 +2303,7 @@ export default function GateChecklistManagementPage() {
               OTP + MBR by Airline
             </h2>
             <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>
-              Print or save a clean KPI sheet for each airline.
+              Print or save a clean KPI sheet by airline for the selected period.
             </div>
           </div>
         </div>
@@ -1994,13 +2332,35 @@ export default function GateChecklistManagementPage() {
               ) : (
                 otpByAirline.map((row) => (
                   <tr key={row.airline}>
-                    <td style={tdStyle}>{row.airline}</td>
+                    <td style={tdStyle}>
+                      <div style={{ fontWeight: 900 }}>
+                        {getAirlineDisplayName(row.airline)}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontSize: 11,
+                          color: "#64748b",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {row.airline}
+                      </div>
+                    </td>
                     <td style={tdStyle}>{row.flights}</td>
                     <td style={tdStyle}>{row.otpFlights}</td>
                     <td style={tdStyle}>{formatPercent(row.otpPercent)}</td>
                     <td style={tdStyle}>{row.totalCheckedBags}</td>
                     <td style={tdStyle}>{row.totalNotLoadedBags}</td>
                     <td style={tdStyle}>{formatPercent(row.mbrPercent)}</td>
+                    <td style={tdStyle}>
+                      <ActionButton
+                        variant="dark"
+                        onClick={() => printAirlineKpiSheet(row.airline)}
+                      >
+                        Print / PDF
+                      </ActionButton>
+                    </td>
                     <td style={tdStyle}>
                       <ActionButton
                         variant="dark"
@@ -2040,7 +2400,7 @@ export default function GateChecklistManagementPage() {
             <tbody>
               {delaySummary.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={tdStyle}>
+                  <td colSpan={8} style={tdStyle}>
                     {loading ? "Loading..." : "No delays found."}
                   </td>
                 </tr>
