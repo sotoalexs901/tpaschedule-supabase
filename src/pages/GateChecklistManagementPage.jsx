@@ -779,6 +779,16 @@ export default function GateChecklistManagementPage() {
     ).sort((a, b) => a.localeCompare(b));
   }, [reports]);
 
+  const monthOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        reports
+          .map((item) => getMonthKey(item.date || item.month || ""))
+          .filter((value) => /^\d{4}-\d{2}$/.test(value))
+      )
+    ).sort((a, b) => b.localeCompare(a));
+  }, [reports]);
+
   const supervisorOptions = useMemo(() => {
     return Array.from(
       new Set(
@@ -1215,7 +1225,7 @@ export default function GateChecklistManagementPage() {
         <body>
           <div class="sheet">
             <div class="header">
-              <div class="eyebrow">AeroStation Hub Â· Operational Management Platform</div>
+              <div class="eyebrow">AeroStation Hub | Operational Management Platform</div>
               <h1>${escapeHtml(airlineName)}</h1>
               <div class="sub">Gate Operations KPI & MBR Performance Report</div>
               <div class="period">${escapeHtml(periodLabel)}</div>
@@ -1240,7 +1250,7 @@ export default function GateChecklistManagementPage() {
               </table>
             </div>
 
-            <div class="footer">AeroStation Hub Â· ${escapeHtml(airlineName)} Â· ${escapeHtml(periodLabel)}</div>
+            <div class="footer">AeroStation Hub | ${escapeHtml(airlineName)} | ${escapeHtml(periodLabel)}</div>
           </div>
         </body>
       </html>`;
@@ -1375,7 +1385,7 @@ export default function GateChecklistManagementPage() {
     const airlineName = getAirlineDisplayName(airlineCode);
     const periodLabel =
       filters.periodType === "month" && filters.month
-        ? formatMonthLabel(filters.month)
+        ? formatMonthYear(filters.month)
         : "Selected Period";
 
     const delayedRows = airlineReports
@@ -1495,7 +1505,7 @@ export default function GateChecklistManagementPage() {
         </head>
         <body>
           <div class="hero">
-            <div class="kicker">AeroStation Hub Â· Operational KPI Report</div>
+            <div class="kicker">AeroStation Hub | Operational KPI Report</div>
             <h1>${airlineName}</h1>
             <div class="subtitle">${periodLabel}</div>
           </div>
@@ -1666,20 +1676,20 @@ export default function GateChecklistManagementPage() {
 
   const selectedPeriodTitle = useMemo(() => {
     if (filters.periodType === "month" && filters.month) {
-      const monthLabel = formatMonthLabel(filters.month);
+      const monthLabel = formatMonthYear(filters.month);
 
       if (filters.airline !== "all") {
-        return `${getAirlineDisplayName(filters.airline)} â ${monthLabel}`;
+        return `${getAirlineDisplayName(filters.airline)} - ${monthLabel}`;
       }
 
-      return `Station â ${monthLabel}`;
+      return `Station KPI - ${monthLabel}`;
     }
 
     if (filters.airline !== "all") {
-      return `${getAirlineDisplayName(filters.airline)} â Selected Period`;
+      return `${getAirlineDisplayName(filters.airline)} - Selected Period`;
     }
 
-    return "Station â Selected Period";
+    return "Station KPI - Selected Period";
   }, [filters.periodType, filters.month, filters.airline]);
 
 
@@ -1793,7 +1803,7 @@ export default function GateChecklistManagementPage() {
             opacity: 0.85,
           }}
         >
-          AEROSTATION HUB Â· GATE CHECKLIST MANAGEMENT
+          AEROSTATION HUB | GATE CHECKLIST MANAGEMENT
         </div>
 
         <h1
@@ -1880,7 +1890,7 @@ export default function GateChecklistManagementPage() {
                 disabled={workingId === filters.month}
                 style={{ width: isMobile ? "100%" : "auto" }}
               >
-                {workingId === filters.month ? "Closing..." : `Close Month ${filters.month}`}
+                {workingId === filters.month ? "Closing..." : `Close Month ${formatMonthYear(filters.month)}`}
               </ActionButton>
             )}
           </div>
@@ -2052,13 +2062,19 @@ export default function GateChecklistManagementPage() {
           {filters.periodType === "month" && (
             <div>
               <FieldLabel>Month</FieldLabel>
-              <TextInput
-                type="month"
+              <SelectInput
                 value={filters.month}
                 onChange={(e) =>
                   setFilters((prev) => ({ ...prev, month: e.target.value }))
                 }
-              />
+              >
+                <option value="">Select Month</option>
+                {monthOptions.map((monthValue) => (
+                  <option key={monthValue} value={monthValue}>
+                    {formatMonthYear(monthValue)}
+                  </option>
+                ))}
+              </SelectInput>
             </div>
           )}
 
@@ -2236,7 +2252,7 @@ export default function GateChecklistManagementPage() {
                 color: "#0f172a",
               }}
             >
-              Monthly Closing Summary Â· {formatMonthLabel(selectedMonthSummary.month)}
+              Monthly Closing Summary | {formatMonthYear(selectedMonthSummary.month)}
             </h2>
           </div>
 
@@ -2842,7 +2858,7 @@ export default function GateChecklistManagementPage() {
                   wordBreak: "break-word",
                 }}
               >
-                {selectedReport.airline || "-"} Â· {selectedReport.flight || "-"} Â· {selectedReport.date || "-"}
+                {selectedReport.airline || "-"} | {selectedReport.flight || "-"} | {selectedReport.date || "-"}
               </p>
             </div>
 
