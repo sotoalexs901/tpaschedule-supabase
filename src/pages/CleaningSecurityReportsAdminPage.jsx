@@ -26,6 +26,24 @@ function formatDateTime(value) {
   }
 }
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -34,6 +52,10 @@ function PageCard({ children, style = {} }) {
         border: "1px solid rgba(255,255,255,0.96)",
         borderRadius: 24,
         boxShadow: "0 18px 42px rgba(15,23,42,0.06)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -73,6 +95,8 @@ function TextInput(props) {
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
+        boxSizing: "border-box",
+        minHeight: 46,
         ...props.style,
       }}
     />
@@ -95,6 +119,7 @@ function TextArea(props) {
         resize: "vertical",
         minHeight: 110,
         fontFamily: "inherit",
+        boxSizing: "border-box",
         ...props.style,
       }}
     />
@@ -114,6 +139,8 @@ function SelectInput(props) {
         fontSize: 14,
         color: "#0f172a",
         outline: "none",
+        boxSizing: "border-box",
+        minHeight: 46,
         ...props.style,
       }}
     />
@@ -126,6 +153,7 @@ function ActionButton({
   variant = "primary",
   type = "button",
   disabled = false,
+  style = {},
 }) {
   const styles = {
     primary: {
@@ -169,12 +197,14 @@ function ActionButton({
       style={{
         borderRadius: 12,
         padding: "10px 14px",
+        minHeight: 42,
         fontSize: 13,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.7 : 1,
         whiteSpace: "nowrap",
         ...styles[variant],
+        ...style,
       }}
     >
       {children}
@@ -309,6 +339,7 @@ function normalizeReportForEdit(report) {
 export default function CleaningSecurityReportsAdminPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const { isMobile, isTablet } = useViewport();
 
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -323,6 +354,7 @@ export default function CleaningSecurityReportsAdminPage() {
     airline: "all",
     date: "",
     supervisor: "",
+    search: "",
   });
 
   const [editData, setEditData] = useState(normalizeReportForEdit(null));
@@ -368,6 +400,32 @@ export default function CleaningSecurityReportsAdminPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [reports]);
 
+  const reportStats = useMemo(() => {
+    const activeReports = reports.filter(
+      (item) => String(item.status || "").toLowerCase() !== "archived"
+    );
+
+    return {
+      reports: activeReports.length,
+      airlines: new Set(
+        activeReports
+          .map((item) => String(item.airline || "").trim())
+          .filter(Boolean)
+      ).size,
+      supervisors: new Set(
+        activeReports
+          .map((item) => String(item.supervisorName || "").trim())
+          .filter(Boolean)
+      ).size,
+      suspicious: activeReports.filter(
+        (item) =>
+          String(item.finalConfirmation?.articuloSospechoso || "")
+            .trim()
+            .toLowerCase() === "yes"
+      ).length,
+    };
+  }, [reports]);
+
   const filteredReports = useMemo(() => {
     return reports.filter((item) => {
       if (
@@ -388,6 +446,27 @@ export default function CleaningSecurityReportsAdminPage() {
           .includes(filters.supervisor.toLowerCase())
       ) {
         return false;
+      }
+
+      const searchValue = String(filters.search || "")
+        .trim()
+        .toLowerCase();
+
+      if (searchValue) {
+        const haystack = [
+          item.airline,
+          item.flightNo,
+          item.tailNo,
+          item.supervisorName,
+          item.airlineRep,
+          item.fecha,
+        ]
+          .map((value) => String(value || "").toLowerCase())
+          .join(" ");
+
+        if (!haystack.includes(searchValue)) {
+          return false;
+        }
       }
 
       return String(item.status || "").toLowerCase() !== "archived";
@@ -732,16 +811,22 @@ export default function CleaningSecurityReportsAdminPage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 12 : 18,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        maxWidth: 1480,
+        margin: "0 auto",
+        minWidth: 0,
+        boxSizing: "border-box",
+        padding: isMobile ? "0 2px" : 0,
       }}
     >
       <div
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: 28,
-          padding: 24,
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? 16 : isTablet ? 20 : 24,
           color: "#fff",
           boxShadow: "0 24px 60px rgba(23,105,170,0.22)",
           position: "relative",
@@ -787,7 +872,7 @@ export default function CleaningSecurityReportsAdminPage() {
             <h1
               style={{
                 margin: "10px 0 6px",
-                fontSize: 32,
+                fontSize: isMobile ? 25 : 32,
                 lineHeight: 1.05,
                 fontWeight: 800,
                 letterSpacing: "-0.04em",
@@ -800,7 +885,7 @@ export default function CleaningSecurityReportsAdminPage() {
               style={{
                 margin: 0,
                 maxWidth: 760,
-                fontSize: 14,
+                fontSize: isMobile ? 12.5 : 14,
                 color: "rgba(255,255,255,0.88)",
               }}
             >
@@ -812,9 +897,98 @@ export default function CleaningSecurityReportsAdminPage() {
             type="button"
             variant="secondary"
             onClick={() => navigate("/dashboard")}
+            style={{ width: isMobile ? "100%" : "auto" }}
           >
             ← Back to Dashboard
           </ActionButton>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile
+            ? "repeat(2, minmax(0, 1fr))"
+            : "repeat(4, minmax(0, 1fr))",
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            background: "#f8fbff",
+            border: "1px solid #dbeafe",
+            borderRadius: 16,
+            padding: isMobile ? "12px 13px" : "14px 16px",
+          }}
+        >
+          <div style={{ fontSize: 9.5, fontWeight: 900, color: "#64748b", textTransform: "uppercase" }}>
+            Reports
+          </div>
+          <div style={{ marginTop: 5, fontSize: 24, fontWeight: 950, color: "#0f172a" }}>
+            {reportStats.reports}
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            borderRadius: 16,
+            padding: isMobile ? "12px 13px" : "14px 16px",
+          }}
+        >
+          <div style={{ fontSize: 9.5, fontWeight: 900, color: "#1d4ed8", textTransform: "uppercase" }}>
+            Airlines
+          </div>
+          <div style={{ marginTop: 5, fontSize: 24, fontWeight: 950, color: "#1d4ed8" }}>
+            {reportStats.airlines}
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: "#ecfdf5",
+            border: "1px solid #a7f3d0",
+            borderRadius: 16,
+            padding: isMobile ? "12px 13px" : "14px 16px",
+          }}
+        >
+          <div style={{ fontSize: 9.5, fontWeight: 900, color: "#047857", textTransform: "uppercase" }}>
+            Supervisors
+          </div>
+          <div style={{ marginTop: 5, fontSize: 24, fontWeight: 950, color: "#047857" }}>
+            {reportStats.supervisors}
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: reportStats.suspicious > 0 ? "#fff1f2" : "#f8fafc",
+            border: `1px solid ${reportStats.suspicious > 0 ? "#fecdd3" : "#e2e8f0"}`,
+            borderRadius: 16,
+            padding: isMobile ? "12px 13px" : "14px 16px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 9.5,
+              fontWeight: 900,
+              color: reportStats.suspicious > 0 ? "#b91c1c" : "#64748b",
+              textTransform: "uppercase",
+            }}
+          >
+            Suspicious
+          </div>
+          <div
+            style={{
+              marginTop: 5,
+              fontSize: 24,
+              fontWeight: 950,
+              color: reportStats.suspicious > 0 ? "#b91c1c" : "#0f172a",
+            }}
+          >
+            {reportStats.suspicious}
+          </div>
         </div>
       </div>
 
@@ -836,7 +1010,7 @@ export default function CleaningSecurityReportsAdminPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 22 }}>
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
         <div style={{ marginBottom: 16 }}>
           <h2
             style={{
@@ -854,7 +1028,9 @@ export default function CleaningSecurityReportsAdminPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(220px, 1fr))",
             gap: 14,
           }}
         >
@@ -896,16 +1072,52 @@ export default function CleaningSecurityReportsAdminPage() {
               placeholder="Search by supervisor name"
             />
           </div>
+
+          <div>
+            <FieldLabel>Search</FieldLabel>
+            <TextInput
+              value={filters.search}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, search: e.target.value }))
+              }
+              placeholder="Airline, flight, tail, supervisor..."
+            />
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            display: "flex",
+            justifyContent: isMobile ? "stretch" : "flex-end",
+          }}
+        >
+          <ActionButton
+            variant="secondary"
+            onClick={() =>
+              setFilters({
+                airline: "all",
+                date: "",
+                supervisor: "",
+                search: "",
+              })
+            }
+            style={{ width: isMobile ? "100%" : "auto" }}
+          >
+            Clear Filters
+          </ActionButton>
         </div>
       </PageCard>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: selectedReport
-            ? "minmax(320px, 0.95fr) minmax(520px, 1.25fr)"
-            : "1fr",
-          gap: 18,
+          gridTemplateColumns:
+            selectedReport && !isMobile
+              ? "minmax(300px, 0.78fr) minmax(520px, 1.22fr)"
+              : "1fr",
+          gap: isMobile ? 12 : 18,
+          minWidth: 0,
         }}
       >
         <PageCard style={{ padding: 18, overflow: "hidden" }}>
@@ -969,7 +1181,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   }}
                   style={{
                     borderRadius: 18,
-                    padding: 16,
+                    padding: isMobile ? 13 : 16,
                     cursor: "pointer",
                     background:
                       report.id === selectedId ? "#edf7ff" : "#ffffff",
@@ -985,7 +1197,7 @@ export default function CleaningSecurityReportsAdminPage() {
                 >
                   <div
                     style={{
-                      fontSize: 16,
+                      fontSize: isMobile ? 14.5 : 16,
                       fontWeight: 800,
                       color: "#0f172a",
                     }}
@@ -1030,7 +1242,7 @@ export default function CleaningSecurityReportsAdminPage() {
         </PageCard>
 
         {selectedReport && (
-          <PageCard style={{ padding: 20 }}>
+          <PageCard style={{ padding: isMobile ? 14 : 20 }}>
             {!isEditMode ? (
               <div style={{ display: "grid", gap: 16 }}>
                 <div
@@ -1065,14 +1277,41 @@ export default function CleaningSecurityReportsAdminPage() {
                     </p>
                   </div>
 
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <ActionButton variant="secondary" onClick={exportPDF}>
+                  {isMobile && (
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() => {
+                        setSelectedId("");
+                        setIsEditMode(false);
+                      }}
+                      style={{ width: "100%" }}
+                    >
+                      Close Report
+                    </ActionButton>
+                  )}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile
+                        ? "repeat(2, minmax(0, 1fr))"
+                        : "repeat(4, auto)",
+                      gap: 8,
+                      width: isMobile ? "100%" : "auto",
+                    }}
+                  >
+                    <ActionButton
+                      variant="secondary"
+                      onClick={exportPDF}
+                      style={{ width: "100%" }}
+                    >
                       Export PDF
                     </ActionButton>
 
                     <ActionButton
                       variant="primary"
                       onClick={() => setIsEditMode(true)}
+                      style={{ width: "100%" }}
                     >
                       Edit
                     </ActionButton>
@@ -1081,6 +1320,7 @@ export default function CleaningSecurityReportsAdminPage() {
                       variant="warning"
                       onClick={handleArchive}
                       disabled={archivingId === selectedReport.id}
+                      style={{ width: "100%" }}
                     >
                       {archivingId === selectedReport.id ? "Archiving..." : "Archive"}
                     </ActionButton>
@@ -1089,6 +1329,7 @@ export default function CleaningSecurityReportsAdminPage() {
                       variant="danger"
                       onClick={handleDelete}
                       disabled={deletingId === selectedReport.id}
+                      style={{ width: "100%" }}
                     >
                       {deletingId === selectedReport.id ? "Deleting..." : "Delete"}
                     </ActionButton>
@@ -1098,7 +1339,9 @@ export default function CleaningSecurityReportsAdminPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                     gap: 12,
                   }}
                 >
@@ -1137,7 +1380,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   />
                 </div>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Work Distribution
                   </h3>
@@ -1145,7 +1388,9 @@ export default function CleaningSecurityReportsAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1160,7 +1405,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Cleaning Checklist
                   </h3>
@@ -1168,7 +1413,9 @@ export default function CleaningSecurityReportsAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1189,7 +1436,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Security Search Checklist
                   </h3>
@@ -1197,7 +1444,9 @@ export default function CleaningSecurityReportsAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1219,7 +1468,27 @@ export default function CleaningSecurityReportsAdminPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                {String(
+                  selectedReport.finalConfirmation?.articuloSospechoso || ""
+                )
+                  .trim()
+                  .toLowerCase() === "yes" && (
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      padding: "13px 15px",
+                      background: "#fff1f2",
+                      border: "1px solid #fecdd3",
+                      color: "#9f1239",
+                      fontWeight: 900,
+                      fontSize: 13,
+                    }}
+                  >
+                    Suspicious item reported on this Cleaning & Security report.
+                  </div>
+                )}
+
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Final Confirmation
                   </h3>
@@ -1227,7 +1496,9 @@ export default function CleaningSecurityReportsAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1244,7 +1515,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Photos
                   </h3>
@@ -1253,7 +1524,9 @@ export default function CleaningSecurityReportsAdminPage() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gridTemplateColumns: isMobile
+                          ? "1fr"
+                          : "repeat(auto-fit, minmax(180px, 1fr))",
                         gap: 12,
                       }}
                     >
@@ -1356,10 +1629,20 @@ export default function CleaningSecurityReportsAdminPage() {
                     </p>
                   </div>
 
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile
+                        ? "1fr 1fr"
+                        : "repeat(2, auto)",
+                      gap: 8,
+                      width: isMobile ? "100%" : "auto",
+                    }}
+                  >
                     <ActionButton
                       variant="secondary"
                       onClick={() => setIsEditMode(false)}
+                      style={{ width: "100%" }}
                     >
                       Cancel
                     </ActionButton>
@@ -1368,17 +1651,20 @@ export default function CleaningSecurityReportsAdminPage() {
                       variant="primary"
                       onClick={handleSaveEdits}
                       disabled={savingId === selectedReport.id}
+                      style={{ width: "100%" }}
                     >
                       {savingId === selectedReport.id ? "Saving..." : "Save Changes"}
                     </ActionButton>
                   </div>
                 </div>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1493,7 +1779,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Work Distribution
                   </h3>
@@ -1501,7 +1787,9 @@ export default function CleaningSecurityReportsAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1519,7 +1807,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Cleaning Checklist
                   </h3>
@@ -1527,7 +1815,9 @@ export default function CleaningSecurityReportsAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1559,7 +1849,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Security Search Checklist
                   </h3>
@@ -1567,7 +1857,9 @@ export default function CleaningSecurityReportsAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
@@ -1599,7 +1891,7 @@ export default function CleaningSecurityReportsAdminPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 18, background: "#fcfdff" }}>
+                <PageCard style={{ padding: isMobile ? 14 : 18, background: "#fcfdff" }}>
                   <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                     Final Confirmation
                   </h3>
@@ -1607,7 +1899,9 @@ export default function CleaningSecurityReportsAdminPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(auto-fit, minmax(220px, 1fr))",
                       gap: 12,
                     }}
                   >
