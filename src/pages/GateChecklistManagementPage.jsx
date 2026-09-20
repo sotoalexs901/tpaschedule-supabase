@@ -1388,7 +1388,39 @@ export default function GateChecklistManagementPage() {
         ? formatMonthYear(filters.month)
         : "Selected Period";
 
-    const delayedRows = airlineReports
+    const maxPassengers = Math.max(
+      1,
+      ...airlineReports.map((item) =>
+        Math.max(
+          safeNumber(item.finalTotalPax),
+          safeNumber(item.totalIbPax)
+        )
+      )
+    );
+
+    const passengerBars = airlineReports
+      .slice()
+      .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+      .slice(-8)
+      .map((item) => {
+        const out = safeNumber(item.finalTotalPax);
+        const ib = safeNumber(item.totalIbPax);
+        const outPct = Math.max(4, Math.round((out / maxPassengers) * 100));
+        const ibPct = Math.max(4, Math.round((ib / maxPassengers) * 100));
+
+        return `
+          <div class="bar-item">
+            <div class="bar-wrap">
+              <div class="bar ib" style="height:${ibPct}%"></div>
+              <div class="bar out" style="height:${outPct}%"></div>
+            </div>
+            <div class="bar-label">${item.flight || "-"}</div>
+          </div>
+        `;
+      })
+      .join("");
+
+    const delayRows = airlineReports
       .filter((item) => String(item.delay || "No") === "Yes")
       .map(
         (item) => `
@@ -1415,144 +1447,423 @@ export default function GateChecklistManagementPage() {
             * { box-sizing: border-box; }
             body {
               font-family: Arial, Helvetica, sans-serif;
-              margin: 24px;
+              margin: 0;
               color: #0f172a;
-              background: #fff;
+              background: #f4f7fb;
             }
+
+            .page {
+              width: 100%;
+              padding: 22px;
+            }
+
             .hero {
+              background: #ffffff;
+              border: 1px solid #dbeafe;
               border-radius: 18px;
-              padding: 22px 24px;
-              color: #fff;
-              background: linear-gradient(135deg, #0f5c91 0%, #1f7cc1 55%, #6ec6e8 100%);
-              margin-bottom: 18px;
+              padding: 20px 22px;
+              margin-bottom: 14px;
             }
+
             .kicker {
               font-size: 10px;
               font-weight: 900;
-              letter-spacing: .14em;
+              color: #1769aa;
               text-transform: uppercase;
-              opacity: .9;
+              letter-spacing: .14em;
             }
+
             h1 {
-              margin: 7px 0 3px;
-              font-size: 29px;
+              margin: 6px 0 4px;
+              font-size: 31px;
+              line-height: 1.05;
+              font-weight: 900;
             }
+
             .subtitle {
-              font-size: 13px;
-              opacity: .95;
+              color: #64748b;
+              font-size: 12px;
+              font-weight: 700;
             }
-            .kpis {
+
+            .dashboard {
+              display: grid;
+              grid-template-columns: 1.2fr 1fr 1fr;
+              gap: 12px;
+              align-items: stretch;
+            }
+
+            .panel {
+              background: #fff;
+              border: 1px solid #dbeafe;
+              border-radius: 16px;
+              padding: 14px;
+              min-height: 190px;
+            }
+
+            .panel-title {
+              text-align: center;
+              font-size: 13px;
+              font-weight: 900;
+              color: #334155;
+              margin-bottom: 8px;
+            }
+
+            .bar-chart {
+              height: 135px;
+              display: flex;
+              align-items: end;
+              justify-content: center;
+              gap: 8px;
+              padding: 4px 4px 0;
+            }
+
+            .bar-item {
+              flex: 1;
+              min-width: 28px;
+              max-width: 42px;
+              text-align: center;
+            }
+
+            .bar-wrap {
+              height: 105px;
+              display: flex;
+              gap: 2px;
+              align-items: end;
+              justify-content: center;
+            }
+
+            .bar {
+              width: 10px;
+              border-radius: 3px 3px 0 0;
+            }
+
+            .bar.ib { background: #1fa9e6; }
+            .bar.out { background: #f8c32d; }
+
+            .bar-label {
+              margin-top: 5px;
+              font-size: 8px;
+              font-weight: 800;
+              color: #64748b;
+            }
+
+            .legend {
+              margin-top: 8px;
+              display: flex;
+              justify-content: center;
+              gap: 12px;
+              font-size: 8px;
+              color: #64748b;
+              font-weight: 700;
+            }
+
+            .legend span::before {
+              content: "";
+              display: inline-block;
+              width: 8px;
+              height: 8px;
+              border-radius: 2px;
+              margin-right: 4px;
+              vertical-align: -1px;
+            }
+
+            .legend .ib-key::before { background: #1fa9e6; }
+            .legend .out-key::before { background: #f8c32d; }
+
+            .big-number {
+              text-align: center;
+              margin-top: 26px;
+            }
+
+            .big-number .label {
+              font-size: 13px;
+              font-weight: 900;
+              color: #475569;
+            }
+
+            .big-number .value {
+              font-size: 34px;
+              line-height: 1;
+              font-weight: 950;
+              margin-top: 12px;
+              color: #0f172a;
+            }
+
+            .big-number .sub {
+              margin-top: 8px;
+              font-size: 10px;
+              color: #94a3b8;
+              font-weight: 700;
+            }
+
+            .kpi-grid {
               display: grid;
               grid-template-columns: repeat(4, minmax(0, 1fr));
               gap: 10px;
+              margin-top: 12px;
             }
+
             .kpi {
-              border-radius: 14px;
+              background: #fff;
               border: 1px solid #dbeafe;
-              background: #f8fbff;
-              padding: 14px 15px;
+              border-radius: 14px;
+              padding: 13px 14px;
+              text-align: center;
             }
+
             .kpi .label {
               font-size: 9px;
-              font-weight: 900;
               color: #64748b;
               text-transform: uppercase;
-              letter-spacing: .07em;
+              letter-spacing: .05em;
+              font-weight: 900;
             }
+
             .kpi .value {
               margin-top: 5px;
-              font-size: 22px;
-              font-weight: 900;
+              font-size: 21px;
+              font-weight: 950;
               color: #0f172a;
             }
-            .section {
-              margin-top: 18px;
+
+            .kpi .good { color: #15803d; }
+            .kpi .warn { color: #b45309; }
+            .kpi .bad { color: #be123c; }
+
+            .donut-row {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 12px;
+              margin-top: 12px;
             }
+
+            .donut-panel {
+              background: #fff;
+              border: 1px solid #dbeafe;
+              border-radius: 16px;
+              padding: 14px;
+              text-align: center;
+            }
+
+            .donut-title {
+              font-size: 13px;
+              font-weight: 900;
+              color: #334155;
+              margin-bottom: 8px;
+            }
+
+            .donut {
+              width: 150px;
+              height: 150px;
+              border-radius: 50%;
+              margin: 0 auto;
+              display: grid;
+              place-items: center;
+              position: relative;
+            }
+
+            .donut::after {
+              content: "";
+              width: 100px;
+              height: 100px;
+              border-radius: 50%;
+              background: #fff;
+              position: absolute;
+            }
+
+            .donut-value {
+              position: relative;
+              z-index: 2;
+              font-size: 30px;
+              font-weight: 950;
+              color: #0f172a;
+            }
+
+            .section {
+              margin-top: 12px;
+              background: #fff;
+              border: 1px solid #dbeafe;
+              border-radius: 16px;
+              padding: 14px;
+            }
+
             .section h2 {
               margin: 0 0 10px;
-              font-size: 17px;
+              font-size: 16px;
+              font-weight: 900;
             }
+
             table {
               width: 100%;
               border-collapse: collapse;
             }
+
             th, td {
-              border: 1px solid #dbeafe;
-              padding: 8px 9px;
+              border: 1px solid #e2e8f0;
+              padding: 7px 8px;
               text-align: left;
-              font-size: 10px;
+              font-size: 9px;
             }
+
             th {
               background: #f8fbff;
-              color: #475569;
               text-transform: uppercase;
-              font-size: 9px;
-              letter-spacing: .05em;
+              letter-spacing: .04em;
+              color: #475569;
+              font-size: 8px;
             }
+
             .footer {
-              margin-top: 22px;
-              padding-top: 10px;
-              border-top: 1px solid #e2e8f0;
+              margin-top: 12px;
               text-align: center;
               color: #94a3b8;
-              font-size: 9px;
+              font-size: 8px;
             }
+
             @media print {
-              body { margin: 12px; }
-              .hero, .kpi { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              body { background: #fff; }
+              .page { padding: 10px; }
+              .hero, .panel, .kpi, .donut-panel, .section {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
             }
           </style>
         </head>
         <body>
-          <div class="hero">
-            <div class="kicker">AeroStation Hub | Operational KPI Report</div>
-            <h1>${airlineName}</h1>
-            <div class="subtitle">${periodLabel}</div>
-          </div>
+          <div class="page">
+            <div class="hero">
+              <div class="kicker">AeroStation Hub | Airline Service KPI Dashboard</div>
+              <h1>${airlineName}</h1>
+              <div class="subtitle">${periodLabel} | Operational Performance Summary</div>
+            </div>
 
-          <div class="kpis">
-            <div class="kpi"><div class="label">Flights</div><div class="value">${flights}</div></div>
-            <div class="kpi"><div class="label">OTP</div><div class="value">${formatPercent(otpPercent)}</div></div>
-            <div class="kpi"><div class="label">Delayed Flights</div><div class="value">${delayedFlights}</div></div>
-            <div class="kpi"><div class="label">Avg Delay</div><div class="value">${avgDelay.toFixed(1)} min</div></div>
+            <div class="dashboard">
+              <div class="panel">
+                <div class="panel-title">Passenger Flow by Flight</div>
+                <div class="bar-chart">
+                  ${passengerBars || `<div style="color:#94a3b8;font-size:11px;">No passenger data</div>`}
+                </div>
+                <div class="legend">
+                  <span class="ib-key">IB Pax</span>
+                  <span class="out-key">OUT Pax</span>
+                </div>
+              </div>
 
-            <div class="kpi"><div class="label">Checked Bags</div><div class="value">${checkedBags}</div></div>
-            <div class="kpi"><div class="label">Not Loaded</div><div class="value">${notLoadedBags}</div></div>
-            <div class="kpi"><div class="label">MBR</div><div class="value">${formatPercent(mbrPercent)}</div></div>
-            <div class="kpi"><div class="label">Pax Flow</div><div class="value">${ibPax} IB | ${outPax} OUT</div></div>
-          </div>
+              <div class="panel">
+                <div class="big-number">
+                  <div class="label">Total Flights</div>
+                  <div class="value">${flights}</div>
+                  <div class="sub">${periodLabel}</div>
+                </div>
+              </div>
 
-          <div class="section">
-            <h2>Delay Detail</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Flight</th>
-                  <th>Route</th>
-                  <th>STD</th>
-                  <th>Push</th>
-                  <th>Delay</th>
-                  <th>Code</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${
-                  delayedRows ||
-                  `<tr><td colspan="7">No delays for this selected period.</td></tr>`
-                }
-              </tbody>
-            </table>
-          </div>
+              <div class="panel">
+                <div class="big-number">
+                  <div class="label">Checked Bags</div>
+                  <div class="value">${checkedBags}</div>
+                  <div class="sub">${notLoadedBags} not loaded</div>
+                </div>
+              </div>
+            </div>
 
-          <div class="footer">
-            AeroStation Hub | ${airlineName} | ${periodLabel}
+            <div class="kpi-grid">
+              <div class="kpi">
+                <div class="label">OTP</div>
+                <div class="value ${otpPercent >= 90 ? "good" : "warn"}">${formatPercent(otpPercent)}</div>
+              </div>
+
+              <div class="kpi">
+                <div class="label">Delayed Flights</div>
+                <div class="value ${delayedFlights > 0 ? "warn" : "good"}">${delayedFlights}</div>
+              </div>
+
+              <div class="kpi">
+                <div class="label">Average Delay</div>
+                <div class="value ${avgDelay > 0 ? "warn" : "good"}">${avgDelay.toFixed(1)} min</div>
+              </div>
+
+              <div class="kpi">
+                <div class="label">MBR</div>
+                <div class="value ${mbrPercent > 0 ? "bad" : "good"}">${formatPercent(mbrPercent)}</div>
+              </div>
+
+              <div class="kpi">
+                <div class="label">IB Pax</div>
+                <div class="value">${ibPax}</div>
+              </div>
+
+              <div class="kpi">
+                <div class="label">OUT Pax</div>
+                <div class="value">${outPax}</div>
+              </div>
+
+              <div class="kpi">
+                <div class="label">Not Loaded Bags</div>
+                <div class="value ${notLoadedBags > 0 ? "bad" : "good"}">${notLoadedBags}</div>
+              </div>
+
+              <div class="kpi">
+                <div class="label">OTP Flights</div>
+                <div class="value">${otpFlights}</div>
+              </div>
+            </div>
+
+            <div class="donut-row">
+              <div class="donut-panel">
+                <div class="donut-title">OTP Performance</div>
+                <div
+                  class="donut"
+                  style="background: conic-gradient(#1fa9e6 0 ${Math.max(0, Math.min(100, otpPercent))}%, #e5e7eb ${Math.max(0, Math.min(100, otpPercent))}% 100%);"
+                >
+                  <div class="donut-value">${formatPercent(otpPercent)}</div>
+                </div>
+              </div>
+
+              <div class="donut-panel">
+                <div class="donut-title">Bag Delivery Quality</div>
+                <div
+                  class="donut"
+                  style="background: conic-gradient(#f8c32d 0 ${Math.max(0, Math.min(100, 100 - mbrPercent))}%, #e5e7eb ${Math.max(0, Math.min(100, 100 - mbrPercent))}% 100%);"
+                >
+                  <div class="donut-value">${formatPercent(Math.max(0, 100 - mbrPercent))}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Delay Detail</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Flight</th>
+                    <th>Route</th>
+                    <th>STD</th>
+                    <th>Push</th>
+                    <th>Delay</th>
+                    <th>Code</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${
+                    delayRows ||
+                    `<tr><td colspan="7">No delays for this selected period.</td></tr>`
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <div class="footer">
+              AeroStation Hub | ${airlineName} | ${periodLabel}
+            </div>
           </div>
         </body>
       </html>
     `;
 
-    const printWindow = window.open("", "_blank", "width=1200,height=900");
+    const printWindow = window.open("", "_blank", "width=1280,height=900");
 
     if (!printWindow) {
       setStatusMessage("Pop-up blocked. Please allow pop-ups to print/export KPI.");
@@ -1568,6 +1879,7 @@ export default function GateChecklistManagementPage() {
       printWindow.print();
     }, 400);
   }
+
 
   function startEditing(report) {
     setEditingReportId(report.id);
