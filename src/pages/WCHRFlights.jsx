@@ -43,11 +43,23 @@ const REPORT_FILTERS = [
   { value: "BOARDED", label: "Boarded" },
   { value: "PENDING_STORAGE", label: "Pending Storage" },
   { value: "STORED", label: "Stored" },
+  { value: "READY_FOR_IB", label: "Ready for IB" },
   { value: "IB_WAITING", label: "IB Waiting" },
   { value: "IB_ACCEPTED", label: "IB Accepted" },
   { value: "IB_IN_TRANSIT", label: "IB In Transit" },
   { value: "IB_DELIVERED", label: "IB Delivered" },
   { value: "ALERT", label: "30+ Min Alert" },
+];
+
+const STORAGE_LOCATIONS = ["AV Counter", "F87"];
+
+const IB_READY_GATES = [
+  "F90",
+  "F88",
+  "F87",
+  "F85",
+  "F83",
+  "F79",
 ];
 
 // ============================================================
@@ -268,6 +280,13 @@ function getServiceStatus(report) {
     );
 
   if (
+    trackingStatus === "READY_FOR_IB" ||
+    report?.ready_for_ib === true
+  ) {
+    return "READY_FOR_IB";
+  }
+
+  if (
     trackingStatus === "STORED" ||
     Boolean(report?.stored_at)
   ) {
@@ -330,6 +349,7 @@ function getServiceStatusLabel(report) {
     BOARDED: "Boarded",
     PENDING_STORAGE: "Pending Storage",
     STORED: "Stored",
+    READY_FOR_IB: "Ready for IB Flight",
     IB_WAITING: "IB Waiting",
     IB_ACCEPTED: "IB Accepted",
     IB_IN_TRANSIT: "IB In Transit",
@@ -665,6 +685,8 @@ function downloadOperationalCSV(
     "IB Delivered",
     "IB Transit Time",
     "Stored",
+    "Ready for IB",
+    "Ready for IB Gate",
     "Current Location",
     "Counter to Gate",
     "Gate to Boarding",
@@ -724,6 +746,8 @@ function downloadOperationalCSV(
       formatDateTime(
         report.stored_at
       ),
+      report.ready_for_ib === true ? "Yes" : "No",
+      report.ready_for_ib_gate || "",
       report.current_location,
       formatMinutes(
         getCounterToGateMinutes(report)
@@ -865,6 +889,10 @@ function buildSummary(rows) {
         summary.stored += 1;
       }
 
+      if (status === "READY_FOR_IB") {
+        summary.readyForIb += 1;
+      }
+
       if (needs30MinuteAlert(report)) {
         summary.alerts += 1;
       }
@@ -886,6 +914,7 @@ function buildSummary(rows) {
       boarded: 0,
       pendingStorage: 0,
       stored: 0,
+      readyForIb: 0,
       alerts: 0,
       personal: 0,
     }
@@ -928,6 +957,7 @@ function buildFlights(rows) {
         boarded: 0,
         pending_storage: 0,
         stored: 0,
+        ready_for_ib: 0,
         alerts: 0,
         personal: 0,
         wheelchairs:
@@ -975,6 +1005,10 @@ function buildFlights(rows) {
 
     if (status === "STORED") {
       item.stored += 1;
+    }
+
+    if (status === "READY_FOR_IB") {
+      item.ready_for_ib += 1;
     }
 
     if (needs30MinuteAlert(report)) {
@@ -1369,6 +1403,11 @@ function StatusBadge({
       background: "#f0fdf4",
       color: "#166534",
       border: "#86efac",
+    },
+    READY_FOR_IB: {
+      background: "#eef2ff",
+      color: "#4338ca",
+      border: "#c7d2fe",
     },
     IB_WAITING: {
       background: "#f8fafc",
@@ -2197,6 +2236,7 @@ function buildWchrPrintableHtml(report, timeline = [], segments = []) {
             ${card("Passenger Boarded", formatDateTime(getBoardedAt(report)))}
             ${card("Passenger Delivered", formatDateTime(getPassengerDeliveredAt(report)))}
             ${card("Stored", formatDateTime(report?.stored_at))}
+            ${report?.ready_for_ib === true ? card("Ready for IB Flight", report?.ready_for_ib_gate || "Yes") : ""}
             ${card("Last Update", formatDateTime(report?.last_updated_at || report?.last_location_update_at))}
           </div>
 
@@ -2367,9 +2407,29 @@ export default function WCHRFlights() {
   ] = useState("");
 
   const [
+    wheelchairDisposition,
+    setWheelchairDisposition,
+  ] = useState("STORAGE");
+
+  const [
     storeLocation,
     setStoreLocation,
-  ] = useState("Wheelchair Storage");
+  ] = useState("AV Counter");
+
+  const [
+    ibReadyGate,
+    setIbReadyGate,
+  ] = useState("F90");
+
+  const [
+    showBoardSelector,
+    setShowBoardSelector,
+  ] = useState(false);
+
+  const [
+    selectedBoardReportIds,
+    setSelectedBoardReportIds,
+  ] = useState([]);
 
   const [
     lookupReportId,
@@ -2528,6 +2588,42 @@ export default function WCHRFlights() {
       selectedFlight,
     ]);
 
+  const boardingEligibleReports =
+    useMemo(
+      () =>
+        flightReports.filter((report) => {
+          if (isInboundReport(report)) return false;
+
+          const status = getServiceStatus(report);
+
+          return (
+            !getBoardedAt(report) &&
+            (
+              status === "AT_GATE" ||
+              safeUpper(report?.service_status) === "BOARDING" ||
+              safeUpper(report?.tracking_status) === "BOARDING" ||
+              Boolean(getBoardingStartedAt(report))
+            )
+          );
+        }),
+      [flightReports]
+    );
+
+  const atGateReportsForBoarding =
+    useMemo(
+      () =>
+        flightReports.filter((report) => {
+          if (isInboundReport(report)) return false;
+
+          return (
+            getServiceStatus(report) === "AT_GATE" &&
+            !getBoardingStartedAt(report) &&
+            !getBoardedAt(report)
+          );
+        }),
+      [flightReports]
+    );
+
   const selectedReport =
     useMemo(
       () =>
@@ -2578,7 +2674,13 @@ export default function WCHRFlights() {
     selectedFlightKey,
   ]);
 
-  // ==========================================================
+  
+  useEffect(() => {
+    setSelectedBoardReportIds([]);
+    setShowBoardSelector(false);
+  }, [selectedFlightKey]);
+
+// ==========================================================
   // LOAD TIMELINE + SEGMENTS FOR SELECTED REPORT
   // ==========================================================
 
@@ -2770,42 +2872,88 @@ export default function WCHRFlights() {
     }
   };
 
-  const handleStoreWheelchair = async () => {
+  const handleWheelchairDisposition = async () => {
     if (!selectedReport || !canManageService) return;
 
-    if (getServiceStatus(selectedReport) === "STORED") {
+    const isReadyForIb = wheelchairDisposition === "IB_READY";
+
+    if (
+      !isReadyForIb &&
+      getServiceStatus(selectedReport) === "STORED"
+    ) {
       setStatusMessage("This wheelchair is already stored.");
       return;
     }
 
-    const location = safeText(storeLocation) || "Wheelchair Storage";
+    if (
+      isReadyForIb &&
+      getServiceStatus(selectedReport) === "READY_FOR_IB"
+    ) {
+      setStatusMessage("This wheelchair is already ready for an inbound flight.");
+      return;
+    }
+
+    const location = isReadyForIb
+      ? safeText(ibReadyGate) || "F90"
+      : safeText(storeLocation) || "AV Counter";
+
+    const visibleLocation = isReadyForIb
+      ? `Ready for IB Flight at ${location}`
+      : location;
 
     const confirmed = window.confirm(
-      `Mark WCHR ${selectedReport.wheelchair_number || ""} as STORED at ${location}?`
+      isReadyForIb
+        ? `Mark WCHR ${selectedReport.wheelchair_number || ""} as READY FOR IB FLIGHT at ${location}?`
+        : `Mark WCHR ${selectedReport.wheelchair_number || ""} as STORED at ${location}?`
     );
 
     if (!confirmed) return;
 
     try {
-      setBusyAction("store");
+      setBusyAction("disposition");
       setError("");
       setStatusMessage("");
 
-      await updateDoc(
-        doc(db, REPORTS_COLLECTION, selectedReport.id),
-        {
-          service_status: "STORED",
-          tracking_status: "STORED",
-          stored_location: location,
-          stored_at: serverTimestamp(),
-          current_location: location,
-          is_active: false,
-          alerts_enabled: false,
-          last_updated_at: serverTimestamp(),
-          last_updated_by: getVisibleName(user),
-          last_updated_by_id: user?.id || user?.uid || "",
-        }
-      );
+      if (isReadyForIb) {
+        await updateDoc(
+          doc(db, REPORTS_COLLECTION, selectedReport.id),
+          {
+            service_status: "READY_FOR_IB",
+            tracking_status: "READY_FOR_IB",
+            ready_for_ib: true,
+            ready_for_ib_gate: location,
+            ready_for_ib_at: serverTimestamp(),
+            stored_location: "",
+            stored_at: null,
+            current_location: visibleLocation,
+            is_active: false,
+            alerts_enabled: false,
+            transport_alert_active: false,
+            last_updated_at: serverTimestamp(),
+            last_updated_by: getVisibleName(user),
+            last_updated_by_id: user?.id || user?.uid || "",
+          }
+        );
+      } else {
+        await updateDoc(
+          doc(db, REPORTS_COLLECTION, selectedReport.id),
+          {
+            service_status: "STORED",
+            tracking_status: "STORED",
+            ready_for_ib: false,
+            ready_for_ib_gate: "",
+            stored_location: location,
+            stored_at: serverTimestamp(),
+            current_location: location,
+            is_active: false,
+            alerts_enabled: false,
+            transport_alert_active: false,
+            last_updated_at: serverTimestamp(),
+            last_updated_by: getVisibleName(user),
+            last_updated_by_id: user?.id || user?.uid || "",
+          }
+        );
+      }
 
       const inventoryId = safeText(
         selectedReport.inventory_doc_id
@@ -2816,10 +2964,14 @@ export default function WCHRFlights() {
           doc(db, INVENTORY_COLLECTION, inventoryId),
           {
             wheelchair_number: selectedReport.wheelchair_number || "",
+            // Keep AVAILABLE for compatibility with current dispatch/IB inventory logic.
             status: "AVAILABLE",
             is_available: true,
-            available_for_handoff: false,
+            available_for_handoff: isReadyForIb,
             location,
+            ready_for_ib: isReadyForIb,
+            ready_for_ib_gate: isReadyForIb ? location : "",
+            ready_for_ib_at: isReadyForIb ? serverTimestamp() : null,
             report_doc_id: "",
             assigned_report_doc_id: "",
             report_id: "",
@@ -2830,7 +2982,7 @@ export default function WCHRFlights() {
             pnr: "",
             current_agent_id: "",
             current_agent_name: "",
-            stored_at: serverTimestamp(),
+            stored_at: isReadyForIb ? null : serverTimestamp(),
             updated_at: serverTimestamp(),
           },
           { merge: true }
@@ -2846,9 +2998,13 @@ export default function WCHRFlights() {
           passenger_name: selectedReport.passenger_name || "",
           airline: selectedReport.airline || "",
           flight_number: selectedReport.flight_number || "",
-          event_type: "WCHR_STORED",
+          event_type: isReadyForIb
+            ? "WCHR_READY_FOR_IB"
+            : "WCHR_STORED",
           location,
-          notes: `WCHR stored at ${location} by ${getVisibleName(user)}.`,
+          notes: isReadyForIb
+            ? `WCHR prepared for an inbound flight at ${location} by ${getVisibleName(user)}.`
+            : `WCHR stored at ${location} by ${getVisibleName(user)}.`,
           employee_id: user?.id || user?.uid || "",
           employee_name: getVisibleName(user),
           created_at: serverTimestamp(),
@@ -2856,13 +3012,15 @@ export default function WCHRFlights() {
       );
 
       setStatusMessage(
-        `WCHR ${selectedReport.wheelchair_number || ""} marked as stored.`
+        isReadyForIb
+          ? `WCHR ${selectedReport.wheelchair_number || ""} is ready for an IB flight at ${location}.`
+          : `WCHR ${selectedReport.wheelchair_number || ""} marked as stored at ${location}.`
       );
     } catch (actionError) {
-      console.error("WCHR store error:", actionError);
+      console.error("WCHR disposition error:", actionError);
       setError(
         actionError?.message ||
-          "Unable to store the wheelchair."
+          "Unable to update the wheelchair disposition."
       );
     } finally {
       setBusyAction("");
@@ -2929,255 +3087,173 @@ export default function WCHRFlights() {
   // PASSENGER COMPLETION TIMESTAMPS
   // ==========================================================
 
-  const handleDeclareBoarding =
-    async () => {
-      if (
-        !selectedReport ||
-        !canManageService
-      ) {
-        return;
-      }
+  const handleStartBoardingForFlight = async () => {
+    if (!selectedFlight || !canManageService) return;
 
-      if (
-        getBoardingStartedAt(
-          selectedReport
-        )
-      ) {
-        setStatusMessage(
-          "Boarding start time is already recorded."
-        );
-        return;
-      }
+    if (!atGateReportsForBoarding.length) {
+      setStatusMessage(
+        "No WCHRs at the gate are waiting for boarding on this flight."
+      );
+      return;
+    }
 
-      try {
-        setBusyAction(
-          "boarding"
-        );
-        setError("");
-        setStatusMessage("");
+    const confirmed = window.confirm(
+      `Start boarding for all ${atGateReportsForBoarding.length} WCHR service(s) currently AT GATE for ${selectedFlight.airline} ${selectedFlight.flight_number}?`
+    );
 
-        await updateDoc(
-          doc(
-            db,
-            REPORTS_COLLECTION,
-            selectedReport.id
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("flight-boarding");
+      setError("");
+      setStatusMessage("");
+
+      await Promise.all(
+        atGateReportsForBoarding.flatMap((report) => [
+          updateDoc(
+            doc(db, REPORTS_COLLECTION, report.id),
+            {
+              service_status: "BOARDING",
+              tracking_status: "BOARDING",
+              boarding_started_at: serverTimestamp(),
+              boarding_declared_by: getVisibleName(user),
+              boarding_declared_by_id: user?.id || user?.uid || "",
+              transport_alert_active: false,
+              last_updated_at: serverTimestamp(),
+              last_updated_by: getVisibleName(user),
+            }
           ),
-          {
-            service_status:
-              "BOARDING",
-            tracking_status:
-              "BOARDING",
-            boarding_started_at:
-              serverTimestamp(),
-            boarding_declared_by:
-              getVisibleName(
-                user
-              ),
-            boarding_declared_by_id:
-              user?.id ||
-              user?.uid ||
-              "",
-            transport_alert_active:
-              false,
-            last_updated_at:
-              serverTimestamp(),
-            last_updated_by:
-              getVisibleName(
-                user
-              ),
-          }
-        );
-
-        await addDoc(
-          collection(
-            db,
-            TRACKING_EVENTS_COLLECTION
+          addDoc(
+            collection(db, TRACKING_EVENTS_COLLECTION),
+            {
+              report_doc_id: report.id,
+              report_id: report.report_id || report.id,
+              wheelchair_number: report.wheelchair_number || "",
+              passenger_name: report.passenger_name || "",
+              airline: report.airline || "",
+              flight_number: report.flight_number || "",
+              event_type: "BOARDING_STARTED",
+              location:
+                report.current_location ||
+                report.gate_location ||
+                "",
+              notes: `Flight boarding started for all WCHRs at gate. Declared by ${getVisibleName(user)}.`,
+              employee_id: user?.id || user?.uid || "",
+              employee_name: getVisibleName(user),
+              created_at: serverTimestamp(),
+            }
           ),
-          {
-            report_doc_id:
-              selectedReport.id,
-            report_id:
-              selectedReport.report_id ||
-              selectedReport.id,
-            wheelchair_number:
-              selectedReport.wheelchair_number ||
-              "",
-            passenger_name:
-              selectedReport.passenger_name ||
-              "",
-            airline:
-              selectedReport.airline ||
-              "",
-            flight_number:
-              selectedReport.flight_number ||
-              "",
-            event_type:
-              "BOARDING_STARTED",
-            location:
-              selectedReport.current_location ||
-              selectedReport.gate_location ||
-              "",
-            notes:
-              `Boarding started. Declared by ${getVisibleName(
-                user
-              )}.`,
-            employee_id:
-              user?.id ||
-              user?.uid ||
-              "",
-            employee_name:
-              getVisibleName(
-                user
-              ),
-            created_at:
-              serverTimestamp(),
-          }
-        );
+        ])
+      );
 
-        setStatusMessage(
-          "Boarding start time recorded."
-        );
-      } catch (actionError) {
-        console.error(
-          "WCHR boarding timestamp error:",
-          actionError
-        );
-        setError(
-          actionError?.message ||
-            "Unable to record boarding start."
-        );
-      } finally {
-        setBusyAction("");
-      }
-    };
+      setStatusMessage(
+        `Boarding started for ${atGateReportsForBoarding.length} WCHR service(s) on ${selectedFlight.airline} ${selectedFlight.flight_number}.`
+      );
+    } catch (actionError) {
+      console.error(
+        "WCHR flight boarding start error:",
+        actionError
+      );
+      setError(
+        actionError?.message ||
+          "Unable to start boarding for the WCHRs at this gate."
+      );
+    } finally {
+      setBusyAction("");
+    }
+  };
 
-  const handleDeclareBoarded =
-    async () => {
-      if (
-        !selectedReport ||
-        !canManageService
-      ) {
-        return;
-      }
+  const toggleBoardSelection = (reportId) => {
+    setSelectedBoardReportIds((current) =>
+      current.includes(reportId)
+        ? current.filter((id) => id !== reportId)
+        : [...current, reportId]
+    );
+  };
 
-      if (
-        getBoardedAt(
-          selectedReport
-        )
-      ) {
-        setStatusMessage(
-          "Passenger boarded time is already recorded."
-        );
-        return;
-      }
+  const handleBoardSelectedWheelchairs = async () => {
+    if (!canManageService) return;
 
-      try {
-        setBusyAction(
-          "boarded"
-        );
-        setError("");
-        setStatusMessage("");
+    const selected = boardingEligibleReports.filter((report) =>
+      selectedBoardReportIds.includes(report.id)
+    );
 
-        await updateDoc(
-          doc(
-            db,
-            REPORTS_COLLECTION,
-            selectedReport.id
+    if (!selected.length) {
+      setError("Select at least one WCHR number to mark as boarded.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Mark ${selected.length} selected WCHR service(s) as PASSENGER BOARDED?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setBusyAction("board-selected");
+      setError("");
+      setStatusMessage("");
+
+      await Promise.all(
+        selected.flatMap((report) => [
+          updateDoc(
+            doc(db, REPORTS_COLLECTION, report.id),
+            {
+              service_status: "BOARDED",
+              tracking_status: "BOARDED",
+              boarded_at: serverTimestamp(),
+              passenger_boarded_at: serverTimestamp(),
+              boarded_declared_by: getVisibleName(user),
+              boarded_declared_by_id: user?.id || user?.uid || "",
+              transport_alert_active: false,
+              alerts_enabled: false,
+              is_active: false,
+              last_updated_at: serverTimestamp(),
+              last_updated_by: getVisibleName(user),
+            }
           ),
-          {
-            service_status:
-              "BOARDED",
-            tracking_status:
-              "BOARDED",
-            boarded_at:
-              serverTimestamp(),
-            passenger_boarded_at:
-              serverTimestamp(),
-            boarded_declared_by:
-              getVisibleName(
-                user
-              ),
-            boarded_declared_by_id:
-              user?.id ||
-              user?.uid ||
-              "",
-            transport_alert_active:
-              false,
-            alerts_enabled:
-              false,
-            is_active:
-              false,
-            last_updated_at:
-              serverTimestamp(),
-            last_updated_by:
-              getVisibleName(
-                user
-              ),
-          }
-        );
-
-        await addDoc(
-          collection(
-            db,
-            TRACKING_EVENTS_COLLECTION
+          addDoc(
+            collection(db, TRACKING_EVENTS_COLLECTION),
+            {
+              report_doc_id: report.id,
+              report_id: report.report_id || report.id,
+              wheelchair_number: report.wheelchair_number || "",
+              passenger_name: report.passenger_name || "",
+              airline: report.airline || "",
+              flight_number: report.flight_number || "",
+              event_type: "PASSENGER_BOARDED",
+              location:
+                report.current_location ||
+                report.gate_location ||
+                "",
+              notes: `Passenger boarded. Declared by ${getVisibleName(user)}. Passenger service timer stopped.`,
+              employee_id: user?.id || user?.uid || "",
+              employee_name: getVisibleName(user),
+              created_at: serverTimestamp(),
+            }
           ),
-          {
-            report_doc_id:
-              selectedReport.id,
-            report_id:
-              selectedReport.report_id ||
-              selectedReport.id,
-            wheelchair_number:
-              selectedReport.wheelchair_number ||
-              "",
-            passenger_name:
-              selectedReport.passenger_name ||
-              "",
-            airline:
-              selectedReport.airline ||
-              "",
-            flight_number:
-              selectedReport.flight_number ||
-              "",
-            event_type:
-              "PASSENGER_BOARDED",
-            location:
-              selectedReport.current_location ||
-              selectedReport.gate_location ||
-              "",
-            notes:
-              `Passenger boarded. Declared by ${getVisibleName(
-                user
-              )}. Passenger service timer stopped.`,
-            employee_id:
-              user?.id ||
-              user?.uid ||
-              "",
-            employee_name:
-              getVisibleName(
-                user
-              ),
-            created_at:
-              serverTimestamp(),
-          }
-        );
+        ])
+      );
 
-        setStatusMessage(
-          "Passenger boarded time recorded. Service timer is complete."
-        );
-      } catch (actionError) {
-        console.error(
-          "WCHR boarded timestamp error:",
-          actionError
-        );
-        setError(
-          actionError?.message ||
-            "Unable to record passenger boarded time."
-        );
-      } finally {
-        setBusyAction("");
-      }
-    };
+      setSelectedBoardReportIds([]);
+      setShowBoardSelector(false);
+
+      setStatusMessage(
+        `${selected.length} WCHR service(s) marked as boarded.`
+      );
+    } catch (actionError) {
+      console.error(
+        "WCHR selected boarded error:",
+        actionError
+      );
+      setError(
+        actionError?.message ||
+          "Unable to mark the selected WCHR service(s) as boarded."
+      );
+    } finally {
+      setBusyAction("");
+    }
+  };
 
   const handleDeclareDelivered =
     async () => {
@@ -3870,6 +3946,12 @@ export default function WCHRFlights() {
         />
 
         <MetricCard
+          label="Ready for IB"
+          value={summary.readyForIb}
+          tone="blue"
+        />
+
+        <MetricCard
           label="IB Waiting"
           value={summary.ibWaiting}
           tone="slate"
@@ -4051,6 +4133,12 @@ export default function WCHRFlights() {
               ) {
                 count =
                   summary.stored;
+              } else if (
+                item.value ===
+                "READY_FOR_IB"
+              ) {
+                count =
+                  summary.readyForIb;
               } else if (
                 item.value === "IB_WAITING"
               ) {
@@ -4353,6 +4441,19 @@ export default function WCHRFlights() {
                         </span>
                       )}
 
+                      {flight.ready_for_ib >
+                        0 && (
+                        <span
+                          style={miniPillStyle(
+                            "#eef2ff",
+                            "#4338ca",
+                            "#c7d2fe"
+                          )}
+                        >
+                          Ready IB {flight.ready_for_ib}
+                        </span>
+                      )}
+
                       {flight.alerts >
                         0 && (
                         <span
@@ -4454,6 +4555,220 @@ export default function WCHRFlights() {
               Export Flight CSV
             </ActionButton>
           </div>
+
+          {!flightReports.every(isInboundReport) && canManageService && (
+            <div
+              style={{
+                marginBottom: 14,
+                padding: isMobile ? 12 : 14,
+                borderRadius: 16,
+                background: "#f8fbff",
+                border: "1px solid #dbeafe",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: isMobile ? "column" : "row",
+                  justifyContent: "space-between",
+                  alignItems: isMobile ? "stretch" : "center",
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      color: "#1769aa",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.07em",
+                    }}
+                  >
+                    Flight Boarding Control
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      color: "#64748b",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Start Boarding updates every WCHR currently At Gate with one click.
+                    Then use Board WCHR to choose the wheelchair number(s) as each
+                    passenger actually boards.
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <ActionButton
+                    variant="primary"
+                    disabled={
+                      Boolean(busyAction) ||
+                      atGateReportsForBoarding.length === 0
+                    }
+                    onClick={handleStartBoardingForFlight}
+                    style={{
+                      width: isMobile ? "100%" : "auto",
+                    }}
+                  >
+                    {busyAction === "flight-boarding"
+                      ? "Starting..."
+                      : `Start Boarding (${atGateReportsForBoarding.length})`}
+                  </ActionButton>
+
+                  <ActionButton
+                    variant="success"
+                    disabled={
+                      Boolean(busyAction) ||
+                      boardingEligibleReports.length === 0
+                    }
+                    onClick={() =>
+                      setShowBoardSelector((current) => !current)
+                    }
+                    style={{
+                      width: isMobile ? "100%" : "auto",
+                    }}
+                  >
+                    Board WCHR ({boardingEligibleReports.length})
+                  </ActionButton>
+                </div>
+              </div>
+
+              {showBoardSelector && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 11,
+                    borderRadius: 14,
+                    background: "#ffffff",
+                    border: "1px solid #dbeafe",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 900,
+                      color: "#0f172a",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Select WCHR number(s) that are boarding now
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile
+                        ? "1fr"
+                        : "repeat(auto-fit, minmax(210px, 1fr))",
+                      gap: 7,
+                    }}
+                  >
+                    {boardingEligibleReports.map((report) => {
+                      const checked =
+                        selectedBoardReportIds.includes(report.id);
+
+                      return (
+                        <label
+                          key={report.id}
+                          style={{
+                            display: "flex",
+                            gap: 9,
+                            alignItems: "center",
+                            padding: "9px 10px",
+                            borderRadius: 12,
+                            border: checked
+                              ? "2px solid #16a34a"
+                              : "1px solid #e2e8f0",
+                            background: checked
+                              ? "#ecfdf5"
+                              : "#ffffff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleBoardSelection(report.id)}
+                          />
+
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: 12.5,
+                                fontWeight: 900,
+                                color: "#0f172a",
+                              }}
+                            >
+                              WCHR {report.wheelchair_number || "Pending"}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 2,
+                                fontSize: 10.5,
+                                color: "#64748b",
+                              }}
+                            >
+                              {report.passenger_name || "Passenger"}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <ActionButton
+                      variant="success"
+                      disabled={
+                        Boolean(busyAction) ||
+                        selectedBoardReportIds.length === 0
+                      }
+                      onClick={handleBoardSelectedWheelchairs}
+                      style={{
+                        width: isMobile ? "100%" : "auto",
+                      }}
+                    >
+                      {busyAction === "board-selected"
+                        ? "Recording..."
+                        : `Confirm Boarded (${selectedBoardReportIds.length})`}
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="secondary"
+                      disabled={Boolean(busyAction)}
+                      onClick={() => {
+                        setSelectedBoardReportIds([]);
+                        setShowBoardSelector(false);
+                      }}
+                      style={{
+                        width: isMobile ? "100%" : "auto",
+                      }}
+                    >
+                      Cancel
+                    </ActionButton>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div
             style={{
@@ -4849,6 +5164,13 @@ export default function WCHRFlights() {
                   value={formatDateTime(selectedReport.stored_at)}
                 />
 
+                {selectedReport.ready_for_ib === true && (
+                  <InfoField
+                    label="Ready for IB Flight"
+                    value={selectedReport.ready_for_ib_gate || "Ready"}
+                  />
+                )}
+
                 <InfoField
                   label="Counter to Gate"
                   value={formatMinutes(getCounterToGateMinutes(selectedReport))}
@@ -4932,7 +5254,7 @@ export default function WCHRFlights() {
                     : "Inbound service is controlled by the WCHR agent. Management can review the live transit, add notes, or delete an incorrect report."
                   : needs30MinuteAlert(selectedReport)
                   ? "30+ minute alert is active. Add an operational note explaining the current status, then continue monitoring or store the wheelchair when the service is complete."
-                  : "Add operational notes, confirm wheelchair storage, or delete an incorrect report."}
+                  : "Add operational notes, then either store the wheelchair at AV Counter/F87 or stage it at an approved gate for the next inbound flight."}
               </div>
 
               {!isInboundReport(selectedReport) && (
@@ -4940,68 +5262,27 @@ export default function WCHRFlights() {
                   style={{
                     marginTop: 12,
                     display: "grid",
-                    gridTemplateColumns:
-                      isMobile
-                        ? "1fr"
-                        : "repeat(3, minmax(0, 1fr))",
+                    gridTemplateColumns: "1fr",
                     gap: 8,
                   }}
                 >
                   <ActionButton
-                    variant="secondary"
-                  disabled={
-                    Boolean(busyAction) ||
-                    Boolean(
-                      getBoardingStartedAt(
-                        selectedReport
+                    variant="warning"
+                    disabled={
+                      Boolean(busyAction) ||
+                      Boolean(
+                        getPassengerDeliveredAt(
+                          selectedReport
+                        )
                       )
-                    )
-                  }
-                  onClick={
-                    handleDeclareBoarding
-                  }
-                >
-                  {busyAction === "boarding"
-                    ? "Recording..."
-                    : "Start Boarding"}
-                </ActionButton>
-
-                <ActionButton
-                  variant="success"
-                  disabled={
-                    Boolean(busyAction) ||
-                    Boolean(
-                      getBoardedAt(
-                        selectedReport
-                      )
-                    )
-                  }
-                  onClick={
-                    handleDeclareBoarded
-                  }
-                >
-                  {busyAction === "boarded"
-                    ? "Recording..."
-                    : "Passenger Boarded"}
-                </ActionButton>
-
-                <ActionButton
-                  variant="warning"
-                  disabled={
-                    Boolean(busyAction) ||
-                    Boolean(
-                      getPassengerDeliveredAt(
-                        selectedReport
-                      )
-                    )
-                  }
-                  onClick={
-                    handleDeclareDelivered
-                  }
-                >
-                  {busyAction === "delivered"
-                    ? "Recording..."
-                    : "Delivered Main Terminal"}
+                    }
+                    onClick={
+                      handleDeclareDelivered
+                    }
+                  >
+                    {busyAction === "delivered"
+                      ? "Recording..."
+                      : "Delivered Main Terminal"}
                   </ActionButton>
                 </div>
               )}
@@ -5032,18 +5313,47 @@ export default function WCHRFlights() {
                 }}
               >
                 {!isInboundReport(selectedReport) ? (
-                  <SelectInput
-                    value={storeLocation}
-                    onChange={setStoreLocation}
-                    disabled={Boolean(busyAction)}
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 7,
+                    }}
                   >
-                    <option value="Wheelchair Storage">Wheelchair Storage</option>
-                    <option value="Counter">Counter</option>
-                    <option value="Main Terminal">Main Terminal</option>
-                    <option value="Gate F87">Gate F87</option>
-                    <option value="Gate F88">Gate F88</option>
-                    <option value="Other">Other</option>
-                  </SelectInput>
+                    <SelectInput
+                      value={wheelchairDisposition}
+                      onChange={setWheelchairDisposition}
+                      disabled={Boolean(busyAction)}
+                    >
+                      <option value="STORAGE">Store WCHR</option>
+                      <option value="IB_READY">Ready for IB Flight</option>
+                    </SelectInput>
+
+                    {wheelchairDisposition === "STORAGE" ? (
+                      <SelectInput
+                        value={storeLocation}
+                        onChange={setStoreLocation}
+                        disabled={Boolean(busyAction)}
+                      >
+                        {STORAGE_LOCATIONS.map((location) => (
+                          <option key={location} value={location}>
+                            {location}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    ) : (
+                      <SelectInput
+                        value={ibReadyGate}
+                        onChange={setIbReadyGate}
+                        disabled={Boolean(busyAction)}
+                      >
+                        {IB_READY_GATES.map((gate) => (
+                          <option key={gate} value={gate}>
+                            Ready for IB Flight at {gate}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    )}
+                  </div>
                 ) : (
                   <InfoField
                     label="IB Destination"
@@ -5068,11 +5378,22 @@ export default function WCHRFlights() {
                     variant="success"
                     disabled={
                       Boolean(busyAction) ||
-                      getServiceStatus(selectedReport) === "STORED"
+                      (
+                        wheelchairDisposition === "STORAGE" &&
+                        getServiceStatus(selectedReport) === "STORED"
+                      ) ||
+                      (
+                        wheelchairDisposition === "IB_READY" &&
+                        getServiceStatus(selectedReport) === "READY_FOR_IB"
+                      )
                     }
-                    onClick={handleStoreWheelchair}
+                    onClick={handleWheelchairDisposition}
                   >
-                    {busyAction === "store" ? "Storing..." : "Store WCHR"}
+                    {busyAction === "disposition"
+                      ? "Updating..."
+                      : wheelchairDisposition === "IB_READY"
+                      ? "Ready for IB Flight"
+                      : "Store WCHR"}
                   </ActionButton>
                 )}
 
