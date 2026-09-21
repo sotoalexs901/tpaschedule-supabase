@@ -272,6 +272,57 @@ function InfoCard({ label, value, tone = "default" }) {
   );
 }
 
+
+function AircraftSilhouette({
+  width = 132,
+  height = 54,
+  color = "#0f2f57",
+}) {
+  return (
+    <svg
+      viewBox="0 0 220 90"
+      width={width}
+      height={height}
+      aria-hidden="true"
+      role="img"
+      style={{ display: "block", maxWidth: "100%" }}
+    >
+      <path
+        fill={color}
+        d="M13 50c0-4 5-7 13-8l52-6 28-28h15l-12 27 63-2 18-14h11l-7 14 13 4c9 3 14 7 14 12 0 6-8 10-23 12l-72 2 17 21h-14L96 64l-48 1-18 13H18l10-14-8-2c-5-1-7-5-7-12Z"
+      />
+      <rect x="144" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
+      <rect x="159" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
+      <rect x="174" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
+    </svg>
+  );
+}
+
+function getAircraftSvgHtml(color = "#0f2f57") {
+  return `
+    <svg viewBox="0 0 220 90" width="150" height="60" aria-hidden="true" style="display:block;margin:0 auto;">
+      <path
+        fill="${color}"
+        d="M13 50c0-4 5-7 13-8l52-6 28-28h15l-12 27 63-2 18-14h11l-7 14 13 4c9 3 14 7 14 12 0 6-8 10-23 12l-72 2 17 21h-14L96 64l-48 1-18 13H18l10-14-8-2c-5-1-7-5-7-12Z"
+      />
+      <rect x="144" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
+      <rect x="159" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
+      <rect x="174" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
+    </svg>
+  `;
+}
+
+function getWeekBucketLabel(dateStr) {
+  if (!dateStr) return "Other";
+  const day = Number(String(dateStr).slice(8, 10)) || 0;
+
+  if (day <= 7) return "1-7";
+  if (day <= 14) return "8-14";
+  if (day <= 21) return "15-21";
+  if (day <= 28) return "22-28";
+  return "29-31";
+}
+
 function formatDateTime(value) {
   if (!value) return "-";
   try {
@@ -1393,6 +1444,7 @@ export default function GateChecklistManagementPage() {
       .map(
         ([aircraft, count]) => `
           <div class="aircraft-card">
+            <div class="aircraft-visual">${getAircraftSvgHtml("#0f2f57")}</div>
             <div class="aircraft-name">${aircraft}</div>
             <div class="aircraft-count">${count}</div>
             <div class="aircraft-sub">flight${count === 1 ? "" : "s"}</div>
@@ -1629,6 +1681,13 @@ export default function GateChecklistManagementPage() {
               border-radius: 14px;
               padding: 13px 14px;
               text-align: center;
+            }
+
+            .aircraft-visual {
+              height: 64px;
+              display: grid;
+              place-items: center;
+              margin-bottom: 4px;
             }
 
             .aircraft-name {
@@ -2046,6 +2105,38 @@ export default function GateChecklistManagementPage() {
       .sort((a, b) => b.flights - a.flights || a.aircraft.localeCompare(b.aircraft));
   }, [filteredReports]);
 
+  const selectedAirlineName = useMemo(() => {
+    if (filters.airline === "all") return "All Airlines";
+    return getAirlineDisplayName(filters.airline);
+  }, [filters.airline]);
+
+  const passengerFlowBuckets = useMemo(() => {
+    const order = ["1-7", "8-14", "15-21", "22-28", "29-31"];
+    const bucketMap = order.reduce((acc, label) => {
+      acc[label] = { label, ib: 0, out: 0 };
+      return acc;
+    }, {});
+
+    filteredReports.forEach((item) => {
+      const label = getWeekBucketLabel(item.date);
+      if (!bucketMap[label]) {
+        bucketMap[label] = { label, ib: 0, out: 0 };
+      }
+
+      bucketMap[label].ib += safeNumber(item.totalIbPax);
+      bucketMap[label].out += safeNumber(item.finalTotalPax);
+    });
+
+    return order.map((label) => bucketMap[label]);
+  }, [filteredReports]);
+
+  const maxPassengerBucket = useMemo(() => {
+    return Math.max(
+      1,
+      ...passengerFlowBuckets.map((item) => Math.max(item.ib, item.out))
+    );
+  }, [passengerFlowBuckets]);
+
   const selectedAirlinePeriodSummary = useMemo(() => {
     if (
       filters.periodType !== "month" ||
@@ -2106,7 +2197,210 @@ export default function GateChecklistManagementPage() {
           }
         }
 
+
+        .airline-kpi-shell {
+          background: #ffffff;
+          border: 1px solid #dbeafe;
+          border-radius: 22px;
+          padding: 18px;
+          overflow: hidden;
+        }
+
+        .airline-kpi-header {
+          display: grid;
+          grid-template-columns: minmax(0, 1.5fr) auto auto;
+          gap: 14px;
+          align-items: center;
+          padding: 16px 18px;
+          border-radius: 18px;
+          background: linear-gradient(135deg, #f8fbff 0%, #eef7ff 100%);
+          border: 1px solid #dbeafe;
+        }
+
+        .airline-kpi-title {
+          font-size: 28px;
+          font-weight: 950;
+          color: #0f172a;
+          line-height: 1.05;
+        }
+
+        .airline-kpi-sub {
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .airline-kpi-badge {
+          padding: 8px 11px;
+          border-radius: 999px;
+          background: #e0f2fe;
+          border: 1px solid #bae6fd;
+          color: #1769aa;
+          font-size: 12px;
+          font-weight: 900;
+        }
+
+        .airline-kpi-chart-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.45fr) minmax(0, .85fr) minmax(0, .85fr) minmax(0, 1.15fr);
+          gap: 10px;
+          margin-top: 12px;
+        }
+
+        .airline-kpi-panel {
+          background: #fff;
+          border: 1px solid #dbeafe;
+          border-radius: 16px;
+          padding: 13px;
+          min-width: 0;
+        }
+
+        .airline-kpi-panel-title {
+          font-size: 13px;
+          font-weight: 900;
+          color: #0f172a;
+          margin-bottom: 10px;
+        }
+
+        .airline-kpi-bars {
+          height: 165px;
+          display: flex;
+          align-items: end;
+          gap: 12px;
+          justify-content: center;
+        }
+
+        .airline-kpi-bar-group {
+          flex: 1;
+          min-width: 0;
+          text-align: center;
+        }
+
+        .airline-kpi-bar-wrap {
+          height: 126px;
+          display: flex;
+          justify-content: center;
+          align-items: end;
+          gap: 4px;
+        }
+
+        .airline-kpi-bar {
+          width: 14px;
+          min-height: 4px;
+          border-radius: 4px 4px 0 0;
+        }
+
+        .airline-kpi-bar.ib {
+          background: #24a7e5;
+        }
+
+        .airline-kpi-bar.out {
+          background: #0f5c91;
+        }
+
+        .airline-kpi-bar-label {
+          margin-top: 6px;
+          font-size: 9px;
+          color: #64748b;
+          font-weight: 800;
+        }
+
+        .airline-kpi-donut {
+          width: 140px;
+          height: 140px;
+          margin: 8px auto 0;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          position: relative;
+        }
+
+        .airline-kpi-donut::after {
+          content: "";
+          position: absolute;
+          width: 94px;
+          height: 94px;
+          border-radius: 50%;
+          background: white;
+        }
+
+        .airline-kpi-donut-value {
+          position: relative;
+          z-index: 2;
+          font-size: 25px;
+          font-weight: 950;
+          color: #0f172a;
+          text-align: center;
+          line-height: 1.05;
+        }
+
+        .airline-kpi-aircraft-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        .airline-kpi-aircraft-card {
+          border: 1px solid #dbeafe;
+          background: #f8fbff;
+          border-radius: 13px;
+          padding: 8px;
+          text-align: center;
+        }
+
+        .airline-kpi-aircraft-name {
+          margin-top: 2px;
+          font-size: 11px;
+          font-weight: 900;
+          color: #0f172a;
+        }
+
+        .airline-kpi-aircraft-count {
+          margin-top: 2px;
+          font-size: 18px;
+          font-weight: 950;
+          color: #1769aa;
+        }
+
+        @media (max-width: 1100px) {
+          .airline-kpi-header {
+            grid-template-columns: 1fr auto;
+          }
+
+          .airline-kpi-chart-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
         @media (max-width: 900px) {
+          .airline-kpi-shell {
+            padding: 12px !important;
+            border-radius: 18px !important;
+          }
+
+          .airline-kpi-header {
+            grid-template-columns: 1fr !important;
+            padding: 14px !important;
+          }
+
+          .airline-kpi-title {
+            font-size: 22px !important;
+          }
+
+          .airline-kpi-chart-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .airline-kpi-bars {
+            height: 150px !important;
+            gap: 7px !important;
+          }
+
+          .airline-kpi-aircraft-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
           .gcm-hero {
             padding: 18px !important;
             border-radius: 18px !important;
@@ -2530,47 +2824,58 @@ export default function GateChecklistManagementPage() {
         </div>
       </PageCard>
 
-      <PageCard
-        style={{
-          padding: isMobile ? 14 : 18,
-          background: "#ffffff",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 900,
-                color: "#1769aa",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Selected KPI View
+      {filters.airline !== "all" ? (
+        <div className="airline-kpi-shell">
+          <div className="airline-kpi-header">
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 900,
+                  color: "#1769aa",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.12em",
+                }}
+              >
+                AeroStation Hub | Airline Service KPI Dashboard
+              </div>
+
+              <div
+                className="airline-kpi-title"
+                style={{
+                  marginTop: 7,
+                }}
+              >
+                {selectedAirlineName}
+              </div>
+
+              <div className="airline-kpi-sub">
+                {filters.month ? formatMonthYear(filters.month) : "Selected Period"} | Gate Operations Performance
+              </div>
             </div>
 
             <div
               style={{
-                marginTop: 4,
-                fontSize: isMobile ? 19 : 23,
-                fontWeight: 900,
-                color: "#0f172a",
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
               }}
             >
-              {selectedPeriodTitle}
+              <span className="airline-kpi-badge">
+                {filters.airline}
+              </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                {totals.flights} Flights
+              </span>
             </div>
-          </div>
 
-          {filters.airline !== "all" && filteredReports.length > 0 && (
             <ActionButton
               variant="dark"
               onClick={() => printAirlineKpiSheet(filters.airline)}
@@ -2578,57 +2883,263 @@ export default function GateChecklistManagementPage() {
             >
               Print / Export KPI PDF
             </ActionButton>
-          )}
-        </div>
-      </PageCard>
+          </div>
 
-      <div
-        className="gcm-kpi-grid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 10,
-        }}
-      >
-        <InfoCard
-          label="Flights"
-          value={String(totals.flights)}
-        />
-        <InfoCard
-          label="OTP"
-          value={formatPercent(totals.otpPercent)}
-          tone={totals.otpPercent >= 90 ? "green" : "amber"}
-        />
-        <InfoCard
-          label="Delayed Flights"
-          value={String(totals.delayedFlights)}
-          tone={totals.delayedFlights > 0 ? "amber" : "green"}
-        />
-        <InfoCard
-          label="Avg Delay"
-          value={`${totals.avgDelayMinutes.toFixed(1)} min`}
-          tone={totals.avgDelayMinutes > 0 ? "amber" : "green"}
-        />
-        <InfoCard
-          label="Checked Bags"
-          value={String(totals.checkedBags)}
-        />
-        <InfoCard
-          label="Not Loaded"
-          value={String(totals.notLoadedBags)}
-          tone={totals.notLoadedBags > 0 ? "red" : "green"}
-        />
-        <InfoCard
-          label="Station MBR"
-          value={formatPercent(totals.stationMbrPercent)}
-          tone={totals.stationMbrPercent > 0 ? "amber" : "green"}
-        />
-        <InfoCard
-          label="Pax Flow"
-          value={`${totals.totalIbPax} IB | ${totals.totalOutPax} OUT`}
-          tone="blue"
-        />
-      </div>
+          <div
+            className="gcm-kpi-grid"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: 9,
+              marginTop: 12,
+            }}
+          >
+            <InfoCard label="Total Flights" value={String(totals.flights)} tone="blue" />
+            <InfoCard
+              label="OTP"
+              value={formatPercent(totals.otpPercent)}
+              tone={totals.otpPercent >= 90 ? "green" : "amber"}
+            />
+            <InfoCard
+              label="Delayed Flights"
+              value={String(totals.delayedFlights)}
+              tone={totals.delayedFlights > 0 ? "amber" : "green"}
+            />
+            <InfoCard
+              label="Avg Delay"
+              value={`${totals.avgDelayMinutes.toFixed(1)} min`}
+              tone={totals.avgDelayMinutes > 0 ? "amber" : "green"}
+            />
+            <InfoCard label="Checked Bags" value={String(totals.checkedBags)} tone="blue" />
+            <InfoCard
+              label="Not Loaded Bags"
+              value={String(totals.notLoadedBags)}
+              tone={totals.notLoadedBags > 0 ? "red" : "green"}
+            />
+            <InfoCard
+              label="Passenger Flow"
+              value={`${totals.totalIbPax} IB | ${totals.totalOutPax} OUT`}
+              tone="blue"
+            />
+          </div>
+
+          <div className="airline-kpi-chart-grid">
+            <div className="airline-kpi-panel">
+              <div className="airline-kpi-panel-title">Passenger Flow by Month Segment</div>
+
+              <div className="airline-kpi-bars">
+                {passengerFlowBuckets.map((bucket) => (
+                  <div className="airline-kpi-bar-group" key={bucket.label}>
+                    <div className="airline-kpi-bar-wrap">
+                      <div
+                        className="airline-kpi-bar ib"
+                        title={`${bucket.ib} IB`}
+                        style={{
+                          height: `${Math.max(
+                            4,
+                            (bucket.ib / maxPassengerBucket) * 100
+                          )}%`,
+                        }}
+                      />
+                      <div
+                        className="airline-kpi-bar out"
+                        title={`${bucket.out} OUT`}
+                        style={{
+                          height: `${Math.max(
+                            4,
+                            (bucket.out / maxPassengerBucket) * 100
+                          )}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="airline-kpi-bar-label">
+                      {bucket.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  justifyContent: "center",
+                  gap: 14,
+                  flexWrap: "wrap",
+                  fontSize: 9,
+                  fontWeight: 800,
+                  color: "#64748b",
+                }}
+              >
+                <span>â IB Pax</span>
+                <span style={{ color: "#0f5c91" }}>â OUT Pax</span>
+              </div>
+            </div>
+
+            <div className="airline-kpi-panel">
+              <div className="airline-kpi-panel-title">OTP Performance</div>
+              <div
+                className="airline-kpi-donut"
+                style={{
+                  background: `conic-gradient(
+                    #22a06b 0 ${Math.max(0, Math.min(100, totals.otpPercent))}%,
+                    #e5e7eb ${Math.max(0, Math.min(100, totals.otpPercent))}% 100%
+                  )`,
+                }}
+              >
+                <div className="airline-kpi-donut-value">
+                  {formatPercent(totals.otpPercent)}
+                </div>
+              </div>
+            </div>
+
+            <div className="airline-kpi-panel">
+              <div className="airline-kpi-panel-title">Bag Delivery Quality</div>
+              <div
+                className="airline-kpi-donut"
+                style={{
+                  background: `conic-gradient(
+                    #2196f3 0 ${Math.max(
+                      0,
+                      Math.min(100, 100 - totals.stationMbrPercent)
+                    )}%,
+                    #e5e7eb ${Math.max(
+                      0,
+                      Math.min(100, 100 - totals.stationMbrPercent)
+                    )}% 100%
+                  )`,
+                }}
+              >
+                <div className="airline-kpi-donut-value">
+                  {formatPercent(
+                    Math.max(0, 100 - totals.stationMbrPercent)
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="airline-kpi-panel">
+              <div className="airline-kpi-panel-title">Aircraft Type Mix</div>
+
+              {aircraftTypeSummary.length === 0 ? (
+                <div style={emptyTextStyle}>No aircraft data.</div>
+              ) : (
+                <div className="airline-kpi-aircraft-grid">
+                  {aircraftTypeSummary.slice(0, 4).map((item) => (
+                    <div
+                      className="airline-kpi-aircraft-card"
+                      key={item.aircraft}
+                    >
+                      <AircraftSilhouette
+                        width={108}
+                        height={44}
+                        color="#0f2f57"
+                      />
+
+                      <div className="airline-kpi-aircraft-name">
+                        {item.aircraft}
+                      </div>
+
+                      <div className="airline-kpi-aircraft-count">
+                        {item.flights}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontSize: 8,
+                          fontWeight: 800,
+                          color: "#94a3b8",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Flight{item.flights === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <PageCard
+            style={{
+              padding: isMobile ? 14 : 18,
+              background: "#ffffff",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 900,
+                  color: "#1769aa",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                Selected KPI View
+              </div>
+
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: isMobile ? 19 : 23,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                }}
+              >
+                {selectedPeriodTitle}
+              </div>
+            </div>
+          </PageCard>
+
+          <div
+            className="gcm-kpi-grid"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 10,
+            }}
+          >
+            <InfoCard label="Flights" value={String(totals.flights)} />
+            <InfoCard
+              label="OTP"
+              value={formatPercent(totals.otpPercent)}
+              tone={totals.otpPercent >= 90 ? "green" : "amber"}
+            />
+            <InfoCard
+              label="Delayed Flights"
+              value={String(totals.delayedFlights)}
+              tone={totals.delayedFlights > 0 ? "amber" : "green"}
+            />
+            <InfoCard
+              label="Avg Delay"
+              value={`${totals.avgDelayMinutes.toFixed(1)} min`}
+              tone={totals.avgDelayMinutes > 0 ? "amber" : "green"}
+            />
+            <InfoCard label="Checked Bags" value={String(totals.checkedBags)} />
+            <InfoCard
+              label="Not Loaded"
+              value={String(totals.notLoadedBags)}
+              tone={totals.notLoadedBags > 0 ? "red" : "green"}
+            />
+            <InfoCard
+              label="Station MBR"
+              value={formatPercent(totals.stationMbrPercent)}
+              tone={totals.stationMbrPercent > 0 ? "amber" : "green"}
+            />
+            <InfoCard
+              label="Pax Flow"
+              value={`${totals.totalIbPax} IB | ${totals.totalOutPax} OUT`}
+              tone="blue"
+            />
+          </div>
+        </>
+      )}
 
       {selectedMonthSummary &&
         !(filters.periodType === "month" && filters.airline !== "all") && (
@@ -2766,14 +3277,6 @@ export default function GateChecklistManagementPage() {
                         onClick={() => printAirlineKpiSheet(row.airline)}
                       >
                         Print / PDF
-                      </ActionButton>
-                    </td>
-                    <td style={tdStyle}>
-                      <ActionButton
-                        variant="dark"
-                        onClick={() => handlePrintAirlineKpis(row)}
-                      >
-                        Print / Export PDF
                       </ActionButton>
                     </td>
                   </tr>
