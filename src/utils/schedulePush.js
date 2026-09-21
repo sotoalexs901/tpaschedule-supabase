@@ -1,9 +1,10 @@
 // src/utils/schedulePush.js
+import { apiFetch } from "../platform/api.js";
 
 function fireAndForgetSchedulePush(endpoint, payload, label) {
   if (typeof window === "undefined") return;
 
-  fetch(endpoint, {
+  apiFetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -73,7 +74,7 @@ export function triggerScheduleDecisionPush(scheduleId, decision) {
 }
 
 async function postScheduleDistribution(endpoint, payload) {
-  const response = await fetch(endpoint, {
+  const response = await apiFetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
