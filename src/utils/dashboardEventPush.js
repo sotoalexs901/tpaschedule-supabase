@@ -1,9 +1,10 @@
 // src/utils/dashboardEventPush.js
+import { apiFetch } from "../platform/api.js";
 
 function fireAndForgetDashboardEventPush(endpoint, payload, label) {
   if (typeof window === "undefined") return;
 
-  fetch(endpoint, {
+  apiFetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
