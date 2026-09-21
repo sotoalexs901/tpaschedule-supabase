@@ -272,121 +272,6 @@ function InfoCard({ label, value, tone = "default" }) {
 }
 
 
-function AircraftSilhouette({
-  width = 180,
-  height = 70,
-  color = "#0f2f57",
-}) {
-  return (
-    <svg
-      viewBox="0 0 320 120"
-      width={width}
-      height={height}
-      aria-hidden="true"
-      role="img"
-      style={{ display: "block", maxWidth: "100%", margin: "0 auto" }}
-    >
-      {/* fuselage */}
-      <path
-        fill={color}
-        d="M20 62
-           C34 56, 55 53, 88 51
-           L208 47
-           C234 46, 257 48, 278 54
-           L305 61
-           C311 63, 314 67, 312 71
-           C310 76, 304 79, 293 80
-           L205 81
-           L104 79
-           L51 76
-           C36 75, 25 72, 19 68
-           C16 66, 16 64, 20 62Z"
-      />
-
-      {/* nose highlight */}
-      <path
-        fill="#ffffff"
-        opacity="0.9"
-        d="M279 57 L296 62 C302 64 304 66 304 68 L278 68Z"
-      />
-
-      {/* vertical tail */}
-      <path
-        fill={color}
-        d="M212 49 L235 15 L251 15 L244 49Z"
-      />
-
-      {/* main wing */}
-      <path
-        fill={color}
-        d="M145 58 L190 25 L210 25 L183 61 L231 74 L218 82 L162 70 L118 91 L102 91 L132 67Z"
-      />
-
-      {/* horizontal tail */}
-      <path
-        fill={color}
-        d="M69 53 L96 34 L108 34 L94 54 L119 58 L112 63 L83 60 L63 70 L52 70 L65 59Z"
-      />
-
-      {/* engines */}
-      <ellipse cx="171" cy="76" rx="16" ry="8" fill={color} />
-      <ellipse cx="206" cy="77" rx="14" ry="7" fill={color} />
-
-      {/* cockpit + windows */}
-      <rect x="271" y="58" width="10" height="4" rx="2" fill="#ffffff" opacity="0.95" />
-      {Array.from({ length: 10 }).map((_, index) => (
-        <rect
-          key={index}
-          x={225 - index * 14}
-          y="58"
-          width="7"
-          height="4"
-          rx="2"
-          fill="#ffffff"
-          opacity="0.92"
-        />
-      ))}
-    </svg>
-  );
-}
-
-function getAircraftSvgHtml(color = "#0f2f57") {
-  const windows = Array.from({ length: 10 })
-    .map(
-      (_, index) =>
-        `<rect x="${225 - index * 14}" y="58" width="7" height="4" rx="2" fill="#ffffff" opacity="0.92" />`
-    )
-    .join("");
-
-  return `
-    <svg viewBox="0 0 320 120" width="240" height="92" aria-hidden="true" style="display:block;margin:0 auto;">
-      <path
-        fill="${color}"
-        d="M20 62
-           C34 56, 55 53, 88 51
-           L208 47
-           C234 46, 257 48, 278 54
-           L305 61
-           C311 63, 314 67, 312 71
-           C310 76, 304 79, 293 80
-           L205 81
-           L104 79
-           L51 76
-           C36 75, 25 72, 19 68
-           C16 66, 16 64, 20 62Z"
-      />
-      <path fill="#ffffff" opacity="0.9" d="M279 57 L296 62 C302 64 304 66 304 68 L278 68Z" />
-      <path fill="${color}" d="M212 49 L235 15 L251 15 L244 49Z" />
-      <path fill="${color}" d="M145 58 L190 25 L210 25 L183 61 L231 74 L218 82 L162 70 L118 91 L102 91 L132 67Z" />
-      <path fill="${color}" d="M69 53 L96 34 L108 34 L94 54 L119 58 L112 63 L83 60 L63 70 L52 70 L65 59Z" />
-      <ellipse cx="171" cy="76" rx="16" ry="8" fill="${color}" />
-      <ellipse cx="206" cy="77" rx="14" ry="7" fill="${color}" />
-      <rect x="271" y="58" width="10" height="4" rx="2" fill="#ffffff" opacity="0.95" />
-      ${windows}
-    </svg>
-  `;
-}
-
 function getWeekBucketLabel(dateStr) {
   if (!dateStr) return "Other";
   const day = Number(String(dateStr).slice(8, 10)) || 0;
@@ -1541,7 +1426,6 @@ export default function GateChecklistManagementPage() {
       .map(
         ([aircraft, count]) => `
           <div class="aircraft-card">
-            <div class="aircraft-visual">${getAircraftSvgHtml("#0f2f57")}</div>
             <div class="aircraft-name">${aircraft}</div>
             <div class="aircraft-count">${count}</div>
             <div class="aircraft-sub">flight${count === 1 ? "" : "s"}</div>
@@ -1767,35 +1651,28 @@ export default function GateChecklistManagementPage() {
 
             .aircraft-grid {
               display: grid;
-              grid-template-columns: repeat(4, minmax(0, 1fr));
-              gap: 10px;
-              margin-top: 12px;
+              grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+              gap: 8px;
+              margin-top: 8px;
             }
 
             .aircraft-card {
               background: #fff;
               border: 1px solid #dbeafe;
-              border-radius: 14px;
-              padding: 13px 14px;
+              border-radius: 12px;
+              padding: 10px 12px;
               text-align: center;
             }
 
-            .aircraft-visual {
-              height: 64px;
-              display: grid;
-              place-items: center;
-              margin-bottom: 4px;
-            }
-
             .aircraft-name {
-              font-size: 12px;
+              font-size: 11px;
               font-weight: 900;
               color: #334155;
             }
 
             .aircraft-count {
-              margin-top: 5px;
-              font-size: 24px;
+              margin-top: 4px;
+              font-size: 20px;
               line-height: 1;
               font-weight: 950;
               color: #1769aa;
@@ -2434,19 +2311,17 @@ export default function GateChecklistManagementPage() {
 
         .airline-kpi-aircraft-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-          gap: 10px;
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+          gap: 8px;
         }
 
         .airline-kpi-aircraft-card {
           border: 1px solid #dbeafe;
-          background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-          border-radius: 16px;
-          padding: 14px 12px;
+          background: #f8fbff;
+          border-radius: 13px;
+          padding: 10px 12px;
           text-align: center;
-          min-height: 170px;
-          display: grid;
-          align-content: center;
+          min-height: 0;
         }
 
         .airline-kpi-aircraft-name {
@@ -2499,6 +2374,7 @@ export default function GateChecklistManagementPage() {
 
           .airline-kpi-aircraft-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 7px !important;
           }
 
           .gcm-hero {
@@ -3077,8 +2953,13 @@ export default function GateChecklistManagementPage() {
               </div>
             </div>
 
-            <div className="airline-kpi-panel">
-              <div className="airline-kpi-panel-title">Aircraft Type Mix</div>
+            <div
+              className="airline-kpi-panel"
+              style={{ padding: isMobile ? 11 : 12 }}
+            >
+              <div className="airline-kpi-panel-title" style={{ marginBottom: 7 }}>
+                Aircraft Type Mix
+              </div>
 
               {aircraftTypeSummary.length === 0 ? (
                 <div style={emptyTextStyle}>No aircraft data.</div>
@@ -3089,12 +2970,6 @@ export default function GateChecklistManagementPage() {
                       className="airline-kpi-aircraft-card"
                       key={item.aircraft}
                     >
-                      <AircraftSilhouette
-                        width={180}
-                        height={70}
-                        color="#0f2f57"
-                      />
-
                       <div className="airline-kpi-aircraft-name">
                         {item.aircraft}
                       </div>
