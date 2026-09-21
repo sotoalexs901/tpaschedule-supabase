@@ -1,11 +1,12 @@
 // src/utils/wchrOpsPush.js
+import { apiFetch } from "../platform/api.js";
 
 function fireAndForgetWchrOpsPush(endpoint, payload, label) {
   if (typeof window === "undefined") {
     return;
   }
 
-  fetch(endpoint, {
+  apiFetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
