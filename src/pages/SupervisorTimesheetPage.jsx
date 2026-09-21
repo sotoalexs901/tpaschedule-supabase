@@ -90,6 +90,45 @@ function getDefaultPosition(role) {
   return "Team Member";
 }
 
+function normalizeEmployeeAirlineValue(value) {
+  const raw = normalizeAirlineName(value);
+  const upper = String(raw || "").trim().toUpperCase();
+
+  if (!upper) return "";
+
+  if (upper === "SUN COUNTRY" || upper === "SUN COUNTRY AIRLINES") return "SY";
+  if (upper === "AVIANCA") return "AV";
+  if (upper === "WORLD ATLANTIC" || upper === "WORLD ATLANTIC AIRLINES") return "WL Invicta";
+  if (upper === "WCHR") return "WCHR";
+  if (upper === "AA BSO" || upper === "AA-BSO") return "AA-BSO";
+  if (upper === "CABIN" || upper.includes("CABIN SERVICE")) return "CABIN";
+  if (upper === "EA") return "EA";
+
+  return raw;
+}
+
+function getEmployeeAirline(emp) {
+  return normalizeEmployeeAirlineValue(
+    emp?.airline ||
+    emp?.account ||
+    emp?.airlineAccount ||
+    emp?.department ||
+    emp?.stationDepartment ||
+    ""
+  );
+}
+
+function employeeMatchesSelectedAirline(emp, selectedAirline) {
+  const selected = normalizeEmployeeAirlineValue(selectedAirline);
+  if (!selected) return true;
+
+  if (selected === "CABIN") {
+    return isCabinServiceDepartment(emp?.department) || getEmployeeAirline(emp) === "CABIN";
+  }
+
+  return getEmployeeAirline(emp) === selected;
+}
+
 function getVisibleName(user) {
   return (
     user?.displayName ||
@@ -214,14 +253,54 @@ function emptyRow() {
   };
 }
 
+function useViewport() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return {
+    width,
+    isMobile: width < 720,
+    isTablet: width >= 720 && width < 1180,
+  };
+}
+
 function PageCard({ children, style = {} }) {
   return (
+    <>
+
+      <style>{`
+        .timesheet-mobile-cards {
+          display: none;
+        }
+
+        @media (max-width: 719px) {
+          .timesheet-desktop-table {
+            display: none !important;
+          }
+
+          .timesheet-mobile-cards {
+            display: grid !important;
+          }
+        }
+      `}</style>
+
     <div
       style={{
         background: "rgba(255,255,255,0.95)",
         border: "1px solid #e2e8f0",
         borderRadius: 22,
         boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         ...style,
       }}
     >
@@ -258,8 +337,9 @@ function TextInput(props) {
         border: "1px solid #dbeafe",
         background: "#ffffff",
         borderRadius: 12,
-        padding: "11px 13px",
-        fontSize: 14,
+        padding: "9px 11px",
+        minHeight: 42,
+        fontSize: 13,
         color: "#0f172a",
         outline: "none",
         ...props.style,
@@ -278,8 +358,9 @@ function SelectInput(props) {
         border: "1px solid #dbeafe",
         background: "#ffffff",
         borderRadius: 12,
-        padding: "11px 13px",
-        fontSize: 14,
+        padding: "9px 11px",
+        minHeight: 42,
+        fontSize: 13,
         color: "#0f172a",
         outline: "none",
         ...props.style,
@@ -298,8 +379,8 @@ function TextArea(props) {
         border: "1px solid #dbeafe",
         background: "#ffffff",
         borderRadius: 13,
-        padding: "11px 13px",
-        fontSize: 14,
+        padding: "9px 11px",
+        fontSize: 13,
         color: "#0f172a",
         outline: "none",
         resize: "vertical",
@@ -317,6 +398,7 @@ function ActionButton({
   variant = "primary",
   type = "button",
   disabled = false,
+  style = {},
 }) {
   const styles = {
     primary: {
@@ -347,13 +429,15 @@ function ActionButton({
       disabled={disabled}
       style={{
         borderRadius: 11,
-        padding: "9px 13px",
+        padding: "10px 13px",
+        minHeight: 42,
         fontSize: 12.5,
         fontWeight: 800,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.7 : 1,
         whiteSpace: "nowrap",
         ...styles[variant],
+        ...style,
       }}
     >
       {children}
@@ -436,9 +520,162 @@ function MetricCard({ label, value, tone = "blue" }) {
   );
 }
 
+
+function MobileEmployeeEntryCard({
+  row,
+  index,
+  employees,
+  onChange,
+  onRemove,
+  canRemove,
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: 16,
+        border: "1px solid #dbeafe",
+        background: "#ffffff",
+        padding: 12,
+        display: "grid",
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 900,
+            color: "#0f172a",
+          }}
+        >
+          Employee #{index + 1}
+        </div>
+
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 900,
+            color: "#1769aa",
+          }}
+        >
+          {calculateRowHours(row).toFixed(2)} hrs
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel>Employee</FieldLabel>
+        <SelectInput
+          value={row.employeeId}
+          onChange={(e) => onChange(index, "employeeId", e.target.value)}
+        >
+          <option value="">Select employee</option>
+          {employees.map((emp) => (
+            <option key={emp.id} value={emp.id}>
+              {emp.name}
+            </option>
+          ))}
+        </SelectInput>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+        }}
+      >
+        <div>
+          <FieldLabel>Punch In</FieldLabel>
+          <TextInput
+            type="time"
+            value={row.punchIn}
+            onChange={(e) => onChange(index, "punchIn", e.target.value)}
+          />
+        </div>
+
+        <div>
+          <FieldLabel>Punch Out</FieldLabel>
+          <TextInput
+            type="time"
+            value={row.punchOut}
+            onChange={(e) => onChange(index, "punchOut", e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+        }}
+      >
+        <div>
+          <FieldLabel>Status</FieldLabel>
+          <SelectInput
+            value={row.employeeStatus}
+            onChange={(e) =>
+              onChange(index, "employeeStatus", e.target.value)
+            }
+          >
+            <option value="">Select status</option>
+            {STATUS_OPTIONS.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </SelectInput>
+        </div>
+
+        <div>
+          <FieldLabel>Break</FieldLabel>
+          <SelectInput
+            value={row.breakTaken}
+            onChange={(e) =>
+              onChange(index, "breakTaken", e.target.value)
+            }
+          >
+            {BREAK_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </SelectInput>
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel>Reason / Note</FieldLabel>
+        <TextInput
+          value={row.reason}
+          onChange={(e) => onChange(index, "reason", e.target.value)}
+          placeholder="Reason / note"
+        />
+      </div>
+
+      <ActionButton
+        variant="danger"
+        disabled={!canRemove}
+        onClick={() => onRemove(index)}
+        style={{ width: "100%" }}
+      >
+        Remove Employee
+      </ActionButton>
+    </div>
+  );
+}
+
 export default function SupervisorTimesheetPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const { isMobile, isTablet } = useViewport();
 
   const [employees, setEmployees] = useState([]);
   const [dailyBudgetDocs, setDailyBudgetDocs] = useState([]);
@@ -505,6 +742,15 @@ export default function SupervisorTimesheetPage() {
               item.username ||
               "Unnamed employee",
             department: item.department || "",
+            airline:
+              item.airline ||
+              item.account ||
+              item.airlineAccount ||
+              item.stationDepartment ||
+              "",
+            account: item.account || "",
+            airlineAccount: item.airlineAccount || "",
+            stationDepartment: item.stationDepartment || "",
           }));
 
         if (isCabinServiceUser) {
@@ -566,6 +812,19 @@ export default function SupervisorTimesheetPage() {
     return map;
   }, [employees]);
 
+  const availableEmployees = useMemo(() => {
+    if (!form.airline) return employees;
+
+    const matching = employees.filter((emp) =>
+      employeeMatchesSelectedAirline(emp, form.airline)
+    );
+
+    // Backward-safe fallback: if legacy employee records do not have an
+    // airline/account mapping, keep the full list instead of hiding everyone.
+    return matching.length ? matching : employees;
+  }, [employees, form.airline]);
+
+
   const dailyBudgetMap = useMemo(() => {
     const map = {};
 
@@ -615,6 +874,25 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
+    if (field === "airline") {
+      const nextAirline = normalizeEmployeeAirlineValue(value);
+
+      setForm((prev) => ({
+        ...prev,
+        airline: nextAirline,
+      }));
+
+      setRows((prev) =>
+        prev.map((row) => ({
+          ...row,
+          employeeId: "",
+          employeeName: "",
+        }))
+      );
+
+      return;
+    }
+
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -656,7 +934,9 @@ export default function SupervisorTimesheetPage() {
     setEditingReportId(report.id);
 
     setForm({
-      airline: report.airline || (isCabinServiceUser ? "CABIN" : ""),
+      airline:
+        normalizeEmployeeAirlineValue(report.airline) ||
+        (isCabinServiceUser ? "CABIN" : ""),
       reportDate: report.reportDate || "",
       shift: report.shift || "",
       supervisorReporting:
@@ -935,6 +1215,27 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
+    const mismatchedEmployees = cleanRows.filter((row) => {
+      const emp = employeeMap[row.employeeId];
+      if (!emp) return false;
+
+      const mapped = getEmployeeAirline(emp);
+      if (!mapped) return false;
+
+      return !employeeMatchesSelectedAirline(emp, form.airline);
+    });
+
+    if (mismatchedEmployees.length) {
+      setStatusMessage(
+        `Timesheet cannot be sent. ${mismatchedEmployees
+          .map((row) => row.employeeName)
+          .join(", ")} ${
+          mismatchedEmployees.length === 1 ? "is" : "are"
+        } not assigned to the selected airline/account.`
+      );
+      return;
+    }
+
     if (
       cleanRows.some(
         (row) =>
@@ -993,16 +1294,22 @@ export default function SupervisorTimesheetPage() {
     <div
       style={{
         display: "grid",
-        gap: 18,
+        gap: isMobile ? 12 : 16,
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        maxWidth: 1320,
+        margin: "0 auto",
+        minWidth: 0,
+        boxSizing: "border-box",
+        padding: isMobile ? "0 2px" : isTablet ? "0 4px" : 0,
       }}
     >
       <div
         style={{
           background:
             "linear-gradient(135deg, #073b66 0%, #0f5c91 50%, #2e9fd6 100%)",
-          borderRadius: 18,
-          padding: "14px 16px",
+          borderRadius: isMobile ? 16 : 18,
+          padding: isMobile ? "12px 13px" : "14px 16px",
           color: "#ffffff",
           boxShadow: "0 14px 30px rgba(15,76,129,0.16)",
           position: "relative",
@@ -1054,7 +1361,7 @@ export default function SupervisorTimesheetPage() {
             >
               <img
                 src="/icons/aerostation-icon.png"
-                alt={APP_NAME}
+                alt="AeroStation Hub"
                 style={{
                   width: "100%",
                   height: "100%",
@@ -1075,13 +1382,13 @@ export default function SupervisorTimesheetPage() {
                   fontWeight: 800,
                 }}
               >
-                {APP_NAME} {"\u00B7"} Timesheets
+                AeroStation Hub | Timesheets
               </div>
 
               <h1
                 style={{
                   margin: 0,
-                  fontSize: 20,
+                  fontSize: isMobile ? 18 : 20,
                   lineHeight: 1.15,
                   fontWeight: 800,
                   letterSpacing: "-0.02em",
@@ -1101,7 +1408,7 @@ export default function SupervisorTimesheetPage() {
                   color: "rgba(255,255,255,0.78)",
                 }}
               >
-                {APP_SUBTITLE} {"\u00B7"} Create, review and resubmit
+                Operational Management Platform | Create, review and resubmit
                 supervisor timesheets.
               </p>
             </div>
@@ -1109,9 +1416,11 @@ export default function SupervisorTimesheetPage() {
 
           <div
             style={{
-              display: "flex",
+              display: isMobile ? "grid" : "flex",
+              gridTemplateColumns: isMobile ? "1fr 1fr" : undefined,
               gap: 8,
               flexWrap: "wrap",
+              width: isMobile ? "100%" : "auto",
             }}
           >
             {editingReportId && (
@@ -1180,13 +1489,13 @@ export default function SupervisorTimesheetPage() {
                   color: "rgba(255,255,255,0.78)",
                 }}
               >
-                Urgent {"\u00B7"} Late Timesheet
+                Urgent "|" Late Timesheet
               </div>
 
               <div
                 style={{
                   marginTop: 4,
-                  fontSize: 20,
+                  fontSize: isMobile ? 18 : 20,
                   fontWeight: 900,
                   letterSpacing: "-0.02em",
                 }}
@@ -1442,7 +1751,7 @@ export default function SupervisorTimesheetPage() {
       )}
 
       {returnedReports.length > 0 && (
-        <PageCard style={{ padding: 20 }}>
+        <PageCard style={{ padding: isMobile ? 14 : 18 }}>
           <div style={{ marginBottom: 14 }}>
             <h2
               style={{
@@ -1496,7 +1805,7 @@ export default function SupervisorTimesheetPage() {
                       }}
                     >
                       {report.airline || "\u2014"}{" "}
-                      {"\u00B7"}{" "}
+                      "|"{" "}
                       {report.reportDate || "\u2014"}
                     </div>
 
@@ -1576,7 +1885,7 @@ export default function SupervisorTimesheetPage() {
         </PageCard>
       )}
 
-      <PageCard style={{ padding: 20 }}>
+      <PageCard style={{ padding: isMobile ? 14 : 18 }}>
         <div
           style={{
             marginBottom: 14,
@@ -1619,8 +1928,11 @@ export default function SupervisorTimesheetPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(220px, 1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : isTablet
+              ? "repeat(2, minmax(0, 1fr))"
+              : "repeat(auto-fit, minmax(210px, 1fr))",
             gap: 13,
           }}
         >
@@ -1700,8 +2012,9 @@ export default function SupervisorTimesheetPage() {
             style={{
               marginTop: 15,
               display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(210px, 1fr))",
+              gridTemplateColumns: isMobile
+                ? "repeat(2, minmax(0, 1fr))"
+                : "repeat(auto-fit, minmax(210px, 1fr))",
               gap: 11,
             }}
           >
@@ -1786,7 +2099,7 @@ export default function SupervisorTimesheetPage() {
 
       <PageCard
         style={{
-          padding: 18,
+          padding: isMobile ? 12 : 16,
           overflow: "hidden",
         }}
       >
@@ -1822,13 +2135,26 @@ export default function SupervisorTimesheetPage() {
             >
               {rows.length}{" "}
               {rows.length === 1 ? "entry" : "entries"}{" "}
-              {"\u00B7"} {totalReportedHours.toFixed(2)} hrs
+              "|" {totalReportedHours.toFixed(2)} hrs
             </div>
+            {form.airline && (
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 10.5,
+                  color: "#1769aa",
+                  fontWeight: 800,
+                }}
+              >
+                Employee list filtered for: {form.airline}
+              </div>
+            )}
           </div>
 
           <ActionButton
             onClick={addRow}
             variant="secondary"
+            style={{ width: isMobile ? "100%" : "auto" }}
           >
             + Add Row
           </ActionButton>
@@ -1849,8 +2175,30 @@ export default function SupervisorTimesheetPage() {
             Loading employees...
           </div>
         ) : (
-          <div
-            style={{
+          <>
+            <div
+              className="timesheet-mobile-cards"
+              style={{
+                display: "none",
+                gap: 10,
+              }}
+            >
+              {rows.map((row, index) => (
+                <MobileEmployeeEntryCard
+                  key={`mobile-${index}`}
+                  row={row}
+                  index={index}
+                  employees={availableEmployees}
+                  onChange={handleRowChange}
+                  onRemove={removeRow}
+                  canRemove={rows.length > 1}
+                />
+              ))}
+            </div>
+
+            <div
+              className="timesheet-desktop-table"
+              style={{
               overflowX: "auto",
               borderRadius: 16,
               border: "1px solid #e2e8f0",
@@ -1931,7 +2279,7 @@ export default function SupervisorTimesheetPage() {
                           Select employee
                         </option>
 
-                        {employees.map((emp) => (
+                        {availableEmployees.map((emp) => (
                           <option
                             key={emp.id}
                             value={emp.id}
@@ -2064,6 +2412,7 @@ export default function SupervisorTimesheetPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </PageCard>
 
@@ -2092,9 +2441,11 @@ export default function SupervisorTimesheetPage() {
 
           <div
             style={{
-              display: "flex",
-              gap: 10,
+              display: isMobile ? "grid" : "flex",
+              gridTemplateColumns: isMobile ? "1fr 1fr" : undefined,
+              gap: 8,
               flexWrap: "wrap",
+              width: isMobile ? "100%" : "auto",
             }}
           >
             <ActionButton
@@ -2119,6 +2470,7 @@ export default function SupervisorTimesheetPage() {
         </div>
       </PageCard>
     </div>
+    </>
   );
 }
 
