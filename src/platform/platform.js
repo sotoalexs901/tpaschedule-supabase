@@ -1,8 +1,8 @@
 // src/platform/platform.js
-// Shared platform detection for AeroStation Hub.
-// This file intentionally has no Capacitor dependency yet, so the current
-// website/PWA build remains unchanged. Once Capacitor is installed, native
-// detection can be added here without spreading platform checks across pages.
+// Shared runtime detection for AeroStation Hub.
+// Works for website, installed PWA, iOS and Android from the same React codebase.
+
+import { Capacitor } from "@capacitor/core";
 
 export function isBrowserEnvironment() {
   return typeof window !== "undefined" && typeof navigator !== "undefined";
@@ -22,20 +22,18 @@ export function isStandalonePwa() {
 }
 
 export function isNativeApp() {
-  if (!isBrowserEnvironment()) return false;
-
-  // Reserved for Capacitor. Keeping the check dependency-free means the
-  // production website can use this foundation before Capacitor is installed.
-  return Boolean(window.Capacitor?.isNativePlatform?.());
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
 }
 
 export function getNativePlatform() {
-  if (!isNativeApp()) return "web";
-
   try {
-    return window.Capacitor?.getPlatform?.() || "native";
+    return Capacitor.getPlatform() || "web";
   } catch {
-    return "native";
+    return "web";
   }
 }
 
@@ -51,4 +49,18 @@ export function isIOSRuntime() {
 
 export function isAndroidRuntime() {
   return getNativePlatform() === "android";
+}
+
+export function isWebRuntime() {
+  return !isNativeApp();
+}
+
+export function getRuntimeInfo() {
+  return {
+    runtime: getAppRuntime(),
+    platform: getNativePlatform(),
+    native: isNativeApp(),
+    pwa: isStandalonePwa(),
+    web: isWebRuntime(),
+  };
 }
