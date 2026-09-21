@@ -1,9 +1,10 @@
 // src/utils/eprPush.js
 
+import { apiFetch } from "../platform/api.js";
 function fireAndForgetEprPush(payload, label = "EPR Push") {
   if (typeof window === "undefined") return;
 
-  fetch("/.netlify/functions/send-epr-event-push", {
+  apiFetch("/.netlify/functions/send-epr-event-push", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
