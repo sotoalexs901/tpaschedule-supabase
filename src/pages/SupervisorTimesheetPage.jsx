@@ -12,7 +12,6 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
-import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 import { createOperationalAlert } from "../utils/operationalAlerts.js";
 import { triggerTimesheetSubmittedPush } from "../utils/timesheetPush.js";
 
@@ -273,24 +272,6 @@ function useViewport() {
 
 function PageCard({ children, style = {} }) {
   return (
-    <>
-
-      <style>{`
-        .timesheet-mobile-cards {
-          display: none;
-        }
-
-        @media (max-width: 719px) {
-          .timesheet-desktop-table {
-            display: none !important;
-          }
-
-          .timesheet-mobile-cards {
-            display: grid !important;
-          }
-        }
-      `}</style>
-
     <div
       style={{
         background: "rgba(255,255,255,0.95)",
@@ -2179,7 +2160,7 @@ export default function SupervisorTimesheetPage() {
             <div
               className="timesheet-mobile-cards"
               style={{
-                display: "none",
+                display: isMobile ? "grid" : "none",
                 gap: 10,
               }}
             >
@@ -2199,6 +2180,7 @@ export default function SupervisorTimesheetPage() {
             <div
               className="timesheet-desktop-table"
               style={{
+              display: isMobile ? "none" : "block",
               overflowX: "auto",
               borderRadius: 16,
               border: "1px solid #e2e8f0",
@@ -2470,7 +2452,6 @@ export default function SupervisorTimesheetPage() {
         </div>
       </PageCard>
     </div>
-    </>
   );
 }
 
