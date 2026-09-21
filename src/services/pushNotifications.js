@@ -11,6 +11,16 @@ import {
 } from "firebase/firestore";
 
 import { app, db } from "../firebase.js";
+import {
+  getNativePushPermissionStatus,
+  registerNativePush,
+  subscribeToNativePushEvents,
+} from "../platform/pushService.js";
+import {
+  getNativePlatform,
+  isNativeApp,
+  isStandalonePwa,
+} from "../platform/platform.js";
 
 const VAPID_KEY = String(
   import.meta.env.VITE_FIREBASE_VAPID_KEY || ""
@@ -32,9 +42,13 @@ async function loadFirebaseMessaging() {
 }
 
 async function sha256(value) {
-  if (!window.crypto?.subtle) {
+  if (
+    typeof window === "undefined" ||
+    !window.crypto ||
+    !window.crypto.subtle
+  ) {
     throw new Error(
-      "Secure browser crypto is not available on this device."
+      "Secure crypto is not available on this device."
     );
   }
 
@@ -47,7 +61,19 @@ async function sha256(value) {
 }
 
 function getDeviceLabel() {
-  const ua = navigator.userAgent || "";
+  if (isNativeApp()) {
+    const platform = getNativePlatform();
+
+    if (platform === "ios") return "iPhone / iPad App";
+    if (platform === "android") return "Android App";
+
+    return "Native App";
+  }
+
+  const ua =
+    typeof navigator !== "undefined"
+      ? navigator.userAgent || ""
+      : "";
 
   if (/iPad/i.test(ua)) return "iPad";
   if (/iPhone/i.test(ua)) return "iPhone";
@@ -59,17 +85,49 @@ function getDeviceLabel() {
 }
 
 function isStandaloneMode() {
-  try {
-    return Boolean(
-      window.matchMedia?.("(display-mode: standalone)")?.matches ||
-        window.navigator?.standalone === true
-    );
-  } catch {
-    return false;
-  }
+  return isStandalonePwa();
 }
 
 export async function getPushSupportStatus() {
+  // ------------------------------------------------------------
+  // Native iOS / Android
+  // ------------------------------------------------------------
+  if (isNativeApp()) {
+    try {
+      const permission =
+        await getNativePushPermissionStatus();
+
+      return {
+        supported: true,
+        permission:
+          permission && permission.receive
+            ? permission.receive
+            : "prompt",
+        standalone: true,
+        native: true,
+        platform: getNativePlatform(),
+        reason: "",
+      };
+    } catch (error) {
+      console.error(
+        "Native push support check failed:",
+        error
+      );
+
+      return {
+        supported: false,
+        permission: "unsupported",
+        standalone: true,
+        native: true,
+        platform: getNativePlatform(),
+        reason: "native-push",
+      };
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Website / PWA
+  // ------------------------------------------------------------
   if (typeof window === "undefined") {
     return {
       supported: false,
@@ -109,14 +167,21 @@ export async function getPushSupportStatus() {
   try {
     messagingSupported = await messaging.isSupported();
   } catch (error) {
-    console.warn("Firebase Messaging support check failed:", error);
+    console.warn(
+      "Firebase Messaging support check failed:",
+      error
+    );
   }
 
   return {
     supported: Boolean(messagingSupported),
     permission: Notification.permission,
     standalone: isStandaloneMode(),
-    reason: messagingSupported ? "" : "firebase-messaging",
+    native: false,
+    platform: "web",
+    reason: messagingSupported
+      ? ""
+      : "firebase-messaging",
   };
 }
 
@@ -125,18 +190,20 @@ async function getRootServiceWorkerRegistration() {
     await navigator.serviceWorker.getRegistration("/");
 
   if (!registration) {
-    registration = await navigator.serviceWorker.register("/sw.js", {
-      scope: "/",
-      updateViaCache: "none",
-    });
+    registration =
+      await navigator.serviceWorker.register("/sw.js", {
+        scope: "/",
+        updateViaCache: "none",
+      });
 
-    registration = await navigator.serviceWorker.ready;
+    registration =
+      await navigator.serviceWorker.ready;
   }
 
   return registration;
 }
 
-async function savePushToken(user, token) {
+async function saveWebPushToken(user, token) {
   if (!user?.id || !token) {
     throw new Error("Missing user or push token.");
   }
@@ -154,6 +221,8 @@ async function savePushToken(user, token) {
   const nowPayload = {
     token,
     tokenHash,
+    tokenRuntime: "web",
+    tokenProvider: "firebase-web-messaging",
     userId: user.id,
     username:
       user.username ||
@@ -165,15 +234,19 @@ async function savePushToken(user, token) {
       user.name ||
       "",
     deviceLabel: getDeviceLabel(),
-    userAgent: navigator.userAgent || "",
-    platform: navigator.platform || "",
+    userAgent:
+      typeof navigator !== "undefined"
+        ? navigator.userAgent || ""
+        : "",
+    platform:
+      typeof navigator !== "undefined"
+        ? navigator.platform || ""
+        : "",
     standalone: isStandaloneMode(),
     enabled: true,
     updatedAt: serverTimestamp(),
   };
 
-  // setDoc + merge means an existing token is refreshed without
-  // overwriting unrelated token data.
   await setDoc(
     tokenRef,
     {
@@ -186,9 +259,155 @@ async function savePushToken(user, token) {
   return tokenHash;
 }
 
+async function saveNativePushToken(user, token) {
+  if (!user?.id || !token) {
+    throw new Error(
+      "Missing user or native push token."
+    );
+  }
+
+  const tokenHash = await sha256(token);
+  const platform = getNativePlatform();
+
+  // IMPORTANT:
+  // Native tokens are stored separately from existing Web FCM tokens.
+  // Current Netlify push functions continue reading only "pushTokens".
+  // This prevents an iOS APNs token from accidentally being sent through
+  // the existing Firebase Web Push delivery path.
+  const tokenRef = doc(
+    db,
+    "users",
+    user.id,
+    "nativePushTokens",
+    tokenHash
+  );
+
+  await setDoc(
+    tokenRef,
+    {
+      token,
+      tokenHash,
+      tokenRuntime: "native",
+      tokenProvider:
+        platform === "ios"
+          ? "apns"
+          : platform === "android"
+          ? "fcm"
+          : "native",
+      nativePlatform: platform,
+      userId: user.id,
+      username:
+        user.username ||
+        user.loginUsername ||
+        "",
+      displayName:
+        user.displayName ||
+        user.fullName ||
+        user.name ||
+        "",
+      deviceLabel: getDeviceLabel(),
+      enabled: true,
+      updatedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return tokenHash;
+}
+
+function waitForNativeRegistrationToken() {
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    let unsubscribe = function () {};
+
+    const timeoutId = window.setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      unsubscribe();
+
+      reject(
+        new Error(
+          "Native push registration timed out."
+        )
+      );
+    }, 15000);
+
+    unsubscribe = subscribeToNativePushEvents({
+      onRegistration(token) {
+        if (finished) return;
+
+        const value =
+          token && typeof token.value === "string"
+            ? token.value.trim()
+            : "";
+
+        if (!value) return;
+
+        finished = true;
+        window.clearTimeout(timeoutId);
+        unsubscribe();
+        resolve(value);
+      },
+
+      onRegistrationError(error) {
+        if (finished) return;
+
+        finished = true;
+        window.clearTimeout(timeoutId);
+        unsubscribe();
+
+        reject(
+          new Error(
+            error && error.error
+              ? String(error.error)
+              : "Native push registration failed."
+          )
+        );
+      },
+    });
+  });
+}
+
+async function enableNativePushNotifications(user) {
+  const tokenPromise =
+    waitForNativeRegistrationToken();
+
+  const registrationResult =
+    await registerNativePush();
+
+  if (!registrationResult.registered) {
+    throw new Error(
+      registrationResult.reason === "permission-denied"
+        ? "Notifications were blocked on this device."
+        : "Native push registration could not start."
+    );
+  }
+
+  const token = await tokenPromise;
+
+  await saveNativePushToken(user, token);
+
+  return {
+    success: true,
+    token,
+    permission:
+      registrationResult.permission ||
+      "granted",
+    runtime: "native",
+    platform: getNativePlatform(),
+  };
+}
+
 export async function enablePushNotifications(user) {
   if (!user?.id) {
-    throw new Error("A logged-in user is required.");
+    throw new Error(
+      "A logged-in user is required."
+    );
+  }
+
+  if (isNativeApp()) {
+    return enableNativePushNotifications(user);
   }
 
   if (!VAPID_KEY) {
@@ -210,7 +429,8 @@ export async function enablePushNotifications(user) {
   let permission = Notification.permission;
 
   if (permission !== "granted") {
-    permission = await Notification.requestPermission();
+    permission =
+      await Notification.requestPermission();
   }
 
   if (permission !== "granted") {
@@ -224,7 +444,8 @@ export async function enablePushNotifications(user) {
   const registration =
     await getRootServiceWorkerRegistration();
 
-  const messagingModule = await loadFirebaseMessaging();
+  const messagingModule =
+    await loadFirebaseMessaging();
 
   if (!messagingModule) {
     throw new Error(
@@ -232,12 +453,14 @@ export async function enablePushNotifications(user) {
     );
   }
 
-  const messaging = messagingModule.getMessaging(app);
+  const messaging =
+    messagingModule.getMessaging(app);
 
-  const token = await messagingModule.getToken(messaging, {
-    vapidKey: VAPID_KEY,
-    serviceWorkerRegistration: registration,
-  });
+  const token =
+    await messagingModule.getToken(messaging, {
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: registration,
+    });
 
   if (!token) {
     throw new Error(
@@ -245,17 +468,33 @@ export async function enablePushNotifications(user) {
     );
   }
 
-  await savePushToken(user, token);
+  await saveWebPushToken(user, token);
 
   return {
     success: true,
     token,
     permission,
+    runtime: "web",
   };
 }
 
 export async function refreshPushToken(user) {
   if (!user?.id) return null;
+
+  if (isNativeApp()) {
+    try {
+      const result =
+        await enableNativePushNotifications(user);
+
+      return result?.token || null;
+    } catch (error) {
+      console.warn(
+        "Native push token refresh failed:",
+        error
+      );
+      return null;
+    }
+  }
 
   if (
     typeof window === "undefined" ||
@@ -273,19 +512,23 @@ export async function refreshPushToken(user) {
   const registration =
     await getRootServiceWorkerRegistration();
 
-  const messagingModule = await loadFirebaseMessaging();
+  const messagingModule =
+    await loadFirebaseMessaging();
+
   if (!messagingModule) return null;
 
-  const messaging = messagingModule.getMessaging(app);
+  const messaging =
+    messagingModule.getMessaging(app);
 
-  const token = await messagingModule.getToken(messaging, {
-    vapidKey: VAPID_KEY,
-    serviceWorkerRegistration: registration,
-  });
+  const token =
+    await messagingModule.getToken(messaging, {
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: registration,
+    });
 
   if (!token) return null;
 
-  await savePushToken(user, token);
+  await saveWebPushToken(user, token);
 
   return token;
 }
@@ -294,16 +537,29 @@ export async function hasPushRegistration(userId) {
   if (!userId) return false;
 
   try {
+    const collectionName =
+      isNativeApp()
+        ? "nativePushTokens"
+        : "pushTokens";
+
     const snap = await getDocs(
       query(
-        collection(db, "users", userId, "pushTokens"),
+        collection(
+          db,
+          "users",
+          userId,
+          collectionName
+        ),
         where("enabled", "==", true)
       )
     );
 
     return !snap.empty;
   } catch (error) {
-    console.error("Could not check push registration:", error);
+    console.error(
+      "Could not check push registration:",
+      error
+    );
     return false;
   }
 }
