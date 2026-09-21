@@ -25,8 +25,8 @@ function useViewport() {
 
   return {
     width,
-    isMobile: width < 768,
-    isTablet: width >= 768 && width < 1100,
+    isMobile: width < 720,
+    isTablet: width >= 720 && width < 1280,
   };
 }
 
@@ -58,7 +58,7 @@ function FieldLabel({ children, className = "" }) {
       style={{
         display: "block",
         marginBottom: 6,
-        fontSize: 12,
+        fontSize: 10.5,
         fontWeight: 800,
         color: "#475569",
         letterSpacing: "0.04em",
@@ -81,8 +81,9 @@ const TextInput = React.forwardRef(function TextInput(props, ref) {
         minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
-        padding: "10px 12px",
-        fontSize: 14,
+        padding: "8px 10px",
+        minHeight: 40,
+        fontSize: 13,
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
@@ -106,8 +107,9 @@ const TimeInput = React.forwardRef(function TimeInput(props, ref) {
         minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
-        padding: "10px 12px",
-        fontSize: 14,
+        padding: "8px 10px",
+        minHeight: 40,
+        fontSize: 13,
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
@@ -128,8 +130,9 @@ function TextArea(props) {
         minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
-        padding: "10px 12px",
-        fontSize: 14,
+        padding: "8px 10px",
+        minHeight: 40,
+        fontSize: 13,
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
@@ -153,8 +156,8 @@ function SelectInput(props) {
         minWidth: 0,
         border: "1px solid #cbd5e1",
         borderRadius: 12,
-        padding: "10px 12px",
-        fontSize: 14,
+        padding: "8px 10px",
+        fontSize: 13,
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
@@ -764,7 +767,29 @@ function buildPrintableGateChecklistHtml({
             color: #94a3b8;
             font-size: 9px;
           }
-          @media print {
+  
+        @media screen and (max-width: 1279px) {
+          .print-side-cards {
+            align-items: start;
+          }
+
+          .print-main-card {
+            border-radius: 14px !important;
+          }
+        }
+
+        @media screen and (max-width: 719px) {
+          .print-table th,
+          .print-table td {
+            padding: 7px 8px !important;
+          }
+
+          .print-card {
+            border-radius: 14px !important;
+          }
+        }
+
+        @media print {
             body { margin: 12px; }
             .section { break-inside: avoid; }
           }
@@ -1628,8 +1653,11 @@ export default function GateChecklistPage() {
         fontFamily: "Poppins, Inter, system-ui, sans-serif",
         color: "#0f172a",
         width: "100%",
-        maxWidth: "100%",
+        maxWidth: 1280,
         minWidth: 0,
+        margin: "0 auto",
+        padding: isMobile ? "0 2px" : isTablet ? "0 4px" : 0,
+        boxSizing: "border-box",
       }}
     >
       <style>{`
@@ -1745,8 +1773,8 @@ export default function GateChecklistPage() {
         style={{
           background:
             "linear-gradient(135deg, #0f5c91 0%, #1f7cc1 42%, #6ec6e8 100%)",
-          borderRadius: isMobile ? 20 : 24,
-          padding: isMobile ? 16 : 24,
+          borderRadius: isMobile ? 16 : 20,
+          padding: isMobile ? 12 : isTablet ? 16 : 20,
           color: "#fff",
         }}
       >
@@ -1765,7 +1793,7 @@ export default function GateChecklistPage() {
         <h1
           style={{
             margin: "10px 0 6px",
-            fontSize: isMobile ? 26 : 30,
+            fontSize: isMobile ? 22 : isTablet ? 24 : 28,
             lineHeight: 1.05,
             fontWeight: 900,
           }}
@@ -1776,7 +1804,7 @@ export default function GateChecklistPage() {
         <p
           style={{
             margin: 0,
-            fontSize: isMobile ? 12 : 14,
+            fontSize: isMobile ? 11 : isTablet ? 12 : 13,
             maxWidth: 900,
             lineHeight: 1.6,
             color: "rgba(255,255,255,0.92)",
@@ -1806,12 +1834,14 @@ export default function GateChecklistPage() {
         </PageCard>
       )}
 
-      <PageCard className="no-print" style={{ padding: isMobile ? 14 : 16 }}>
+      <PageCard className="no-print" style={{ padding: isMobile ? 10 : isTablet ? 12 : 14 }}>
         <div
           style={{
             display: "grid",
             gridTemplateColumns: isMobile
               ? "1fr"
+              : isTablet
+              ? "repeat(2, minmax(0, 1fr))"
               : "minmax(180px, 240px) minmax(180px, 240px) auto auto",
             gap: 10,
             alignItems: "end",
@@ -1883,7 +1913,10 @@ export default function GateChecklistPage() {
       </PageCard>
 
       <div className="print-only-area">
-        <PageCard className="print-main-card" style={{ padding: isMobile ? 14 : 18 }}>
+        <PageCard
+          className="print-main-card"
+          style={{ padding: isMobile ? 10 : isTablet ? 12 : 16 }}
+        >
           <div
             className="no-print"
             style={{
@@ -1958,7 +1991,7 @@ export default function GateChecklistPage() {
             <div style={{ textAlign: "center" }}>
               <div
                 style={{
-                  fontSize: isMobile ? 26 : 34,
+                  fontSize: isMobile ? 22 : isTablet ? 25 : 30,
                   fontWeight: 900,
                   letterSpacing: "-0.03em",
                 }}
@@ -1973,7 +2006,9 @@ export default function GateChecklistPage() {
                 display: "grid",
                 gridTemplateColumns: isMobile
                   ? "1fr"
-                  : "repeat(auto-fit, minmax(220px, 1fr))",
+                  : isTablet
+                  ? "repeat(2, minmax(0, 1fr))"
+                  : "repeat(auto-fit, minmax(200px, 1fr))",
                 gap: 12,
               }}
             >
@@ -2304,9 +2339,10 @@ export default function GateChecklistPage() {
               className="print-grid-tight"
               style={{
                 display: "grid",
-                gridTemplateColumns: isMobile
-                  ? "1fr"
-                  : "minmax(0, 1.7fr) minmax(260px, 0.85fr)",
+                gridTemplateColumns:
+                  isMobile || isTablet
+                    ? "1fr"
+                    : "minmax(0, 1.7fr) minmax(250px, 0.8fr)",
                 gap: 14,
                 alignItems: "start",
               }}
@@ -2324,10 +2360,10 @@ export default function GateChecklistPage() {
                   className="print-table"
                   style={{
                     width: "100%",
-                    minWidth: isMobile ? 720 : 0,
+                    minWidth: isMobile ? 560 : isTablet ? 640 : 0,
                     borderCollapse: "collapse",
                     tableLayout: "fixed",
-                    fontSize: 13,
+                    fontSize: isMobile ? 11 : 12,
                     opacity: stdUnlocked ? 1 : 0.65,
                   }}
                 >
@@ -2347,7 +2383,7 @@ export default function GateChecklistPage() {
                         </td>
 
                         <td style={tableCellStyle}>
-                          <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ display: "grid", gap: 6 }}>
                             {section.tasks.map((task, taskIndex) => (
                               <div
                                 key={`${section.time}-${taskIndex}`}
@@ -2376,7 +2412,7 @@ export default function GateChecklistPage() {
                         </td>
 
                         <td style={tableCellStyle}>
-                          <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ display: "grid", gap: 6 }}>
                             {section.tasks.map((task, taskIndex) => (
                               <TimeInput
                                 key={`${sectionIndex}-${taskIndex}`}
@@ -2391,8 +2427,9 @@ export default function GateChecklistPage() {
                                   )
                                 }
                                 style={{
-                                  padding: "8px 10px",
-                                  fontSize: 12,
+                                  padding: "6px 8px",
+                                  minHeight: 34,
+                                  fontSize: 11.5,
                                   background: getMappedTaskField(task)
                                     ? "#f0fdf4"
                                     : "#ffffff",
@@ -2409,14 +2446,23 @@ export default function GateChecklistPage() {
 
               <div
                 className="print-side-cards"
-                style={{ display: "grid", gap: 14, opacity: stdUnlocked ? 1 : 0.65 }}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile
+                    ? "1fr"
+                    : isTablet
+                    ? "repeat(2, minmax(0, 1fr))"
+                    : "1fr",
+                  gap: 10,
+                  opacity: stdUnlocked ? 1 : 0.65,
+                }}
               >
-                <PageCard style={{ padding: 14 }}>
+                <PageCard style={{ padding: 11 }}>
                   <div
                     style={{
-                      fontSize: 15,
+                      fontSize: 13.5,
                       fontWeight: 900,
-                      marginBottom: 12,
+                      marginBottom: 9,
                       textAlign: "center",
                     }}
                   >
@@ -2444,12 +2490,12 @@ export default function GateChecklistPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 14 }}>
+                <PageCard style={{ padding: 11 }}>
                   <div
                     style={{
-                      fontSize: 15,
+                      fontSize: 13.5,
                       fontWeight: 900,
-                      marginBottom: 12,
+                      marginBottom: 9,
                       textAlign: "center",
                     }}
                   >
@@ -2495,12 +2541,12 @@ export default function GateChecklistPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 14 }}>
+                <PageCard style={{ padding: 11 }}>
                   <div
                     style={{
-                      fontSize: 15,
+                      fontSize: 13.5,
                       fontWeight: 900,
-                      marginBottom: 12,
+                      marginBottom: 9,
                       textAlign: "center",
                     }}
                   >
@@ -2534,12 +2580,12 @@ export default function GateChecklistPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 14 }}>
+                <PageCard style={{ padding: 11 }}>
                   <div
                     style={{
-                      fontSize: 15,
+                      fontSize: 13.5,
                       fontWeight: 900,
-                      marginBottom: 12,
+                      marginBottom: 9,
                       textAlign: "center",
                     }}
                   >
@@ -2562,12 +2608,12 @@ export default function GateChecklistPage() {
                   </div>
                 </PageCard>
 
-                <PageCard style={{ padding: 14 }}>
+                <PageCard style={{ padding: 11 }}>
                   <div
                     style={{
-                      fontSize: 15,
+                      fontSize: 13.5,
                       fontWeight: 900,
-                      marginBottom: 12,
+                      marginBottom: 9,
                       textAlign: "center",
                     }}
                   >
@@ -2626,14 +2672,14 @@ export default function GateChecklistPage() {
               </div>
             </div>
 
-            <PageCard style={{ padding: 16, opacity: stdUnlocked ? 1 : 0.65 }}>
+            <PageCard style={{ padding: isMobile ? 10 : 12, opacity: stdUnlocked ? 1 : 0.65 }}>
               <FieldLabel className="print-label">Notes</FieldLabel>
               <TextArea
                 value={form.remarks}
                 disabled={!canEdit || !stdUnlocked}
                 onChange={(e) => updateField("remarks", e.target.value)}
                 placeholder="Add notes here..."
-                style={{ minHeight: 120 }}
+                style={{ minHeight: isMobile ? 80 : 95 }}
               />
             </PageCard>
           </div>
@@ -2659,15 +2705,15 @@ export default function GateChecklistPage() {
 const tableHeadStyle = {
   border: "1px solid #94a3b8",
   background: "#f8fafc",
-  padding: "10px 12px",
-  fontSize: 13,
+  padding: "8px 9px",
+  fontSize: 11.5,
   textAlign: "left",
   fontWeight: 900,
 };
 
 const tableCellStyle = {
   border: "1px solid #94a3b8",
-  padding: "10px 12px",
+  padding: "8px 9px",
   verticalAlign: "top",
 };
 
