@@ -1,4 +1,5 @@
 // src/utils/trainingPush.js
+import { apiFetch } from "../platform/api.js";
 
 export async function triggerTrainingNoticePush(noticeId) {
   const cleanNoticeId = String(noticeId || "").trim();
@@ -9,7 +10,7 @@ export async function triggerTrainingNoticePush(noticeId) {
   }
 
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       "/.netlify/functions/send-training-notice-push",
       {
         method: "POST",
