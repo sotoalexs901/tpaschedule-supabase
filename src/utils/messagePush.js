@@ -1,11 +1,12 @@
 // src/utils/messagePush.js
 
+import { apiFetch } from "../platform/api.js";
 function fireAndForgetMessagePush(endpoint, payload) {
   if (typeof window === "undefined") {
     return;
   }
 
-  fetch(endpoint, {
+  apiFetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
