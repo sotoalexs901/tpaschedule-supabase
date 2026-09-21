@@ -1,5 +1,6 @@
 // src/components/AppLayout.jsx
 import { subscribeToBrowserVisibility } from "../platform/appLifecycle.js";
+import { subscribeToNativePushNavigation } from "../platform/pushNavigation.js";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
@@ -731,6 +732,25 @@ export default function AppLayout() {
       },
     });
   }, [user, location.pathname]);
+
+  // ============================================================
+  // NATIVE PUSH NAVIGATION
+  // ============================================================
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    return subscribeToNativePushNavigation({
+      navigate,
+      onForegroundNotification: () => {
+        // Firestore listeners already update AeroStation Hub badges/counters.
+        // Keep foreground push handling quiet to avoid duplicate UI alerts.
+      },
+      onRegistrationError: (error) => {
+        console.warn("Native push registration error:", error);
+      },
+    });
+  }, [user?.id, navigate]);
 
   // ============================================================
   // REAL USER ACTIVITY HEARTBEAT
