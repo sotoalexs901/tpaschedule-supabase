@@ -1,10 +1,16 @@
 // src/platform/api.js
-// Central URL resolver for Netlify Functions.
-// Web/PWA keeps using same-origin /.netlify/functions/... exactly as today.
-// Native builds can set VITE_API_BASE_URL=https://www.aerostationhub.com
-// without changing individual pages or utilities.
+// Central URL resolver for AeroStation Hub backend calls.
+//
+// Website/PWA:
+//   /.netlify/functions/... stays same-origin.
+//
+// iOS/Android:
+//   relative Netlify Function calls are automatically routed to
+//   https://www.aerostationhub.com unless VITE_API_BASE_URL overrides it.
 
 import { isNativeApp } from "./platform.js";
+
+const DEFAULT_NATIVE_API_BASE_URL = "https://www.aerostationhub.com";
 
 const configuredBaseUrl = String(
   import.meta.env.VITE_API_BASE_URL || ""
@@ -16,7 +22,10 @@ function trimTrailingSlashes(value) {
 
 export function getApiBaseUrl() {
   if (!isNativeApp()) return "";
-  return trimTrailingSlashes(configuredBaseUrl);
+
+  return trimTrailingSlashes(
+    configuredBaseUrl || DEFAULT_NATIVE_API_BASE_URL
+  );
 }
 
 export function getFunctionUrl(functionName) {
