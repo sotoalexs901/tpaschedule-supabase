@@ -1,6 +1,7 @@
 // src/utils/wchrAssignmentPush.js
 
 import { db } from "../firebase";
+import { apiFetch } from "../platform/api.js";
 
 import {
   doc,
@@ -315,7 +316,7 @@ export async function triggerWchrAssignmentPush(
     // ----------------------------------------------------------
 
     const response =
-      await fetch(
+      await apiFetch(
         WCHR_ASSIGNMENT_PUSH_URL,
         {
           method: "POST",
@@ -731,7 +732,7 @@ export async function triggerWchrDeliveryPush(
       }
     );
 
-    const response = await fetch(
+    const response = await apiFetch(
       WCHR_ASSIGNMENT_PUSH_URL,
       {
         method: "POST",
