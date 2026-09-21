@@ -2358,7 +2358,15 @@ export default function GateChecklistPage() {
                                   alignItems: "start",
                                 }}
                               >
-                                <div>â¢</div>
+                                <div
+                                  style={{
+                                    color: "#1769aa",
+                                    fontWeight: 900,
+                                    lineHeight: 1.4,
+                                  }}
+                                >
+                                  â¢
+                                </div>
                                 <div>{task}</div>
                               </div>
                             ))}
