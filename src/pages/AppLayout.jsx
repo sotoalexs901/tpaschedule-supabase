@@ -1,4 +1,5 @@
 // src/components/AppLayout.jsx
+import { subscribeToBrowserVisibility } from "../platform/appLifecycle.js";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
@@ -719,30 +720,16 @@ export default function AppLayout() {
   useEffect(() => {
     if (!user?.id) return undefined;
 
-    const handleBeforeUnload = () => {
-      markUserOffline(user).catch(() => {});
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
+    return subscribeToBrowserVisibility({
+      onInactive: () => {
         markUserOffline(user).catch(() => {});
-      } else {
+      },
+      onActive: () => {
         updateUserPresence(user, {
           currentPage: location.pathname,
         }).catch(() => {});
-      }
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibilityChange
-      );
-    };
+      },
+    });
   }, [user, location.pathname]);
 
   // ============================================================
