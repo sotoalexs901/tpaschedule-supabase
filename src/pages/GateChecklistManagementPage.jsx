@@ -150,7 +150,6 @@ function TextArea(props) {
         background: props.disabled ? "#f8fafc" : "#ffffff",
         outline: "none",
         resize: "vertical",
-        minHeight: 90,
         fontFamily: "inherit",
         boxSizing: "border-box",
         minHeight: 100,
@@ -274,40 +273,116 @@ function InfoCard({ label, value, tone = "default" }) {
 
 
 function AircraftSilhouette({
-  width = 132,
-  height = 54,
+  width = 180,
+  height = 70,
   color = "#0f2f57",
 }) {
   return (
     <svg
-      viewBox="0 0 220 90"
+      viewBox="0 0 320 120"
       width={width}
       height={height}
       aria-hidden="true"
       role="img"
-      style={{ display: "block", maxWidth: "100%" }}
+      style={{ display: "block", maxWidth: "100%", margin: "0 auto" }}
     >
+      {/* fuselage */}
       <path
         fill={color}
-        d="M13 50c0-4 5-7 13-8l52-6 28-28h15l-12 27 63-2 18-14h11l-7 14 13 4c9 3 14 7 14 12 0 6-8 10-23 12l-72 2 17 21h-14L96 64l-48 1-18 13H18l10-14-8-2c-5-1-7-5-7-12Z"
+        d="M20 62
+           C34 56, 55 53, 88 51
+           L208 47
+           C234 46, 257 48, 278 54
+           L305 61
+           C311 63, 314 67, 312 71
+           C310 76, 304 79, 293 80
+           L205 81
+           L104 79
+           L51 76
+           C36 75, 25 72, 19 68
+           C16 66, 16 64, 20 62Z"
       />
-      <rect x="144" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
-      <rect x="159" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
-      <rect x="174" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
+
+      {/* nose highlight */}
+      <path
+        fill="#ffffff"
+        opacity="0.9"
+        d="M279 57 L296 62 C302 64 304 66 304 68 L278 68Z"
+      />
+
+      {/* vertical tail */}
+      <path
+        fill={color}
+        d="M212 49 L235 15 L251 15 L244 49Z"
+      />
+
+      {/* main wing */}
+      <path
+        fill={color}
+        d="M145 58 L190 25 L210 25 L183 61 L231 74 L218 82 L162 70 L118 91 L102 91 L132 67Z"
+      />
+
+      {/* horizontal tail */}
+      <path
+        fill={color}
+        d="M69 53 L96 34 L108 34 L94 54 L119 58 L112 63 L83 60 L63 70 L52 70 L65 59Z"
+      />
+
+      {/* engines */}
+      <ellipse cx="171" cy="76" rx="16" ry="8" fill={color} />
+      <ellipse cx="206" cy="77" rx="14" ry="7" fill={color} />
+
+      {/* cockpit + windows */}
+      <rect x="271" y="58" width="10" height="4" rx="2" fill="#ffffff" opacity="0.95" />
+      {Array.from({ length: 10 }).map((_, index) => (
+        <rect
+          key={index}
+          x={225 - index * 14}
+          y="58"
+          width="7"
+          height="4"
+          rx="2"
+          fill="#ffffff"
+          opacity="0.92"
+        />
+      ))}
     </svg>
   );
 }
 
 function getAircraftSvgHtml(color = "#0f2f57") {
+  const windows = Array.from({ length: 10 })
+    .map(
+      (_, index) =>
+        `<rect x="${225 - index * 14}" y="58" width="7" height="4" rx="2" fill="#ffffff" opacity="0.92" />`
+    )
+    .join("");
+
   return `
-    <svg viewBox="0 0 220 90" width="150" height="60" aria-hidden="true" style="display:block;margin:0 auto;">
+    <svg viewBox="0 0 320 120" width="240" height="92" aria-hidden="true" style="display:block;margin:0 auto;">
       <path
         fill="${color}"
-        d="M13 50c0-4 5-7 13-8l52-6 28-28h15l-12 27 63-2 18-14h11l-7 14 13 4c9 3 14 7 14 12 0 6-8 10-23 12l-72 2 17 21h-14L96 64l-48 1-18 13H18l10-14-8-2c-5-1-7-5-7-12Z"
+        d="M20 62
+           C34 56, 55 53, 88 51
+           L208 47
+           C234 46, 257 48, 278 54
+           L305 61
+           C311 63, 314 67, 312 71
+           C310 76, 304 79, 293 80
+           L205 81
+           L104 79
+           L51 76
+           C36 75, 25 72, 19 68
+           C16 66, 16 64, 20 62Z"
       />
-      <rect x="144" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
-      <rect x="159" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
-      <rect x="174" y="39" width="11" height="5" rx="2" fill="#ffffff" opacity="0.88" />
+      <path fill="#ffffff" opacity="0.9" d="M279 57 L296 62 C302 64 304 66 304 68 L278 68Z" />
+      <path fill="${color}" d="M212 49 L235 15 L251 15 L244 49Z" />
+      <path fill="${color}" d="M145 58 L190 25 L210 25 L183 61 L231 74 L218 82 L162 70 L118 91 L102 91 L132 67Z" />
+      <path fill="${color}" d="M69 53 L96 34 L108 34 L94 54 L119 58 L112 63 L83 60 L63 70 L52 70 L65 59Z" />
+      <ellipse cx="171" cy="76" rx="16" ry="8" fill="${color}" />
+      <ellipse cx="206" cy="77" rx="14" ry="7" fill="${color}" />
+      <rect x="271" y="58" width="10" height="4" rx="2" fill="#ffffff" opacity="0.95" />
+      ${windows}
     </svg>
   `;
 }
@@ -2265,8 +2340,8 @@ export default function GateChecklistManagementPage() {
 
         .airline-kpi-chart-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.45fr) minmax(0, .85fr) minmax(0, .85fr) minmax(0, 1.15fr);
-          gap: 10px;
+          grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+          gap: 12px;
           margin-top: 12px;
         }
 
@@ -2359,16 +2434,19 @@ export default function GateChecklistManagementPage() {
 
         .airline-kpi-aircraft-grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 8px;
+          grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+          gap: 10px;
         }
 
         .airline-kpi-aircraft-card {
           border: 1px solid #dbeafe;
-          background: #f8fbff;
-          border-radius: 13px;
-          padding: 8px;
+          background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+          border-radius: 16px;
+          padding: 14px 12px;
           text-align: center;
+          min-height: 170px;
+          display: grid;
+          align-content: center;
         }
 
         .airline-kpi-aircraft-name {
@@ -2994,50 +3072,8 @@ export default function GateChecklistManagementPage() {
                   color: "#64748b",
                 }}
               >
-                <span>â IB Pax</span>
+                <span style={{ color: "#24a7e5" }}>â IB Pax</span>
                 <span style={{ color: "#0f5c91" }}>â OUT Pax</span>
-              </div>
-            </div>
-
-            <div className="airline-kpi-panel">
-              <div className="airline-kpi-panel-title">OTP Performance</div>
-              <div
-                className="airline-kpi-donut"
-                style={{
-                  background: `conic-gradient(
-                    #22a06b 0 ${Math.max(0, Math.min(100, totals.otpPercent))}%,
-                    #e5e7eb ${Math.max(0, Math.min(100, totals.otpPercent))}% 100%
-                  )`,
-                }}
-              >
-                <div className="airline-kpi-donut-value">
-                  {formatPercent(totals.otpPercent)}
-                </div>
-              </div>
-            </div>
-
-            <div className="airline-kpi-panel">
-              <div className="airline-kpi-panel-title">Bag Delivery Quality</div>
-              <div
-                className="airline-kpi-donut"
-                style={{
-                  background: `conic-gradient(
-                    #2196f3 0 ${Math.max(
-                      0,
-                      Math.min(100, 100 - totals.stationMbrPercent)
-                    )}%,
-                    #e5e7eb ${Math.max(
-                      0,
-                      Math.min(100, 100 - totals.stationMbrPercent)
-                    )}% 100%
-                  )`,
-                }}
-              >
-                <div className="airline-kpi-donut-value">
-                  {formatPercent(
-                    Math.max(0, 100 - totals.stationMbrPercent)
-                  )}
-                </div>
               </div>
             </div>
 
@@ -3054,8 +3090,8 @@ export default function GateChecklistManagementPage() {
                       key={item.aircraft}
                     >
                       <AircraftSilhouette
-                        width={108}
-                        height={44}
+                        width={180}
+                        height={70}
                         color="#0f2f57"
                       />
 
@@ -3082,6 +3118,57 @@ export default function GateChecklistManagementPage() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+              gap: 12,
+              marginTop: 12,
+            }}
+          >
+            <div className="airline-kpi-panel">
+              <div className="airline-kpi-panel-title">OTP Performance</div>
+              <div
+                className="airline-kpi-donut"
+                style={{
+                  background: `conic-gradient(
+                    #24a7e5 0 ${Math.max(0, Math.min(100, totals.otpPercent))}%,
+                    #e5e7eb ${Math.max(0, Math.min(100, totals.otpPercent))}% 100%
+                  )`,
+                }}
+              >
+                <div className="airline-kpi-donut-value">
+                  {formatPercent(totals.otpPercent)}
+                </div>
+              </div>
+            </div>
+
+            <div className="airline-kpi-panel">
+              <div className="airline-kpi-panel-title">Bag Delivery Quality</div>
+              <div
+                className="airline-kpi-donut"
+                style={{
+                  background: `conic-gradient(
+                    #f8c32d 0 ${Math.max(
+                      0,
+                      Math.min(100, 100 - totals.stationMbrPercent)
+                    )}%,
+                    #e5e7eb ${Math.max(
+                      0,
+                      Math.min(100, 100 - totals.stationMbrPercent)
+                    )}% 100%
+                  )`,
+                }}
+              >
+                <div className="airline-kpi-donut-value">
+                  {formatPercent(
+                    Math.max(0, 100 - totals.stationMbrPercent)
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
