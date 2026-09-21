@@ -382,7 +382,7 @@ function getAirlineDisplayName(code) {
 }
 
 function formatMonthYear(monthKey) {
-  if (!monthKey || !/^\\d{4}-\\d{2}$/.test(monthKey)) return "Selected Period";
+  if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return "Selected Period";
   const [year, month] = monthKey.split("-").map(Number);
   return new Date(year, month - 1, 1).toLocaleDateString("en-US", {
     month: "long",
@@ -1382,6 +1382,25 @@ export default function GateChecklistManagementPage() {
     const otpPercent = getOtpPercent(otpFlights, flights);
     const mbrPercent = getMbrPercent(notLoadedBags, checkedBags);
 
+    const aircraftCounts = {};
+    airlineReports.forEach((item) => {
+      const aircraft = String(item.aircraft || "Unknown").trim() || "Unknown";
+      aircraftCounts[aircraft] = (aircraftCounts[aircraft] || 0) + 1;
+    });
+
+    const aircraftRows = Object.entries(aircraftCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(
+        ([aircraft, count]) => `
+          <div class="aircraft-card">
+            <div class="aircraft-name">${aircraft}</div>
+            <div class="aircraft-count">${count}</div>
+            <div class="aircraft-sub">flight${count === 1 ? "" : "s"}</div>
+          </div>
+        `
+      )
+      .join("");
+
     const airlineName = getAirlineDisplayName(airlineCode);
     const periodLabel =
       filters.periodType === "month" && filters.month
@@ -1597,6 +1616,43 @@ export default function GateChecklistManagementPage() {
               font-weight: 700;
             }
 
+            .aircraft-grid {
+              display: grid;
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+              gap: 10px;
+              margin-top: 12px;
+            }
+
+            .aircraft-card {
+              background: #fff;
+              border: 1px solid #dbeafe;
+              border-radius: 14px;
+              padding: 13px 14px;
+              text-align: center;
+            }
+
+            .aircraft-name {
+              font-size: 12px;
+              font-weight: 900;
+              color: #334155;
+            }
+
+            .aircraft-count {
+              margin-top: 5px;
+              font-size: 24px;
+              line-height: 1;
+              font-weight: 950;
+              color: #1769aa;
+            }
+
+            .aircraft-sub {
+              margin-top: 4px;
+              font-size: 8px;
+              color: #94a3b8;
+              font-weight: 800;
+              text-transform: uppercase;
+            }
+
             .kpi-grid {
               display: grid;
               grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1765,6 +1821,13 @@ export default function GateChecklistManagementPage() {
                   <div class="value">${checkedBags}</div>
                   <div class="sub">${notLoadedBags} not loaded</div>
                 </div>
+              </div>
+            </div>
+
+            <div class="section" style="margin-top:12px;">
+              <h2>Aircraft Type Mix</h2>
+              <div class="aircraft-grid">
+                ${aircraftRows || `<div class="aircraft-card"><div class="aircraft-name">No aircraft data</div></div>`}
               </div>
             </div>
 
@@ -1966,6 +2029,22 @@ export default function GateChecklistManagementPage() {
     if (!filters.month) return null;
     return monthlySummaries.find((item) => item.month === filters.month) || null;
   }, [monthlySummaries, filters.month]);
+
+  const aircraftTypeSummary = useMemo(() => {
+    const counts = {};
+
+    filteredReports.forEach((item) => {
+      const aircraft = String(item.aircraft || "Unknown").trim() || "Unknown";
+      counts[aircraft] = (counts[aircraft] || 0) + 1;
+    });
+
+    return Object.entries(counts)
+      .map(([aircraft, flights]) => ({
+        aircraft,
+        flights,
+      }))
+      .sort((a, b) => b.flights - a.flights || a.aircraft.localeCompare(b.aircraft));
+  }, [filteredReports]);
 
   const selectedAirlinePeriodSummary = useMemo(() => {
     if (
