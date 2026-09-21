@@ -1,4 +1,5 @@
 // src/utils/operationalAlerts.js
+import { apiFetch } from "../platform/api.js";
 import {
   addDoc,
   collection,
@@ -15,7 +16,7 @@ function triggerOperationalAlertPush(alertId) {
 
   // Fire-and-forget by design:
   // Operational Alert creation must NEVER depend on Push delivery.
-  fetch("/.netlify/functions/send-operational-alert-push", {
+  apiFetch("/.netlify/functions/send-operational-alert-push", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
