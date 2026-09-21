@@ -106,28 +106,6 @@ function normalizeEmployeeAirlineValue(value) {
   return raw;
 }
 
-function getEmployeeAirline(emp) {
-  return normalizeEmployeeAirlineValue(
-    emp?.airline ||
-    emp?.account ||
-    emp?.airlineAccount ||
-    emp?.department ||
-    emp?.stationDepartment ||
-    ""
-  );
-}
-
-function employeeMatchesSelectedAirline(emp, selectedAirline) {
-  const selected = normalizeEmployeeAirlineValue(selectedAirline);
-  if (!selected) return true;
-
-  if (selected === "CABIN") {
-    return isCabinServiceDepartment(emp?.department) || getEmployeeAirline(emp) === "CABIN";
-  }
-
-  return getEmployeeAirline(emp) === selected;
-}
-
 function getVisibleName(user) {
   return (
     user?.displayName ||
@@ -734,12 +712,6 @@ export default function SupervisorTimesheetPage() {
             stationDepartment: item.stationDepartment || "",
           }));
 
-        if (isCabinServiceUser) {
-          employeeList = employeeList.filter((item) =>
-            isCabinServiceDepartment(item.department)
-          );
-        }
-
         employeeList = employeeList.sort((a, b) =>
           a.name.localeCompare(b.name)
         );
@@ -794,16 +766,8 @@ export default function SupervisorTimesheetPage() {
   }, [employees]);
 
   const availableEmployees = useMemo(() => {
-    if (!form.airline) return employees;
-
-    const matching = employees.filter((emp) =>
-      employeeMatchesSelectedAirline(emp, form.airline)
-    );
-
-    // Backward-safe fallback: if legacy employee records do not have an
-    // airline/account mapping, keep the full list instead of hiding everyone.
-    return matching.length ? matching : employees;
-  }, [employees, form.airline]);
+    return employees;
+  }, [employees]);
 
 
   const dailyBudgetMap = useMemo(() => {
@@ -856,21 +820,10 @@ export default function SupervisorTimesheetPage() {
     }
 
     if (field === "airline") {
-      const nextAirline = normalizeEmployeeAirlineValue(value);
-
       setForm((prev) => ({
         ...prev,
-        airline: nextAirline,
+        airline: normalizeEmployeeAirlineValue(value),
       }));
-
-      setRows((prev) =>
-        prev.map((row) => ({
-          ...row,
-          employeeId: "",
-          employeeName: "",
-        }))
-      );
-
       return;
     }
 
@@ -1196,26 +1149,7 @@ export default function SupervisorTimesheetPage() {
       return;
     }
 
-    const mismatchedEmployees = cleanRows.filter((row) => {
-      const emp = employeeMap[row.employeeId];
-      if (!emp) return false;
 
-      const mapped = getEmployeeAirline(emp);
-      if (!mapped) return false;
-
-      return !employeeMatchesSelectedAirline(emp, form.airline);
-    });
-
-    if (mismatchedEmployees.length) {
-      setStatusMessage(
-        `Timesheet cannot be sent. ${mismatchedEmployees
-          .map((row) => row.employeeName)
-          .join(", ")} ${
-          mismatchedEmployees.length === 1 ? "is" : "are"
-        } not assigned to the selected airline/account.`
-      );
-      return;
-    }
 
     if (
       cleanRows.some(
@@ -2118,18 +2052,17 @@ export default function SupervisorTimesheetPage() {
               {rows.length === 1 ? "entry" : "entries"}{" "}
               "|" {totalReportedHours.toFixed(2)} hrs
             </div>
-            {form.airline && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 10.5,
-                  color: "#1769aa",
-                  fontWeight: 800,
-                }}
-              >
-                Employee list filtered for: {form.airline}
-              </div>
-            )}
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 10.5,
+                color: "#1769aa",
+                fontWeight: 800,
+              }}
+            >
+              All employees are available for selection regardless of department or airline account.
+            </div>
+
           </div>
 
           <ActionButton
