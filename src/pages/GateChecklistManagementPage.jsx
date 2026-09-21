@@ -432,6 +432,28 @@ function getAirlineDisplayName(code) {
   return names[clean] || clean || "All Airlines";
 }
 
+function getAircraftType(airlineCode, aircraftValue) {
+  const airline = String(airlineCode || "").trim().toUpperCase();
+  const aircraft = String(aircraftValue || "").trim().toUpperCase();
+
+  // Sun Country registrations used in the Gate Checklist records:
+  // N8xxxSY -> Boeing 737-800
+  // N9xxxSY -> Boeing 737-900
+  if (airline === "SY") {
+    if (/^N8/.test(aircraft)) return "Boeing 737-800";
+    if (/^N9/.test(aircraft)) return "Boeing 737-900";
+  }
+
+  // Avianca flights in this operation are grouped as Airbus A320.
+  if (airline === "AV") {
+    return "Airbus A320";
+  }
+
+  // If the saved value is already an aircraft model, keep it.
+  // Otherwise preserve the original value so no data is lost.
+  return aircraft || "Unknown";
+}
+
 function formatMonthYear(monthKey) {
   if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return "Selected Period";
   const [year, month] = monthKey.split("-").map(Number);
@@ -1435,8 +1457,8 @@ export default function GateChecklistManagementPage() {
 
     const aircraftCounts = {};
     airlineReports.forEach((item) => {
-      const aircraft = String(item.aircraft || "Unknown").trim() || "Unknown";
-      aircraftCounts[aircraft] = (aircraftCounts[aircraft] || 0) + 1;
+      const aircraftType = getAircraftType(item.airline, item.aircraft);
+      aircraftCounts[aircraftType] = (aircraftCounts[aircraftType] || 0) + 1;
     });
 
     const aircraftRows = Object.entries(aircraftCounts)
@@ -2093,8 +2115,8 @@ export default function GateChecklistManagementPage() {
     const counts = {};
 
     filteredReports.forEach((item) => {
-      const aircraft = String(item.aircraft || "Unknown").trim() || "Unknown";
-      counts[aircraft] = (counts[aircraft] || 0) + 1;
+      const aircraftType = getAircraftType(item.airline, item.aircraft);
+      counts[aircraftType] = (counts[aircraftType] || 0) + 1;
     });
 
     return Object.entries(counts)
