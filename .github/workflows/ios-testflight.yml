@@ -1,0 +1,37 @@
+name: AeroStation Hub iOS TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ios-build:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build AeroStation Hub
+        env:
+          VITE_API_BASE_URL: https://www.aerostationhub.com
+        run: npm run build
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Show available iOS schemes
+        run: |
+          cd ios/App
+          xcodebuild -list -project App.xcodeproj
