@@ -39,7 +39,7 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Archive AeroStation Hub
+            - name: Archive AeroStation Hub
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -56,7 +56,7 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/appstoreconnect/AuthKey.p8" \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-           DEVELOPMENT_TEAM=K57GCA7VK8 \
-CODE_SIGN_STYLE=Automatic \
-CODE_SIGN_IDENTITY="Apple Distribution" \
-clean archive
+            DEVELOPMENT_TEAM=K57GCA7VK8 \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            clean archive
