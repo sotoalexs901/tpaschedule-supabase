@@ -69,6 +69,112 @@ async function resolveUserName(db, userId, fallback = "Station Team") {
   }
 }
 
+function isStaleTokenError(response) {
+  const code = clean(response?.error?.code);
+
+  return (
+    code === "messaging/registration-token-not-registered" ||
+    code === "messaging/invalid-registration-token"
+  );
+}
+
+async function getEnabledTokens(db, userId, collectionName) {
+  const snap = await db
+    .collection("users")
+    .doc(userId)
+    .collection(collectionName)
+    .where("enabled", "==", true)
+    .get();
+
+  return snap.docs
+    .map((docSnap) => ({
+      ref: docSnap.ref,
+      token: clean(docSnap.data()?.token),
+    }))
+    .filter((item) => item.token);
+}
+
+async function sendWebPush(tokens, payload) {
+  let sent = 0;
+  let failed = 0;
+  const staleRefs = [];
+
+  for (let i = 0; i < tokens.length; i += 500) {
+    const chunk = tokens.slice(i, i + 500);
+
+    const result = await getMessaging().sendEachForMulticast({
+      tokens: chunk.map((item) => item.token),
+      data: payload,
+      webpush: {
+        headers: {
+          Urgency: "high",
+        },
+      },
+    });
+
+    sent += result.successCount;
+    failed += result.failureCount;
+
+    result.responses.forEach((response, index) => {
+      if (!response.success && isStaleTokenError(response)) {
+        staleRefs.push(chunk[index].ref);
+      }
+    });
+  }
+
+  return { sent, failed, staleRefs };
+}
+
+async function sendNativePush(tokens, title, body, data) {
+  let sent = 0;
+  let failed = 0;
+  const staleRefs = [];
+
+  for (let i = 0; i < tokens.length; i += 500) {
+    const chunk = tokens.slice(i, i + 500);
+
+    const result = await getMessaging().sendEachForMulticast({
+      tokens: chunk.map((item) => item.token),
+
+      notification: {
+        title,
+        body,
+      },
+
+      data,
+
+      apns: {
+        headers: {
+          "apns-priority": "10",
+        },
+        payload: {
+          aps: {
+            sound: "default",
+          },
+        },
+      },
+
+      android: {
+        priority: "high",
+        notification: {
+          sound: "default",
+        },
+      },
+    });
+
+    sent += result.successCount;
+    failed += result.failureCount;
+
+    result.responses.forEach((response, index) => {
+      if (!response.success && isStaleTokenError(response)) {
+        staleRefs.push(chunk[index].ref);
+      }
+    });
+  }
+
+  return { sent, failed, staleRefs };
+}
+
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return jsonResponse(405, {
@@ -91,12 +197,8 @@ export const handler = async (event) => {
     }
 
     getAdminApp();
-
     const db = getFirestore();
 
-    // Important:
-    // The function does NOT trust message text or recipient details
-    // sent by the browser. It reads the saved Firestore message itself.
     const messageRef = db
       .collection("conversations")
       .doc(conversationId)
@@ -132,21 +234,12 @@ export const handler = async (event) => {
       clean(message.senderUsername) || "Station Team"
     );
 
-    const tokenSnap = await db
-      .collection("users")
-      .doc(receiverId)
-      .collection("pushTokens")
-      .where("enabled", "==", true)
-      .get();
+    const [webTokens, nativeTokens] = await Promise.all([
+      getEnabledTokens(db, receiverId, "pushTokens"),
+      getEnabledTokens(db, receiverId, "nativePushTokens"),
+    ]);
 
-    const tokenRows = tokenSnap.docs
-      .map((snap) => ({
-        ref: snap.ref,
-        token: clean(snap.data()?.token),
-      }))
-      .filter((item) => item.token);
-
-    if (!tokenRows.length) {
+    if (!webTokens.length && !nativeTokens.length) {
       return jsonResponse(200, {
         ok: true,
         sent: 0,
@@ -161,50 +254,28 @@ export const handler = async (event) => {
 
     const title = `Message from ${senderName}`;
 
-    let successCount = 0;
-    let failureCount = 0;
-    const staleRefs = [];
+    const data = {
+      title,
+      body: preview,
+      type: "message",
+      url: "/messages",
+      conversationId,
+      senderId,
+    };
 
-    for (let i = 0; i < tokenRows.length; i += 500) {
-      const chunk = tokenRows.slice(i, i + 500);
+    const [webResult, nativeResult] = await Promise.all([
+      webTokens.length
+        ? sendWebPush(webTokens, data)
+        : Promise.resolve({ sent: 0, failed: 0, staleRefs: [] }),
+      nativeTokens.length
+        ? sendNativePush(nativeTokens, title, preview, data)
+        : Promise.resolve({ sent: 0, failed: 0, staleRefs: [] }),
+    ]);
 
-      const result = await getMessaging().sendEachForMulticast({
-        tokens: chunk.map((item) => item.token),
-
-        // Data-only notification:
-        // public/sw.js decides how the notification is displayed.
-        data: {
-          title,
-          body: preview,
-          type: "message",
-          url: "/messages",
-          conversationId,
-          senderId,
-        },
-
-        webpush: {
-          headers: {
-            Urgency: "high",
-          },
-        },
-      });
-
-      successCount += result.successCount;
-      failureCount += result.failureCount;
-
-      result.responses.forEach((response, index) => {
-        if (response.success) return;
-
-        const code = clean(response.error?.code);
-
-        if (
-          code === "messaging/registration-token-not-registered" ||
-          code === "messaging/invalid-registration-token"
-        ) {
-          staleRefs.push(chunk[index].ref);
-        }
-      });
-    }
+    const staleRefs = [
+      ...webResult.staleRefs,
+      ...nativeResult.staleRefs,
+    ];
 
     if (staleRefs.length) {
       await Promise.allSettled(
@@ -214,8 +285,10 @@ export const handler = async (event) => {
 
     return jsonResponse(200, {
       ok: true,
-      sent: successCount,
-      failed: failureCount,
+      sent: webResult.sent + nativeResult.sent,
+      failed: webResult.failed + nativeResult.failed,
+      webSent: webResult.sent,
+      nativeSent: nativeResult.sent,
       staleTokensRemoved: staleRefs.length,
     });
   } catch (error) {
