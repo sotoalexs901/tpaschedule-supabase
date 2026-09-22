@@ -1,4 +1,4 @@
-// src/pages/DashboardPage.jsx
+//src/pages/DashboardPage.jsx
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -1382,8 +1382,8 @@ export default function DashboardPage() {
                   display: "grid",
                   gridTemplateColumns:
                     isMobile
-                      ? "repeat(2,minmax(0,1fr))"
-                      : "repeat(auto-fit,minmax(160px,1fr))",
+                      ? "1fr"
+                      : "repeat(auto-fit,minmax(220px,1fr))",
                   gap: 10,
                 }}
               >
@@ -1405,27 +1405,24 @@ export default function DashboardPage() {
                     >
                       <div
                         style={{
-                          aspectRatio:
-                            "4 / 3",
-                          background:
-                            "#e2e8f0",
+                          width: "100%",
+                          background: "#f8fafc",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          overflow: "hidden",
+                          borderRadius: 14,
                         }}
                       >
                         <img
                           src={p.url}
-                          alt={
-                            p.caption ||
-                            "Station highlight"
-                          }
+                          alt={p.caption || "Station highlight"}
                           style={{
-                            width:
-                              "100%",
-                            height:
-                              "100%",
-                            objectFit:
-                              "cover",
-                            display:
-                              "block",
+                            width: "100%",
+                            height: "auto",
+                            maxHeight: isMobile ? "420px" : "520px",
+                            objectFit: "contain",
+                            display: "block",
                           }}
                         />
                       </div>
