@@ -39,7 +39,7 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-            - name: Archive AeroStation Hub
+      - name: Archive AeroStation Hub
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
