@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 
 import { app, db } from "../firebase.js";
+import { FCM } from "@capacitor-community/fcm";
 import {
   getNativePushPermissionStatus,
   registerNativePush,
@@ -37,16 +38,6 @@ async function loadFirebaseMessaging() {
     };
   } catch (error) {
     console.error("Firebase Messaging could not be loaded:", error);
-    return null;
-  }
-}
-
-async function loadNativeFcm() {
-  try {
-    const module = await import("@capacitor-community/fcm");
-    return module.FCM || null;
-  } catch (error) {
-    console.error("Native FCM plugin could not be loaded:", error);
     return null;
   }
 }
@@ -370,16 +361,30 @@ async function enableNativePushNotifications(user) {
   const apnsToken = await apnsRegistrationPromise;
   console.log("[PUSH DIAG] 3/7 APNs registration completed", { tokenLength: apnsToken?.length || 0 });
 
-  const FCM = await loadNativeFcm();
-  console.log("[PUSH DIAG] Native FCM plugin loaded", { available: Boolean(FCM) });
+  console.log("[PUSH DIAG] Native FCM plugin ready", {
+    available: Boolean(FCM),
+    hasGetToken: typeof FCM?.getToken === "function",
+  });
 
-  if (!FCM) {
-    throw new Error("Native Firebase Messaging is not available.");
+  if (!FCM || typeof FCM.getToken !== "function") {
+    throw new Error("Native Firebase Messaging plugin is not available.");
   }
 
   console.log("[PUSH DIAG] Requesting FCM token...");
-  const result = await FCM.getToken();
-  console.log("[PUSH DIAG] 4/7 FCM.getToken() returned", { hasToken: Boolean(result?.token), tokenLength: result?.token?.length || 0 });
+
+  const result = await Promise.race([
+    FCM.getToken(),
+    new Promise((_, reject) => {
+      window.setTimeout(() => {
+        reject(new Error("Timed out while requesting the native FCM token."));
+      }, 15000);
+    }),
+  ]);
+
+  console.log("[PUSH DIAG] 4/7 FCM.getToken() returned", {
+    hasToken: Boolean(result?.token),
+    tokenLength: result?.token?.length || 0,
+  });
   const token =
     result && typeof result.token === "string"
       ? result.token.trim()
