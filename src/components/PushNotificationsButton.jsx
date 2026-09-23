@@ -12,6 +12,7 @@ export default function PushNotificationsButton({ user }) {
   const [status, setStatus] = useState("checking");
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState("");
+  const [progress, setProgress] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -75,11 +76,13 @@ export default function PushNotificationsButton({ user }) {
     try {
       setWorking(true);
       setMessage("");
+      setProgress("Starting...");
 
       await enablePushNotifications(user, (progressMessage) => {
-        setMessage(String(progressMessage || "Enabling push notifications..."));
+        setProgress(String(progressMessage || "Working..."));
       });
 
+      setProgress("Enabled");
       setStatus("enabled");
       setMessage("Push notifications enabled.");
     } catch (error) {
@@ -91,6 +94,7 @@ export default function PushNotificationsButton({ user }) {
         setStatus("blocked");
       }
 
+      setProgress("");
       setMessage(
         msg || "Could not enable push notifications."
       );
@@ -176,8 +180,22 @@ export default function PushNotificationsButton({ user }) {
           boxShadow: "0 8px 18px rgba(23,105,170,0.08)",
         }}
       >
-        {"\u{1F514}"} {working ? message || "Enabling..." : "Enable Push"}
+        {"\u{1F514}"} {working ? "Enabling..." : "Enable Push"}
       </button>
+
+      {working && progress && (
+        <div
+          style={{
+            maxWidth: 220,
+            fontSize: 10,
+            lineHeight: 1.35,
+            color: "#1769aa",
+            fontWeight: 800,
+          }}
+        >
+          {progress}
+        </div>
+      )}
 
       {message && (
         <div
