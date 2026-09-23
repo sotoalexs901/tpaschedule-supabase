@@ -243,7 +243,11 @@ async function saveWebPushToken(user, token) {
 }
 
 async function saveNativePushToken(user, token) {
-  console.log("[PUSH DIAG] 5/7 saveNativePushToken() started", { userId: user?.id, hasToken: Boolean(token) });
+  console.log("[PUSH DIAG] 5/7 saveNativePushToken() started", {
+    userId: user?.id,
+    hasToken: Boolean(token),
+  });
+
   if (!user?.id || !token) {
     throw new Error("Missing user or native push token.");
   }
@@ -259,7 +263,11 @@ async function saveNativePushToken(user, token) {
     tokenHash
   );
 
-  console.log("[PUSH DIAG] 6/7 Writing native FCM token to Firestore", { userId: user.id, platform, tokenHash });
+  console.log("[PUSH DIAG] 6/7 Writing native FCM token to Firestore", {
+    userId: user.id,
+    platform,
+    tokenHash,
+  });
 
   await setDoc(
     tokenRef,
@@ -287,68 +295,101 @@ async function saveNativePushToken(user, token) {
     { merge: true }
   );
 
-  console.log("[PUSH DIAG] 7/7 Native FCM token saved to Firestore", { userId: user.id, tokenHash });
+  console.log("[PUSH DIAG] 7/7 Native FCM token saved to Firestore", {
+    userId: user.id,
+    tokenHash,
+  });
+
   return tokenHash;
 }
 
-function waitForNativeRegistrationToken() {
-  return new Promise((resolve, reject) => {
-    let finished = false;
-    let unsubscribe = function () {};
+async function createNativeRegistrationWaiter() {
+  let finished = false;
+  let unsubscribe = async function () {};
+  let timeoutId;
+  let resolveToken;
+  let rejectToken;
 
-    const timeoutId = window.setTimeout(() => {
-      if (finished) return;
-      finished = true;
-      unsubscribe();
-      reject(new Error("Native push registration timed out."));
-    }, 15000);
-
-    unsubscribe = subscribeToNativePushEvents({
-      onRegistration(token) {
-        console.log("[PUSH DIAG] 2/7 APNs registration event received", { hasValue: Boolean(token?.value) });
-        if (finished) return;
-
-        const value =
-          token && typeof token.value === "string"
-            ? token.value.trim()
-            : "";
-
-        if (!value) return;
-
-        finished = true;
-        window.clearTimeout(timeoutId);
-        unsubscribe();
-        resolve(value);
-      },
-
-      onRegistrationError(error) {
-        console.error("[PUSH DIAG] APNs registration error", error);
-        if (finished) return;
-
-        finished = true;
-        window.clearTimeout(timeoutId);
-        unsubscribe();
-
-        reject(
-          new Error(
-            error && error.error
-              ? String(error.error)
-              : "Native push registration failed."
-          )
-        );
-      },
-    });
+  const tokenPromise = new Promise((resolve, reject) => {
+    resolveToken = resolve;
+    rejectToken = reject;
   });
+
+  unsubscribe = await subscribeToNativePushEvents({
+    onRegistration(token) {
+      console.log("[PUSH DIAG] 2/7 APNs registration event received", {
+        hasValue: Boolean(token?.value),
+      });
+
+      if (finished) return;
+
+      const value =
+        token && typeof token.value === "string"
+          ? token.value.trim()
+          : "";
+
+      if (!value) return;
+
+      finished = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+      void unsubscribe();
+      resolveToken(value);
+    },
+
+    onRegistrationError(error) {
+      console.error("[PUSH DIAG] APNs registration error", error);
+
+      if (finished) return;
+
+      finished = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+      void unsubscribe();
+
+      rejectToken(
+        new Error(
+          error && error.error
+            ? String(error.error)
+            : "Native push registration failed."
+        )
+      );
+    },
+  });
+
+  timeoutId = window.setTimeout(() => {
+    if (finished) return;
+
+    finished = true;
+    void unsubscribe();
+    rejectToken(new Error("Native push registration timed out."));
+  }, 15000);
+
+  return {
+    tokenPromise,
+    unsubscribe,
+  };
 }
 
 async function enableNativePushNotifications(user) {
-  console.log("[PUSH DIAG] 1/7 enableNativePushNotifications() started", { userId: user?.id, platform: getNativePlatform() });
-  const apnsRegistrationPromise = waitForNativeRegistrationToken();
+  console.log("[PUSH DIAG] 1/7 enableNativePushNotifications() started", {
+    userId: user?.id,
+    platform: getNativePlatform(),
+  });
+
+  // IMPORTANT: wait until all native listeners are fully attached before
+  // calling PushNotifications.register(). This avoids losing the APNs
+  // registration event on fast devices.
+  const registrationWaiter = await createNativeRegistrationWaiter();
+  console.log("[PUSH DIAG] Native push listeners attached");
 
   const registrationResult = await registerNativePush();
-  console.log("[PUSH DIAG] Native registration request result", registrationResult);
+  console.log(
+    "[PUSH DIAG] Native registration request result",
+    registrationResult
+  );
 
   if (!registrationResult.registered) {
+    await registrationWaiter.unsubscribe();
+
     throw new Error(
       registrationResult.reason === "permission-denied"
         ? "Notifications were blocked on this device."
@@ -356,10 +397,11 @@ async function enableNativePushNotifications(user) {
     );
   }
 
-  // Wait until iOS/Android native registration has completed before asking
-  // Firebase Messaging for the FCM registration token.
-  const apnsToken = await apnsRegistrationPromise;
-  console.log("[PUSH DIAG] 3/7 APNs registration completed", { tokenLength: apnsToken?.length || 0 });
+  const apnsToken = await registrationWaiter.tokenPromise;
+
+  console.log("[PUSH DIAG] 3/7 APNs registration completed", {
+    tokenLength: apnsToken?.length || 0,
+  });
 
   console.log("[PUSH DIAG] Native FCM plugin ready", {
     available: Boolean(FCM),
@@ -376,7 +418,9 @@ async function enableNativePushNotifications(user) {
     FCM.getToken(),
     new Promise((_, reject) => {
       window.setTimeout(() => {
-        reject(new Error("Timed out while requesting the native FCM token."));
+        reject(
+          new Error("Timed out while requesting the native FCM token.")
+        );
       }, 15000);
     }),
   ]);
@@ -385,6 +429,7 @@ async function enableNativePushNotifications(user) {
     hasToken: Boolean(result?.token),
     tokenLength: result?.token?.length || 0,
   });
+
   const token =
     result && typeof result.token === "string"
       ? result.token.trim()
