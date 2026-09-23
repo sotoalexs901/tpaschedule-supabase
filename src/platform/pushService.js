@@ -5,8 +5,7 @@
 //   Existing Firebase Web Push remains unchanged.
 //
 // iOS/Android:
-//   Capacitor native push is exposed here. Token persistence and
-//   server registration will be connected in a later batch.
+//   Capacitor native push is exposed here.
 
 import { PushNotifications } from "@capacitor/push-notifications";
 import { isNativeApp } from "./platform.js";
@@ -36,7 +35,7 @@ export async function requestNativePushPermission() {
     };
   }
 
-  var permission = await PushNotifications.checkPermissions();
+  let permission = await PushNotifications.checkPermissions();
 
   if (permission.receive === "prompt") {
     permission = await PushNotifications.requestPermissions();
@@ -53,7 +52,7 @@ export async function registerNativePush() {
     };
   }
 
-  var permission = await requestNativePushPermission();
+  const permission = await requestNativePushPermission();
 
   if (permission.receive !== "granted") {
     return {
@@ -71,70 +70,75 @@ export async function registerNativePush() {
   };
 }
 
-export function subscribeToNativePushEvents(handlers) {
+export async function subscribeToNativePushEvents(handlers) {
   if (!isNativeApp()) {
     return function unsubscribeWebRuntime() {};
   }
 
-  handlers = handlers || {};
+  const safeHandlers = handlers || {};
+  const listenerHandles = [];
+  let disposed = false;
 
-  var listenerHandles = [];
-  var disposed = false;
+  async function add(eventName, callback) {
+    try {
+      const handle = await PushNotifications.addListener(eventName, callback);
 
-  function add(eventName, callback) {
-    PushNotifications.addListener(eventName, callback)
-      .then(function (handle) {
-        if (disposed) {
-          if (handle && typeof handle.remove === "function") {
-            handle.remove();
-          }
-          return;
+      if (disposed) {
+        if (handle && typeof handle.remove === "function") {
+          await handle.remove();
         }
+        return;
+      }
 
-        listenerHandles.push(handle);
-      })
-      .catch(function (error) {
-        console.error(
-          "Unable to register native push listener:",
-          eventName,
-          error
-        );
-      });
+      listenerHandles.push(handle);
+    } catch (error) {
+      console.error(
+        "Unable to register native push listener:",
+        eventName,
+        error
+      );
+      throw error;
+    }
   }
 
-  add("registration", function (token) {
-    if (typeof handlers.onRegistration === "function") {
-      handlers.onRegistration(token);
+  await add("registration", function (token) {
+    if (typeof safeHandlers.onRegistration === "function") {
+      safeHandlers.onRegistration(token);
     }
   });
 
-  add("registrationError", function (error) {
-    if (typeof handlers.onRegistrationError === "function") {
-      handlers.onRegistrationError(error);
+  await add("registrationError", function (error) {
+    if (typeof safeHandlers.onRegistrationError === "function") {
+      safeHandlers.onRegistrationError(error);
     }
   });
 
-  add("pushNotificationReceived", function (notification) {
-    if (typeof handlers.onNotificationReceived === "function") {
-      handlers.onNotificationReceived(notification);
+  await add("pushNotificationReceived", function (notification) {
+    if (typeof safeHandlers.onNotificationReceived === "function") {
+      safeHandlers.onNotificationReceived(notification);
     }
   });
 
-  add("pushNotificationActionPerformed", function (action) {
-    if (typeof handlers.onNotificationAction === "function") {
-      handlers.onNotificationAction(action);
+  await add("pushNotificationActionPerformed", function (action) {
+    if (typeof safeHandlers.onNotificationAction === "function") {
+      safeHandlers.onNotificationAction(action);
     }
   });
 
-  return function unsubscribeNativePushEvents() {
+  return async function unsubscribeNativePushEvents() {
     disposed = true;
 
-    listenerHandles.forEach(function (handle) {
+    const removals = listenerHandles.map(async function (handle) {
       if (handle && typeof handle.remove === "function") {
-        handle.remove();
+        try {
+          await handle.remove();
+        } catch (error) {
+          console.warn("Unable to remove native push listener:", error);
+        }
       }
     });
 
-    listenerHandles = [];
+    await Promise.all(removals);
+    listenerHandles.length = 0;
   };
 }
