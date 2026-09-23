@@ -76,7 +76,9 @@ export default function PushNotificationsButton({ user }) {
       setWorking(true);
       setMessage("");
 
-      await enablePushNotifications(user);
+      await enablePushNotifications(user, (progressMessage) => {
+        setMessage(String(progressMessage || "Enabling push notifications..."));
+      });
 
       setStatus("enabled");
       setMessage("Push notifications enabled.");
@@ -174,7 +176,7 @@ export default function PushNotificationsButton({ user }) {
           boxShadow: "0 8px 18px rgba(23,105,170,0.08)",
         }}
       >
-        {"\u{1F514}"} {working ? "Enabling..." : "Enable Push"}
+        {"\u{1F514}"} {working ? message || "Enabling..." : "Enable Push"}
       </button>
 
       {message && (
