@@ -16,6 +16,7 @@ import {
   getNativePushPermissionStatus,
   registerNativePush,
   subscribeToNativePushEvents,
+  subscribeToNativeRegistrationEvents,
 } from "../platform/pushService.js";
 import {
   getNativePlatform,
@@ -315,7 +316,7 @@ async function createNativeRegistrationWaiter() {
     rejectToken = reject;
   });
 
-  unsubscribe = await subscribeToNativePushEvents({
+  unsubscribe = await subscribeToNativeRegistrationEvents({
     onRegistration(token) {
       console.log("[PUSH DIAG] 2/7 APNs registration event received", {
         hasValue: Boolean(token?.value),
