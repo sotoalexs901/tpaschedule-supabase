@@ -70,6 +70,60 @@ export async function registerNativePush() {
   };
 }
 
+
+export async function subscribeToNativeRegistrationEvents(handlers) {
+  if (!isNativeApp()) {
+    return async function unsubscribeWebRuntime() {};
+  }
+
+  const safeHandlers = handlers || {};
+  const listenerHandles = [];
+  let disposed = false;
+
+  async function add(eventName, callback) {
+    const handle = await PushNotifications.addListener(eventName, callback);
+
+    if (disposed) {
+      if (handle && typeof handle.remove === "function") {
+        await handle.remove();
+      }
+      return;
+    }
+
+    listenerHandles.push(handle);
+  }
+
+  await add("registration", function (token) {
+    if (typeof safeHandlers.onRegistration === "function") {
+      safeHandlers.onRegistration(token);
+    }
+  });
+
+  await add("registrationError", function (error) {
+    if (typeof safeHandlers.onRegistrationError === "function") {
+      safeHandlers.onRegistrationError(error);
+    }
+  });
+
+  return async function unsubscribeNativeRegistrationEvents() {
+    disposed = true;
+
+    await Promise.all(
+      listenerHandles.map(async function (handle) {
+        if (handle && typeof handle.remove === "function") {
+          try {
+            await handle.remove();
+          } catch (error) {
+            console.warn("Unable to remove native registration listener:", error);
+          }
+        }
+      })
+    );
+
+    listenerHandles.length = 0;
+  };
+}
+
 export async function subscribeToNativePushEvents(handlers) {
   if (!isNativeApp()) {
     return function unsubscribeWebRuntime() {};
