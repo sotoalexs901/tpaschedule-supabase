@@ -252,6 +252,7 @@ async function saveWebPushToken(user, token) {
 }
 
 async function saveNativePushToken(user, token) {
+  console.log("[PUSH DIAG] 5/7 saveNativePushToken() started", { userId: user?.id, hasToken: Boolean(token) });
   if (!user?.id || !token) {
     throw new Error("Missing user or native push token.");
   }
@@ -266,6 +267,8 @@ async function saveNativePushToken(user, token) {
     "nativePushTokens",
     tokenHash
   );
+
+  console.log("[PUSH DIAG] 6/7 Writing native FCM token to Firestore", { userId: user.id, platform, tokenHash });
 
   await setDoc(
     tokenRef,
@@ -293,6 +296,7 @@ async function saveNativePushToken(user, token) {
     { merge: true }
   );
 
+  console.log("[PUSH DIAG] 7/7 Native FCM token saved to Firestore", { userId: user.id, tokenHash });
   return tokenHash;
 }
 
@@ -310,6 +314,7 @@ function waitForNativeRegistrationToken() {
 
     unsubscribe = subscribeToNativePushEvents({
       onRegistration(token) {
+        console.log("[PUSH DIAG] 2/7 APNs registration event received", { hasValue: Boolean(token?.value) });
         if (finished) return;
 
         const value =
@@ -326,6 +331,7 @@ function waitForNativeRegistrationToken() {
       },
 
       onRegistrationError(error) {
+        console.error("[PUSH DIAG] APNs registration error", error);
         if (finished) return;
 
         finished = true;
@@ -345,9 +351,11 @@ function waitForNativeRegistrationToken() {
 }
 
 async function enableNativePushNotifications(user) {
+  console.log("[PUSH DIAG] 1/7 enableNativePushNotifications() started", { userId: user?.id, platform: getNativePlatform() });
   const apnsRegistrationPromise = waitForNativeRegistrationToken();
 
   const registrationResult = await registerNativePush();
+  console.log("[PUSH DIAG] Native registration request result", registrationResult);
 
   if (!registrationResult.registered) {
     throw new Error(
@@ -359,15 +367,19 @@ async function enableNativePushNotifications(user) {
 
   // Wait until iOS/Android native registration has completed before asking
   // Firebase Messaging for the FCM registration token.
-  await apnsRegistrationPromise;
+  const apnsToken = await apnsRegistrationPromise;
+  console.log("[PUSH DIAG] 3/7 APNs registration completed", { tokenLength: apnsToken?.length || 0 });
 
   const FCM = await loadNativeFcm();
+  console.log("[PUSH DIAG] Native FCM plugin loaded", { available: Boolean(FCM) });
 
   if (!FCM) {
     throw new Error("Native Firebase Messaging is not available.");
   }
 
+  console.log("[PUSH DIAG] Requesting FCM token...");
   const result = await FCM.getToken();
+  console.log("[PUSH DIAG] 4/7 FCM.getToken() returned", { hasToken: Boolean(result?.token), tokenLength: result?.token?.length || 0 });
   const token =
     result && typeof result.token === "string"
       ? result.token.trim()
@@ -395,7 +407,12 @@ export async function enablePushNotifications(user) {
   }
 
   if (isNativeApp()) {
-    return enableNativePushNotifications(user);
+    try {
+      return await enableNativePushNotifications(user);
+    } catch (error) {
+      console.error("[PUSH DIAG] Native push enable FAILED", error);
+      throw error;
+    }
   }
 
   if (!VAPID_KEY) {
