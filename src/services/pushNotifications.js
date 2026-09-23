@@ -369,7 +369,12 @@ async function createNativeRegistrationWaiter() {
   };
 }
 
-async function enableNativePushNotifications(user) {
+async function enableNativePushNotifications(user, onProgress) {
+  const progress = (message) => {
+    try {
+      if (typeof onProgress === "function") onProgress(message);
+    } catch (_) {}
+  };
   console.log("[PUSH DIAG] 1/7 enableNativePushNotifications() started", {
     userId: user?.id,
     platform: getNativePlatform(),
@@ -378,9 +383,12 @@ async function enableNativePushNotifications(user) {
   // IMPORTANT: wait until all native listeners are fully attached before
   // calling PushNotifications.register(). This avoids losing the APNs
   // registration event on fast devices.
+  progress("Preparing native listeners...");
   const registrationWaiter = await createNativeRegistrationWaiter();
+  progress("Listeners ready");
   console.log("[PUSH DIAG] Native push listeners attached");
 
+  progress("Requesting iOS permission / APNs...");
   const registrationResult = await registerNativePush();
   console.log(
     "[PUSH DIAG] Native registration request result",
@@ -397,7 +405,9 @@ async function enableNativePushNotifications(user) {
     );
   }
 
+  progress("Waiting for APNs token...");
   const apnsToken = await registrationWaiter.tokenPromise;
+  progress("APNs OK");
 
   console.log("[PUSH DIAG] 3/7 APNs registration completed", {
     tokenLength: apnsToken?.length || 0,
@@ -412,6 +422,7 @@ async function enableNativePushNotifications(user) {
     throw new Error("Native Firebase Messaging plugin is not available.");
   }
 
+  progress("Requesting FCM token...");
   console.log("[PUSH DIAG] Requesting FCM token...");
 
   const result = await Promise.race([
@@ -430,6 +441,8 @@ async function enableNativePushNotifications(user) {
     tokenLength: result?.token?.length || 0,
   });
 
+  progress("FCM responded");
+
   const token =
     result && typeof result.token === "string"
       ? result.token.trim()
@@ -439,7 +452,9 @@ async function enableNativePushNotifications(user) {
     throw new Error("Firebase did not return a native FCM token.");
   }
 
+  progress("FCM OK - Saving token...");
   await saveNativePushToken(user, token);
+  progress("Enabled");
 
   return {
     success: true,
@@ -451,14 +466,14 @@ async function enableNativePushNotifications(user) {
   };
 }
 
-export async function enablePushNotifications(user) {
+export async function enablePushNotifications(user, onProgress) {
   if (!user?.id) {
     throw new Error("A logged-in user is required.");
   }
 
   if (isNativeApp()) {
     try {
-      return await enableNativePushNotifications(user);
+      return await enableNativePushNotifications(user, onProgress);
     } catch (error) {
       console.error("[PUSH DIAG] Native push enable FAILED", error);
       throw error;
