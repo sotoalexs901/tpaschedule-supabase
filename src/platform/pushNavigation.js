@@ -51,7 +51,7 @@ export function getPushActionRoute(action) {
   );
 }
 
-export function subscribeToNativePushNavigation({
+export async function subscribeToNativePushNavigation({
   navigate,
   onForegroundNotification,
   onRegistration,
@@ -61,7 +61,10 @@ export function subscribeToNativePushNavigation({
     return function unsubscribeWebPushNavigation() {};
   }
 
-  return subscribeToNativePushEvents({
+  // subscribeToNativePushEvents is async, so it MUST be awaited.
+  // Returning its Promise directly caused callers to receive a Promise
+  // instead of an unsubscribe function ("... is not a function").
+  const unsubscribe = await subscribeToNativePushEvents({
     onRegistration(token) {
       if (typeof onRegistration === "function") {
         onRegistration(token);
@@ -91,4 +94,9 @@ export function subscribeToNativePushNavigation({
       }
     },
   });
+
+  // Defensive fallback: callers can always safely invoke cleanup.
+  return typeof unsubscribe === "function"
+    ? unsubscribe
+    : function unsubscribeNativePushNavigation() {};
 }
