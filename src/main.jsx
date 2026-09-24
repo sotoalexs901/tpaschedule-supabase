@@ -97,6 +97,9 @@ import FuelManagementPage from "./pages/FuelManagementPage.jsx";
 import CierreVuelo from "./pages/CierreVuelo.jsx";
 import CierreVueloManagement from "./pages/CierreVueloManagement.jsx";
 
+import Code24ShiftReportPage from "./pages/Code24ShiftReportPage.jsx";
+import Code24ManagementPage from "./pages/Code24ManagementPage.jsx";
+
 // ============================================================
 // PROTECTED ROUTE
 // ============================================================
@@ -863,6 +866,29 @@ function AppRouter() {
                 roles={["supervisor", "duty_manager", "station_manager"]}
               >
                 <CierreVueloManagement />
+              </ProtectedRoute>
+            }
+          />
+
+
+          {/* CODE 24 / BAG RETURN */}
+
+          <Route
+            path="code24/submit"
+            element={
+              <ProtectedRoute
+                roles={["supervisor", "duty_manager", "station_manager"]}
+              >
+                <Code24ShiftReportPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="code24/management"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <Code24ManagementPage />
               </ProtectedRoute>
             }
           />
