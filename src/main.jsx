@@ -17,7 +17,7 @@ import {
 import { APP_NAME } from "./config/appConfig.js";
 
 import LoginPage from "./pages/LoginPage.jsx";
-import AppLayout from "./components/AppLayout.jsx";
+import AppLayout from "./pages/AppLayout.jsx";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
 import PrivacyAcknowledgmentsPage from "./pages/PrivacyAcknowledgmentsPage.jsx";
 import ReportsDataManagementPage from "./pages/ReportsDataManagementPage.jsx";
@@ -96,9 +96,9 @@ import FuelManagementPage from "./pages/FuelManagementPage.jsx";
 
 import CierreVuelo from "./pages/CierreVuelo.jsx";
 import CierreVueloManagement from "./pages/CierreVueloManagement.jsx";
+import BSODailyReportPage from "./pages/BSODailyReportPage.jsx";
+import BSODailyManagementPage from "./pages/BSODailyManagementPage.jsx";
 
-import Code24ShiftReportPage from "./pages/Code24ShiftReportPage.jsx";
-import Code24ManagementPage from "./pages/Code24ManagementPage.jsx";
 
 // ============================================================
 // PROTECTED ROUTE
@@ -870,28 +870,29 @@ function AppRouter() {
             }
           />
 
-
-          {/* CODE 24 / BAG RETURN */}
+          {/* BSO DAILY REPORT */}
 
           <Route
-            path="code24/submit"
+            path="bso-daily-report"
             element={
-              <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
-              >
-                <Code24ShiftReportPage />
+              <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
+                <BSODailyReportPage />
               </ProtectedRoute>
             }
           />
 
           <Route
-            path="code24/management"
+            path="bso-daily-management"
             element={
               <ProtectedRoute roles={["duty_manager", "station_manager"]}>
-                <Code24ManagementPage />
+                <BSODailyManagementPage />
               </ProtectedRoute>
             }
           />
+
+          {/* Legacy Code 24 routes */}
+          <Route path="code24/submit" element={<Navigate to="/bso-daily-report" replace />} />
+          <Route path="code24/management" element={<Navigate to="/bso-daily-management" replace />} />
 
           {/* WCHR OPERATIONS */}
 
