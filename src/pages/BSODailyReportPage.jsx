@@ -1,6 +1,6 @@
 // src/pages/BSODailyReportPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, getDocs, query, serverTimestamp, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
@@ -198,16 +198,6 @@ export default function BSODailyReportPage() {
     loadTodayReports();
   }, []);
 
-  const selectedDateReports = useMemo(() => {
-    if (form.reportDate === todayLocal()) return todayReports;
-    return [];
-  }, [todayReports, form.reportDate]);
-
-  const existingShiftReport = useMemo(() => {
-    if (!form.reportDate || !form.shift) return null;
-    return selectedDateReports.find((r) => String(r.shift || "").toUpperCase() === String(form.shift || "").toUpperCase()) || null;
-  }, [selectedDateReports, form.reportDate, form.shift]);
-
   const todayEventRows = useMemo(() => {
     return todayReports.flatMap((report) =>
       (Array.isArray(report.events) ? report.events : []).map((event, index) => ({
@@ -390,9 +380,8 @@ export default function BSODailyReportPage() {
     const events = buildCleanEvents();
 
     try {
-      // Always re-read the selected date immediately before saving.
-      // This prevents two supervisors from creating separate files for the same shift
-      // when one of them submitted after the other page was already open.
+      // Re-read the selected date immediately before saving so duplicate
+      // event/file checks include anything submitted while this page was open.
       const q = query(collection(db, "bso_daily_reports"), where("reportDate", "==", form.reportDate));
       const snap = await getDocs(q);
       const reportsForDate = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -407,10 +396,9 @@ export default function BSODailyReportPage() {
       }
 
       setSaving(true);
-      const shiftReport = reportsForDate.find(
-        (r) => String(r.shift || "").toUpperCase() === String(form.shift || "").toUpperCase()
-      ) || null;
 
+      // Multiple BSO Daily Reports are allowed for the same date and shift.
+      // We only interrupt submission when an event/file appears to be a duplicate.
       const duplicateOverride = overrideDuplicate
         ? {
             overrideReason: duplicateOverrideReason.trim(),
@@ -423,56 +411,20 @@ export default function BSODailyReportPage() {
         ? events.map((event) => ({ ...event, duplicateOverride }))
         : events;
 
-      if (shiftReport) {
-        const existingEvents = Array.isArray(shiftReport.events) ? shiftReport.events : [];
-        const mergedEvents = [...existingEvents, ...eventsWithOverride].map((event, index) => ({ ...event, sequence: index + 1 }));
-        const code24Events = mergedEvents.filter((e) => e.eventType === "CODE_24");
-        const code24Created = code24Events.filter((e) => e.code24Created === true || e.code24Created === "Yes").length;
-        const code39Events = mergedEvents.filter((e) => e.eventType === "CODE_39");
-        const exceptionEvents = mergedEvents.filter((e) => e.eventType === "EXCEPTION_DELIVERY");
-        const otherEvents = mergedEvents.filter((e) => e.eventType === "OTHER");
-        const code39BagsAffected = code39Events.reduce((sum, e) => sum + Number(e.bagsChecked || 0), 0);
-        const newNotes = form.notes.trim();
-        const mergedNotes = newNotes
-          ? `${String(shiftReport.notes || "").trim()}${shiftReport.notes ? "\n\n" : ""}[Update ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}] ${newNotes}`
-          : String(shiftReport.notes || "");
+      await addDoc(collection(db, "bso_daily_reports"), {
+        reportDate: form.reportDate, shift: form.shift, department: "AA BSO",
+        supervisorName: form.supervisorName, supervisorPosition: form.supervisorPosition,
+        notes: form.notes.trim(), events: eventsWithOverride,
+        totalEvents: metrics.total, code24BagReturnEvents: metrics.code24Events, code24CreatedCount: metrics.code24Created,
+        code24Rate: Number(metrics.code24Rate.toFixed(2)), code39Count: metrics.code39,
+        exceptionDeliveryCount: metrics.exceptions, exceptionFedExCount: metrics.fedEx, exceptionSddCount: metrics.sdd,
+        exceptionOtherMethodCount: metrics.exceptions - metrics.fedEx - metrics.sdd, otherCount: metrics.other,
+        code39BagsAffected: metrics.bagsAffected,
+        submittedByUserId: user?.id || "", submittedByUsername: user?.username || "", submittedByName: getVisibleName(user), submittedByRole: user?.role || "",
+        createdAt: serverTimestamp(), status: "submitted", reviewStatus: "submitted",
+      });
 
-        await updateDoc(doc(db, "bso_daily_reports", shiftReport.id), {
-          events: mergedEvents,
-          notes: mergedNotes,
-          totalEvents: mergedEvents.length,
-          code24BagReturnEvents: code24Events.length,
-          code24CreatedCount: code24Created,
-          code24Rate: code24Events.length ? Number(((code24Created / code24Events.length) * 100).toFixed(2)) : 0,
-          code39Count: code39Events.length,
-          exceptionDeliveryCount: exceptionEvents.length,
-          exceptionFedExCount: exceptionEvents.filter((e) => e.deliveryMethod === "FedEx").length,
-          exceptionSddCount: exceptionEvents.filter((e) => e.deliveryMethod === "SDD").length,
-          exceptionOtherMethodCount: exceptionEvents.filter((e) => e.deliveryMethod === "Other").length,
-          otherCount: otherEvents.length,
-          code39BagsAffected,
-          updatedAt: serverTimestamp(),
-          lastUpdatedByUserId: user?.id || "",
-          lastUpdatedByUsername: user?.username || "",
-          lastUpdatedByName: getVisibleName(user),
-        });
-        setMessage(`Events added to the existing ${form.shift} BSO Daily Report. No duplicate shift file was created.`);
-      } else {
-        await addDoc(collection(db, "bso_daily_reports"), {
-          reportDate: form.reportDate, shift: form.shift, department: "AA BSO",
-          supervisorName: form.supervisorName, supervisorPosition: form.supervisorPosition,
-          notes: form.notes.trim(), events: eventsWithOverride,
-          totalEvents: metrics.total, code24BagReturnEvents: metrics.code24Events, code24CreatedCount: metrics.code24Created,
-          code24Rate: Number(metrics.code24Rate.toFixed(2)), code39Count: metrics.code39,
-          exceptionDeliveryCount: metrics.exceptions, exceptionFedExCount: metrics.fedEx, exceptionSddCount: metrics.sdd,
-          exceptionOtherMethodCount: metrics.exceptions - metrics.fedEx - metrics.sdd, otherCount: metrics.other,
-          code39BagsAffected: metrics.bagsAffected,
-          submittedByUserId: user?.id || "", submittedByUsername: user?.username || "", submittedByName: getVisibleName(user), submittedByRole: user?.role || "",
-          createdAt: serverTimestamp(), status: "submitted", reviewStatus: "submitted", supervisorCertified: true,
-        });
-        setMessage("BSO Daily Report submitted successfully.");
-      }
-
+      setMessage("BSO Daily Report submitted successfully. You may submit additional reports for the same day or shift as long as the event/file is not duplicated.");
       setDuplicateWarning(null);
       setDuplicateOverrideReason("");
       setForm({ reportDate: todayLocal(), shift: "", department: "AA BSO", supervisorName: getVisibleName(user), supervisorPosition: user?.position || getDefaultPosition(user?.role), notes: "", certification: false, events: [newEvent()] });
@@ -530,11 +482,6 @@ export default function BSODailyReportPage() {
       <div><Label>Supervisor</Label><Input value={form.supervisorName} disabled /></div>
     </div></Card>
 
-    {existingShiftReport && <Card style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
-      <div style={{ fontSize: 12, fontWeight: 900, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: ".05em" }}>Existing Shift Report Found</div>
-      <div style={{ marginTop: 5, fontSize: 13, color: "#334155", fontWeight: 700, lineHeight: 1.55 }}>A BSO Daily Report for <b>{form.shift}</b> shift has already been submitted today. New events will be added to that report instead of creating another file.</div>
-      <div style={{ marginTop: 10 }}><Button variant="secondary" onClick={() => { setExpandedReportId(existingShiftReport.id); setActiveTab("today"); }}>View Existing Shift Report</Button></div>
-    </Card>}
 
     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(8,minmax(0,1fr))", gap: 9 }}>
       <Metric label="Total Events" value={metrics.total} />
@@ -618,7 +565,7 @@ export default function BSODailyReportPage() {
 
     <Card><h2 style={{ marginTop: 0 }}>Shift Notes & Certification</h2><Label>General Shift Notes</Label><Area value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /><label style={{ marginTop: 13, display: "flex", gap: 10, padding: 12, border: "1px solid #dbeafe", borderRadius: 13, background: "#f8fbff", fontSize: 12.5, fontWeight: 700 }}><input type="checkbox" checked={form.certification} onChange={e => setForm(p => ({ ...p, certification: e.target.checked }))} />I confirm that the BSO events handled during this shift were reviewed and documented accurately.</label></Card>
 
-    <Card><div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><Button onClick={submit} disabled={saving}>{saving ? "Saving..." : existingShiftReport ? "Add Event(s) to Existing Shift Report" : "Submit BSO Daily Report"}</Button><Button variant="secondary" onClick={() => navigate("/dashboard")} disabled={saving}>Cancel</Button></div></Card>
+    <Card><div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><Button onClick={submit} disabled={saving}>{saving ? "Saving..." : "Submit BSO Daily Report"}</Button><Button variant="secondary" onClick={() => navigate("/dashboard")} disabled={saving}>Cancel</Button></div></Card>
     </>}
 
     {activeTab === "today" && <>
