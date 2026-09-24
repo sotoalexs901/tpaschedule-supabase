@@ -96,9 +96,6 @@ function newEvent() {
     // Code 39
     reportId: "",
     createDate: "",
-    closeDate: "",
-    assignedStation: "",
-    finalStation: "",
     status: "Open",
     faultStation: "",
     lossCode: "39",
@@ -380,7 +377,6 @@ export default function BSODailyReportPage() {
     ...e,
     employee: e.employee.trim(), passengerName: e.passengerName.trim(), pnr: e.pnr.trim().toUpperCase(),
     flightNumber: e.flightNumber.trim().toUpperCase(), bagTags: e.bagTags.trim(), reportId: e.reportId.trim().toUpperCase(),
-    assignedStation: e.assignedStation.trim().toUpperCase(), finalStation: e.finalStation.trim().toUpperCase(),
     faultStation: e.faultStation.trim().toUpperCase(), worldTracerId: e.worldTracerId.trim().toUpperCase(),
     netTracerFile: e.netTracerFile.trim().toUpperCase(), agentCode: e.agentCode.trim().toUpperCase(),
     bagsChecked: e.eventType === "CODE_39" ? Number(e.bagsChecked || 0) : 0,
@@ -581,10 +577,7 @@ export default function BSODailyReportPage() {
         <div style={grid}>
           <div><Label>Report ID *</Label><Input value={e.reportId} onChange={x => updateEvent(e.id, "reportId", x.target.value)} placeholder="TPAAA..." /></div>
           <div><Label>Create Date</Label><Input type="datetime-local" value={e.createDate} onChange={x => updateEvent(e.id, "createDate", x.target.value)} /></div>
-          <div><Label>Close Date</Label><Input type="datetime-local" value={e.closeDate} onChange={x => updateEvent(e.id, "closeDate", x.target.value)} /></div>
           <div><Label>Status</Label><Select value={e.status} onChange={x => updateEvent(e.id, "status", x.target.value)}><option>Open</option><option>Closed</option><option>Pending</option></Select></div>
-          <div><Label>Assigned Station</Label><Input value={e.assignedStation} onChange={x => updateEvent(e.id, "assignedStation", x.target.value)} /></div>
-          <div><Label>Final Station</Label><Input value={e.finalStation} onChange={x => updateEvent(e.id, "finalStation", x.target.value)} /></div>
           <div><Label>Fault Station *</Label><Input value={e.faultStation} onChange={x => updateEvent(e.id, "faultStation", x.target.value)} /></div>
           <div><Label>Loss Code *</Label><Input value={e.lossCode} onChange={x => updateEvent(e.id, "lossCode", x.target.value)} /></div>
           <div><Label>Bag Type</Label><Input value={e.bagType} onChange={x => updateEvent(e.id, "bagType", x.target.value)} placeholder="Example: 02" /></div>
