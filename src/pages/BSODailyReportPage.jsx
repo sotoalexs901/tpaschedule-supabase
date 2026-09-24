@@ -97,10 +97,6 @@ function newEvent() {
     reportId: "",
     createDate: "",
     closeDate: "",
-    segment1: "",
-    segment2: "",
-    segment3: "",
-    segment4: "",
     assignedStation: "",
     finalStation: "",
     status: "Open",
@@ -516,8 +512,8 @@ export default function BSODailyReportPage() {
   return <div style={{ display: "grid", gap: 16, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
     <div style={{ background: "linear-gradient(135deg,#0f5c91,#1f7cc1 45%,#6ec6e8)", borderRadius: 22, padding: isMobile ? 15 : 20, color: "#fff", boxShadow: "0 18px 42px rgba(23,105,170,.18)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-        <div><div style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".15em", textTransform: "uppercase", opacity: .8 }}>{APP_NAME} · AA BSO</div><h1 style={{ margin: "7px 0 4px", fontSize: isMobile ? 21 : 27 }}>BSO Daily Report</h1><div style={{ fontSize: 12.5, opacity: .9 }}>Daily office activity tracking for Code 24 / Bag Returns, Code 39, Exception Delivery and other BSO events.</div><div style={{ marginTop: 4, fontSize: 10.5, opacity: .7 }}>{APP_SUBTITLE}</div></div>
-        <Button variant="secondary" onClick={() => navigate("/dashboard")}>← Back to Dashboard</Button>
+        <div><div style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".15em", textTransform: "uppercase", opacity: .8 }}>{APP_NAME} Â· AA BSO</div><h1 style={{ margin: "7px 0 4px", fontSize: isMobile ? 21 : 27 }}>BSO Daily Report</h1><div style={{ fontSize: 12.5, opacity: .9 }}>Daily office activity tracking for Code 24 / Bag Returns, Code 39, Exception Delivery and other BSO events.</div><div style={{ marginTop: 4, fontSize: 10.5, opacity: .7 }}>{APP_SUBTITLE}</div></div>
+        <Button variant="secondary" onClick={() => navigate("/dashboard")}>â Back to Dashboard</Button>
       </div>
     </div>
 
@@ -596,10 +592,6 @@ export default function BSODailyReportPage() {
           <div><Label>Bags Checked</Label><Input type="number" min="0" value={e.bagsChecked} onChange={x => updateEvent(e.id, "bagsChecked", x.target.value)} /></div>
           <div><Label>Bags Received</Label><Input type="number" min="0" value={e.bagsReceived} onChange={x => updateEvent(e.id, "bagsReceived", x.target.value)} /></div>
           <div><Label>World Tracer ID</Label><Input value={e.worldTracerId} onChange={x => updateEvent(e.id, "worldTracerId", x.target.value)} /></div>
-          <div><Label>Segment 1</Label><Input value={e.segment1} onChange={x => updateEvent(e.id, "segment1", x.target.value)} placeholder="Example: DFW AA 3112" /></div>
-          <div><Label>Segment 2</Label><Input value={e.segment2} onChange={x => updateEvent(e.id, "segment2", x.target.value)} /></div>
-          <div><Label>Segment 3</Label><Input value={e.segment3} onChange={x => updateEvent(e.id, "segment3", x.target.value)} /></div>
-          <div><Label>Segment 4</Label><Input value={e.segment4} onChange={x => updateEvent(e.id, "segment4", x.target.value)} /></div>
         </div>
       </div>}
 
@@ -658,7 +650,7 @@ export default function BSODailyReportPage() {
             return <div key={report.id} style={{ border: "1px solid #dbeafe", borderRadius: 16, overflow: "hidden" }}>
               <div style={{ padding: 13, background: "#f8fbff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <div>
-                  <div style={{ fontSize: 11, color: "#1769aa", fontWeight: 900, textTransform: "uppercase" }}>{report.shift || "-"} Shift · {events.length} Event{events.length === 1 ? "" : "s"}</div>
+                  <div style={{ fontSize: 11, color: "#1769aa", fontWeight: 900, textTransform: "uppercase" }}>{report.shift || "-"} Shift Â· {events.length} Event{events.length === 1 ? "" : "s"}</div>
                   <div style={{ marginTop: 4, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{report.supervisorName || report.submittedByName || "Supervisor"}</div>
                   <div style={{ marginTop: 2, fontSize: 11, color: "#64748b" }}>{timestampToLabel(report.createdAt)}</div>
                 </div>
@@ -678,7 +670,7 @@ export default function BSODailyReportPage() {
                     {event.eventType === "CODE_39" && <div><b>Report ID:</b> {event.reportId || "-"}</div>}
                     {event.eventType === "CODE_39" && <div><b>World Tracer:</b> {event.worldTracerId || "-"}</div>}
                     {event.eventType === "CODE_24" && <div><b>Code 24 Created:</b> {event.code24Created === true || event.code24Created === "Yes" ? "Yes" : "No"}</div>}
-                    {event.eventType === "EXCEPTION_DELIVERY" && <div><b>NetTracer:</b> {event.netTracerFile || "-"} · <b>Method:</b> {event.deliveryMethod || "-"} · <b>Reason:</b> {event.exceptionReason || "-"}</div>}
+                    {event.eventType === "EXCEPTION_DELIVERY" && <div><b>NetTracer:</b> {event.netTracerFile || "-"} Â· <b>Method:</b> {event.deliveryMethod || "-"} Â· <b>Reason:</b> {event.exceptionReason || "-"}</div>}
                   </div>
                 </div>)}
               </div>}
@@ -697,7 +689,7 @@ export default function BSODailyReportPage() {
         <div style={{ padding: 18 }}>
           <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, lineHeight: 1.55 }}>Review the matching information before creating another entry.</div>
           <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-            {duplicateWarning.duplicates.map((d, index) => <div key={index} style={{ padding: 10, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12.5, fontWeight: 800 }}>Event #{d.eventNumber} · {d.eventType}: {d.reason}</div>)}
+            {duplicateWarning.duplicates.map((d, index) => <div key={index} style={{ padding: 10, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12.5, fontWeight: 800 }}>Event #{d.eventNumber} Â· {d.eventType}: {d.reason}</div>)}
           </div>
           <div style={{ marginTop: 14 }}><Label>If this is a different event, explain why *</Label><Area value={duplicateOverrideReason} onChange={(e) => setDuplicateOverrideReason(e.target.value)} placeholder="Example: Separate bag, new customer interaction, correction, or other valid reason." /></div>
           <div style={{ marginTop: 14, display: "flex", gap: 9, flexWrap: "wrap" }}>
