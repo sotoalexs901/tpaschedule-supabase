@@ -857,6 +857,15 @@ export default function AppLayout() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
+  const canSubmitCode24 =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageCode24 =
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
   const canAccessWchrTools =
     !isDLCabinService &&
     (
@@ -1125,6 +1134,14 @@ export default function AppLayout() {
       });
     }
 
+    if (canSubmitCode24) {
+      submissionReports.push({
+        to: "/code24/submit",
+        label: "Code 24 / Bag Return",
+        icon: "\u{1F9F3}",
+      });
+    }
+
     if (canSubmitOperationsRequests) {
       submissionReports.push({
         to: "/operations-requests/submit",
@@ -1199,6 +1216,14 @@ export default function AppLayout() {
         to: "/regulated-garbage/reports",
         label: "Regulated Garbage Reports",
         icon: "\u{1F5D1}",
+      });
+    }
+
+    if (canManageCode24) {
+      managementReports.push({
+        to: "/code24/management",
+        label: "Code 24 Management",
+        icon: "\u{1F4CA}",
       });
     }
 
@@ -1357,6 +1382,8 @@ export default function AppLayout() {
     canManageWchrPoi,
     canSubmitRegulatedGarbage,
     canManageRegulatedGarbage,
+    canSubmitCode24,
+    canManageCode24,
     canSubmitEmployeePerformance,
     canManageEmployeePerformance,
     canSubmitGateChecklist,
