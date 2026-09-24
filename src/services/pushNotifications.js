@@ -11,7 +11,6 @@ import {
 } from "firebase/firestore";
 
 import { app, db } from "../firebase.js";
-import { FCM } from "@capacitor-community/fcm";
 import {
   getNativePushPermissionStatus,
   registerNativePush,
@@ -414,14 +413,7 @@ async function enableNativePushNotifications(user, onProgress) {
     tokenLength: apnsToken?.length || 0,
   });
 
-  console.log("[PUSH DIAG] Native FCM plugin ready", {
-    available: Boolean(FCM),
-    hasGetToken: typeof FCM?.getToken === "function",
-  });
-
-  if (!FCM || typeof FCM.getToken !== "function") {
-    throw new Error("Native Firebase Messaging plugin is not available.");
-  }
+  console.log("[PUSH DIAG] APNs complete; using Capacitor native FCM bridge");
 
   progress("Requesting FCM token...");
   console.log("[PUSH DIAG] Requesting FCM token...");
