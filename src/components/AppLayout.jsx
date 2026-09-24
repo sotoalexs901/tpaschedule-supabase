@@ -857,15 +857,6 @@ export default function AppLayout() {
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
-  const canSubmitCode24 =
-    user?.role === "supervisor" ||
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
-
-  const canManageCode24 =
-    user?.role === "duty_manager" ||
-    user?.role === "station_manager";
-
   const canAccessWchrTools =
     !isDLCabinService &&
     (
@@ -942,6 +933,15 @@ export default function AppLayout() {
 
   const canManageCierreVuelo =
     user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canSubmitBsoDaily =
+    user?.role === "supervisor" ||
+    user?.role === "duty_manager" ||
+    user?.role === "station_manager";
+
+  const canManageBsoDaily =
     user?.role === "duty_manager" ||
     user?.role === "station_manager";
 
@@ -1126,19 +1126,19 @@ export default function AppLayout() {
       );
     }
 
+    if (canSubmitBsoDaily) {
+      submissionReports.push({
+        to: "/bso-daily-report",
+        label: "BSO Daily Report",
+        icon: "\u{1F9F3}",
+      });
+    }
+
     if (canSubmitRegulatedGarbage) {
       submissionReports.push({
         to: "/regulated-garbage/submit",
         label: "Regulated Garbage",
         icon: "\u{1F5D1}",
-      });
-    }
-
-    if (canSubmitCode24) {
-      submissionReports.push({
-        to: "/code24/submit",
-        label: "Code 24 / Bag Return",
-        icon: "\u{1F9F3}",
       });
     }
 
@@ -1211,19 +1211,19 @@ export default function AppLayout() {
       });
     }
 
+    if (canManageBsoDaily) {
+      managementReports.push({
+        to: "/bso-daily-management",
+        label: "BSO Daily Management",
+        icon: "\u{1F4CA}",
+      });
+    }
+
     if (canManageRegulatedGarbage) {
       managementReports.push({
         to: "/regulated-garbage/reports",
         label: "Regulated Garbage Reports",
         icon: "\u{1F5D1}",
-      });
-    }
-
-    if (canManageCode24) {
-      managementReports.push({
-        to: "/code24/management",
-        label: "Code 24 Management",
-        icon: "\u{1F4CA}",
       });
     }
 
@@ -1368,6 +1368,8 @@ export default function AppLayout() {
     canRequestTimeOff,
     canViewMySchedule,
     canAccessTimesheets,
+    canSubmitBsoDaily,
+    canManageBsoDaily,
     canAccessOperationalReports,
     canAccessOperationalReportAdmin,
     canManageOperationalReportForm,
@@ -1382,8 +1384,6 @@ export default function AppLayout() {
     canManageWchrPoi,
     canSubmitRegulatedGarbage,
     canManageRegulatedGarbage,
-    canSubmitCode24,
-    canManageCode24,
     canSubmitEmployeePerformance,
     canManageEmployeePerformance,
     canSubmitGateChecklist,
@@ -2078,3 +2078,4 @@ const emptySearchStyle = {
 };
 
 // END AppLayout
+
