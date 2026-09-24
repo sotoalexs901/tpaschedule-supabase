@@ -426,16 +426,17 @@ async function enableNativePushNotifications(user, onProgress) {
   progress("Requesting FCM token...");
   console.log("[PUSH DIAG] Requesting FCM token...");
 
-  const result = await Promise.race([
-    FCM.getToken(),
-    new Promise((_, reject) => {
-      window.setTimeout(() => {
-        reject(
-          new Error("Timed out while requesting the native FCM token.")
-        );
-      }, 15000);
-    }),
-  ]);
+  const nativeFcm =
+    typeof window !== "undefined" &&
+    window.Capacitor &&
+    window.Capacitor.Plugins &&
+    window.Capacitor.Plugins.FCM;
+
+  if (!nativeFcm || typeof nativeFcm.getToken !== "function") {
+    throw new Error("Native FCM plugin bridge is not available.");
+  }
+
+  const result = await nativeFcm.getToken();
 
   console.log("[PUSH DIAG] 4/7 FCM.getToken() returned", {
     hasToken: Boolean(result?.token),
