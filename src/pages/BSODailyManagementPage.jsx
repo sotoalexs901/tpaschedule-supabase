@@ -817,6 +817,8 @@ export default function BSODailyManagementPage() {
   const [selectedId, setSelectedId] = useState("");
   const [selectedCase, setSelectedCase] = useState(null);
   const [activeCaseType, setActiveCaseType] = useState("all");
+  const [caseListOpen, setCaseListOpen] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [working, setWorking] = useState("");
 
   const emptyFilters = {
@@ -1257,510 +1259,144 @@ export default function BSODailyManagementPage() {
         </Card>
       )}
 
-      <Card>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 10,
-            flexWrap: "wrap",
-            marginBottom: 14,
-            alignItems: "center",
-          }}
-        >
+      <Card style={{ padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 19, color: "#0f172a" }}>
-              Filters & Export
-            </h2>
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: 12,
-                color: "#64748b",
-                fontWeight: 700,
-              }}
-            >
-              KPI cards, CSV and print output follow the active filters.
+            <h2 style={{ margin: 0, fontSize: 19, color: "#0f172a" }}>Dashboard Controls</h2>
+            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+              The dashboard follows the active filters. Case lists stay hidden until you select a KPI.
             </div>
           </div>
-
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Button variant="secondary" onClick={exportCsv}>
-              Export CSV
-            </Button>
-            <Button variant="dark" onClick={printSummary}>
-              Print Summary
-            </Button>
+            <Button variant="secondary" onClick={() => setShowFilters((v) => !v)}>{showFilters ? "Hide Filters" : "Filters"}</Button>
+            <Button variant="secondary" onClick={exportCsv}>Export CSV</Button>
+            <Button variant="dark" onClick={printSummary}>Print Summary</Button>
           </div>
         </div>
 
-        <div style={grid}>
-          <div>
-            <Label>Start Date</Label>
-            <Input
-              type="date"
-              value={filters.startDate}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, startDate: e.target.value }))
-              }
-            />
+        {showFilters && <div style={{ marginTop: 14 }}>
+          <div style={grid}>
+            <div><Label>Start Date</Label><Input type="date" value={filters.startDate} onChange={(e) => setFilters((p) => ({ ...p, startDate: e.target.value }))} /></div>
+            <div><Label>End Date</Label><Input type="date" value={filters.endDate} onChange={(e) => setFilters((p) => ({ ...p, endDate: e.target.value }))} /></div>
+            <div><Label>Shift</Label><Select value={filters.shift} onChange={(e) => setFilters((p) => ({ ...p, shift: e.target.value }))}><option value="all">All</option><option>AM</option><option>PM</option><option>MID</option><option>IMPORTED</option></Select></div>
+            <div><Label>Event Type</Label><Select value={filters.eventType} onChange={(e) => setFilters((p) => ({ ...p, eventType: e.target.value }))}><option value="all">All</option><option value="CODE_24">Code 24 / Bag Return</option><option value="CODE_39">Code 39</option><option value="EXCEPTION_DELIVERY">Exception Delivery</option><option value="OTHER">Other</option></Select></div>
+            <div><Label>Supervisor</Label><Input value={filters.supervisor} onChange={(e) => setFilters((p) => ({ ...p, supervisor: e.target.value }))} /></div>
+            <div><Label>Employee</Label><Input value={filters.employee} onChange={(e) => setFilters((p) => ({ ...p, employee: e.target.value }))} /></div>
+            <div><Label>Fault Station</Label><Input value={filters.faultStation} onChange={(e) => setFilters((p) => ({ ...p, faultStation: e.target.value }))} /></div>
+            <div><Label>Loss Code</Label><Input value={filters.lossCode} onChange={(e) => setFilters((p) => ({ ...p, lossCode: e.target.value }))} /></div>
+            <div><Label>Delivery Method</Label><Select value={filters.deliveryMethod} onChange={(e) => setFilters((p) => ({ ...p, deliveryMethod: e.target.value }))}><option value="all">All</option>{DELIVERY_METHODS.map((x) => <option key={x}>{x}</option>)}</Select></div>
+            <div><Label>Exception Reason</Label><Select value={filters.exceptionReason} onChange={(e) => setFilters((p) => ({ ...p, exceptionReason: e.target.value }))}><option value="all">All</option>{EXCEPTION_REASONS.map((x) => <option key={x}>{x}</option>)}</Select></div>
+            <div><Label>NetTracer File</Label><Input value={filters.netTracerFile} onChange={(e) => setFilters((p) => ({ ...p, netTracerFile: e.target.value }))} /></div>
+            <div><Label>Status</Label><Select value={filters.status} onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}><option value="all">All</option><option value="open">Open</option><option value="closed">Closed</option><option value="pending">Pending</option><option value="submitted">Submitted</option></Select></div>
+            <div><Label>Quick Search</Label><Input value={filters.search} onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))} placeholder="PNR, bag tag, NetTracer, report ID..." /></div>
           </div>
-          <div>
-            <Label>End Date</Label>
-            <Input
-              type="date"
-              value={filters.endDate}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, endDate: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <Label>Shift</Label>
-            <Select
-              value={filters.shift}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, shift: e.target.value }))
-              }
-            >
-              <option value="all">All</option>
-              <option>AM</option>
-              <option>PM</option>
-              <option>MID</option>
-            </Select>
-          </div>
-          <div>
-            <Label>Event Type</Label>
-            <Select
-              value={filters.eventType}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, eventType: e.target.value }))
-              }
-            >
-              <option value="all">All</option>
-              <option value="CODE_24">Code 24 / Bag Return</option>
-              <option value="CODE_39">Code 39</option>
-              <option value="EXCEPTION_DELIVERY">Exception Delivery</option>
-              <option value="OTHER">Other</option>
-            </Select>
-          </div>
-          <div>
-            <Label>Supervisor</Label>
-            <Input
-              value={filters.supervisor}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, supervisor: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <Label>Employee</Label>
-            <Input
-              value={filters.employee}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, employee: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <Label>Fault Station</Label>
-            <Input
-              value={filters.faultStation}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, faultStation: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <Label>Loss Code</Label>
-            <Input
-              value={filters.lossCode}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, lossCode: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <Label>Delivery Method</Label>
-            <Select
-              value={filters.deliveryMethod}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, deliveryMethod: e.target.value }))
-              }
-            >
-              <option value="all">All</option>
-              {DELIVERY_METHODS.map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <Label>Exception Reason</Label>
-            <Select
-              value={filters.exceptionReason}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, exceptionReason: e.target.value }))
-              }
-            >
-              <option value="all">All</option>
-              {EXCEPTION_REASONS.map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <Label>NetTracer File</Label>
-            <Input
-              value={filters.netTracerFile}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, netTracerFile: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <Label>Status</Label>
-            <Select
-              value={filters.status}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, status: e.target.value }))
-              }
-            >
-              <option value="all">All</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-              <option value="pending">Pending</option>
-              <option value="submitted">Submitted</option>
-            </Select>
-          </div>
-          <div>
-            <Label>Quick Search</Label>
-            <Input
-              value={filters.search}
-              onChange={(e) =>
-                setFilters((p) => ({ ...p, search: e.target.value }))
-              }
-              placeholder="PNR, bag tag, NetTracer, report ID..."
-            />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12, textAlign: "right" }}>
-          <Button variant="secondary" onClick={() => setFilters(emptyFilters)}>
-            Clear Filters
-          </Button>
-        </div>
+          <div style={{ marginTop: 12, textAlign: "right" }}><Button variant="secondary" onClick={() => setFilters(emptyFilters)}>Clear Filters</Button></div>
+        </div>}
       </Card>
 
-      <Card style={{ padding: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 19, color: "#0f172a" }}>BSO Case KPIs</h2>
-            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>Click a KPI to filter the case table below. All counts follow the active date and management filters.</div>
+      <Card>
+        <div style={{ marginBottom: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 20, color: "#0f172a" }}>BSO Monthly Case Summary</h2>
+          <div style={{ marginTop: 4, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
+            Click any category to open its cases. No case table is shown on the main dashboard.
           </div>
-          {activeCaseType !== "all" && <Button variant="secondary" onClick={() => setActiveCaseType("all")}>Show All Cases</Button>}
         </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isMobile
-              ? "repeat(2,minmax(0,1fr))"
-              : isTablet
-              ? "repeat(3,minmax(0,1fr))"
-              : "repeat(5,minmax(0,1fr))",
-            gap: 9,
-          }}
-        >
-          <Metric label="All BSO Cases" value={totals.total} tone="blue" onClick={() => setActiveCaseType("all")} active={activeCaseType === "all"} />
-          <Metric label="Code 24" value={totals.code24Events} tone="amber" onClick={() => setActiveCaseType("CODE_24")} active={activeCaseType === "CODE_24"} />
-          <Metric label="Code 39" value={totals.code39} tone="red" onClick={() => setActiveCaseType("CODE_39")} active={activeCaseType === "CODE_39"} />
-          <Metric label="Exception Delivery" value={totals.exceptions} tone="blue" onClick={() => setActiveCaseType("EXCEPTION_DELIVERY")} active={activeCaseType === "EXCEPTION_DELIVERY"} />
-          <Metric label="Other" value={totals.other} tone="green" onClick={() => setActiveCaseType("OTHER")} active={activeCaseType === "OTHER"} />
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : isTablet ? "repeat(3,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))", gap: 9 }}>
+          <Metric label="All BSO Cases" value={totals.total} tone="blue" subtitle="Open all cases" onClick={() => { setActiveCaseType("all"); setCaseListOpen(true); }} />
+          <Metric label="Code 24" value={totals.code24Events} tone="amber" subtitle={`${totals.code24Created} created | ${totals.code24Avoided} avoided`} onClick={() => { setActiveCaseType("CODE_24"); setCaseListOpen(true); }} />
+          <Metric label="Code 39" value={totals.code39} tone="red" subtitle={`${totals.code39Bags} bag(s) affected`} onClick={() => { setActiveCaseType("CODE_39"); setCaseListOpen(true); }} />
+          <Metric label="Exception Delivery" value={totals.exceptions} tone="blue" subtitle={`${totals.fedEx} FedEx | ${totals.sdd} SDD`} onClick={() => { setActiveCaseType("EXCEPTION_DELIVERY"); setCaseListOpen(true); }} />
+          <Metric label="Other" value={totals.other} tone="green" subtitle={`${totals.followUp} follow-up case(s)`} onClick={() => { setActiveCaseType("OTHER"); setCaseListOpen(true); }} />
         </div>
       </Card>
 
       <Card>
         <div style={{ marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 19 }}>Operational Error & Control KPIs</h2>
+          <h2 style={{ margin: 0, fontSize: 20, color: "#0f172a" }}>Operational Error & Control</h2>
           <div style={{ marginTop: 4, color: "#64748b", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
-            Internal watch bands modeled after the Gate Checklist KPI dashboard. These are operational control indicators, not statistical confidence intervals.
+            Internal operational watch indicators based on the selected period. These are control bands, not statistical confidence intervals.
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))", gap: 9 }}>
-          <Metric
-            label="Error Margin"
-            value={`${totals.errorMargin.toFixed(1)}%`}
-            subtitle={`${totals.errorCases} Code 24 created + Code 39 cases`}
-            tone={lowerIsBetterTone(totals.errorMargin, BSO_WATCH_BANDS.errorMargin)}
-          />
-          <Metric
-            label="Control Success"
-            value={`${totals.controlSuccessRate.toFixed(1)}%`}
-            subtitle="Inverse of current error margin"
-            tone={higherIsBetterTone(totals.controlSuccessRate, BSO_WATCH_BANDS.controlSuccess)}
-          />
-          <Metric
-            label="Code 24 Avoidance"
-            value={`${totals.code24AvoidanceRate.toFixed(1)}%`}
-            subtitle={`${totals.code24Avoided} avoided / ${totals.code24Events} bag return cases`}
-            tone={higherIsBetterTone(totals.code24AvoidanceRate, BSO_WATCH_BANDS.code24Avoidance)}
-          />
-          <Metric
-            label="Code 39 Share"
-            value={`${totals.code39Share.toFixed(1)}%`}
-            subtitle={`${totals.code39} of ${totals.total} BSO cases`}
-            tone={lowerIsBetterTone(totals.code39Share, BSO_WATCH_BANDS.code39Share)}
-          />
-          <Metric
-            label="Follow-up Rate"
-            value={`${totals.followUpRate.toFixed(1)}%`}
-            subtitle={`${totals.followUp} case(s) requiring follow-up`}
-            tone={lowerIsBetterTone(totals.followUpRate, BSO_WATCH_BANDS.followUpRate)}
-          />
+          <Metric label="Error Margin" value={`${totals.errorMargin.toFixed(1)}%`} subtitle={`${totals.errorCases} Code 24 created + Code 39 cases`} tone={lowerIsBetterTone(totals.errorMargin, BSO_WATCH_BANDS.errorMargin)} />
+          <Metric label="Control Success" value={`${totals.controlSuccessRate.toFixed(1)}%`} subtitle="100% minus current error margin" tone={higherIsBetterTone(totals.controlSuccessRate, BSO_WATCH_BANDS.controlSuccess)} />
+          <Metric label="Code 24 Avoidance" value={`${totals.code24AvoidanceRate.toFixed(1)}%`} subtitle={`${totals.code24Avoided} avoided / ${totals.code24Events} returns`} tone={higherIsBetterTone(totals.code24AvoidanceRate, BSO_WATCH_BANDS.code24Avoidance)} />
+          <Metric label="Code 39 Share" value={`${totals.code39Share.toFixed(1)}%`} subtitle={`${totals.code39} of ${totals.total} cases`} tone={lowerIsBetterTone(totals.code39Share, BSO_WATCH_BANDS.code39Share)} />
+          <Metric label="Follow-up Rate" value={`${totals.followUpRate.toFixed(1)}%`} subtitle={`${totals.followUp} requiring follow-up`} tone={lowerIsBetterTone(totals.followUpRate, BSO_WATCH_BANDS.followUpRate)} />
         </div>
         <div style={{ marginTop: 10, fontSize: 11, color: "#64748b", fontWeight: 700 }}>
-          Watch bands: Error Margin and Code 39 Share green <=10%, amber <=20%; Follow-up green <=5%, amber <=10%; Control Success and Code 24 Avoidance green >=90%, amber >=80%.
+          Watch bands: Error Margin / Code 39 Share green <=10%, amber <=20%; Follow-up green <=5%, amber <=10%; Control Success / Code 24 Avoidance green >=90%, amber >=80%.
         </div>
       </Card>
 
       <Card>
         <div style={{ marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 19 }}>Exception Delivery KPI</h2>
-          <div
-            style={{
-              marginTop: 4,
-              color: "#64748b",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            Delivery method and exception-reason breakdown for the selected
-            filters.
+          <h2 style={{ margin: 0, fontSize: 20, color: "#0f172a" }}>Code Performance Breakdown</h2>
+          <div style={{ marginTop: 4, color: "#64748b", fontSize: 12, fontWeight: 700 }}>Summary by code. Click a panel to review individual cases.</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,minmax(0,1fr))", gap: 12 }}>
+          <div onClick={() => { setActiveCaseType("CODE_24"); setCaseListOpen(true); }} style={{ cursor: "pointer", border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 18, padding: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#92400e", textTransform: "uppercase" }}>Code 24 / Bag Returns</div>
+            <div style={{ marginTop: 8, fontSize: 30, fontWeight: 900, color: "#9a3412" }}>{totals.code24Events}</div>
+            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 7 }}>
+              <Metric label="Created" value={totals.code24Created} tone="amber" />
+              <Metric label="Avoided" value={totals.code24Avoided} tone="green" />
+              <Metric label="Avoidance" value={`${totals.code24AvoidanceRate.toFixed(1)}%`} tone={higherIsBetterTone(totals.code24AvoidanceRate, BSO_WATCH_BANDS.code24Avoidance)} />
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11.5, fontWeight: 800, color: "#92400e" }}>Click to view all Code 24 cases</div>
+          </div>
+
+          <div onClick={() => { setActiveCaseType("CODE_39"); setCaseListOpen(true); }} style={{ cursor: "pointer", border: "1px solid #fecdd3", background: "#fff1f2", borderRadius: 18, padding: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#9f1239", textTransform: "uppercase" }}>Code 39</div>
+            <div style={{ marginTop: 8, fontSize: 30, fontWeight: 900, color: "#9f1239" }}>{totals.code39}</div>
+            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 7 }}>
+              <Metric label="Bags Affected" value={totals.code39Bags} tone="red" />
+              <Metric label="Share" value={`${totals.code39Share.toFixed(1)}%`} tone={lowerIsBetterTone(totals.code39Share, BSO_WATCH_BANDS.code39Share)} />
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11.5, fontWeight: 800, color: "#9f1239" }}>Click to view all Code 39 cases</div>
+          </div>
+
+          <div onClick={() => { setActiveCaseType("EXCEPTION_DELIVERY"); setCaseListOpen(true); }} style={{ cursor: "pointer", border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 18, padding: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#1769aa", textTransform: "uppercase" }}>Exception Delivery</div>
+            <div style={{ marginTop: 8, fontSize: 30, fontWeight: 900, color: "#1769aa" }}>{totals.exceptions}</div>
+            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 7 }}>
+              <Metric label="FedEx" value={totals.fedEx} tone="blue" />
+              <Metric label="SDD" value={totals.sdd} tone="green" />
+              <Metric label="Other" value={totals.otherDelivery} tone="slate" />
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11.5, fontWeight: 800, color: "#1769aa" }}>Click to view Exception Delivery cases</div>
           </div>
         </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isMobile
-              ? "1fr"
-              : "repeat(3,minmax(0,1fr))",
-            gap: 9,
-            marginBottom: 12,
-          }}
-        >
-          <Metric label="FedEx" value={totals.fedEx} tone="blue" />
-          <Metric label="SDD" value={totals.sdd} tone="green" />
-          <Metric
-            label="Other Method"
-            value={totals.otherDelivery}
-            tone="slate"
-          />
-        </div>
-
-        {exceptionReasonSummary.length === 0 ? (
-          <div
-            style={{
-              padding: 14,
-              background: "#f8fafc",
-              borderRadius: 12,
-              color: "#64748b",
-              fontWeight: 700,
-            }}
-          >
-            No Exception Delivery data for the selected filters.
-          </div>
-        ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : "repeat(auto-fit,minmax(210px,1fr))",
-              gap: 8,
-            }}
-          >
-            {exceptionReasonSummary.map((row) => (
-              <div
-                key={row.reason}
-                style={{
-                  border: "1px solid #dbeafe",
-                  borderRadius: 13,
-                  padding: 11,
-                  background: "#f8fbff",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#64748b",
-                    fontWeight: 800,
-                  }}
-                >
-                  {row.reason}
-                </div>
-                <div
-                  style={{
-                    marginTop: 3,
-                    fontSize: 20,
-                    fontWeight: 900,
-                    color: "#1769aa",
-                  }}
-                >
-                  {row.count}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </Card>
 
-      <Card>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 10,
-            flexWrap: "wrap",
-            marginBottom: 12,
-            alignItems: "center",
-          }}
-        >
-          <div><h2 style={{ margin: 0, fontSize: 19 }}>BSO Cases | {activeCaseLabel}</h2><div style={{ marginTop: 4, fontSize: 11.5, color: "#64748b", fontWeight: 700 }}>Select a KPI above to change this case list.</div></div>
-          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
-            {loading ? "Loading..." : `${caseRows.length} case(s)`}
-          </div>
-        </div>
-
-        <div
-          style={{
-            overflowX: "auto",
-            border: "1px solid #e2e8f0",
-            borderRadius: 16,
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              minWidth: 1500,
-              background: "#fff",
-            }}
-          >
-            <thead>
-              <tr style={{ background: "#f8fbff" }}>
-                <th style={th}>Date</th>
-                <th style={th}>Type</th>
-                <th style={th}>Employee</th>
-                <th style={th}>Passenger / PNR</th>
-                <th style={th}>Flight</th>
-                <th style={th}>Bag Tags</th>
-                <th style={th}>Code 24</th>
-                <th style={th}>Code 39 ID</th>
-                <th style={th}>Exception Delivery</th>
-                <th style={th}>Fault / Loss</th>
-                <th style={th}>Supervisor</th>
-                <th style={th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!caseRows.length ? (
-                <tr>
-                  <td colSpan={12} style={td}>
-                    {loading ? "Loading..." : "No data found."}
-                  </td>
-                </tr>
-              ) : (
-                caseRows.map((e, i) => (
-                  <tr key={`${e.reportIdDoc}-${e.eventIndex}-${i}`}>
-                    <td style={td}>
-                      {e.reportDate}
-                      <br />
-                      <span style={{ color: "#64748b" }}>{e.shift}</span>
-                    </td>
-                    <td style={td}>
-                      <b>{eventLabel(e.eventType)}</b>
-                    </td>
-                    <td style={td}>
-                      {e.employee || "-"}
-                      {e.agentCode ? (
-                        <>
-                          <br />
-                          <span style={{ color: "#64748b" }}>
-                            Code: {e.agentCode}
-                          </span>
-                        </>
-                      ) : null}
-                    </td>
-                    <td style={td}>
-                      {e.passengerName || "-"}
-                      <br />
-                      <b>{e.pnr || "-"}</b>
-                    </td>
-                    <td style={td}>{e.flightNumber || "-"}</td>
+      {caseListOpen && (
+        <div onClick={() => setCaseListOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(15,23,42,.58)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: isMobile ? 8 : 22 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(1220px,97vw)", maxHeight: "92vh", overflow: "hidden", background: "#fff", borderRadius: 22, border: "1px solid #bfdbfe", boxShadow: "0 28px 80px rgba(15,23,42,.28)", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: isMobile ? 14 : 18, background: "linear-gradient(135deg,#073b66,#0f5c91 55%,#2e9fd6)", color: "#fff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <div><div style={{ fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".1em", opacity: .8 }}>BSO Cases</div><div style={{ marginTop: 3, fontSize: 22, fontWeight: 900 }}>{activeCaseLabel} ({caseRows.length})</div></div>
+              <Button variant="secondary" onClick={() => setCaseListOpen(false)}>Close</Button>
+            </div>
+            <div style={{ padding: isMobile ? 10 : 16, overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1080 }}>
+                <thead><tr style={{ background: "#f8fbff" }}><th style={th}>Date</th><th style={th}>Passenger / PNR</th><th style={th}>Bag Tag(s)</th><th style={th}>File / Report ID</th><th style={th}>Flight</th><th style={th}>Employee</th><th style={th}>Supervisor</th><th style={th}>Result</th><th style={th}>Action</th></tr></thead>
+                <tbody>
+                  {!caseRows.length ? <tr><td colSpan={9} style={td}>No cases found for the selected filters.</td></tr> : caseRows.map((e, i) => <tr key={`${e.reportIdDoc}-${e.eventIndex}-${i}`}>
+                    <td style={td}>{e.reportDate || "-"}<br/><span style={{ color: "#64748b" }}>{e.shift || "-"}</span></td>
+                    <td style={td}>{e.passengerName || "-"}<br/><b>{e.pnr || "-"}</b></td>
                     <td style={td}>{e.bagTags || "-"}</td>
-                    <td style={td}>
-                      {e.eventType === "CODE_24"
-                        ? e.code24Created === true || e.code24Created === "Yes"
-                          ? "Created"
-                          : "Avoided"
-                        : "-"}
-                    </td>
-                    <td style={td}>{e.reportId || "-"}</td>
-                    <td style={td}>
-                      {e.eventType === "EXCEPTION_DELIVERY" ? (
-                        <>
-                          <b>{e.netTracerFile || "-"}</b>
-                          <br />
-                          {e.deliveryMethod || "-"}
-                          <br />
-                          <span style={{ color: "#64748b" }}>
-                            {e.exceptionReason || "-"}
-                          </span>
-                        </>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td style={td}>
-                      {e.faultStation || "-"}
-                      <br />
-                      {e.lossCode || "-"}
-                    </td>
+                    <td style={td}>{e.reportId || e.netTracerFile || e.worldTracerId || "-"}</td>
+                    <td style={td}>{e.flightNumber || "-"}</td>
+                    <td style={td}>{e.employee || "-"}</td>
                     <td style={td}>{e.supervisorName || "-"}</td>
-                    <td style={td}>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <Button
-                          variant="secondary"
-                          onClick={() => setSelectedCase(e)}
-                        >
-                          View Case
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => setSelectedId(e.reportIdDoc)}
-                        >
-                          Shift Report
-                        </Button>
-                        <Button
-                          variant="danger"
-                          disabled={
-                            working === `${e.reportIdDoc}-${e.eventIndex}`
-                          }
-                          onClick={() =>
-                            deleteEvent(e.reportIdDoc, e.eventIndex)
-                          }
-                        >
-                          Delete Event
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                    <td style={td}>{e.eventType === "CODE_24" ? (e.code24Created === true || e.code24Created === "Yes" ? "Created" : "Avoided") : e.eventType === "CODE_39" ? `Code 39 | ${e.bagsChecked || 0} bag(s)` : e.eventType === "EXCEPTION_DELIVERY" ? (e.deliveryMethod || "Exception") : (e.supervisorReview || "-")}</td>
+                    <td style={td}><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><Button variant="secondary" onClick={() => { setSelectedCase(e); setCaseListOpen(false); }}>View Case</Button><Button variant="danger" disabled={working === `${e.reportIdDoc}-${e.eventIndex}`} onClick={() => deleteEvent(e.reportIdDoc, e.eventIndex)}>Delete</Button></div></td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </Card>
+      )}
 
       {selectedCase && (
         <div
