@@ -1247,7 +1247,7 @@ export default function BSODailyReportPage() {
         </div>
         <div style={{ padding: 13, borderTop: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "flex-end" }}><Button variant="secondary" onClick={() => setSelectedHistoryCase(null)}>Close</Button></div>
       </div>
-    </>}
+    </div>}
 
     {expandedReportId && (() => {
       const report = filteredHistoryReports.find((item) => item.id === expandedReportId);
