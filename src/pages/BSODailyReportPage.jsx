@@ -367,6 +367,7 @@ export default function BSODailyReportPage() {
   const [mtdReports, setMtdReports] = useState([]);
   const [loadingMtd, setLoadingMtd] = useState(true);
   const [expandedReportId, setExpandedReportId] = useState("");
+  const [selectedHistoryCase, setSelectedHistoryCase] = useState(null);
   const [historyFilter, setHistoryFilter] = useState("MTD");
   const [historyStartDate, setHistoryStartDate] = useState("");
   const [historyEndDate, setHistoryEndDate] = useState("");
@@ -434,7 +435,7 @@ export default function BSODailyReportPage() {
     );
   }, [mtdReports]);
 
-  const historyRows = useMemo(() => {
+  const historyRowsBase = useMemo(() => {
     const today = todayLocal();
     return mtdEventRows.filter((row) => {
       if (historyFilter === "TODAY" && row.reportDate !== today) return false;
@@ -442,23 +443,27 @@ export default function BSODailyReportPage() {
         if (historyStartDate && row.reportDate < historyStartDate) return false;
         if (historyEndDate && row.reportDate > historyEndDate) return false;
       }
-      if (historyType !== "ALL" && row.eventType !== historyType) return false;
       if (historySupervisor && !String(row.supervisorName || "").toLowerCase().includes(historySupervisor.toLowerCase().trim())) return false;
       if (historyEmployee && !String(row.employee || "").toLowerCase().includes(historyEmployee.toLowerCase().trim())) return false;
       const search = historySearch.trim().toLowerCase();
       if (search) {
         const haystack = [
           row.pnr, row.bagTags, row.flightNumber, row.reportId, row.worldTracerId,
-          row.netTracerFile, row.employee, row.supervisorName, row.otherCategory, row.otherDescription
+          row.netTracerFile, row.employee, row.supervisorName, row.passengerName, row.otherCategory, row.otherDescription
         ].map((v) => String(v || "").toLowerCase()).join(" ");
         if (!haystack.includes(search)) return false;
       }
       return true;
     });
-  }, [mtdEventRows, historyFilter, historyStartDate, historyEndDate, historyType, historySupervisor, historyEmployee, historySearch]);
+  }, [mtdEventRows, historyFilter, historyStartDate, historyEndDate, historySupervisor, historyEmployee, historySearch]);
+
+  const historyRows = useMemo(() => {
+    if (historyType === "ALL") return historyRowsBase;
+    return historyRowsBase.filter((row) => row.eventType === historyType);
+  }, [historyRowsBase, historyType]);
 
   const historyMetrics = useMemo(() => {
-    const events = historyRows;
+    const events = historyRowsBase;
     return {
       total: events.length,
       code24: events.filter((e) => e.eventType === "CODE_24").length,
@@ -466,7 +471,7 @@ export default function BSODailyReportPage() {
       exceptions: events.filter((e) => e.eventType === "EXCEPTION_DELIVERY").length,
       other: events.filter((e) => e.eventType === "OTHER").length,
     };
-  }, [historyRows]);
+  }, [historyRowsBase]);
 
   const filteredHistoryReports = useMemo(() => {
     const allowed = new Set(historyRows.map((r) => r.reportIdDoc));
@@ -1139,16 +1144,30 @@ export default function BSODailyReportPage() {
 
     {activeTab === "history" && <>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))", gap: 9 }}>
-        <Metric label={historyFilter === "TODAY" ? "Events Today" : "BSO Events MTD"} value={historyMetrics.total} />
-        <Metric label="Code 24" value={historyMetrics.code24} tone="amber" />
-        <Metric label="Code 39" value={historyMetrics.code39} tone="red" />
-        <Metric label="Exception Delivery" value={historyMetrics.exceptions} tone="blue" />
-        <Metric label="Other" value={historyMetrics.other} tone="green" />
+        {[
+          { key: "ALL", label: historyFilter === "TODAY" ? "Events Today" : "All BSO Cases", value: historyMetrics.total, tone: "blue" },
+          { key: "CODE_24", label: "Code 24", value: historyMetrics.code24, tone: "amber" },
+          { key: "CODE_39", label: "Code 39", value: historyMetrics.code39, tone: "red" },
+          { key: "EXCEPTION_DELIVERY", label: "Exception Delivery", value: historyMetrics.exceptions, tone: "blue" },
+          { key: "OTHER", label: "Other", value: historyMetrics.other, tone: "green" },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setHistoryType(item.key)}
+            style={{ border: historyType === item.key ? "2px solid #1769aa" : "none", padding: 0, borderRadius: 16, background: "transparent", cursor: "pointer", textAlign: "left" }}
+          >
+            <Metric label={item.label} value={item.value} tone={item.tone} />
+          </button>
+        ))}
       </div>
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-          <div><h2 style={{ margin: 0 }}>BSO MTD Reports</h2><div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>All AA BSO supervisors can review office submissions for the current month. This view is read-only.</div></div>
+          <div>
+            <h2 style={{ margin: 0 }}>{historyType === "ALL" ? "All BSO Cases" : `${eventTypeLabel(historyType)} Cases`} ({historyRows.length})</h2>
+            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>Click a KPI above to filter the office cases. Select View Case to open one record at a time.</div>
+          </div>
           <Button variant="secondary" onClick={loadMtdReports} disabled={loadingMtd}>{loadingMtd ? "Refreshing..." : "Refresh"}</Button>
         </div>
 
@@ -1161,23 +1180,73 @@ export default function BSODailyReportPage() {
           <div><Label>Search</Label><Input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="PNR, bag tag, file, flight..." /></div>
         </div>
 
-        {loadingMtd ? <div style={{ padding: 16, color: "#64748b", fontWeight: 700 }}>Loading BSO MTD reports...</div> : filteredHistoryReports.length === 0 ? <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No BSO reports match the selected filters.</div> : <div style={{ display: "grid", gap: 10 }}>
-          {filteredHistoryReports.map((report) => {
-            const allEvents = Array.isArray(report.events) ? report.events : [];
-            const events = allEvents.filter((event, index) => historyRows.some((row) => row.reportIdDoc === report.id && row.eventIndex === index));
-            return <div key={report.id} style={{ border: "1px solid #dbeafe", borderRadius: 16, overflow: "hidden" }}>
-              <div style={{ padding: 13, background: "#f8fbff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ fontSize: 11, color: "#1769aa", fontWeight: 900, textTransform: "uppercase" }}>{report.reportDate || "-"} | {report.shift || "-"} Shift | {events.length} Matching Event{events.length === 1 ? "" : "s"}</div>
-                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{report.supervisorName || report.submittedByName || "Supervisor"}</div>
-                  <div style={{ marginTop: 2, fontSize: 11, color: "#64748b" }}>{timestampToLabel(report.createdAt)}</div>
-                </div>
-                <Button variant="secondary" onClick={() => setExpandedReportId(report.id)}>View Report</Button>
-              </div>
-            </div>;
-          })}
-        </div>}
+        {loadingMtd ? <div style={{ padding: 16, color: "#64748b", fontWeight: 700 }}>Loading BSO MTD cases...</div> : historyRows.length === 0 ? <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No BSO cases match the selected filters.</div> : (
+          <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 14 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1050 }}>
+              <thead><tr style={{ background: "#f8fbff" }}>{["Date","Type","Passenger / PNR","Bag Tag(s)","File / Report ID","Flight","Employee","Supervisor","Action"].map((label) => <th key={label} style={{ padding: "10px 11px", borderBottom: "1px solid #e2e8f0", textAlign: "left", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".04em", color: "#475569", whiteSpace: "nowrap" }}>{label}</th>)}</tr></thead>
+              <tbody>{historyRows.map((row, index) => {
+                const fileRef = row.reportId || row.netTracerFile || row.worldTracerId || "-";
+                return <tr key={`${row.reportIdDoc}-${row.eventIndex}-${index}`}>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.reportDate || "-"}<br/><span style={{ color: "#64748b" }}>{row.shift || "-"}</span></td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12, fontWeight: 850 }}>{eventTypeLabel(row.eventType)}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.passengerName || "-"}<br/><b>{row.pnr || "-"}</b></td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.bagTags || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{fileRef}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.flightNumber || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.employee || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.supervisorName || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7" }}><Button variant="secondary" onClick={() => setSelectedHistoryCase(row)}>View Case</Button></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+        )}
       </Card>
+    </>}
+
+    {selectedHistoryCase && <div
+      onClick={() => setSelectedHistoryCase(null)}
+      style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: isMobile ? 10 : 20 }}
+    >
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 760, maxHeight: "88vh", background: "#fff", borderRadius: isMobile ? 16 : 22, boxShadow: "0 28px 80px rgba(15,23,42,.32)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: isMobile ? "14px 15px" : "17px 20px", background: "linear-gradient(135deg,#0f5c91,#1f7cc1 55%,#6ec6e8)", color: "#fff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+          <div><div style={{ fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".10em", opacity: .82 }}>BSO Case Detail</div><div style={{ marginTop: 4, fontSize: isMobile ? 18 : 22, fontWeight: 900 }}>{eventTypeLabel(selectedHistoryCase.eventType)}</div><div style={{ marginTop: 4, fontSize: 12, opacity: .9 }}>{selectedHistoryCase.reportDate || "-"} | {selectedHistoryCase.shift || "-"} Shift</div></div>
+          <button type="button" onClick={() => setSelectedHistoryCase(null)} style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 12, border: "1px solid rgba(255,255,255,.35)", background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer", fontWeight: 800 }}>x</button>
+        </div>
+        <div style={{ padding: isMobile ? 13 : 18, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2,minmax(0,1fr))", gap: 10, fontSize: 13, color: "#334155" }}>
+            <div><b>Passenger:</b> {selectedHistoryCase.passengerName || "-"}</div><div><b>PNR:</b> {selectedHistoryCase.pnr || "-"}</div>
+            <div><b>Bag Tag(s):</b> {selectedHistoryCase.bagTags || "-"}</div><div><b>Flight:</b> {selectedHistoryCase.flightNumber || "-"}</div>
+            <div><b>Employee:</b> {selectedHistoryCase.employee || "-"}</div><div><b>Supervisor:</b> {selectedHistoryCase.supervisorName || "-"}</div>
+            {selectedHistoryCase.eventType === "CODE_24" && <>
+              <div><b>Return Reason:</b> {selectedHistoryCase.returnReason === "Other" ? (selectedHistoryCase.returnReasonOther || "Other") : (selectedHistoryCase.returnReason || "-")}</div>
+              <div><b>Code 24 Created:</b> {selectedHistoryCase.code24Created === true || selectedHistoryCase.code24Created === "Yes" ? "Yes" : "No"}</div>
+              <div><b>Code 24 Reason:</b> {selectedHistoryCase.code24Reason === "Other" ? (selectedHistoryCase.code24ReasonOther || "Other") : (selectedHistoryCase.code24Reason || "-")}</div>
+              <div><b>BCC Referral:</b> {selectedHistoryCase.bccReferral === true || selectedHistoryCase.bccReferral === "Yes" ? "Yes" : "No"}</div>
+              <div><b>Report ID:</b> {selectedHistoryCase.reportId || "-"}</div>
+            </>}
+            {selectedHistoryCase.eventType === "CODE_39" && <>
+              <div><b>Report ID:</b> {selectedHistoryCase.reportId || "-"}</div><div><b>Create Date:</b> {selectedHistoryCase.createDate || "-"}</div>
+              <div><b>Status:</b> {selectedHistoryCase.status || "-"}</div><div><b>Fault Station:</b> {selectedHistoryCase.faultStation || "-"}</div>
+              <div><b>Loss Code:</b> {selectedHistoryCase.lossCode || "-"}</div><div><b>Bag Type:</b> {selectedHistoryCase.bagType || "-"}</div>
+              <div><b>Bags Checked:</b> {selectedHistoryCase.bagsChecked ?? "-"}</div><div><b>Bags Received:</b> {selectedHistoryCase.bagsReceived ?? "-"}</div>
+              <div><b>World Tracer:</b> {selectedHistoryCase.worldTracerId || "-"}</div>
+            </>}
+            {selectedHistoryCase.eventType === "EXCEPTION_DELIVERY" && <>
+              <div><b>NetTracer File:</b> {selectedHistoryCase.netTracerFile || "-"}</div><div><b>Exception Date:</b> {selectedHistoryCase.exceptionDate || "-"}</div>
+              <div><b>Agent Code:</b> {selectedHistoryCase.agentCode || "-"}</div><div><b>Delivery Method:</b> {selectedHistoryCase.deliveryMethod || "-"}</div>
+              <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}><b>Exception Reason:</b> {selectedHistoryCase.exceptionReason === "Other" ? (selectedHistoryCase.exceptionReasonOther || "Other") : (selectedHistoryCase.exceptionReason || "-")}</div>
+            </>}
+            {selectedHistoryCase.eventType === "OTHER" && <>
+              <div><b>Category:</b> {selectedHistoryCase.otherCategory || "-"}</div><div><b>Follow-up Required:</b> {selectedHistoryCase.followUpRequired || "-"}</div>
+              <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}><b>Description:</b> {selectedHistoryCase.otherDescription || "-"}</div>
+              <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}><b>Action Taken:</b> {selectedHistoryCase.actionTaken || "-"}</div>
+            </>}
+          </div>
+          {selectedHistoryCase.comments && <div style={{ marginTop: 14, padding: 11, borderRadius: 12, background: "#f8fafc", color: "#475569", fontSize: 12.5 }}><b>Comments / Coaching:</b> {selectedHistoryCase.comments}</div>}
+        </div>
+        <div style={{ padding: 13, borderTop: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "flex-end" }}><Button variant="secondary" onClick={() => setSelectedHistoryCase(null)}>Close</Button></div>
+      </div>
     </>}
 
     {expandedReportId && (() => {
