@@ -740,16 +740,46 @@ export default function AppLayout() {
   useEffect(() => {
     if (!user?.id) return undefined;
 
-    return subscribeToNativePushNavigation({
-      navigate,
-      onForegroundNotification: () => {
-        // Firestore listeners already update AeroStation Hub badges/counters.
-        // Keep foreground push handling quiet to avoid duplicate UI alerts.
-      },
-      onRegistrationError: (error) => {
-        console.warn("Native push registration error:", error);
-      },
-    });
+    let cancelled = false;
+    let unsubscribe = null;
+
+    const startNativePushNavigation = async () => {
+      try {
+        const cleanup = await subscribeToNativePushNavigation({
+          navigate,
+          onForegroundNotification: () => {
+            // Firestore listeners already update AeroStation Hub badges/counters.
+            // Keep foreground push handling quiet to avoid duplicate UI alerts.
+          },
+          onRegistrationError: (error) => {
+            console.warn("Native push registration error:", error);
+          },
+        });
+
+        if (cancelled) {
+          if (typeof cleanup === "function") {
+            cleanup();
+          }
+          return;
+        }
+
+        if (typeof cleanup === "function") {
+          unsubscribe = cleanup;
+        }
+      } catch (error) {
+        console.warn("Native push navigation setup error:", error);
+      }
+    };
+
+    startNativePushNavigation();
+
+    return () => {
+      cancelled = true;
+
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
   }, [user?.id, navigate]);
 
   // ============================================================
@@ -2078,4 +2108,3 @@ const emptySearchStyle = {
 };
 
 // END AppLayout
-
