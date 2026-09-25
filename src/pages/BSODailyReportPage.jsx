@@ -1,10 +1,11 @@
 // src/pages/BSODailyReportPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, getDocs, query, serverTimestamp, where } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import * as XLSX from "xlsx";
 
 const EVENT_TYPES = [
   { value: "CODE_24", label: "Code 24 / Bag Return" },
@@ -155,11 +156,192 @@ function Metric({ label, value, tone = "blue" }) {
   return <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 16, padding: "13px 15px" }}><div style={{ fontSize: 10.5, fontWeight: 900, color: "#64748b", textTransform: "uppercase" }}>{label}</div><div style={{ marginTop: 5, fontSize: 24, fontWeight: 900 }}>{value}</div></div>;
 }
 
+
+function normalizeHeader(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function getExcelValue(row, aliases) {
+  const normalized = {};
+  Object.entries(row || {}).forEach(([key, value]) => {
+    normalized[normalizeHeader(key)] = value;
+  });
+
+  for (const alias of aliases) {
+    const key = normalizeHeader(alias);
+    if (Object.prototype.hasOwnProperty.call(normalized, key)) {
+      return normalized[key];
+    }
+  }
+  return "";
+}
+
+function excelDateToDate(value) {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+
+  if (typeof value === "number") {
+    try {
+      const parsed = XLSX.SSF.parse_date_code(value);
+      if (parsed) {
+        return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, Math.floor(parsed.S || 0));
+      }
+    } catch {
+      // Fall through to the normal Date parser.
+    }
+  }
+
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function dateToInputString(value) {
+  const d = excelDateToDate(value);
+  if (!d) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dateToDateTimeLocal(value) {
+  const d = excelDateToDate(value);
+  if (!d) return "";
+  return `${dateToInputString(d)}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function countBagTags(value) {
+  return splitBagTags(value).length;
+}
+
+function eventTypeLabel(type) {
+  if (type === "CODE_24") return "Code 24 / Bag Return";
+  if (type === "CODE_39") return "Code 39";
+  if (type === "EXCEPTION_DELIVERY") return "Exception Delivery";
+  return "Other";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function buildBsoPrintableHtml(report, events) {
+  const logoUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/icons/aerostation-icon.png`
+    : "/icons/aerostation-icon.png";
+
+  const safeEvents = Array.isArray(events) ? events : [];
+  const rowsHtml = safeEvents.map((event, index) => {
+    let details = "";
+    if (event.eventType === "CODE_24") {
+      details = [
+        event.returnReason === "Other" ? event.returnReasonOther : event.returnReason,
+        event.code24Created === true || event.code24Created === "Yes" ? "Code 24 created" : "No Code 24",
+        event.bccReferral === true || event.bccReferral === "Yes" ? "BCC referral" : "",
+      ].filter(Boolean).join(" | ");
+    } else if (event.eventType === "CODE_39") {
+      details = [
+        event.faultStation ? `Fault: ${event.faultStation}` : "",
+        event.lossCode ? `Loss: ${event.lossCode}` : "",
+        event.worldTracerId ? `WT: ${event.worldTracerId}` : "",
+      ].filter(Boolean).join(" | ");
+    } else if (event.eventType === "EXCEPTION_DELIVERY") {
+      details = [event.deliveryMethod, event.exceptionReason, event.netTracerFile].filter(Boolean).join(" | ");
+    } else {
+      details = [event.otherCategory, event.otherDescription, event.actionTaken].filter(Boolean).join(" | ");
+    }
+
+    const fileRef = event.reportId || event.netTracerFile || event.worldTracerId || "-";
+    return `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(eventTypeLabel(event.eventType))}</td>
+        <td>${escapeHtml(event.employee || "-")}</td>
+        <td>${escapeHtml(event.passengerName || "-")}</td>
+        <td>${escapeHtml(event.pnr || "-")}</td>
+        <td>${escapeHtml(event.bagTags || "-")}</td>
+        <td>${escapeHtml(fileRef)}</td>
+        <td>${escapeHtml(event.flightNumber || "-")}</td>
+        <td>${escapeHtml(event.status || "-")}</td>
+        <td>${escapeHtml(details || "-")}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(APP_NAME)} - BSO Daily Report</title>
+        <style>
+          * { box-sizing: border-box; }
+          @page { size: landscape; margin: 10mm; }
+          body { font-family: Arial, Helvetica, sans-serif; margin: 20px; color: #111827; background: #fff; }
+          .brand { display:flex; justify-content:space-between; align-items:center; gap:18px; padding-bottom:14px; border-bottom:2px solid #e5eef7; }
+          .brand-left { display:flex; align-items:center; gap:12px; }
+          .logo { width:52px; height:52px; border-radius:14px; border:1px solid #dbeafe; object-fit:contain; }
+          .brand-name { font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:#1769aa; }
+          .brand-sub { margin-top:3px; font-size:11px; color:#64748b; font-weight:700; }
+          .doc-label { font-size:11px; color:#64748b; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+          .title-row { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin:18px 0 14px; }
+          h1 { margin:0; font-size:27px; letter-spacing:-.03em; }
+          .subtitle { margin-top:5px; color:#475569; font-size:13px; font-weight:700; }
+          .grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:14px; }
+          .card { border:1px solid #dbeafe; background:#f8fbff; border-radius:11px; padding:10px 12px; }
+          .label { font-size:9px; color:#64748b; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+          .value { margin-top:4px; font-size:13px; font-weight:800; color:#0f172a; }
+          table { width:100%; border-collapse:collapse; margin-top:10px; }
+          th, td { border:1px solid #dbeafe; padding:7px 8px; text-align:left; vertical-align:top; font-size:9.5px; }
+          th { background:#f8fbff; font-size:9px; text-transform:uppercase; letter-spacing:.04em; color:#475569; }
+          .notes { margin-top:12px; border:1px solid #dbeafe; background:#f8fbff; border-radius:11px; padding:10px 12px; font-size:11px; line-height:1.5; }
+          .footer { margin-top:18px; padding-top:10px; border-top:1px solid #e2e8f0; color:#94a3b8; font-size:8.5px; text-align:center; }
+        </style>
+      </head>
+      <body>
+        <div class="brand">
+          <div class="brand-left">
+            <img class="logo" src="${logoUrl}" alt="${escapeHtml(APP_NAME)}" />
+            <div><div class="brand-name">${escapeHtml(APP_NAME)}</div><div class="brand-sub">${escapeHtml(APP_SUBTITLE)}</div></div>
+          </div>
+          <div class="doc-label">BSO Daily Management Report</div>
+        </div>
+
+        <div class="title-row">
+          <div><h1>BSO Daily Report</h1><div class="subtitle">AA BSO | ${escapeHtml(report.reportDate || "-")} | ${escapeHtml(report.shift || "-")} Shift</div></div>
+          <div class="doc-label">${escapeHtml(String(report.status || "submitted").toUpperCase())}</div>
+        </div>
+
+        <div class="grid">
+          <div class="card"><div class="label">Report Date</div><div class="value">${escapeHtml(report.reportDate || "-")}</div></div>
+          <div class="card"><div class="label">Shift</div><div class="value">${escapeHtml(report.shift || "-")}</div></div>
+          <div class="card"><div class="label">Supervisor / Submitted By</div><div class="value">${escapeHtml(report.supervisorName || report.submittedByName || "-")}</div></div>
+          <div class="card"><div class="label">Total Events</div><div class="value">${safeEvents.length}</div></div>
+        </div>
+
+        <table>
+          <thead><tr><th>#</th><th>Type</th><th>Employee</th><th>Passenger</th><th>PNR</th><th>Bag Tag(s)</th><th>File / Report ID</th><th>Flight</th><th>Status</th><th>Details</th></tr></thead>
+          <tbody>${rowsHtml || '<tr><td colspan="10">No events found.</td></tr>'}</tbody>
+        </table>
+
+        ${report.notes ? `<div class="notes"><strong>Notes:</strong><br/>${escapeHtml(report.notes).replace(/\n/g, "<br/>")}</div>` : ""}
+        <div class="footer">${escapeHtml(APP_NAME)} | ${escapeHtml(APP_SUBTITLE)}</div>
+      </body>
+    </html>
+  `;
+}
+
 export default function BSODailyReportPage() {
   const { user } = useUser();
   const navigate = useNavigate();
   const { isMobile, isTablet } = useViewport();
   const canAccess = ["supervisor", "duty_manager", "station_manager"].includes(user?.role);
+  const canBulkUpload = user?.role === "station_manager";
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({
@@ -180,6 +362,12 @@ export default function BSODailyReportPage() {
   const [historySearch, setHistorySearch] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState(null);
   const [duplicateOverrideReason, setDuplicateOverrideReason] = useState("");
+  const [bulkRows, setBulkRows] = useState([]);
+  const [bulkFileName, setBulkFileName] = useState("");
+  const [bulkShift, setBulkShift] = useState("IMPORTED");
+  const [bulkReading, setBulkReading] = useState(false);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState("");
 
   const getMonthBounds = () => {
     const today = todayLocal();
@@ -367,11 +555,14 @@ export default function BSODailyReportPage() {
         if (event.eventType === "CODE_24") {
           const samePnr = pnr && pnr === normalizeKey(existing.pnr);
           const sameFlight = !flight || !normalizeKey(existing.flightNumber) || flight === normalizeKey(existing.flightNumber);
-          if (samePnr && sharedTag && sameFlight) {
+          const sameReportId = reportId && reportId === normalizeKey(existing.reportId);
+          if (sameReportId || (samePnr && sharedTag && sameFlight)) {
             duplicates.push({
               eventNumber: idx + 1,
               eventType: "Code 24",
-              reason: `PNR ${event.pnr} and Bag Tag ${sharedTag} already exist${existing.sourceShift ? ` in ${existing.sourceShift} shift` : " in this submission"}.`,
+              reason: sameReportId
+                ? `Report ID ${event.reportId} already exists.`
+                : `PNR ${event.pnr} and Bag Tag ${sharedTag} already exist${existing.sourceShift ? ` in ${existing.sourceShift} shift` : " in this submission"}.`,
             });
             break;
           }
@@ -502,6 +693,233 @@ export default function BSODailyReportPage() {
   };
 
 
+  const parseBulkExcel = async (file) => {
+    if (!canBulkUpload || !file) return;
+    setBulkReading(true);
+    setBulkMessage("");
+    setBulkRows([]);
+    setBulkFileName(file.name || "");
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array", cellDates: true });
+      const firstSheetName = workbook.SheetNames?.[0];
+      if (!firstSheetName) throw new Error("No worksheet found in this Excel file.");
+
+      const sheet = workbook.Sheets[firstSheetName];
+      const sourceRows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
+      const parsedRows = [];
+
+      sourceRows.forEach((row, index) => {
+        const passengerName = String(getExcelValue(row, ["Last Name, First Name", "Passenger Name", "Name"]) || "").trim();
+        const reportId = String(getExcelValue(row, ["Report ID", "File", "File ID"]) || "").trim().toUpperCase();
+        const pnr = String(getExcelValue(row, ["PNR", "Record Locator"]) || "").trim().toUpperCase();
+        const createDateRaw = getExcelValue(row, ["Create Date", "Created Date", "Date"]);
+        const status = String(getExcelValue(row, ["Status"]) || "").trim() || "Closed";
+        const faultStation = String(getExcelValue(row, ["Fault Station", "Fault"]) || "").trim().toUpperCase();
+        const lossCodeRaw = getExcelValue(row, ["Loss Code", "Code"]);
+        const lossCode = String(lossCodeRaw || "").trim();
+        const bagTags = String(getExcelValue(row, ["Bag Tag (s)", "Bag Tags", "Bag Tag(s)", "Bag Tag"]) || "").trim();
+        const worldTracerId = String(getExcelValue(row, ["World Tracer ID", "WorldTracer ID", "WT ID"]) || "").trim().toUpperCase();
+        const employee = String(getExcelValue(row, ["Employee", "Employee Involved", "Agent", "Agent Name", "Agent Code"]) || "").trim();
+        const flightNumber = String(getExcelValue(row, ["Flight", "Flight Number", "Flight #"]) || "").trim().toUpperCase();
+
+        const sourceRowNumber = index + 2;
+        if (!passengerName && !reportId && !pnr && !bagTags && !lossCode) return;
+        if (passengerName.toLowerCase() === "delayed" && !reportId && !pnr) return;
+
+        const numericLossCode = Number(lossCode);
+        const eventType = numericLossCode === 24 ? "CODE_24" : numericLossCode === 39 ? "CODE_39" : "";
+        const reportDate = dateToInputString(createDateRaw) || todayLocal();
+        const createDate = dateToDateTimeLocal(createDateRaw);
+
+        const validationIssues = [];
+        if (!eventType) validationIssues.push(`Unsupported Loss Code: ${lossCode || "blank"}`);
+        if (!reportId) validationIssues.push("Missing Report ID");
+        if (!pnr) validationIssues.push("Missing PNR");
+        if (!bagTags) validationIssues.push("Missing Bag Tag(s)");
+        if (eventType === "CODE_39" && !faultStation) validationIssues.push("Missing Fault Station");
+
+        const event = {
+          ...newEvent(),
+          id: undefined,
+          sequence: 0,
+          eventType: eventType || "OTHER",
+          employee: employee || "Excel Import",
+          passengerName,
+          pnr,
+          flightNumber,
+          bagTags,
+          supervisorReview: "Imported by Station Manager",
+          comments: `Bulk Excel import from ${file.name || "uploaded workbook"} (source row ${sourceRowNumber}).`,
+          reportId,
+          createDate,
+          status,
+          faultStation,
+          lossCode: lossCode || (eventType === "CODE_24" ? "24" : eventType === "CODE_39" ? "39" : ""),
+          bagsChecked: eventType === "CODE_39" ? countBagTags(bagTags) : 0,
+          bagsReceived: 0,
+          worldTracerId,
+          returnReason: eventType === "CODE_24" ? "Customer requested bag return" : "",
+          code24Created: eventType === "CODE_24",
+          code24Reason: "",
+          bccReferral: false,
+          followUpRequired: false,
+          importedFromExcel: true,
+          importSourceFile: file.name || "",
+          importSourceRow: sourceRowNumber,
+        };
+
+        parsedRows.push({
+          sourceRowNumber,
+          reportDate,
+          event,
+          status: validationIssues.length ? "INVALID" : "READY",
+          reason: validationIssues.join("; "),
+        });
+      });
+
+      const validCandidates = parsedRows.filter((row) => row.status === "READY");
+      const existingSnap = await getDocs(collection(db, "bso_daily_reports"));
+      const existingReports = existingSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const duplicates = findDuplicates(validCandidates.map((row) => row.event), existingReports);
+      const duplicateMap = new Map(duplicates.map((item) => [item.eventNumber - 1, item.reason]));
+
+      let candidateIndex = -1;
+      const finalRows = parsedRows.map((row) => {
+        if (row.status !== "READY") return row;
+        candidateIndex += 1;
+        const duplicateReason = duplicateMap.get(candidateIndex);
+        return duplicateReason
+          ? { ...row, status: "DUPLICATE", reason: duplicateReason }
+          : row;
+      });
+
+      setBulkRows(finalRows);
+      const readyCount = finalRows.filter((row) => row.status === "READY").length;
+      const duplicateCount = finalRows.filter((row) => row.status === "DUPLICATE").length;
+      const invalidCount = finalRows.filter((row) => row.status === "INVALID").length;
+      setBulkMessage(`Excel reviewed: ${readyCount} ready, ${duplicateCount} duplicate, ${invalidCount} invalid.`);
+    } catch (err) {
+      console.error("Error reading BSO bulk Excel:", err);
+      setBulkMessage(`Could not read this Excel file. ${err?.message || ""}`.trim());
+      setBulkRows([]);
+    } finally {
+      setBulkReading(false);
+    }
+  };
+
+  const importBulkRows = async () => {
+    if (!canBulkUpload) return;
+    const readyRows = bulkRows.filter((row) => row.status === "READY");
+    if (!readyRows.length) {
+      setBulkMessage("There are no unique rows ready to import.");
+      return;
+    }
+
+    try {
+      setBulkImporting(true);
+      setBulkMessage("");
+
+      // Re-check duplicates immediately before committing the import.
+      const existingSnap = await getDocs(collection(db, "bso_daily_reports"));
+      const existingReports = existingSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const duplicates = findDuplicates(readyRows.map((row) => row.event), existingReports);
+      const duplicateIndexes = new Set(duplicates.map((item) => item.eventNumber - 1));
+      const rowsToImport = readyRows.filter((_, index) => !duplicateIndexes.has(index));
+
+      if (!rowsToImport.length) {
+        setBulkRows((prev) => prev.map((row) => row.status === "READY" ? { ...row, status: "DUPLICATE", reason: "Duplicate detected during final pre-import check." } : row));
+        setBulkMessage("No rows were imported because all ready rows are now duplicates.");
+        return;
+      }
+
+      const groups = new Map();
+      rowsToImport.forEach((row) => {
+        const key = row.reportDate || todayLocal();
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row.event);
+      });
+
+      const batch = writeBatch(db);
+      const currentName = getVisibleName(user);
+
+      groups.forEach((events, reportDate) => {
+        const normalizedEvents = events.map((event, index) => ({ ...event, sequence: index + 1 }));
+        const code24Events = normalizedEvents.filter((event) => event.eventType === "CODE_24");
+        const code39Events = normalizedEvents.filter((event) => event.eventType === "CODE_39");
+        const exceptions = normalizedEvents.filter((event) => event.eventType === "EXCEPTION_DELIVERY");
+        const otherEvents = normalizedEvents.filter((event) => event.eventType === "OTHER");
+        const code24CreatedCount = code24Events.filter((event) => event.code24Created === true || event.code24Created === "Yes").length;
+        const code39BagsAffected = code39Events.reduce((sum, event) => sum + Number(event.bagsChecked || 0), 0);
+        const reportRef = doc(collection(db, "bso_daily_reports"));
+
+        batch.set(reportRef, {
+          reportDate,
+          shift: bulkShift,
+          department: "AA BSO",
+          supervisorName: currentName,
+          supervisorPosition: user?.position || "Station Manager",
+          notes: `Bulk Excel import: ${bulkFileName || "uploaded workbook"}`,
+          events: normalizedEvents,
+          totalEvents: normalizedEvents.length,
+          code24BagReturnEvents: code24Events.length,
+          code24CreatedCount,
+          code24Rate: code24Events.length ? Number(((code24CreatedCount / code24Events.length) * 100).toFixed(2)) : 0,
+          code39Count: code39Events.length,
+          exceptionDeliveryCount: exceptions.length,
+          exceptionFedExCount: exceptions.filter((event) => event.deliveryMethod === "FedEx").length,
+          exceptionSddCount: exceptions.filter((event) => event.deliveryMethod === "SDD").length,
+          exceptionOtherMethodCount: exceptions.filter((event) => event.deliveryMethod && !["FedEx", "SDD"].includes(event.deliveryMethod)).length,
+          otherCount: otherEvents.length,
+          code39BagsAffected,
+          submittedByUserId: user?.id || "",
+          submittedByUsername: user?.username || "",
+          submittedByName: currentName,
+          submittedByRole: user?.role || "station_manager",
+          bulkImport: true,
+          bulkImportFileName: bulkFileName || "",
+          bulkImportCount: normalizedEvents.length,
+          bulkImportedBy: currentName,
+          bulkImportedByUserId: user?.id || "",
+          bulkImportedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          status: "submitted",
+          reviewStatus: "submitted",
+        });
+      });
+
+      await batch.commit();
+
+      const importedKeys = new Set(rowsToImport.map((row) => `${row.sourceRowNumber}__${row.event.reportId}__${row.event.pnr}`));
+      setBulkRows((prev) => prev.map((row) => importedKeys.has(`${row.sourceRowNumber}__${row.event.reportId}__${row.event.pnr}`) ? { ...row, status: "IMPORTED", reason: "Imported successfully" } : row));
+      setBulkMessage(`Imported ${rowsToImport.length} unique BSO case${rowsToImport.length === 1 ? "" : "s"}. Duplicate and invalid rows were not imported.`);
+      await loadMtdReports();
+    } catch (err) {
+      console.error("Error bulk importing BSO reports:", err);
+      setBulkMessage("Could not import the Excel rows.");
+    } finally {
+      setBulkImporting(false);
+    }
+  };
+
+  const handlePrintReport = (report, events) => {
+    if (!report) return;
+    const printWindow = window.open("", "_blank", "width=1200,height=850");
+    if (!printWindow) {
+      setMessage("Please allow pop-ups to print the BSO report.");
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(buildBsoPrintableHtml(report, events));
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 250);
+  };
+
+
   if (!canAccess) return <Card><h2>Access denied</h2></Card>;
   const error = /please|could not|event #/i.test(message);
 
@@ -516,9 +934,10 @@ export default function BSODailyReportPage() {
     {message && <Card style={{ padding: 13 }}><div style={{ padding: 11, borderRadius: 12, background: error ? "#fff1f2" : "#ecfdf5", border: `1px solid ${error ? "#fecdd3" : "#a7f3d0"}`, color: error ? "#9f1239" : "#065f46", fontWeight: 800, fontSize: 13 }}>{message}</div></Card>}
 
     <Card style={{ padding: 8 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: canBulkUpload ? "repeat(3,minmax(0,1fr))" : "1fr 1fr", gap: 8 }}>
         <button type="button" onClick={() => setActiveTab("submit")} style={{ border: activeTab === "submit" ? "1px solid #9ecdf3" : "1px solid #e2e8f0", background: activeTab === "submit" ? "linear-gradient(135deg,#e7f4ff,#f4faff)" : "#fff", color: activeTab === "submit" ? "#0f4c81" : "#64748b", borderRadius: 13, padding: "11px 14px", fontWeight: 900, cursor: "pointer" }}>Submit Report</button>
         <button type="button" onClick={() => setActiveTab("history")} style={{ border: activeTab === "history" ? "1px solid #9ecdf3" : "1px solid #e2e8f0", background: activeTab === "history" ? "linear-gradient(135deg,#e7f4ff,#f4faff)" : "#fff", color: activeTab === "history" ? "#0f4c81" : "#64748b", borderRadius: 13, padding: "11px 14px", fontWeight: 900, cursor: "pointer" }}>BSO MTD Reports ({historyMetrics.total})</button>
+        {canBulkUpload && <button type="button" onClick={() => setActiveTab("bulk")} style={{ border: activeTab === "bulk" ? "1px solid #9ecdf3" : "1px solid #e2e8f0", background: activeTab === "bulk" ? "linear-gradient(135deg,#e7f4ff,#f4faff)" : "#fff", color: activeTab === "bulk" ? "#0f4c81" : "#64748b", borderRadius: 13, padding: "11px 14px", fontWeight: 900, cursor: "pointer" }}>Bulk Excel Upload</button>}
       </div>
     </Card>
 
@@ -614,6 +1033,91 @@ export default function BSODailyReportPage() {
     <Card><h2 style={{ marginTop: 0 }}>Shift Notes & Certification</h2><Label>General Shift Notes</Label><Area value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /><label style={{ marginTop: 13, display: "flex", gap: 10, padding: 12, border: "1px solid #dbeafe", borderRadius: 13, background: "#f8fbff", fontSize: 12.5, fontWeight: 700 }}><input type="checkbox" checked={form.certification} onChange={e => setForm(p => ({ ...p, certification: e.target.checked }))} />I confirm that the BSO events handled during this shift were reviewed and documented accurately.</label></Card>
 
     <Card><div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><Button onClick={submit} disabled={saving}>{saving ? "Saving..." : "Submit BSO Daily Report"}</Button><Button variant="secondary" onClick={() => navigate("/dashboard")} disabled={saving}>Cancel</Button></div></Card>
+    </>}
+
+
+    {activeTab === "bulk" && canBulkUpload && <>
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 900, color: "#1769aa", textTransform: "uppercase", letterSpacing: ".08em" }}>Station Manager Only</div>
+            <h2 style={{ margin: "4px 0 6px" }}>Bulk Excel Upload</h2>
+            <div style={{ color: "#64748b", fontSize: 12.5, fontWeight: 700, lineHeight: 1.55 }}>Upload the Code 24 or Code 39 Excel export to create multiple BSO cases at once. Existing files are checked before import and duplicates are skipped.</div>
+          </div>
+          <div style={{ padding: "8px 11px", borderRadius: 999, background: "#ecfdf5", border: "1px solid #a7f3d0", color: "#047857", fontSize: 11, fontWeight: 900 }}>AA BSO BULK IMPORT</div>
+        </div>
+
+        <div style={{ ...grid, marginTop: 16 }}>
+          <div>
+            <Label>Imported Shift</Label>
+            <Select value={bulkShift} onChange={(e) => setBulkShift(e.target.value)}>
+              <option value="IMPORTED">Imported / Historical</option>
+              <option value="AM">AM</option>
+              <option value="PM">PM</option>
+              <option value="MID">MID</option>
+            </Select>
+          </div>
+          <div style={{ gridColumn: isMobile ? "auto" : "span 2" }}>
+            <Label>Excel File (.xlsx / .xls)</Label>
+            <Input
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) parseBulkExcel(file);
+                e.target.value = "";
+              }}
+              disabled={bulkReading || bulkImporting}
+            />
+          </div>
+        </div>
+
+        {bulkFileName && <div style={{ marginTop: 11, padding: 10, borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0", fontSize: 12.5, color: "#475569", fontWeight: 750 }}><b>Selected file:</b> {bulkFileName}</div>}
+        {bulkMessage && <div style={{ marginTop: 11, padding: 11, borderRadius: 12, background: /could not|no rows/i.test(bulkMessage) ? "#fff1f2" : "#eff6ff", border: `1px solid ${/could not|no rows/i.test(bulkMessage) ? "#fecdd3" : "#bfdbfe"}`, color: /could not|no rows/i.test(bulkMessage) ? "#9f1239" : "#1d4ed8", fontSize: 12.5, fontWeight: 800 }}>{bulkReading ? "Reading Excel..." : bulkMessage}</div>}
+      </Card>
+
+      {bulkRows.length > 0 && <>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(6,minmax(0,1fr))", gap: 9 }}>
+          <Metric label="Rows Found" value={bulkRows.length} />
+          <Metric label="Ready" value={bulkRows.filter((r) => r.status === "READY").length} tone="green" />
+          <Metric label="Duplicates" value={bulkRows.filter((r) => r.status === "DUPLICATE").length} tone="amber" />
+          <Metric label="Invalid" value={bulkRows.filter((r) => r.status === "INVALID").length} tone="red" />
+          <Metric label="Code 24" value={bulkRows.filter((r) => r.event.eventType === "CODE_24").length} tone="amber" />
+          <Metric label="Code 39" value={bulkRows.filter((r) => r.event.eventType === "CODE_39").length} tone="red" />
+        </div>
+
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            <div><h2 style={{ margin: 0 }}>Excel Preview</h2><div style={{ marginTop: 4, color: "#64748b", fontSize: 12, fontWeight: 700 }}>Only rows marked Ready will be imported. Duplicate and invalid rows remain visible for review.</div></div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button onClick={importBulkRows} disabled={bulkImporting || bulkReading || !bulkRows.some((r) => r.status === "READY")}>{bulkImporting ? "Importing..." : `Import ${bulkRows.filter((r) => r.status === "READY").length} Unique Row(s)`}</Button>
+              <Button variant="secondary" onClick={() => { setBulkRows([]); setBulkFileName(""); setBulkMessage(""); }} disabled={bulkImporting}>Clear</Button>
+            </div>
+          </div>
+
+          <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 14 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180 }}>
+              <thead><tr style={{ background: "#f8fbff" }}>{["Excel Row","Result","Type","Passenger","Report ID","PNR","Create Date","Fault Station","Bag Tag(s)","World Tracer ID","Reason / Note"].map((label) => <th key={label} style={{ padding: "10px 11px", borderBottom: "1px solid #e2e8f0", textAlign: "left", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".04em", color: "#475569", whiteSpace: "nowrap" }}>{label}</th>)}</tr></thead>
+              <tbody>{bulkRows.map((row) => {
+                const tone = row.status === "READY" ? ["#ecfdf5","#047857"] : row.status === "IMPORTED" ? ["#eff6ff","#1d4ed8"] : row.status === "DUPLICATE" ? ["#fffbeb","#b45309"] : ["#fff1f2","#be123c"];
+                return <tr key={`${row.sourceRowNumber}-${row.event.reportId}-${row.event.pnr}`}>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.sourceRowNumber}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7" }}><span style={{ display: "inline-flex", padding: "5px 8px", borderRadius: 999, background: tone[0], color: tone[1], fontSize: 10.5, fontWeight: 900 }}>{row.status}</span></td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12, fontWeight: 800 }}>{eventTypeLabel(row.event.eventType)}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.event.passengerName || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.event.reportId || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.event.pnr || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.event.createDate || row.reportDate || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.event.faultStation || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.event.bagTags || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.event.worldTracerId || "-"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 11.5, color: "#64748b", maxWidth: 260, whiteSpace: "normal" }}>{row.reason || (row.status === "READY" ? "Ready to import" : "-")}</td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+        </Card>
+      </>}
     </>}
 
     {activeTab === "history" && <>
@@ -737,7 +1241,8 @@ export default function BSODailyReportPage() {
             {!events.length && <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No matching events in this report for the selected filters.</div>}
           </div>
 
-          <div style={{ padding: 13, borderTop: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ padding: 13, borderTop: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "flex-end", gap: 9, flexWrap: "wrap" }}>
+            <Button onClick={() => handlePrintReport(report, allEvents)}>Print Report</Button>
             <Button variant="secondary" onClick={() => setExpandedReportId("")}>Close</Button>
           </div>
         </div>
