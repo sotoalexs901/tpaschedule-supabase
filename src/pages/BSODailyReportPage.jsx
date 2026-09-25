@@ -508,8 +508,8 @@ export default function BSODailyReportPage() {
   return <div style={{ display: "grid", gap: 16, fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
     <div style={{ background: "linear-gradient(135deg,#0f5c91,#1f7cc1 45%,#6ec6e8)", borderRadius: 22, padding: isMobile ? 15 : 20, color: "#fff", boxShadow: "0 18px 42px rgba(23,105,170,.18)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-        <div><div style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".15em", textTransform: "uppercase", opacity: .8 }}>{APP_NAME} Â· AA BSO</div><h1 style={{ margin: "7px 0 4px", fontSize: isMobile ? 21 : 27 }}>BSO Daily Report</h1><div style={{ fontSize: 12.5, opacity: .9 }}>Daily office activity tracking for Code 24 / Bag Returns, Code 39, Exception Delivery and other BSO events.</div><div style={{ marginTop: 4, fontSize: 10.5, opacity: .7 }}>{APP_SUBTITLE}</div></div>
-        <Button variant="secondary" onClick={() => navigate("/dashboard")}>â Back to Dashboard</Button>
+        <div><div style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".15em", textTransform: "uppercase", opacity: .8 }}>{APP_NAME} | AA BSO</div><h1 style={{ margin: "7px 0 4px", fontSize: isMobile ? 21 : 27 }}>BSO Daily Report</h1><div style={{ fontSize: 12.5, opacity: .9 }}>Daily office activity tracking for Code 24 / Bag Returns, Code 39, Exception Delivery and other BSO events.</div><div style={{ marginTop: 4, fontSize: 10.5, opacity: .7 }}>{APP_SUBTITLE}</div></div>
+        <Button variant="secondary" onClick={() => navigate("/dashboard")}>Back to Dashboard</Button>
       </div>
     </div>
 
@@ -644,39 +644,105 @@ export default function BSODailyReportPage() {
           {filteredHistoryReports.map((report) => {
             const allEvents = Array.isArray(report.events) ? report.events : [];
             const events = allEvents.filter((event, index) => historyRows.some((row) => row.reportIdDoc === report.id && row.eventIndex === index));
-            const expanded = expandedReportId === report.id;
             return <div key={report.id} style={{ border: "1px solid #dbeafe", borderRadius: 16, overflow: "hidden" }}>
               <div style={{ padding: 13, background: "#f8fbff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <div>
-                  <div style={{ fontSize: 11, color: "#1769aa", fontWeight: 900, textTransform: "uppercase" }}>{report.reportDate || "-"} Â· {report.shift || "-"} Shift Â· {events.length} Matching Event{events.length === 1 ? "" : "s"}</div>
+                  <div style={{ fontSize: 11, color: "#1769aa", fontWeight: 900, textTransform: "uppercase" }}>{report.reportDate || "-"} | {report.shift || "-"} Shift | {events.length} Matching Event{events.length === 1 ? "" : "s"}</div>
                   <div style={{ marginTop: 4, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{report.supervisorName || report.submittedByName || "Supervisor"}</div>
                   <div style={{ marginTop: 2, fontSize: 11, color: "#64748b" }}>{timestampToLabel(report.createdAt)}</div>
                 </div>
-                <Button variant="secondary" onClick={() => setExpandedReportId(expanded ? "" : report.id)}>{expanded ? "Hide Details" : "View Details"}</Button>
+                <Button variant="secondary" onClick={() => setExpandedReportId(report.id)}>View Report</Button>
               </div>
-              {expanded && <div style={{ padding: 13, display: "grid", gap: 9 }}>
-                {events.map((event, index) => <div key={`${report.id}-${index}`} style={{ border: "1px solid #e2e8f0", borderRadius: 13, padding: 11 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 900, color: "#0f172a" }}>{event.eventType === "CODE_24" ? "Code 24 / Bag Return" : event.eventType === "CODE_39" ? "Code 39" : event.eventType === "EXCEPTION_DELIVERY" ? "Exception Delivery" : "Other"}</div>
-                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>Event #{event.sequence || index + 1}</div>
-                  </div>
-                  <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,minmax(0,1fr))", gap: 7, fontSize: 12 }}>
-                    <div><b>Employee:</b> {event.employee || "-"}</div>
-                    <div><b>PNR:</b> {event.pnr || "-"}</div>
-                    <div><b>Bag Tag:</b> {event.bagTags || "-"}</div>
-                    <div><b>Flight:</b> {event.flightNumber || "-"}</div>
-                    {event.eventType === "CODE_39" && <div><b>Report ID:</b> {event.reportId || "-"}</div>}
-                    {event.eventType === "CODE_39" && <div><b>World Tracer:</b> {event.worldTracerId || "-"}</div>}
-                    {event.eventType === "CODE_24" && <div><b>Code 24 Created:</b> {event.code24Created === true || event.code24Created === "Yes" ? "Yes" : "No"}</div>}
-                    {event.eventType === "EXCEPTION_DELIVERY" && <div><b>NetTracer:</b> {event.netTracerFile || "-"} Â· <b>Method:</b> {event.deliveryMethod || "-"} Â· <b>Reason:</b> {event.exceptionReason || "-"}</div>}
-                  </div>
-                </div>)}
-              </div>}
             </div>;
           })}
         </div>}
       </Card>
     </>}
+
+    {expandedReportId && (() => {
+      const report = filteredHistoryReports.find((item) => item.id === expandedReportId);
+      if (!report) return null;
+      const allEvents = Array.isArray(report.events) ? report.events : [];
+      const events = allEvents.filter((event, index) => historyRows.some((row) => row.reportIdDoc === report.id && row.eventIndex === index));
+      return <div
+        onClick={() => setExpandedReportId("")}
+        style={{ position: "fixed", inset: 0, zIndex: 99998, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: isMobile ? 10 : 20 }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ width: "100%", maxWidth: 900, maxHeight: "88vh", background: "#fff", borderRadius: isMobile ? 16 : 22, boxShadow: "0 28px 80px rgba(15,23,42,.32)", overflow: "hidden", display: "flex", flexDirection: "column" }}
+        >
+          <div style={{ padding: isMobile ? "14px 15px" : "17px 20px", background: "linear-gradient(135deg,#0f5c91,#1f7cc1 55%,#6ec6e8)", color: "#fff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".10em", opacity: .82 }}>BSO Daily Report</div>
+              <div style={{ marginTop: 4, fontSize: isMobile ? 18 : 22, fontWeight: 900 }}>{report.reportDate || "-"} | {report.shift || "-"} Shift</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: .9 }}>{report.supervisorName || report.submittedByName || "Supervisor"} | {timestampToLabel(report.createdAt)}</div>
+            </div>
+            <button type="button" onClick={() => setExpandedReportId("")} style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 12, border: "1px solid rgba(255,255,255,.35)", background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer", fontWeight: 800 }}>x</button>
+          </div>
+
+          <div style={{ padding: isMobile ? 13 : 18, overflowY: "auto", WebkitOverflowScrolling: "touch", display: "grid", gap: 11 }}>
+            {events.map((event, index) => <div key={`${report.id}-${index}`} style={{ border: "1px solid #dbeafe", borderRadius: 15, padding: isMobile ? 12 : 14, background: "#fff" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>{event.eventType === "CODE_24" ? "Code 24 / Bag Return" : event.eventType === "CODE_39" ? "Code 39" : event.eventType === "EXCEPTION_DELIVERY" ? "Exception Delivery" : "Other"}</div>
+                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>Event #{event.sequence || index + 1}</div>
+              </div>
+
+              <div style={{ marginTop: 11, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,minmax(0,1fr))", gap: 9, fontSize: 12.5, color: "#334155" }}>
+                <div><b>Employee:</b> {event.employee || "-"}</div>
+                <div><b>Passenger:</b> {event.passengerName || "-"}</div>
+                <div><b>PNR:</b> {event.pnr || "-"}</div>
+                <div><b>Bag Tag:</b> {event.bagTags || "-"}</div>
+                <div><b>Flight:</b> {event.flightNumber || "-"}</div>
+                <div><b>Supervisor Review:</b> {event.supervisorReview || "-"}</div>
+
+                {event.eventType === "CODE_24" && <>
+                  <div><b>Return Reason:</b> {event.returnReason === "Other" ? (event.returnReasonOther || "Other") : (event.returnReason || "-")}</div>
+                  <div><b>Code 24 Created:</b> {event.code24Created === true || event.code24Created === "Yes" ? "Yes" : "No"}</div>
+                  <div><b>Code 24 Reason:</b> {event.code24Reason === "Other" ? (event.code24ReasonOther || "Other") : (event.code24Reason || "-")}</div>
+                  <div><b>BCC Referral:</b> {event.bccReferral === true || event.bccReferral === "Yes" ? "Yes" : "No"}</div>
+                </>}
+
+                {event.eventType === "CODE_39" && <>
+                  <div><b>Report ID:</b> {event.reportId || "-"}</div>
+                  <div><b>Create Date:</b> {event.createDate || "-"}</div>
+                  <div><b>Status:</b> {event.status || "-"}</div>
+                  <div><b>Fault Station:</b> {event.faultStation || "-"}</div>
+                  <div><b>Loss Code:</b> {event.lossCode || "-"}</div>
+                  <div><b>Bag Type:</b> {event.bagType || "-"}</div>
+                  <div><b>Bags Checked:</b> {event.bagsChecked || "-"}</div>
+                  <div><b>Bags Received:</b> {event.bagsReceived || "-"}</div>
+                  <div><b>World Tracer:</b> {event.worldTracerId || "-"}</div>
+                </>}
+
+                {event.eventType === "EXCEPTION_DELIVERY" && <>
+                  <div><b>NetTracer File:</b> {event.netTracerFile || "-"}</div>
+                  <div><b>Exception Date:</b> {event.exceptionDate || "-"}</div>
+                  <div><b>Agent Code:</b> {event.agentCode || "-"}</div>
+                  <div><b>Delivery Method:</b> {event.deliveryMethod || "-"}</div>
+                  <div><b>Exception Reason:</b> {event.exceptionReason === "Other" ? (event.exceptionReasonOther || "Other") : (event.exceptionReason || "-")}</div>
+                </>}
+
+                {event.eventType === "OTHER" && <>
+                  <div><b>Category:</b> {event.otherCategory || "-"}</div>
+                  <div><b>Follow-up Required:</b> {event.followUpRequired || "-"}</div>
+                  <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}><b>Description:</b> {event.otherDescription || "-"}</div>
+                  <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}><b>Action Taken:</b> {event.actionTaken || "-"}</div>
+                </>}
+              </div>
+
+              {event.comments && <div style={{ marginTop: 11, padding: 10, borderRadius: 11, background: "#f8fafc", color: "#475569", fontSize: 12.5 }}><b>Comments / Coaching:</b> {event.comments}</div>}
+            </div>)}
+
+            {!events.length && <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No matching events in this report for the selected filters.</div>}
+          </div>
+
+          <div style={{ padding: 13, borderTop: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "flex-end" }}>
+            <Button variant="secondary" onClick={() => setExpandedReportId("")}>Close</Button>
+          </div>
+        </div>
+      </div>;
+    })()}
 
     {duplicateWarning && <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,.48)", display: "grid", placeItems: "center", padding: 18 }}>
       <div style={{ width: "100%", maxWidth: 620, background: "#fff", borderRadius: 20, boxShadow: "0 24px 70px rgba(15,23,42,.28)", overflow: "hidden" }}>
@@ -687,7 +753,7 @@ export default function BSODailyReportPage() {
         <div style={{ padding: 18 }}>
           <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, lineHeight: 1.55 }}>Review the matching information before creating another entry.</div>
           <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-            {duplicateWarning.duplicates.map((d, index) => <div key={index} style={{ padding: 10, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12.5, fontWeight: 800 }}>Event #{d.eventNumber} Â· {d.eventType}: {d.reason}</div>)}
+            {duplicateWarning.duplicates.map((d, index) => <div key={index} style={{ padding: 10, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12.5, fontWeight: 800 }}>Event #{d.eventNumber} | {d.eventType}: {d.reason}</div>)}
           </div>
           <div style={{ marginTop: 14 }}><Label>If this is a different event, explain why *</Label><Area value={duplicateOverrideReason} onChange={(e) => setDuplicateOverrideReason(e.target.value)} placeholder="Example: Separate bag, new customer interaction, correction, or other valid reason." /></div>
           <div style={{ marginTop: 14, display: "flex", gap: 9, flexWrap: "wrap" }}>
