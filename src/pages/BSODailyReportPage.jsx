@@ -168,16 +168,36 @@ export default function BSODailyReportPage() {
     notes: "", certification: false, events: [newEvent()],
   });
   const [activeTab, setActiveTab] = useState("submit");
-  const [todayReports, setTodayReports] = useState([]);
-  const [loadingToday, setLoadingToday] = useState(true);
+  const [mtdReports, setMtdReports] = useState([]);
+  const [loadingMtd, setLoadingMtd] = useState(true);
   const [expandedReportId, setExpandedReportId] = useState("");
+  const [historyFilter, setHistoryFilter] = useState("MTD");
+  const [historyStartDate, setHistoryStartDate] = useState("");
+  const [historyEndDate, setHistoryEndDate] = useState("");
+  const [historyType, setHistoryType] = useState("ALL");
+  const [historySupervisor, setHistorySupervisor] = useState("");
+  const [historyEmployee, setHistoryEmployee] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState(null);
   const [duplicateOverrideReason, setDuplicateOverrideReason] = useState("");
 
-  const loadTodayReports = async () => {
+  const getMonthBounds = () => {
+    const today = todayLocal();
+    const month = today.slice(0, 7);
+    const [year, monthNum] = month.split("-").map(Number);
+    const lastDay = new Date(year, monthNum, 0).getDate();
+    return { start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, "0")}` };
+  };
+
+  const loadMtdReports = async () => {
     try {
-      setLoadingToday(true);
-      const q = query(collection(db, "bso_daily_reports"), where("reportDate", "==", todayLocal()));
+      setLoadingMtd(true);
+      const { start, end } = getMonthBounds();
+      const q = query(
+        collection(db, "bso_daily_reports"),
+        where("reportDate", ">=", start),
+        where("reportDate", "<=", end)
+      );
       const snap = await getDocs(q);
       const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       rows.sort((a, b) => {
@@ -185,21 +205,21 @@ export default function BSODailyReportPage() {
         const bd = typeof b.createdAt?.toMillis === "function" ? b.createdAt.toMillis() : 0;
         return bd - ad;
       });
-      setTodayReports(rows);
+      setMtdReports(rows);
     } catch (err) {
-      console.error("Error loading today's BSO reports:", err);
-      setMessage("Could not load today's BSO reports.");
+      console.error("Error loading MTD BSO reports:", err);
+      setMessage("Could not load BSO MTD reports.");
     } finally {
-      setLoadingToday(false);
+      setLoadingMtd(false);
     }
   };
 
   useEffect(() => {
-    loadTodayReports();
+    loadMtdReports();
   }, []);
 
-  const todayEventRows = useMemo(() => {
-    return todayReports.flatMap((report) =>
+  const mtdEventRows = useMemo(() => {
+    return mtdReports.flatMap((report) =>
       (Array.isArray(report.events) ? report.events : []).map((event, index) => ({
         ...event,
         reportIdDoc: report.id,
@@ -210,10 +230,33 @@ export default function BSODailyReportPage() {
         eventIndex: index,
       }))
     );
-  }, [todayReports]);
+  }, [mtdReports]);
 
-  const todayMetrics = useMemo(() => {
-    const events = todayEventRows;
+  const historyRows = useMemo(() => {
+    const today = todayLocal();
+    return mtdEventRows.filter((row) => {
+      if (historyFilter === "TODAY" && row.reportDate !== today) return false;
+      if (historyFilter === "RANGE") {
+        if (historyStartDate && row.reportDate < historyStartDate) return false;
+        if (historyEndDate && row.reportDate > historyEndDate) return false;
+      }
+      if (historyType !== "ALL" && row.eventType !== historyType) return false;
+      if (historySupervisor && !String(row.supervisorName || "").toLowerCase().includes(historySupervisor.toLowerCase().trim())) return false;
+      if (historyEmployee && !String(row.employee || "").toLowerCase().includes(historyEmployee.toLowerCase().trim())) return false;
+      const search = historySearch.trim().toLowerCase();
+      if (search) {
+        const haystack = [
+          row.pnr, row.bagTags, row.flightNumber, row.reportId, row.worldTracerId,
+          row.netTracerFile, row.employee, row.supervisorName, row.otherCategory, row.otherDescription
+        ].map((v) => String(v || "").toLowerCase()).join(" ");
+        if (!haystack.includes(search)) return false;
+      }
+      return true;
+    });
+  }, [mtdEventRows, historyFilter, historyStartDate, historyEndDate, historyType, historySupervisor, historyEmployee, historySearch]);
+
+  const historyMetrics = useMemo(() => {
+    const events = historyRows;
     return {
       total: events.length,
       code24: events.filter((e) => e.eventType === "CODE_24").length,
@@ -221,7 +264,12 @@ export default function BSODailyReportPage() {
       exceptions: events.filter((e) => e.eventType === "EXCEPTION_DELIVERY").length,
       other: events.filter((e) => e.eventType === "OTHER").length,
     };
-  }, [todayEventRows]);
+  }, [historyRows]);
+
+  const filteredHistoryReports = useMemo(() => {
+    const allowed = new Set(historyRows.map((r) => r.reportIdDoc));
+    return mtdReports.filter((r) => allowed.has(r.id));
+  }, [mtdReports, historyRows]);
 
   const grid = { display: "grid", gridTemplateColumns: isMobile ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fit,minmax(220px,1fr))", gap: 12 };
   const metrics = useMemo(() => {
@@ -428,7 +476,7 @@ export default function BSODailyReportPage() {
       setDuplicateWarning(null);
       setDuplicateOverrideReason("");
       setForm({ reportDate: todayLocal(), shift: "", department: "AA BSO", supervisorName: getVisibleName(user), supervisorPosition: user?.position || getDefaultPosition(user?.role), notes: "", certification: false, events: [newEvent()] });
-      await loadTodayReports();
+      await loadMtdReports();
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       console.error("Error saving BSO Daily Report:", err);
@@ -470,7 +518,7 @@ export default function BSODailyReportPage() {
     <Card style={{ padding: 8 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <button type="button" onClick={() => setActiveTab("submit")} style={{ border: activeTab === "submit" ? "1px solid #9ecdf3" : "1px solid #e2e8f0", background: activeTab === "submit" ? "linear-gradient(135deg,#e7f4ff,#f4faff)" : "#fff", color: activeTab === "submit" ? "#0f4c81" : "#64748b", borderRadius: 13, padding: "11px 14px", fontWeight: 900, cursor: "pointer" }}>Submit Report</button>
-        <button type="button" onClick={() => setActiveTab("today")} style={{ border: activeTab === "today" ? "1px solid #9ecdf3" : "1px solid #e2e8f0", background: activeTab === "today" ? "linear-gradient(135deg,#e7f4ff,#f4faff)" : "#fff", color: activeTab === "today" ? "#0f4c81" : "#64748b", borderRadius: 13, padding: "11px 14px", fontWeight: 900, cursor: "pointer" }}>BSO Reports Today ({todayMetrics.total})</button>
+        <button type="button" onClick={() => setActiveTab("history")} style={{ border: activeTab === "history" ? "1px solid #9ecdf3" : "1px solid #e2e8f0", background: activeTab === "history" ? "linear-gradient(135deg,#e7f4ff,#f4faff)" : "#fff", color: activeTab === "history" ? "#0f4c81" : "#64748b", borderRadius: 13, padding: "11px 14px", fontWeight: 900, cursor: "pointer" }}>BSO MTD Reports ({historyMetrics.total})</button>
       </div>
     </Card>
 
@@ -568,29 +616,39 @@ export default function BSODailyReportPage() {
     <Card><div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><Button onClick={submit} disabled={saving}>{saving ? "Saving..." : "Submit BSO Daily Report"}</Button><Button variant="secondary" onClick={() => navigate("/dashboard")} disabled={saving}>Cancel</Button></div></Card>
     </>}
 
-    {activeTab === "today" && <>
+    {activeTab === "history" && <>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))", gap: 9 }}>
-        <Metric label="Events Today" value={todayMetrics.total} />
-        <Metric label="Code 24" value={todayMetrics.code24} tone="amber" />
-        <Metric label="Code 39" value={todayMetrics.code39} tone="red" />
-        <Metric label="Exception Delivery" value={todayMetrics.exceptions} tone="blue" />
-        <Metric label="Other" value={todayMetrics.other} tone="green" />
+        <Metric label={historyFilter === "TODAY" ? "Events Today" : "BSO Events MTD"} value={historyMetrics.total} />
+        <Metric label="Code 24" value={historyMetrics.code24} tone="amber" />
+        <Metric label="Code 39" value={historyMetrics.code39} tone="red" />
+        <Metric label="Exception Delivery" value={historyMetrics.exceptions} tone="blue" />
+        <Metric label="Other" value={historyMetrics.other} tone="green" />
       </div>
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-          <div><h2 style={{ margin: 0 }}>BSO Reports Today</h2><div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>Review what has already been submitted before adding another event.</div></div>
-          <Button variant="secondary" onClick={loadTodayReports} disabled={loadingToday}>{loadingToday ? "Refreshing..." : "Refresh"}</Button>
+          <div><h2 style={{ margin: 0 }}>BSO MTD Reports</h2><div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>All AA BSO supervisors can review office submissions for the current month. This view is read-only.</div></div>
+          <Button variant="secondary" onClick={loadMtdReports} disabled={loadingMtd}>{loadingMtd ? "Refreshing..." : "Refresh"}</Button>
         </div>
 
-        {loadingToday ? <div style={{ padding: 16, color: "#64748b", fontWeight: 700 }}>Loading today's reports...</div> : todayReports.length === 0 ? <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No BSO reports have been submitted today.</div> : <div style={{ display: "grid", gap: 10 }}>
-          {todayReports.map((report) => {
-            const events = Array.isArray(report.events) ? report.events : [];
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit,minmax(175px,1fr))", gap: 10, marginBottom: 14 }}>
+          <div><Label>View</Label><Select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="MTD">Month to Date</option><option value="TODAY">Today</option><option value="RANGE">Date Range</option></Select></div>
+          {historyFilter === "RANGE" && <><div><Label>Start Date</Label><Input type="date" value={historyStartDate} onChange={(e) => setHistoryStartDate(e.target.value)} /></div><div><Label>End Date</Label><Input type="date" value={historyEndDate} onChange={(e) => setHistoryEndDate(e.target.value)} /></div></>}
+          <div><Label>Type</Label><Select value={historyType} onChange={(e) => setHistoryType(e.target.value)}><option value="ALL">All Types</option><option value="CODE_24">Code 24</option><option value="CODE_39">Code 39</option><option value="EXCEPTION_DELIVERY">Exception Delivery</option><option value="OTHER">Other</option></Select></div>
+          <div><Label>Supervisor</Label><Input value={historySupervisor} onChange={(e) => setHistorySupervisor(e.target.value)} placeholder="Supervisor name" /></div>
+          <div><Label>Employee</Label><Input value={historyEmployee} onChange={(e) => setHistoryEmployee(e.target.value)} placeholder="Employee name" /></div>
+          <div><Label>Search</Label><Input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="PNR, bag tag, file, flight..." /></div>
+        </div>
+
+        {loadingMtd ? <div style={{ padding: 16, color: "#64748b", fontWeight: 700 }}>Loading BSO MTD reports...</div> : filteredHistoryReports.length === 0 ? <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No BSO reports match the selected filters.</div> : <div style={{ display: "grid", gap: 10 }}>
+          {filteredHistoryReports.map((report) => {
+            const allEvents = Array.isArray(report.events) ? report.events : [];
+            const events = allEvents.filter((event, index) => historyRows.some((row) => row.reportIdDoc === report.id && row.eventIndex === index));
             const expanded = expandedReportId === report.id;
             return <div key={report.id} style={{ border: "1px solid #dbeafe", borderRadius: 16, overflow: "hidden" }}>
               <div style={{ padding: 13, background: "#f8fbff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <div>
-                  <div style={{ fontSize: 11, color: "#1769aa", fontWeight: 900, textTransform: "uppercase" }}>{report.shift || "-"} Shift Â· {events.length} Event{events.length === 1 ? "" : "s"}</div>
+                  <div style={{ fontSize: 11, color: "#1769aa", fontWeight: 900, textTransform: "uppercase" }}>{report.reportDate || "-"} Â· {report.shift || "-"} Shift Â· {events.length} Matching Event{events.length === 1 ? "" : "s"}</div>
                   <div style={{ marginTop: 4, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{report.supervisorName || report.submittedByName || "Supervisor"}</div>
                   <div style={{ marginTop: 2, fontSize: 11, color: "#64748b" }}>{timestampToLabel(report.createdAt)}</div>
                 </div>
@@ -633,7 +691,7 @@ export default function BSODailyReportPage() {
           </div>
           <div style={{ marginTop: 14 }}><Label>If this is a different event, explain why *</Label><Area value={duplicateOverrideReason} onChange={(e) => setDuplicateOverrideReason(e.target.value)} placeholder="Example: Separate bag, new customer interaction, correction, or other valid reason." /></div>
           <div style={{ marginTop: 14, display: "flex", gap: 9, flexWrap: "wrap" }}>
-            <Button variant="secondary" onClick={() => { setDuplicateWarning(null); setActiveTab("today"); }}>View Reports Today</Button>
+            <Button variant="secondary" onClick={() => { setDuplicateWarning(null); setActiveTab("history"); }}>View BSO MTD Reports</Button>
             <Button onClick={continueDuplicate} disabled={saving}>{saving ? "Saving..." : "Continue Anyway"}</Button>
             <Button variant="danger" onClick={() => { setDuplicateWarning(null); setDuplicateOverrideReason(""); }}>Cancel</Button>
           </div>
