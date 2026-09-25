@@ -221,6 +221,20 @@ function eventTypeLabel(type) {
   return "Other";
 }
 
+function removeUndefinedDeep(value) {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefinedDeep);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, removeUndefinedDeep(v)])
+    );
+  }
+  return value;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -742,7 +756,6 @@ export default function BSODailyReportPage() {
 
         const event = {
           ...newEvent(),
-          id: undefined,
           sequence: 0,
           eventType: eventType || "OTHER",
           employee: employee || "Excel Import",
@@ -845,7 +858,9 @@ export default function BSODailyReportPage() {
       const currentName = getVisibleName(user);
 
       groups.forEach((events, reportDate) => {
-        const normalizedEvents = events.map((event, index) => ({ ...event, sequence: index + 1 }));
+        const normalizedEvents = events.map((event, index) =>
+          removeUndefinedDeep({ ...event, sequence: index + 1 })
+        );
         const code24Events = normalizedEvents.filter((event) => event.eventType === "CODE_24");
         const code39Events = normalizedEvents.filter((event) => event.eventType === "CODE_39");
         const exceptions = normalizedEvents.filter((event) => event.eventType === "EXCEPTION_DELIVERY");
@@ -897,7 +912,9 @@ export default function BSODailyReportPage() {
       await loadMtdReports();
     } catch (err) {
       console.error("Error bulk importing BSO reports:", err);
-      setBulkMessage("Could not import the Excel rows.");
+      setBulkMessage(
+        `Could not import the Excel rows. ${err?.code ? `[${err.code}] ` : ""}${err?.message || "Unknown Firestore error."}`
+      );
     } finally {
       setBulkImporting(false);
     }
