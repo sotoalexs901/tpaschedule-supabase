@@ -145,14 +145,28 @@ async function getEnabledTokens(
   db,
   userId
 ) {
-  const snap = await db
+  const userRef = db
     .collection("users")
-    .doc(userId)
-    .collection("pushTokens")
-    .where("enabled", "==", true)
-    .get();
+    .doc(userId);
 
-  return snap.docs
+  // Read both token stores:
+  // - nativePushTokens: iOS / Android native app
+  // - pushTokens: Web / PWA
+  const [nativeSnap, webSnap] = await Promise.all([
+    userRef
+      .collection("nativePushTokens")
+      .where("enabled", "==", true)
+      .get(),
+    userRef
+      .collection("pushTokens")
+      .where("enabled", "==", true)
+      .get(),
+  ]);
+
+  const tokenItems = [
+    ...nativeSnap.docs,
+    ...webSnap.docs,
+  ]
     .map((tokenDoc) => ({
       ref: tokenDoc.ref,
       token: normalizeText(
@@ -160,6 +174,18 @@ async function getEnabledTokens(
       ),
     }))
     .filter((item) => item.token);
+
+  // Avoid sending the same FCM token twice if it exists in both stores.
+  const seen = new Set();
+
+  return tokenItems.filter((item) => {
+    if (seen.has(item.token)) {
+      return false;
+    }
+
+    seen.add(item.token);
+    return true;
+  });
 }
 
 async function disableInvalidTokens(
@@ -407,6 +433,12 @@ exports.handler = async function handler(event) {
             (item) => item.token
           ),
 
+          // Visible notification for native iOS/Android background delivery.
+          notification: {
+            title,
+            body,
+          },
+
           data: {
             title,
             body,
@@ -417,9 +449,24 @@ exports.handler = async function handler(event) {
             senderId,
           },
 
+          apns: {
+            headers: {
+              "apns-priority": "10",
+            },
+            payload: {
+              aps: {
+                sound: "default",
+              },
+            },
+          },
+
           webpush: {
             headers: {
               Urgency: "high",
+            },
+            notification: {
+              title,
+              body,
             },
           },
         });
