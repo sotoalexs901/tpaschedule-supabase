@@ -386,6 +386,24 @@ exports.handler = async function handler(event) {
         recipient.id
       );
 
+    // Keep the iOS app-icon badge aligned with unread direct-message conversations.
+    // The current message has already been stored and the conversation's
+    // unreadUserIds has already been updated before this function runs.
+    const unreadConversationsSnap =
+      await db
+        .collection("conversations")
+        .where(
+          "unreadUserIds",
+          "array-contains",
+          recipient.id
+        )
+        .get();
+
+    const badgeCount = Math.max(
+      0,
+      unreadConversationsSnap.size
+    );
+
     if (!tokenItems.length) {
       await messageRef.set(
         {
@@ -456,6 +474,7 @@ exports.handler = async function handler(event) {
             payload: {
               aps: {
                 sound: "default",
+                badge: badgeCount,
               },
             },
           },
