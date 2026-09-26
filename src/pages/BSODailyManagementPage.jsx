@@ -121,6 +121,27 @@ function Select(props) {
   );
 }
 
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        boxSizing: "border-box",
+        border: "1px solid #cbd5e1",
+        borderRadius: 12,
+        padding: "10px 12px",
+        minHeight: 100,
+        resize: "vertical",
+        fontSize: 13.5,
+        fontFamily: "inherit",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
+}
+
 function Button({ children, onClick, variant = "primary", disabled = false }) {
   const variants = {
     primary: {
@@ -820,6 +841,11 @@ export default function BSODailyManagementPage() {
   const [caseListOpen, setCaseListOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [working, setWorking] = useState("");
+  const [investigationOpen, setInvestigationOpen] = useState(false);
+  const [investigationStatus, setInvestigationStatus] = useState("OPEN");
+  const [investigationNotes, setInvestigationNotes] = useState("");
+  const [investigationCorrection, setInvestigationCorrection] = useState("");
+  const [investigationEvidence, setInvestigationEvidence] = useState([]);
 
   const emptyFilters = {
     startDate: "",
@@ -1041,6 +1067,98 @@ export default function BSODailyManagementPage() {
     () => reports.find((r) => r.id === selectedId) || null,
     [reports, selectedId]
   );
+
+  function openInvestigation(caseItem) {
+    const inv = caseItem?.investigation || {};
+    setSelectedCase(caseItem);
+    setInvestigationStatus(inv.status || "OPEN");
+    setInvestigationNotes("");
+    setInvestigationCorrection("");
+    setInvestigationEvidence(Array.isArray(inv.evidence) ? inv.evidence : []);
+    setInvestigationOpen(true);
+  }
+
+  function handleEvidenceFiles(fileList) {
+    const files = Array.from(fileList || []).slice(0, 6);
+    if (!files.length) return;
+    const readers = files.map((file) => new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({
+        name: file.name || `evidence-${Date.now()}.jpg`,
+        type: file.type || "image/jpeg",
+        size: file.size || 0,
+        dataUrl: String(reader.result || ""),
+        addedAt: new Date().toISOString(),
+        addedBy: user?.username || user?.name || "Management",
+      });
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    }));
+    Promise.all(readers).then((items) => {
+      const clean = items.filter(Boolean).filter((x) => x.dataUrl.length < 700000);
+      if (clean.length !== items.filter(Boolean).length) {
+        setMessage("Some evidence images were too large. Please use screenshots or compressed images under about 500 KB each.");
+      }
+      setInvestigationEvidence((prev) => [...prev, ...clean].slice(0, 8));
+    });
+  }
+
+  async function saveInvestigation(closeAfter = false) {
+    if (!selectedCase) return;
+    const report = reports.find((r) => r.id === selectedCase.reportIdDoc);
+    if (!report) return;
+    const nowIso = new Date().toISOString();
+    const actor = user?.username || user?.name || "Management";
+    const oldEvent = (report.events || [])[selectedCase.eventIndex];
+    if (!oldEvent) return;
+    const previous = oldEvent.investigation || {};
+    const history = Array.isArray(previous.history) ? previous.history : [];
+    const finalStatus = closeAfter ? "CLOSED" : investigationStatus;
+    const historyEntry = {
+      at: nowIso,
+      by: actor,
+      action: closeAfter ? "Investigation closed" : previous.openedAt ? "Investigation updated" : "Investigation opened",
+      status: finalStatus,
+      notes: investigationNotes.trim(),
+      correction: investigationCorrection.trim(),
+    };
+    const investigation = {
+      ...previous,
+      status: finalStatus,
+      openedAt: previous.openedAt || nowIso,
+      openedBy: previous.openedBy || actor,
+      updatedAt: nowIso,
+      updatedBy: actor,
+      closedAt: closeAfter ? nowIso : (previous.closedAt || ""),
+      closedBy: closeAfter ? actor : (previous.closedBy || ""),
+      managementNotes: investigationNotes.trim() || previous.managementNotes || "",
+      correction: investigationCorrection.trim() || previous.correction || "",
+      evidence: investigationEvidence,
+      history: [...history, historyEntry],
+    };
+    const events = (report.events || []).map((event, idx) =>
+      idx === selectedCase.eventIndex ? { ...event, investigation } : event
+    );
+    try {
+      setWorking(`investigation-${report.id}-${selectedCase.eventIndex}`);
+      await updateDoc(doc(db, "bso_daily_reports", report.id), {
+        events,
+        updatedAt: serverTimestamp(),
+      });
+      setReports((prev) => prev.map((r) => r.id === report.id ? { ...r, events, updatedAt: new Date() } : r));
+      setSelectedCase((prev) => prev ? { ...prev, investigation } : prev);
+      setInvestigationStatus(finalStatus);
+      setInvestigationNotes("");
+      setInvestigationCorrection("");
+      setMessage(closeAfter ? "Investigation closed successfully." : "Investigation saved successfully.");
+      if (closeAfter) setInvestigationOpen(false);
+    } catch (e) {
+      console.error(e);
+      setMessage("Could not save the investigation.");
+    } finally {
+      setWorking("");
+    }
+  }
 
   async function deleteReport(reportId) {
     if (!window.confirm("Delete this entire BSO Daily Report permanently?"))
@@ -1428,6 +1546,14 @@ export default function BSODailyManagementPage() {
               <Metric label="Review" value={selectedCase.supervisorReview || "-"} tone="slate" />
             </div>
 
+            {selectedCase.investigation?.status ? (
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 14, background: selectedCase.investigation.status === "CLOSED" ? "#ecfdf5" : "#fff7ed", border: `1px solid ${selectedCase.investigation.status === "CLOSED" ? "#a7f3d0" : "#fdba74"}` }}>
+                <div style={{ fontSize: 10, fontWeight: 900, textTransform: "uppercase", color: "#64748b" }}>Investigation</div>
+                <div style={{ marginTop: 4, fontWeight: 900 }}>{selectedCase.investigation.status}</div>
+                {selectedCase.investigation.managementNotes ? <div style={{ marginTop: 5, fontSize: 12.5 }}>{selectedCase.investigation.managementNotes}</div> : null}
+              </div>
+            ) : null}
+
             <div style={{ marginTop: 12, border: "1px solid #dbeafe", borderRadius: 16, padding: 14, background: "#f8fbff", fontSize: 13, lineHeight: 1.75, color: "#334155" }}>
               {selectedCase.eventType === "CODE_24" && <>
                 <div><b>Code 24 Created:</b> {yesNo(selectedCase.code24Created)}</div>
@@ -1459,8 +1585,49 @@ export default function BSODailyManagementPage() {
             </div>
 
             <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-              <Button variant="secondary" onClick={() => { setSelectedId(selectedCase.reportIdDoc); setSelectedCase(null); }}>View Shift Report</Button>
+              <Button variant="primary" onClick={() => openInvestigation(selectedCase)}>{selectedCase.investigation?.status ? "Investigation" : "Open Investigation"}</Button><Button variant="secondary" onClick={() => { setSelectedId(selectedCase.reportIdDoc); setSelectedCase(null); }}>View Shift Report</Button>
               <Button variant="danger" disabled={working === `${selectedCase.reportIdDoc}-${selectedCase.eventIndex}`} onClick={() => { deleteEvent(selectedCase.reportIdDoc, selectedCase.eventIndex); setSelectedCase(null); }}>Delete Case</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {investigationOpen && selectedCase && (
+        <div onClick={() => setInvestigationOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10020, background: "rgba(15,23,42,.68)", backdropFilter: "blur(5px)", display: "flex", alignItems: "center", justifyContent: "center", padding: isMobile ? 8 : 22 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(980px,97vw)", maxHeight: "94vh", overflowY: "auto", background: "#fff", borderRadius: 22, border: "1px solid #bfdbfe", boxShadow: "0 28px 80px rgba(15,23,42,.34)", padding: isMobile ? 14 : 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 10, color: "#1769aa", fontWeight: 900, textTransform: "uppercase", letterSpacing: ".08em" }}>BSO Case Investigation</div>
+                <h2 style={{ margin: "4px 0", fontSize: isMobile ? 21 : 27 }}>Investigation | {eventLabel(selectedCase.eventType)}</h2>
+                <div style={{ fontSize: 12.5, color: "#64748b", fontWeight: 700 }}>{selectedCase.reportDate || "-"} | {selectedCase.passengerName || "-"} | {selectedCase.pnr || "-"} | {selectedCase.bagTags || "-"}</div>
+              </div>
+              <Button variant="secondary" onClick={() => setInvestigationOpen(false)}>Close</Button>
+            </div>
+
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
+              <div><Label>Investigation Status</Label><Select value={investigationStatus} onChange={(e) => setInvestigationStatus(e.target.value)}><option value="OPEN">Open</option><option value="IN_REVIEW">In Review</option><option value="PENDING_FOLLOW_UP">Pending Follow-up</option><option value="CLOSED">Closed</option></Select></div>
+              <div><Label>Case Owner</Label><Input value={user?.username || user?.name || "Management"} readOnly style={{ background: "#f8fafc" }} /></div>
+            </div>
+
+            <div style={{ marginTop: 12 }}><Label>Management Investigation Notes</Label><TextArea value={investigationNotes} onChange={(e) => setInvestigationNotes(e.target.value)} placeholder="Document findings, calls, verification, coaching, or follow-up..." /></div>
+            <div style={{ marginTop: 12 }}><Label>Correction / Case Adjustment</Label><TextArea value={investigationCorrection} onChange={(e) => setInvestigationCorrection(e.target.value)} placeholder="Document any correction to the original submission. The original supervisor submission remains unchanged." /></div>
+
+            <div style={{ marginTop: 14, padding: 14, borderRadius: 16, border: "1px solid #dbeafe", background: "#f8fbff" }}>
+              <div style={{ fontWeight: 900, color: "#0f172a" }}>Evidence / Screenshot</div>
+              <div style={{ marginTop: 4, fontSize: 11.5, color: "#64748b", fontWeight: 700 }}>Take a photo or select screenshots. For this first version, evidence is stored with the investigation record; use compressed screenshots under about 500 KB each.</div>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <label style={{ display: "inline-flex", alignItems: "center", borderRadius: 11, padding: "9px 13px", fontSize: 12.5, fontWeight: 850, cursor: "pointer", background: "#fff", color: "#1769aa", border: "1px solid #cfe7fb" }}>Scan / Camera<input type="file" accept="image/*" capture="environment" onChange={(e) => handleEvidenceFiles(e.target.files)} style={{ display: "none" }} /></label>
+                <label style={{ display: "inline-flex", alignItems: "center", borderRadius: 11, padding: "9px 13px", fontSize: 12.5, fontWeight: 850, cursor: "pointer", background: "#fff", color: "#1769aa", border: "1px solid #cfe7fb" }}>Upload Screenshot<input type="file" accept="image/*" multiple onChange={(e) => handleEvidenceFiles(e.target.files)} style={{ display: "none" }} /></label>
+              </div>
+              {investigationEvidence.length ? <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 8 }}>{investigationEvidence.map((item, idx) => <div key={`${item.name}-${idx}`} style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 7, background: "#fff" }}><img src={item.dataUrl} alt={item.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 8 }} /><div style={{ marginTop: 5, fontSize: 9.5, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div><button type="button" onClick={() => setInvestigationEvidence((prev) => prev.filter((_, i) => i !== idx))} style={{ marginTop: 5, border: 0, background: "transparent", color: "#dc2626", fontWeight: 800, cursor: "pointer" }}>Remove</button></div>)}</div> : null}
+            </div>
+
+            {Array.isArray(selectedCase.investigation?.history) && selectedCase.investigation.history.length ? <div style={{ marginTop: 14, padding: 14, border: "1px solid #e2e8f0", borderRadius: 16 }}><div style={{ fontWeight: 900 }}>Investigation History</div>{[...selectedCase.investigation.history].reverse().map((h, idx) => <div key={idx} style={{ marginTop: 9, paddingTop: 9, borderTop: idx ? "1px solid #eef2f7" : "none", fontSize: 12.5, lineHeight: 1.55 }}><b>{h.action || "Update"}</b> | {h.status || "-"}<br/><span style={{ color: "#64748b" }}>{h.by || "Management"} | {h.at ? new Date(h.at).toLocaleString() : "-"}</span>{h.notes ? <div><b>Notes:</b> {h.notes}</div> : null}{h.correction ? <div><b>Correction:</b> {h.correction}</div> : null}</div>)}</div> : null}
+
+            <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+              <Button variant="secondary" onClick={() => setInvestigationOpen(false)}>Cancel</Button>
+              <Button disabled={working.startsWith("investigation-")} onClick={() => saveInvestigation(false)}>Save Investigation</Button>
+              <Button variant="success" disabled={working.startsWith("investigation-")} onClick={() => saveInvestigation(true)}>Close Investigation</Button>
             </div>
           </div>
         </div>
