@@ -1325,7 +1325,7 @@ export default function BSODailyManagementPage() {
           <Metric label="Follow-up Rate" value={`${totals.followUpRate.toFixed(1)}%`} subtitle={`${totals.followUp} requiring follow-up`} tone={lowerIsBetterTone(totals.followUpRate, BSO_WATCH_BANDS.followUpRate)} />
         </div>
         <div style={{ marginTop: 10, fontSize: 11, color: "#64748b", fontWeight: 700 }}>
-          Watch bands: Error Margin / Code 39 Share green <=10%, amber <=20%; Follow-up green <=5%, amber <=10%; Control Success / Code 24 Avoidance green >=90%, amber >=80%.
+          Watch bands: Error Margin / Code 39 Share green &lt;=10%, amber &lt;=20%; Follow-up green &lt;=5%, amber &lt;=10%; Control Success / Code 24 Avoidance green &gt;=90%, amber &gt;=80%.
         </div>
       </Card>
 
