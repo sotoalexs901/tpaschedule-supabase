@@ -1,5 +1,8 @@
 // src/utils/appBadge.js
 
+import { Capacitor } from "@capacitor/core";
+import { Badge } from "@capawesome/capacitor-badge";
+
 function normalizeBadgeCount(value) {
   const parsed = Number.parseInt(value, 10);
 
@@ -97,6 +100,10 @@ async function clearBadgeInServiceWorker() {
 }
 
 export function supportsAppBadge() {
+  if (Capacitor.isNativePlatform()) {
+    return true;
+  }
+
   return (
     typeof navigator !== "undefined" &&
     typeof navigator.setAppBadge === "function"
@@ -104,23 +111,34 @@ export function supportsAppBadge() {
 }
 
 export async function setAeroStationAppBadge(value) {
-  if (
-    typeof navigator ===
-    "undefined"
-  ) {
-    return;
-  }
-
-  const count =
-    normalizeBadgeCount(
-      value
-    );
+  const count = normalizeBadgeCount(value);
 
   // Keep the Service Worker's persisted counter synchronized
   // with the exact unread/action count calculated by AppLayout.
-  syncBadgeWithServiceWorker(
-    count
-  );
+  syncBadgeWithServiceWorker(count);
+
+  // Native iOS / Android app.
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (count <= 0) {
+        await Badge.clear();
+      } else {
+        await Badge.set({ count });
+      }
+    } catch (err) {
+      console.warn(
+        "Could not update AeroStation Hub native app badge:",
+        err
+      );
+    }
+
+    return;
+  }
+
+  // Web / PWA fallback.
+  if (typeof navigator === "undefined") {
+    return;
+  }
 
   try {
     if (count <= 0) {
@@ -143,9 +161,7 @@ export async function setAeroStationAppBadge(value) {
       typeof navigator.setAppBadge ===
       "function"
     ) {
-      await navigator.setAppBadge(
-        count
-      );
+      await navigator.setAppBadge(count);
     }
   } catch (err) {
     console.warn(
@@ -156,14 +172,26 @@ export async function setAeroStationAppBadge(value) {
 }
 
 export async function clearAeroStationAppBadge() {
-  if (
-    typeof navigator ===
-    "undefined"
-  ) {
+  clearBadgeInServiceWorker();
+
+  // Native iOS / Android app.
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await Badge.clear();
+    } catch (err) {
+      console.warn(
+        "Could not clear AeroStation Hub native app badge:",
+        err
+      );
+    }
+
     return;
   }
 
-  clearBadgeInServiceWorker();
+  // Web / PWA fallback.
+  if (typeof navigator === "undefined") {
+    return;
+  }
 
   try {
     if (
