@@ -10,7 +10,7 @@ import {
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
@@ -631,6 +631,7 @@ function cloneReportForEdit(report) {
 export default function EmployeePerformanceManagementPage() {
   const { user } = useUser();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const canAccess =
     user?.role === "duty_manager" || user?.role === "station_manager";
@@ -648,6 +649,10 @@ export default function EmployeePerformanceManagementPage() {
   const [platformUsers, setPlatformUsers] = useState([]);
   const [isEditingReport, setIsEditingReport] = useState(false);
   const [editForm, setEditForm] = useState(null);
+  const [managementTab, setManagementTab] = useState(() =>
+    user?.role === "duty_manager" ? "assigned" : "dashboard"
+  );
+  const [followUpEdit, setFollowUpEdit] = useState({});
 
   const [expandedSupervisors, setExpandedSupervisors] = useState({});
   const [expandedEmployees, setExpandedEmployees] = useState({});
@@ -811,6 +816,81 @@ export default function EmployeePerformanceManagementPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [employees, platformUsers]);
 
+  const currentDutyManagerProfile = useMemo(() => {
+    if (user?.role !== "duty_manager") return null;
+
+    const currentUserId = String(user?.id || user?.uid || "").trim();
+    const currentUsername = normalizeRoleLike(user?.username || user?.loginUsername || "");
+    const currentName = normalizeRoleLike(getVisibleUserName(user));
+
+    return (
+      dutyManagers.find((dm) => {
+        const notificationUserId = String(dm?.notificationUserId || "").trim();
+        const username = normalizeRoleLike(dm?.username || "");
+        const name = normalizeRoleLike(dm?.name || "");
+
+        return (
+          (currentUserId && notificationUserId === currentUserId) ||
+          (currentUsername && username && currentUsername === username) ||
+          (currentName && name && currentName === name)
+        );
+      }) || null
+    );
+  }, [dutyManagers, user]);
+
+  function isAssignedToCurrentDutyManager(report) {
+    if (user?.role !== "duty_manager") return true;
+
+    const currentUserId = String(user?.id || user?.uid || "").trim();
+    const profileEmployeeId = String(currentDutyManagerProfile?.id || "").trim();
+    const profileUserId = String(
+      currentDutyManagerProfile?.notificationUserId || currentUserId || ""
+    ).trim();
+    const profileName = normalizeRoleLike(
+      currentDutyManagerProfile?.name || getVisibleUserName(user)
+    );
+
+    const assignedEmployeeIds = [
+      report?.followUpDutyManagerId,
+      report?.assignedDutyManagerId,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const assignedUserIds = [
+      report?.followUpDutyManagerUserId,
+      report?.assignedDutyManagerUserId,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const assignedNames = [
+      report?.followUpDutyManagerName,
+      report?.assignedDutyManagerName,
+    ]
+      .map(normalizeRoleLike)
+      .filter(Boolean);
+
+    return Boolean(
+      (profileEmployeeId && assignedEmployeeIds.includes(profileEmployeeId)) ||
+        (profileUserId && assignedUserIds.includes(profileUserId)) ||
+        (currentUserId && assignedUserIds.includes(currentUserId)) ||
+        (profileName && assignedNames.includes(profileName))
+    );
+  }
+
+  function getFollowUpField(report, field) {
+    return followUpEdit[report?.id]?.[field] ?? "";
+  }
+
+  const reportsVisibleToCurrentUser = useMemo(() => {
+    if (user?.role === "station_manager") return reports;
+    if (user?.role === "duty_manager") {
+      return reports.filter((report) => isAssignedToCurrentDutyManager(report));
+    }
+    return [];
+  }, [reports, user, currentDutyManagerProfile]);
+
   const employeeNotificationTargets = useMemo(() => {
     const map = {};
 
@@ -860,33 +940,45 @@ export default function EmployeePerformanceManagementPage() {
 
   const departmentOptions = useMemo(() => {
     const set = new Set();
-    reports.forEach((r) => {
+    reportsVisibleToCurrentUser.forEach((r) => {
       const dept = safeText(r.department);
       if (dept) set.add(dept);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [reports]);
+  }, [reportsVisibleToCurrentUser]);
 
   const employeeOptions = useMemo(() => {
     const set = new Set();
-    reports.forEach((r) => {
+    reportsVisibleToCurrentUser.forEach((r) => {
       const name = safeText(r.employeeName);
       if (name) set.add(name);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [reports]);
+  }, [reportsVisibleToCurrentUser]);
 
   const supervisorOptions = useMemo(() => {
     const set = new Set();
-    reports.forEach((r) => {
+    reportsVisibleToCurrentUser.forEach((r) => {
       const name = safeText(r.supervisorName);
       if (name) set.add(name);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [reports]);
+  }, [reportsVisibleToCurrentUser]);
 
   const filteredReports = useMemo(() => {
-    return reports.filter((report) => {
+    return reportsVisibleToCurrentUser.filter((report) => {
+      if (managementTab === "assigned" && report.month !== getCurrentMonthValue()) {
+        return false;
+      }
+      if (managementTab === "assigned") {
+        const hasAssignment = Boolean(
+          report.followUpDutyManagerId ||
+            report.assignedDutyManagerId ||
+            report.followUpDutyManagerUserId ||
+            report.assignedDutyManagerUserId
+        );
+        if (!hasAssignment) return false;
+      }
       if (filters.month !== "all" && report.month !== filters.month) return false;
 
       if (
@@ -928,15 +1020,41 @@ export default function EmployeePerformanceManagementPage() {
 
       return true;
     });
-  }, [reports, filters]);
+  }, [reportsVisibleToCurrentUser, filters, managementTab]);
 
   const selectedReport = useMemo(() => {
-    return (
+    const candidate =
       reports.find((r) => r.id === selectedReportId) ||
       filteredReports.find((r) => r.id === selectedReportId) ||
-      null
-    );
-  }, [reports, filteredReports, selectedReportId]);
+      null;
+
+    if (user?.role === "duty_manager" && candidate && !isAssignedToCurrentDutyManager(candidate)) {
+      return null;
+    }
+
+    return candidate;
+  }, [reports, filteredReports, selectedReportId, user, currentDutyManagerProfile]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedReportId = params.get("reportId");
+    const requestedTab = params.get("tab");
+
+    if (requestedTab === "assigned") {
+      setManagementTab("assigned");
+      setFilters((prev) => ({ ...prev, month: getCurrentMonthValue() }));
+    }
+
+    if (requestedReportId) {
+      const report = reports.find((item) => item.id === requestedReportId);
+      if (
+        report &&
+        (user?.role === "station_manager" || isAssignedToCurrentDutyManager(report))
+      ) {
+        setSelectedReportId(requestedReportId);
+      }
+    }
+  }, [location.search, reports, user, currentDutyManagerProfile]);
 
   useEffect(() => {
     if (selectedReport) {
@@ -1096,6 +1214,12 @@ export default function EmployeePerformanceManagementPage() {
   async function openReportForReview(report) {
     if (!report?.id) return;
 
+    if (user?.role === "duty_manager" && !isAssignedToCurrentDutyManager(report)) {
+      setStatusMessage("This EPR is not assigned to you.");
+      setStatusTone("red");
+      return;
+    }
+
     setSelectedReportId(report.id);
 
     const currentStatus = String(report.managerStatus || "submitted").toLowerCase();
@@ -1217,9 +1341,9 @@ export default function EmployeePerformanceManagementPage() {
             body: `${currentReport?.employeeName || "Employee"} - ${formatMonthValue(
               currentReport?.month
             )}: ${statusLabel}.`,
-            link: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
-            route: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
-            path: `/monthly-employee-performance-report?reportId=${report.id}&action=followup`,
+            link: `/employee-performance-management?reportId=${report.id}&tab=assigned`,
+            route: `/employee-performance-management?reportId=${report.id}&tab=assigned`,
+            path: `/employee-performance-management?reportId=${report.id}&tab=assigned`,
             reportId,
             employeeName: currentReport?.employeeName || "",
             month: currentReport?.month || "",
@@ -1397,6 +1521,12 @@ export default function EmployeePerformanceManagementPage() {
   }
 
   async function assignDutyManagerForFollowUp(report) {
+    if (user?.role !== "station_manager") {
+      setStatusMessage("Only the Station Manager can assign or reassign Duty Manager follow-up.");
+      setStatusTone("red");
+      return;
+    }
+
     if (!selectedDutyManagerId) {
       setStatusMessage("Select a duty manager first.");
       setStatusTone("red");
@@ -1572,6 +1702,268 @@ export default function EmployeePerformanceManagementPage() {
     } catch (err) {
       console.error("Error assigning duty manager:", err);
       setStatusMessage("Could not assign duty manager.");
+      setStatusTone("red");
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  async function acceptAssignedFollowUp(report) {
+    if (!report?.id || user?.role !== "duty_manager" || !isAssignedToCurrentDutyManager(report)) {
+      setStatusMessage("This follow-up case is not assigned to you.");
+      setStatusTone("red");
+      return;
+    }
+
+    try {
+      setSavingId(report.id);
+      const note = normalizeText(getFollowUpField(report, "acceptanceNote"));
+      const history = Array.isArray(report?.followUpHistory)
+        ? [...report.followUpHistory]
+        : [];
+
+      history.push(buildHistoryEntry("follow_up_accepted", user, note));
+
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "follow_up_accepted",
+          user,
+          `${getVisibleUserName(user)} (Duty Manager) accepted the follow-up case.`
+        )
+      );
+
+      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
+        managerStatus: "follow_up_in_progress",
+        followUpAcceptedBy: getVisibleUserName(user),
+        followUpAcceptedAt: serverTimestamp(),
+        followUpHistory: history,
+        supervisorTimeline,
+        updatedAt: serverTimestamp(),
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                managerStatus: "follow_up_in_progress",
+                followUpAcceptedBy: getVisibleUserName(user),
+                followUpAcceptedAt: new Date(),
+                followUpHistory: history,
+                supervisorTimeline,
+                updatedAt: new Date(),
+              }
+            : item
+        )
+      );
+
+      try {
+        await createUserNotification(report?.supervisorId || "", {
+          type: "employee_performance_follow_up_accepted",
+          title: "EPR Follow Up Accepted",
+          message: `${getVisibleUserName(user)} accepted the follow-up case for ${
+            report.employeeName || "Employee"
+          }.`,
+          body: `${getVisibleUserName(user)} accepted the follow-up case for ${
+            report.employeeName || "Employee"
+          }.`,
+          link: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          route: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          path: `/monthly-employee-performance-report?reportId=${report.id}&action=myreports`,
+          reportId: report.id,
+        });
+      } catch (notificationError) {
+        console.error("Error notifying supervisor about accepted follow-up:", notificationError);
+      }
+
+      triggerEprPush(report.id, "accepted");
+      setStatusMessage("Follow-up case accepted.");
+      setStatusTone("green");
+    } catch (err) {
+      console.error("Error accepting follow-up case:", err);
+      setStatusMessage("Could not accept follow-up case.");
+      setStatusTone("red");
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  async function saveAssignedFollowUpProgress(report) {
+    if (!report?.id || user?.role !== "duty_manager" || !isAssignedToCurrentDutyManager(report)) {
+      setStatusMessage("This follow-up case is not assigned to you.");
+      setStatusTone("red");
+      return;
+    }
+
+    const actionTaken = normalizeText(getFollowUpField(report, "actionTaken"));
+    const details = normalizeText(getFollowUpField(report, "details"));
+
+    if (!actionTaken && !details) {
+      setStatusMessage("Write follow-up action or details first.");
+      setStatusTone("red");
+      return;
+    }
+
+    try {
+      setSavingId(report.id);
+      const history = Array.isArray(report?.followUpHistory)
+        ? [...report.followUpHistory]
+        : [];
+
+      history.push(
+        buildHistoryEntry("follow_up_progress", user, details, {
+          actionTaken,
+          details,
+        })
+      );
+
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "follow_up_progress",
+          user,
+          `${getVisibleUserName(user)} added an internal follow-up update to this case.`
+        )
+      );
+
+      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
+        managerStatus: "follow_up_in_progress",
+        followUpLastAction: actionTaken,
+        followUpLastDetails: details,
+        followUpLastUpdatedBy: getVisibleUserName(user),
+        followUpLastUpdatedAt: serverTimestamp(),
+        followUpHistory: history,
+        supervisorTimeline,
+        updatedAt: serverTimestamp(),
+      });
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                managerStatus: "follow_up_in_progress",
+                followUpLastAction: actionTaken,
+                followUpLastDetails: details,
+                followUpLastUpdatedBy: getVisibleUserName(user),
+                followUpLastUpdatedAt: new Date(),
+                followUpHistory: history,
+                supervisorTimeline,
+                updatedAt: new Date(),
+              }
+            : item
+        )
+      );
+
+      triggerEprPush(report.id, "progress");
+      setStatusMessage("Follow-up progress saved.");
+      setStatusTone("green");
+    } catch (err) {
+      console.error("Error saving follow-up progress:", err);
+      setStatusMessage("Could not save follow-up progress.");
+      setStatusTone("red");
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  async function resubmitAssignedFollowUp(report) {
+    if (!report?.id || user?.role !== "duty_manager" || !isAssignedToCurrentDutyManager(report)) {
+      setStatusMessage("This follow-up case is not assigned to you.");
+      setStatusTone("red");
+      return;
+    }
+
+    const actionTaken = normalizeText(getFollowUpField(report, "actionTaken"));
+    const details = normalizeText(getFollowUpField(report, "details"));
+
+    if (!actionTaken && !details) {
+      setStatusMessage("Write what was done before resubmitting.");
+      setStatusTone("red");
+      return;
+    }
+
+    try {
+      setSavingId(report.id);
+      const history = Array.isArray(report?.followUpHistory)
+        ? [...report.followUpHistory]
+        : [];
+
+      history.push(
+        buildHistoryEntry("follow_up_resubmitted", user, details, {
+          actionTaken,
+          details,
+        })
+      );
+
+      const supervisorTimeline = appendSupervisorTimeline(
+        report,
+        buildSupervisorTimelineEntry(
+          "follow_up_resubmitted",
+          user,
+          `${getVisibleUserName(user)} submitted the follow-up case for Station Manager review.`
+        )
+      );
+
+      await updateDoc(doc(db, "employeePerformanceReports", report.id), {
+        managerStatus: "follow_up_resubmitted",
+        followUpCompletedBy: getVisibleUserName(user),
+        followUpCompletedAt: serverTimestamp(),
+        followUpLastAction: actionTaken,
+        followUpLastDetails: details,
+        followUpHistory: history,
+        supervisorTimeline,
+        updatedAt: serverTimestamp(),
+      });
+
+      const stationManagers = platformUsers.filter((managerUser) =>
+        normalizeRoleLike(managerUser?.role || "") === "station manager"
+      );
+
+      await Promise.allSettled(
+        stationManagers.map((managerUser) =>
+          createUserNotification(managerUser.id, {
+            type: "employee_performance_follow_up_ready_for_review",
+            title: "EPR Follow Up Ready for Review",
+            message: `${getVisibleUserName(user)} submitted the follow-up for ${
+              report.employeeName || "Employee"
+            } (${formatMonthValue(report.month)}) for Station Manager review.`,
+            body: `${getVisibleUserName(user)} submitted the follow-up for ${
+              report.employeeName || "Employee"
+            } (${formatMonthValue(report.month)}) for Station Manager review.`,
+            link: `/employee-performance-management?reportId=${report.id}&tab=assigned`,
+            route: `/employee-performance-management?reportId=${report.id}&tab=assigned`,
+            path: `/employee-performance-management?reportId=${report.id}&tab=assigned`,
+            reportId: report.id,
+          })
+        )
+      );
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id
+            ? {
+                ...item,
+                managerStatus: "follow_up_resubmitted",
+                followUpCompletedBy: getVisibleUserName(user),
+                followUpCompletedAt: new Date(),
+                followUpLastAction: actionTaken,
+                followUpLastDetails: details,
+                followUpHistory: history,
+                supervisorTimeline,
+                updatedAt: new Date(),
+              }
+            : item
+        )
+      );
+
+      triggerEprPush(report.id, "follow_up_resubmitted");
+      setStatusMessage("Follow-up submitted to Station Manager for review.");
+      setStatusTone("green");
+    } catch (err) {
+      console.error("Error resubmitting follow-up:", err);
+      setStatusMessage("Could not resubmit follow-up.");
       setStatusTone("red");
     } finally {
       setSavingId("");
@@ -2204,6 +2596,34 @@ export default function EmployeePerformanceManagementPage() {
 
       {statusMessage && <CenterToast message={statusMessage} tone={statusTone} />}
 
+      <PageCard style={{ padding: 14 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {user?.role === "station_manager" && (
+            <ActionButton
+              variant={managementTab === "dashboard" ? "primary" : "secondary"}
+              onClick={() => setManagementTab("dashboard")}
+            >
+              Management Dashboard
+            </ActionButton>
+          )}
+          <ActionButton
+            variant={managementTab === "assigned" ? "primary" : "secondary"}
+            onClick={() => {
+              setManagementTab("assigned");
+              setFilters((prev) => ({ ...prev, month: getCurrentMonthValue() }));
+              setSelectedEmployeeName("");
+            }}
+          >
+            Employees Assigned This Month
+          </ActionButton>
+          {user?.role === "duty_manager" && (
+            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+              Only EPR follow-up cases assigned to your Duty Manager profile are visible here.
+            </div>
+          )}
+        </div>
+      </PageCard>
+
       <PageCard style={{ padding: 22 }}>
         <div
           style={{
@@ -2215,7 +2635,8 @@ export default function EmployeePerformanceManagementPage() {
           <div>
             <FieldLabel>Month</FieldLabel>
             <SelectInput
-              value={filters.month}
+              value={managementTab === "assigned" ? getCurrentMonthValue() : filters.month}
+              disabled={managementTab === "assigned"}
               onChange={(e) =>
                 setFilters((prev) => ({ ...prev, month: e.target.value }))
               }
@@ -2389,7 +2810,7 @@ export default function EmployeePerformanceManagementPage() {
                 color: "#0f172a",
               }}
             >
-              Supervisors & Submitted Employees
+              {managementTab === "assigned" ? "Employees Assigned This Month" : "Supervisors & Submitted Employees"}
             </h2>
             <p
               style={{
@@ -2399,8 +2820,11 @@ export default function EmployeePerformanceManagementPage() {
                 lineHeight: 1.6,
               }}
             >
-              Select an employee under a supervisor to see every EPR received for
-              that employee, including reports submitted by other supervisors.
+              {managementTab === "assigned"
+                ? user?.role === "duty_manager"
+                  ? "Only employees with EPR follow-up assigned to you for the current month are shown."
+                  : "Current-month EPR follow-up assignments are shown. Open an employee to review the assigned case."
+                : "Select an employee under a supervisor to see every EPR received for that employee, including reports submitted by other supervisors."}
             </p>
           </div>
 
@@ -2795,7 +3219,7 @@ export default function EmployeePerformanceManagementPage() {
                     </ActionButton>
                   )}
 
-                  {!isEditingReport ? (
+                  {user?.role === "station_manager" && (!isEditingReport ? (
                     <ActionButton variant="secondary" onClick={startEditingReport}>
                       Edit Received EPR
                     </ActionButton>
@@ -2813,7 +3237,7 @@ export default function EmployeePerformanceManagementPage() {
                         Cancel Edit
                       </ActionButton>
                     </>
-                  )}
+                  ))}
 
                   <ActionButton
                     variant="dark"
@@ -2822,16 +3246,18 @@ export default function EmployeePerformanceManagementPage() {
                     Export as PDF / Print
                   </ActionButton>
 
-                  <ActionButton
-                    variant="secondary"
-                    onClick={() =>
-                      navigate(
-                        `/monthly-employee-performance-report?reportId=${selectedReport.id}&action=edit`
-                      )
-                    }
-                  >
-                    Open in Monthly EPR
-                  </ActionButton>
+                  {user?.role === "station_manager" && (
+                    <ActionButton
+                      variant="secondary"
+                      onClick={() =>
+                        navigate(
+                          `/monthly-employee-performance-report?reportId=${selectedReport.id}&action=edit`
+                        )
+                      }
+                    >
+                      Open in Monthly EPR
+                    </ActionButton>
+                  )}
                 </div>
               </div>
 
@@ -3407,7 +3833,7 @@ export default function EmployeePerformanceManagementPage() {
                 )}
               </div>
 
-              {!isEditingReport && (
+              {!isEditingReport && user?.role === "station_manager" && (
                 <>
                   <div>
                     <FieldLabel>Manager Note</FieldLabel>
@@ -3449,22 +3875,15 @@ export default function EmployeePerformanceManagementPage() {
                           lineHeight: 1.5,
                         }}
                       >
-                        {dutyManagers.find(
-                          (dm) => dm.id === selectedDutyManagerId
-                        )?.notificationUserId
+                        {dutyManagers.find((dm) => dm.id === selectedDutyManagerId)
+                          ?.notificationUserId
                           ? "A platform notification will be sent when this case is assigned."
-                          : "This employee is not linked to a platform user ID. Assignment will still save, but notification cannot be created."}
+                          : "This Duty Manager is not linked to a platform user ID. Assignment will still save, but notification cannot be created."}
                       </div>
                     )}
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      flexWrap: "wrap",
-                    }}
-                  >
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <ActionButton
                       variant="success"
                       onClick={() => updateManagerStatus(selectedReport.id, "approved")}
@@ -3502,9 +3921,7 @@ export default function EmployeePerformanceManagementPage() {
                       onClick={() => updateManagerStatus(selectedReport.id, "recognized")}
                       disabled={savingId === selectedReport.id}
                     >
-                      {savingId === selectedReport.id
-                        ? "Saving..."
-                        : "Recognize / Congratulate"}
+                      {savingId === selectedReport.id ? "Saving..." : "Recognize / Congratulate"}
                     </ActionButton>
 
                     <ActionButton
@@ -3517,6 +3934,133 @@ export default function EmployeePerformanceManagementPage() {
                   </div>
                 </>
               )}
+
+              {!isEditingReport &&
+                user?.role === "duty_manager" &&
+                isAssignedToCurrentDutyManager(selectedReport) && (
+                  <div
+                    style={{
+                      border: "1px solid #cfe7fb",
+                      background: "#f8fbff",
+                      borderRadius: 18,
+                      padding: 16,
+                      display: "grid",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 900,
+                          color: "#1769aa",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        Assigned Follow Up
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 14,
+                          color: "#334155",
+                          fontWeight: 700,
+                        }}
+                      >
+                        This case is assigned to you. Add your follow-up activity here; other Duty Managers cannot see or update it.
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <FieldLabel>Acceptance Note</FieldLabel>
+                        <TextArea
+                          value={getFollowUpField(selectedReport, "acceptanceNote")}
+                          onChange={(e) =>
+                            setFollowUpEdit((prev) => ({
+                              ...prev,
+                              [selectedReport.id]: {
+                                ...(prev[selectedReport.id] || {}),
+                                acceptanceNote: e.target.value,
+                              },
+                            }))
+                          }
+                          style={{ minHeight: 80 }}
+                        />
+                      </div>
+
+                      <div>
+                        <FieldLabel>Action Taken</FieldLabel>
+                        <TextArea
+                          value={getFollowUpField(selectedReport, "actionTaken")}
+                          onChange={(e) =>
+                            setFollowUpEdit((prev) => ({
+                              ...prev,
+                              [selectedReport.id]: {
+                                ...(prev[selectedReport.id] || {}),
+                                actionTaken: e.target.value,
+                              },
+                            }))
+                          }
+                          style={{ minHeight: 80 }}
+                        />
+                      </div>
+
+                      <div>
+                        <FieldLabel>Follow Up Details</FieldLabel>
+                        <TextArea
+                          value={getFollowUpField(selectedReport, "details")}
+                          onChange={(e) =>
+                            setFollowUpEdit((prev) => ({
+                              ...prev,
+                              [selectedReport.id]: {
+                                ...(prev[selectedReport.id] || {}),
+                                details: e.target.value,
+                              },
+                            }))
+                          }
+                          style={{ minHeight: 80 }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {String(selectedReport.managerStatus || "").toLowerCase() ===
+                        "follow_up_assigned" && (
+                        <ActionButton
+                          variant="success"
+                          onClick={() => acceptAssignedFollowUp(selectedReport)}
+                          disabled={savingId === selectedReport.id}
+                        >
+                          {savingId === selectedReport.id ? "Saving..." : "Accept Case"}
+                        </ActionButton>
+                      )}
+
+                      <ActionButton
+                        variant="warning"
+                        onClick={() => saveAssignedFollowUpProgress(selectedReport)}
+                        disabled={savingId === selectedReport.id}
+                      >
+                        {savingId === selectedReport.id ? "Saving..." : "Save Progress"}
+                      </ActionButton>
+
+                      <ActionButton
+                        variant="primary"
+                        onClick={() => resubmitAssignedFollowUp(selectedReport)}
+                        disabled={savingId === selectedReport.id}
+                      >
+                        {savingId === selectedReport.id ? "Saving..." : "Submit to Station Manager"}
+                      </ActionButton>
+                    </div>
+                  </div>
+                )}
             </div>
           </PageCard>
           </div>
