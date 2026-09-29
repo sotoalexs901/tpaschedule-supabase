@@ -1437,7 +1437,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
       if (action === "edit" && report) {
         loadReportIntoForm(report);
       } else if (action === "followup") {
-        setTab("followups");
+        navigate(`/employee-performance-management?reportId=${reportId}&tab=assigned`);
       } else if (action === "myreports") {
         setTab("myreports");
       }
@@ -2828,20 +2828,8 @@ export default function MonthlyEmployeePerformanceReportPage() {
               </TabButton>
             )}
 
-            {canHandleFollowUp && (
-              <TabButton active={tab === "followups"} onClick={() => setTab("followups")}>
-                {t.followUpTab}
-              </TabButton>
-            )}
-
-            {canManage && (
-              <TabButton
-                active={tab === "management"}
-                onClick={() => setTab("management")}
-              >
-                {t.managementTab}
-              </TabButton>
-            )}
+            {/* Duty Manager follow-up and management were moved to
+                Employee Performance Management for clearer ownership. */}
           </div>
 
           <div style={{ minWidth: 180 }}>
