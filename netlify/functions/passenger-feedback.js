@@ -20,9 +20,7 @@ const ACCOUNT_CONFIG = {
 };
 
 function getAdminApp() {
-  if (admin.apps.length) {
-    return admin.app();
-  }
+  if (admin.apps.length) return admin.app();
 
   const credentialsJson = String(
     process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || ""
@@ -74,6 +72,14 @@ function normalizeText(value) {
   return String(value ?? "").trim();
 }
 
+function normalizeMatch(value) {
+  return normalizeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+}
+
 function todayUtcDateString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -91,74 +97,111 @@ function publicEmployeeName(data) {
   );
 }
 
-async function loadEmployees(db, accountKey) {
-  const config = ACCOUNT_CONFIG[accountKey];
-  if (!config) return [];
+function storedFirstName(data) {
+  const fullName = publicEmployeeName(data);
+  const parts = fullName.split(/\s+/).filter(Boolean);
+
+  // Employee records are stored LAST NAME + FIRST NAME.
+  if (parts.length >= 2) return parts[1];
+  return parts[0] || "";
+}
+
+function isEmployeeActive(data) {
+  const status = normalizeText(data?.status).toLowerCase();
+  return data?.active === true || status === "active";
+}
+
+function employeeBelongsToAccount(data, accountConfig) {
+  const department = normalizeText(data?.department).toUpperCase();
+
+  return accountConfig.departments.some(
+    (allowed) => department === String(allowed).toUpperCase()
+  );
+}
+
+async function matchEmployeeByFirstName(db, accountConfig, typedFirstName) {
+  const typed = normalizeMatch(typedFirstName);
+
+  if (!typed) {
+    return {
+      status: "not_provided",
+      employeeId: null,
+      employeeName: null,
+      candidates: [],
+    };
+  }
 
   const snap = await db.collection("employees").get();
 
-  return snap.docs
+  const candidates = snap.docs
     .map((doc) => ({
       id: doc.id,
       data: doc.data() || {},
     }))
-    .filter(({ data }) => {
-      const department = normalizeText(data.department).toUpperCase();
-      const status = normalizeText(data.status).toLowerCase();
-
-      const isActive =
-        data.active === true ||
-        status === "active";
-
-      return (
-        isActive &&
-        config.departments.some(
-          (allowed) => department === String(allowed).toUpperCase()
-        )
-      );
-    })
+    .filter(({ data }) =>
+      isEmployeeActive(data) &&
+      employeeBelongsToAccount(data, accountConfig) &&
+      normalizeMatch(storedFirstName(data)) === typed
+    )
     .map(({ id, data }) => ({
       id,
       name: publicEmployeeName(data),
-    }))
-    .filter((employee) => employee.name)
-    .sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-    );
+      firstName: storedFirstName(data),
+    }));
+
+  if (candidates.length === 1) {
+    return {
+      status: "matched",
+      employeeId: candidates[0].id,
+      employeeName: candidates[0].name,
+      candidates: [],
+    };
+  }
+
+  if (candidates.length > 1) {
+    return {
+      status: "ambiguous",
+      employeeId: null,
+      employeeName: null,
+      candidates: candidates.map((item) => ({
+        id: item.id,
+        name: item.name,
+      })),
+    };
+  }
+
+  return {
+    status: "not_found",
+    employeeId: null,
+    employeeName: null,
+    candidates: [],
+  };
+}
+
+function cleanEmail(value) {
+  return normalizeText(value).slice(0, 160);
+}
+
+function cleanPhone(value) {
+  return normalizeText(value).slice(0, 40);
+}
+
+function isValidEmail(value) {
+  if (!value) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 exports.handler = async function handler(event) {
   try {
-    getAdminApp();
-    const db = admin.firestore();
-
-    if (event.httpMethod === "GET") {
-      const accountKey = normalizeText(
-        event.queryStringParameters?.account
-      ).toLowerCase();
-
-      if (!ACCOUNT_CONFIG[accountKey]) {
-        return json(400, {
-          ok: false,
-          error: "Invalid feedback account.",
-        });
-      }
-
-      const employees = await loadEmployees(db, accountKey);
-
-      return json(200, {
-        ok: true,
-        account: accountKey,
-        employees,
-      });
-    }
-
     if (event.httpMethod !== "POST") {
       return json(405, {
         ok: false,
         error: "Method not allowed.",
       });
     }
+
+    getAdminApp();
+    const db = admin.firestore();
 
     const body = JSON.parse(event.body || "{}");
 
@@ -216,55 +259,73 @@ exports.handler = async function handler(event) {
       return json(400, { ok: false, error: "Invalid language." });
     }
 
-    let employeeId = normalizeText(body.employeeId);
-    let employeeName = normalizeText(body.employeeName);
+    const passengerName = normalizeText(body.passengerName).slice(0, 120);
+    const flightNumber = normalizeText(body.flightNumber)
+      .toUpperCase()
+      .slice(0, 20);
+    const pnr = normalizeText(body.pnr)
+      .toUpperCase()
+      .replace(/\s+/g, "")
+      .slice(0, 20);
 
-    if (employeeId) {
-      const employeeSnap = await db
-        .collection("employees")
-        .doc(employeeId)
-        .get();
-
-      if (!employeeSnap.exists) {
-        employeeId = "";
-        employeeName = "";
-      } else {
-        const employeeData = employeeSnap.data() || {};
-        const department = normalizeText(employeeData.department).toUpperCase();
-        const validDepartment = accountConfig.departments.some(
-          (allowed) => department === String(allowed).toUpperCase()
-        );
-        const status = normalizeText(employeeData.status).toLowerCase();
-        const isActive =
-          employeeData.active === true ||
-          status === "active";
-
-        if (!validDepartment || !isActive) {
-          employeeId = "";
-          employeeName = "";
-        } else {
-          employeeName = publicEmployeeName(employeeData);
-        }
-      }
-    }
+    const employeeFirstName = normalizeText(body.employeeFirstName).slice(0, 60);
+    const employeeMatch = await matchEmployeeByFirstName(
+      db,
+      accountConfig,
+      employeeFirstName
+    );
 
     const comment = normalizeText(body.comments).slice(0, 1200);
+
+    const contactRequested = body.contactRequested === true;
+    const contactEmail = contactRequested ? cleanEmail(body.contactEmail) : "";
+    const contactPhone = contactRequested ? cleanPhone(body.contactPhone) : "";
+
+    if (contactRequested && !contactEmail && !contactPhone) {
+      return json(400, {
+        ok: false,
+        error: "At least one contact method is required when contact is requested.",
+      });
+    }
+
+    if (!isValidEmail(contactEmail)) {
+      return json(400, {
+        ok: false,
+        error: "Invalid email address.",
+      });
+    }
 
     const payload = {
       account: accountKey,
       accountLabel: accountConfig.label,
       serviceDate,
-      employeeId: employeeId || null,
-      employeeName: employeeName || null,
-      employeeKnown: Boolean(employeeId),
+
+      passengerName: passengerName || null,
+      flightNumber: flightNumber || null,
+      pnr: pnr || null,
+
+      employeeTypedFirstName: employeeFirstName || null,
+      employeeMatchStatus: employeeMatch.status,
+      employeeId: employeeMatch.employeeId,
+      employeeName: employeeMatch.employeeName,
+      employeeMatchCandidates:
+        employeeMatch.status === "ambiguous"
+          ? employeeMatch.candidates
+          : [],
+
       rating,
       courteous,
       assistance,
       recommend,
       comment: comment || null,
+
+      contactRequested,
+      contactEmail: contactEmail || null,
+      contactPhone: contactPhone || null,
+
       language,
       source: "qr",
-      schemaVersion: 1,
+      schemaVersion: 2,
       enteredManually: true,
       submittedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -276,6 +337,7 @@ exports.handler = async function handler(event) {
     return json(200, {
       ok: true,
       id: ref.id,
+      employeeMatchStatus: employeeMatch.status,
     });
   } catch (error) {
     console.error("passenger-feedback error:", error);
@@ -285,4 +347,3 @@ exports.handler = async function handler(event) {
       error: error?.message || "Unexpected passenger feedback error.",
     });
   }
-};
