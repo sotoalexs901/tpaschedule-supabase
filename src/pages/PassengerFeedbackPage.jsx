@@ -1,6 +1,44 @@
+
+Loading older messages…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // src/pages/PassengerFeedbackPage.jsx
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useParams } from "react-router-dom";
 
 const MIN_FEEDBACK_DATE = "2026-07-01";
@@ -41,14 +79,27 @@ const COPY = {
     intro: "Your feedback helps us recognize great service and improve the passenger experience.",
     serviceDate: "Service Date",
     serviceDateHelp: "You may select a service date back to July 1, 2026.",
-    employee: "Which employee assisted you?",
-    unknownEmployee: "I don't know the employee's name",
+    passengerName: "Passenger Name",
+    passengerNamePlaceholder: "Your name",
+    flightNumber: "Flight Number",
+    flightNumberPlaceholder: "Example: SY123",
+    pnr: "PNR / Confirmation Code",
+    pnrPlaceholder: "Optional",
+    employeeFirstName: "First name of the employee who assisted you",
+    employeeFirstNamePlaceholder: "Example: Maria",
+    employeeHelp: "First name only. If you do not remember it, you may leave this blank.",
     rating: "How would you rate your service?",
     courteous: "Was the employee courteous and professional?",
     assistance: "Did you receive the assistance you needed?",
     recommend: "Would you recommend our service?",
     comments: "Additional comments",
     commentsPlaceholder: "Optional — tell us anything else about your experience.",
+    contactQuestion: "Would you like us to contact you about this feedback?",
+    contactHelp: "If yes, provide an email address or phone number. You may provide both.",
+    email: "Email",
+    emailPlaceholder: "name@example.com",
+    phone: "Phone Number",
+    phonePlaceholder: "Phone number",
     excellent: "Excellent",
     good: "Good",
     fair: "Fair",
@@ -59,13 +110,13 @@ const COPY = {
     submit: "Submit Feedback",
     submitting: "Submitting...",
     required: "Please complete the required questions before submitting.",
+    contactRequired: "Please provide at least an email address or phone number so we can contact you.",
     invalidDate: "Please select a service date between July 1, 2026 and today.",
-    loadError: "We could not load the employee list. You may still submit without selecting an employee.",
     submitError: "We could not submit your feedback. Please try again.",
     thanksTitle: "Thank you for your feedback!",
     thanksBody: "Your comments help us provide better service.",
     another: "Submit another response",
-    privacy: "No login, email, or phone number is required.",
+    privacy: "Your feedback is reviewed by authorized AeroStation Hub management.",
     ratingLabels: ["Very poor", "Poor", "Fair", "Good", "Excellent"],
   },
   es: {
@@ -73,14 +124,27 @@ const COPY = {
     intro: "Sus comentarios nos ayudan a reconocer un buen servicio y mejorar la experiencia del pasajero.",
     serviceDate: "Fecha del servicio",
     serviceDateHelp: "Puede seleccionar una fecha de servicio desde el 1 de julio de 2026.",
-    employee: "¿Qué empleado le atendió?",
-    unknownEmployee: "No sé el nombre del empleado",
+    passengerName: "Nombre del pasajero",
+    passengerNamePlaceholder: "Su nombre",
+    flightNumber: "Número de vuelo",
+    flightNumberPlaceholder: "Ejemplo: SY123",
+    pnr: "PNR / Código de confirmación",
+    pnrPlaceholder: "Opcional",
+    employeeFirstName: "Primer nombre del empleado que le atendió",
+    employeeFirstNamePlaceholder: "Ejemplo: Maria",
+    employeeHelp: "Solo el primer nombre. Si no lo recuerda, puede dejarlo en blanco.",
     rating: "¿Cómo calificaría el servicio recibido?",
     courteous: "¿El empleado fue cortés y profesional?",
     assistance: "¿Recibió la asistencia que necesitaba?",
     recommend: "¿Recomendaría nuestro servicio?",
     comments: "Comentarios adicionales",
     commentsPlaceholder: "Opcional — cuéntenos cualquier otro detalle de su experiencia.",
+    contactQuestion: "¿Desea que le contactemos acerca de este feedback?",
+    contactHelp: "Si responde sí, agregue un correo electrónico o teléfono. Puede agregar ambos.",
+    email: "Correo electrónico",
+    emailPlaceholder: "nombre@ejemplo.com",
+    phone: "Número de teléfono",
+    phonePlaceholder: "Número de teléfono",
     excellent: "Excelente",
     good: "Bueno",
     fair: "Regular",
@@ -91,13 +155,13 @@ const COPY = {
     submit: "Enviar comentarios",
     submitting: "Enviando...",
     required: "Complete las preguntas requeridas antes de enviar.",
+    contactRequired: "Agregue al menos un correo electrónico o número de teléfono para poder contactarle.",
     invalidDate: "Seleccione una fecha de servicio entre el 1 de julio de 2026 y hoy.",
-    loadError: "No pudimos cargar la lista de empleados. Aun puede enviar sin seleccionar un empleado.",
     submitError: "No pudimos enviar sus comentarios. Inténtelo nuevamente.",
     thanksTitle: "¡Gracias por sus comentarios!",
     thanksBody: "Sus comentarios nos ayudan a brindar un mejor servicio.",
     another: "Enviar otra respuesta",
-    privacy: "No se requiere inicio de sesión, correo electrónico ni número de teléfono.",
+    privacy: "Su feedback será revisado por personal autorizado de AeroStation Hub.",
     ratingLabels: ["Muy deficiente", "Deficiente", "Regular", "Bueno", "Excelente"],
   },
   pt: {
@@ -105,14 +169,27 @@ const COPY = {
     intro: "Seu feedback nos ajuda a reconhecer um ótimo atendimento e melhorar a experiência do passageiro.",
     serviceDate: "Data do serviço",
     serviceDateHelp: "Você pode selecionar uma data de serviço desde 1º de julho de 2026.",
-    employee: "Qual funcionário atendeu você?",
-    unknownEmployee: "Não sei o nome do funcionário",
+    passengerName: "Nome do passageiro",
+    passengerNamePlaceholder: "Seu nome",
+    flightNumber: "Número do voo",
+    flightNumberPlaceholder: "Exemplo: SY123",
+    pnr: "PNR / Código de confirmação",
+    pnrPlaceholder: "Opcional",
+    employeeFirstName: "Primeiro nome do funcionário que atendeu você",
+    employeeFirstNamePlaceholder: "Exemplo: Maria",
+    employeeHelp: "Somente o primeiro nome. Se não lembrar, pode deixar em branco.",
     rating: "Como você avaliaria o serviço recebido?",
     courteous: "O funcionário foi cortês e profissional?",
     assistance: "Você recebeu a assistência de que precisava?",
     recommend: "Você recomendaria nosso serviço?",
     comments: "Comentários adicionais",
     commentsPlaceholder: "Opcional — conte-nos qualquer outro detalhe sobre sua experiência.",
+    contactQuestion: "Você gostaria que entrássemos em contato sobre este feedback?",
+    contactHelp: "Se sim, informe um e-mail ou telefone. Você pode informar ambos.",
+    email: "E-mail",
+    emailPlaceholder: "nome@exemplo.com",
+    phone: "Número de telefone",
+    phonePlaceholder: "Número de telefone",
     excellent: "Excelente",
     good: "Bom",
     fair: "Regular",
@@ -123,13 +200,13 @@ const COPY = {
     submit: "Enviar feedback",
     submitting: "Enviando...",
     required: "Preencha as perguntas obrigatórias antes de enviar.",
+    contactRequired: "Informe pelo menos um e-mail ou número de telefone para que possamos entrar em contato.",
     invalidDate: "Selecione uma data de serviço entre 1º de julho de 2026 e hoje.",
-    loadError: "Não foi possível carregar a lista de funcionários. Você ainda pode enviar sem selecionar um funcionário.",
     submitError: "Não foi possível enviar seu feedback. Tente novamente.",
     thanksTitle: "Obrigado pelo seu feedback!",
     thanksBody: "Seus comentários nos ajudam a oferecer um serviço melhor.",
     another: "Enviar outra resposta",
-    privacy: "Não é necessário login, e-mail ou número de telefone.",
+    privacy: "Seu feedback será analisado pela gerência autorizada do AeroStation Hub.",
     ratingLabels: ["Muito ruim", "Ruim", "Regular", "Bom", "Excelente"],
   },
 };
@@ -148,6 +225,21 @@ function detectLanguage() {
   if (language.startsWith("es")) return "es";
   if (language.startsWith("pt")) return "pt";
   return "en";
+}
+
+function inputStyle() {
+  return {
+    width: "100%",
+    minHeight: 50,
+    boxSizing: "border-box",
+    border: "1px solid #cbd5e1",
+    borderRadius: 14,
+    padding: "10px 12px",
+    fontSize: 16,
+    color: "#0f172a",
+    background: "#ffffff",
+    outline: "none",
+  };
 }
 
 function ChoiceButton({ selected, children, onClick }) {
@@ -208,70 +300,23 @@ export default function PassengerFeedbackPage() {
 
   const [language, setLanguage] = useState(detectLanguage);
   const [serviceDate, setServiceDate] = useState(today);
-  const [employees, setEmployees] = useState([]);
-  const [employeeId, setEmployeeId] = useState("");
+  const [passengerName, setPassengerName] = useState("");
+  const [flightNumber, setFlightNumber] = useState("");
+  const [pnr, setPnr] = useState("");
+  const [employeeFirstName, setEmployeeFirstName] = useState("");
   const [rating, setRating] = useState(0);
   const [courteous, setCourteous] = useState("");
   const [assistance, setAssistance] = useState("");
   const [recommend, setRecommend] = useState("");
   const [comments, setComments] = useState("");
-  const [loadingEmployees, setLoadingEmployees] = useState(true);
-  const [loadWarning, setLoadWarning] = useState("");
+  const [contactRequested, setContactRequested] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
   const t = COPY[language] || COPY.en;
-
-  useEffect(() => {
-    if (!account) {
-      setLoadingEmployees(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadEmployees() {
-      try {
-        setLoadingEmployees(true);
-        setLoadWarning("");
-
-        const response = await fetch(
-          `/.netlify/functions/passenger-feedback?account=${encodeURIComponent(account.key)}`,
-          { method: "GET", cache: "no-store" }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Employee request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (!cancelled) {
-          setEmployees(Array.isArray(data?.employees) ? data.employees : []);
-        }
-      } catch (err) {
-        console.error("Passenger feedback employee load failed:", err);
-        if (!cancelled) {
-          setEmployees([]);
-          setLoadWarning(COPY[language]?.loadError || COPY.en.loadError);
-        }
-      } finally {
-        if (!cancelled) setLoadingEmployees(false);
-      }
-    }
-
-    loadEmployees();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [account?.key, language]);
-
-  const selectedEmployee = useMemo(
-    () => employees.find((employee) => employee.id === employeeId) || null,
-    [employees, employeeId]
-  );
 
   if (!account) {
     return (
@@ -286,12 +331,18 @@ export default function PassengerFeedbackPage() {
 
   const resetForm = () => {
     setServiceDate(localToday());
-    setEmployeeId("");
+    setPassengerName("");
+    setFlightNumber("");
+    setPnr("");
+    setEmployeeFirstName("");
     setRating(0);
     setCourteous("");
     setAssistance("");
     setRecommend("");
     setComments("");
+    setContactRequested("");
+    setContactEmail("");
+    setContactPhone("");
     setError("");
     setSubmitted(false);
   };
@@ -305,8 +356,17 @@ export default function PassengerFeedbackPage() {
       return;
     }
 
-    if (!rating || !courteous || !assistance || !recommend) {
+    if (!rating || !courteous || !assistance || !recommend || !contactRequested) {
       setError(t.required);
+      return;
+    }
+
+    if (
+      contactRequested === "yes" &&
+      !contactEmail.trim() &&
+      !contactPhone.trim()
+    ) {
+      setError(t.contactRequired);
       return;
     }
 
@@ -321,13 +381,18 @@ export default function PassengerFeedbackPage() {
         body: JSON.stringify({
           account: account.key,
           serviceDate,
-          employeeId: selectedEmployee?.id || null,
-          employeeName: selectedEmployee?.name || null,
+          passengerName: passengerName.trim(),
+          flightNumber: flightNumber.trim(),
+          pnr: pnr.trim(),
+          employeeFirstName: employeeFirstName.trim(),
           rating,
           courteous,
           assistance,
           recommend,
           comments: comments.trim(),
+          contactRequested: contactRequested === "yes",
+          contactEmail: contactRequested === "yes" ? contactEmail.trim() : "",
+          contactPhone: contactRequested === "yes" ? contactPhone.trim() : "",
           language,
         }),
       });
@@ -506,65 +571,59 @@ export default function PassengerFeedbackPage() {
                 value={serviceDate}
                 onChange={(event) => setServiceDate(event.target.value)}
                 required
-                style={{
-                  width: "100%",
-                  minHeight: 50,
-                  boxSizing: "border-box",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 14,
-                  padding: "10px 12px",
-                  fontSize: 16,
-                  color: "#0f172a",
-                  background: "#ffffff",
-                }}
+                style={inputStyle()}
               />
               <div style={{ marginTop: 8, fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
                 {t.serviceDateHelp}
               </div>
             </QuestionCard>
 
-            <QuestionCard label={t.employee}>
-              <select
-                value={employeeId}
-                onChange={(event) => setEmployeeId(event.target.value)}
-                disabled={loadingEmployees}
-                style={{
-                  width: "100%",
-                  minHeight: 50,
-                  boxSizing: "border-box",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 14,
-                  padding: "10px 12px",
-                  fontSize: 16,
-                  color: "#0f172a",
-                  background: "#ffffff",
-                }}
-              >
-                <option value="">
-                  {loadingEmployees ? "Loading..." : t.unknownEmployee}
-                </option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.name}
-                  </option>
-                ))}
-              </select>
-              {loadWarning && (
-                <div
-                  style={{
-                    marginTop: 9,
-                    borderRadius: 12,
-                    background: "#fff7ed",
-                    border: "1px solid #fed7aa",
-                    color: "#9a3412",
-                    padding: "9px 10px",
-                    fontSize: 12,
-                    lineHeight: 1.45,
-                  }}
-                >
-                  {loadWarning}
-                </div>
-              )}
+            <QuestionCard label={t.passengerName}>
+              <input
+                value={passengerName}
+                maxLength={120}
+                onChange={(event) => setPassengerName(event.target.value)}
+                placeholder={t.passengerNamePlaceholder}
+                autoComplete="name"
+                style={inputStyle()}
+              />
+            </QuestionCard>
+
+            <QuestionCard label={t.flightNumber}>
+              <input
+                value={flightNumber}
+                maxLength={20}
+                onChange={(event) => setFlightNumber(event.target.value.toUpperCase())}
+                placeholder={t.flightNumberPlaceholder}
+                autoCapitalize="characters"
+                style={inputStyle()}
+              />
+            </QuestionCard>
+
+            <QuestionCard label={t.pnr}>
+              <input
+                value={pnr}
+                maxLength={20}
+                onChange={(event) => setPnr(event.target.value.toUpperCase().replace(/\s+/g, ""))}
+                placeholder={t.pnrPlaceholder}
+                autoCapitalize="characters"
+                autoCorrect="off"
+                style={inputStyle()}
+              />
+            </QuestionCard>
+
+            <QuestionCard label={t.employeeFirstName}>
+              <input
+                value={employeeFirstName}
+                maxLength={60}
+                onChange={(event) => setEmployeeFirstName(event.target.value)}
+                placeholder={t.employeeFirstNamePlaceholder}
+                autoCapitalize="words"
+                style={inputStyle()}
+              />
+              <div style={{ marginTop: 8, fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+                {t.employeeHelp}
+              </div>
             </QuestionCard>
 
             <QuestionCard label={t.rating}>
@@ -665,18 +724,81 @@ export default function PassengerFeedbackPage() {
                 onChange={(event) => setComments(event.target.value)}
                 placeholder={t.commentsPlaceholder}
                 style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 14,
-                  padding: "12px 13px",
-                  fontSize: 16,
-                  lineHeight: 1.5,
-                  color: "#0f172a",
-                  resize: "vertical",
+                  ...inputStyle(),
                   minHeight: 112,
+                  resize: "vertical",
+                  lineHeight: 1.5,
                 }}
               />
+            </QuestionCard>
+
+            <QuestionCard label={t.contactQuestion}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                <ChoiceButton
+                  selected={contactRequested === "yes"}
+                  onClick={() => setContactRequested("yes")}
+                >
+                  {t.yes}
+                </ChoiceButton>
+                <ChoiceButton
+                  selected={contactRequested === "no"}
+                  onClick={() => {
+                    setContactRequested("no");
+                    setContactEmail("");
+                    setContactPhone("");
+                  }}
+                >
+                  {t.no}
+                </ChoiceButton>
+              </div>
+
+              {contactRequested === "yes" && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "grid",
+                    gap: 10,
+                    paddingTop: 12,
+                    borderTop: "1px solid #e2e8f0",
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+                    {t.contactHelp}
+                  </div>
+
+                  <div>
+                    <div style={{ marginBottom: 6, fontSize: 12, fontWeight: 800, color: "#475569" }}>
+                      {t.email}
+                    </div>
+                    <input
+                      type="email"
+                      value={contactEmail}
+                      maxLength={160}
+                      onChange={(event) => setContactEmail(event.target.value)}
+                      placeholder={t.emailPlaceholder}
+                      autoComplete="email"
+                      inputMode="email"
+                      style={inputStyle()}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ marginBottom: 6, fontSize: 12, fontWeight: 800, color: "#475569" }}>
+                      {t.phone}
+                    </div>
+                    <input
+                      type="tel"
+                      value={contactPhone}
+                      maxLength={40}
+                      onChange={(event) => setContactPhone(event.target.value)}
+                      placeholder={t.phonePlaceholder}
+                      autoComplete="tel"
+                      inputMode="tel"
+                      style={inputStyle()}
+                    />
+                  </div>
+                </div>
+              )}
             </QuestionCard>
 
             {error && (
@@ -733,4 +855,3 @@ export default function PassengerFeedbackPage() {
       </div>
     </main>
   );
-}
