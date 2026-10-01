@@ -1,6 +1,6 @@
 // netlify/functions/passenger-feedback.js
 
-import admin from "firebase-admin";
+const admin = require("firebase-admin");
 
 const MIN_FEEDBACK_DATE = "2026-07-01";
 
@@ -127,7 +127,7 @@ async function loadEmployees(db, accountKey) {
     );
 }
 
-export async function handler(event) {
+exports.handler = async function handler(event) {
   try {
     getAdminApp();
     const db = admin.firestore();
