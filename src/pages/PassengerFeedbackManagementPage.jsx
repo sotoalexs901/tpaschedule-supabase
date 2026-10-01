@@ -633,6 +633,208 @@ export default function PassengerFeedbackManagementPage() {
     `;
   };
 
+  const handlePrintEmployeeSummary = () => {
+    const esc = (value) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    const grouped = new Map();
+
+    filtered.forEach((item) => {
+      const employeeName =
+        item.employeeName || item.employeeTypedFirstName || "Unmatched / Not provided";
+      const employeeKey = item.employeeId || `name:${employeeName}`;
+
+      if (!grouped.has(employeeKey)) {
+        grouped.set(employeeKey, {
+          employeeName,
+          responses: [],
+        });
+      }
+
+      grouped.get(employeeKey).responses.push(item);
+    });
+
+    const employees = Array.from(grouped.values()).sort((a, b) =>
+      a.employeeName.localeCompare(b.employeeName, undefined, { sensitivity: "base" })
+    );
+
+    if (employees.length === 0) {
+      setActionMessage("No passenger feedback matches the current filters to print.");
+      return;
+    }
+
+    const accountLabel =
+      accountFilter === "ALL"
+        ? "All Accounts"
+        : ACCOUNTS.find((entry) => entry.key === accountFilter)?.label || accountFilter;
+
+    const employeeLabel =
+      employeeFilter === "ALL"
+        ? "All Employees"
+        : employeeOptions.find((employee) => employee.id === employeeFilter)?.name ||
+          "Selected Employee";
+
+    const employeeSections = employees
+      .map(({ employeeName, responses }) => {
+        const responseCount = responses.length;
+        const avg =
+          responseCount > 0
+            ? (
+                responses.reduce(
+                  (sum, item) => sum + Number(item.rating || 0),
+                  0
+                ) / responseCount
+              ).toFixed(2)
+            : "0.00";
+        const fiveStars = responses.filter(
+          (item) => Number(item.rating || 0) === 5
+        ).length;
+        const followUps = responses.filter(
+          (item) => Number(item.rating || 0) <= 2
+        ).length;
+
+        const rows = responses
+          .map((item) => {
+            const account =
+              ACCOUNTS.find((entry) => entry.key === item.account)?.label ||
+              item.accountLabel ||
+              item.account ||
+              "—";
+
+            return `
+              <tr>
+                <td>${esc(formatDate(item.serviceDate))}</td>
+                <td>${esc(account)}</td>
+                <td>${esc(item.flightNumber || "—")}</td>
+                <td>${esc(item.passengerName || "—")}</td>
+                <td>${esc(item.pnr || "—")}</td>
+                <td class="center"><strong>${esc(Number(item.rating || 0))} ★</strong></td>
+                <td>${esc(responseLabel(item.courteous))}</td>
+                <td>${esc(responseLabel(item.assistance))}</td>
+                <td>${esc(responseLabel(item.recommend))}</td>
+                <td>${esc(item.comment || "—")}</td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        return `
+          <section class="employee-section">
+            <div class="employee-header">
+              <div>
+                <div class="employee-label">Employee</div>
+                <h2>${esc(employeeName)}</h2>
+              </div>
+              <div class="employee-kpis">
+                <div><span>Responses</span><strong>${responseCount}</strong></div>
+                <div><span>Avg Rating</span><strong>${esc(avg)} ★</strong></div>
+                <div><span>5-Star</span><strong>${fiveStars}</strong></div>
+                <div><span>Follow-Up</span><strong>${followUps}</strong></div>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Service Date</th>
+                  <th>Account</th>
+                  <th>Flight</th>
+                  <th>Passenger</th>
+                  <th>PNR</th>
+                  <th>Rating</th>
+                  <th>Professional</th>
+                  <th>Assistance</th>
+                  <th>Recommend</th>
+                  <th>Comments</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </section>
+        `;
+      })
+      .join("");
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Passenger Feedback - Employee Summary</title>
+          <style>
+            * { box-sizing: border-box; }
+            @page { size: landscape; margin: 10mm; }
+            body { margin: 0; padding: 24px; font-family: Arial, Helvetica, sans-serif; color: #0f172a; background: #fff; }
+            .header { border-bottom: 3px solid #1769aa; padding-bottom: 14px; margin-bottom: 16px; }
+            .brand { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #1769aa; }
+            h1 { margin: 5px 0 3px; font-size: 25px; }
+            .sub { color: #64748b; font-size: 11px; line-height: 1.5; }
+            .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0 20px; }
+            .summary div { border: 1px solid #dbe3ee; border-radius: 8px; padding: 9px; }
+            .summary span, .employee-kpis span { display: block; color: #64748b; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+            .summary strong { display: block; margin-top: 3px; font-size: 16px; }
+            .employee-section { margin: 0 0 24px; break-inside: avoid-page; }
+            .employee-header { display: flex; justify-content: space-between; gap: 14px; align-items: end; padding: 9px 10px; background: #f8fbff; border: 1px solid #dbeafe; border-radius: 9px 9px 0 0; }
+            .employee-label { font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+            h2 { margin: 2px 0 0; font-size: 17px; }
+            .employee-kpis { display: flex; gap: 16px; text-align: right; }
+            .employee-kpis strong { display: block; margin-top: 2px; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8px; }
+            th { background: #0f4c81; color: #fff; text-align: left; padding: 6px 5px; border: 1px solid #dbe3ee; }
+            td { padding: 6px 5px; border: 1px solid #dbe3ee; vertical-align: top; word-break: break-word; }
+            tr:nth-child(even) td { background: #f8fafc; }
+            .center { text-align: center; }
+            .footer { margin-top: 18px; padding-top: 9px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 8px; }
+            @media print { body { padding: 0; } .employee-section { break-inside: auto; } thead { display: table-header-group; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="brand">AeroStation Hub · Passenger Feedback Management</div>
+            <h1>Employee Feedback Summary</h1>
+            <div class="sub">
+              Account: ${esc(accountLabel)} &nbsp;·&nbsp;
+              Employee: ${esc(employeeLabel)} &nbsp;·&nbsp;
+              Service Date: ${esc(formatDate(fromDate))} - ${esc(formatDate(toDate))}
+            </div>
+          </div>
+
+          <div class="summary">
+            <div><span>Responses</span><strong>${total}</strong></div>
+            <div><span>Average Rating</span><strong>${esc(averageRating)} ★</strong></div>
+            <div><span>5-Star Reviews</span><strong>${esc(fiveStarPct)}</strong></div>
+            <div><span>Needs Follow-Up</span><strong>${followUpCount}</strong></div>
+          </div>
+
+          ${employeeSections}
+
+          <div class="footer">Printed from AeroStation Hub · Passenger Feedback Management</div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=1400,height=900");
+
+    if (!printWindow) {
+      setActionMessage("Pop-up blocked. Please allow pop-ups to print/export PDF.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    window.setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 400);
+  };
+
   const handlePrintExport = (item) => {
     const html = buildPrintableHtml(item);
 
@@ -857,6 +1059,30 @@ export default function PassengerFeedbackManagementPage() {
           />
           Show only feedback needing follow-up (1–2 stars)
         </label>
+
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 12,
+            borderTop: "1px solid #e2e8f0",
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <button
+            type="button"
+            onClick={handlePrintEmployeeSummary}
+            disabled={loading || filtered.length === 0}
+            style={{
+              ...primaryButton,
+              padding: "10px 16px",
+              opacity: loading || filtered.length === 0 ? 0.55 : 1,
+              cursor: loading || filtered.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >
+            Print Employee Summary
+          </button>
+        </div>
       </section>
 
       {loadError && (
