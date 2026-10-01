@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
+  deleteDoc,
+  doc,
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "../firebase";
@@ -287,6 +289,8 @@ export default function PassengerFeedbackManagementPage() {
   const [feedback, setFeedback] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [deletingId, setDeletingId] = useState("");
 
   const [accountFilter, setAccountFilter] = useState("ALL");
   const [employeeFilter, setEmployeeFilter] = useState("ALL");
@@ -413,6 +417,247 @@ export default function PassengerFeedbackManagementPage() {
   const followUpCount = filtered.filter(
     (item) => Number(item.rating || 0) <= 2
   ).length;
+
+  const handleDelete = async (item) => {
+    const passengerLabel =
+      item.passengerName ||
+      item.employeeName ||
+      item.flightNumber ||
+      "this feedback";
+
+    const confirmed = window.confirm(
+      `Delete passenger feedback for ${passengerLabel}? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(item.id);
+      setActionMessage("");
+
+      await deleteDoc(doc(db, "passenger_feedback", item.id));
+
+      setActionMessage("Passenger feedback deleted.");
+    } catch (error) {
+      console.error("Passenger feedback delete failed:", error);
+      setActionMessage("Could not delete passenger feedback.");
+    } finally {
+      setDeletingId("");
+    }
+  };
+
+  const buildPrintableHtml = (item) => {
+    const account =
+      ACCOUNTS.find((entry) => entry.key === item.account) || null;
+
+    const esc = (value) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    const stars = `${Number(item.rating || 0)} / 5`;
+
+    return `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Passenger Feedback Report</title>
+          <style>
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              padding: 34px;
+              font-family: Arial, Helvetica, sans-serif;
+              color: #0f172a;
+              background: #fff;
+            }
+            .header {
+              border-bottom: 3px solid #1769aa;
+              padding-bottom: 16px;
+              margin-bottom: 22px;
+            }
+            .brand {
+              font-size: 12px;
+              font-weight: 700;
+              letter-spacing: .08em;
+              text-transform: uppercase;
+              color: #1769aa;
+            }
+            h1 {
+              margin: 6px 0 0;
+              font-size: 28px;
+            }
+            .sub {
+              margin-top: 5px;
+              color: #64748b;
+              font-size: 13px;
+            }
+            .grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 10px;
+              margin-bottom: 18px;
+            }
+            .box {
+              border: 1px solid #dbe3ee;
+              border-radius: 10px;
+              padding: 10px 12px;
+            }
+            .label {
+              font-size: 10px;
+              font-weight: 700;
+              letter-spacing: .05em;
+              text-transform: uppercase;
+              color: #64748b;
+            }
+            .value {
+              margin-top: 4px;
+              font-size: 14px;
+              font-weight: 600;
+            }
+            .section {
+              margin-top: 18px;
+            }
+            .section h2 {
+              font-size: 16px;
+              margin: 0 0 8px;
+            }
+            .comment {
+              border: 1px solid #dbe3ee;
+              border-radius: 10px;
+              padding: 12px;
+              white-space: pre-wrap;
+              line-height: 1.5;
+              font-size: 13px;
+            }
+            .contact {
+              background: #eff6ff;
+              border: 1px solid #bfdbfe;
+            }
+            .footer {
+              margin-top: 28px;
+              padding-top: 12px;
+              border-top: 1px solid #e2e8f0;
+              color: #94a3b8;
+              font-size: 10px;
+            }
+            @media print {
+              body { padding: 18px; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="brand">AeroStation Hub · Passenger Feedback</div>
+            <h1>${esc(account?.label || item.accountLabel || item.account || "Passenger Feedback")}</h1>
+            <div class="sub">Service date: ${esc(formatDate(item.serviceDate))}</div>
+          </div>
+
+          <div class="grid">
+            <div class="box">
+              <div class="label">Passenger</div>
+              <div class="value">${esc(item.passengerName || "Not provided")}</div>
+            </div>
+            <div class="box">
+              <div class="label">Employee</div>
+              <div class="value">${esc(item.employeeName || item.employeeTypedFirstName || "Not provided")}</div>
+            </div>
+            <div class="box">
+              <div class="label">Flight</div>
+              <div class="value">${esc(item.flightNumber || "—")}</div>
+            </div>
+            <div class="box">
+              <div class="label">PNR</div>
+              <div class="value">${esc(item.pnr || "—")}</div>
+            </div>
+            <div class="box">
+              <div class="label">Rating</div>
+              <div class="value">${esc(stars)}</div>
+            </div>
+            <div class="box">
+              <div class="label">Language</div>
+              <div class="value">${esc(languageLabel(item.language))}</div>
+            </div>
+            <div class="box">
+              <div class="label">Professional / Courteous</div>
+              <div class="value">${esc(responseLabel(item.courteous))}</div>
+            </div>
+            <div class="box">
+              <div class="label">Assistance Received</div>
+              <div class="value">${esc(responseLabel(item.assistance))}</div>
+            </div>
+            <div class="box">
+              <div class="label">Would Recommend</div>
+              <div class="value">${esc(responseLabel(item.recommend))}</div>
+            </div>
+            <div class="box">
+              <div class="label">Employee Match</div>
+              <div class="value">${esc(item.employeeMatchStatus || "not provided")}</div>
+            </div>
+          </div>
+
+          ${
+            item.comment
+              ? `
+                <div class="section">
+                  <h2>Passenger Comments</h2>
+                  <div class="comment">${esc(item.comment)}</div>
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            item.contactRequested
+              ? `
+                <div class="section">
+                  <h2>Contact Requested</h2>
+                  <div class="comment contact">
+                    Email: ${esc(item.contactEmail || "—")}<br/>
+                    Phone: ${esc(item.contactPhone || "—")}
+                  </div>
+                </div>
+              `
+              : ""
+          }
+
+          <div class="footer">
+            Printed from AeroStation Hub · Passenger Feedback Management
+          </div>
+        </body>
+      </html>
+    `;
+  };
+
+  const handlePrintExport = (item) => {
+    const html = buildPrintableHtml(item);
+
+    const printWindow = window.open(
+      "",
+      "_blank",
+      "width=1100,height=850"
+    );
+
+    if (!printWindow) {
+      setActionMessage(
+        "Pop-up blocked. Please allow pop-ups to print/export PDF."
+      );
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    window.setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 400);
+  };
 
   return (
     <div
@@ -627,6 +872,24 @@ export default function PassengerFeedbackManagementPage() {
           }}
         >
           {loadError}
+        </div>
+      )}
+
+      {actionMessage && (
+        <div
+          style={{
+            background: actionMessage.includes("Could not") ? "#fff1f2" : "#ecfdf5",
+            border: actionMessage.includes("Could not")
+              ? "1px solid #fecdd3"
+              : "1px solid #a7f3d0",
+            color: actionMessage.includes("Could not") ? "#9f1239" : "#166534",
+            borderRadius: 16,
+            padding: "12px 14px",
+            fontSize: 13,
+            fontWeight: 750,
+          }}
+        >
+          {actionMessage}
         </div>
       )}
 
@@ -859,6 +1122,55 @@ export default function PassengerFeedbackManagementPage() {
                     {item.comment}
                   </div>
                 )}
+
+                <div
+                  style={{
+                    marginTop: 13,
+                    paddingTop: 12,
+                    borderTop: "1px solid #e2e8f0",
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handlePrintExport(item)}
+                    style={{
+                      minHeight: 42,
+                      borderRadius: 12,
+                      border: "1px solid #bfdbfe",
+                      background: "#ffffff",
+                      color: "#1769aa",
+                      fontSize: 12,
+                      fontWeight: 850,
+                      padding: "9px 12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Print / Export PDF
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(item)}
+                    disabled={deletingId === item.id}
+                    style={{
+                      minHeight: 42,
+                      borderRadius: 12,
+                      border: "1px solid #fecaca",
+                      background: "#fff1f2",
+                      color: "#be123c",
+                      fontSize: 12,
+                      fontWeight: 850,
+                      padding: "9px 12px",
+                      cursor: deletingId === item.id ? "not-allowed" : "pointer",
+                      opacity: deletingId === item.id ? 0.65 : 1,
+                    }}
+                  >
+                    {deletingId === item.id ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
               </article>
             );
           })
