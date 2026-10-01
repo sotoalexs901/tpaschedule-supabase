@@ -19,6 +19,7 @@ import { APP_NAME } from "./config/appConfig.js";
 import LoginPage from "./pages/LoginPage.jsx";
 import AppLayout from "./components/AppLayout.jsx";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
+import PassengerFeedbackPage from "./pages/PassengerFeedbackPage.jsx";
 import PrivacyAcknowledgmentsPage from "./pages/PrivacyAcknowledgmentsPage.jsx";
 import ReportsDataManagementPage from "./pages/ReportsDataManagementPage.jsx";
 
@@ -510,6 +511,7 @@ function AppRouter() {
 
         <Route path="/login" element={<LoginPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/feedback/:account" element={<PassengerFeedbackPage />} />
 
         {/* PROTECTED PLATFORM */}
 
