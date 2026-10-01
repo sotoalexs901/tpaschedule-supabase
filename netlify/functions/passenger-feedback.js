@@ -101,14 +101,43 @@ function storedFirstName(data) {
   const fullName = publicEmployeeName(data);
   const parts = fullName.split(/\s+/).filter(Boolean);
 
-  // Employee records are stored LAST NAME + FIRST NAME.
+  // Primary storage convention: LAST NAME + FIRST NAME.
   if (parts.length >= 2) return parts[1];
   return parts[0] || "";
 }
 
+function employeeNameTokens(data) {
+  const fullName = publicEmployeeName(data);
+
+  return fullName
+    .split(/\s+/)
+    .map((part) => normalizeMatch(part))
+    .filter(Boolean);
+}
+
+function employeeFirstNameCandidates(data) {
+  const fullName = publicEmployeeName(data);
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  const candidates = new Set();
+
+  // Primary convention: LAST NAME + FIRST NAME.
+  if (parts[1]) candidates.add(normalizeMatch(parts[1]));
+
+  // Some legacy/imported records may not strictly follow the convention.
+  // Include all name tokens as fallbacks so a passenger-entered first name
+  // can still resolve when the record order differs.
+  employeeNameTokens(data).forEach((token) => candidates.add(token));
+
+  return candidates;
+}
+
 function isEmployeeActive(data) {
   const status = normalizeText(data?.status).toLowerCase();
-  return data?.active === true || status === "active";
+
+  if (data?.active === false) return false;
+  if (status === "inactive" || status === "terminated") return false;
+
+  return data?.active === true || status === "active" || (!status && data?.active !== false);
 }
 
 function employeeBelongsToAccount(data, accountConfig) {
@@ -141,7 +170,7 @@ async function matchEmployeeByFirstName(db, accountConfig, typedFirstName) {
     .filter(({ data }) =>
       isEmployeeActive(data) &&
       employeeBelongsToAccount(data, accountConfig) &&
-      normalizeMatch(storedFirstName(data)) === typed
+      employeeFirstNameCandidates(data).has(typed)
     )
     .map(({ id, data }) => ({
       id,
@@ -347,4 +376,3 @@ exports.handler = async function handler(event) {
       error: error?.message || "Unexpected passenger feedback error.",
     });
   }
-};
