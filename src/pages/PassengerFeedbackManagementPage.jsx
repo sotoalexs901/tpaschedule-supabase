@@ -699,7 +699,7 @@ export default function PassengerFeedbackManagementPage() {
                         color: "#0f172a",
                       }}
                     >
-                      {item.employeeName || "Employee not identified"}
+                      {item.passengerName || "Passenger name not provided"}
                     </div>
 
                     <div
@@ -712,6 +712,22 @@ export default function PassengerFeedbackManagementPage() {
                       {account?.label || item.accountLabel || item.account || "—"} ·{" "}
                       {formatDate(item.serviceDate)} ·{" "}
                       {languageLabel(item.language)}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 5,
+                        color: "#334155",
+                        fontSize: 12,
+                        fontWeight: 750,
+                      }}
+                    >
+                      Employee:{" "}
+                      {item.employeeName
+                        ? item.employeeName
+                        : item.employeeTypedFirstName
+                          ? `${item.employeeTypedFirstName} (${item.employeeMatchStatus === "ambiguous" ? "multiple matches" : "not matched"})`
+                          : "Not provided"}
                     </div>
                   </div>
 
@@ -742,6 +758,26 @@ export default function PassengerFeedbackManagementPage() {
                   }}
                 >
                   <MiniInfo
+                    label="Flight"
+                    value={item.flightNumber || "—"}
+                  />
+                  <MiniInfo
+                    label="PNR"
+                    value={item.pnr || "—"}
+                  />
+                  <MiniInfo
+                    label="Employee Match"
+                    value={
+                      item.employeeMatchStatus === "matched"
+                        ? "Matched"
+                        : item.employeeMatchStatus === "ambiguous"
+                          ? "Multiple matches"
+                          : item.employeeMatchStatus === "not_found"
+                            ? "Not found"
+                            : "Not provided"
+                    }
+                  />
+                  <MiniInfo
                     label="Professional"
                     value={responseLabel(item.courteous)}
                   />
@@ -754,6 +790,58 @@ export default function PassengerFeedbackManagementPage() {
                     value={responseLabel(item.recommend)}
                   />
                 </div>
+
+
+                {item.contactRequested && (
+                  <div
+                    style={{
+                      marginTop: 11,
+                      padding: "11px 12px",
+                      background: "#eff6ff",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: 13,
+                      color: "#1e3a5f",
+                      fontSize: 12.5,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, marginBottom: 4 }}>
+                      Passenger requested contact
+                    </div>
+                    <div>
+                      Email: {item.contactEmail || "—"}
+                    </div>
+                    <div>
+                      Phone: {item.contactPhone || "—"}
+                    </div>
+                  </div>
+                )}
+
+                {item.employeeMatchStatus === "ambiguous" &&
+                  Array.isArray(item.employeeMatchCandidates) &&
+                  item.employeeMatchCandidates.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: 11,
+                        padding: "11px 12px",
+                        background: "#fff7ed",
+                        border: "1px solid #fed7aa",
+                        borderRadius: 13,
+                        color: "#9a3412",
+                        fontSize: 12.5,
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      <div style={{ fontWeight: 900, marginBottom: 4 }}>
+                        Employee match needs review
+                      </div>
+                      Possible matches:{" "}
+                      {item.employeeMatchCandidates
+                        .map((candidate) => candidate?.name)
+                        .filter(Boolean)
+                        .join(", ")}
+                    </div>
+                  )}
 
                 {item.comment && (
                   <div
