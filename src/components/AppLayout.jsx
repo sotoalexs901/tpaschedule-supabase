@@ -1249,6 +1249,14 @@ export default function AppLayout() {
       });
     }
 
+    if (isManagementUser) {
+      managementReports.push({
+        to: "/passenger-feedback-management",
+        label: "Passenger Feedback",
+        icon: "\u{2B50}",
+      });
+    }
+
     if (canManageRegulatedGarbage) {
       managementReports.push({
         to: "/regulated-garbage/reports",
@@ -2106,5 +2114,3 @@ const emptySearchStyle = {
   fontWeight: 800,
   textAlign: "center",
 };
-
-// END AppLayout
