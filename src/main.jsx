@@ -99,6 +99,7 @@ import CierreVuelo from "./pages/CierreVuelo.jsx";
 import CierreVueloManagement from "./pages/CierreVueloManagement.jsx";
 import BSODailyReportPage from "./pages/BSODailyReportPage.jsx";
 import BSODailyManagementPage from "./pages/BSODailyManagementPage.jsx";
+import PassengerFeedbackManagementPage from "./pages/PassengerFeedbackManagementPage.jsx";
 
 
 // ============================================================
@@ -892,6 +893,15 @@ function AppRouter() {
             }
           />
 
+          <Route
+            path="passenger-feedback-management"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <PassengerFeedbackManagementPage />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Legacy Code 24 routes */}
           <Route path="code24/submit" element={<Navigate to="/bso-daily-report" replace />} />
           <Route path="code24/management" element={<Navigate to="/bso-daily-management" replace />} />
@@ -1298,5 +1308,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     </UserProvider>
   </React.StrictMode>
 );
-
-// END main.jsx
