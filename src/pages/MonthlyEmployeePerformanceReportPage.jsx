@@ -324,6 +324,31 @@ function normalizeLookup(value) {
   return normalizeText(value).toLowerCase();
 }
 
+function normalizeRoleLike(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function isSupervisorEmployee(employee) {
+  const roleValues = [
+    employee?.role,
+    employee?.position,
+    employee?.title,
+    employee?.jobTitle,
+    employee?.job_title,
+    employee?.employeeRole,
+  ]
+    .map(normalizeRoleLike)
+    .filter(Boolean);
+
+  return roleValues.some(
+    (value) => value === "supervisor" || value.includes("supervisor")
+  );
+}
+
 function formatMonthValue(value) {
   const [year, month] = String(value || "").split("-").map(Number);
   if (!year || !month) return value || "-";
@@ -966,6 +991,29 @@ const WCHR_QUESTIONS = [
   { id: "20", es: "Mantiene el uniforme y una apariencia profesional adecuada.", en: "Maintains proper uniform and professional appearance.", weight: 1 },
 ];
 
+const SUPERVISOR_MANAGEMENT_QUESTIONS = [
+  { id: "1", es: "Control operacional. Mantiene control real de la operación, conoce el estatus de las áreas bajo su responsabilidad y anticipa necesidades antes de que se conviertan en problemas.", en: "Operational Control. Maintains real control of the operation, knows the status of assigned areas, and anticipates needs before they become problems.", weight: 1 },
+  { id: "2", es: "Liderazgo bajo presión. Mantiene organización, criterio y liderazgo durante operaciones de alto volumen, retrasos, IROPS o situaciones inesperadas.", en: "Leadership Under Pressure. Maintains organization, judgment, and leadership during high-volume operations, delays, IROPS, or unexpected situations.", weight: 1 },
+  { id: "3", es: "Asignación de personal. Distribuye correctamente las posiciones y recursos de acuerdo con la operación, prioridades, carga de trabajo y requerimientos de seguridad.", en: "Staff Deployment. Assigns positions and resources correctly based on the operation, priorities, workload, and safety requirements.", weight: 1 },
+  { id: "4", es: "Seguimiento de asignaciones. Verifica que las tareas delegadas se completen y realiza seguimiento hasta cerrar los pendientes.", en: "Assignment Follow-Through. Verifies delegated tasks are completed and follows through until open items are closed.", weight: 1 },
+  { id: "5", es: "Auditorías y controles diarios. Completa y documenta las auditorías, inspecciones y verificaciones diarias requeridas sin omisiones.", en: "Daily Audits and Controls. Completes and documents required daily audits, inspections, and checks without omissions.", weight: 1 },
+  { id: "6", es: "Seguimiento de oficina y reportes. Completa reportes, correos, registros y seguimientos administrativos requeridos dentro del tiempo establecido.", en: "Office Follow-Up and Reporting. Completes required reports, emails, records, and administrative follow-up within established timelines.", weight: 1 },
+  { id: "7", es: "Comunicación con management. Mantiene al Duty Manager y Station Manager informados de riesgos, incidentes, cambios, faltantes y asuntos que requieren escalación.", en: "Management Communication. Keeps the Duty Manager and Station Manager informed of risks, incidents, changes, shortages, and matters requiring escalation.", weight: 1 },
+  { id: "8", es: "Aplicación de instrucciones. Ejecuta las instrucciones de management de forma completa, precisa y dentro del tiempo indicado.", en: "Execution of Management Instructions. Carries out management instructions completely, accurately, and within the required timeframe.", weight: 1 },
+  { id: "9", es: "Responsabilidad y ownership. Asume responsabilidad por la operación, decisiones, errores y resultados de su turno sin transferir responsabilidades.", en: "Accountability and Ownership. Takes responsibility for the operation, decisions, errors, and shift results without shifting responsibility.", weight: 1 },
+  { id: "10", es: "Toma de decisiones. Evalúa prioridades, riesgos y recursos antes de tomar decisiones y aplica criterio consistente con las políticas de la compañía.", en: "Decision Making. Evaluates priorities, risks, and resources before making decisions and applies judgment consistent with company policy.", weight: 1 },
+  { id: "11", es: "Seguridad y cumplimiento. Supervisa activamente el cumplimiento de procedimientos de seguridad, TSA/CBP, aerolínea y aeropuerto y corrige desviaciones inmediatamente.", en: "Safety and Compliance. Actively supervises compliance with safety, TSA/CBP, airline, and airport procedures and corrects deviations immediately.", weight: 1 },
+  { id: "12", es: "Calidad operacional. Verifica que el equipo mantenga los estándares del cliente y de la estación en servicio, documentación y ejecución operacional.", en: "Operational Quality. Verifies the team maintains customer and station standards in service, documentation, and operational execution.", weight: 1 },
+  { id: "13", es: "Coaching y corrección. Ofrece dirección clara, coaching oportuno y acciones correctivas cuando un empleado no cumple expectativas o procedimientos.", en: "Coaching and Correction. Provides clear direction, timely coaching, and corrective action when an employee does not meet expectations or procedures.", weight: 1 },
+  { id: "14", es: "Conocimiento del equipo. Conoce las fortalezas, limitaciones, entrenamientos y necesidades de desarrollo del personal bajo su supervisión.", en: "Team Knowledge. Understands the strengths, limitations, training status, and development needs of employees under supervision.", weight: 1 },
+  { id: "15", es: "Manejo de conflictos. Atiende conflictos y quejas de forma profesional, imparcial y oportuna, escalando cuando corresponde.", en: "Conflict Management. Handles conflicts and complaints professionally, fairly, and promptly, escalating when appropriate.", weight: 1 },
+  { id: "16", es: "Coordinación entre departamentos. Mantiene comunicación efectiva con rampa, pasajeros, WCHR, cabin service, seguridad, BSO y otros grupos que impactan la operación.", en: "Cross-Department Coordination. Maintains effective communication with ramp, passenger service, WCHR, cabin service, security, BSO, and other groups affecting the operation.", weight: 1 },
+  { id: "17", es: "Manejo de irregularidades. Reacciona correctamente ante delays, cancelaciones, cambios operacionales, incidentes y necesidades de último minuto, manteniendo control y documentación.", en: "Irregular Operations Management. Responds correctly to delays, cancellations, operational changes, incidents, and last-minute needs while maintaining control and documentation.", weight: 1 },
+  { id: "18", es: "Uso de recursos e inventario. Mantiene control responsable de equipos, materiales, suministros y recursos asignados al turno.", en: "Resource and Inventory Control. Maintains responsible control of equipment, materials, supplies, and resources assigned to the shift.", weight: 1 },
+  { id: "19", es: "Profesionalismo y ejemplo. Mantiene conducta, comunicación, asistencia, puntualidad y presentación profesional consistente con una posición de liderazgo.", en: "Professionalism and Example. Maintains conduct, communication, attendance, punctuality, and professional appearance consistent with a leadership position.", weight: 1 },
+  { id: "20", es: "Cierre de turno y continuidad. Entrega un turnover completo, informa pendientes, confirma acciones requeridas y asegura continuidad al siguiente supervisor o manager.", en: "Shift Closeout and Continuity. Provides a complete turnover, communicates open items, confirms required actions, and ensures continuity to the next supervisor or manager.", weight: 1 },
+];
+
 const TEMPLATE_MAP = {
   passenger: {
     key: "passenger",
@@ -987,6 +1035,13 @@ const TEMPLATE_MAP = {
     role: "WCHR Agent",
     department: "WCHR Service",
     questions: WCHR_QUESTIONS,
+  },
+  supervisor: {
+    key: "supervisor",
+    label: "Supervisor Performance Report (SPR)",
+    role: "Supervisor",
+    department: "Management",
+    questions: SUPERVISOR_MANAGEMENT_QUESTIONS,
   },
 };
 
@@ -1028,7 +1083,6 @@ export default function MonthlyEmployeePerformanceReportPage() {
   const [followUpEdit, setFollowUpEdit] = useState({});
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
-  const availableTemplates = useMemo(() => Object.values(TEMPLATE_MAP), []);
 
   const [filters, setFilters] = useState({
     month: "all",
@@ -1039,6 +1093,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
   });
 
   const [form, setForm] = useState({
+    reviewTargetType: "agent",
     employeeId: "",
     employeeName: "",
     month: getCurrentMonthValue(),
@@ -1051,6 +1106,13 @@ export default function MonthlyEmployeePerformanceReportPage() {
   });
 
   const [answers, setAnswers] = useState({});
+
+  const availableTemplates = useMemo(() => {
+    if (form.reviewTargetType === "supervisor") {
+      return user?.role === "duty_manager" ? [TEMPLATE_MAP.supervisor] : [];
+    }
+    return Object.values(TEMPLATE_MAP).filter((item) => item.key !== "supervisor");
+  }, [form.reviewTargetType, user?.role]);
 
   useEffect(() => {
     let timer;
@@ -1091,7 +1153,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
               "Unnamed Employee",
             department: emp.department || "",
             hireDate: emp.hireDate || emp.startDate || "",
-            role: emp.role || "",
+            role: emp.role || emp.position || emp.title || emp.jobTitle || emp.job_title || "",
+            position: emp.position || "",
+            title: emp.title || "",
+            jobTitle: emp.jobTitle || emp.job_title || "",
             username: emp.username || "",
             email: emp.email || "",
           }))
@@ -1153,7 +1218,10 @@ export default function MonthlyEmployeePerformanceReportPage() {
   }, [canCreate, canManage]);
 
   useEffect(() => {
-    const template = TEMPLATE_MAP[form.templateKey] || TEMPLATE_MAP.passenger;
+    const template =
+      form.reviewTargetType === "supervisor"
+        ? TEMPLATE_MAP.supervisor
+        : TEMPLATE_MAP[form.templateKey] || TEMPLATE_MAP.passenger;
     setForm((prev) => ({
       ...prev,
       department: template.department,
@@ -1167,7 +1235,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
       });
       return next;
     });
-  }, [form.templateKey]);
+  }, [form.templateKey, form.reviewTargetType]);
 
   const selectedEmployee = useMemo(() => {
     return employees.find((emp) => emp.id === form.employeeId) || null;
@@ -1180,16 +1248,24 @@ export default function MonthlyEmployeePerformanceReportPage() {
       employeeName: selectedEmployee.name,
       hireDate: selectedEmployee.hireDate || "",
       department:
-        TEMPLATE_MAP[prev.templateKey]?.department ||
-        selectedEmployee.department ||
-        "",
+        prev.reviewTargetType === "supervisor"
+          ? selectedEmployee.department || "Management"
+          : TEMPLATE_MAP[prev.templateKey]?.department ||
+            selectedEmployee.department ||
+            "",
+      roleTitle:
+        prev.reviewTargetType === "supervisor"
+          ? selectedEmployee.role || "Supervisor"
+          : prev.roleTitle,
     }));
   }, [selectedEmployee]);
 
   const activeTemplate =
-    TEMPLATE_MAP[form.templateKey] ||
-    availableTemplates[0] ||
-    TEMPLATE_MAP.passenger;
+    form.reviewTargetType === "supervisor"
+      ? TEMPLATE_MAP.supervisor
+      : TEMPLATE_MAP[form.templateKey] ||
+        availableTemplates[0] ||
+        TEMPLATE_MAP.passenger;
 
   const calculatedScore = useMemo(() => {
     return calculatePerformanceScore(answers, activeTemplate.questions);
@@ -1256,6 +1332,22 @@ export default function MonthlyEmployeePerformanceReportPage() {
       );
     });
   }, [platformUsers]);
+
+  const stationManagerUsers = useMemo(() => {
+    return platformUsers.filter((platformUser) => {
+      const role = normalizeRoleLike(platformUser?.role || "").replace(/ /g, "_");
+      return platformUser?.active !== false && role === "station_manager";
+    });
+  }, [platformUsers]);
+
+  const primaryStationManager = stationManagerUsers[0] || null;
+
+  const selectableEmployees = useMemo(() => {
+    if (form.reviewTargetType === "supervisor") {
+      return employees.filter((employee) => isSupervisorEmployee(employee));
+    }
+    return employees.filter((employee) => !isSupervisorEmployee(employee));
+  }, [employees, form.reviewTargetType]);
 
   const recentThreeMonthValues = useMemo(() => getRecentMonthValues(3), []);
 
@@ -1471,6 +1563,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
     setEditingDraftId("");
 
     setForm({
+      reviewTargetType: report.reportType === "SPR" || report.templateKey === "supervisor" ? "supervisor" : "agent",
       employeeId: report.employeeId || "",
       employeeName: report.employeeName || "",
       month: report.month || getCurrentMonthValue(),
@@ -1501,6 +1594,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
     setTab("create");
 
     setForm({
+      reviewTargetType: draft.reportType === "SPR" || draft.templateKey === "supervisor" ? "supervisor" : "agent",
       employeeId: draft.employeeId || "",
       employeeName: draft.employeeName || "",
       month: draft.month || getCurrentMonthValue(),
@@ -1530,23 +1624,36 @@ export default function MonthlyEmployeePerformanceReportPage() {
   }
 
   async function notifyManagementAboutSubmission(reportId, reportData, isResubmission = false) {
-    if (user?.role !== "supervisor") return;
+    const isSupervisorReport = reportData?.reportType === "SPR" || reportData?.templateKey === "supervisor";
+    if (user?.role !== "supervisor" && !(user?.role === "duty_manager" && isSupervisorReport)) return;
 
     const employeeName = reportData?.employeeName || "Employee";
     const monthLabel = formatMonthValue(reportData?.month);
     const supervisorName = getVisibleUserName(user);
 
-    const title = isResubmission
-      ? "EPR Resubmitted by Supervisor"
-      : "New EPR Submitted";
+    const title = isSupervisorReport
+      ? isResubmission
+        ? "SPR Resubmitted by Duty Manager"
+        : "New Supervisor Performance Report"
+      : isResubmission
+        ? "EPR Resubmitted by Supervisor"
+        : "New EPR Submitted";
 
-    const message = isResubmission
-      ? `${supervisorName} corrected and resubmitted the EPR for ${employeeName} (${monthLabel}).`
-      : `${supervisorName} submitted a new EPR for ${employeeName} (${monthLabel}).`;
+    const message = isSupervisorReport
+      ? isResubmission
+        ? `${supervisorName} corrected and resubmitted the SPR for ${employeeName} (${monthLabel}).`
+        : `${supervisorName} submitted a Supervisor Performance Report for ${employeeName} (${monthLabel}).`
+      : isResubmission
+        ? `${supervisorName} corrected and resubmitted the EPR for ${employeeName} (${monthLabel}).`
+        : `${supervisorName} submitted a new EPR for ${employeeName} (${monthLabel}).`;
 
     await Promise.allSettled(
       managementNotificationUsers
-        .filter((managerUser) => managerUser.id !== user?.id)
+        .filter((managerUser) => {
+          if (managerUser.id === user?.id) return false;
+          if (!isSupervisorReport) return true;
+          return normalizeRoleLike(managerUser?.role || "") === "station manager";
+        })
         .map((managerUser) =>
           createUserNotification(managerUser.id, {
             type: isResubmission
@@ -1578,6 +1685,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
       TEMPLATE_MAP.passenger;
 
     setForm({
+      reviewTargetType: "agent",
       employeeId: "",
       employeeName: "",
       month: getCurrentMonthValue(),
@@ -1603,6 +1711,12 @@ export default function MonthlyEmployeePerformanceReportPage() {
       return;
     }
 
+    if (form.reviewTargetType === "supervisor" && !primaryStationManager?.id) {
+      setStatusMessage("No active Station Manager user was found for automatic SPR assignment.");
+      setStatusTone("red");
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -1615,8 +1729,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
         employeeId: form.employeeId,
         employeeName: form.employeeName,
         month: form.month,
-        templateKey: form.templateKey,
+        reportType: form.reviewTargetType === "supervisor" ? "SPR" : "EPR",
+        assignedStationManagerUserId:
+          form.reviewTargetType === "supervisor" ? primaryStationManager?.id || "" : "",
+        assignedStationManagerName:
+          form.reviewTargetType === "supervisor" ? getVisibleUserName(primaryStationManager) : "",
+        templateKey: form.reviewTargetType === "supervisor" ? "supervisor" : form.templateKey,
         templateLabel: activeTemplate.label,
+        questionsSnapshot: activeTemplate.questions,
         roleTitle: form.roleTitle,
         department: form.department,
         hireDate: form.hireDate || "",
@@ -1701,6 +1821,12 @@ export default function MonthlyEmployeePerformanceReportPage() {
       return;
     }
 
+    if (form.reviewTargetType === "supervisor" && !primaryStationManager?.id) {
+      setStatusMessage("No active Station Manager user was found for automatic SPR assignment.");
+      setStatusTone("red");
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -1760,8 +1886,14 @@ export default function MonthlyEmployeePerformanceReportPage() {
         employeeId: form.employeeId,
         employeeName: form.employeeName,
         month: form.month,
-        templateKey: form.templateKey,
+        reportType: form.reviewTargetType === "supervisor" ? "SPR" : "EPR",
+        assignedStationManagerUserId:
+          form.reviewTargetType === "supervisor" ? primaryStationManager?.id || "" : "",
+        assignedStationManagerName:
+          form.reviewTargetType === "supervisor" ? getVisibleUserName(primaryStationManager) : "",
+        templateKey: form.reviewTargetType === "supervisor" ? "supervisor" : form.templateKey,
         templateLabel: activeTemplate.label,
+        questionsSnapshot: activeTemplate.questions,
         roleTitle: form.roleTitle,
         department: form.department,
         hireDate: form.hireDate || "",
@@ -1910,7 +2042,11 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
       await notifyManagementAboutSubmission(ref.id, payload, false);
 
-      setStatusMessage("Performance report submitted correctly. Duty and Station Managers were notified.");
+      setStatusMessage(
+        form.reviewTargetType === "supervisor"
+          ? "Supervisor Performance Report submitted and automatically assigned to the Station Manager."
+          : "Performance report submitted correctly. Duty and Station Managers were notified."
+      );
       setStatusTone("green");
       resetCreateForm();
     } catch (err) {
@@ -2883,6 +3019,37 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 gap: 14,
               }}
             >
+              {user?.role === "duty_manager" && (
+                <div>
+                  <FieldLabel>Report Type</FieldLabel>
+                  <SelectInput
+                    value={form.reviewTargetType}
+                    onChange={(e) => {
+                      const nextType = e.target.value;
+                      const nextTemplate = nextType === "supervisor" ? TEMPLATE_MAP.supervisor : TEMPLATE_MAP.passenger;
+                      setForm((prev) => ({
+                        ...prev,
+                        reviewTargetType: nextType,
+                        employeeId: "",
+                        employeeName: "",
+                        templateKey: nextTemplate.key,
+                        department: nextTemplate.department,
+                        roleTitle: nextTemplate.role,
+                        hireDate: "",
+                      }));
+                      const freshAnswers = {};
+                      nextTemplate.questions.forEach((q) => {
+                        freshAnswers[q.id] = { rating: "", note: "" };
+                      });
+                      setAnswers(freshAnswers);
+                    }}
+                  >
+                    <option value="agent">Agent EPR</option>
+                    <option value="supervisor">Supervisor SPR</option>
+                  </SelectInput>
+                </div>
+              )}
+
               <div>
                 <FieldLabel>{t.month}</FieldLabel>
                 <SelectInput
@@ -2900,7 +3067,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
               </div>
 
               <div>
-                <FieldLabel>{t.employee}</FieldLabel>
+                <FieldLabel>{form.reviewTargetType === "supervisor" ? "Supervisor" : t.employee}</FieldLabel>
                 <SelectInput
                   value={form.employeeId}
                   onChange={(e) =>
@@ -2908,7 +3075,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
                   }
                 >
                   <option value="">Select employee</option>
-                  {employees.map((emp) => (
+                  {selectableEmployees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
                       {emp.name}
                     </option>
@@ -2918,18 +3085,22 @@ export default function MonthlyEmployeePerformanceReportPage() {
 
               <div>
                 <FieldLabel>{t.template}</FieldLabel>
-                <SelectInput
-                  value={form.templateKey}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, templateKey: e.target.value }))
-                  }
-                >
-                  {availableTemplates.map((item) => (
-                    <option key={item.key} value={item.key}>
-                      {item.label}
-                    </option>
-                  ))}
-                </SelectInput>
+                {form.reviewTargetType === "supervisor" ? (
+                  <TextInput value="Supervisor Performance Report (SPR)" disabled />
+                ) : (
+                  <SelectInput
+                    value={form.templateKey}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, templateKey: e.target.value }))
+                    }
+                  >
+                    {availableTemplates.map((item) => (
+                      <option key={item.key} value={item.key}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                )}
               </div>
 
               <div>
@@ -2947,6 +3118,24 @@ export default function MonthlyEmployeePerformanceReportPage() {
                 <TextInput value={form.hireDate || ""} disabled />
               </div>
             </div>
+
+            {form.reviewTargetType === "supervisor" && (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  background: "#edf7ff",
+                  border: "1px solid #cfe7fb",
+                  color: "#1769aa",
+                  fontSize: 13,
+                  fontWeight: 800,
+                }}
+              >
+                SPR is available only to Duty Managers and will be automatically assigned to the Station Manager
+                {primaryStationManager ? ` (${getVisibleUserName(primaryStationManager)})` : ""} for review.
+              </div>
+            )}
           </PageCard>
 
           <div
@@ -3073,7 +3262,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
               }}
             >
               <div>
-                <FieldLabel>{t.commentsCompany}</FieldLabel>
+                <FieldLabel>{form.reviewTargetType === "supervisor" ? "Duty Manager Comments" : t.commentsCompany}</FieldLabel>
                 <TextArea
                   value={form.commentsCompany}
                   onChange={(e) =>
@@ -3086,7 +3275,7 @@ export default function MonthlyEmployeePerformanceReportPage() {
               </div>
 
               <div>
-                <FieldLabel>{t.commentsEmployee}</FieldLabel>
+                <FieldLabel>{form.reviewTargetType === "supervisor" ? "Supervisor Comments" : t.commentsEmployee}</FieldLabel>
                 <TextArea
                   value={form.commentsEmployee}
                   onChange={(e) =>
