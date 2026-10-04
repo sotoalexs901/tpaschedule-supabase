@@ -431,6 +431,13 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function isSupervisorPerformanceReport(report) {
+  return (
+    String(report?.reportType || "").toUpperCase() === "SPR" ||
+    String(report?.templateKey || "").toLowerCase() === "supervisor"
+  );
+}
+
 function getRatingLabel(value) {
   const v = String(value || "").toLowerCase();
   if (v === "exceeds") return "Exceeds";
@@ -662,6 +669,7 @@ export default function EmployeePerformanceManagementPage() {
 
   const [filters, setFilters] = useState({
     month: getCurrentMonthValue(),
+    reportType: "all",
     department: "all",
     employee: "all",
     supervisor: "all",
@@ -967,10 +975,16 @@ export default function EmployeePerformanceManagementPage() {
 
   const filteredReports = useMemo(() => {
     return reportsVisibleToCurrentUser.filter((report) => {
+      if (filters.reportType !== "all") {
+        const reportType = isSupervisorPerformanceReport(report) ? "SPR" : "EPR";
+        if (reportType !== filters.reportType) return false;
+      }
+
       if (managementTab === "assigned" && report.month !== getCurrentMonthValue()) {
         return false;
       }
       if (managementTab === "assigned") {
+        if (isSupervisorPerformanceReport(report)) return false;
         const hasAssignment = Boolean(
           report.followUpDutyManagerId ||
             report.assignedDutyManagerId ||
@@ -2312,7 +2326,7 @@ export default function EmployeePerformanceManagementPage() {
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>${escapeHtml(APP_NAME)} - Employee Performance Report</title>
+          <title>${escapeHtml(APP_NAME)} - ${isSupervisorPerformanceReport(report) ? "Supervisor Performance Report" : "Employee Performance Report"}</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -2434,12 +2448,12 @@ export default function EmployeePerformanceManagementPage() {
                 <div class="brand-subtitle">${escapeHtml(APP_SUBTITLE)}</div>
               </div>
             </div>
-            <div class="document-label">Employee Performance Management Report</div>
+            <div class="document-label">${isSupervisorPerformanceReport(report) ? "Supervisor Performance Report (SPR)" : "Employee Performance Management Report"}</div>
           </div>
 
           <div class="header">
             <div>
-              <h1 class="title">Employee Performance Report</h1>
+              <h1 class="title">${isSupervisorPerformanceReport(report) ? "Supervisor Performance Report" : "Employee Performance Report"}</h1>
               <div class="subtitle">
                 ${htmlText(report.employeeName)} &middot; ${htmlText(
       formatMonthValue(report.month)
@@ -2587,10 +2601,10 @@ export default function EmployeePerformanceManagementPage() {
             color: "rgba(255,255,255,0.88)",
           }}
         >
-          Review reports by supervisor, open employee details, return reports to
-          supervisors, assign and reassign follow up to duty managers with
-          notifications, maintain internal management notes, review the complete
-          follow-up history, and export EPRs as PDF for printing.
+          Review Agent EPRs and Supervisor Performance Reports (SPR), open employee
+          or supervisor details, return reports for correction, assign EPR follow up
+          to duty managers, maintain internal management notes, review complete
+          follow-up history, and export reports as PDF for printing.
         </p>
       </div>
 
@@ -2647,6 +2661,20 @@ export default function EmployeePerformanceManagementPage() {
                   {item.label}
                 </option>
               ))}
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Report Type</FieldLabel>
+            <SelectInput
+              value={filters.reportType}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, reportType: e.target.value }))
+              }
+            >
+              <option value="all">All Reports</option>
+              <option value="EPR">Agent EPR</option>
+              <option value="SPR">Supervisor SPR</option>
             </SelectInput>
           </div>
 
@@ -3103,7 +3131,7 @@ export default function EmployeePerformanceManagementPage() {
                           fontWeight: 700,
                         }}
                       >
-                        Supervisor: {report.supervisorName || "-"}
+                        {isSupervisorPerformanceReport(report) ? "Duty Manager Evaluator" : "Supervisor"}: {report.supervisorName || "-"}
                       </div>
                       <div
                         style={{
@@ -3112,7 +3140,7 @@ export default function EmployeePerformanceManagementPage() {
                           color: "#64748b",
                         }}
                       >
-                        {report.templateLabel || "-"} | {report.department || "-"}
+                        {isSupervisorPerformanceReport(report) ? "SPR" : "EPR"} | {report.templateLabel || "-"} | {report.department || "-"}
                       </div>
                     </div>
 
@@ -3203,8 +3231,8 @@ export default function EmployeePerformanceManagementPage() {
                       color: "#64748b",
                     }}
                   >
-                    {selectedReport.templateLabel || "-"} |{" "}
-                    {formatMonthValue(selectedReport.month)} | Supervisor:{" "}
+                    {isSupervisorPerformanceReport(selectedReport) ? "Supervisor Performance Report (SPR)" : selectedReport.templateLabel || "-"} |{" "}
+                    {formatMonthValue(selectedReport.month)} | {isSupervisorPerformanceReport(selectedReport) ? "Duty Manager Evaluator" : "Supervisor"}:{" "}
                     {selectedReport.supervisorName || "-"}
                   </p>
                 </div>
@@ -3269,6 +3297,18 @@ export default function EmployeePerformanceManagementPage() {
                 }}
               >
                 <InfoCard
+                  label="Report Type"
+                  value={isSupervisorPerformanceReport(selectedReport) ? "Supervisor SPR" : "Agent EPR"}
+                  tone={isSupervisorPerformanceReport(selectedReport) ? "deepblue" : "blue"}
+                />
+                {isSupervisorPerformanceReport(selectedReport) && (
+                  <InfoCard
+                    label="Assigned Station Manager"
+                    value={selectedReport.assignedStationManagerName || "Station Manager"}
+                    tone="deepblue"
+                  />
+                )}
+                <InfoCard
                   label="Score"
                   value={`${formatScore(selectedReport.score)} / 100`}
                   tone={getPerformanceTone(selectedReport.score)}
@@ -3324,15 +3364,17 @@ export default function EmployeePerformanceManagementPage() {
                   value={selectedReport.openedAt ? formatDateTime(selectedReport.openedAt) : "-"}
                   tone={selectedReport.openedAt ? "brown" : "default"}
                 />
-                <InfoCard
-                  label="Duty Manager"
-                  value={
-                    selectedReport.followUpDutyManagerName ||
-                    selectedReport.assignedDutyManagerName ||
-                    "-"
-                  }
-                  tone="default"
-                />
+                {!isSupervisorPerformanceReport(selectedReport) && (
+                  <InfoCard
+                    label="Duty Manager"
+                    value={
+                      selectedReport.followUpDutyManagerName ||
+                      selectedReport.assignedDutyManagerName ||
+                      "-"
+                    }
+                    tone="default"
+                  />
+                )}
                 <InfoCard
                   label="Return Reason"
                   value={isEditingReport ? editForm?.returnReason || "-" : selectedReport.returnReason || "-"}
@@ -3900,20 +3942,26 @@ export default function EmployeePerformanceManagementPage() {
                       {savingId === selectedReport.id ? "Saving..." : "Mark Follow Up"}
                     </ActionButton>
 
-                    <ActionButton
-                      variant="secondary"
-                      onClick={() => assignDutyManagerForFollowUp(selectedReport)}
-                      disabled={savingId === selectedReport.id}
-                    >
-                      {savingId === selectedReport.id ? "Saving..." : "Assign Duty Manager"}
-                    </ActionButton>
+                    {!isSupervisorPerformanceReport(selectedReport) && (
+                      <ActionButton
+                        variant="secondary"
+                        onClick={() => assignDutyManagerForFollowUp(selectedReport)}
+                        disabled={savingId === selectedReport.id}
+                      >
+                        {savingId === selectedReport.id ? "Saving..." : "Assign Duty Manager"}
+                      </ActionButton>
+                    )}
 
                     <ActionButton
                       variant="danger"
                       onClick={() => returnToSupervisor(selectedReport)}
                       disabled={savingId === selectedReport.id}
                     >
-                      {savingId === selectedReport.id ? "Saving..." : "Return to Supervisor"}
+                      {savingId === selectedReport.id
+                        ? "Saving..."
+                        : isSupervisorPerformanceReport(selectedReport)
+                          ? "Return to Duty Manager"
+                          : "Return to Supervisor"}
                     </ActionButton>
 
                     <ActionButton
