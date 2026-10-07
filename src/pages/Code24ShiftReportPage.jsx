@@ -1,4 +1,4 @@
-// src/pages/Code24ShiftReportPage.jsx
+ src/pages/Code24ShiftReportPage.jsx
 
 import React, { useMemo, useState } from "react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
@@ -51,21 +51,36 @@ function todayLocal() {
   return `${y}-${m}-${day}`;
 }
 
-function newCase() {
+function makeId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function newReturnRequest() {
   return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    id: makeId(),
     employee: "",
     passengerName: "",
     pnr: "",
     flightNumber: "",
     returnReason: "",
     returnReasonOther: "",
-    code24Created: "No",
+    bccReferral: "No",
+    supervisorReview: "Process followed",
+    comments: "",
+  };
+}
+
+function newCode24Case() {
+  return {
+    id: makeId(),
+    passengerName: "",
+    pnr: "",
+    flightNumber: "",
     code24Reason: "",
     code24ReasonOther: "",
     bccReferral: "No",
     supervisorReview: "Process followed",
-    comments: "",
+    details: "",
   };
 }
 
@@ -80,54 +95,172 @@ function useViewport() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  return { width, isMobile: width < 768, isTablet: width >= 768 && width < 1100 };
+  return {
+    width,
+    isMobile: width < 768,
+    isTablet: width >= 768 && width < 1100,
+  };
 }
 
 function PageCard({ children, style = {} }) {
   return (
-    <div style={{
-      background: "rgba(255,255,255,0.96)", border: "1px solid #e2e8f0",
-      borderRadius: 20, boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
-      width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", ...style,
-    }}>{children}</div>
+    <div
+      style={{
+        background: "rgba(255,255,255,0.96)",
+        border: "1px solid #e2e8f0",
+        borderRadius: 20,
+        boxShadow: "0 14px 34px rgba(15,23,42,0.055)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
 function FieldLabel({ children }) {
-  return <label style={{ display: "block", marginBottom: 6, fontSize: 11, fontWeight: 800,
-    color: "#475569", letterSpacing: "0.03em", textTransform: "uppercase" }}>{children}</label>;
+  return (
+    <label
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontSize: 11,
+        fontWeight: 800,
+        color: "#475569",
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </label>
+  );
 }
 
 function TextInput(props) {
-  return <input {...props} style={{ width: "100%", minWidth: 0, boxSizing: "border-box",
-    border: "1px solid #dbeafe", background: props.disabled ? "#f8fafc" : "#fff",
-    borderRadius: 12, padding: "11px 13px", fontSize: 14, color: "#0f172a", outline: "none",
-    ...props.style }} />;
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        border: "1px solid #dbeafe",
+        background: props.disabled ? "#f8fafc" : "#fff",
+        borderRadius: 12,
+        padding: "11px 13px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    />
+  );
 }
 
 function SelectInput(props) {
-  return <select {...props} style={{ width: "100%", minWidth: 0, boxSizing: "border-box",
-    border: "1px solid #dbeafe", background: props.disabled ? "#f8fafc" : "#fff",
-    borderRadius: 12, padding: "11px 13px", fontSize: 14, color: "#0f172a", outline: "none",
-    ...props.style }}>{props.children}</select>;
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        border: "1px solid #dbeafe",
+        background: props.disabled ? "#f8fafc" : "#fff",
+        borderRadius: 12,
+        padding: "11px 13px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        ...props.style,
+      }}
+    >
+      {props.children}
+    </select>
+  );
 }
 
 function TextArea(props) {
-  return <textarea {...props} style={{ width: "100%", minWidth: 0, boxSizing: "border-box",
-    border: "1px solid #dbeafe", background: props.disabled ? "#f8fafc" : "#fff",
-    borderRadius: 12, padding: "11px 13px", fontSize: 14, color: "#0f172a", outline: "none",
-    resize: "vertical", minHeight: 82, fontFamily: "inherit", ...props.style }} />;
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        border: "1px solid #dbeafe",
+        background: props.disabled ? "#f8fafc" : "#fff",
+        borderRadius: 12,
+        padding: "11px 13px",
+        fontSize: 14,
+        color: "#0f172a",
+        outline: "none",
+        resize: "vertical",
+        minHeight: 82,
+        fontFamily: "inherit",
+        ...props.style,
+      }}
+    />
+  );
 }
 
-function ActionButton({ children, onClick, variant = "primary", type = "button", disabled = false }) {
+function ActionButton({
+  children,
+  onClick,
+  variant = "primary",
+  type = "button",
+  disabled = false,
+}) {
   const styles = {
-    primary: { background: "linear-gradient(135deg,#0f4c81 0%,#1769aa 55%,#5aa9e6 100%)", color: "#fff", border: "none", boxShadow: "0 10px 20px rgba(23,105,170,.16)" },
-    secondary: { background: "#fff", color: "#1769aa", border: "1px solid #cfe7fb", boxShadow: "none" },
-    danger: { background: "#fff", color: "#be123c", border: "1px solid #fecdd3", boxShadow: "none" },
+    primary: {
+      background: "linear-gradient(135deg,#0f4c81 0%,#1769aa 55%,#5aa9e6 100%)",
+      color: "#fff",
+      border: "none",
+      boxShadow: "0 10px 20px rgba(23,105,170,.16)",
+    },
+    secondary: {
+      background: "#fff",
+      color: "#1769aa",
+      border: "1px solid #cfe7fb",
+      boxShadow: "none",
+    },
+    danger: {
+      background: "#fff",
+      color: "#be123c",
+      border: "1px solid #fecdd3",
+      boxShadow: "none",
+    },
+    amber: {
+      background: "#fffbeb",
+      color: "#92400e",
+      border: "1px solid #fde68a",
+      boxShadow: "none",
+    },
   };
-  return <button type={type} onClick={onClick} disabled={disabled} style={{ borderRadius: 11,
-    padding: "9px 13px", fontSize: 12.5, fontWeight: 800, cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? .7 : 1, whiteSpace: "nowrap", ...styles[variant] }}>{children}</button>;
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        borderRadius: 11,
+        padding: "9px 13px",
+        fontSize: 12.5,
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
+        whiteSpace: "nowrap",
+        ...styles[variant],
+      }}
+    >
+      {children}
+    </button>
+  );
 }
 
 function MetricCard({ label, value, detail, tone = "blue" }) {
@@ -138,195 +271,1128 @@ function MetricCard({ label, value, detail, tone = "blue" }) {
     slate: ["#f8fafc", "#e2e8f0", "#334155"],
   };
   const [bg, border, color] = tones[tone] || tones.blue;
-  return <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 16, padding: "14px 15px", minWidth: 0 }}>
-    <div style={{ fontSize: 10.5, fontWeight: 900, color, textTransform: "uppercase", letterSpacing: ".05em" }}>{label}</div>
-    <div style={{ marginTop: 4, fontSize: 25, lineHeight: 1, fontWeight: 900, color: "#0f172a" }}>{value}</div>
-    {detail && <div style={{ marginTop: 5, fontSize: 11, color: "#64748b", fontWeight: 700 }}>{detail}</div>}
-  </div>;
+
+  return (
+    <div
+      style={{
+        background: bg,
+        border: `1px solid ${border}`,
+        borderRadius: 16,
+        padding: "14px 15px",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10.5,
+          fontWeight: 900,
+          color,
+          textTransform: "uppercase",
+          letterSpacing: ".05em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          fontSize: 25,
+          lineHeight: 1,
+          fontWeight: 900,
+          color: "#0f172a",
+        }}
+      >
+        {value}
+      </div>
+      {detail && (
+        <div
+          style={{
+            marginTop: 5,
+            fontSize: 11,
+            color: "#64748b",
+            fontWeight: 700,
+          }}
+        >
+          {detail}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Code24ShiftReportPage() {
   const { user } = useUser();
   const navigate = useNavigate();
   const { isMobile, isTablet } = useViewport();
-  const canAccess = ["supervisor", "duty_manager", "station_manager"].includes(user?.role);
+  const canAccess = ["supervisor", "duty_manager", "station_manager"].includes(
+    user?.role
+  );
 
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [form, setForm] = useState({
-    reportDate: todayLocal(), shift: "", department: "AA BSO",
+    reportDate: todayLocal(),
+    shift: "",
+    department: "AA BSO",
     supervisorName: getVisibleName(user),
     supervisorPosition: user?.position || getDefaultPosition(user?.role),
-    notes: "", certification: false, cases: [newCase()],
+    notes: "",
+    certification: false,
+    returnRequests: [newReturnRequest()],
+    code24Cases: [newCode24Case()],
   });
 
   const metrics = useMemo(() => {
-    const total = form.cases.length;
-    const code24 = form.cases.filter((c) => c.code24Created === "Yes").length;
-    const avoided = total - code24;
-    const bcc = form.cases.filter((c) => c.bccReferral === "Yes").length;
-    const rate = total ? (code24 / total) * 100 : 0;
-    return { total, code24, avoided, bcc, rate };
-  }, [form.cases]);
+    const returnRequests = form.returnRequests.length;
+    const code24 = form.code24Cases.length;
+    const totalCases = returnRequests + code24;
+    const bcc =
+      form.returnRequests.filter((c) => c.bccReferral === "Yes").length +
+      form.code24Cases.filter((c) => c.bccReferral === "Yes").length;
 
-  const gridStyle = { display: "grid", gridTemplateColumns: isMobile ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fit,minmax(220px,1fr))", gap: isMobile ? 10 : 14 };
+    return { returnRequests, code24, totalCases, bcc };
+  }, [form.returnRequests, form.code24Cases]);
 
-  const updateCase = (id, field, value) => {
-    setForm((prev) => ({ ...prev, cases: prev.cases.map((item) => {
-      if (item.id !== id) return item;
-      const next = { ...item, [field]: value };
-      if (field === "code24Created" && value === "No") { next.code24Reason = ""; next.code24ReasonOther = ""; }
-      if (field === "returnReason" && value !== "Other") next.returnReasonOther = "";
-      if (field === "code24Reason" && value !== "Other") next.code24ReasonOther = "";
-      return next;
-    }) }));
+  const gridStyle = {
+    display: "grid",
+    gridTemplateColumns: isMobile
+      ? "1fr"
+      : isTablet
+        ? "repeat(2,minmax(0,1fr))"
+        : "repeat(auto-fit,minmax(220px,1fr))",
+    gap: isMobile ? 10 : 14,
   };
 
-  const addCase = () => setForm((prev) => ({ ...prev, cases: [...prev.cases, newCase()] }));
-  const removeCase = (id) => setForm((prev) => ({ ...prev, cases: prev.cases.length === 1 ? prev.cases : prev.cases.filter((c) => c.id !== id) }));
+  const updateReturnRequest = (id, field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      returnRequests: prev.returnRequests.map((item) => {
+        if (item.id !== id) return item;
+        const next = { ...item, [field]: value };
+        if (field === "returnReason" && value !== "Other") {
+          next.returnReasonOther = "";
+        }
+        return next;
+      }),
+    }));
+  };
+
+  const updateCode24Case = (id, field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      code24Cases: prev.code24Cases.map((item) => {
+        if (item.id !== id) return item;
+        const next = { ...item, [field]: value };
+        if (field === "code24Reason" && value !== "Other") {
+          next.code24ReasonOther = "";
+        }
+        return next;
+      }),
+    }));
+  };
+
+  const addReturnRequest = () =>
+    setForm((prev) => ({
+      ...prev,
+      returnRequests: [...prev.returnRequests, newReturnRequest()],
+    }));
+
+  const addCode24Case = () =>
+    setForm((prev) => ({
+      ...prev,
+      code24Cases: [...prev.code24Cases, newCode24Case()],
+    }));
+
+  const removeReturnRequest = (id) =>
+    setForm((prev) => ({
+      ...prev,
+      returnRequests: prev.returnRequests.filter((c) => c.id !== id),
+    }));
+
+  const removeCode24Case = (id) =>
+    setForm((prev) => ({
+      ...prev,
+      code24Cases: prev.code24Cases.filter((c) => c.id !== id),
+    }));
 
   const validate = () => {
-    if (!form.reportDate) return setStatusMessage("Please select the report date."), false;
-    if (!form.shift) return setStatusMessage("Please select the shift."), false;
-    if (!form.cases.length) return setStatusMessage("Please add at least one bag return request."), false;
-
-    for (let i = 0; i < form.cases.length; i += 1) {
-      const c = form.cases[i]; const n = i + 1;
-      if (!c.employee.trim()) return setStatusMessage(`Request #${n}: please enter the employee.`), false;
-      if (!c.passengerName.trim()) return setStatusMessage(`Request #${n}: please enter the passenger name.`), false;
-      if (!c.pnr.trim()) return setStatusMessage(`Request #${n}: please enter the PNR.`), false;
-      if (!c.flightNumber.trim()) return setStatusMessage(`Request #${n}: please enter the flight number.`), false;
-      if (!c.returnReason) return setStatusMessage(`Request #${n}: please select the bag return reason.`), false;
-      if (c.returnReason === "Other" && !c.returnReasonOther.trim()) return setStatusMessage(`Request #${n}: please explain the bag return reason.`), false;
-      if (c.code24Created === "Yes" && !c.code24Reason) return setStatusMessage(`Request #${n}: Code 24 was created. Please document why.`), false;
-      if (c.code24Reason === "Other" && !c.code24ReasonOther.trim()) return setStatusMessage(`Request #${n}: please explain the Code 24 reason.`), false;
-      if (!c.supervisorReview) return setStatusMessage(`Request #${n}: please complete Supervisor Review.`), false;
+    if (!form.reportDate) {
+      setStatusMessage("Please select the report date.");
+      return false;
     }
-    if (!form.certification) return setStatusMessage("Please confirm the supervisor certification before submitting."), false;
+
+    if (!form.shift) {
+      setStatusMessage("Please select the shift.");
+      return false;
+    }
+
+    if (!form.returnRequests.length && !form.code24Cases.length) {
+      setStatusMessage("Please add at least one Bag Return Request or Code 24 case.");
+      return false;
+    }
+
+    for (let i = 0; i < form.returnRequests.length; i += 1) {
+      const c = form.returnRequests[i];
+      const n = i + 1;
+
+      if (!c.employee.trim()) {
+        setStatusMessage(`Bag Return Request #${n}: please enter the employee involved.`);
+        return false;
+      }
+      if (!c.passengerName.trim()) {
+        setStatusMessage(`Bag Return Request #${n}: please enter the passenger name.`);
+        return false;
+      }
+      if (!c.pnr.trim()) {
+        setStatusMessage(`Bag Return Request #${n}: please enter the PNR.`);
+        return false;
+      }
+      if (!c.flightNumber.trim()) {
+        setStatusMessage(`Bag Return Request #${n}: please enter the flight number.`);
+        return false;
+      }
+      if (!c.returnReason) {
+        setStatusMessage(`Bag Return Request #${n}: please select the bag return reason.`);
+        return false;
+      }
+      if (c.returnReason === "Other" && !c.returnReasonOther.trim()) {
+        setStatusMessage(`Bag Return Request #${n}: please explain the bag return reason.`);
+        return false;
+      }
+      if (!c.supervisorReview) {
+        setStatusMessage(`Bag Return Request #${n}: please complete Supervisor Review.`);
+        return false;
+      }
+    }
+
+    for (let i = 0; i < form.code24Cases.length; i += 1) {
+      const c = form.code24Cases[i];
+      const n = i + 1;
+
+      if (!c.passengerName.trim()) {
+        setStatusMessage(`Code 24 #${n}: please enter the passenger name.`);
+        return false;
+      }
+      if (!c.pnr.trim()) {
+        setStatusMessage(`Code 24 #${n}: please enter the PNR.`);
+        return false;
+      }
+      if (!c.flightNumber.trim()) {
+        setStatusMessage(`Code 24 #${n}: please enter the flight number.`);
+        return false;
+      }
+      if (!c.code24Reason) {
+        setStatusMessage(`Code 24 #${n}: please select the Code 24 reason.`);
+        return false;
+      }
+      if (c.code24Reason === "Other" && !c.code24ReasonOther.trim()) {
+        setStatusMessage(`Code 24 #${n}: please explain the Code 24 reason.`);
+        return false;
+      }
+      if (!c.details.trim()) {
+        setStatusMessage(`Code 24 #${n}: please enter details / comments.`);
+        return false;
+      }
+      if (!c.supervisorReview) {
+        setStatusMessage(`Code 24 #${n}: please complete Supervisor Review.`);
+        return false;
+      }
+    }
+
+    if (!form.certification) {
+      setStatusMessage("Please confirm the supervisor certification before submitting.");
+      return false;
+    }
+
     return true;
   };
 
   const handleSubmit = async () => {
     setStatusMessage("");
     if (!validate()) return;
+
     try {
       setSaving(true);
-      const cleanCases = form.cases.map(({ id, ...c }, index) => ({
-        sequence: index + 1,
-        employee: c.employee.trim(), passengerName: c.passengerName.trim(), pnr: c.pnr.trim().toUpperCase(),
-        flightNumber: c.flightNumber.trim().toUpperCase(), returnReason: c.returnReason,
-        returnReasonOther: c.returnReason === "Other" ? c.returnReasonOther.trim() : "",
-        code24Created: c.code24Created === "Yes", code24Reason: c.code24Created === "Yes" ? c.code24Reason : "",
-        code24ReasonOther: c.code24Created === "Yes" && c.code24Reason === "Other" ? c.code24ReasonOther.trim() : "",
-        bccReferral: c.bccReferral === "Yes", supervisorReview: c.supervisorReview, comments: c.comments.trim(),
-      }));
+
+      const cleanReturnRequests = form.returnRequests.map(
+        ({ id, ...c }, index) => ({
+          sequence: index + 1,
+          caseType: "bag_return_request",
+          employee: c.employee.trim(),
+          passengerName: c.passengerName.trim(),
+          pnr: c.pnr.trim().toUpperCase(),
+          flightNumber: c.flightNumber.trim().toUpperCase(),
+          returnReason: c.returnReason,
+          returnReasonOther:
+            c.returnReason === "Other" ? c.returnReasonOther.trim() : "",
+          bccReferral: c.bccReferral === "Yes",
+          supervisorReview: c.supervisorReview,
+          comments: c.comments.trim(),
+        })
+      );
+
+      const cleanCode24Cases = form.code24Cases.map(
+        ({ id, ...c }, index) => ({
+          sequence: index + 1,
+          caseType: "code_24",
+          passengerName: c.passengerName.trim(),
+          pnr: c.pnr.trim().toUpperCase(),
+          flightNumber: c.flightNumber.trim().toUpperCase(),
+          code24Reason: c.code24Reason,
+          code24ReasonOther:
+            c.code24Reason === "Other" ? c.code24ReasonOther.trim() : "",
+          bccReferral: c.bccReferral === "Yes",
+          supervisorReview: c.supervisorReview,
+          details: c.details.trim(),
+        })
+      );
+
+      // Legacy-compatible combined array so existing management pages do not break.
+      // New reports should prefer returnRequests and code24Cases.
+      const legacyCases = [
+        ...cleanReturnRequests.map((c) => ({
+          ...c,
+          code24Created: false,
+          code24Reason: "",
+          code24ReasonOther: "",
+        })),
+        ...cleanCode24Cases.map((c) => ({
+          ...c,
+          employee: "",
+          returnReason: "",
+          returnReasonOther: "",
+          code24Created: true,
+          comments: c.details,
+        })),
+      ];
 
       await addDoc(collection(db, "code24_shift_reports"), {
-        reportDate: form.reportDate, shift: form.shift, department: "AA BSO",
+        schemaVersion: 2,
+        reportDate: form.reportDate,
+        shift: form.shift,
+        department: "AA BSO",
         supervisorName: form.supervisorName.trim() || getVisibleName(user),
-        supervisorPosition: form.supervisorPosition || getDefaultPosition(user?.role),
-        totalReturnRequests: metrics.total, code24CreatedCount: metrics.code24,
-        code24AvoidedCount: metrics.avoided, bccReferralCount: metrics.bcc,
-        code24Rate: Number(metrics.rate.toFixed(2)), cases: cleanCases, notes: form.notes.trim(),
-        supervisorCertified: true, submittedByUserId: user?.id || "", submittedByUsername: user?.username || "",
-        submittedByName: getVisibleName(user), submittedByRole: user?.role || "", createdAt: serverTimestamp(),
-        status: "submitted", reviewStatus: "submitted",
+        supervisorPosition:
+          form.supervisorPosition || getDefaultPosition(user?.role),
+
+        totalReturnRequests: cleanReturnRequests.length,
+        code24CreatedCount: cleanCode24Cases.length,
+        totalCases: cleanReturnRequests.length + cleanCode24Cases.length,
+        bccReferralCount: metrics.bcc,
+
+        returnRequests: cleanReturnRequests,
+        code24Cases: cleanCode24Cases,
+        cases: legacyCases,
+
+        notes: form.notes.trim(),
+        supervisorCertified: true,
+        submittedByUserId: user?.id || "",
+        submittedByUsername: user?.username || "",
+        submittedByName: getVisibleName(user),
+        submittedByRole: user?.role || "",
+        createdAt: serverTimestamp(),
+        status: "submitted",
+        reviewStatus: "submitted",
       });
 
-      setStatusMessage("Code 24 / Bag Return shift report submitted successfully.");
-      setForm({ reportDate: todayLocal(), shift: "", department: "AA BSO", supervisorName: getVisibleName(user),
-        supervisorPosition: user?.position || getDefaultPosition(user?.role), notes: "", certification: false, cases: [newCase()] });
+      setStatusMessage(
+        "Bag Return / Code 24 shift report submitted successfully."
+      );
+
+      setForm({
+        reportDate: todayLocal(),
+        shift: "",
+        department: "AA BSO",
+        supervisorName: getVisibleName(user),
+        supervisorPosition: user?.position || getDefaultPosition(user?.role),
+        notes: "",
+        certification: false,
+        returnRequests: [newReturnRequest()],
+        code24Cases: [newCode24Case()],
+      });
+
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
-      console.error("Error saving Code 24 shift report:", err);
-      setStatusMessage("Could not submit the Code 24 / Bag Return shift report.");
-    } finally { setSaving(false); }
+      console.error("Error saving Code 24 / Bag Return shift report:", err);
+      setStatusMessage("Could not submit the Bag Return / Code 24 shift report.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (!canAccess) return <div style={{ fontFamily: "Poppins, Inter, system-ui, sans-serif" }}><PageCard style={{ padding: 20 }}><h2 style={{ margin: 0, color: "#0f172a" }}>Access denied</h2><p style={{ color: "#64748b" }}>You do not have permission to submit Code 24 / Bag Return reports.</p></PageCard></div>;
+  if (!canAccess) {
+    return (
+      <div style={{ fontFamily: "Poppins, Inter, system-ui, sans-serif" }}>
+        <PageCard style={{ padding: 20 }}>
+          <h2 style={{ margin: 0, color: "#0f172a" }}>Access denied</h2>
+          <p style={{ color: "#64748b" }}>
+            You do not have permission to submit Code 24 / Bag Return reports.
+          </p>
+        </PageCard>
+      </div>
+    );
+  }
 
-  const statusIsError = statusMessage.toLowerCase().includes("could not") || statusMessage.toLowerCase().includes("please") || statusMessage.includes("Request #");
+  const statusIsError =
+    statusMessage.toLowerCase().includes("could not") ||
+    statusMessage.toLowerCase().includes("please") ||
+    statusMessage.includes("Request #") ||
+    statusMessage.includes("Code 24 #");
 
-  return <div style={{ display: "grid", gap: isMobile ? 12 : 18, fontFamily: "Poppins, Inter, system-ui, sans-serif", width: "100%", maxWidth: "100%", minWidth: 0, overflowX: "hidden" }}>
-    <div style={{ background: "linear-gradient(135deg,#0f5c91 0%,#1f7cc1 42%,#6ec6e8 100%)", borderRadius: isMobile ? 18 : 22, padding: isMobile ? 14 : "18px 20px", color: "#fff", boxShadow: "0 18px 42px rgba(23,105,170,.18)", position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", width: 190, height: 190, borderRadius: 999, background: "rgba(255,255,255,.07)", top: -95, right: -30 }} />
-      <div style={{ position: "relative", display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6 }}>
-            <img src="/icons/aerostation-icon.png" alt={APP_NAME} style={{ width: isMobile ? 34 : 40, height: isMobile ? 34 : 40, borderRadius: 10, objectFit: "contain", background: "#fff" }} />
-            <p style={{ margin: 0, fontSize: isMobile ? 9 : 10, textTransform: "uppercase", letterSpacing: ".14em", color: "rgba(255,255,255,.78)", fontWeight: 800 }}>{APP_NAME} · AA BSO</p>
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: isMobile ? 12 : 18,
+        fontFamily: "Poppins, Inter, system-ui, sans-serif",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        overflowX: "hidden",
+      }}
+    >
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg,#0f5c91 0%,#1f7cc1 42%,#6ec6e8 100%)",
+          borderRadius: isMobile ? 18 : 22,
+          padding: isMobile ? 14 : "18px 20px",
+          color: "#fff",
+          boxShadow: "0 18px 42px rgba(23,105,170,.18)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: 190,
+            height: 190,
+            borderRadius: 999,
+            background: "rgba(255,255,255,.07)",
+            top: -95,
+            right: -30,
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            justifyContent: "space-between",
+            alignItems: isMobile ? "stretch" : "flex-start",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                marginBottom: 6,
+              }}
+            >
+              <img
+                src="/icons/aerostation-icon.png"
+                alt={APP_NAME}
+                style={{
+                  width: isMobile ? 34 : 40,
+                  height: isMobile ? 34 : 40,
+                  borderRadius: 10,
+                  objectFit: "contain",
+                  background: "#fff",
+                }}
+              />
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: isMobile ? 9 : 10,
+                  textTransform: "uppercase",
+                  letterSpacing: ".14em",
+                  color: "rgba(255,255,255,.78)",
+                  fontWeight: 800,
+                }}
+              >
+                {APP_NAME} · AA BSO
+              </p>
+            </div>
+
+            <h1
+              style={{
+                margin: "0 0 4px",
+                fontSize: isMobile ? 20 : 25,
+                lineHeight: 1.08,
+                fontWeight: 800,
+                letterSpacing: "-.035em",
+              }}
+            >
+              Bag Return / Code 24 Shift Report
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 800,
+                fontSize: isMobile ? 11.5 : 12.5,
+                lineHeight: 1.5,
+                color: "rgba(255,255,255,.9)",
+              }}
+            >
+              Bag Return Requests and Code 24 tracers are documented separately.
+              Employee involvement is required only for Bag Return Requests.
+            </p>
+
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 10.5,
+                color: "rgba(255,255,255,.72)",
+                fontWeight: 700,
+              }}
+            >
+              {APP_SUBTITLE}
+            </p>
           </div>
-          <h1 style={{ margin: "0 0 4px", fontSize: isMobile ? 20 : 25, lineHeight: 1.08, fontWeight: 800, letterSpacing: "-.035em" }}>Code 24 / Bag Return Shift Report</h1>
-          <p style={{ margin: 0, maxWidth: 800, fontSize: isMobile ? 11.5 : 12.5, lineHeight: 1.5, color: "rgba(255,255,255,.9)" }}>Document every bag return request handled during the shift and the operational reason for any Code 24 tracer created.</p>
-          <p style={{ margin: "4px 0 0", fontSize: 10.5, color: "rgba(255,255,255,.72)", fontWeight: 700 }}>{APP_SUBTITLE}</p>
+
+          <ActionButton
+            variant="secondary"
+            onClick={() => navigate("/dashboard")}
+          >
+            ← Back to Dashboard
+          </ActionButton>
         </div>
-        <ActionButton variant="secondary" onClick={() => navigate("/dashboard")}>← Back to Dashboard</ActionButton>
       </div>
-    </div>
 
-    {statusMessage && <PageCard style={{ padding: isMobile ? 12 : 16 }}><div style={{ background: statusIsError ? "#fff1f2" : "#ecfdf5", border: statusIsError ? "1px solid #fecdd3" : "1px solid #a7f3d0", borderRadius: 14, padding: "12px 14px", color: statusIsError ? "#9f1239" : "#065f46", fontSize: 13, fontWeight: 800 }}>{statusMessage}</div></PageCard>}
+      {statusMessage && (
+        <PageCard style={{ padding: isMobile ? 12 : 16 }}>
+          <div
+            style={{
+              background: statusIsError ? "#fff1f2" : "#ecfdf5",
+              border: statusIsError
+                ? "1px solid #fecdd3"
+                : "1px solid #a7f3d0",
+              borderRadius: 14,
+              padding: "12px 14px",
+              color: statusIsError ? "#9f1239" : "#065f46",
+              fontSize: 13,
+              fontWeight: 800,
+            }}
+          >
+            {statusMessage}
+          </div>
+        </PageCard>
+      )}
 
-    <PageCard style={{ padding: isMobile ? 14 : 20 }}>
-      <h2 style={{ margin: "0 0 14px", fontSize: isMobile ? 17 : 19, fontWeight: 800, color: "#0f172a" }}>Shift Header</h2>
-      <div style={gridStyle}>
-        <div><FieldLabel>Date *</FieldLabel><TextInput type="date" value={form.reportDate} onChange={(e) => setForm((p) => ({ ...p, reportDate: e.target.value }))} /></div>
-        <div><FieldLabel>Shift *</FieldLabel><SelectInput value={form.shift} onChange={(e) => setForm((p) => ({ ...p, shift: e.target.value }))}><option value="">Select shift</option><option>AM</option><option>PM</option><option>MID</option></SelectInput></div>
-        <div><FieldLabel>Department</FieldLabel><TextInput value="AA BSO" disabled /></div>
-        <div><FieldLabel>Supervisor</FieldLabel><TextInput value={form.supervisorName} disabled /></div>
-      </div>
-    </PageCard>
-
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(4,minmax(0,1fr))", gap: isMobile ? 8 : 12 }}>
-      <MetricCard label="Return Requests" value={metrics.total} detail="Current shift" tone="blue" />
-      <MetricCard label="Code 24 Created" value={metrics.code24} detail="Documented tracers" tone="amber" />
-      <MetricCard label="Code 24 Avoided" value={metrics.avoided} detail="Handled without tracer" tone="green" />
-      <MetricCard label="Code 24 Rate" value={`${metrics.rate.toFixed(1)}%`} detail={`${metrics.bcc} BCC referral(s)`} tone="slate" />
-    </div>
-
-    <div style={{ display: "grid", gap: 14 }}>
-      {form.cases.map((item, index) => <PageCard key={item.id} style={{ padding: isMobile ? 14 : 20, border: item.code24Created === "Yes" ? "1px solid #fde68a" : "1px solid #e2e8f0" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
-          <div><div style={{ fontSize: 10.5, fontWeight: 900, color: "#1769aa", textTransform: "uppercase", letterSpacing: ".05em" }}>Bag Return Request</div><h2 style={{ margin: "2px 0 0", fontSize: isMobile ? 17 : 19, color: "#0f172a" }}>Request #{index + 1}</h2></div>
-          {form.cases.length > 1 && <ActionButton variant="danger" onClick={() => removeCase(item.id)}>Remove Request</ActionButton>}
-        </div>
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <h2
+          style={{
+            margin: "0 0 14px",
+            fontSize: isMobile ? 17 : 19,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Shift Header
+        </h2>
 
         <div style={gridStyle}>
-          <div><FieldLabel>Employee *</FieldLabel><TextInput value={item.employee} onChange={(e) => updateCase(item.id, "employee", e.target.value)} placeholder="Employee handling request" /></div>
-          <div><FieldLabel>Passenger Name *</FieldLabel><TextInput value={item.passengerName} onChange={(e) => updateCase(item.id, "passengerName", e.target.value)} placeholder="Passenger name" /></div>
-          <div><FieldLabel>PNR *</FieldLabel><TextInput value={item.pnr} onChange={(e) => updateCase(item.id, "pnr", e.target.value)} placeholder="Example: ABC123" /></div>
-          <div><FieldLabel>Flight Number *</FieldLabel><TextInput value={item.flightNumber} onChange={(e) => updateCase(item.id, "flightNumber", e.target.value)} placeholder="Example: AA1234" /></div>
-          <div><FieldLabel>Bag Return Reason *</FieldLabel><SelectInput value={item.returnReason} onChange={(e) => updateCase(item.id, "returnReason", e.target.value)}><option value="">Select reason</option>{RETURN_REASONS.map((x) => <option key={x}>{x}</option>)}</SelectInput></div>
-          <div><FieldLabel>Code 24 Created? *</FieldLabel><SelectInput value={item.code24Created} onChange={(e) => updateCase(item.id, "code24Created", e.target.value)}><option>No</option><option>Yes</option></SelectInput></div>
-          <div><FieldLabel>BCC Referral?</FieldLabel><SelectInput value={item.bccReferral} onChange={(e) => updateCase(item.id, "bccReferral", e.target.value)}><option>No</option><option>Yes</option></SelectInput></div>
-          <div><FieldLabel>Supervisor Review *</FieldLabel><SelectInput value={item.supervisorReview} onChange={(e) => updateCase(item.id, "supervisorReview", e.target.value)}>{REVIEW_OPTIONS.map((x) => <option key={x}>{x}</option>)}</SelectInput></div>
+          <div>
+            <FieldLabel>Date *</FieldLabel>
+            <TextInput
+              type="date"
+              value={form.reportDate}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, reportDate: e.target.value }))
+              }
+            />
+          </div>
+
+          <div>
+            <FieldLabel>Shift *</FieldLabel>
+            <SelectInput
+              value={form.shift}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, shift: e.target.value }))
+              }
+            >
+              <option value="">Select shift</option>
+              <option>AM</option>
+              <option>PM</option>
+              <option>MID</option>
+            </SelectInput>
+          </div>
+
+          <div>
+            <FieldLabel>Department</FieldLabel>
+            <TextInput value="AA BSO" disabled />
+          </div>
+
+          <div>
+            <FieldLabel>Supervisor</FieldLabel>
+            <TextInput value={form.supervisorName} disabled />
+          </div>
+        </div>
+      </PageCard>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile
+            ? "repeat(2,minmax(0,1fr))"
+            : "repeat(4,minmax(0,1fr))",
+          gap: isMobile ? 8 : 12,
+        }}
+      >
+        <MetricCard
+          label="Bag Return Requests"
+          value={metrics.returnRequests}
+          detail="Employee involved tracked"
+          tone="blue"
+        />
+        <MetricCard
+          label="Code 24 Cases"
+          value={metrics.code24}
+          detail="Tracer cases documented"
+          tone="amber"
+        />
+        <MetricCard
+          label="Total Cases"
+          value={metrics.totalCases}
+          detail="Current shift"
+          tone="green"
+        />
+        <MetricCard
+          label="BCC Referrals"
+          value={metrics.bcc}
+          detail="Across both sections"
+          tone="slate"
+        />
+      </div>
+
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 10.5,
+                fontWeight: 900,
+                color: "#1769aa",
+                textTransform: "uppercase",
+                letterSpacing: ".05em",
+              }}
+            >
+              Section 1
+            </div>
+            <h2
+              style={{
+                margin: "2px 0 0",
+                fontSize: isMobile ? 18 : 21,
+                color: "#0f172a",
+              }}
+            >
+              Bag Return Requests
+            </h2>
+            <p style={{ margin: "5px 0 0", color: "#64748b", fontSize: 12 }}>
+              Record the employee involved with each requested bag return.
+            </p>
+          </div>
+          <ActionButton variant="secondary" onClick={addReturnRequest}>
+            + Add Bag Return Request
+          </ActionButton>
         </div>
 
-        {item.returnReason === "Other" && <div style={{ marginTop: 12 }}><FieldLabel>Explain Bag Return Reason *</FieldLabel><TextArea value={item.returnReasonOther} onChange={(e) => updateCase(item.id, "returnReasonOther", e.target.value)} /></div>}
+        {form.returnRequests.length === 0 ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 14,
+              border: "1px dashed #bfdbfe",
+              background: "#f8fbff",
+              color: "#64748b",
+              fontSize: 12.5,
+              fontWeight: 700,
+            }}
+          >
+            No Bag Return Requests added for this shift.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 14 }}>
+            {form.returnRequests.map((item, index) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #dbeafe",
+                  borderRadius: 16,
+                  padding: isMobile ? 12 : 16,
+                  background: "#fbfdff",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    marginBottom: 12,
+                  }}
+                >
+                  <strong style={{ color: "#0f172a" }}>
+                    Bag Return Request #{index + 1}
+                  </strong>
+                  <ActionButton
+                    variant="danger"
+                    onClick={() => removeReturnRequest(item.id)}
+                  >
+                    Remove
+                  </ActionButton>
+                </div>
 
-        {item.code24Created === "Yes" && <div style={{ marginTop: 14, padding: 14, borderRadius: 15, background: "#fffbeb", border: "1px solid #fde68a" }}>
-          <div style={{ fontSize: 11, fontWeight: 900, color: "#92400e", textTransform: "uppercase", marginBottom: 10 }}>Code 24 Documentation Required</div>
-          <div style={gridStyle}><div><FieldLabel>Reason Code 24 Was Created *</FieldLabel><SelectInput value={item.code24Reason} onChange={(e) => updateCase(item.id, "code24Reason", e.target.value)}><option value="">Select reason</option>{CODE24_REASONS.map((x) => <option key={x}>{x}</option>)}</SelectInput></div></div>
-          {item.code24Reason === "Other" && <div style={{ marginTop: 10 }}><FieldLabel>Explain Code 24 Reason *</FieldLabel><TextArea value={item.code24ReasonOther} onChange={(e) => updateCase(item.id, "code24ReasonOther", e.target.value)} /></div>}
-        </div>}
+                <div style={gridStyle}>
+                  <div>
+                    <FieldLabel>Employee Involved *</FieldLabel>
+                    <TextInput
+                      value={item.employee}
+                      onChange={(e) =>
+                        updateReturnRequest(item.id, "employee", e.target.value)
+                      }
+                      placeholder="Employee handling request"
+                    />
+                  </div>
 
-        <div style={{ marginTop: 14 }}><FieldLabel>Comments / Coaching</FieldLabel><TextArea value={item.comments} onChange={(e) => updateCase(item.id, "comments", e.target.value)} placeholder="Document coaching, follow-up, BCC information, or relevant details." /></div>
-      </PageCard>)}
+                  <div>
+                    <FieldLabel>Passenger Name *</FieldLabel>
+                    <TextInput
+                      value={item.passengerName}
+                      onChange={(e) =>
+                        updateReturnRequest(
+                          item.id,
+                          "passengerName",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Passenger name"
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>PNR *</FieldLabel>
+                    <TextInput
+                      value={item.pnr}
+                      onChange={(e) =>
+                        updateReturnRequest(item.id, "pnr", e.target.value)
+                      }
+                      placeholder="Example: ABC123"
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Flight Number *</FieldLabel>
+                    <TextInput
+                      value={item.flightNumber}
+                      onChange={(e) =>
+                        updateReturnRequest(
+                          item.id,
+                          "flightNumber",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Example: AA1234"
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Bag Return Reason *</FieldLabel>
+                    <SelectInput
+                      value={item.returnReason}
+                      onChange={(e) =>
+                        updateReturnRequest(
+                          item.id,
+                          "returnReason",
+                          e.target.value
+                        )
+                      }
+                    >
+                      <option value="">Select reason</option>
+                      {RETURN_REASONS.map((x) => (
+                        <option key={x}>{x}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+
+                  <div>
+                    <FieldLabel>BCC Referral?</FieldLabel>
+                    <SelectInput
+                      value={item.bccReferral}
+                      onChange={(e) =>
+                        updateReturnRequest(
+                          item.id,
+                          "bccReferral",
+                          e.target.value
+                        )
+                      }
+                    >
+                      <option>No</option>
+                      <option>Yes</option>
+                    </SelectInput>
+                  </div>
+
+                  <div>
+                    <FieldLabel>Supervisor Review *</FieldLabel>
+                    <SelectInput
+                      value={item.supervisorReview}
+                      onChange={(e) =>
+                        updateReturnRequest(
+                          item.id,
+                          "supervisorReview",
+                          e.target.value
+                        )
+                      }
+                    >
+                      {REVIEW_OPTIONS.map((x) => (
+                        <option key={x}>{x}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                </div>
+
+                {item.returnReason === "Other" && (
+                  <div style={{ marginTop: 12 }}>
+                    <FieldLabel>Explain Bag Return Reason *</FieldLabel>
+                    <TextArea
+                      value={item.returnReasonOther}
+                      onChange={(e) =>
+                        updateReturnRequest(
+                          item.id,
+                          "returnReasonOther",
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+                )}
+
+                <div style={{ marginTop: 12 }}>
+                  <FieldLabel>Comments / Coaching</FieldLabel>
+                  <TextArea
+                    value={item.comments}
+                    onChange={(e) =>
+                      updateReturnRequest(item.id, "comments", e.target.value)
+                    }
+                    placeholder="Document coaching, follow-up, BCC information, or relevant details."
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </PageCard>
+
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 10.5,
+                fontWeight: 900,
+                color: "#b45309",
+                textTransform: "uppercase",
+                letterSpacing: ".05em",
+              }}
+            >
+              Section 2
+            </div>
+            <h2
+              style={{
+                margin: "2px 0 0",
+                fontSize: isMobile ? 18 : 21,
+                color: "#0f172a",
+              }}
+            >
+              Code 24 Cases
+            </h2>
+            <p style={{ margin: "5px 0 0", color: "#64748b", fontSize: 12 }}>
+              Employee involved is not requested for Code 24. Document the case details and operational context instead.
+            </p>
+          </div>
+          <ActionButton variant="amber" onClick={addCode24Case}>
+            + Add Code 24
+          </ActionButton>
+        </div>
+
+        {form.code24Cases.length === 0 ? (
+          <div
+            style={{
+              padding: 16,
+              borderRadius: 14,
+              border: "1px dashed #fde68a",
+              background: "#fffbeb",
+              color: "#92400e",
+              fontSize: 12.5,
+              fontWeight: 700,
+            }}
+          >
+            No Code 24 cases added for this shift.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 14 }}>
+            {form.code24Cases.map((item, index) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #fde68a",
+                  borderRadius: 16,
+                  padding: isMobile ? 12 : 16,
+                  background: "#fffdf5",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    marginBottom: 12,
+                  }}
+                >
+                  <strong style={{ color: "#92400e" }}>
+                    Code 24 #{index + 1}
+                  </strong>
+                  <ActionButton
+                    variant="danger"
+                    onClick={() => removeCode24Case(item.id)}
+                  >
+                    Remove
+                  </ActionButton>
+                </div>
+
+                <div style={gridStyle}>
+                  <div>
+                    <FieldLabel>Passenger Name *</FieldLabel>
+                    <TextInput
+                      value={item.passengerName}
+                      onChange={(e) =>
+                        updateCode24Case(
+                          item.id,
+                          "passengerName",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Passenger name"
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>PNR *</FieldLabel>
+                    <TextInput
+                      value={item.pnr}
+                      onChange={(e) =>
+                        updateCode24Case(item.id, "pnr", e.target.value)
+                      }
+                      placeholder="Example: ABC123"
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Flight Number *</FieldLabel>
+                    <TextInput
+                      value={item.flightNumber}
+                      onChange={(e) =>
+                        updateCode24Case(
+                          item.id,
+                          "flightNumber",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Example: AA1234"
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Code 24 Reason *</FieldLabel>
+                    <SelectInput
+                      value={item.code24Reason}
+                      onChange={(e) =>
+                        updateCode24Case(
+                          item.id,
+                          "code24Reason",
+                          e.target.value
+                        )
+                      }
+                    >
+                      <option value="">Select reason</option>
+                      {CODE24_REASONS.map((x) => (
+                        <option key={x}>{x}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+
+                  <div>
+                    <FieldLabel>BCC Referral?</FieldLabel>
+                    <SelectInput
+                      value={item.bccReferral}
+                      onChange={(e) =>
+                        updateCode24Case(
+                          item.id,
+                          "bccReferral",
+                          e.target.value
+                        )
+                      }
+                    >
+                      <option>No</option>
+                      <option>Yes</option>
+                    </SelectInput>
+                  </div>
+
+                  <div>
+                    <FieldLabel>Supervisor Review *</FieldLabel>
+                    <SelectInput
+                      value={item.supervisorReview}
+                      onChange={(e) =>
+                        updateCode24Case(
+                          item.id,
+                          "supervisorReview",
+                          e.target.value
+                        )
+                      }
+                    >
+                      {REVIEW_OPTIONS.map((x) => (
+                        <option key={x}>{x}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                </div>
+
+                {item.code24Reason === "Other" && (
+                  <div style={{ marginTop: 12 }}>
+                    <FieldLabel>Explain Code 24 Reason *</FieldLabel>
+                    <TextArea
+                      value={item.code24ReasonOther}
+                      onChange={(e) =>
+                        updateCode24Case(
+                          item.id,
+                          "code24ReasonOther",
+                          e.target.value
+                        )
+                      }
+                    />
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: 14,
+                    borderRadius: 15,
+                    background: "#fffbeb",
+                    border: "1px solid #fde68a",
+                  }}
+                >
+                  <FieldLabel>Code 24 Details / Comments *</FieldLabel>
+                  <TextArea
+                    value={item.details}
+                    onChange={(e) =>
+                      updateCode24Case(item.id, "details", e.target.value)
+                    }
+                    placeholder="Document what happened, why the Code 24 was created, BCC guidance, passenger request, supervisor action, follow-up, and any relevant operational details."
+                    style={{ minHeight: 120 }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </PageCard>
+
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <h2
+          style={{
+            margin: "0 0 12px",
+            fontSize: isMobile ? 17 : 19,
+            fontWeight: 800,
+            color: "#0f172a",
+          }}
+        >
+          Shift Notes & Certification
+        </h2>
+
+        <FieldLabel>General Shift Notes</FieldLabel>
+        <TextArea
+          value={form.notes}
+          onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+          placeholder="Optional shift-level notes or recurring trends."
+        />
+
+        <label
+          style={{
+            marginTop: 14,
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            padding: 13,
+            borderRadius: 14,
+            background: "#f8fbff",
+            border: "1px solid #dbeafe",
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={form.certification}
+            onChange={(e) =>
+              setForm((p) => ({ ...p, certification: e.target.checked }))
+            }
+            style={{ marginTop: 3 }}
+          />
+          <span
+            style={{
+              fontSize: 12.5,
+              lineHeight: 1.55,
+              color: "#334155",
+              fontWeight: 700,
+            }}
+          >
+            I confirm that all Bag Return Requests and Code 24 cases handled during my shift have been reviewed and documented in the correct section. Employee involvement has been documented for Bag Return Requests, while Code 24 cases include the required operational details and follow-up information.
+          </span>
+        </label>
+      </PageCard>
+
+      <PageCard style={{ padding: isMobile ? 14 : 18 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <ActionButton onClick={handleSubmit} disabled={saving}>
+            {saving ? "Submitting..." : "Submit Shift Report"}
+          </ActionButton>
+          <ActionButton
+            variant="secondary"
+            onClick={() => navigate("/dashboard")}
+            disabled={saving}
+          >
+            Cancel
+          </ActionButton>
+        </div>
+      </PageCard>
     </div>
-
-    <div><ActionButton variant="secondary" onClick={addCase}>+ Add Return Request</ActionButton></div>
-
-    <PageCard style={{ padding: isMobile ? 14 : 20 }}>
-      <h2 style={{ margin: "0 0 12px", fontSize: isMobile ? 17 : 19, fontWeight: 800, color: "#0f172a" }}>Shift Notes & Certification</h2>
-      <FieldLabel>General Shift Notes</FieldLabel><TextArea value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} placeholder="Optional shift-level notes or recurring trends." />
-      <label style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "flex-start", padding: 13, borderRadius: 14, background: "#f8fbff", border: "1px solid #dbeafe", cursor: "pointer" }}>
-        <input type="checkbox" checked={form.certification} onChange={(e) => setForm((p) => ({ ...p, certification: e.target.checked }))} style={{ marginTop: 3 }} />
-        <span style={{ fontSize: 12.5, lineHeight: 1.55, color: "#334155", fontWeight: 700 }}>I confirm that all bag return requests handled during my shift have been reviewed and that any Code 24 tracer created has a documented reason. Any deviation requiring coaching or follow-up has been identified above.</span>
-      </label>
-    </PageCard>
-
-    <PageCard style={{ padding: isMobile ? 14 : 18 }}><div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-      <ActionButton onClick={handleSubmit} disabled={saving}>{saving ? "Submitting..." : "Submit Code 24 Shift Report"}</ActionButton>
-      <ActionButton variant="secondary" onClick={() => navigate("/dashboard")} disabled={saving}>Cancel</ActionButton>
-    </div></PageCard>
-  </div>;
+  );
 }
