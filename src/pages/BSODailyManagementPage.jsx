@@ -121,27 +121,6 @@ function Select(props) {
   );
 }
 
-function TextArea(props) {
-  return (
-    <textarea
-      {...props}
-      style={{
-        width: "100%",
-        boxSizing: "border-box",
-        border: "1px solid #cbd5e1",
-        borderRadius: 12,
-        padding: "10px 12px",
-        minHeight: 100,
-        resize: "vertical",
-        fontSize: 13.5,
-        fontFamily: "inherit",
-        outline: "none",
-        ...props.style,
-      }}
-    />
-  );
-}
-
 function Button({ children, onClick, variant = "primary", disabled = false }) {
   const variants = {
     primary: {
@@ -359,7 +338,8 @@ function formatTs(v) {
 }
 
 function eventLabel(type) {
-  if (type === "CODE_24") return "Code 24 / Bag Return";
+  if (type === "BAG_RETURN") return "Bag Return Request";
+  if (type === "CODE_24") return "Code 24";
   if (type === "CODE_39") return "Code 39";
   if (type === "EXCEPTION_DELIVERY") return "Exception Delivery";
   return "Other";
@@ -661,7 +641,7 @@ function buildReportPrintHtml(report) {
             report.reviewStatus || report.status || "submitted"
           )}</div></div>
           <div class="card"><div class="card-label">Total Events</div><div class="card-value">${metrics.totalEvents}</div></div>
-          <div class="card"><div class="card-label">Code 24 / Bag Returns</div><div class="card-value">${metrics.code24BagReturnEvents}</div></div>
+          <div class="card"><div class="card-label">Bag Return Requests</div><div class="card-value">${metrics.code24BagReturnEvents}</div></div>
           <div class="card"><div class="card-label">Code 39</div><div class="card-value">${metrics.code39Count}</div></div>
           <div class="card"><div class="card-label">Exception Delivery</div><div class="card-value">${metrics.exceptionDeliveryCount}</div></div>
           <div class="card"><div class="card-label">Other</div><div class="card-value">${metrics.otherCount}</div></div>
@@ -752,7 +732,7 @@ function buildSummaryPrintHtml(filtered, totals, filters) {
 
         <div class="grid">
           <div class="card"><div class="card-label">Total Events</div><div class="card-value">${totals.total}</div></div>
-          <div class="card"><div class="card-label">Code 24 / Bag Returns</div><div class="card-value">${totals.code24Events}</div></div>
+          <div class="card"><div class="card-label">Bag Return Requests</div><div class="card-value">${totals.code24Events}</div></div>
           <div class="card"><div class="card-label">Code 24 Created</div><div class="card-value">${totals.code24Created}</div></div>
           <div class="card"><div class="card-label">Code 24 Rate</div><div class="card-value">${totals.code24Rate.toFixed(
             1
@@ -794,22 +774,28 @@ function buildSummaryPrintHtml(filtered, totals, filters) {
 }
 
 function recalc(events) {
-  const code24 = events.filter((e) => e.eventType === "CODE_24");
-  const code24Created = code24.filter(
-    (e) => e.code24Created === true || e.code24Created === "Yes"
-  ).length;
-  const code39 = events.filter((e) => e.eventType === "CODE_39");
-  const exceptions = events.filter(
+  const normalized = events.map((e) => ({
+    ...e,
+    eventType:
+      e.eventType === "CODE_24" &&
+      !(e.code24Created === true || e.code24Created === "Yes")
+        ? "BAG_RETURN"
+        : e.eventType,
+  }));
+  const bagReturn = normalized.filter((e) => e.eventType === "BAG_RETURN");
+  const code24 = normalized.filter((e) => e.eventType === "CODE_24");
+  const code39 = normalized.filter((e) => e.eventType === "CODE_39");
+  const exceptions = normalized.filter(
     (e) => e.eventType === "EXCEPTION_DELIVERY"
   );
 
   return {
-    totalEvents: events.length,
-    code24BagReturnEvents: code24.length,
-    code24CreatedCount: code24Created,
-    code24Rate: code24.length
-      ? Number(((code24Created / code24.length) * 100).toFixed(2))
-      : 0,
+    totalEvents: normalized.length,
+    bagReturnRequestCount: bagReturn.length,
+    code24Count: code24.length,
+    code24BagReturnEvents: bagReturn.length + code24.length,
+    code24CreatedCount: code24.length,
+    code24Rate: 0,
     code39Count: code39.length,
     code39BagsAffected: code39.reduce(
       (s, e) => s + (Number(e.bagsChecked) || 0),
@@ -841,11 +827,6 @@ export default function BSODailyManagementPage() {
   const [caseListOpen, setCaseListOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [working, setWorking] = useState("");
-  const [investigationOpen, setInvestigationOpen] = useState(false);
-  const [investigationStatus, setInvestigationStatus] = useState("OPEN");
-  const [investigationNotes, setInvestigationNotes] = useState("");
-  const [investigationCorrection, setInvestigationCorrection] = useState("");
-  const [investigationEvidence, setInvestigationEvidence] = useState([]);
 
   const emptyFilters = {
     startDate: "",
@@ -886,6 +867,11 @@ export default function BSODailyManagementPage() {
       reports.flatMap((r) =>
         (Array.isArray(r.events) ? r.events : []).map((e, idx) => ({
           ...e,
+          eventType:
+            e.eventType === "CODE_24" &&
+            !(e.code24Created === true || e.code24Created === "Yes")
+              ? "BAG_RETURN"
+              : e.eventType,
           eventIndex: idx,
           reportIdDoc: r.id,
           reportDate: r.reportDate,
@@ -988,50 +974,39 @@ export default function BSODailyManagementPage() {
   );
 
   const totals = useMemo(() => {
+    const bagReturn = filtered.filter((e) => e.eventType === "BAG_RETURN");
     const code24 = filtered.filter((e) => e.eventType === "CODE_24");
-    const code24Created = code24.filter(
-      (e) => e.code24Created === true || e.code24Created === "Yes"
-    ).length;
     const code39 = filtered.filter((e) => e.eventType === "CODE_39");
     const exceptions = filtered.filter(
       (e) => e.eventType === "EXCEPTION_DELIVERY"
     );
 
+    const followUp = filtered.filter(
+      (e) =>
+        e.followUpRequired === true ||
+        e.supervisorReview === "Follow-up required"
+    ).length;
+
     return {
       total: filtered.length,
-      code24Events: code24.length,
-      code24Created,
-      code24Avoided: Math.max(0, code24.length - code24Created),
-      code24Rate: percent(code24Created, code24.length),
-      code24AvoidanceRate: percent(Math.max(0, code24.length - code24Created), code24.length),
+      bagReturn: bagReturn.length,
+      code24: code24.length,
       code39: code39.length,
       code39Share: percent(code39.length, filtered.length),
       code39Bags: code39.reduce(
-        (s, e) => s + (Number(e.bagsChecked) || 0),
+        (sum, e) => sum + (Number(e.bagsChecked) || 0),
         0
       ),
       exceptions: exceptions.length,
       fedEx: exceptions.filter((e) => e.deliveryMethod === "FedEx").length,
       sdd: exceptions.filter((e) => e.deliveryMethod === "SDD").length,
-      otherDelivery: exceptions.filter((e) => e.deliveryMethod === "Other")
-        .length,
+      otherDelivery: exceptions.filter((e) => e.deliveryMethod === "Other").length,
       other: filtered.filter((e) => e.eventType === "OTHER").length,
-      followUp: filtered.filter(
-        (e) =>
-          e.followUpRequired === true ||
-          e.supervisorReview === "Follow-up required"
-      ).length,
-      followUpRate: percent(
-        filtered.filter(
-          (e) =>
-            e.followUpRequired === true ||
-            e.supervisorReview === "Follow-up required"
-        ).length,
-        filtered.length
-      ),
-      errorCases: code24Created + code39.length,
-      errorMargin: percent(code24Created + code39.length, filtered.length),
-      controlSuccessRate: Math.max(0, 100 - percent(code24Created + code39.length, filtered.length)),
+      followUp,
+      followUpRate: percent(followUp, filtered.length),
+      errorCases: code24.length + code39.length,
+      errorMargin: percent(code24.length + code39.length, filtered.length),
+      controlSuccessRate: Math.max(0, 100 - percent(code24.length + code39.length, filtered.length)),
     };
   }, [filtered]);
 
@@ -1041,8 +1016,10 @@ export default function BSODailyManagementPage() {
   }, [filtered, activeCaseType]);
 
   const activeCaseLabel =
-    activeCaseType === "CODE_24"
-      ? "Code 24 / Bag Return"
+    activeCaseType === "BAG_RETURN"
+      ? "Bag Return Request"
+      : activeCaseType === "CODE_24"
+      ? "Code 24"
       : activeCaseType === "CODE_39"
       ? "Code 39"
       : activeCaseType === "EXCEPTION_DELIVERY"
@@ -1067,98 +1044,6 @@ export default function BSODailyManagementPage() {
     () => reports.find((r) => r.id === selectedId) || null,
     [reports, selectedId]
   );
-
-  function openInvestigation(caseItem) {
-    const inv = caseItem?.investigation || {};
-    setSelectedCase(caseItem);
-    setInvestigationStatus(inv.status || "OPEN");
-    setInvestigationNotes("");
-    setInvestigationCorrection("");
-    setInvestigationEvidence(Array.isArray(inv.evidence) ? inv.evidence : []);
-    setInvestigationOpen(true);
-  }
-
-  function handleEvidenceFiles(fileList) {
-    const files = Array.from(fileList || []).slice(0, 6);
-    if (!files.length) return;
-    const readers = files.map((file) => new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve({
-        name: file.name || `evidence-${Date.now()}.jpg`,
-        type: file.type || "image/jpeg",
-        size: file.size || 0,
-        dataUrl: String(reader.result || ""),
-        addedAt: new Date().toISOString(),
-        addedBy: user?.username || user?.name || "Management",
-      });
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    }));
-    Promise.all(readers).then((items) => {
-      const clean = items.filter(Boolean).filter((x) => x.dataUrl.length < 700000);
-      if (clean.length !== items.filter(Boolean).length) {
-        setMessage("Some evidence images were too large. Please use screenshots or compressed images under about 500 KB each.");
-      }
-      setInvestigationEvidence((prev) => [...prev, ...clean].slice(0, 8));
-    });
-  }
-
-  async function saveInvestigation(closeAfter = false) {
-    if (!selectedCase) return;
-    const report = reports.find((r) => r.id === selectedCase.reportIdDoc);
-    if (!report) return;
-    const nowIso = new Date().toISOString();
-    const actor = user?.username || user?.name || "Management";
-    const oldEvent = (report.events || [])[selectedCase.eventIndex];
-    if (!oldEvent) return;
-    const previous = oldEvent.investigation || {};
-    const history = Array.isArray(previous.history) ? previous.history : [];
-    const finalStatus = closeAfter ? "CLOSED" : investigationStatus;
-    const historyEntry = {
-      at: nowIso,
-      by: actor,
-      action: closeAfter ? "Investigation closed" : previous.openedAt ? "Investigation updated" : "Investigation opened",
-      status: finalStatus,
-      notes: investigationNotes.trim(),
-      correction: investigationCorrection.trim(),
-    };
-    const investigation = {
-      ...previous,
-      status: finalStatus,
-      openedAt: previous.openedAt || nowIso,
-      openedBy: previous.openedBy || actor,
-      updatedAt: nowIso,
-      updatedBy: actor,
-      closedAt: closeAfter ? nowIso : (previous.closedAt || ""),
-      closedBy: closeAfter ? actor : (previous.closedBy || ""),
-      managementNotes: investigationNotes.trim() || previous.managementNotes || "",
-      correction: investigationCorrection.trim() || previous.correction || "",
-      evidence: investigationEvidence,
-      history: [...history, historyEntry],
-    };
-    const events = (report.events || []).map((event, idx) =>
-      idx === selectedCase.eventIndex ? { ...event, investigation } : event
-    );
-    try {
-      setWorking(`investigation-${report.id}-${selectedCase.eventIndex}`);
-      await updateDoc(doc(db, "bso_daily_reports", report.id), {
-        events,
-        updatedAt: serverTimestamp(),
-      });
-      setReports((prev) => prev.map((r) => r.id === report.id ? { ...r, events, updatedAt: new Date() } : r));
-      setSelectedCase((prev) => prev ? { ...prev, investigation } : prev);
-      setInvestigationStatus(finalStatus);
-      setInvestigationNotes("");
-      setInvestigationCorrection("");
-      setMessage(closeAfter ? "Investigation closed successfully." : "Investigation saved successfully.");
-      if (closeAfter) setInvestigationOpen(false);
-    } catch (e) {
-      console.error(e);
-      setMessage("Could not save the investigation.");
-    } finally {
-      setWorking("");
-    }
-  }
 
   async function deleteReport(reportId) {
     if (!window.confirm("Delete this entire BSO Daily Report permanently?"))
@@ -1397,7 +1282,7 @@ export default function BSODailyManagementPage() {
             <div><Label>Start Date</Label><Input type="date" value={filters.startDate} onChange={(e) => setFilters((p) => ({ ...p, startDate: e.target.value }))} /></div>
             <div><Label>End Date</Label><Input type="date" value={filters.endDate} onChange={(e) => setFilters((p) => ({ ...p, endDate: e.target.value }))} /></div>
             <div><Label>Shift</Label><Select value={filters.shift} onChange={(e) => setFilters((p) => ({ ...p, shift: e.target.value }))}><option value="all">All</option><option>AM</option><option>PM</option><option>MID</option><option>IMPORTED</option></Select></div>
-            <div><Label>Event Type</Label><Select value={filters.eventType} onChange={(e) => setFilters((p) => ({ ...p, eventType: e.target.value }))}><option value="all">All</option><option value="CODE_24">Code 24 / Bag Return</option><option value="CODE_39">Code 39</option><option value="EXCEPTION_DELIVERY">Exception Delivery</option><option value="OTHER">Other</option></Select></div>
+            <div><Label>Event Type</Label><Select value={filters.eventType} onChange={(e) => setFilters((p) => ({ ...p, eventType: e.target.value }))}><option value="all">All</option><option value="BAG_RETURN">Bag Return Request</option><option value="CODE_24">Code 24</option><option value="CODE_39">Code 39</option><option value="EXCEPTION_DELIVERY">Exception Delivery</option><option value="OTHER">Other</option></Select></div>
             <div><Label>Supervisor</Label><Input value={filters.supervisor} onChange={(e) => setFilters((p) => ({ ...p, supervisor: e.target.value }))} /></div>
             <div><Label>Employee</Label><Input value={filters.employee} onChange={(e) => setFilters((p) => ({ ...p, employee: e.target.value }))} /></div>
             <div><Label>Fault Station</Label><Input value={filters.faultStation} onChange={(e) => setFilters((p) => ({ ...p, faultStation: e.target.value }))} /></div>
@@ -1421,7 +1306,8 @@ export default function BSODailyManagementPage() {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : isTablet ? "repeat(3,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))", gap: 9 }}>
           <Metric label="All BSO Cases" value={totals.total} tone="blue" subtitle="Open all cases" onClick={() => { setActiveCaseType("all"); setCaseListOpen(true); }} />
-          <Metric label="Code 24" value={totals.code24Events} tone="amber" subtitle={`${totals.code24Created} created | ${totals.code24Avoided} avoided`} onClick={() => { setActiveCaseType("CODE_24"); setCaseListOpen(true); }} />
+          <Metric label="Bag Return Requests" value={totals.bagReturn} tone="blue" subtitle="Customer / operational bag returns" onClick={() => { setActiveCaseType("BAG_RETURN"); setCaseListOpen(true); }} />
+          <Metric label="Code 24" value={totals.code24} tone="amber" subtitle="Code 24 tracer cases" onClick={() => { setActiveCaseType("CODE_24"); setCaseListOpen(true); }} />
           <Metric label="Code 39" value={totals.code39} tone="red" subtitle={`${totals.code39Bags} bag(s) affected`} onClick={() => { setActiveCaseType("CODE_39"); setCaseListOpen(true); }} />
           <Metric label="Exception Delivery" value={totals.exceptions} tone="blue" subtitle={`${totals.fedEx} FedEx | ${totals.sdd} SDD`} onClick={() => { setActiveCaseType("EXCEPTION_DELIVERY"); setCaseListOpen(true); }} />
           <Metric label="Other" value={totals.other} tone="green" subtitle={`${totals.followUp} follow-up case(s)`} onClick={() => { setActiveCaseType("OTHER"); setCaseListOpen(true); }} />
@@ -1438,12 +1324,11 @@ export default function BSODailyManagementPage() {
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))", gap: 9 }}>
           <Metric label="Error Margin" value={`${totals.errorMargin.toFixed(1)}%`} subtitle={`${totals.errorCases} Code 24 created + Code 39 cases`} tone={lowerIsBetterTone(totals.errorMargin, BSO_WATCH_BANDS.errorMargin)} />
           <Metric label="Control Success" value={`${totals.controlSuccessRate.toFixed(1)}%`} subtitle="100% minus current error margin" tone={higherIsBetterTone(totals.controlSuccessRate, BSO_WATCH_BANDS.controlSuccess)} />
-          <Metric label="Code 24 Avoidance" value={`${totals.code24AvoidanceRate.toFixed(1)}%`} subtitle={`${totals.code24Avoided} avoided / ${totals.code24Events} returns`} tone={higherIsBetterTone(totals.code24AvoidanceRate, BSO_WATCH_BANDS.code24Avoidance)} />
           <Metric label="Code 39 Share" value={`${totals.code39Share.toFixed(1)}%`} subtitle={`${totals.code39} of ${totals.total} cases`} tone={lowerIsBetterTone(totals.code39Share, BSO_WATCH_BANDS.code39Share)} />
           <Metric label="Follow-up Rate" value={`${totals.followUpRate.toFixed(1)}%`} subtitle={`${totals.followUp} requiring follow-up`} tone={lowerIsBetterTone(totals.followUpRate, BSO_WATCH_BANDS.followUpRate)} />
         </div>
         <div style={{ marginTop: 10, fontSize: 11, color: "#64748b", fontWeight: 700 }}>
-          Watch bands: Error Margin / Code 39 Share green &lt;=10%, amber &lt;=20%; Follow-up green &lt;=5%, amber &lt;=10%; Control Success / Code 24 Avoidance green &gt;=90%, amber &gt;=80%.
+          Watch bands: Error Margin / Code 39 Share green &lt;=10%, amber &lt;=20%; Follow-up green &lt;=5%, amber &lt;=10%; Control Success green &gt;=90%, amber &gt;=80%.
         </div>
       </Card>
 
@@ -1452,16 +1337,17 @@ export default function BSODailyManagementPage() {
           <h2 style={{ margin: 0, fontSize: 20, color: "#0f172a" }}>Code Performance Breakdown</h2>
           <div style={{ marginTop: 4, color: "#64748b", fontSize: 12, fontWeight: 700 }}>Summary by code. Click a panel to review individual cases.</div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,minmax(0,1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4,minmax(0,1fr))", gap: 12 }}>
+          <div onClick={() => { setActiveCaseType("BAG_RETURN"); setCaseListOpen(true); }} style={{ cursor: "pointer", border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 18, padding: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#1d4ed8", textTransform: "uppercase" }}>Bag Return Requests</div>
+            <div style={{ marginTop: 8, fontSize: 30, fontWeight: 900, color: "#1d4ed8" }}>{totals.bagReturn}</div>
+            <div style={{ marginTop: 10, fontSize: 11.5, fontWeight: 800, color: "#1d4ed8" }}>Includes Employee Involved and return reason</div>
+          </div>
+
           <div onClick={() => { setActiveCaseType("CODE_24"); setCaseListOpen(true); }} style={{ cursor: "pointer", border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 18, padding: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 900, color: "#92400e", textTransform: "uppercase" }}>Code 24 / Bag Returns</div>
-            <div style={{ marginTop: 8, fontSize: 30, fontWeight: 900, color: "#9a3412" }}>{totals.code24Events}</div>
-            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 7 }}>
-              <Metric label="Created" value={totals.code24Created} tone="amber" />
-              <Metric label="Avoided" value={totals.code24Avoided} tone="green" />
-              <Metric label="Avoidance" value={`${totals.code24AvoidanceRate.toFixed(1)}%`} tone={higherIsBetterTone(totals.code24AvoidanceRate, BSO_WATCH_BANDS.code24Avoidance)} />
-            </div>
-            <div style={{ marginTop: 10, fontSize: 11.5, fontWeight: 800, color: "#92400e" }}>Click to view all Code 24 cases</div>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#92400e", textTransform: "uppercase" }}>Code 24</div>
+            <div style={{ marginTop: 8, fontSize: 30, fontWeight: 900, color: "#9a3412" }}>{totals.code24}</div>
+            <div style={{ marginTop: 10, fontSize: 11.5, fontWeight: 800, color: "#92400e" }}>Click to review Code 24 details and comments</div>
           </div>
 
           <div onClick={() => { setActiveCaseType("CODE_39"); setCaseListOpen(true); }} style={{ cursor: "pointer", border: "1px solid #fecdd3", background: "#fff1f2", borderRadius: 18, padding: 16 }}>
@@ -1504,9 +1390,9 @@ export default function BSODailyManagementPage() {
                     <td style={td}>{e.bagTags || "-"}</td>
                     <td style={td}>{e.reportId || e.netTracerFile || e.worldTracerId || "-"}</td>
                     <td style={td}>{e.flightNumber || "-"}</td>
-                    <td style={td}>{e.employee || "-"}</td>
+                    <td style={td}>{e.eventType === "CODE_24" ? "—" : (e.employee || "-")}</td>
                     <td style={td}>{e.supervisorName || "-"}</td>
-                    <td style={td}>{e.eventType === "CODE_24" ? (e.code24Created === true || e.code24Created === "Yes" ? "Created" : "Avoided") : e.eventType === "CODE_39" ? `Code 39 | ${e.bagsChecked || 0} bag(s)` : e.eventType === "EXCEPTION_DELIVERY" ? (e.deliveryMethod || "Exception") : (e.supervisorReview || "-")}</td>
+                    <td style={td}>{e.eventType === "BAG_RETURN" ? (e.returnReason || "Bag Return") : e.eventType === "CODE_24" ? "Code 24" : e.eventType === "CODE_39" ? `Code 39 | ${e.bagsChecked || 0} bag(s)` : e.eventType === "EXCEPTION_DELIVERY" ? (e.deliveryMethod || "Exception") : (e.supervisorReview || "-")}</td>
                     <td style={td}><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><Button variant="secondary" onClick={() => { setSelectedCase(e); setCaseListOpen(false); }}>View Case</Button><Button variant="danger" disabled={working === `${e.reportIdDoc}-${e.eventIndex}`} onClick={() => deleteEvent(e.reportIdDoc, e.eventIndex)}>Delete</Button></div></td>
                   </tr>)}
                 </tbody>
@@ -1538,7 +1424,7 @@ export default function BSODailyManagementPage() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,minmax(0,1fr))", gap: 9 }}>
-              <Metric label="Employee" value={selectedCase.employee || "-"} tone="slate" />
+              {selectedCase.eventType !== "CODE_24" && <Metric label="Employee" value={selectedCase.employee || "-"} tone="slate" />}
               <Metric label="Passenger" value={selectedCase.passengerName || "-"} tone="slate" />
               <Metric label="PNR" value={selectedCase.pnr || "-"} tone="blue" />
               <Metric label="Flight" value={selectedCase.flightNumber || "-"} tone="slate" />
@@ -1546,20 +1432,15 @@ export default function BSODailyManagementPage() {
               <Metric label="Review" value={selectedCase.supervisorReview || "-"} tone="slate" />
             </div>
 
-            {selectedCase.investigation?.status ? (
-              <div style={{ marginTop: 12, padding: 12, borderRadius: 14, background: selectedCase.investigation.status === "CLOSED" ? "#ecfdf5" : "#fff7ed", border: `1px solid ${selectedCase.investigation.status === "CLOSED" ? "#a7f3d0" : "#fdba74"}` }}>
-                <div style={{ fontSize: 10, fontWeight: 900, textTransform: "uppercase", color: "#64748b" }}>Investigation</div>
-                <div style={{ marginTop: 4, fontWeight: 900 }}>{selectedCase.investigation.status}</div>
-                {selectedCase.investigation.managementNotes ? <div style={{ marginTop: 5, fontSize: 12.5 }}>{selectedCase.investigation.managementNotes}</div> : null}
-              </div>
-            ) : null}
-
             <div style={{ marginTop: 12, border: "1px solid #dbeafe", borderRadius: 16, padding: 14, background: "#f8fbff", fontSize: 13, lineHeight: 1.75, color: "#334155" }}>
-              {selectedCase.eventType === "CODE_24" && <>
-                <div><b>Code 24 Created:</b> {yesNo(selectedCase.code24Created)}</div>
-                <div><b>Return Reason:</b> {selectedCase.returnReason || "-"}</div>
-                <div><b>Code 24 Reason:</b> {selectedCase.code24Reason || "-"}</div>
+              {selectedCase.eventType === "BAG_RETURN" && <>
+                <div><b>Return Reason:</b> {selectedCase.returnReason === "Other" ? (selectedCase.returnReasonOther || "Other") : (selectedCase.returnReason || "-")}</div>
                 <div><b>BCC Referral:</b> {yesNo(selectedCase.bccReferral)}</div>
+              </>}
+              {selectedCase.eventType === "CODE_24" && <>
+                <div><b>Code 24 Reason:</b> {selectedCase.code24Reason === "Other" ? (selectedCase.code24ReasonOther || "Other") : (selectedCase.code24Reason || "-")}</div>
+                <div><b>BCC Referral:</b> {yesNo(selectedCase.bccReferral)}</div>
+                <div style={{ marginTop: 8 }}><b>Code 24 Details / Comments:</b> {selectedCase.code24Details || selectedCase.comments || "-"}</div>
               </>}
               {selectedCase.eventType === "CODE_39" && <>
                 <div><b>Report ID:</b> {selectedCase.reportId || "-"}</div>
@@ -1581,53 +1462,12 @@ export default function BSODailyManagementPage() {
                 <div><b>Description:</b> {selectedCase.otherDescription || "-"}</div>
                 <div><b>Action Taken:</b> {selectedCase.actionTaken || "-"}</div>
               </>}
-              {selectedCase.comments ? <div style={{ marginTop: 8 }}><b>Comments / Coaching:</b> {selectedCase.comments}</div> : null}
+              {selectedCase.eventType !== "CODE_24" && selectedCase.comments ? <div style={{ marginTop: 8 }}><b>Comments / Coaching:</b> {selectedCase.comments}</div> : null}
             </div>
 
             <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-              <Button variant="primary" onClick={() => openInvestigation(selectedCase)}>{selectedCase.investigation?.status ? "Investigation" : "Open Investigation"}</Button><Button variant="secondary" onClick={() => { setSelectedId(selectedCase.reportIdDoc); setSelectedCase(null); }}>View Shift Report</Button>
+              <Button variant="secondary" onClick={() => { setSelectedId(selectedCase.reportIdDoc); setSelectedCase(null); }}>View Shift Report</Button>
               <Button variant="danger" disabled={working === `${selectedCase.reportIdDoc}-${selectedCase.eventIndex}`} onClick={() => { deleteEvent(selectedCase.reportIdDoc, selectedCase.eventIndex); setSelectedCase(null); }}>Delete Case</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {investigationOpen && selectedCase && (
-        <div onClick={() => setInvestigationOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10020, background: "rgba(15,23,42,.68)", backdropFilter: "blur(5px)", display: "flex", alignItems: "center", justifyContent: "center", padding: isMobile ? 8 : 22 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(980px,97vw)", maxHeight: "94vh", overflowY: "auto", background: "#fff", borderRadius: 22, border: "1px solid #bfdbfe", boxShadow: "0 28px 80px rgba(15,23,42,.34)", padding: isMobile ? 14 : 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontSize: 10, color: "#1769aa", fontWeight: 900, textTransform: "uppercase", letterSpacing: ".08em" }}>BSO Case Investigation</div>
-                <h2 style={{ margin: "4px 0", fontSize: isMobile ? 21 : 27 }}>Investigation | {eventLabel(selectedCase.eventType)}</h2>
-                <div style={{ fontSize: 12.5, color: "#64748b", fontWeight: 700 }}>{selectedCase.reportDate || "-"} | {selectedCase.passengerName || "-"} | {selectedCase.pnr || "-"} | {selectedCase.bagTags || "-"}</div>
-              </div>
-              <Button variant="secondary" onClick={() => setInvestigationOpen(false)}>Close</Button>
-            </div>
-
-            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
-              <div><Label>Investigation Status</Label><Select value={investigationStatus} onChange={(e) => setInvestigationStatus(e.target.value)}><option value="OPEN">Open</option><option value="IN_REVIEW">In Review</option><option value="PENDING_FOLLOW_UP">Pending Follow-up</option><option value="CLOSED">Closed</option></Select></div>
-              <div><Label>Case Owner</Label><Input value={user?.username || user?.name || "Management"} readOnly style={{ background: "#f8fafc" }} /></div>
-            </div>
-
-            <div style={{ marginTop: 12 }}><Label>Management Investigation Notes</Label><TextArea value={investigationNotes} onChange={(e) => setInvestigationNotes(e.target.value)} placeholder="Document findings, calls, verification, coaching, or follow-up..." /></div>
-            <div style={{ marginTop: 12 }}><Label>Correction / Case Adjustment</Label><TextArea value={investigationCorrection} onChange={(e) => setInvestigationCorrection(e.target.value)} placeholder="Document any correction to the original submission. The original supervisor submission remains unchanged." /></div>
-
-            <div style={{ marginTop: 14, padding: 14, borderRadius: 16, border: "1px solid #dbeafe", background: "#f8fbff" }}>
-              <div style={{ fontWeight: 900, color: "#0f172a" }}>Evidence / Screenshot</div>
-              <div style={{ marginTop: 4, fontSize: 11.5, color: "#64748b", fontWeight: 700 }}>Take a photo or select screenshots. For this first version, evidence is stored with the investigation record; use compressed screenshots under about 500 KB each.</div>
-              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <label style={{ display: "inline-flex", alignItems: "center", borderRadius: 11, padding: "9px 13px", fontSize: 12.5, fontWeight: 850, cursor: "pointer", background: "#fff", color: "#1769aa", border: "1px solid #cfe7fb" }}>Scan / Camera<input type="file" accept="image/*" capture="environment" onChange={(e) => handleEvidenceFiles(e.target.files)} style={{ display: "none" }} /></label>
-                <label style={{ display: "inline-flex", alignItems: "center", borderRadius: 11, padding: "9px 13px", fontSize: 12.5, fontWeight: 850, cursor: "pointer", background: "#fff", color: "#1769aa", border: "1px solid #cfe7fb" }}>Upload Screenshot<input type="file" accept="image/*" multiple onChange={(e) => handleEvidenceFiles(e.target.files)} style={{ display: "none" }} /></label>
-              </div>
-              {investigationEvidence.length ? <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 8 }}>{investigationEvidence.map((item, idx) => <div key={`${item.name}-${idx}`} style={{ border: "1px solid #dbeafe", borderRadius: 12, padding: 7, background: "#fff" }}><img src={item.dataUrl} alt={item.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 8 }} /><div style={{ marginTop: 5, fontSize: 9.5, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div><button type="button" onClick={() => setInvestigationEvidence((prev) => prev.filter((_, i) => i !== idx))} style={{ marginTop: 5, border: 0, background: "transparent", color: "#dc2626", fontWeight: 800, cursor: "pointer" }}>Remove</button></div>)}</div> : null}
-            </div>
-
-            {Array.isArray(selectedCase.investigation?.history) && selectedCase.investigation.history.length ? <div style={{ marginTop: 14, padding: 14, border: "1px solid #e2e8f0", borderRadius: 16 }}><div style={{ fontWeight: 900 }}>Investigation History</div>{[...selectedCase.investigation.history].reverse().map((h, idx) => <div key={idx} style={{ marginTop: 9, paddingTop: 9, borderTop: idx ? "1px solid #eef2f7" : "none", fontSize: 12.5, lineHeight: 1.55 }}><b>{h.action || "Update"}</b> | {h.status || "-"}<br/><span style={{ color: "#64748b" }}>{h.by || "Management"} | {h.at ? new Date(h.at).toLocaleString() : "-"}</span>{h.notes ? <div><b>Notes:</b> {h.notes}</div> : null}{h.correction ? <div><b>Correction:</b> {h.correction}</div> : null}</div>)}</div> : null}
-
-            <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-              <Button variant="secondary" onClick={() => setInvestigationOpen(false)}>Cancel</Button>
-              <Button disabled={working.startsWith("investigation-")} onClick={() => saveInvestigation(false)}>Save Investigation</Button>
-              <Button variant="success" disabled={working.startsWith("investigation-")} onClick={() => saveInvestigation(true)}>Close Investigation</Button>
             </div>
           </div>
         </div>
