@@ -8,7 +8,8 @@ import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
 import * as XLSX from "xlsx";
 
 const EVENT_TYPES = [
-  { value: "CODE_24", label: "Code 24 / Bag Return" },
+  { value: "BAG_RETURN", label: "Bag Return Request" },
+  { value: "CODE_24", label: "Code 24" },
   { value: "CODE_39", label: "Code 39" },
   { value: "EXCEPTION_DELIVERY", label: "Exception Delivery" },
   { value: "OTHER", label: "Other" },
@@ -79,7 +80,7 @@ function timestampToLabel(value) {
 function newEvent() {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    eventType: "CODE_24",
+    eventType: "BAG_RETURN",
     employee: "",
     passengerName: "",
     pnr: "",
@@ -93,6 +94,7 @@ function newEvent() {
     code24Created: "No",
     code24Reason: "",
     code24ReasonOther: "",
+    code24Details: "",
     bccReferral: "No",
     // Code 39
     reportId: "",
@@ -219,20 +221,6 @@ function eventTypeLabel(type) {
   if (type === "CODE_39") return "Code 39";
   if (type === "EXCEPTION_DELIVERY") return "Exception Delivery";
   return "Other";
-}
-
-function removeUndefinedDeep(value) {
-  if (Array.isArray(value)) {
-    return value.map(removeUndefinedDeep);
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([, v]) => v !== undefined)
-        .map(([k, v]) => [k, removeUndefinedDeep(v)])
-    );
-  }
-  return value;
 }
 
 function escapeHtml(value) {
@@ -367,7 +355,6 @@ export default function BSODailyReportPage() {
   const [mtdReports, setMtdReports] = useState([]);
   const [loadingMtd, setLoadingMtd] = useState(true);
   const [expandedReportId, setExpandedReportId] = useState("");
-  const [selectedHistoryCase, setSelectedHistoryCase] = useState(null);
   const [historyFilter, setHistoryFilter] = useState("MTD");
   const [historyStartDate, setHistoryStartDate] = useState("");
   const [historyEndDate, setHistoryEndDate] = useState("");
@@ -435,7 +422,7 @@ export default function BSODailyReportPage() {
     );
   }, [mtdReports]);
 
-  const historyRowsBase = useMemo(() => {
+  const historyRows = useMemo(() => {
     const today = todayLocal();
     return mtdEventRows.filter((row) => {
       if (historyFilter === "TODAY" && row.reportDate !== today) return false;
@@ -443,35 +430,32 @@ export default function BSODailyReportPage() {
         if (historyStartDate && row.reportDate < historyStartDate) return false;
         if (historyEndDate && row.reportDate > historyEndDate) return false;
       }
+      if (historyType !== "ALL" && row.eventType !== historyType) return false;
       if (historySupervisor && !String(row.supervisorName || "").toLowerCase().includes(historySupervisor.toLowerCase().trim())) return false;
       if (historyEmployee && !String(row.employee || "").toLowerCase().includes(historyEmployee.toLowerCase().trim())) return false;
       const search = historySearch.trim().toLowerCase();
       if (search) {
         const haystack = [
           row.pnr, row.bagTags, row.flightNumber, row.reportId, row.worldTracerId,
-          row.netTracerFile, row.employee, row.supervisorName, row.passengerName, row.otherCategory, row.otherDescription
+          row.netTracerFile, row.employee, row.supervisorName, row.otherCategory, row.otherDescription
         ].map((v) => String(v || "").toLowerCase()).join(" ");
         if (!haystack.includes(search)) return false;
       }
       return true;
     });
-  }, [mtdEventRows, historyFilter, historyStartDate, historyEndDate, historySupervisor, historyEmployee, historySearch]);
-
-  const historyRows = useMemo(() => {
-    if (historyType === "ALL") return historyRowsBase;
-    return historyRowsBase.filter((row) => row.eventType === historyType);
-  }, [historyRowsBase, historyType]);
+  }, [mtdEventRows, historyFilter, historyStartDate, historyEndDate, historyType, historySupervisor, historyEmployee, historySearch]);
 
   const historyMetrics = useMemo(() => {
-    const events = historyRowsBase;
+    const events = historyRows;
     return {
       total: events.length,
+      bagReturn: events.filter((e) => e.eventType === "BAG_RETURN").length,
       code24: events.filter((e) => e.eventType === "CODE_24").length,
       code39: events.filter((e) => e.eventType === "CODE_39").length,
       exceptions: events.filter((e) => e.eventType === "EXCEPTION_DELIVERY").length,
       other: events.filter((e) => e.eventType === "OTHER").length,
     };
-  }, [historyRowsBase]);
+  }, [historyRows]);
 
   const filteredHistoryReports = useMemo(() => {
     const allowed = new Set(historyRows.map((r) => r.reportIdDoc));
@@ -480,13 +464,13 @@ export default function BSODailyReportPage() {
 
   const grid = { display: "grid", gridTemplateColumns: isMobile ? "1fr" : isTablet ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fit,minmax(220px,1fr))", gap: 12 };
   const metrics = useMemo(() => {
-    const code24Events = form.events.filter(e => e.eventType === "CODE_24");
-    const code24Created = code24Events.filter(e => e.code24Created === "Yes").length;
+    const bagReturn = form.events.filter(e => e.eventType === "BAG_RETURN").length;
+    const code24 = form.events.filter(e => e.eventType === "CODE_24").length;
     const code39 = form.events.filter(e => e.eventType === "CODE_39").length;
     const exceptions = form.events.filter(e => e.eventType === "EXCEPTION_DELIVERY");
     const other = form.events.filter(e => e.eventType === "OTHER").length;
     const bagsAffected = form.events.filter(e => e.eventType === "CODE_39").reduce((s,e) => s + (Number(e.bagsChecked) || 0), 0);
-    return { total: form.events.length, code24Events: code24Events.length, code24Created, code39, exceptions: exceptions.length, fedEx: exceptions.filter(e => e.deliveryMethod === "FedEx").length, sdd: exceptions.filter(e => e.deliveryMethod === "SDD").length, other, bagsAffected, code24Rate: code24Events.length ? code24Created / code24Events.length * 100 : 0 };
+    return { total: form.events.length, bagReturn, code24, code39, exceptions: exceptions.length, fedEx: exceptions.filter(e => e.deliveryMethod === "FedEx").length, sdd: exceptions.filter(e => e.deliveryMethod === "SDD").length, other, bagsAffected };
   }, [form.events]);
 
   const updateEvent = (id, field, value) => setForm(p => ({ ...p, events: p.events.map(e => {
@@ -494,6 +478,7 @@ export default function BSODailyReportPage() {
     const n = { ...e, [field]: value };
     if (field === "eventType") {
       n.supervisorReview = "Process followed";
+      if (value === "CODE_24") n.employee = "";
     }
     if (field === "code24Created" && value === "No") { n.code24Reason = ""; n.code24ReasonOther = ""; }
     if (field === "returnReason" && value !== "Other") n.returnReasonOther = "";
@@ -511,16 +496,22 @@ export default function BSODailyReportPage() {
     for (let i = 0; i < form.events.length; i++) {
       const e = form.events[i], n = i + 1;
       if (!e.eventType) return setMessage(`Event #${n}: select an event type.`), false;
-      if (!e.employee.trim()) return setMessage(`Event #${n}: enter the employee involved.`), false;
-      if ((e.eventType === "CODE_24" || e.eventType === "CODE_39") && !e.pnr.trim()) return setMessage(`Event #${n}: enter the PNR.`), false;
-      if (e.eventType === "CODE_24") {
+      if (e.eventType !== "CODE_24" && !e.employee.trim()) return setMessage(`Event #${n}: enter the employee involved.`), false;
+      if (["BAG_RETURN", "CODE_24", "CODE_39"].includes(e.eventType) && !e.pnr.trim()) return setMessage(`Event #${n}: enter the PNR.`), false;
+      if (e.eventType === "BAG_RETURN") {
         if (!e.passengerName.trim()) return setMessage(`Event #${n}: enter passenger name.`), false;
         if (!e.flightNumber.trim()) return setMessage(`Event #${n}: enter flight number.`), false;
         if (!e.bagTags.trim()) return setMessage(`Event #${n}: enter the bag tag number.`), false;
         if (!e.returnReason) return setMessage(`Event #${n}: select the bag return reason.`), false;
         if (e.returnReason === "Other" && !e.returnReasonOther.trim()) return setMessage(`Event #${n}: explain the bag return reason.`), false;
-        if (e.code24Created === "Yes" && !e.code24Reason) return setMessage(`Event #${n}: document why Code 24 was created.`), false;
+      }
+      if (e.eventType === "CODE_24") {
+        if (!e.passengerName.trim()) return setMessage(`Event #${n}: enter passenger name.`), false;
+        if (!e.flightNumber.trim()) return setMessage(`Event #${n}: enter flight number.`), false;
+        if (!e.bagTags.trim()) return setMessage(`Event #${n}: enter the bag tag number.`), false;
+        if (!e.code24Reason) return setMessage(`Event #${n}: select the Code 24 reason.`), false;
         if (e.code24Reason === "Other" && !e.code24ReasonOther.trim()) return setMessage(`Event #${n}: explain the Code 24 reason.`), false;
+        if (!e.code24Details.trim()) return setMessage(`Event #${n}: enter Code 24 details / comments.`), false;
       }
       if (e.eventType === "CODE_39") {
         if (!e.passengerName.trim()) return setMessage(`Event #${n}: enter passenger name.`), false;
@@ -571,14 +562,14 @@ export default function BSODailyReportPage() {
         const existingTags = splitBagTags(existing.bagTags);
         const sharedTag = tags.find((tag) => existingTags.includes(tag));
 
-        if (event.eventType === "CODE_24") {
+        if (event.eventType === "CODE_24" || event.eventType === "BAG_RETURN") {
           const samePnr = pnr && pnr === normalizeKey(existing.pnr);
           const sameFlight = !flight || !normalizeKey(existing.flightNumber) || flight === normalizeKey(existing.flightNumber);
           const sameReportId = reportId && reportId === normalizeKey(existing.reportId);
           if (sameReportId || (samePnr && sharedTag && sameFlight)) {
             duplicates.push({
               eventNumber: idx + 1,
-              eventType: "Code 24",
+              eventType: event.eventType === "CODE_24" ? "Code 24" : "Bag Return Request",
               reason: sameReportId
                 ? `Report ID ${event.reportId} already exists.`
                 : `PNR ${event.pnr} and Bag Tag ${sharedTag} already exist${existing.sourceShift ? ` in ${existing.sourceShift} shift` : " in this submission"}.`,
@@ -623,14 +614,14 @@ export default function BSODailyReportPage() {
   const buildCleanEvents = () => form.events.map(({ id, ...e }, index) => ({
     sequence: index + 1,
     ...e,
-    employee: e.employee.trim(), passengerName: e.passengerName.trim(), pnr: e.pnr.trim().toUpperCase(),
+    employee: e.eventType === "CODE_24" ? "" : e.employee.trim(), passengerName: e.passengerName.trim(), pnr: e.pnr.trim().toUpperCase(),
     flightNumber: e.flightNumber.trim().toUpperCase(), bagTags: e.bagTags.trim(), reportId: e.reportId.trim().toUpperCase(),
     faultStation: e.faultStation.trim().toUpperCase(), worldTracerId: e.worldTracerId.trim().toUpperCase(),
     netTracerFile: e.netTracerFile.trim().toUpperCase(), agentCode: e.agentCode.trim().toUpperCase(),
     bagsChecked: e.eventType === "CODE_39" ? Number(e.bagsChecked || 0) : 0,
     bagsReceived: e.eventType === "CODE_39" ? Number(e.bagsReceived || 0) : 0,
-    code24Created: e.eventType === "CODE_24" ? e.code24Created === "Yes" : false,
-    bccReferral: e.eventType === "CODE_24" ? e.bccReferral === "Yes" : false,
+    code24Created: e.eventType === "CODE_24",
+    bccReferral: ["BAG_RETURN", "CODE_24"].includes(e.eventType) ? e.bccReferral === "Yes" : false,
     followUpRequired: e.eventType === "OTHER" ? e.followUpRequired === "Yes" : e.supervisorReview === "Follow-up required",
   }));
 
@@ -673,8 +664,9 @@ export default function BSODailyReportPage() {
         reportDate: form.reportDate, shift: form.shift, department: "AA BSO",
         supervisorName: form.supervisorName, supervisorPosition: form.supervisorPosition,
         notes: form.notes.trim(), events: eventsWithOverride,
-        totalEvents: metrics.total, code24BagReturnEvents: metrics.code24Events, code24CreatedCount: metrics.code24Created,
-        code24Rate: Number(metrics.code24Rate.toFixed(2)), code39Count: metrics.code39,
+        totalEvents: metrics.total, bagReturnRequestCount: metrics.bagReturn, code24Count: metrics.code24,
+        code24BagReturnEvents: metrics.bagReturn + metrics.code24, code24CreatedCount: metrics.code24,
+        code24Rate: 0, code39Count: metrics.code39,
         exceptionDeliveryCount: metrics.exceptions, exceptionFedExCount: metrics.fedEx, exceptionSddCount: metrics.sdd,
         exceptionOtherMethodCount: metrics.exceptions - metrics.fedEx - metrics.sdd, otherCount: metrics.other,
         code39BagsAffected: metrics.bagsAffected,
@@ -761,9 +753,10 @@ export default function BSODailyReportPage() {
 
         const event = {
           ...newEvent(),
+          id: undefined,
           sequence: 0,
           eventType: eventType || "OTHER",
-          employee: employee || "Excel Import",
+          employee: eventType === "CODE_24" ? "" : (employee || "Excel Import"),
           passengerName,
           pnr,
           flightNumber,
@@ -781,6 +774,7 @@ export default function BSODailyReportPage() {
           returnReason: eventType === "CODE_24" ? "Customer requested bag return" : "",
           code24Created: eventType === "CODE_24",
           code24Reason: "",
+          code24Details: eventType === "CODE_24" ? `Bulk Excel import from ${file.name || "uploaded workbook"} (source row ${sourceRowNumber}).` : "",
           bccReferral: false,
           followUpRequired: false,
           importedFromExcel: true,
@@ -863,9 +857,7 @@ export default function BSODailyReportPage() {
       const currentName = getVisibleName(user);
 
       groups.forEach((events, reportDate) => {
-        const normalizedEvents = events.map((event, index) =>
-          removeUndefinedDeep({ ...event, sequence: index + 1 })
-        );
+        const normalizedEvents = events.map((event, index) => ({ ...event, sequence: index + 1 }));
         const code24Events = normalizedEvents.filter((event) => event.eventType === "CODE_24");
         const code39Events = normalizedEvents.filter((event) => event.eventType === "CODE_39");
         const exceptions = normalizedEvents.filter((event) => event.eventType === "EXCEPTION_DELIVERY");
@@ -883,9 +875,11 @@ export default function BSODailyReportPage() {
           notes: `Bulk Excel import: ${bulkFileName || "uploaded workbook"}`,
           events: normalizedEvents,
           totalEvents: normalizedEvents.length,
+          bagReturnRequestCount: normalizedEvents.filter((event) => event.eventType === "BAG_RETURN").length,
+          code24Count: code24Events.length,
           code24BagReturnEvents: code24Events.length,
           code24CreatedCount,
-          code24Rate: code24Events.length ? Number(((code24CreatedCount / code24Events.length) * 100).toFixed(2)) : 0,
+          code24Rate: 0,
           code39Count: code39Events.length,
           exceptionDeliveryCount: exceptions.length,
           exceptionFedExCount: exceptions.filter((event) => event.deliveryMethod === "FedEx").length,
@@ -917,9 +911,7 @@ export default function BSODailyReportPage() {
       await loadMtdReports();
     } catch (err) {
       console.error("Error bulk importing BSO reports:", err);
-      setBulkMessage(
-        `Could not import the Excel rows. ${err?.code ? `[${err.code}] ` : ""}${err?.message || "Unknown Firestore error."}`
-      );
+      setBulkMessage("Could not import the Excel rows.");
     } finally {
       setBulkImporting(false);
     }
@@ -974,8 +966,8 @@ export default function BSODailyReportPage() {
 
     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(8,minmax(0,1fr))", gap: 9 }}>
       <Metric label="Total Events" value={metrics.total} />
-      <Metric label="Code 24 Created" value={metrics.code24Created} tone="amber" />
-      <Metric label="Code 24 Rate" value={`${metrics.code24Rate.toFixed(1)}%`} tone="slate" />
+      <Metric label="Bag Return Requests" value={metrics.bagReturn} tone="blue" />
+      <Metric label="Code 24" value={metrics.code24} tone="amber" />
       <Metric label="Code 39" value={metrics.code39} tone="red" />
       <Metric label="Code 39 Bags" value={metrics.bagsAffected} tone="red" />
       <Metric label="Exception Delivery" value={metrics.exceptions} tone="blue" />
@@ -987,24 +979,33 @@ export default function BSODailyReportPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}><div><div style={{ fontSize: 10, fontWeight: 900, color: "#1769aa", textTransform: "uppercase" }}>BSO Event</div><h2 style={{ margin: "2px 0 0" }}>Event #{i + 1}</h2></div>{form.events.length > 1 && <Button variant="danger" onClick={() => removeEvent(e.id)}>Remove</Button>}</div>
       <div style={grid}>
         <div><Label>Event Type *</Label><Select value={e.eventType} onChange={x => updateEvent(e.id, "eventType", x.target.value)}>{EVENT_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></div>
-        <div><Label>Employee Involved *</Label><Input value={e.employee} onChange={x => updateEvent(e.id, "employee", x.target.value)} /></div>
-        <div><Label>Passenger Name{(e.eventType === "CODE_24" || e.eventType === "CODE_39") ? " *" : ""}</Label><Input value={e.passengerName} onChange={x => updateEvent(e.id, "passengerName", x.target.value)} /></div>
-        <div><Label>PNR{(e.eventType === "CODE_24" || e.eventType === "CODE_39") ? " *" : ""}</Label><Input value={e.pnr} onChange={x => updateEvent(e.id, "pnr", x.target.value)} /></div>
+        {e.eventType !== "CODE_24" && <div><Label>Employee Involved *</Label><Input value={e.employee} onChange={x => updateEvent(e.id, "employee", x.target.value)} /></div>}
+        <div><Label>Passenger Name{(["BAG_RETURN", "CODE_24", "CODE_39"].includes(e.eventType)) ? " *" : ""}</Label><Input value={e.passengerName} onChange={x => updateEvent(e.id, "passengerName", x.target.value)} /></div>
+        <div><Label>PNR{(["BAG_RETURN", "CODE_24", "CODE_39"].includes(e.eventType)) ? " *" : ""}</Label><Input value={e.pnr} onChange={x => updateEvent(e.id, "pnr", x.target.value)} /></div>
         <div><Label>Flight Number</Label><Input value={e.flightNumber} onChange={x => updateEvent(e.id, "flightNumber", x.target.value)} /></div>
         <div><Label>Supervisor Review *</Label><Select value={e.supervisorReview} onChange={x => updateEvent(e.id, "supervisorReview", x.target.value)}>{REVIEW_OPTIONS.map(o => <option key={o}>{o}</option>)}</Select></div>
       </div>
 
-      {e.eventType === "CODE_24" && <div style={{ marginTop: 14, padding: 14, borderRadius: 15, background: "#fffbeb", border: "1px solid #fde68a" }}>
-        <h3 style={{ margin: "0 0 12px", color: "#92400e" }}>Code 24 / Bag Return Details</h3>
+      {e.eventType === "BAG_RETURN" && <div style={{ marginTop: 14, padding: 14, borderRadius: 15, background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+        <h3 style={{ margin: "0 0 12px", color: "#1d4ed8" }}>Bag Return Request Details</h3>
         <div style={grid}>
           <div><Label>Bag Tag Number(s) *</Label><Input value={e.bagTags} onChange={x => updateEvent(e.id, "bagTags", x.target.value)} placeholder="Example: 8001835788" /></div>
           <div><Label>Bag Return Reason *</Label><Select value={e.returnReason} onChange={x => updateEvent(e.id, "returnReason", x.target.value)}><option value="">Select</option>{RETURN_REASONS.map(o => <option key={o}>{o}</option>)}</Select></div>
-          <div><Label>Code 24 Created?</Label><Select value={e.code24Created} onChange={x => updateEvent(e.id, "code24Created", x.target.value)}><option>No</option><option>Yes</option></Select></div>
           <div><Label>BCC Referral?</Label><Select value={e.bccReferral} onChange={x => updateEvent(e.id, "bccReferral", x.target.value)}><option>No</option><option>Yes</option></Select></div>
-          {e.code24Created === "Yes" && <div><Label>Why was Code 24 created? *</Label><Select value={e.code24Reason} onChange={x => updateEvent(e.id, "code24Reason", x.target.value)}><option value="">Select</option>{CODE24_REASONS.map(o => <option key={o}>{o}</option>)}</Select></div>}
         </div>
         {e.returnReason === "Other" && <div style={{ marginTop: 10 }}><Label>Explain Return Reason *</Label><Area value={e.returnReasonOther} onChange={x => updateEvent(e.id, "returnReasonOther", x.target.value)} /></div>}
+      </div>}
+
+      {e.eventType === "CODE_24" && <div style={{ marginTop: 14, padding: 14, borderRadius: 15, background: "#fffbeb", border: "1px solid #fde68a" }}>
+        <h3 style={{ margin: "0 0 5px", color: "#92400e" }}>Code 24 Details</h3>
+        <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 12 }}>Document the Code 24 tracer itself. Employee Involved is intentionally not collected for this category.</div>
+        <div style={grid}>
+          <div><Label>Bag Tag Number(s) *</Label><Input value={e.bagTags} onChange={x => updateEvent(e.id, "bagTags", x.target.value)} placeholder="Example: 8001835788" /></div>
+          <div><Label>Code 24 Reason *</Label><Select value={e.code24Reason} onChange={x => updateEvent(e.id, "code24Reason", x.target.value)}><option value="">Select reason</option>{CODE24_REASONS.map(o => <option key={o}>{o}</option>)}</Select></div>
+          <div><Label>BCC Referral?</Label><Select value={e.bccReferral} onChange={x => updateEvent(e.id, "bccReferral", x.target.value)}><option>No</option><option>Yes</option></Select></div>
+        </div>
         {e.code24Reason === "Other" && <div style={{ marginTop: 10 }}><Label>Explain Code 24 Reason *</Label><Area value={e.code24ReasonOther} onChange={x => updateEvent(e.id, "code24ReasonOther", x.target.value)} /></div>}
+        <div style={{ marginTop: 10 }}><Label>Code 24 Details / Comments *</Label><Area value={e.code24Details} onChange={x => updateEvent(e.id, "code24Details", x.target.value)} placeholder="Document the circumstances, customer request, BCC guidance, supervisor action, and any follow-up required." /></div>
       </div>}
 
       {e.eventType === "CODE_39" && <div style={{ marginTop: 14, padding: 14, borderRadius: 15, background: "#fff1f2", border: "1px solid #fecdd3" }}>
@@ -1047,7 +1048,7 @@ export default function BSODailyReportPage() {
         <div style={{ marginTop: 10 }}><Label>Action Taken</Label><Area value={e.actionTaken} onChange={x => updateEvent(e.id, "actionTaken", x.target.value)} /></div>
       </div>}
 
-      <div style={{ marginTop: 14 }}><Label>Comments / Coaching</Label><Area value={e.comments} onChange={x => updateEvent(e.id, "comments", x.target.value)} /></div>
+      {e.eventType !== "CODE_24" && <div style={{ marginTop: 14 }}><Label>Comments / Coaching</Label><Area value={e.comments} onChange={x => updateEvent(e.id, "comments", x.target.value)} /></div>}
     </Card>)}
 
     <div><Button variant="secondary" onClick={addEvent}>+ Add BSO Event</Button></div>
@@ -1144,30 +1145,16 @@ export default function BSODailyReportPage() {
 
     {activeTab === "history" && <>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))", gap: 9 }}>
-        {[
-          { key: "ALL", label: historyFilter === "TODAY" ? "Events Today" : "All BSO Cases", value: historyMetrics.total, tone: "blue" },
-          { key: "CODE_24", label: "Code 24", value: historyMetrics.code24, tone: "amber" },
-          { key: "CODE_39", label: "Code 39", value: historyMetrics.code39, tone: "red" },
-          { key: "EXCEPTION_DELIVERY", label: "Exception Delivery", value: historyMetrics.exceptions, tone: "blue" },
-          { key: "OTHER", label: "Other", value: historyMetrics.other, tone: "green" },
-        ].map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setHistoryType(item.key)}
-            style={{ border: historyType === item.key ? "2px solid #1769aa" : "none", padding: 0, borderRadius: 16, background: "transparent", cursor: "pointer", textAlign: "left" }}
-          >
-            <Metric label={item.label} value={item.value} tone={item.tone} />
-          </button>
-        ))}
+        <Metric label={historyFilter === "TODAY" ? "Events Today" : "BSO Events MTD"} value={historyMetrics.total} />
+        <Metric label="Code 24" value={historyMetrics.code24} tone="amber" />
+        <Metric label="Code 39" value={historyMetrics.code39} tone="red" />
+        <Metric label="Exception Delivery" value={historyMetrics.exceptions} tone="blue" />
+        <Metric label="Other" value={historyMetrics.other} tone="green" />
       </div>
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-          <div>
-            <h2 style={{ margin: 0 }}>{historyType === "ALL" ? "All BSO Cases" : `${eventTypeLabel(historyType)} Cases`} ({historyRows.length})</h2>
-            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>Click a KPI above to filter the office cases. Select View Case to open one record at a time.</div>
-          </div>
+          <div><h2 style={{ margin: 0 }}>BSO MTD Reports</h2><div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>All AA BSO supervisors can review office submissions for the current month. This view is read-only.</div></div>
           <Button variant="secondary" onClick={loadMtdReports} disabled={loadingMtd}>{loadingMtd ? "Refreshing..." : "Refresh"}</Button>
         </div>
 
@@ -1180,74 +1167,24 @@ export default function BSODailyReportPage() {
           <div><Label>Search</Label><Input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="PNR, bag tag, file, flight..." /></div>
         </div>
 
-        {loadingMtd ? <div style={{ padding: 16, color: "#64748b", fontWeight: 700 }}>Loading BSO MTD cases...</div> : historyRows.length === 0 ? <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No BSO cases match the selected filters.</div> : (
-          <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 14 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1050 }}>
-              <thead><tr style={{ background: "#f8fbff" }}>{["Date","Type","Passenger / PNR","Bag Tag(s)","File / Report ID","Flight","Employee","Supervisor","Action"].map((label) => <th key={label} style={{ padding: "10px 11px", borderBottom: "1px solid #e2e8f0", textAlign: "left", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".04em", color: "#475569", whiteSpace: "nowrap" }}>{label}</th>)}</tr></thead>
-              <tbody>{historyRows.map((row, index) => {
-                const fileRef = row.reportId || row.netTracerFile || row.worldTracerId || "-";
-                return <tr key={`${row.reportIdDoc}-${row.eventIndex}-${index}`}>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.reportDate || "-"}<br/><span style={{ color: "#64748b" }}>{row.shift || "-"}</span></td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12, fontWeight: 850 }}>{eventTypeLabel(row.eventType)}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.passengerName || "-"}<br/><b>{row.pnr || "-"}</b></td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.bagTags || "-"}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{fileRef}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.flightNumber || "-"}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.employee || "-"}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7", fontSize: 12 }}>{row.supervisorName || "-"}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #eef2f7" }}><Button variant="secondary" onClick={() => setSelectedHistoryCase(row)}>View Case</Button></td>
-                </tr>;
-              })}</tbody>
-            </table>
-          </div>
-        )}
+        {loadingMtd ? <div style={{ padding: 16, color: "#64748b", fontWeight: 700 }}>Loading BSO MTD reports...</div> : filteredHistoryReports.length === 0 ? <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No BSO reports match the selected filters.</div> : <div style={{ display: "grid", gap: 10 }}>
+          {filteredHistoryReports.map((report) => {
+            const allEvents = Array.isArray(report.events) ? report.events : [];
+            const events = allEvents.filter((event, index) => historyRows.some((row) => row.reportIdDoc === report.id && row.eventIndex === index));
+            return <div key={report.id} style={{ border: "1px solid #dbeafe", borderRadius: 16, overflow: "hidden" }}>
+              <div style={{ padding: 13, background: "#f8fbff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "#1769aa", fontWeight: 900, textTransform: "uppercase" }}>{report.reportDate || "-"} | {report.shift || "-"} Shift | {events.length} Matching Event{events.length === 1 ? "" : "s"}</div>
+                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{report.supervisorName || report.submittedByName || "Supervisor"}</div>
+                  <div style={{ marginTop: 2, fontSize: 11, color: "#64748b" }}>{timestampToLabel(report.createdAt)}</div>
+                </div>
+                <Button variant="secondary" onClick={() => setExpandedReportId(report.id)}>View Report</Button>
+              </div>
+            </div>;
+          })}
+        </div>}
       </Card>
     </>}
-
-    {selectedHistoryCase && <div
-      onClick={() => setSelectedHistoryCase(null)}
-      style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: isMobile ? 10 : 20 }}
-    >
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 760, maxHeight: "88vh", background: "#fff", borderRadius: isMobile ? 16 : 22, boxShadow: "0 28px 80px rgba(15,23,42,.32)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: isMobile ? "14px 15px" : "17px 20px", background: "linear-gradient(135deg,#0f5c91,#1f7cc1 55%,#6ec6e8)", color: "#fff", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-          <div><div style={{ fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".10em", opacity: .82 }}>BSO Case Detail</div><div style={{ marginTop: 4, fontSize: isMobile ? 18 : 22, fontWeight: 900 }}>{eventTypeLabel(selectedHistoryCase.eventType)}</div><div style={{ marginTop: 4, fontSize: 12, opacity: .9 }}>{selectedHistoryCase.reportDate || "-"} | {selectedHistoryCase.shift || "-"} Shift</div></div>
-          <button type="button" onClick={() => setSelectedHistoryCase(null)} style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 12, border: "1px solid rgba(255,255,255,.35)", background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer", fontWeight: 800 }}>x</button>
-        </div>
-        <div style={{ padding: isMobile ? 13 : 18, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2,minmax(0,1fr))", gap: 10, fontSize: 13, color: "#334155" }}>
-            <div><b>Passenger:</b> {selectedHistoryCase.passengerName || "-"}</div><div><b>PNR:</b> {selectedHistoryCase.pnr || "-"}</div>
-            <div><b>Bag Tag(s):</b> {selectedHistoryCase.bagTags || "-"}</div><div><b>Flight:</b> {selectedHistoryCase.flightNumber || "-"}</div>
-            <div><b>Employee:</b> {selectedHistoryCase.employee || "-"}</div><div><b>Supervisor:</b> {selectedHistoryCase.supervisorName || "-"}</div>
-            {selectedHistoryCase.eventType === "CODE_24" && <>
-              <div><b>Return Reason:</b> {selectedHistoryCase.returnReason === "Other" ? (selectedHistoryCase.returnReasonOther || "Other") : (selectedHistoryCase.returnReason || "-")}</div>
-              <div><b>Code 24 Created:</b> {selectedHistoryCase.code24Created === true || selectedHistoryCase.code24Created === "Yes" ? "Yes" : "No"}</div>
-              <div><b>Code 24 Reason:</b> {selectedHistoryCase.code24Reason === "Other" ? (selectedHistoryCase.code24ReasonOther || "Other") : (selectedHistoryCase.code24Reason || "-")}</div>
-              <div><b>BCC Referral:</b> {selectedHistoryCase.bccReferral === true || selectedHistoryCase.bccReferral === "Yes" ? "Yes" : "No"}</div>
-              <div><b>Report ID:</b> {selectedHistoryCase.reportId || "-"}</div>
-            </>}
-            {selectedHistoryCase.eventType === "CODE_39" && <>
-              <div><b>Report ID:</b> {selectedHistoryCase.reportId || "-"}</div><div><b>Create Date:</b> {selectedHistoryCase.createDate || "-"}</div>
-              <div><b>Status:</b> {selectedHistoryCase.status || "-"}</div><div><b>Fault Station:</b> {selectedHistoryCase.faultStation || "-"}</div>
-              <div><b>Loss Code:</b> {selectedHistoryCase.lossCode || "-"}</div><div><b>Bag Type:</b> {selectedHistoryCase.bagType || "-"}</div>
-              <div><b>Bags Checked:</b> {selectedHistoryCase.bagsChecked ?? "-"}</div><div><b>Bags Received:</b> {selectedHistoryCase.bagsReceived ?? "-"}</div>
-              <div><b>World Tracer:</b> {selectedHistoryCase.worldTracerId || "-"}</div>
-            </>}
-            {selectedHistoryCase.eventType === "EXCEPTION_DELIVERY" && <>
-              <div><b>NetTracer File:</b> {selectedHistoryCase.netTracerFile || "-"}</div><div><b>Exception Date:</b> {selectedHistoryCase.exceptionDate || "-"}</div>
-              <div><b>Agent Code:</b> {selectedHistoryCase.agentCode || "-"}</div><div><b>Delivery Method:</b> {selectedHistoryCase.deliveryMethod || "-"}</div>
-              <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}><b>Exception Reason:</b> {selectedHistoryCase.exceptionReason === "Other" ? (selectedHistoryCase.exceptionReasonOther || "Other") : (selectedHistoryCase.exceptionReason || "-")}</div>
-            </>}
-            {selectedHistoryCase.eventType === "OTHER" && <>
-              <div><b>Category:</b> {selectedHistoryCase.otherCategory || "-"}</div><div><b>Follow-up Required:</b> {selectedHistoryCase.followUpRequired || "-"}</div>
-              <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}><b>Description:</b> {selectedHistoryCase.otherDescription || "-"}</div>
-              <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}><b>Action Taken:</b> {selectedHistoryCase.actionTaken || "-"}</div>
-            </>}
-          </div>
-          {selectedHistoryCase.comments && <div style={{ marginTop: 14, padding: 11, borderRadius: 12, background: "#f8fafc", color: "#475569", fontSize: 12.5 }}><b>Comments / Coaching:</b> {selectedHistoryCase.comments}</div>}
-        </div>
-        <div style={{ padding: 13, borderTop: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", justifyContent: "flex-end" }}><Button variant="secondary" onClick={() => setSelectedHistoryCase(null)}>Close</Button></div>
-      </div>
-    </div>}
 
     {expandedReportId && (() => {
       const report = filteredHistoryReports.find((item) => item.id === expandedReportId);
@@ -1274,23 +1211,27 @@ export default function BSODailyReportPage() {
           <div style={{ padding: isMobile ? 13 : 18, overflowY: "auto", WebkitOverflowScrolling: "touch", display: "grid", gap: 11 }}>
             {events.map((event, index) => <div key={`${report.id}-${index}`} style={{ border: "1px solid #dbeafe", borderRadius: 15, padding: isMobile ? 12 : 14, background: "#fff" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>{event.eventType === "CODE_24" ? "Code 24 / Bag Return" : event.eventType === "CODE_39" ? "Code 39" : event.eventType === "EXCEPTION_DELIVERY" ? "Exception Delivery" : "Other"}</div>
+                <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>{event.eventType === "BAG_RETURN" ? "Bag Return Request" : event.eventType === "CODE_24" ? "Code 24" : event.eventType === "CODE_39" ? "Code 39" : event.eventType === "EXCEPTION_DELIVERY" ? "Exception Delivery" : "Other"}</div>
                 <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>Event #{event.sequence || index + 1}</div>
               </div>
 
               <div style={{ marginTop: 11, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,minmax(0,1fr))", gap: 9, fontSize: 12.5, color: "#334155" }}>
-                <div><b>Employee:</b> {event.employee || "-"}</div>
+                {event.eventType !== "CODE_24" && <div><b>Employee:</b> {event.employee || "-"}</div>}
                 <div><b>Passenger:</b> {event.passengerName || "-"}</div>
                 <div><b>PNR:</b> {event.pnr || "-"}</div>
                 <div><b>Bag Tag:</b> {event.bagTags || "-"}</div>
                 <div><b>Flight:</b> {event.flightNumber || "-"}</div>
                 <div><b>Supervisor Review:</b> {event.supervisorReview || "-"}</div>
 
-                {event.eventType === "CODE_24" && <>
+                {event.eventType === "BAG_RETURN" && <>
                   <div><b>Return Reason:</b> {event.returnReason === "Other" ? (event.returnReasonOther || "Other") : (event.returnReason || "-")}</div>
-                  <div><b>Code 24 Created:</b> {event.code24Created === true || event.code24Created === "Yes" ? "Yes" : "No"}</div>
+                  <div><b>BCC Referral:</b> {event.bccReferral === true || event.bccReferral === "Yes" ? "Yes" : "No"}</div>
+                </>}
+
+                {event.eventType === "CODE_24" && <>
                   <div><b>Code 24 Reason:</b> {event.code24Reason === "Other" ? (event.code24ReasonOther || "Other") : (event.code24Reason || "-")}</div>
                   <div><b>BCC Referral:</b> {event.bccReferral === true || event.bccReferral === "Yes" ? "Yes" : "No"}</div>
+                  <div style={{ gridColumn: "1 / -1" }}><b>Code 24 Details:</b> {event.code24Details || event.comments || "-"}</div>
                 </>}
 
                 {event.eventType === "CODE_39" && <>
