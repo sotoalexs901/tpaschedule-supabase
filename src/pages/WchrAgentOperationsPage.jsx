@@ -704,6 +704,7 @@ export default function WchrAgentOperationsPage() {
 
   const [shift, setShift] = useState(null);
   const [shiftLoading, setShiftLoading] = useState(true);
+  const [umnrCapacity, setUmnrCapacity] = useState(0);
 
   const [activeReport, setActiveReport] = useState(null);
 
@@ -916,6 +917,38 @@ export default function WchrAgentOperationsPage() {
   }, [agentId]);
 
   // ============================================================
+  // UMNR CAPACITY LOCK
+  // ============================================================
+
+  useEffect(() => {
+    if (!agentId || import.meta.env.VITE_UMNR_ENABLED !== "true") {
+      setUmnrCapacity(0);
+      return undefined;
+    }
+
+    const capacityRef = doc(db, "umnr_agent_capacity", agentId);
+
+    const unsubscribe = onSnapshot(
+      capacityRef,
+      (snapshot) => {
+        const count = snapshot.exists()
+          ? Number(snapshot.data()?.count || 0)
+          : 0;
+        setUmnrCapacity(Number.isFinite(count) ? Math.max(0, count) : 0);
+      },
+      (err) => {
+        console.error("Error listening UMNR capacity:", err);
+        // Fail closed while UMNR is enabled: do not treat an unknown lock as free.
+        setUmnrCapacity(10);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [agentId]);
+
+  const hasActiveUmnr = umnrCapacity > 0;
+
+  // ============================================================
   // ACTIVE REPORT LISTENER
   // ============================================================
 
@@ -1108,7 +1141,8 @@ export default function WchrAgentOperationsPage() {
   const isBusy =
     availability ===
       WCHR_AGENT_AVAILABILITY.BUSY ||
-    Boolean(activeReportId);
+    Boolean(activeReportId) ||
+    hasActiveUmnr;
 
   const shiftElapsedSeconds = isPunchedIn
     ? getElapsedSeconds(
@@ -1298,7 +1332,9 @@ export default function WchrAgentOperationsPage() {
 
     if (isBusy) {
       setError(
-        "Availability cannot be changed while a wheelchair is assigned to you."
+        hasActiveUmnr
+          ? "Availability cannot be changed while UMNR services are assigned to you."
+          : "Availability cannot be changed while a wheelchair is assigned to you."
       );
       return;
     }
@@ -1579,6 +1615,11 @@ export default function WchrAgentOperationsPage() {
       return;
     }
 
+    if (hasActiveUmnr) {
+      setError("Complete all active UMNR services before accepting a WCHR passenger.");
+      return;
+    }
+
     if (isBusy || activeReportId) {
       setError("Complete your current WCHR service before accepting another passenger.");
       return;
@@ -1601,17 +1642,24 @@ export default function WchrAgentOperationsPage() {
 
       const reportRef = doc(db, "wch_reports", report.id);
       const shiftRef = doc(db, "wchr_agent_shifts", agentId);
+      const umnrCapacityRef = doc(db, "umnr_agent_capacity", agentId);
 
       await runTransaction(db, async (transaction) => {
         const reportSnap = await transaction.get(reportRef);
         const shiftSnap = await transaction.get(shiftRef);
+        const umnrCapacitySnap = await transaction.get(umnrCapacityRef);
 
         if (!reportSnap.exists()) throw new Error("This inbound passenger is no longer available.");
         if (!shiftSnap.exists()) throw new Error("Your active WCHR shift was not found.");
 
         const freshReport = reportSnap.data() || {};
         const freshShift = shiftSnap.data() || {};
+        const freshUmnrCount = Number(umnrCapacitySnap.exists() ? umnrCapacitySnap.data()?.count || 0 : 0);
         const freshStatus = safeUpper(freshReport.ib_status || freshReport.service_status);
+
+        if (freshUmnrCount > 0) {
+          throw new Error("You already have active UMNR services. Complete them before accepting a WCHR service.");
+        }
 
         if (
           freshReport.ib_passenger_available !== true ||
@@ -2339,6 +2387,11 @@ export default function WchrAgentOperationsPage() {
       return;
     }
 
+    if (hasActiveUmnr) {
+      setError("Complete all active UMNR services before accepting this WCHR assignment.");
+      return;
+    }
+
     const location =
       cleanText(activeReport.current_location) ||
       cleanText(shift?.current_location) ||
@@ -2348,6 +2401,12 @@ export default function WchrAgentOperationsPage() {
       setBusyAction("accept");
       setError("");
       setMessage("");
+
+      const capacitySnapshot = await getDoc(doc(db, "umnr_agent_capacity", agentId));
+      const activeUmnrCount = Number(capacitySnapshot.exists() ? capacitySnapshot.data()?.count || 0 : 0);
+      if (activeUmnrCount > 0) {
+        throw new Error("You already have active UMNR services. Complete them before accepting a WCHR service.");
+      }
 
       await updateJourneyState({
         serviceStatus: "ACCEPTED",
@@ -2801,6 +2860,13 @@ export default function WchrAgentOperationsPage() {
           </div>
         )}
       </section>
+      {hasActiveUmnr && (
+        <PageCard style={{ padding: 14, border: "1px solid #fed7aa", background: "#fff7ed" }}>
+          <div style={{ color: "#9a3412", fontSize: 12.5, lineHeight: 1.55, fontWeight: 800 }}>
+            UMNR lock active: {umnrCapacity} active UMNR service{umnrCapacity === 1 ? "" : "s"}. WCHR acceptance and new WCHR service actions are blocked until all UMNR services are completed, cancelled, or reassigned.
+          </div>
+        </PageCard>
+      )}
       {assignmentDecisionOpen && activeReport && !hasAccepted && (
         <div role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(3, 18, 38, 0.76)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div role="dialog" aria-modal="true" aria-label="WCHR assignment decision" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: 20, padding: 22, boxShadow: "0 25px 70px rgba(0,0,0,.3)" }}>
@@ -2810,7 +2876,7 @@ export default function WchrAgentOperationsPage() {
             <label htmlFor="wchr-rejection-reason" style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 7 }}>Reason for rejection (required only if rejecting)</label>
             <textarea id="wchr-rejection-reason" value={assignmentRejectReason} onChange={(e) => setAssignmentRejectReason(e.target.value)} rows={3} placeholder="Explain why you cannot take this service..." style={{ width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 10, padding: 10, font: "inherit", resize: "vertical" }} />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 15 }}>
-              <button type="button" disabled={Boolean(busyAction)} onClick={handleAcceptAssignment} style={{ flex: 1, background: "#15803d", color: "white", padding: 12, border: 0, borderRadius: 10, fontWeight: 800 }}>{busyAction === "accept" ? "Accepting..." : "Accept"}</button>
+              <button type="button" disabled={Boolean(busyAction) || hasActiveUmnr} onClick={handleAcceptAssignment} style={{ flex: 1, background: "#15803d", color: "white", padding: 12, border: 0, borderRadius: 10, fontWeight: 800 }}>{busyAction === "accept" ? "Accepting..." : "Accept"}</button>
               <button type="button" disabled={Boolean(busyAction) || !cleanText(assignmentRejectReason)} onClick={handleRejectAssignment} style={{ flex: 1, background: "#b91c1c", color: "white", padding: 12, border: 0, borderRadius: 10, fontWeight: 800, opacity: !cleanText(assignmentRejectReason) ? 0.55 : 1 }}>{busyAction === "reject" ? "Rejecting..." : "Reject"}</button>
               <button type="button" disabled={Boolean(busyAction)} onClick={() => setAssignmentDecisionOpen(false)} style={{ padding: 12, border: "1px solid #cbd5e1", borderRadius: 10, background: "white" }}>Later</button>
             </div>
@@ -3485,7 +3551,7 @@ export default function WchrAgentOperationsPage() {
                         <div>Type: {report.wch_type || "WCHR"}</div>
                         <div>Pickup: CBP</div>
                       </div>
-                      <ActionButton variant="success" onClick={() => handleAcceptInboundPassenger(report)} disabled={Boolean(busyAction) || availability !== WCHR_AGENT_AVAILABILITY.AVAILABLE} style={{ marginTop: 12, width: "100%" }}>
+                      <ActionButton variant="success" onClick={() => handleAcceptInboundPassenger(report)} disabled={Boolean(busyAction) || hasActiveUmnr || availability !== WCHR_AGENT_AVAILABILITY.AVAILABLE} style={{ marginTop: 12, width: "100%" }}>
                         {busyAction === `ib-accept:${report.id}` ? "Accepting Pax..." : "Accept Pax"}
                       </ActionButton>
                     </div>
@@ -3553,7 +3619,7 @@ export default function WchrAgentOperationsPage() {
                 </p>
 
                 {availability ===
-                  WCHR_AGENT_AVAILABILITY.AVAILABLE && (
+                  WCHR_AGENT_AVAILABILITY.AVAILABLE && !hasActiveUmnr && (
                   <div
                     style={{
                       margin: "13px auto 0",
@@ -4018,7 +4084,7 @@ export default function WchrAgentOperationsPage() {
                 >
                   <ActionButton
                     variant="success"
-                    disabled={Boolean(busyAction) || hasAccepted}
+                    disabled={Boolean(busyAction) || hasAccepted || hasActiveUmnr}
                     onClick={() => setAssignmentDecisionOpen(true)}
                   >
                     {busyAction === "accept"
