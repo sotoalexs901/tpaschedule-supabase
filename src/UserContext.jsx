@@ -7,6 +7,8 @@ import React, {
   useState,
 } from "react";
 
+import { endUmnrSession } from "./utils/umnrClient.js";
+
 const UserContext = createContext({
   user: null,
   setUser: () => {},
@@ -88,6 +90,7 @@ export function UserProvider({ children }) {
   };
 
   const logout = () => {
+    endUmnrSession().catch(() => {});
     clearTimers();
     setShowSessionWarning(false);
     setUser(null);
