@@ -10,6 +10,7 @@ import {
   getDoc,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -1183,6 +1184,7 @@ function AgentCard({
   selected,
   onSelect,
   isMobile,
+  umnrCount = 0,
 }) {
   const punchedIn =
     safeUpper(
@@ -1202,11 +1204,14 @@ function AgentCard({
       )
     );
 
+  const hasActiveUmnr = Number(umnrCount || 0) > 0;
+
   const canReceive =
     punchedIn &&
     availability ===
       WCHR_AGENT_AVAILABILITY.AVAILABLE &&
-    !hasAssignment;
+    !hasAssignment &&
+    !hasActiveUmnr;
 
   return (
     <button
@@ -1310,6 +1315,25 @@ function AgentCard({
         </div>
       )}
 
+      {hasActiveUmnr && (
+        <div
+          style={{
+            marginTop: 10,
+            borderRadius: 12,
+            padding: "8px 10px",
+            background: "#f5f3ff",
+            border: "1px solid #ddd6fe",
+            color: "#6d28d9",
+            fontSize: 11,
+            fontWeight: 850,
+            lineHeight: 1.45,
+          }}
+        >
+          UMNR Active: {umnrCount} service{Number(umnrCount) === 1 ? "" : "s"}.
+          WCHR assignment is blocked until all UMNR services are closed.
+        </div>
+      )}
+
       {canReceive && (
         <div
           style={{
@@ -1338,6 +1362,7 @@ function SupervisorAgentCard({
   clearBusy,
   hasLiveReport,
   isMobile,
+  umnrCount = 0,
 }) {
   const punchedIn =
     safeUpper(agent.status) === WCHR_AGENT_STATUS.ACTIVE;
@@ -1351,10 +1376,13 @@ function SupervisorAgentCard({
       cleanText(agent.active_wheelchair_number)
     );
 
+  const hasActiveUmnr = Number(umnrCount || 0) > 0;
+
   const canReceive =
     punchedIn &&
     availability === WCHR_AGENT_AVAILABILITY.AVAILABLE &&
-    !hasAssignment;
+    !hasAssignment &&
+    !hasActiveUmnr;
 
   const staleAssignment =
     punchedIn &&
@@ -1362,7 +1390,7 @@ function SupervisorAgentCard({
     !hasLiveReport;
 
   const canSupervisorPunchOut =
-    punchedIn && !hasAssignment;
+    punchedIn && !hasAssignment && !hasActiveUmnr;
 
   const canForceClear =
     punchedIn && staleAssignment;
@@ -1448,6 +1476,24 @@ function SupervisorAgentCard({
             }}
           >
             Active WCHR {agent.active_wheelchair_number || "â"}
+          </div>
+        )}
+
+        {hasActiveUmnr && (
+          <div
+            style={{
+              marginTop: 9,
+              borderRadius: 11,
+              padding: "7px 9px",
+              background: "#f5f3ff",
+              border: "1px solid #ddd6fe",
+              color: "#6d28d9",
+              fontSize: 10.5,
+              fontWeight: 850,
+              lineHeight: 1.45,
+            }}
+          >
+            UMNR Active: {umnrCount}. WCHR assignment and WCHR Punch Out are blocked.
           </div>
         )}
 
@@ -1955,6 +2001,18 @@ export default function WchrDispatchPage() {
     setAgents,
   ] = useState([]);
 
+  const umnrEnabled = import.meta.env.VITE_UMNR_ENABLED === "true";
+
+  const [
+    umnrCapacityByAgent,
+    setUmnrCapacityByAgent,
+  ] = useState({});
+
+  const [
+    umnrCapacityUnavailable,
+    setUmnrCapacityUnavailable,
+  ] = useState(false);
+
   // ============================================================
   // READY REPORTS
   // ============================================================
@@ -2414,6 +2472,54 @@ export default function WchrDispatchPage() {
     return () =>
       unsubscribe();
   }, []);
+
+  // ============================================================
+  // LIVE UMNR CAPACITY LOCKS
+  // ============================================================
+
+  useEffect(() => {
+    if (!umnrEnabled) {
+      setUmnrCapacityByAgent({});
+      setUmnrCapacityUnavailable(false);
+      return undefined;
+    }
+
+    const unsubscribe = onSnapshot(
+      collection(db, "umnr_agent_capacity"),
+      (snapshot) => {
+        const next = {};
+
+        snapshot.docs.forEach((item) => {
+          const rawCount = Number(item.data()?.count || 0);
+          next[item.id] = Number.isFinite(rawCount)
+            ? Math.max(0, rawCount)
+            : 0;
+        });
+
+        setUmnrCapacityByAgent(next);
+        setUmnrCapacityUnavailable(false);
+      },
+      (err) => {
+        console.error("UMNR capacity listener error:", err);
+        // Fail closed while UMNR is enabled. Dispatch must never assume
+        // an unknown UMNR capacity means the agent is free for WCHR.
+        setUmnrCapacityUnavailable(true);
+        setError(
+          "UMNR capacity status could not be verified. WCHR assignment is temporarily blocked for safety."
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, [umnrEnabled]);
+
+  function getUmnrCountForAgent(agentId) {
+    if (!umnrEnabled) return 0;
+    if (umnrCapacityUnavailable) return 10;
+
+    const count = Number(umnrCapacityByAgent[cleanText(agentId)] || 0);
+    return Number.isFinite(count) ? Math.max(0, count) : 0;
+  }
 
   // ============================================================
   // LIVE READY WCHRS
@@ -3652,6 +3758,32 @@ export default function WchrDispatchPage() {
     const wheelchair =
       cleanText(agent?.active_wheelchair_number) || "assigned WCHR";
 
+    if (umnrEnabled) {
+      try {
+        const capacitySnapshot = await getDoc(
+          doc(db, "umnr_agent_capacity", agent.id)
+        );
+        const activeUmnrCount = Number(
+          capacitySnapshot.exists()
+            ? capacitySnapshot.data()?.count || 0
+            : 0
+        );
+
+        if (activeUmnrCount > 0) {
+          setError(
+            `${getAgentName(agent)} still has ${activeUmnrCount} active UMNR service${activeUmnrCount === 1 ? "" : "s"}. Clear & Punch Out is blocked until UMNR custody is closed.`
+          );
+          return;
+        }
+      } catch (err) {
+        console.error("UMNR Clear & Punch Out validation error:", err);
+        setError(
+          "UMNR capacity could not be verified. Clear & Punch Out is blocked for safety."
+        );
+        return;
+      }
+    }
+
     const confirmed = window.confirm(
       `Clear ${wheelchair} and Punch Out ${getAgentName(agent)}?\n\nThis is intended for a stale assignment when the agent forgot to finish/logout.`
     );
@@ -3711,6 +3843,32 @@ export default function WchrDispatchPage() {
         "This agent still has a real active WCHR service. Reassign or complete the service before Punch Out."
       );
       return;
+    }
+
+    if (umnrEnabled) {
+      try {
+        const capacitySnapshot = await getDoc(
+          doc(db, "umnr_agent_capacity", agent.id)
+        );
+        const activeUmnrCount = Number(
+          capacitySnapshot.exists()
+            ? capacitySnapshot.data()?.count || 0
+            : 0
+        );
+
+        if (activeUmnrCount > 0) {
+          setError(
+            `${getAgentName(agent)} still has ${activeUmnrCount} active UMNR service${activeUmnrCount === 1 ? "" : "s"}. Complete the UMNR service before WCHR Punch Out.`
+          );
+          return;
+        }
+      } catch (err) {
+        console.error("UMNR Punch Out validation error:", err);
+        setError(
+          "UMNR capacity could not be verified. WCHR Punch Out is blocked for safety."
+        );
+        return;
+      }
     }
 
     const confirmed = window.confirm(
@@ -3949,183 +4107,140 @@ export default function WchrDispatchPage() {
         setError("");
         setMessage("");
 
-        await releaseAgentFromReport(
-          report,
-          note
-        );
+        const reportRef = doc(db, "wch_reports", report.id);
+        const newAgentRef = doc(db, "wchr_agent_shifts", newAgent.id);
+        const capacityRef = umnrEnabled
+          ? doc(db, "umnr_agent_capacity", newAgent.id)
+          : null;
+        const oldAgentRef = oldAgentId
+          ? doc(db, "wchr_agent_shifts", oldAgentId)
+          : null;
 
-        await updateDoc(
-          doc(
-            db,
-            "wch_reports",
-            report.id
-          ),
-          {
-            previous_agent_id:
-              oldAgentId,
+        await runTransaction(db, async (transaction) => {
+          const freshReportSnap = await transaction.get(reportRef);
+          const freshNewAgentSnap = await transaction.get(newAgentRef);
+          const freshCapacitySnap = capacityRef
+            ? await transaction.get(capacityRef)
+            : null;
+          const freshOldAgentSnap = oldAgentRef
+            ? await transaction.get(oldAgentRef)
+            : null;
 
-            previous_agent_name:
-              oldAgentName,
-
-            reassigned_from_agent_id:
-              oldAgentId,
-
-            reassigned_from_agent_name:
-              oldAgentName,
-
-            reassigned_to_agent_id:
-              newAgent.id,
-
-            reassigned_to_agent_name:
-              newAgentName,
-
-            reassignment_note:
-              note,
-
-            reassigned_at:
-              serverTimestamp(),
-
-            reassigned_by_user_id:
-              user?.id ||
-              user?.uid ||
-              "",
-
-            reassigned_by_username:
-              user?.username ||
-              "",
-
-            reassigned_by_name:
-              getVisibleName(
-                user
-              ),
-
-            wchr_agent_id:
-              newAgent.id,
-
-            assigned_agent_id:
-              newAgent.id,
-
-            wchr_agent_name:
-              newAgentName,
-
-            assigned_wchr_agent:
-              newAgentName,
-
-            assigned_by_user_id:
-              user?.id ||
-              user?.uid ||
-              "",
-
-            assigned_by_username:
-              user?.username ||
-              "",
-
-            assigned_by_name:
-              getVisibleName(
-                user
-              ),
-
-            assigned_by_role:
-              user?.role ||
-              "",
-
-            assigned_at:
-              serverTimestamp(),
-
-            assignment_status:
-              "PENDING_ACCEPTANCE",
-            assignment_acceptance_status: "PENDING_ACCEPTANCE",
-
-            assignmentPushStatus:
-              "PENDING",
-
-            assignmentPushError:
-              "",
-
-            service_status:
-              WCHR_SERVICE_STATUS.ASSIGNED,
-
-            tracking_status:
-              WCHR_SERVICE_STATUS.ASSIGNED,
-
-            is_active:
-              true,
-
-            alerts_enabled:
-              true,
-
-            transport_alert_active:
-              true,
-
-            last_updated_at:
-              serverTimestamp(),
-
-            last_updated_by:
-              getVisibleName(
-                user
-              ),
-
-            last_updated_by_id:
-              user?.id ||
-              user?.uid ||
-              "",
+          if (!freshReportSnap.exists()) {
+            throw new Error("This WCHR service no longer exists.");
           }
-        );
 
-        await updateDoc(
-          doc(
-            db,
-            "wchr_agent_shifts",
-            newAgent.id
-          ),
-          {
-            availability_status:
-              WCHR_AGENT_AVAILABILITY.BUSY,
+          if (!freshNewAgentSnap.exists()) {
+            throw new Error("The selected replacement agent is no longer available.");
+          }
 
-            active_report_id:
-              report.id,
+          const freshReport = freshReportSnap.data() || {};
+          const freshNewAgent = freshNewAgentSnap.data() || {};
+          const activeUmnrCount = Number(
+            freshCapacitySnap?.exists()
+              ? freshCapacitySnap.data()?.count || 0
+              : 0
+          );
 
-            active_wheelchair_number:
-              safeUpper(
-                report.wheelchair_number
-              ),
+          if (activeUmnrCount > 0) {
+            throw new Error(
+              `${newAgentName} currently has ${activeUmnrCount} active UMNR service${activeUmnrCount === 1 ? "" : "s"}. Complete all UMNR services before reassigning a WCHR.`
+            );
+          }
 
-            active_passenger_name:
-              cleanText(
-                report.passenger_name
-              ),
+          if (
+            safeUpper(freshNewAgent.status) !== WCHR_AGENT_STATUS.ACTIVE ||
+            safeUpper(freshNewAgent.availability_status) !==
+              WCHR_AGENT_AVAILABILITY.AVAILABLE ||
+            cleanText(freshNewAgent.active_report_id)
+          ) {
+            throw new Error(
+              `${newAgentName} is no longer available for this WCHR reassignment.`
+            );
+          }
 
-            active_pnr:
-              safeUpper(
-                report.pnr
-              ),
+          const freshCurrentAgentId = cleanText(
+            freshReport.wchr_agent_id || freshReport.assigned_agent_id
+          );
 
-            active_flight_number:
-              safeUpper(
-                report.flight_number
-              ),
+          if (oldAgentId && freshCurrentAgentId !== oldAgentId) {
+            throw new Error(
+              "This WCHR assignment changed before the reassignment was completed. Refresh Dispatch and try again."
+            );
+          }
 
-            active_airline:
-              safeUpper(
-                report.airline
-              ),
+          if (
+            oldAgentRef &&
+            freshOldAgentSnap?.exists() &&
+            cleanText(freshOldAgentSnap.data()?.active_report_id) === report.id
+          ) {
+            transaction.update(oldAgentRef, {
+              availability_status: WCHR_AGENT_AVAILABILITY.AVAILABLE,
+              active_report_id: "",
+              active_wheelchair_number: "",
+              active_passenger_name: "",
+              active_pnr: "",
+              active_flight_number: "",
+              active_airline: "",
+              active_service_status: "",
+              last_assignment_note: note,
+              updated_at: serverTimestamp(),
+            });
+          }
 
-            active_service_status:
-              WCHR_SERVICE_STATUS.ASSIGNED,
+          transaction.update(reportRef, {
+            previous_agent_id: oldAgentId,
+            previous_agent_name: oldAgentName,
+            reassigned_from_agent_id: oldAgentId,
+            reassigned_from_agent_name: oldAgentName,
+            reassigned_to_agent_id: newAgent.id,
+            reassigned_to_agent_name: newAgentName,
+            reassignment_note: note,
+            reassigned_at: serverTimestamp(),
+            reassigned_by_user_id: user?.id || user?.uid || "",
+            reassigned_by_username: user?.username || "",
+            reassigned_by_name: getVisibleName(user),
+            wchr_agent_id: newAgent.id,
+            assigned_agent_id: newAgent.id,
+            wchr_agent_name: newAgentName,
+            assigned_wchr_agent: newAgentName,
+            assigned_by_user_id: user?.id || user?.uid || "",
+            assigned_by_username: user?.username || "",
+            assigned_by_name: getVisibleName(user),
+            assigned_by_role: user?.role || "",
+            assigned_at: serverTimestamp(),
+            assignment_status: "PENDING_ACCEPTANCE",
+            assignment_acceptance_status: "PENDING_ACCEPTANCE",
+            assignmentPushStatus: "PENDING",
+            assignmentPushError: "",
+            service_status: WCHR_SERVICE_STATUS.ASSIGNED,
+            tracking_status: WCHR_SERVICE_STATUS.ASSIGNED,
+            is_active: true,
+            alerts_enabled: true,
+            transport_alert_active: true,
+            last_updated_at: serverTimestamp(),
+            last_updated_by: getVisibleName(user),
+            last_updated_by_id: user?.id || user?.uid || "",
+          });
 
-            assigned_at:
-              serverTimestamp(),
-
+          transaction.update(newAgentRef, {
+            availability_status: WCHR_AGENT_AVAILABILITY.BUSY,
+            active_report_id: report.id,
+            active_wheelchair_number: safeUpper(report.wheelchair_number),
+            active_passenger_name: cleanText(report.passenger_name),
+            active_pnr: safeUpper(report.pnr),
+            active_flight_number: safeUpper(report.flight_number),
+            active_airline: safeUpper(report.airline),
+            active_service_status: WCHR_SERVICE_STATUS.ASSIGNED,
+            assigned_at: serverTimestamp(),
             current_location:
               report.current_location ||
               report.ready_location ||
               newAgent.current_location ||
               "Counter",
-
-            updated_at:
-              serverTimestamp(),
-          }
-        );
+            updated_at: serverTimestamp(),
+          });
+        });
 
         const inventoryItem =
           inventory.find(
@@ -4890,16 +5005,6 @@ export default function WchrDispatchPage() {
             );
 
           if (
-            targetAgent &&
-            currentAgentId
-          ) {
-            await releaseAgentFromReport(
-              report,
-              managementNote
-            );
-          }
-
-          if (
             finishing &&
             currentAgentId &&
             !targetAgent
@@ -5116,75 +5221,127 @@ export default function WchrDispatchPage() {
             }
           }
 
-          await updateDoc(
-            doc(
+          if (targetAgent) {
+            const newAgentName = getAgentName(targetAgent);
+            const reportRef = doc(db, "wch_reports", report.id);
+            const targetShiftRef = doc(
               db,
-              "wch_reports",
-              report.id
-            ),
-            reportPatch
-          );
+              "wchr_agent_shifts",
+              targetAgent.id
+            );
+            const capacityRef = umnrEnabled
+              ? doc(
+                  db,
+                  "umnr_agent_capacity",
+                  targetAgent.id
+                )
+              : null;
+            const oldShiftRef = currentAgentId
+              ? doc(db, "wchr_agent_shifts", currentAgentId)
+              : null;
 
-          if (
-            targetAgent
-          ) {
-            const newAgentName =
-              getAgentName(
-                targetAgent
+            await runTransaction(db, async (transaction) => {
+              const freshReportSnap = await transaction.get(reportRef);
+              const freshTargetShiftSnap = await transaction.get(targetShiftRef);
+              const freshCapacitySnap = capacityRef
+                ? await transaction.get(capacityRef)
+                : null;
+              const freshOldShiftSnap = oldShiftRef
+                ? await transaction.get(oldShiftRef)
+                : null;
+
+              if (!freshReportSnap.exists()) {
+                throw new Error(
+                  "One of the selected WCHR services no longer exists."
+                );
+              }
+
+              if (!freshTargetShiftSnap.exists()) {
+                throw new Error(
+                  `${newAgentName} is no longer in the active WCHR roster.`
+                );
+              }
+
+              const freshReport = freshReportSnap.data() || {};
+              const freshTargetShift = freshTargetShiftSnap.data() || {};
+              const activeUmnrCount = Number(
+                freshCapacitySnap?.exists()
+                  ? freshCapacitySnap.data()?.count || 0
+                  : 0
               );
 
-            await updateDoc(
-              doc(
-                db,
-                "wchr_agent_shifts",
-                targetAgent.id
-              ),
-              {
-                availability_status:
-                  WCHR_AGENT_AVAILABILITY.BUSY,
-
-                active_report_id:
-                  report.id,
-
-                active_wheelchair_number:
-                  safeUpper(
-                    report.wheelchair_number
-                  ),
-
-                active_passenger_name:
-                  cleanText(
-                    report.passenger_name
-                  ),
-
-                active_pnr:
-                  safeUpper(
-                    report.pnr
-                  ),
-
-                active_flight_number:
-                  safeUpper(
-                    report.flight_number
-                  ),
-
-                active_airline:
-                  safeUpper(
-                    report.airline
-                  ),
-
-                active_service_status:
-                  normalizedStatus ||
-                  WCHR_SERVICE_STATUS.ASSIGNED,
-
-                assigned_at:
-                  serverTimestamp(),
-
-                current_location:
-                  finalLocation,
-
-                updated_at:
-                  serverTimestamp(),
+              if (activeUmnrCount > 0) {
+                throw new Error(
+                  `${newAgentName} currently has ${activeUmnrCount} active UMNR service${activeUmnrCount === 1 ? "" : "s"}. Bulk WCHR reassignment was stopped.`
+                );
               }
-            );
+
+              if (
+                safeUpper(freshTargetShift.status) !== WCHR_AGENT_STATUS.ACTIVE ||
+                safeUpper(freshTargetShift.availability_status) !==
+                  WCHR_AGENT_AVAILABILITY.AVAILABLE ||
+                cleanText(freshTargetShift.active_report_id)
+              ) {
+                throw new Error(
+                  `${newAgentName} is no longer available for bulk WCHR reassignment.`
+                );
+              }
+
+              const freshCurrentAgentId = cleanText(
+                freshReport.wchr_agent_id || freshReport.assigned_agent_id
+              );
+
+              if (
+                currentAgentId &&
+                freshCurrentAgentId !== currentAgentId
+              ) {
+                throw new Error(
+                  "A WCHR assignment changed during the bulk update. Refresh Dispatch and try again."
+                );
+              }
+
+              if (
+                oldShiftRef &&
+                freshOldShiftSnap?.exists() &&
+                cleanText(freshOldShiftSnap.data()?.active_report_id) === report.id
+              ) {
+                transaction.update(oldShiftRef, {
+                  availability_status: WCHR_AGENT_AVAILABILITY.AVAILABLE,
+                  active_report_id: "",
+                  active_wheelchair_number: "",
+                  active_passenger_name: "",
+                  active_pnr: "",
+                  active_flight_number: "",
+                  active_airline: "",
+                  active_service_status: "",
+                  last_assignment_note: managementNote,
+                  updated_at: serverTimestamp(),
+                });
+              }
+
+              transaction.update(reportRef, reportPatch);
+
+              transaction.update(targetShiftRef, {
+                availability_status: WCHR_AGENT_AVAILABILITY.BUSY,
+                active_report_id: report.id,
+                active_wheelchair_number: safeUpper(
+                  report.wheelchair_number
+                ),
+                active_passenger_name: cleanText(
+                  report.passenger_name
+                ),
+                active_pnr: safeUpper(report.pnr),
+                active_flight_number: safeUpper(
+                  report.flight_number
+                ),
+                active_airline: safeUpper(report.airline),
+                active_service_status:
+                  normalizedStatus || WCHR_SERVICE_STATUS.ASSIGNED,
+                assigned_at: serverTimestamp(),
+                current_location: finalLocation,
+                updated_at: serverTimestamp(),
+              });
+            });
 
             triggerWchrAssignmentPush(
               report.id
@@ -5195,6 +5352,15 @@ export default function WchrDispatchPage() {
                   pushError
                 );
               }
+            );
+          } else {
+            await updateDoc(
+              doc(
+                db,
+                "wch_reports",
+                report.id
+              ),
+              reportPatch
             );
           }
 
@@ -5479,9 +5645,15 @@ export default function WchrDispatchPage() {
               WCHR_AGENT_AVAILABILITY.AVAILABLE &&
             !cleanText(
               agent.active_report_id
-            )
+            ) &&
+            getUmnrCountForAgent(agent.id) === 0
         ),
-      [agents]
+      [
+        agents,
+        umnrEnabled,
+        umnrCapacityByAgent,
+        umnrCapacityUnavailable,
+      ]
     );
 
   const busyAgents =
@@ -5497,9 +5669,15 @@ export default function WchrDispatchPage() {
               cleanText(
                 agent.active_report_id
               )
-            )
+            ) ||
+            getUmnrCountForAgent(agent.id) > 0
         ),
-      [agents]
+      [
+        agents,
+        umnrEnabled,
+        umnrCapacityByAgent,
+        umnrCapacityUnavailable,
+      ]
     );
 
   const breakAgents =
@@ -5589,6 +5767,24 @@ export default function WchrDispatchPage() {
       };
     }
 
+    if (umnrEnabled && umnrCapacityUnavailable) {
+      return {
+        valid: false,
+        reason:
+          "UMNR capacity status is unavailable. WCHR assignment is blocked until the UMNR lock can be verified.",
+      };
+    }
+
+    const activeUmnrCount = getUmnrCountForAgent(selectedAgent.id);
+
+    if (activeUmnrCount > 0) {
+      return {
+        valid: false,
+        reason:
+          `${getAgentName(selectedAgent)} currently has ${activeUmnrCount} active UMNR service${activeUmnrCount === 1 ? "" : "s"}. Complete all UMNR services before assigning a WCHR.`,
+      };
+    }
+
     return {
       valid: true,
       reason: "",
@@ -5661,88 +5857,215 @@ export default function WchrDispatchPage() {
           );
 
         // ------------------------------------------------------
-        // REPORT
+        // ATOMIC WCHR / UMNR LOCK + REPORT + AGENT SHIFT
         // ------------------------------------------------------
 
-        await updateDoc(
-          reportRef,
-          {
-            wchr_agent_id:
-              selectedAgent.id,
+        const capacityRef = umnrEnabled
+          ? doc(
+              db,
+              "umnr_agent_capacity",
+              selectedAgent.id
+            )
+          : null;
 
-            assigned_agent_id:
-              selectedAgent.id,
+        await runTransaction(
+          db,
+          async (transaction) => {
+            const freshReportSnap = await transaction.get(reportRef);
+            const freshAgentSnap = await transaction.get(agentRef);
+            const freshCapacitySnap = capacityRef
+              ? await transaction.get(capacityRef)
+              : null;
 
-            wchr_agent_name:
-              agentName,
+            if (!freshReportSnap.exists()) {
+              throw new Error(
+                "This WCHR service no longer exists."
+              );
+            }
 
-            assigned_wchr_agent:
-              agentName,
+            if (!freshAgentSnap.exists()) {
+              throw new Error(
+                "This WCHR agent shift is no longer available."
+              );
+            }
 
-            assigned_by_user_id:
-              user?.id ||
-              user?.uid ||
-              "",
+            const freshReport = freshReportSnap.data() || {};
+            const freshAgent = freshAgentSnap.data() || {};
+            const activeUmnrCount = Number(
+              freshCapacitySnap?.exists()
+                ? freshCapacitySnap.data()?.count || 0
+                : 0
+            );
 
-            assigned_by_username:
-              user?.username ||
-              "",
+            if (activeUmnrCount > 0) {
+              throw new Error(
+                `${agentName} currently has ${activeUmnrCount} active UMNR service${activeUmnrCount === 1 ? "" : "s"}. Complete all UMNR services before assigning a WCHR.`
+              );
+            }
 
-            assigned_by_name:
-              getVisibleName(
-                user
-              ),
+            if (
+              safeUpper(freshAgent.status) !== WCHR_AGENT_STATUS.ACTIVE ||
+              safeUpper(freshAgent.availability_status) !==
+                WCHR_AGENT_AVAILABILITY.AVAILABLE ||
+              cleanText(freshAgent.active_report_id)
+            ) {
+              throw new Error(
+                `${agentName} is no longer available for a WCHR assignment.`
+              );
+            }
 
-            assigned_by_role:
-              user?.role ||
-              "",
+            const freshServiceStatus = safeUpper(
+              freshReport.service_status || freshReport.tracking_status
+            );
 
-            assigned_at:
-              serverTimestamp(),
+            const freshAssigned = Boolean(
+              cleanText(
+                freshReport.wchr_agent_id ||
+                  freshReport.assigned_agent_id
+              )
+            );
 
-            assignment_status:
-              "PENDING_ACCEPTANCE",
-            assignment_acceptance_status: "PENDING_ACCEPTANCE",
+            const freshReady =
+              freshReport.ready_for_pickup === true ||
+              freshServiceStatus === WCHR_SERVICE_STATUS.READY_FOR_PICKUP;
 
-            assignmentPushStatus:
-              "PENDING",
+            if (!freshReady || freshAssigned) {
+              throw new Error(
+                "This WCHR is no longer available for assignment. Refresh Dispatch and try again."
+              );
+            }
 
-            assignmentPushError:
-              "",
+            transaction.update(
+              reportRef,
+              {
+                wchr_agent_id:
+                  selectedAgent.id,
 
-            ready_for_pickup:
-              false,
+                assigned_agent_id:
+                  selectedAgent.id,
 
-            service_status:
-              WCHR_SERVICE_STATUS.ASSIGNED,
+                wchr_agent_name:
+                  agentName,
 
-            tracking_status:
-              WCHR_SERVICE_STATUS.ASSIGNED,
+                assigned_wchr_agent:
+                  agentName,
 
-            is_active:
-              true,
+                assigned_by_user_id:
+                  user?.id ||
+                  user?.uid ||
+                  "",
 
-            alerts_enabled:
-              true,
+                assigned_by_username:
+                  user?.username ||
+                  "",
 
-            alert_after_minutes:
-              Number(
-                selectedReport.alert_after_minutes ||
-                  30
-              ),
+                assigned_by_name:
+                  getVisibleName(
+                    user
+                  ),
 
-            last_updated_at:
-              serverTimestamp(),
+                assigned_by_role:
+                  user?.role ||
+                  "",
 
-            last_updated_by:
-              getVisibleName(
-                user
-              ),
+                assigned_at:
+                  serverTimestamp(),
 
-            last_updated_by_id:
-              user?.id ||
-              user?.uid ||
-              "",
+                assignment_status:
+                  "PENDING_ACCEPTANCE",
+                assignment_acceptance_status: "PENDING_ACCEPTANCE",
+
+                assignmentPushStatus:
+                  "PENDING",
+
+                assignmentPushError:
+                  "",
+
+                ready_for_pickup:
+                  false,
+
+                service_status:
+                  WCHR_SERVICE_STATUS.ASSIGNED,
+
+                tracking_status:
+                  WCHR_SERVICE_STATUS.ASSIGNED,
+
+                is_active:
+                  true,
+
+                alerts_enabled:
+                  true,
+
+                alert_after_minutes:
+                  Number(
+                    selectedReport.alert_after_minutes ||
+                      30
+                  ),
+
+                last_updated_at:
+                  serverTimestamp(),
+
+                last_updated_by:
+                  getVisibleName(
+                    user
+                  ),
+
+                last_updated_by_id:
+                  user?.id ||
+                  user?.uid ||
+                  "",
+              }
+            );
+
+            transaction.update(
+              agentRef,
+              {
+                availability_status:
+                  WCHR_AGENT_AVAILABILITY.BUSY,
+
+                active_report_id:
+                  selectedReport.id,
+
+                active_wheelchair_number:
+                  safeUpper(
+                    selectedReport.wheelchair_number
+                  ),
+
+                active_passenger_name:
+                  cleanText(
+                    selectedReport.passenger_name
+                  ),
+
+                active_pnr:
+                  safeUpper(
+                    selectedReport.pnr
+                  ),
+
+                active_flight_number:
+                  safeUpper(
+                    selectedReport.flight_number
+                  ),
+
+                active_airline:
+                  safeUpper(
+                    selectedReport.airline
+                  ),
+
+                active_service_status:
+                  WCHR_SERVICE_STATUS.ASSIGNED,
+
+                assigned_at:
+                  serverTimestamp(),
+
+                current_location:
+                  selectedReport.current_location ||
+                  selectedReport.ready_location ||
+                  "Counter",
+
+                updated_at:
+                  serverTimestamp(),
+              }
+            );
           }
         );
 
@@ -5830,60 +6153,6 @@ export default function WchrDispatchPage() {
             }
           );
         }
-
-        // ------------------------------------------------------
-        // AGENT SHIFT
-        // ------------------------------------------------------
-
-        await updateDoc(
-          agentRef,
-          {
-            availability_status:
-              WCHR_AGENT_AVAILABILITY.BUSY,
-
-            active_report_id:
-              selectedReport.id,
-
-            active_wheelchair_number:
-              safeUpper(
-                selectedReport.wheelchair_number
-              ),
-
-            active_passenger_name:
-              cleanText(
-                selectedReport.passenger_name
-              ),
-
-            active_pnr:
-              safeUpper(
-                selectedReport.pnr
-              ),
-
-            active_flight_number:
-              safeUpper(
-                selectedReport.flight_number
-              ),
-
-            active_airline:
-              safeUpper(
-                selectedReport.airline
-              ),
-
-            active_service_status:
-              WCHR_SERVICE_STATUS.ASSIGNED,
-
-            assigned_at:
-              serverTimestamp(),
-
-            current_location:
-              selectedReport.current_location ||
-              selectedReport.ready_location ||
-              "Counter",
-
-            updated_at:
-              serverTimestamp(),
-          }
-        );
 
         // ------------------------------------------------------
         // TIMELINE
@@ -8184,6 +8453,7 @@ export default function WchrDispatchPage() {
                       punchOutBusy={busyPunchOutAgentId === agent.id}
                       clearBusy={busyClearAgentId === agent.id}
                       hasLiveReport={agentHasLiveReport(agent)}
+                      umnrCount={getUmnrCountForAgent(agent.id)}
                     />
                   )
                 )}
