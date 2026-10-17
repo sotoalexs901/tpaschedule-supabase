@@ -2159,10 +2159,8 @@ export default function WchrAgentOperationsPage() {
   // ============================================================
 
   const handleUpdateLocation = async () => {
-    if (!agentId || !activeReport) {
-      setError(
-        "No wheelchair is currently assigned."
-      );
+    if (!agentId || !isPunchedIn) {
+      setError("Punch In before updating your location.");
       return;
     }
 
@@ -2183,50 +2181,53 @@ export default function WchrAgentOperationsPage() {
         location,
       });
 
-      await updateDoc(
-        doc(db, "wch_reports", activeReport.id),
-        {
-          current_location: location,
-          last_location_update_at: serverTimestamp(),
-          last_updated_at: serverTimestamp(),
-          last_updated_by: getVisibleUserName(user),
-          last_updated_by_id:
-            user?.id || user?.uid || "",
-        }
-      );
+      if (activeReport?.id) {
+        await updateDoc(
+          doc(db, "wch_reports", activeReport.id),
+          {
+            current_location: location,
+            last_location_update_at: serverTimestamp(),
+            last_updated_at: serverTimestamp(),
+            last_updated_by: getVisibleUserName(user),
+            last_updated_by_id:
+              user?.id || user?.uid || "",
+          }
+        );
 
-      await syncAssignedInventory({
-        status:
-          safeUpper(activeReport?.service_direction) === "IB"
-            ? "IN_SERVICE"
-            : safeUpper(
-                activeReport.service_status ||
-                  activeReport.tracking_status
-              ) === WCHR_SERVICE_STATUS.IN_TRANSIT
-            ? "IN_SERVICE"
-            : safeUpper(
-                activeReport.service_status ||
-                  activeReport.tracking_status ||
-                  "ASSIGNED"
-              ),
-        location,
-      });
+        await syncAssignedInventory({
+          status:
+            safeUpper(activeReport?.service_direction) === "IB"
+              ? "IN_SERVICE"
+              : safeUpper(
+                  activeReport.service_status ||
+                    activeReport.tracking_status
+                ) === WCHR_SERVICE_STATUS.IN_TRANSIT
+              ? "IN_SERVICE"
+              : safeUpper(
+                  activeReport.service_status ||
+                    activeReport.tracking_status ||
+                    "ASSIGNED"
+                ),
+          location,
+        });
 
-      await addWchrTimelineEvent({
-        reportId: activeReport.id,
-        eventType: "LOCATION_UPDATE",
-        wheelchairNumber:
-          activeReport.wheelchair_number ||
-          shift?.active_wheelchair_number ||
-          "",
-        agentId,
-        agentName: getEmployeeName(employee),
-        location,
-        note:
-          cleanText(locationNote) ||
-          `Agent location updated to ${location}.`,
-        user,
-      });
+        await addWchrTimelineEvent({
+          reportId: activeReport.id,
+          eventType: "LOCATION_UPDATE",
+          wheelchairNumber:
+            activeReport.wheelchair_number ||
+            shift?.active_wheelchair_number ||
+            "",
+          agentId,
+          agentName: getEmployeeName(employee),
+          location,
+          note:
+            cleanText(locationNote) ||
+            `Agent location updated to ${location}.`,
+          user,
+        });
+
+      }
 
       setLocationNote("");
       setMessage(
@@ -3022,6 +3023,38 @@ export default function WchrAgentOperationsPage() {
           )}
         </div>
       </PageCard>
+
+      {/* Independent mobile-friendly location update while on duty and idle. */}
+      {isPunchedIn && !activeReport && (
+        <PageCard style={{ padding: isMobile ? 15 : 20, marginBottom: 12 }}>
+          <h3 style={{ margin: "0 0 5px", fontSize: 17, color: "#0f172a" }}>
+            Update My Location
+          </h3>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b" }}>
+            Update your location without Punch Out. Your active shift and availability remain unchanged.
+          </p>
+          <div style={{ marginBottom: 11 }}>
+            <FieldLabel>Current location: {shift?.current_location || "Not set"}</FieldLabel>
+            <SelectInput
+              value={selectedLocation}
+              disabled={Boolean(busyAction)}
+              onChange={(event) => setSelectedLocation(event.target.value)}
+            >
+              {AGENT_LOCATIONS.map((location) => (
+                <option key={location} value={location}>{location}</option>
+              ))}
+            </SelectInput>
+          </div>
+          <ActionButton
+            variant="primary"
+            disabled={Boolean(busyAction) || !cleanText(selectedLocation)}
+            onClick={handleUpdateLocation}
+            style={{ width: isMobile ? "100%" : "auto", minHeight: 44 }}
+          >
+            {busyAction === "location" ? "Updating..." : "Update Location"}
+          </ActionButton>
+        </PageCard>
+      )}
 
       {/* PUNCH IN */}
       {!isPunchedIn && (
