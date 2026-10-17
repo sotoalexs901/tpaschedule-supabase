@@ -17,6 +17,7 @@ import {
 
 import { db } from "../firebase";
 import LiveServiceBoard from "../components/LiveServiceBoard.jsx";
+import UmnrOperationsPanel from "../components/UmnrOperationsPanel.jsx";
 import useActiveDispatchBoard from "../hooks/useActiveDispatchBoard.js";
 import { useUser } from "../UserContext.jsx";
 
@@ -5979,6 +5980,7 @@ export default function WchrDispatchPage() {
       }}
     >
       {ENABLE_LIVE_BOARD_STAGING && <DispatchLiveBoardStaging />}
+      {import.meta.env.VITE_UMNR_ENABLED === "true" && <UmnrOperationsPanel mode="dispatch" flights={dailyFlights} agents={agents} />}
 
       {/* ====================================================== */}
       {/* HERO */}
