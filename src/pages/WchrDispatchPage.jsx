@@ -1920,10 +1920,10 @@ function InboundPassengerCard({
 // Never changes WCHR assignments, inventory, agent shifts or timers.
 const ENABLE_LIVE_BOARD_STAGING = import.meta.env.VITE_WCHR_LIVE_BOARD === "true";
 function DispatchLiveBoardStaging() {
-  const { wchrReports, umnrAssignments, loading, error } = useActiveDispatchBoard();
+  const { wchrReports, pendingWchrReports, umnrAssignments, loading, error } = useActiveDispatchBoard();
   if (error) return <div role="alert" style={{ padding: 12, color: "#991b1b" }}>Live Board unavailable: {error}</div>;
   if (loading) return <div role="status" style={{ padding: 12 }}>Loading active WCHR services…</div>;
-  return <LiveServiceBoard wchrReports={wchrReports} umnrAssignments={umnrAssignments} />;
+  return <LiveServiceBoard wchrReports={wchrReports} pendingWchrReports={pendingWchrReports} umnrAssignments={umnrAssignments} />;
 }
 
 // ============================================================
