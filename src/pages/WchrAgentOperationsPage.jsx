@@ -963,6 +963,26 @@ export default function WchrAgentOperationsPage() {
     return () => unsubscribe();
   }, [activeReportId]);
 
+  // Open automatically when Dispatch assigns a new outbound WCHR.
+  useEffect(() => {
+    if (!activeReport?.id || !agentId) return;
+    const assignedId = cleanText(activeReport.wchr_agent_id || activeReport.assigned_agent_id);
+    const status = safeUpper(activeReport.service_status || activeReport.tracking_status);
+    const pending = ["ASSIGNED", "READY_FOR_PICKUP"].includes(status) &&
+      !activeReport.assignment_accepted_at &&
+      safeUpper(activeReport.assignment_status) !== "ACCEPTED" &&
+      safeUpper(activeReport.service_direction) !== "IB" &&
+      cleanText(shift?.active_report_id) === cleanText(activeReport.id) &&
+      (!assignedId || assignedId === agentId);
+    if (pending) {
+      setAssignmentRejectReason("");
+      setAssignmentDecisionOpen(true);
+    } else {
+      setAssignmentDecisionOpen(false);
+    }
+  }, [activeReport?.id, activeReport?.assignment_status, activeReport?.assignment_accepted_at,
+      activeReport?.service_status, activeReport?.tracking_status, agentId, shift?.active_report_id]);
+
   // ============================================================
   // LIVE IB PASSENGER LIST
   // ============================================================
@@ -1624,6 +1644,8 @@ export default function WchrAgentOperationsPage() {
           assigned_agent_active: true,
           ib_accepted_at: serverTimestamp(),
           assignment_accepted_at: serverTimestamp(),
+          assignment_status: "ACCEPTED",
+          assignment_acceptance_status: "ACCEPTED",
           assignment_accepted_by_agent_id: agentId,
           assignment_accepted_by_agent_name: getEmployeeName(employee),
           current_location: "CBP",
@@ -2391,8 +2413,8 @@ export default function WchrAgentOperationsPage() {
           throw new Error("This service has already started and cannot be rejected.");
         }
         transaction.update(reportRef, {
-          wchr_agent_id: "", assigned_agent_id: "", wchr_agent_name: "", assigned_wchr_agent: "",
-          assignment_status: "UNASSIGNED", assignment_accepted_at: null,
+          wchr_agent_id: "", assigned_agent_id: "", wchr_agent_name: "", assigned_wchr_agent: "", assigned_agent_name: "", assigned_agent_active: false,
+          assignment_status: "UNASSIGNED", assignment_acceptance_status: "REJECTED", assignment_accepted_at: null,
           service_status: "READY_FOR_PICKUP", tracking_status: "READY_FOR_PICKUP",
           ready_for_pickup: true, is_active: true,
           assignment_rejected_at: serverTimestamp(),
@@ -2404,7 +2426,7 @@ export default function WchrAgentOperationsPage() {
           last_updated_at: serverTimestamp(),
         });
         transaction.update(shiftRef, {
-          active_report_id: "", active_wheelchair_number: "",
+          active_report_id: "", active_wheelchair_number: "", active_passenger_name: "", active_pnr: "", active_flight_number: "", active_airline: "",
           active_service_status: "", availability_status: WCHR_AGENT_AVAILABILITY.AVAILABLE,
           assignment_accepted_at: null,
           last_updated_at: serverTimestamp(),
