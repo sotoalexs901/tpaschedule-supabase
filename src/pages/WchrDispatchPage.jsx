@@ -16,6 +16,8 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import LiveServiceBoard from "../components/LiveServiceBoard.jsx";
+import useActiveDispatchBoard from "../hooks/useActiveDispatchBoard.js";
 import { useUser } from "../UserContext.jsx";
 
 import {
@@ -1912,6 +1914,16 @@ function InboundPassengerCard({
       )}
     </div>
   );
+}
+
+// Feature-flagged, read-only board. Hook subscriptions mount ONLY when enabled.
+// Never changes WCHR assignments, inventory, agent shifts or timers.
+const ENABLE_LIVE_BOARD_STAGING = import.meta.env.VITE_WCHR_LIVE_BOARD === "true";
+function DispatchLiveBoardStaging() {
+  const { wchrReports, umnrAssignments, loading, error } = useActiveDispatchBoard();
+  if (error) return <div role="alert" style={{ padding: 12, color: "#991b1b" }}>Live Board unavailable: {error}</div>;
+  if (loading) return <div role="status" style={{ padding: 12 }}>Loading active WCHR services…</div>;
+  return <LiveServiceBoard wchrReports={wchrReports} umnrAssignments={umnrAssignments} />;
 }
 
 // ============================================================
@@ -5963,6 +5975,8 @@ export default function WchrDispatchPage() {
           "Poppins, Inter, system-ui, sans-serif",
       }}
     >
+      {ENABLE_LIVE_BOARD_STAGING && <DispatchLiveBoardStaging />}
+
       {/* ====================================================== */}
       {/* HERO */}
       {/* ====================================================== */}
