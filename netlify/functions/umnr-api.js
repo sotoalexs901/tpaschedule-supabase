@@ -22,8 +22,8 @@ const endStates = new Set(['DELIVERED','CANCELLED','REJECTED']);
 const allowed = {
   ASSIGNED: ['ACCEPTED','REJECTED','CANCELLED'],
   ACCEPTED: ['PICKED_UP','CANCELLED'],
-  PICKED_UP: ['IN_TRANSIT','DELIVERED','CANCELLED'],
-  IN_TRANSIT: ['AT_GATE','DELIVERED','CANCELLED'],
+  PICKED_UP: ['IN_TRANSIT','CANCELLED'],
+  IN_TRANSIT: ['AT_GATE','CANCELLED'],
   AT_GATE: ['DELIVERED','CANCELLED'],
   REJECTED: ['ASSIGNED','CANCELLED'],
 };
@@ -52,7 +52,7 @@ exports.handler = async (event) => {
     const eventItem = (type, details={}) => ({ type, at: new Date().toISOString(), actor, ...details });
     if (action === 'list') {
       const snapshot = await services.orderBy('createdAt','desc').limit(150).get();
-      const items = snapshot.docs.map(d=>({id:d.id,...d.data(), createdAt:d.data().createdAt?.toDate?.()?.toISOString() || null}));
+      const items = snapshot.docs.map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
       return json(200,{items:manager ? items : items.filter(x=>x.agentId===employeeId)});
     }
     if (action === 'create') {
@@ -101,10 +101,10 @@ exports.handler = async (event) => {
         const s=await tx.get(ref);
         if (!s.exists) throw Error('Service not found');
         const item=s.data();
-        if (!manager && item.agentId!==employeeId) throw Error('Not assigned to you');
-        if (manager && !['CANCELLED'].includes(text(body.status,20).toUpperCase()) && action==='advance' && item.agentId!==employeeId) throw Error('Only assigned agent can advance service');
+        if (item.agentId!==employeeId && !(manager && action==='advance' && text(body.status,20).toUpperCase()==='CANCELLED')) throw Error('Not assigned to you');
+        
         if (action==='custody') {
-          if (!['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Custody not active');
+          if (item.agentId!==employeeId || !['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Custody not active or not assigned to you');
           tx.update(ref,{lastCustodyAt:now,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('CUSTODY_CHECK'))});
           return;
         }
@@ -113,16 +113,18 @@ exports.handler = async (event) => {
         if (next==='CANCELLED' && !manager) throw Error('Only Dispatch can cancel');
         const handoffTo=text(body.handoffTo,120);
         if (next==='DELIVERED' && handoffTo.length<3) throw Error('Authorized receiver required');
+        if (next==='DELIVERED' && text(body.handoffLocation,120).length<3) throw Error('Handoff location required');
         if (next==='DELIVERED' && body.handoffConfirmed !== true) throw Error('Confirm authorized handoff');
         if (next==='DELIVERED' && body.receiverAuthorizationVerified !== true) throw Error('Receiver authorization must be verified');
         if (next==='DELIVERED' && body.receiverIdAndFormMatched !== true) throw Error('Agent must confirm physical photo ID, UMNR form, face match and authorized relationship before handoff');
+        if (next==='DELIVERED' && !['physicalIdInspected','idNameMatched','idPhotoMatched','authorizedReceiverMatched'].every(k=>body[k]===true)) throw Error('All four receiver verification checks are required');
         const receiverSignature=String(body.receiverSignature || '');
         if(next==='DELIVERED' && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(receiverSignature) || receiverSignature.length>180000 || receiverSignature.length<250)) throw Error('Valid receiver signature required');
         if (next==='REJECTED' && !text(body.reason,250)) throw Error('Rejection reason required');
         const patch={status:next,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem(next,{reason:text(body.reason,250)}))};
         if (next==='PICKED_UP') patch.lastCustodyAt=now;
-        if (next==='DELIVERED') { patch.handoffTo=handoffTo; patch.handoffAt=now; patch.receiverSignature=receiverSignature; patch.receiverAuthorizationVerified=true; patch.receiverIdAndFormMatched=true; }
-        if (endStates.has(next)) {
+        if (next==='DELIVERED') { patch.handoffTo=handoffTo; patch.handoffAt=now; patch.receiverSignature=receiverSignature; patch.receiverAuthorizationVerified=true; patch.receiverIdAndFormMatched=true; patch.receiverChecks={physicalIdInspected:true,idNameMatched:true,idPhotoMatched:true,authorizedReceiverMatched:true}; patch.handoffBy=actor; patch.handoffLocation=text(body.handoffLocation,120); }
+        if (endStates.has(next) && item.agentId) {
           const capRef=db.collection('umnr_agent_capacity').doc(item.agentId);
           const cap=await tx.get(capRef);
           patch.agentId=next==='REJECTED'?'':item.agentId;
