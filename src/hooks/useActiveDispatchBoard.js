@@ -35,6 +35,18 @@ export function selectActiveWchrBoardReports(reports = [], shifts = []) {
     });
 }
 
+export function selectPendingWchrBoardReports(reports = [], shifts = []) {
+  const activeIds = new Set(selectActiveWchrBoardReports(reports, shifts).map((r) => clean(r.id)));
+  const terminal = new Set(["STORED", "CANCELLED", "COMPLETED", "CLOSED", "DELIVERED"]);
+  return reports.filter((r) => {
+    if (!r || activeIds.has(clean(r.id))) return false;
+    const state = upper(r.tracking_status || r.service_status);
+    // A boarded passenger should not be shown as awaiting assignment.
+    if (terminal.has(state) || state === "BOARDED") return false;
+    return Boolean(clean(r.id)) && Boolean(clean(r.flight_number || r.flightNumber));
+  });
+}
+
 export default function useActiveDispatchBoard() {
   const [reports, setReports] = useState([]);
   const [shifts, setShifts] = useState([]);
@@ -54,5 +66,6 @@ export default function useActiveDispatchBoard() {
   }, []);
 
   const wchrReports = useMemo(() => selectActiveWchrBoardReports(reports, shifts), [reports, shifts]);
-  return { wchrReports, umnrAssignments: [], loading: !ready.reports || !ready.shifts, error };
+  const pendingWchrReports = useMemo(() => selectPendingWchrBoardReports(reports, shifts), [reports, shifts]);
+  return { wchrReports, pendingWchrReports, umnrAssignments: [], loading: !ready.reports || !ready.shifts, error };
 }
