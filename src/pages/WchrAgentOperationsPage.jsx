@@ -722,6 +722,8 @@ export default function WchrAgentOperationsPage() {
   const [selectedLocation, setSelectedLocation] = useState("Counter");
   const [locationNote, setLocationNote] = useState("");
 
+  const [assignmentDecisionOpen, setAssignmentDecisionOpen] = useState(false);
+  const [assignmentRejectReason, setAssignmentRejectReason] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -2319,14 +2321,6 @@ export default function WchrAgentOperationsPage() {
       cleanText(shift?.current_location) ||
       "Counter";
 
-    const confirmed = window.confirm(
-      `Accept WCHR ${
-        activeReport.wheelchair_number || ""
-      } for ${activeReport.passenger_name || "this passenger"}?`
-    );
-
-    if (!confirmed) return;
-
     try {
       setBusyAction("accept");
       setError("");
@@ -2357,6 +2351,7 @@ export default function WchrAgentOperationsPage() {
           activeReport.wheelchair_number || ""
         } accepted. Proceed to the pickup location and confirm Picked Up once you physically receive the wheelchair/passenger.`
       );
+      setAssignmentDecisionOpen(false);
     } catch (err) {
       console.error("Accept WCHR assignment error:", err);
       setError(
@@ -2366,6 +2361,73 @@ export default function WchrAgentOperationsPage() {
     } finally {
       setBusyAction("");
     }
+  };
+
+  // Reject only a pending, not-yet-accepted assignment. Never release inventory or cancel the WCHR.
+  const handleRejectAssignment = async () => {
+    const reason = cleanText(assignmentRejectReason);
+    if (!reason) { setError("Please provide a reason for rejecting this assignment."); return; }
+    if (!activeReport?.id || !agentId || hasAccepted) {
+      setError("This assignment can no longer be rejected."); return;
+    }
+    const reportId = activeReport.id;
+    const agentName = getEmployeeName(employee);
+    try {
+      setBusyAction("reject"); setError(""); setMessage("");
+      await runTransaction(db, async (transaction) => {
+        const reportRef = doc(db, "wch_reports", reportId);
+        const shiftRef = doc(db, "wchr_agent_shifts", agentId);
+        const reportSnap = await transaction.get(reportRef);
+        const shiftSnap = await transaction.get(shiftRef);
+        if (!reportSnap.exists() || !shiftSnap.exists()) throw new Error("Assignment or active shift not found.");
+        const report = reportSnap.data();
+        const agentShift = shiftSnap.data();
+        if (cleanText(agentShift.active_report_id) !== reportId ||
+            cleanText(report.wchr_agent_id || report.assigned_agent_id) !== agentId) {
+          throw new Error("This assignment has changed. Refresh before rejecting.");
+        }
+        if (report.assignment_accepted_at || report.picked_up_at || report.pickup_at ||
+            !["ASSIGNED", "NEW", "READY_FOR_PICKUP"].includes(safeUpper(report.service_status))) {
+          throw new Error("This service has already started and cannot be rejected.");
+        }
+        transaction.update(reportRef, {
+          wchr_agent_id: "", assigned_agent_id: "", wchr_agent_name: "", assigned_wchr_agent: "",
+          assignment_status: "UNASSIGNED", assignment_accepted_at: null,
+          service_status: "READY_FOR_PICKUP", tracking_status: "READY_FOR_PICKUP",
+          ready_for_pickup: true, is_active: true,
+          assignment_rejected_at: serverTimestamp(),
+          assignment_rejected_by_agent_id: agentId,
+          assignment_rejected_by_agent_name: agentName,
+          assignment_rejection_reason: reason,
+          dispatch_attention_required: true,
+          dispatch_attention_type: "ASSIGNMENT_REJECTED",
+          last_updated_at: serverTimestamp(),
+        });
+        transaction.update(shiftRef, {
+          active_report_id: "", active_wheelchair_number: "",
+          active_service_status: "", availability_status: WCHR_AGENT_AVAILABILITY.AVAILABLE,
+          assignment_accepted_at: null,
+          last_updated_at: serverTimestamp(),
+        });
+      });
+      try {
+        await addWchrTimelineEvent({
+          reportId, eventType: "ASSIGNMENT_REJECTED",
+          wheelchairNumber: activeReport.wheelchair_number || "",
+          agentId, agentName,
+          location: cleanText(shift?.current_location) || "Counter",
+          note: `Assignment rejected by ${agentName}. Reason: ${reason}`,
+          user,
+        });
+      } catch (timelineError) {
+        console.error("Rejection saved, but timeline entry failed:", timelineError);
+      }
+      setAssignmentDecisionOpen(false); setAssignmentRejectReason("");
+      setMessage("Assignment declined. Dispatch can now reassign this WCHR. The service and wheelchair reservation remain active.");
+    } catch (err) {
+      console.error("Reject WCHR assignment error:", err);
+      setError(err?.message || "Unable to reject the assignment.");
+    } finally { setBusyAction(""); }
   };
 
   // ============================================================
@@ -2706,6 +2768,22 @@ export default function WchrAgentOperationsPage() {
         boxSizing: "border-box",
       }}
     >
+      {assignmentDecisionOpen && activeReport && !hasAccepted && (
+        <div role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(3, 18, 38, 0.76)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div role="dialog" aria-modal="true" aria-label="WCHR assignment decision" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: 20, padding: 22, boxShadow: "0 25px 70px rgba(0,0,0,.3)" }}>
+            <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>New WCHR Assignment</h2>
+            <p style={{ color: "#334155", lineHeight: 1.5 }}>WCHR <b>{activeReport.wheelchair_number || "Personal"}</b> — {activeReport.passenger_name || "Passenger"}</p>
+            <p style={{ fontSize: 13, color: "#64748b" }}>Accept to begin service, or reject with a reason so Dispatch can reassign it.</p>
+            <label htmlFor="wchr-rejection-reason" style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 7 }}>Reason for rejection (required only if rejecting)</label>
+            <textarea id="wchr-rejection-reason" value={assignmentRejectReason} onChange={(e) => setAssignmentRejectReason(e.target.value)} rows={3} placeholder="Explain why you cannot take this service..." style={{ width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 10, padding: 10, font: "inherit", resize: "vertical" }} />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 15 }}>
+              <button type="button" disabled={Boolean(busyAction)} onClick={handleAcceptAssignment} style={{ flex: 1, background: "#15803d", color: "white", padding: 12, border: 0, borderRadius: 10, fontWeight: 800 }}>{busyAction === "accept" ? "Accepting..." : "Accept"}</button>
+              <button type="button" disabled={Boolean(busyAction) || !cleanText(assignmentRejectReason)} onClick={handleRejectAssignment} style={{ flex: 1, background: "#b91c1c", color: "white", padding: 12, border: 0, borderRadius: 10, fontWeight: 800, opacity: !cleanText(assignmentRejectReason) ? 0.55 : 1 }}>{busyAction === "reject" ? "Rejecting..." : "Reject"}</button>
+              <button type="button" disabled={Boolean(busyAction)} onClick={() => setAssignmentDecisionOpen(false)} style={{ padding: 12, border: "1px solid #cbd5e1", borderRadius: 10, background: "white" }}>Later</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* HERO */}
       <div
         style={{
@@ -3908,7 +3986,7 @@ export default function WchrAgentOperationsPage() {
                   <ActionButton
                     variant="success"
                     disabled={Boolean(busyAction) || hasAccepted}
-                    onClick={handleAcceptAssignment}
+                    onClick={() => setAssignmentDecisionOpen(true)}
                   >
                     {busyAction === "accept"
                       ? "Accepting..."
