@@ -17,7 +17,7 @@ export function buildLiveServiceCards(wchrReports = [], umnrAssignments = []) {
       kind: "WCHR",
       code: `WCHR ${text(r.wheelchair_number) || "—"}`,
       agent: text(r.wchr_agent_name || r.assigned_wchr_agent || r.assigned_agent_name) || "Assigned agent",
-      status: upper(r.assignment_acceptance_status || r.tracking_status || r.service_status || "ASSIGNED"),
+      status: upper((r.assignment_status === "PENDING_ACCEPTANCE" ? "PENDING_ACCEPTANCE" : r.assignment_acceptance_status === "REJECTED" ? "REJECTED" : null) || r.tracking_status || r.service_status || "ASSIGNED"),
       location: text(r.current_location || r.last_known_location) || "Not reported",
       flight: text(r.flight_number || r.flightNumber) || "—",
       updated: r.last_location_update_at || r.last_updated_at || null,
