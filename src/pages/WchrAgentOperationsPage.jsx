@@ -963,25 +963,16 @@ export default function WchrAgentOperationsPage() {
     return () => unsubscribe();
   }, [activeReportId]);
 
-  // Open automatically when Dispatch assigns a new outbound WCHR.
+  // Open the service control panel when a new outbound assignment arrives.
+  // Do not close it when the service progresses: acceptance, pickup and transit
+  // must all be performed from this same panel. Passenger Details may hide it.
   useEffect(() => {
-    if (!activeReport?.id || !agentId) return;
-    const assignedId = cleanText(activeReport.wchr_agent_id || activeReport.assigned_agent_id);
-    const status = safeUpper(activeReport.service_status || activeReport.tracking_status);
-    const pending = ["ASSIGNED", "READY_FOR_PICKUP"].includes(status) &&
-      !activeReport.assignment_accepted_at &&
-      safeUpper(activeReport.assignment_status) !== "ACCEPTED" &&
-      safeUpper(activeReport.service_direction) !== "IB" &&
-      cleanText(shift?.active_report_id) === cleanText(activeReport.id) &&
-      (!assignedId || assignedId === agentId);
-    if (pending) {
-      setAssignmentRejectReason("");
-      setAssignmentDecisionOpen(true);
-    } else {
-      setAssignmentDecisionOpen(false);
-    }
-  }, [activeReport?.id, activeReport?.assignment_status, activeReport?.assignment_accepted_at,
-      activeReport?.service_status, activeReport?.tracking_status, agentId, shift?.active_report_id]);
+    if (!activeReport?.id || !agentId ||
+        safeUpper(activeReport.service_direction) === "IB" ||
+        cleanText(shift?.active_report_id) !== cleanText(activeReport.id)) return;
+    setAssignmentRejectReason("");
+    setAssignmentDecisionOpen(true);
+  }, [activeReport?.id, agentId, shift?.active_report_id]);
 
   // ============================================================
   // LIVE IB PASSENGER LIST
@@ -2373,7 +2364,7 @@ export default function WchrAgentOperationsPage() {
           activeReport.wheelchair_number || ""
         } accepted. Proceed to the pickup location and confirm Picked Up once you physically receive the wheelchair/passenger.`
       );
-      setAssignmentDecisionOpen(false);
+      setAssignmentDecisionOpen(true);
     } catch (err) {
       console.error("Accept WCHR assignment error:", err);
       setError(
@@ -2790,19 +2781,57 @@ export default function WchrAgentOperationsPage() {
         boxSizing: "border-box",
       }}
     >
-      {assignmentDecisionOpen && activeReport && !hasAccepted && (
-        <div role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(3, 18, 38, 0.76)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div role="dialog" aria-modal="true" aria-label="WCHR assignment decision" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: 20, padding: 22, boxShadow: "0 25px 70px rgba(0,0,0,.3)" }}>
-            <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>New WCHR Assignment</h2>
-            <p style={{ color: "#334155", lineHeight: 1.5 }}>WCHR <b>{activeReport.wheelchair_number || "Personal"}</b> — {activeReport.passenger_name || "Passenger"}</p>
-            <p style={{ fontSize: 13, color: "#64748b" }}>Accept to begin service, or reject with a reason so Dispatch can reassign it.</p>
-            <label htmlFor="wchr-rejection-reason" style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 7 }}>Reason for rejection (required only if rejecting)</label>
-            <textarea id="wchr-rejection-reason" value={assignmentRejectReason} onChange={(e) => setAssignmentRejectReason(e.target.value)} rows={3} placeholder="Explain why you cannot take this service..." style={{ width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 10, padding: 10, font: "inherit", resize: "vertical" }} />
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 15 }}>
-              <button type="button" disabled={Boolean(busyAction)} onClick={handleAcceptAssignment} style={{ flex: 1, background: "#15803d", color: "white", padding: 12, border: 0, borderRadius: 10, fontWeight: 800 }}>{busyAction === "accept" ? "Accepting..." : "Accept"}</button>
-              <button type="button" disabled={Boolean(busyAction) || !cleanText(assignmentRejectReason)} onClick={handleRejectAssignment} style={{ flex: 1, background: "#b91c1c", color: "white", padding: 12, border: 0, borderRadius: 10, fontWeight: 800, opacity: !cleanText(assignmentRejectReason) ? 0.55 : 1 }}>{busyAction === "reject" ? "Rejecting..." : "Reject"}</button>
-              <button type="button" disabled={Boolean(busyAction)} onClick={() => setAssignmentDecisionOpen(false)} style={{ padding: 12, border: "1px solid #cbd5e1", borderRadius: 10, background: "white" }}>Later</button>
+      {assignmentDecisionOpen && activeReport && !isInboundReport && !isAtGate && (
+        <div role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(3,18,38,.80)", display: "flex", alignItems: "center", justifyContent: "center", padding: 14, overflowY: "auto" }}>
+          <div role="dialog" aria-modal="true" aria-label="Active WCHR service controls" style={{ width: "100%", maxWidth: 520, maxHeight: "calc(100dvh - 28px)", overflowY: "auto", background: "#fff", borderRadius: 20, padding: 20, boxShadow: "0 25px 70px rgba(0,0,0,.3)", boxSizing: "border-box" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
+              <div>
+                <div style={{ color: "#0369a1", fontWeight: 800, fontSize: 11, letterSpacing: 1 }}>ACTIVE WCHR SERVICE</div>
+                <h2 style={{ margin: "5px 0 3px", color: "#0f172a", fontSize: 22 }}>WCHR {activeReport.wheelchair_number || "PERSONAL"}</h2>
+                <div style={{ color: "#475569", fontSize: 13 }}>{activeReport.flight_number || "Flight pending"} · {activeReport.passenger_name || "Passenger"}</div>
+              </div>
+              <div style={{ background: "#e0f2fe", borderRadius: 12, padding: "9px 12px", textAlign: "center", flexShrink: 0 }}>
+                <div style={{ fontSize: 10, color: "#075985", fontWeight: 800 }}>SERVICE TIMER</div>
+                <div style={{ fontSize: 22, color: "#0c4a6e", fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>{formatElapsedTime(assignmentElapsedSeconds)}</div>
+              </div>
             </div>
+            <div style={{ margin: "18px 0", display: "grid", gap: 8 }}>
+              {[
+                ["1", "Accept Assignment", hasAccepted],
+                ["2", "Pick Up WCHR", hasPickedUp],
+                ["3", "Start Transit", isInTransit],
+                ["4", "Arrived at Gate", isAtGate],
+              ].map(([step, title, done]) => (
+                <div key={step} style={{ display: "flex", gap: 10, alignItems: "center", padding: "9px 11px", border: "1px solid #e2e8f0", borderRadius: 10, background: done ? "#f0fdf4" : "#fff" }}>
+                  <span style={{ display: "grid", placeItems: "center", borderRadius: 999, width: 25, height: 25, flexShrink: 0, background: done ? "#16a34a" : "#e2e8f0", color: done ? "white" : "#475569", fontWeight: 800, fontSize: 12 }}>{done ? "✓" : step}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>{title}</span>
+                </div>
+              ))}
+            </div>
+            {error && <div role="alert" style={{ background: "#fef2f2", color: "#991b1b", padding: 11, borderRadius: 9, fontSize: 13, marginBottom: 10 }}>{error}</div>}
+            {!hasAccepted ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <p style={{ margin: 0, fontSize: 13, color: "#475569" }}>Accept this assignment to begin, or enter a reason to return it to Dispatch.</p>
+                <button type="button" disabled={Boolean(busyAction)} onClick={handleAcceptAssignment} style={{ background: "#15803d", color: "white", padding: 14, border: 0, borderRadius: 10, fontWeight: 800 }}>{busyAction === "accept" ? "Accepting..." : "Accept Assignment"}</button>
+                <label htmlFor="wchr-rejection-reason" style={{ fontSize: 12, fontWeight: 700 }}>Rejection reason</label>
+                <textarea id="wchr-rejection-reason" value={assignmentRejectReason} onChange={(e) => setAssignmentRejectReason(e.target.value)} rows={2} placeholder="Required to reject the assignment" style={{ width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 10, padding: 10, font: "inherit" }} />
+                <button type="button" disabled={Boolean(busyAction) || !cleanText(assignmentRejectReason)} onClick={handleRejectAssignment} style={{ background: "#b91c1c", color: "white", padding: 12, border: 0, borderRadius: 10, fontWeight: 800, opacity: !cleanText(assignmentRejectReason) ? .55 : 1 }}>{busyAction === "reject" ? "Rejecting..." : "Reject Assignment"}</button>
+              </div>
+            ) : !hasPickedUp ? (
+              <button type="button" disabled={Boolean(busyAction)} onClick={handleMarkPickedUp} style={{ width: "100%", background: "#16a34a", color: "white", padding: 15, border: 0, borderRadius: 10, fontWeight: 800 }}>{busyAction === "pickup" ? "Saving Pickup..." : "Mark Picked Up"}</button>
+            ) : !isInTransit ? (
+              <button type="button" disabled={Boolean(busyAction)} onClick={handleMarkInTransit} style={{ width: "100%", background: "#075985", color: "white", padding: 15, border: 0, borderRadius: 10, fontWeight: 800 }}>{busyAction === "transit" ? "Starting Transit..." : "Start Transit"}</button>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                <label htmlFor="wchr-modal-gate" style={{ fontSize: 12, fontWeight: 800, color: "#334155" }}>Arrival gate (required)</label>
+                <select id="wchr-modal-gate" value={selectedLocation} onChange={(event) => setSelectedLocation(event.target.value)} style={{ width: "100%", padding: 12, border: "1px solid #cbd5e1", borderRadius: 10, background: "white", color: "#0f172a" }}>
+                  {AGENT_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}
+                </select>
+                <button type="button" disabled={Boolean(busyAction) || !isGateLocation(cleanText(selectedLocation))} onClick={handleArriveAtGate} style={{ background: "#d97706", color: "white", padding: 15, border: 0, borderRadius: 10, fontWeight: 800, opacity: !isGateLocation(cleanText(selectedLocation)) ? .55 : 1 }}>{busyAction === "gate" ? "Saving Gate Arrival..." : "Arrived at Gate · Deliver Passenger"}</button>
+              </div>
+            )}
+            <button type="button" disabled={Boolean(busyAction)} onClick={() => setAssignmentDecisionOpen(false)} style={{ width: "100%", marginTop: 12, padding: 12, border: "1px solid #cbd5e1", borderRadius: 10, background: "#f8fafc", color: "#0f4c81", fontWeight: 800 }}>Passenger Details →</button>
+            <p style={{ fontSize: 11, color: "#64748b", marginBottom: 0, textAlign: "center" }}>Your assignment remains active if you view passenger details. Return to the service panel to continue.</p>
           </div>
         </div>
       )}
@@ -3950,6 +3979,7 @@ export default function WchrAgentOperationsPage() {
                     lineHeight: 1.55,
                   }}
                 >
+                  <button type="button" onClick={() => setAssignmentDecisionOpen(true)} disabled={Boolean(busyAction) || isAtGate} style={{ display: "block", marginBottom: 12, background: "#0f4c81", color: "white", border: 0, borderRadius: 10, padding: "11px 16px", fontWeight: 800 }}>Open Active Service Panel</button>
                   Follow the steps in order. Arrival at gate releases you for another WCHR and transfers the passenger to Supervisor gate monitoring.
                 </p>
 
