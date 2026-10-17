@@ -20,8 +20,21 @@ import {
   APP_COPYRIGHT,
 } from "../config/appConfig.js";
 import "./LoginPage.css";
+import { startUmnrSession } from "../utils/umnrClient.js";
 
 const PRIVACY_POLICY_VERSION = "2026.08.26";
+// One AeroStation Hub login. The UMNR token exchange happens silently,
+// only after the employee has accepted the privacy policy.
+// Never block the existing WCHR login if UMNR backend is unavailable.
+async function authorizeUmnrSilently(username, pin) {
+  if (import.meta.env.VITE_UMNR_ENABLED !== "true") return;
+  try {
+    await startUmnrSession(username, pin);
+  } catch (error) {
+    console.warn("UMNR authorization unavailable:", error?.message || "Unavailable");
+  }
+}
+
 
 function normalizeCabinServiceValue(value) {
   const raw = String(value || "")
@@ -189,6 +202,7 @@ export default function LoginPage() {
           "",
       };
 
+
       const hasAcceptedCurrentPolicy =
         userData.privacyPolicyAccepted === true &&
         userData.privacyPolicyVersion === PRIVACY_POLICY_VERSION;
@@ -200,6 +214,7 @@ export default function LoginPage() {
         return;
       }
 
+      await authorizeUmnrSilently(cleanUsername, cleanPin);
       setUser(mergedUser);
 
       navigate(returnPath, {
@@ -248,6 +263,7 @@ export default function LoginPage() {
       setPrivacyChecked(false);
       setPendingUser(null);
 
+      await authorizeUmnrSilently(String(acceptedUser.username || username).trim().toLowerCase(), pin.trim());
       setUser(acceptedUser);
 
       navigate(returnPath, {
