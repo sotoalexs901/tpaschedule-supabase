@@ -42,14 +42,22 @@ export function buildLiveServiceCards(wchrReports = [], umnrAssignments = []) {
 export default function LiveServiceBoard({
   wchrReports = [],
   umnrAssignments = [],
+  pendingWchrReports = [],
   onOpenWchr,
   onOpenUmnr,
 }) {
   const [filter, setFilter] = useState("ALL");
   const [selected, setSelected] = useState(null);
   const cards = useMemo(() => buildLiveServiceCards(wchrReports, umnrAssignments), [wchrReports, umnrAssignments]);
+  const pendingCards = (Array.isArray(pendingWchrReports) ? pendingWchrReports : []).map((r) => ({
+    id: `PENDING:${text(r.id)}`, kind: "WCHR", code: `WCHR ${text(r.wheelchair_number) || "—"}`,
+    agent: "No active agent", status: upper(r.tracking_status || r.service_status || "PENDING"),
+    location: text(r.current_location || r.gate || r.gate_number) || "Not reported",
+    flight: text(r.flight_number || r.flightNumber) || "—", source: r,
+  }));
+  const visiblePending = pendingCards.filter((card) => filter === "ALL" || filter === "WCHR");
   const visible = cards.filter((card) => filter === "ALL" || card.kind === filter);
-  const chosen = cards.find((card) => card.id === selected);
+  const chosen = [...cards, ...pendingCards].find((card) => card.id === selected);
   const counts = { ALL: cards.length, WCHR: cards.filter((c) => c.kind === "WCHR").length, UMNR: cards.filter((c) => c.kind === "UMNR").length };
   const open = (card) => {
     setSelected(card.id);
@@ -81,6 +89,16 @@ export default function LiveServiceBoard({
         ))}
       </div>
       {visible.length === 0 && <p style={{ color: "#64748b" }}>No active assignments in this category.</p>}
+      <div style={{ marginTop: 20, borderTop: "1px solid #d8e5f5", paddingTop: 14 }}>
+        <h3 style={{ fontSize: 17, fontWeight: 800, margin: "0 0 6px" }}>Pending / Unassigned ({visiblePending.length})</h3>
+        <p style={{ color: "#64748b", margin: "0 0 12px", fontSize: 13 }}>Services without an active agent assignment. Boarded services are excluded; review them in the existing Dispatch list.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 215px), 1fr))", gap: 12 }}>
+          {visiblePending.map((card) => <button key={card.id} type="button" onClick={() => open(card)} style={{ textAlign: "left", padding: 14, background: "#fff", border: "1px solid #fbbf24", borderRadius: 12, cursor: "pointer" }}>
+            <strong>{card.code}</strong><div>{card.status.replace(/_/g, " ")} · {card.flight}</div><div>📍 {card.location}</div><div style={{ color: "#92400e", fontSize: 12 }}>Unassigned — review in Dispatch</div>
+          </button>)}
+        </div>
+        {visiblePending.length === 0 && <p style={{ color: "#64748b" }}>No pending unassigned services in this category.</p>}
+      </div>
       {chosen && (
         <div role="region" aria-label="Selected service details" style={{ marginTop: 14, borderRadius: 12, background: "white", border: "1px solid #cbd5e1", padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
