@@ -7065,7 +7065,14 @@ export default function WchrDispatchPage() {
       {/* ====================================================== */}
       {/* ACTIVE SERVICE MANAGEMENT */}
       {/* ====================================================== */}
-
+      {/* The live board is the primary overview. Preserve every existing
+          supervisor action behind an expandable panel, without changing
+          any Firestore writes, assignments, inventory or timing. */}
+      <details style={{ borderRadius: 16, border: "1px solid #dbeafe", background: "#f8fbff", padding: "12px 14px" }}>
+        <summary style={{ cursor: "pointer", color: "#1d4ed8", fontWeight: 850, fontSize: 13 }}>
+          Supervisor Service Controls — bulk updates, reassignment and manual closeout ({activeReports.length})
+        </summary>
+        <div style={{ marginTop: 12 }}>
       <PageCard
         style={{
           padding:
@@ -7675,6 +7682,8 @@ export default function WchrDispatchPage() {
           </div>
         )}
       </PageCard>
+        </div>
+      </details>
 
       {/* ====================================================== */}
       {/* OPERATION METRICS */}
@@ -7886,7 +7895,13 @@ export default function WchrDispatchPage() {
         {/* ==================================================== */}
         {/* READY WCHRS */}
         {/* ==================================================== */}
-
+        {/* Kept for legacy removal/actions, but collapsed because the
+            live board already lists waiting passengers. */}
+        <details style={{ minWidth: 0, border: "1px solid #dbeafe", borderRadius: 16, background: "#f8fbff", padding: "12px" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 850, color: "#1d4ed8", fontSize: 13 }}>
+            Ready for Pickup — legacy actions ({reports.length})
+          </summary>
+          <div style={{ marginTop: 12 }}>
         <PageCard
           style={{
             padding:
@@ -8021,6 +8036,8 @@ export default function WchrDispatchPage() {
             </div>
           )}
         </PageCard>
+          </div>
+        </details>
 
         {/* ==================================================== */}
         {/* ACTIVE AGENTS */}
