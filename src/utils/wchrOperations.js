@@ -851,39 +851,30 @@ export async function updateWchrAgentLocation({
   agentId,
   location,
 }) {
-  const cleanAgentId =
-    cleanText(agentId);
+  const cleanAgentId = cleanText(agentId);
+  const cleanLocation = cleanText(location);
 
-  const cleanLocation =
-    cleanText(location);
-
-  if (
-    !cleanAgentId ||
-    !cleanLocation
-  ) {
-    return;
+  if (!cleanAgentId || !cleanLocation) {
+    throw new Error("Agent and location are required.");
   }
 
-  await setDoc(
-    doc(
-      db,
-      "wchr_agent_shifts",
-      cleanAgentId
-    ),
-    {
-      current_location:
-        cleanLocation,
+  // Location updates must never create a new shift or Punch In.
+  const shiftRef = doc(db, "wchr_agent_shifts", cleanAgentId);
+  const shiftSnap = await getDoc(shiftRef);
 
-      last_activity_at:
-        serverTimestamp(),
+  if (
+    !shiftSnap.exists() ||
+    safeUpper(shiftSnap.data()?.status) !== WCHR_AGENT_STATUS.ACTIVE
+  ) {
+    throw new Error("Punch In is required before updating your location.");
+  }
 
-      updated_at:
-        serverTimestamp(),
-    },
-    {
-      merge: true,
-    }
-  );
+  // Preserve availability, assignments, service timestamps and inventory.
+  await updateDoc(shiftRef, {
+    current_location: cleanLocation,
+    last_activity_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
 }
 
 // ============================================================
