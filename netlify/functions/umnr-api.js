@@ -114,10 +114,14 @@ exports.handler = async (event) => {
         const handoffTo=text(body.handoffTo,120);
         if (next==='DELIVERED' && handoffTo.length<3) throw Error('Authorized receiver required');
         if (next==='DELIVERED' && body.handoffConfirmed !== true) throw Error('Confirm authorized handoff');
+        if (next==='DELIVERED' && body.receiverAuthorizationVerified !== true) throw Error('Receiver authorization must be verified');
+        if (next==='DELIVERED' && body.receiverIdAndFormMatched !== true) throw Error('Agent must confirm physical photo ID, UMNR form, face match and authorized relationship before handoff');
+        const receiverSignature=String(body.receiverSignature || '');
+        if(next==='DELIVERED' && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(receiverSignature) || receiverSignature.length>180000 || receiverSignature.length<250)) throw Error('Valid receiver signature required');
         if (next==='REJECTED' && !text(body.reason,250)) throw Error('Rejection reason required');
         const patch={status:next,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem(next,{reason:text(body.reason,250)}))};
         if (next==='PICKED_UP') patch.lastCustodyAt=now;
-        if (next==='DELIVERED') { patch.handoffTo=handoffTo; patch.handoffAt=now; }
+        if (next==='DELIVERED') { patch.handoffTo=handoffTo; patch.handoffAt=now; patch.receiverSignature=receiverSignature; patch.receiverAuthorizationVerified=true; patch.receiverIdAndFormMatched=true; }
         if (endStates.has(next)) {
           const capRef=db.collection('umnr_agent_capacity').doc(item.agentId);
           const cap=await tx.get(capRef);
