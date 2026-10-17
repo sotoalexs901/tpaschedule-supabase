@@ -3,6 +3,7 @@ import { getAuth, signInWithCustomToken, signOut } from 'firebase/auth';
 import { app } from '../firebase';
 const auth = getAuth(app);
 export async function startUmnrSession(username,pin) {
+  await signOut(auth);
   const response=await fetch('/.netlify/functions/umnr-auth-login',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({username,pin}),credentials:'same-origin'
