@@ -4032,7 +4032,8 @@ export default function WchrDispatchPage() {
               serverTimestamp(),
 
             assignment_status:
-              "ASSIGNED",
+              "PENDING_ACCEPTANCE",
+            assignment_acceptance_status: "PENDING_ACCEPTANCE",
 
             assignmentPushStatus:
               "PENDING",
@@ -5100,7 +5101,8 @@ export default function WchrDispatchPage() {
                 WCHR_SERVICE_STATUS.ASSIGNED;
 
               reportPatch.assignment_status =
-                "ASSIGNED";
+                "PENDING_ACCEPTANCE";
+              reportPatch.assignment_acceptance_status = "PENDING_ACCEPTANCE";
 
               reportPatch.is_active =
                 true;
@@ -5698,7 +5700,8 @@ export default function WchrDispatchPage() {
               serverTimestamp(),
 
             assignment_status:
-              "ASSIGNED",
+              "PENDING_ACCEPTANCE",
+            assignment_acceptance_status: "PENDING_ACCEPTANCE",
 
             assignmentPushStatus:
               "PENDING",
