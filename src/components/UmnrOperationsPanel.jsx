@@ -31,19 +31,29 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
   const [tick,setTick]=useState(Date.now());
   const [handoff,setHandoff]=useState(null);
   const [receiverName,setReceiverName]=useState('');
-  const [receiverVerified,setReceiverVerified]=useState(false);
+  const [receiverChecks,setReceiverChecks]=useState({physicalIdInspected:false,idNameMatched:false,idPhotoMatched:false,authorizedReceiverMatched:false});
+  const [handoffLocation,setHandoffLocation]=useState('');
   const refresh=useCallback(async()=>{try{const r=await umnrRequest('list');setItems(r.items||[]);setError('');}catch(e){setError(e.message)}},[]);
   useEffect(()=>{refresh();const interval=setInterval(refresh,15000);return()=>clearInterval(interval)},[refresh]);
   useEffect(()=>{const interval=setInterval(()=>setTick(Date.now()),30000);return()=>clearInterval(interval)},[]);
   const active=useMemo(()=>items.filter(x=>!finished.has(x.status)),[items]);
   const run=async(action,fields)=>{setBusy(true);setError('');setMessage('');try{await umnrRequest(action,fields);setMessage('UMNR updated.');await refresh();return true;}catch(e){setError(e.message);return false;}finally{setBusy(false)}};
-  const create=async(e)=>{e.preventDefault();await run('create',{flightId,direction,fullName,pnr});setFullName('');setPnr('')};
+  const create=async(e)=>{e.preventDefault();const ok=await run('create',{flightId,direction,fullName,pnr});if(ok){setFullName('');setPnr('');}};
   const next=(x,status)=>{
     let fields={id:x.id,status};
     if(status==='REJECTED'){const reason=window.prompt('Reason for rejecting this UMNR assignment:');if(!reason)return;fields.reason=reason}
-    if(status==='DELIVERED'){setHandoff(x.id);setReceiverName('');setReceiverVerified(false);return;}
+    if(status==='DELIVERED'){setHandoff(x.id);setReceiverName('');setReceiverChecks({physicalIdInspected:false,idNameMatched:false,idPhotoMatched:false,authorizedReceiverMatched:false});setHandoffLocation(x.direction==='IB'?'Customs exit / authorized pickup point':'Gate / authorized crew handoff point');return;}
     if(status==='CANCELLED'&&!window.confirm('Cancel this UMNR service?'))return;
     run('advance',fields);
+  };
+  const printReport=(x)=>{
+    const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const w=window.open('','_blank','width=850,height=900');
+    if(!w){setError('Allow pop-ups to print the final report.');return;}
+    const timeline=(x.timeline||[]).map(t=>`<tr><td>${escapeHtml(t.at)}</td><td>${escapeHtml(t.type)}</td><td>${escapeHtml(t.actor?.employeeId||t.actor?.id)}</td></tr>`).join('');
+    const signature=/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(x.receiverSignature||'')?`<img alt="Receiver signature" style="max-width:440px;max-height:150px" src="${x.receiverSignature}"/>`:'Not available';
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>UMNR Service Report</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#172033}h1{border-bottom:2px solid #123b68;padding-bottom:10px}table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #ccd3dd;padding:9px;text-align:left}small{color:#555}@media print{button{display:none}}</style></head><body><h1>UMNR Final Service Report</h1><p><b>Minor:</b> ${escapeHtml(x.fullName)}<br><b>PNR:</b> ${escapeHtml(x.pnr)}<br><b>Flight:</b> ${escapeHtml(x.airline)} ${escapeHtml(x.flightNumber)}<br><b>Direction:</b> ${escapeHtml(x.direction)}<br><b>Assigned agent:</b> ${escapeHtml(x.agentId)}<br><b>Status:</b> ${escapeHtml(x.status)}<br><b>Handoff location:</b> ${escapeHtml(x.handoffLocation)}<br><b>Receiver:</b> ${escapeHtml(x.handoffTo)}<br><b>Handoff time:</b> ${escapeHtml(x.handoffAt)}<br><b>Handoff performed by:</b> ${escapeHtml(x.handoffBy?.employeeId)}</p><h2>Identity and authorization checks</h2><p>${['physicalIdInspected','idNameMatched','idPhotoMatched','authorizedReceiverMatched'].map(k=>`${escapeHtml(k)}: ${x.receiverChecks?.[k]?'Verified':'Not recorded'}`).join('<br>')}</p><h2>Receiver signature</h2>${signature}<h2>Service history</h2><table><thead><tr><th>Time</th><th>Event</th><th>Employee</th></tr></thead><tbody>${timeline}</tbody></table><small>Confidential operational record. No ID images or ID numbers stored.</small><p><button onclick="window.print()">Print</button></p></body></html>`);
+    w.document.close();
   };
   return <section style={{border:'1px solid #bfdbfe',borderRadius:16,padding:18,background:'#fff',color:'#0f172a'}}>
     <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
@@ -71,15 +81,22 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
           {mayAct&&x.status==='ACCEPTED'&&<button disabled={busy} style={button} onClick={()=>next(x,'PICKED_UP')}>Pick Up</button>}
           {mayAct&&x.status==='PICKED_UP'&&<button disabled={busy} style={button} onClick={()=>next(x,'IN_TRANSIT')}>Start Transit</button>}
           {mayAct&&x.status==='IN_TRANSIT'&&<button disabled={busy} style={button} onClick={()=>next(x,'AT_GATE')}>At Gate / Handoff Point</button>}
-          {mayAct&&['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&<><button disabled={busy} style={button} onClick={()=>run('custody',{id:x.id})}>Custody Check</button><button disabled={busy} style={button} onClick={()=>next(x,'DELIVERED')}>Authorized Handoff</button></>}
+          {mayAct&&['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&<button disabled={busy} style={button} onClick={()=>run('custody',{id:x.id})}>Custody Check</button>}{mayAct&&x.status==='AT_GATE'&&<button disabled={busy} style={button} onClick={()=>next(x,'DELIVERED')}>Authorized Handoff</button>}{x.status==='DELIVERED'&&<button type="button" style={button} onClick={()=>printReport(x)}>Print Final Report</button>}
           {dispatch&&!finished.has(x.status)&&<button disabled={busy} style={button} onClick={()=>next(x,'CANCELLED')}>Cancel</button>}
         </div>
         {handoff===x.id&&<div style={{marginTop:12,padding:12,borderRadius:12,border:'1px solid #bfdbfe',background:'#eff6ff'}}>
           <label>Authorized receiver full name<input style={input} maxLength={120} value={receiverName} onChange={e=>setReceiverName(e.target.value)} /></label>
-          <label style={{display:'flex',gap:8,marginTop:10,alignItems:'flex-start'}}><input type="checkbox" checked={receiverVerified} onChange={e=>setReceiverVerified(e.target.checked)}/><span><strong>Mandatory ID and authorization verification:</strong> I personally inspected the receiver's physical photo ID, confirmed that the ID name matches the authorized receiver listed on the UMNR form, verified that the ID photo matches the person in front of me, and confirmed the receiver's relationship/authorization under the airline's UMNR procedure (authorized family member/guardian for inbound, or designated authorized crew member for outbound). No ID photo is captured or stored.</span></label>
+          <label>Handoff location<input style={input} maxLength={120} value={handoffLocation} onChange={e=>setHandoffLocation(e.target.value)} /></label>
+          <p style={{fontSize:12}}>Verify the original physical photo ID and airline UMNR authorization. Never photograph or record ID numbers.</p>
+          {[
+            ['physicalIdInspected','I personally inspected the physical photo ID'],
+            ['idNameMatched','The ID name matches the authorized receiver on the airline UMNR form'],
+            ['idPhotoMatched','The ID photo matches the person receiving the minor'],
+            ['authorizedReceiverMatched',x.direction==='IB'?'The receiver is an authorized guardian/family member under airline procedure':'The receiver is an authorized crew member under airline procedure']
+          ].map(([key,label])=><label key={key} style={{display:'flex',gap:8,marginTop:8,alignItems:'flex-start'}}><input type="checkbox" checked={receiverChecks[key]} onChange={e=>setReceiverChecks(c=>({...c,[key]:e.target.checked}))}/><span>{label}</span></label>)}
           <SignaturePad busy={busy} onCancel={()=>setHandoff(null)} onSave={async signature=>{
-            if(receiverName.trim().length<3||!receiverVerified){setError('Receiver name and mandatory photo ID, UMNR form, and authorization verification are required.');return;}
-            const ok=await run('advance',{id:x.id,status:'DELIVERED',handoffTo:receiverName.trim(),handoffConfirmed:true,receiverAuthorizationVerified:true,receiverIdAndFormMatched:true,receiverSignature:signature});
+            if(receiverName.trim().length<3||handoffLocation.trim().length<3||!Object.values(receiverChecks).every(Boolean)){setError('Receiver name and mandatory photo ID, UMNR form, and authorization verification are required.');return;}
+            const ok=await run('advance',{id:x.id,status:'DELIVERED',handoffTo:receiverName.trim(),handoffConfirmed:true,receiverAuthorizationVerified:true,receiverIdAndFormMatched:true,...receiverChecks,handoffLocation:handoffLocation.trim(),receiverSignature:signature});
             if(ok)setHandoff(null);
           }}/>
         </div>}
