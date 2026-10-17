@@ -1,0 +1,3 @@
+// UMNR is intentionally disabled until server-side authentication and rules are verified.
+export const UMNR_ENABLED = false;
+export const UMNR_STAGING_ONLY = true;
