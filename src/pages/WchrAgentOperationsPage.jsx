@@ -2791,7 +2791,16 @@ export default function WchrAgentOperationsPage() {
         boxSizing: "border-box",
       }}
     >
-      {import.meta.env.VITE_UMNR_ENABLED === "true" && <UmnrOperationsPanel mode="agent" employeeId={agentId} />}
+      <section aria-label="UMNR operations" style={{ margin: "16px 0", border: "1px solid #bfdbfe", borderRadius: 14, padding: 16, background: "#f8fbff", color: "#0f172a" }}>
+        {import.meta.env.VITE_UMNR_ENABLED === "true" ? (
+          <UmnrOperationsPanel mode="agent" employeeId={agentId} />
+        ) : (
+          <div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>UMNR · My Services</h2>
+            <p style={{ margin: 0, color: "#475569" }}>Module in preparation. UMNR service creation, assignments and custody actions are disabled until authorization, capacity controls and Firebase security are completed.</p>
+          </div>
+        )}
+      </section>
       {assignmentDecisionOpen && activeReport && !hasAccepted && (
         <div role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(3, 18, 38, 0.76)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div role="dialog" aria-modal="true" aria-label="WCHR assignment decision" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: 20, padding: 22, boxShadow: "0 25px 70px rgba(0,0,0,.3)" }}>
