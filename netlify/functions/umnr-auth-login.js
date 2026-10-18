@@ -3,7 +3,7 @@
 // Requires:
 //   UMNR_AUTH_ENABLED=true
 //   UMNR_PIN_PEPPER (32+ chars)
-//   UMNR_ALLOWED_ORIGIN=https://tpaschedule.com
+//   UMNR_ALLOWED_ORIGINS=https://aerostationhub.com,https://tpaschedule.com
 //   Firebase Admin credentials
 //
 // Transitional behavior:
@@ -45,13 +45,29 @@ function getApp() {
   });
 }
 
-const reply = (statusCode, body) => ({
+function normalizeOrigin(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function getAllowedOrigins() {
+  const raw = String(
+    process.env.UMNR_ALLOWED_ORIGINS ||
+    process.env.UMNR_ALLOWED_ORIGIN ||
+    ''
+  );
+
+  return raw
+    .split(',')
+    .map(normalizeOrigin)
+    .filter(Boolean);
+}
+
+const reply = (statusCode, body, origin = '') => ({
   statusCode,
   headers: {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': process.env.UMNR_ALLOWED_ORIGIN || 'https://invalid.example',
-    'Vary': 'Origin',
+    ...(origin ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin' } : {}),
   },
   body: JSON.stringify(body),
 });
@@ -98,30 +114,33 @@ exports.handler = async (event) => {
   }
 
   if (process.env.UMNR_AUTH_ENABLED !== 'true') {
-    console.warn('UMNR_AUTH_FAIL stage=auth_enabled'); return reply(503, { error: 'UMNR authentication not enabled' });
+    return reply(503, { error: 'UMNR authentication not enabled' });
   }
 
   if (getPepper().length < 32) {
-    console.warn('UMNR_AUTH_FAIL stage=pepper_length'); return reply(503, { error: 'UMNR authentication not configured' });
+    return reply(503, { error: 'UMNR authentication not configured' });
   }
 
-  const origin = event.headers.origin || event.headers.Origin;
-  if (!origin || origin !== process.env.UMNR_ALLOWED_ORIGIN) {
-    console.warn('UMNR_AUTH_FAIL stage=origin', { origin, expected: process.env.UMNR_ALLOWED_ORIGIN || '' }); return reply(403, { error: 'Forbidden origin' });
+  const origin = normalizeOrigin(event.headers.origin || event.headers.Origin);
+  const allowedOrigins = getAllowedOrigins();
+
+  if (!origin || !allowedOrigins.includes(origin)) {
+    console.warn('UMNR_AUTH_FAIL stage=origin', { origin, allowedOrigins });
+    return reply(403, { error: 'Forbidden origin' });
   }
 
   let body;
   try {
     body = JSON.parse(event.body || '{}');
   } catch {
-    return reply(400, { error: 'Invalid JSON' });
+    return reply(400, { error: 'Invalid JSON' }, origin);
   }
 
   const username = String(body.username || '').trim().toLowerCase();
   const pin = String(body.pin || '');
 
   if (!/^[a-z0-9._-]{2,60}$/.test(username) || !/^\d{4}$/.test(pin)) {
-    console.warn('UMNR_AUTH_FAIL stage=input_format', { usernameValid: /^[a-z0-9._-]{2,60}$/.test(username), pinLength: pin.length }); return reply(401, { error: 'Invalid credentials' });
+    return reply(401, { error: 'Invalid credentials' }, origin);
   }
 
   try {
@@ -173,8 +192,7 @@ exports.handler = async (event) => {
     });
 
     if (!allowedAttempt) {
-      console.warn('UMNR_AUTH_FAIL stage=rate_limit', { username });
-      return reply(429, { error: 'Too many attempts. Try later.' });
+      return reply(429, { error: 'Too many attempts. Try later.' }, origin);
     }
 
     const found = await db
@@ -184,16 +202,14 @@ exports.handler = async (event) => {
       .get();
 
     if (found.size !== 1) {
-      console.warn('UMNR_AUTH_FAIL stage=user_lookup', { username, matches: found.size });
-      return reply(401, { error: 'Invalid credentials' });
+      return reply(401, { error: 'Invalid credentials' }, origin);
     }
 
     const userDoc = found.docs[0];
     const user = userDoc.data() || {};
 
     if (user.umnrAccessEnabled !== true || user.active === false) {
-      console.warn('UMNR_AUTH_FAIL stage=user_access', { userDocId: userDoc.id, umnrAccessEnabled: user.umnrAccessEnabled === true, active: user.active !== false });
-      return reply(401, { error: 'Invalid credentials' });
+      return reply(401, { error: 'Invalid credentials' }, origin);
     }
 
     let hashValid = validHash(pin, user.umnrPinHash);
@@ -201,8 +217,7 @@ exports.handler = async (event) => {
     // One-time controlled migration from the current AeroStation PIN.
     if (!hashValid && !user.umnrPinHash) {
       if (!legacyPinMatches(pin, user.pin)) {
-        console.warn('UMNR_AUTH_FAIL stage=legacy_pin_mismatch', { userDocId: userDoc.id });
-        return reply(401, { error: 'Invalid credentials' });
+        return reply(401, { error: 'Invalid credentials' }, origin);
       }
 
       const newHash = createHash(pin);
@@ -217,14 +232,12 @@ exports.handler = async (event) => {
     }
 
     if (!hashValid) {
-      console.warn('UMNR_AUTH_FAIL stage=hash_mismatch', { userDocId: userDoc.id });
-      return reply(401, { error: 'Invalid credentials' });
+      return reply(401, { error: 'Invalid credentials' }, origin);
     }
 
     const role = String(user.role || '').toLowerCase();
     if (!['agent', 'supervisor', 'duty_manager', 'station_manager'].includes(role)) {
-      console.warn('UMNR_AUTH_FAIL stage=role', { userDocId: userDoc.id, role });
-      return reply(403, { error: 'Not authorized' });
+      return reply(403, { error: 'Not authorized' }, origin);
     }
 
     const uid = 'umnr_' + userDoc.id;
@@ -236,14 +249,13 @@ exports.handler = async (event) => {
 
     await limiter.delete();
 
-    console.log('UMNR_AUTH_OK', { userDocId: userDoc.id, role });
     return reply(200, {
       token,
       userId: userDoc.id,
       role,
-    });
+    }, origin);
   } catch (error) {
-    console.error('UMNR_AUTH_FAIL stage=exception', error.message);
-    return reply(503, { error: 'Authentication temporarily unavailable' });
+    console.error('UMNR auth failure', error.message);
+    return reply(503, { error: 'Authentication temporarily unavailable' }, origin);
   }
 };
