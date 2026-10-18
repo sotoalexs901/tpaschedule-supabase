@@ -18,8 +18,9 @@ function app() {
 const json = (statusCode, data) => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(data) });
 const text = (v, max=120) => String(v || '').trim().slice(0,max);
 const roles = new Set(['station_manager','duty_manager','supervisor']);
-const endStates = new Set(['DELIVERED','CANCELLED','REJECTED']);
+const releaseStates = new Set(['DELIVERED','CANCELLED','REJECTED']);
 const allowed = {
+  UNASSIGNED: ['CANCELLED'],
   ASSIGNED: ['ACCEPTED','REJECTED','CANCELLED'],
   ACCEPTED: ['PICKED_UP','CANCELLED'],
   PICKED_UP: ['IN_TRANSIT','CANCELLED'],
@@ -75,22 +76,23 @@ exports.handler = async (event) => {
       if (!manager) return json(403,{error:'Dispatch role required'});
       const id = text(body.id,150), agentId=text(body.agentId,120);
       if (!id || !agentId) return json(400,{error:'Service and agent required'});
-      const agentRecord=await db.collection('wchr_agent_shifts').doc(agentId).get();
-      if (!agentRecord.exists) return json(404,{error:'Agent not found in WCHR shift roster'});
-      if (agentRecord.data().active_report_id) return json(409,{error:'Agent currently assigned to WCHR'});
-      // NOTE: UMNR counts are transactional, but WCHR's existing writers are NOT part
-      // of this transaction. Cross-module 1-WCHR-vs-10-UMNR guarantee needs shared lock.
+      // Capacity is enforced atomically against the same WCHR shift/capacity docs
+      // used by Dispatch. This preserves the rule: 10 UMNR OR 1 WCHR, never mixed.
       const ref=services.doc(id), capacity=db.collection('umnr_agent_capacity').doc(agentId);
       await db.runTransaction(async tx=>{
         const shiftRef=db.collection('wchr_agent_shifts').doc(agentId);
         const [s,c,shift] = await Promise.all([tx.get(ref),tx.get(capacity),tx.get(shiftRef)]);
-        if (!shift.exists || shift.data().active_report_id) throw Error('Agent unavailable or WCHR busy');
+        if (!shift.exists) throw Error('Agent not found in WCHR shift roster');
+        const shiftData=shift.data() || {};
+        if (String(shiftData.status || '').toUpperCase() !== 'ACTIVE') throw Error('Agent is not punched in for operations');
+        if (String(shiftData.availability_status || '').toUpperCase() !== 'AVAILABLE') throw Error('Agent is not currently available');
+        if (shiftData.active_report_id) throw Error('Agent currently assigned to WCHR');
         if (!s.exists) throw Error('Service not found');
         const item=s.data();
         if (!['UNASSIGNED','REJECTED'].includes(item.status)) throw Error('Service already assigned');
         const current=Number(c.exists?c.data().count:0);
         if (current>=10) throw Error('UMNR capacity reached');
-        tx.set(capacity,{count:current+1,updatedAt:now},{merge:true});
+        tx.set(capacity,{count:current+1,updatedAt:now,lastAssignedServiceId:id},{merge:true});
         tx.update(ref,{agentId,status:'ASSIGNED',updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('ASSIGNED',{agentId}))});
       });
       return json(200,{ok:true});
@@ -124,11 +126,11 @@ exports.handler = async (event) => {
         const patch={status:next,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem(next,{reason:text(body.reason,250)}))};
         if (next==='PICKED_UP') patch.lastCustodyAt=now;
         if (next==='DELIVERED') { patch.handoffTo=handoffTo; patch.handoffAt=now; patch.receiverSignature=receiverSignature; patch.receiverAuthorizationVerified=true; patch.receiverIdAndFormMatched=true; patch.receiverChecks={physicalIdInspected:true,idNameMatched:true,idPhotoMatched:true,authorizedReceiverMatched:true}; patch.handoffBy=actor; patch.handoffLocation=text(body.handoffLocation,120); }
-        if (endStates.has(next) && item.agentId) {
+        if (releaseStates.has(next) && item.agentId) {
           const capRef=db.collection('umnr_agent_capacity').doc(item.agentId);
           const cap=await tx.get(capRef);
           patch.agentId=next==='REJECTED'?'':item.agentId;
-          tx.set(capRef,{count:Math.max(0,Number(cap.exists?cap.data().count:0)-1),updatedAt:now},{merge:true});
+          tx.set(capRef,{count:Math.max(0,Number(cap.exists?cap.data().count:0)-1),updatedAt:now,lastReleasedServiceId:id},{merge:true});
         }
         tx.update(ref,patch);
       });
