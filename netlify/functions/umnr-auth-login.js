@@ -3,7 +3,7 @@
 // Requires:
 //   UMNR_AUTH_ENABLED=true
 //   UMNR_PIN_PEPPER (32+ chars)
-//   UMNR_ALLOWED_ORIGIN=https://aerostationhub.com
+//   UMNR_ALLOWED_ORIGIN=https://tpaschedule.com
 //   Firebase Admin credentials
 //
 // Transitional behavior:
