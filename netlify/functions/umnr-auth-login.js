@@ -2,7 +2,7 @@
 // Dedicated UMNR authentication. Does not change the existing AeroStation login.
 // Requires:
 //   UMNR_AUTH_ENABLED=true
-//   UMNR_PIN_PEPPER (32+ chars)
+//   UMNR_PIN_PEPPER=AeroUMNR_2026_TPA_Secure_Pepper_9x7K2mQ4vL8p
 //   UMNR_ALLOWED_ORIGIN=https://aerostationhub.com
 //   Firebase Admin credentials
 //
