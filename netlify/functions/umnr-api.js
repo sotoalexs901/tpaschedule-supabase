@@ -62,11 +62,11 @@ exports.handler = async (event) => {
     const action = text(body.action,30);
     const services = db.collection('umnr_services');
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const actor = { id: decoded.userDocId, employeeId, role };
+    const actor = { id: decoded.userDocId, employeeId, role, name: myName || '' };
     const eventItem = (type, details={}) => ({ type, at: new Date().toISOString(), actor, ...details });
     if (action === 'list') {
       const snapshot = await services.orderBy('createdAt','desc').limit(150).get();
-      const items = snapshot.docs.map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
+      const items = snapshot.docs.map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,pickedUpAt:data.pickedUpAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
       return json(200,{items:manager ? items : items.filter(isMyService)});
     }
     if (action === 'create') {
@@ -81,7 +81,7 @@ exports.handler = async (event) => {
       const ref = services.doc();
       await ref.set({flightId, flightNumber:text(f.flight_number,30), airline:text(f.airline,40),
         gate:text(f.gate,30), direction, fullName:name, pnr, agentId:'', status:'UNASSIGNED',
-        lastCustodyAt:null, handoffTo:'', createdAt:now, updatedAt:now,
+        lastCustodyAt:null, pickedUpAt:null, pickupLocation:'', currentLocation:'', handoffTo:'', createdAt:now, updatedAt:now,
         timeline:[eventItem('CREATED')], createdBy:actor.id});
       return json(200,{id:ref.id});
     }
@@ -137,9 +137,12 @@ exports.handler = async (event) => {
         if (next==='DELIVERED' && !['physicalIdInspected','idNameMatched','idPhotoMatched','authorizedReceiverMatched'].every(k=>body[k]===true)) throw Error('All four receiver verification checks are required');
         const receiverSignature=String(body.receiverSignature || '');
         if(next==='DELIVERED' && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(receiverSignature) || receiverSignature.length>180000 || receiverSignature.length<250)) throw Error('Valid receiver signature required');
+        if (['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(next) && text(body.currentLocation,120).length<3) throw Error('Actual current location is required');
         if (next==='REJECTED' && !text(body.reason,250)) throw Error('Rejection reason required');
-        const patch={status:next,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem(next,{reason:text(body.reason,250),agentName:myName}))};
-        if (next==='PICKED_UP') patch.lastCustodyAt=now;
+        const patch={status:next,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem(next,{reason:text(body.reason,250),agentName:myName,location:text(body.currentLocation || body.handoffLocation,120)}))};
+        if (['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(next)) patch.currentLocation=text(body.currentLocation,120);
+        if (next==='PICKED_UP') {patch.lastCustodyAt=now;patch.pickedUpAt=now;patch.pickupLocation=text(body.currentLocation,120);}
+        if (next==='DELIVERED') patch.currentLocation=text(body.handoffLocation,120);
         if (next==='DELIVERED') { patch.handoffTo=handoffTo; patch.handoffAt=now; patch.receiverSignature=receiverSignature; patch.receiverAuthorizationVerified=true; patch.receiverIdAndFormMatched=true; patch.receiverChecks={physicalIdInspected:true,idNameMatched:true,idPhotoMatched:true,authorizedReceiverMatched:true}; patch.handoffBy=actor; patch.handoffLocation=text(body.handoffLocation,120); }
         if (releaseStates.has(next) && item.agentId) {
           const capRef=db.collection('umnr_agent_capacity').doc(item.agentId);
