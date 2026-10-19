@@ -3,7 +3,8 @@
 // Props: wchrReports (array), umnrAssignments (array), onOpenWchr(report), onOpenUmnr(item)
 import React, { useMemo, useState } from "react";
 
-const ACTIVE_END_STATES = new Set(["COMPLETED", "CANCELLED", "STORED", "CLOSED", "DELIVERED"]);
+const ACTIVE_END_STATES = new Set(["COMPLETED", "CANCELLED", "STORED", "CLOSED", "DELIVERED", "REJECTED"]);
+const UMNR_LIVE_STATES = new Set(["ASSIGNED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT", "AT_GATE"]);
 const text = (v) => String(v ?? "").trim();
 const upper = (v) => text(v).toUpperCase();
 const formatStatus = (v) => text(v || "ASSIGNED").replace(/_/g, " ");
@@ -24,16 +25,16 @@ export function buildLiveServiceCards(wchrReports = [], umnrAssignments = []) {
       source: r,
     }));
   const umnr = (Array.isArray(umnrAssignments) ? umnrAssignments : [])
-    .filter((r) => r && !ACTIVE_END_STATES.has(upper(r.status || r.service_status)))
+    .filter((r) => r && UMNR_LIVE_STATES.has(upper(r.status || r.service_status)) && text(r.agentId || r.agent_id))
     .map((r) => ({
       id: `UMNR:${text(r.id)}`,
       kind: "UMNR",
-      code: text(r.display_code || r.umnr_code || r.code || r.id) || "UMNR",
-      agent: text(r.agent_name || r.assigned_agent_name) || "Assigned agent",
+      code: text(r.display_code || r.umnr_code || r.code || `UMNR ${r.airline || ""} ${r.flightNumber || ""}`) || "UMNR",
+      agent: text(r.agentName || r.agent_name || r.assigned_agent_name) || "Assigned agent",
       status: upper(r.assignment_acceptance_status || r.status || "ASSIGNED"),
-      location: text(r.current_location) || "Not reported",
-      flight: text(r.flight_number) || "—",
-      updated: r.last_location_update_at || r.updated_at || null,
+      location: text(r.currentLocation || r.current_location || r.handoffLocation || r.gate) || "Not reported",
+      flight: text(r.flightNumber || r.flight_number) || "—",
+      updated: r.lastCustodyAt || r.updatedAt || r.last_location_update_at || r.updated_at || null,
       source: r,
     }));
   return [...wchr, ...umnr];
@@ -43,6 +44,7 @@ export default function LiveServiceBoard({
   wchrReports = [],
   umnrAssignments = [],
   pendingWchrReports = [],
+  umnrError = "",
   onOpenWchr,
   onOpenUmnr,
 }) {
@@ -77,6 +79,7 @@ export default function LiveServiceBoard({
         </div>
       </div>
       <p style={{ margin: "8px 0 14px", color: "#475569" }}>Select an assignment to view status, location and details.</p>
+      {umnrError && <p role="status" style={{ color: "#9a3412", fontSize: 13 }}>{umnrError}</p>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 215px), 1fr))", gap: 12 }}>
         {visible.map((card) => (
           <button key={card.id} type="button" onClick={() => open(card)} style={{ textAlign: "left", minHeight: 160, background: "white", border: `2px solid ${card.kind === "UMNR" ? "#bbf7d0" : "#bfdbfe"}`, borderRadius: 14, padding: 14, cursor: "pointer", boxShadow: "0 2px 7px #1e293b0c" }}>
