@@ -11,6 +11,9 @@ import {
   query,
   where,
   onSnapshot,
+  updateDoc,
+  getDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import {
@@ -26,6 +29,13 @@ import {
   setAeroStationAppBadge,
   clearAeroStationAppBadge,
 } from "../utils/appBadge.js";
+
+const WHATS_NEW_RELEASE = "2.0.5";
+const WHATS_NEW_STORAGE_PREFIX = "aerostation-whats-new-seen:";
+
+function whatsNewStorageKey(userId) {
+  return `${WHATS_NEW_STORAGE_PREFIX}${userId}`;
+}
 
 const ACTIVITY_PING_MS = 60 * 1000;
 
@@ -83,6 +93,10 @@ export default function AppLayout() {
   const [wchrFollowUps, setWchrFollowUps] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [whatsNewSaving, setWhatsNewSaving] = useState(false);
+  const [whatsNewVersion, setWhatsNewVersion] = useState("");
+
 
   const sessionVersionRef = useRef(getSessionVersion(user?.sessionVersion));
   const forcedLogoutHandledRef = useRef(false);
@@ -97,6 +111,84 @@ export default function AppLayout() {
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
 
   const profilePhotoURL = user?.profilePhotoURL || "";
+
+  // ============================================================
+  // WHAT'S NEW - PER USER / PER RELEASE
+  // ============================================================
+  useEffect(() => {
+    if (!user?.id) {
+      setWhatsNewOpen(false);
+      setWhatsNewVersion("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    const userId = String(user.id);
+    const storageKey = whatsNewStorageKey(userId);
+
+    const checkRelease = async () => {
+      try {
+        // Only display when the deployed version.json matches this announcement.
+        const response = await fetch(`/version.json?whatsnew=${Date.now()}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const release = String(data?.version || "").trim();
+        if (release !== WHATS_NEW_RELEASE || cancelled) return;
+
+        const localSeen = window.localStorage.getItem(storageKey);
+        if (localSeen === release) return;
+
+        let remoteSeen = String(user?.lastWhatsNewVersion || "").trim();
+        try {
+          const profileSnapshot = await getDoc(doc(db, "users", userId));
+          if (profileSnapshot.exists()) {
+            remoteSeen = String(profileSnapshot.data()?.lastWhatsNewVersion || "").trim();
+          }
+        } catch (error) {
+          console.warn("Could not verify cloud release acknowledgement:", error);
+        }
+        if (cancelled || remoteSeen === release) return;
+
+        setWhatsNewVersion(release);
+        setWhatsNewOpen(true);
+      } catch (error) {
+        console.warn("Could not check AeroStation Hub release notes:", error);
+      }
+    };
+
+    checkRelease();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.lastWhatsNewVersion]);
+
+  const acknowledgeWhatsNew = async () => {
+    if (!user?.id || !whatsNewVersion || whatsNewSaving) return;
+    setWhatsNewSaving(true);
+    try {
+      // Attempt cross-device acknowledgement with existing user document permissions.
+      await updateDoc(doc(db, "users", String(user.id)), {
+        lastWhatsNewVersion: whatsNewVersion,
+        lastWhatsNewAcknowledgedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      // Local acknowledgement still works when Firestore rules block profile writes.
+      console.warn("Cloud release acknowledgement unavailable:", error);
+    } finally {
+      try {
+        window.localStorage.setItem(
+          whatsNewStorageKey(String(user.id)),
+          whatsNewVersion
+        );
+      } catch (error) {
+        console.warn("Local release acknowledgement unavailable:", error);
+      }
+      setWhatsNewOpen(false);
+      setWhatsNewSaving(false);
+    }
+  };
 
   // ============================================================
   // LOGOUT
@@ -1789,6 +1881,73 @@ export default function AppLayout() {
           </div>
         )}
       </header>
+
+      {whatsNewOpen && (
+        <div
+          role="presentation"
+          style={{
+            position: "fixed", inset: 0, zIndex: 10000,
+            background: "rgba(15, 23, 42, 0.62)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16, boxSizing: "border-box",
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="aerostation-whats-new-title"
+            style={{
+              width: "100%", maxWidth: 560, maxHeight: "90vh",
+              overflowY: "auto", background: "#fff", borderRadius: 22,
+              padding: 28, boxSizing: "border-box",
+              boxShadow: "0 24px 80px rgba(15,23,42,0.28)",
+              fontFamily: "Poppins, Inter, system-ui, sans-serif",
+            }}
+          >
+            <div style={{ color: "#1769aa", fontSize: 12, fontWeight: 900, letterSpacing: 1 }}>
+              AEROSTATION HUB · VERSION {whatsNewVersion}
+            </div>
+            <h2 id="aerostation-whats-new-title" style={{ margin: "10px 0 8px", color: "#0f172a", fontSize: 25 }}>
+              ✨ What's New
+            </h2>
+            <p style={{ color: "#64748b", margin: "0 0 20px", lineHeight: 1.6 }}>
+              Here are the latest operational improvements available to authorized teams.
+            </p>
+            <div style={{ background: "#f1f8ff", border: "1px solid #dbeafe", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+              <h3 style={{ margin: "0 0 8px", color: "#0f4c81", fontSize: 16 }}>🧳 BSO Daily Report</h3>
+              <p style={{ margin: 0, color: "#334155", fontSize: 14, lineHeight: 1.6 }}>
+                Enhanced MTD dashboard, case search, report editing, event reclassification,
+                supervisor notes, audit history, and requests for case removal.
+              </p>
+            </div>
+            <div style={{ background: "#f1f8ff", border: "1px solid #dbeafe", borderRadius: 16, padding: 16 }}>
+              <h3 style={{ margin: "0 0 8px", color: "#0f4c81", fontSize: 16 }}>👦 UMNR Service · WCHR Department</h3>
+              <p style={{ margin: 0, color: "#334155", fontSize: 14, lineHeight: 1.6 }}>
+                Introducing UMNR Dispatch and Agent Operations for assignments, service
+                status, custody checks, authorized handoffs, and reporting. This module
+                is being refined during implementation. UMNR operations are now managed
+                by the WCHR Department.
+              </p>
+            </div>
+            <p style={{ color: "#64748b", fontSize: 12, lineHeight: 1.5, margin: "16px 0" }}>
+              Feature access depends on your department and role.
+            </p>
+            <button
+              type="button"
+              onClick={acknowledgeWhatsNew}
+              disabled={whatsNewSaving}
+              style={{
+                width: "100%", padding: "13px 18px", border: 0,
+                borderRadius: 13, color: "white", fontWeight: 800,
+                fontSize: 15, cursor: whatsNewSaving ? "wait" : "pointer",
+                background: "linear-gradient(135deg, #0f4c81, #1769aa)",
+              }}
+            >
+              {whatsNewSaving ? "Saving..." : "Got It"}
+            </button>
+          </section>
+        </div>
+      )}
 
       <main
         style={{
