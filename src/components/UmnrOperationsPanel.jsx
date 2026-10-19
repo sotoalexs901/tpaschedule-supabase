@@ -49,7 +49,6 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
   useEffect(()=>{refresh();const interval=setInterval(refresh,15000);return()=>clearInterval(interval)},[refresh]);
   useEffect(()=>{const interval=setInterval(()=>setTick(Date.now()),1000);return()=>clearInterval(interval)},[]);
   const active=useMemo(()=>items.filter(x=>!finished.has(x.status)),[items]);
-  const history=useMemo(()=>items.filter(x=>finished.has(x.status)),[items]);
   const run=async(action,fields)=>{setBusy(true);setError('');setMessage('');try{await umnrRequest(action,fields);setMessage('UMNR updated.');await refresh();return true;}catch(e){setError(e.message);return false;}finally{setBusy(false)}};
   const create=async(e)=>{e.preventDefault();const ok=await run('create',{flightId,direction,fullName,pnr});if(ok){setFullName('');setPnr('');}};
   const next=(x,status)=>{
@@ -137,24 +136,6 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
         <details style={{marginTop:9}}><summary>Audit history ({x.timeline?.length||0})</summary><div style={{fontSize:12}}>{(x.timeline||[]).map((t,i)=><p key={i}>{localTime(t.at)} · {t.type} · {actorLabel(t,x)}{t.location?` · ${t.location}`:''}</p>)}</div></details>
       </article>
     })}</div>
-    {dispatch && history.length > 0 && (
-      <details style={{marginTop:18,border:'1px solid #e2e8f0',borderRadius:12,padding:12,background:'#f8fafc'}}>
-        <summary style={{cursor:'pointer',fontWeight:800,color:'#334155'}}>Completed UMNR History ({history.length})</summary>
-        <p style={{fontSize:12,color:'#64748b'}}>Completed and cancelled services are retained for management review and billing. Expand a record for printing or archiving.</p>
-        <div style={{display:'grid',gap:9,marginTop:12}}>
-          {history.map(x=><article key={x.id} style={{padding:12,border:'1px solid #e2e8f0',borderRadius:10,background:'#fff'}}>
-            <div><strong>{x.fullName}</strong> · {x.direction} · {x.airline} {x.flightNumber} · PNR {x.pnr}</div>
-            <div style={{fontSize:12,marginTop:5}}>Status: {x.status} · Agent: {agentLabel(x.agentId,x.agentName)}</div>
-            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:9}}>
-              {x.status==='DELIVERED' && <button type="button" style={button} onClick={()=>printReport(x)}>Print Final Report</button>}
-              <button type="button" disabled={busy} style={{...button,color:'#991b1b'}} onClick={()=>archiveService(x)}>Archive Service (Station Manager)</button>
-            </div>
-            <details style={{marginTop:8}}><summary>Audit history ({x.timeline?.length||0})</summary>
-              {(x.timeline||[]).map((t,i)=><p key={i} style={{fontSize:12}}>{localTime(t.at)} · {t.type} · {actorLabel(t,x)}{t.location?` · ${t.location}`:''}</p>)}
-            </details>
-          </article>)}
-        </div>
-      </details>
-    )}
+
   </section>;
 }
