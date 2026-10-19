@@ -36,14 +36,11 @@ exports.handler = async (event) => {
     if (!token) return json(401,{error:'Authentication required'});
     const firebase = app();
     const decoded = await firebase.auth().verifyIdToken(token, true);
-    if (!decoded.userDocId) return json(403,{error:'User profile identification required'});
+    if (decoded.umnr !== true || !decoded.userDocId) return json(403,{error:'UMNR access required'});
     const db = firebase.firestore();
     const userDoc = await db.collection('users').doc(decoded.userDocId).get();
-    if (!userDoc.exists || userDoc.data().active === false)
-      return json(403,{error:'User profile missing or inactive'});
-    // All active users are eligible; synchronize their profile on first UMNR request.
-    if (userDoc.data().umnrAccessEnabled !== true)
-      await userDoc.ref.update({umnrAccessEnabled:true});
+    if (!userDoc.exists || userDoc.data().umnrAccessEnabled !== true || userDoc.data().active === false)
+      return json(403,{error:'Access revoked'});
     const user = userDoc.data();
     const role = String(user.role || '').toLowerCase();
     const manager = roles.has(role);
@@ -69,34 +66,8 @@ exports.handler = async (event) => {
     const eventItem = (type, details={}) => ({ type, at: new Date().toISOString(), actor, ...details });
     if (action === 'list') {
       const snapshot = await services.orderBy('createdAt','desc').limit(150).get();
-      const items = snapshot.docs.filter(d=>!d.data().archived).map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,pickedUpAt:data.pickedUpAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
-      return json(200,{items:manager ? items : items.filter(isMyService)});
-    }
-    if (action === 'archive') {
-      if (role !== 'station_manager') return json(403,{error:'Only Station Manager may archive UMNR services'});
-      const id=text(body.id,150), reason=text(body.reason,250);
-      if (!id || reason.length < 8) return json(400,{error:'Service and archive reason (8+ characters) required'});
-      const ref=services.doc(id);
-      await db.runTransaction(async tx=>{
-        const snap=await tx.get(ref);
-        if (!snap.exists) throw Error('Service not found');
-        const item=snap.data();
-        if (item.archived) throw Error('Service already archived');
-        if (!releaseStates.has(item.status)) throw Error('Only completed, cancelled or rejected services can be archived');
-        tx.update(ref,{archived:true,archivedAt:now,archivedBy:actor,archiveReason:reason,updatedAt:now,
-          timeline:admin.firestore.FieldValue.arrayUnion(eventItem('ARCHIVED',{reason}))});
-      });
-      return json(200,{ok:true});
-    }
-    if (action === 'billingList') {
-      if (!manager) return json(403,{error:'Management access required'});
-      const snapshot=await services.orderBy('createdAt','desc').limit(500).get();
-      const items=snapshot.docs.map(d=>{const v=d.data();return {id:d.id,...v,
-        createdAt:v.createdAt?.toDate?.()?.toISOString()||null,
-        pickedUpAt:v.pickedUpAt?.toDate?.()?.toISOString()||null,
-        handoffAt:v.handoffAt?.toDate?.()?.toISOString()||null,
-        archivedAt:v.archivedAt?.toDate?.()?.toISOString()||null};});
-      return json(200,{items});
+      const items = snapshot.docs.map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,pickedUpAt:data.pickedUpAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
+      return json(200,{items:manager ? items : items.filter(item=>isMyService(item)||myAgentIds.has(String(item.pendingTransfer?.toAgentId||'')))});
     }
     if (action === 'create') {
       if (!manager) return json(403,{error:'Dispatch role required'});
@@ -141,6 +112,63 @@ exports.handler = async (event) => {
       });
       return json(200,{ok:true});
     }
+    if (action === 'transfer') {
+      if (!manager) return json(403,{error:'Dispatch role required'});
+      const id=text(body.id,150), agentId=text(body.agentId,120), reason=text(body.reason,250);
+      if (!id || !agentId || reason.length<8) return json(400,{error:'Service, new agent and transfer reason (8+ characters) required'});
+      const ref=services.doc(id), newCapRef=db.collection('umnr_agent_capacity').doc(agentId);
+      await db.runTransaction(async tx=>{
+        const s=await tx.get(ref);
+        if (!s.exists) throw Error('Service not found');
+        const item=s.data();
+        if (!['ASSIGNED','ACCEPTED','PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Service cannot be transferred in its current state');
+        if (String(item.agentId)===agentId) throw Error('Choose a different agent');
+        const oldAgentId=String(item.agentId||'');
+        const oldCapRef=db.collection('umnr_agent_capacity').doc(oldAgentId);
+        const shiftRef=db.collection('wchr_agent_shifts').doc(agentId);
+        const [newCap,oldCap,shift,employee]=await Promise.all([tx.get(newCapRef),tx.get(oldCapRef),tx.get(shiftRef),tx.get(db.collection('employees').doc(agentId))]);
+        if (!shift.exists) throw Error('New agent not in WCHR shift roster');
+        const shiftData=shift.data()||{};
+        if (String(shiftData.status||'').toUpperCase()!=='ACTIVE' || String(shiftData.availability_status||'').toUpperCase()!=='AVAILABLE') throw Error('New agent must be punched in and available');
+        if (shiftData.active_report_id) throw Error('New agent currently assigned to WCHR');
+        if (Number(newCap.exists?newCap.data().count:0)>=10) throw Error('New agent UMNR capacity reached');
+        const newName=displayName(employee.exists?employee.data():{})||displayName(shiftData)||agentId;
+        const inCustody=['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status);
+        if (inCustody) {
+          // Do not change the current custodian until the receiving agent physically confirms handoff.
+          if (item.pendingTransfer) throw Error('A custody transfer is already pending');
+          const location=text(body.location,120);
+          if (location.length<3) throw Error('Actual transfer location required');
+          tx.update(ref,{pendingTransfer:{toAgentId:agentId,toAgentName:newName,fromAgentId:oldAgentId,fromAgentName:item.agentName||oldAgentId,reason,location,requestedAt:new Date().toISOString()},updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('TRANSFER_REQUESTED',{fromAgentId:oldAgentId,toAgentId:agentId,toAgentName:newName,reason,location}))});
+        } else {
+          tx.set(oldCapRef,{count:Math.max(0,Number(oldCap.exists?oldCap.data().count:0)-1),updatedAt:now},{merge:true});
+          tx.set(newCapRef,{count:Number(newCap.exists?newCap.data().count:0)+1,updatedAt:now},{merge:true});
+          tx.update(ref,{agentId,agentName:newName,status:'ASSIGNED',updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('TRANSFERRED_BEFORE_PICKUP',{fromAgentId:oldAgentId,toAgentId:agentId,toAgentName:newName,reason}))});
+        }
+      });
+      return json(200,{ok:true});
+    }
+    if (action === 'confirmTransfer') {
+      const id=text(body.id,150), location=text(body.location,120);
+      if (!id || location.length<3 || body.physicalCustodyConfirmed!==true) return json(400,{error:'Actual location and physical custody confirmation required'});
+      const ref=services.doc(id);
+      await db.runTransaction(async tx=>{
+        const s=await tx.get(ref);
+        if (!s.exists) throw Error('Service not found');
+        const item=s.data(), pending=item.pendingTransfer;
+        if (!pending || !myAgentIds.has(String(pending.toAgentId))) throw Error('Transfer is not assigned to you');
+        if (!['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Service not in active custody');
+        if (location.toLowerCase()!==String(pending.location||'').toLowerCase()) throw Error('Transfer location must match the Dispatch handoff location');
+        const oldCapRef=db.collection('umnr_agent_capacity').doc(pending.fromAgentId),newCapRef=db.collection('umnr_agent_capacity').doc(pending.toAgentId);
+        const [oldCap,newCap,shift]=await Promise.all([tx.get(oldCapRef),tx.get(newCapRef),tx.get(db.collection('wchr_agent_shifts').doc(pending.toAgentId))]);
+        if (!shift.exists || String(shift.data().status||'').toUpperCase()!=='ACTIVE' || shift.data().active_report_id) throw Error('Receiving agent not eligible');
+        if (Number(newCap.exists?newCap.data().count:0)>=10) throw Error('Receiving agent capacity reached');
+        tx.set(oldCapRef,{count:Math.max(0,Number(oldCap.exists?oldCap.data().count:0)-1),updatedAt:now},{merge:true});
+        tx.set(newCapRef,{count:Number(newCap.exists?newCap.data().count:0)+1,updatedAt:now},{merge:true});
+        tx.update(ref,{agentId:pending.toAgentId,agentName:pending.toAgentName,pendingTransfer:admin.firestore.FieldValue.delete(),lastCustodyAt:now,currentLocation:location,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('CUSTODY_TRANSFER_CONFIRMED',{fromAgentId:pending.fromAgentId,fromAgentName:pending.fromAgentName,toAgentId:pending.toAgentId,toAgentName:pending.toAgentName,reason:pending.reason,location}))});
+      });
+      return json(200,{ok:true});
+    }
     if (action === 'advance' || action === 'custody') {
       const id=text(body.id,150), ref=services.doc(id);
       await db.runTransaction(async tx=>{
@@ -149,6 +177,7 @@ exports.handler = async (event) => {
         const item=s.data();
         if (!isMyService(item) && !(manager && action==='advance' && text(body.status,20).toUpperCase()==='CANCELLED')) throw Error('Not assigned to you');
         
+        if (item.pendingTransfer && action==='advance' && text(body.status,20).toUpperCase()!=='CANCELLED') throw Error('Custody transfer pending; complete the handoff first');
         if (action==='custody') {
           if (!isMyService(item) || !['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Custody not active or not assigned to you');
           tx.update(ref,{lastCustodyAt:now,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('CUSTODY_CHECK'))});
