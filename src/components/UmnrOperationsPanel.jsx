@@ -42,6 +42,11 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
   const [fullName,setFullName]=useState(''),[pnr,setPnr]=useState('');
   const [tick,setTick]=useState(Date.now());
   const [handoff,setHandoff]=useState(null);
+  const [dismissedAssignments,setDismissedAssignments]=useState([]);
+  const [transferId,setTransferId]=useState('');
+  const [transferAgent,setTransferAgent]=useState('');
+  const [transferReason,setTransferReason]=useState('');
+  const [transferLocation,setTransferLocation]=useState('');
   const [receiverName,setReceiverName]=useState('');
   const [receiverChecks,setReceiverChecks]=useState({physicalIdInspected:false,idNameMatched:false,idPhotoMatched:false,authorizedReceiverMatched:false});
   const [handoffLocation,setHandoffLocation]=useState('');
@@ -49,6 +54,8 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
   useEffect(()=>{refresh();const interval=setInterval(refresh,15000);return()=>clearInterval(interval)},[refresh]);
   useEffect(()=>{const interval=setInterval(()=>setTick(Date.now()),1000);return()=>clearInterval(interval)},[]);
   const active=useMemo(()=>items.filter(x=>!finished.has(x.status)),[items]);
+  const pendingAssignment=!dispatch?active.find(x=>x.status==='ASSIGNED'&&!dismissedAssignments.includes(x.id)):null;
+  const pendingCustody=!dispatch?active.find(x=>x.pendingTransfer&&String(x.pendingTransfer.toAgentId)===String(employeeId)):null;
   const run=async(action,fields)=>{setBusy(true);setError('');setMessage('');try{await umnrRequest(action,fields);setMessage('UMNR updated.');await refresh();return true;}catch(e){setError(e.message);return false;}finally{setBusy(false)}};
   const create=async(e)=>{e.preventDefault();const ok=await run('create',{flightId,direction,fullName,pnr});if(ok){setFullName('');setPnr('');}};
   const next=(x,status)=>{
@@ -87,6 +94,8 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
       <div><h2 style={{margin:0}}>UMNR · {dispatch?'Dispatch':'My Services'}</h2><small>Shared WCHR flights · Inbound / Outbound · 30-minute custody checks</small></div>
       <button style={button} disabled={busy} onClick={refresh}>Refresh</button>
     </div>
+    {pendingAssignment&&<div role="dialog" aria-modal="true" aria-label="New UMNR assignment" style={{position:'fixed',inset:0,zIndex:99999,background:'rgba(15,23,42,.75)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{width:'100%',maxWidth:480,background:'white',borderRadius:18,padding:24,boxShadow:'0 20px 70px #0005'}}><h2 style={{marginTop:0}}>New UMNR Assignment</h2><p><b>{pendingAssignment.fullName}</b> · {pendingAssignment.direction} · {pendingAssignment.airline} {pendingAssignment.flightNumber}</p><p>PNR: {pendingAssignment.pnr} · Gate: {pendingAssignment.gate||'TBD'}</p><p>Route: {pendingAssignment.pickupLocation||'Pickup to be confirmed'} → {pendingAssignment.direction==='OB'?'Gate / Crew':'Authorized receiver'}</p><p style={{fontSize:13}}>Accepting the assignment does not start the service timer. Confirm Pick Up when you physically receive the minor.</p><div style={{display:'flex',gap:10,flexWrap:'wrap'}}><button style={button} disabled={busy} onClick={async()=>{const ok=await run('advance',{id:pendingAssignment.id,status:'ACCEPTED'});if(ok)setDismissedAssignments(v=>[...v,pendingAssignment.id]);}}>Accept Assignment</button><button style={button} disabled={busy} onClick={async()=>{const reason=window.prompt('Reason for rejecting this UMNR assignment:');if(!reason?.trim())return;const ok=await run('advance',{id:pendingAssignment.id,status:'REJECTED',reason:reason.trim()});if(ok)setDismissedAssignments(v=>[...v,pendingAssignment.id]);}}>Reject Assignment</button></div></div></div>}
+    {pendingCustody&&<div role="dialog" aria-modal="true" aria-label="UMNR custody transfer" style={{position:'fixed',inset:0,zIndex:99998,background:'rgba(15,23,42,.75)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{maxWidth:480,background:'white',borderRadius:18,padding:24}}><h2>UMNR Custody Transfer</h2><p><b>{pendingCustody.fullName}</b> · From {pendingCustody.pendingTransfer.fromAgentName}</p><p>Required handoff location: <b>{pendingCustody.pendingTransfer.location}</b></p><p>Confirm ONLY after physically receiving the minor from the current custodian at this location.</p><button disabled={busy} style={button} onClick={()=>{if(!window.confirm('I confirm I am physically with the minor and received custody from the previous agent at the specified location.'))return;run('confirmTransfer',{id:pendingCustody.id,location:pendingCustody.pendingTransfer.location,physicalCustodyConfirmed:true});}}>Confirm Physical Custody</button></div></div>}
     {error&&<p role="alert" style={{color:'#b91c1c'}}>{error}</p>}{message&&<p style={{color:'#15803d'}}>{message}</p>}
     {dispatch&&<form onSubmit={create} style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10,marginTop:18,alignItems:'end'}}>
       <label>Existing WCHR Flight<select required style={input} value={flightId} onChange={e=>setFlightId(e.target.value)}><option value="">Select flight</option>{flights.map(f=><option key={f.id} value={f.id}>{f.airline} {f.flight_number} · {f.gate||'Gate TBD'}</option>)}</select></label>
@@ -109,7 +118,9 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
         </div>
         <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:10}}>
           {dispatch&&['UNASSIGNED','REJECTED'].includes(x.status)&&<select style={{...input,width:200}} disabled={busy} defaultValue="" onChange={e=>{if(e.target.value)run('assign',{id:x.id,agentId:e.target.value})}}><option value="">Assign agent</option>{agents.map(a=><option key={a.id} value={a.id}>{agentLabel(a.id,a.name)}</option>)}</select>}
-          {mayAct&&x.status==='ASSIGNED'&&<><button disabled={busy} style={button} onClick={()=>next(x,'ACCEPTED')}>Accept</button><button disabled={busy} style={button} onClick={()=>next(x,'REJECTED')}>Reject</button></>}
+          {dispatch&&['ASSIGNED','ACCEPTED','PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&!x.pendingTransfer&&<button type="button" disabled={busy} style={button} onClick={()=>{setTransferId(transferId===x.id?'':x.id);setTransferAgent('');setTransferReason('');setTransferLocation(x.currentLocation||'');}}>Transfer UMNR</button>}
+          {x.pendingTransfer&&<small style={{color:'#9a3412'}}>Custody transfer pending: {x.pendingTransfer.fromAgentName} → {x.pendingTransfer.toAgentName} · {x.pendingTransfer.location}</small>}
+          {mayAct&&x.status==='ASSIGNED' &&<><button disabled={busy} style={button} onClick={()=>next(x,'ACCEPTED')}>Accept</button><button disabled={busy} style={button} onClick={()=>next(x,'REJECTED')}>Reject</button></>}
           {mayAct&&x.status==='ACCEPTED'&&<button disabled={busy} style={button} onClick={()=>next(x,'PICKED_UP')}>Pick Up</button>}
           {mayAct&&x.status==='PICKED_UP'&&<button disabled={busy} style={button} onClick={()=>next(x,'IN_TRANSIT')}>Start Transit</button>}
           {mayAct&&x.status==='IN_TRANSIT'&&<button disabled={busy} style={button} onClick={()=>next(x,'AT_GATE')}>At Gate / Handoff Point</button>}
@@ -117,6 +128,7 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
           {dispatch&&finished.has(x.status)&&<button disabled={busy} style={{...button,color:'#991b1b'}} onClick={()=>archiveService(x)}>Archive Service (Station Manager)</button>}
            {dispatch&&!finished.has(x.status)&&<button disabled={busy} style={button} onClick={()=>next(x,'CANCELLED')}>Cancel</button>}
         </div>
+        {dispatch&&transferId===x.id&&<div style={{padding:12,marginTop:10,border:'1px solid #bfdbfe',borderRadius:10,display:'grid',gap:8}}><strong>Transfer UMNR to another agent</strong><select style={input} value={transferAgent} onChange={e=>setTransferAgent(e.target.value)}><option value="">Select receiving agent</option>{agents.filter(a=>String(a.id)!==String(x.agentId)).map(a=><option key={a.id} value={a.id}>{agentLabel(a.id,a.name)}</option>)}</select><input style={input} placeholder="Transfer reason (minimum 8 characters)" value={transferReason} onChange={e=>setTransferReason(e.target.value)}/>{['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&<input style={input} placeholder="Actual physical handoff location" value={transferLocation} onChange={e=>setTransferLocation(e.target.value)}/>}<p style={{fontSize:12,margin:0}}>After pickup, the current agent retains custody until the receiving agent confirms physical handoff.</p><div style={{display:'flex',gap:8}}><button type="button" style={button} disabled={busy||!transferAgent||transferReason.trim().length<8} onClick={async()=>{const ok=await run('transfer',{id:x.id,agentId:transferAgent,reason:transferReason.trim(),location:transferLocation.trim()});if(ok)setTransferId('');}}>Submit Transfer</button><button type="button" style={button} onClick={()=>setTransferId('')}>Cancel</button></div></div>}
         {handoff===x.id&&<div style={{marginTop:12,padding:12,borderRadius:12,border:'1px solid #bfdbfe',background:'#eff6ff'}}>
           <label>Authorized receiver full name<input style={input} maxLength={120} value={receiverName} onChange={e=>setReceiverName(e.target.value)} /></label>
           <label>Handoff location<input style={input} maxLength={120} value={handoffLocation} onChange={e=>setHandoffLocation(e.target.value)} /></label>
