@@ -6,6 +6,7 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { APP_NAME, APP_SUBTITLE } from "../config/appConfig.js";
+import Code24ManagementPage from "./Code24ManagementPage.jsx";
 
 const CODE24_REASONS = [
   "Customer insisted on a tracer",
@@ -329,6 +330,7 @@ export default function Code24ShiftReportPage() {
   );
 
   const [saving, setSaving] = useState(false);
+  const [showManagement, setShowManagement] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [form, setForm] = useState({
     reportDate: todayLocal(),
@@ -633,6 +635,13 @@ export default function Code24ShiftReportPage() {
     );
   }
 
+  if (showManagement) return (
+    <div style={{display:"grid",gap:12}}>
+      <div><ActionButton variant="secondary" onClick={() => setShowManagement(false)}>← Back to Submit Report</ActionButton></div>
+      <Code24ManagementPage />
+    </div>
+  );
+
   const statusIsError =
     statusMessage.toLowerCase().includes("could not") ||
     statusMessage.toLowerCase().includes("please") ||
@@ -757,12 +766,15 @@ export default function Code24ShiftReportPage() {
             </p>
           </div>
 
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <ActionButton variant="secondary" onClick={() => setShowManagement(true)}>View Cases & Dashboard</ActionButton>
           <ActionButton
             variant="secondary"
             onClick={() => navigate("/dashboard")}
           >
             ← Back to Dashboard
           </ActionButton>
+          </div>
         </div>
       </div>
 
