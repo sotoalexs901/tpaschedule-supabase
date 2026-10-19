@@ -32,12 +32,12 @@ const now = new Date();
 const y = now.getFullYear();
 const m = String(now.getMonth() + 1).padStart(2, "0");
 const d = String(now.getDate()).padStart(2, "0");
-return ${y}-${m}-${d};
+return `${y}-${m}-${d}`;
 }
 
 function monthStartString() {
 const now = new Date();
-return ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01;
+return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
 function normalizeText(value) {
@@ -136,11 +136,11 @@ const [copied, setCopied] = useState(false);
 
 const publicUrl =
 typeof window !== "undefined"
-? ${window.location.origin}/feedback/${account.key}
-: /feedback/${account.key};
+? `${window.location.origin}/feedback/${account.key}`
+: `/feedback/${account.key}`;
 
 const qrImageUrl =
-https://api.qrserver.com/v1/create-qr-code/?size=300x300&format=png&margin=12&data=${encodeURIComponent(publicUrl)};
+`https://api.qrserver.com/v1/create-qr-code/?size=300x300&format=png&margin=12&data=${encodeURIComponent(publicUrl)}`;
 
 const copyLink = async () => {
 try {
@@ -363,15 +363,15 @@ return false;
 
     const serviceDate = normalizeText(item.serviceDate);
 
-    if (fromDate && serviceDate && serviceDate < fromDate) {
+    if (fromDate && (!serviceDate || serviceDate < fromDate)) {
       return false;
     }
 
-    if (toDate && serviceDate && serviceDate > toDate) {
+    if (toDate && (!serviceDate || serviceDate > toDate)) {
       return false;
     }
 
-    if (needsFollowUpOnly && Number(item.rating || 0) > 2) {
+    if (needsFollowUpOnly && (Number(item.rating || 0) < 1 || Number(item.rating || 0) > 2)) {
       return false;
     }
 
@@ -417,11 +417,11 @@ const fiveStarCount = filtered.filter(
 
 const fiveStarPct =
 total > 0
-? ${Math.round((fiveStarCount / total) * 100)}%
+? `${Math.round((fiveStarCount / total) * 100)}%`
 : "0%";
 
 const followUpCount = filtered.filter(
-(item) => Number(item.rating || 0) <= 2
+(item) => (Number(item.rating || 0) >= 1 && Number(item.rating || 0) <= 2)
 ).length;
 
 const handleDelete = async (item) => {
@@ -643,14 +643,14 @@ return `
 
 const handlePrintEmployeeSummary = () => {
 const esc = (value) =>
-String(value ?? "")
-.replace(/&/g, "&")
-.replace(/</g, "<")
-.replace(/>/g, ">")
-.replace(/"/g, """)
-.replace(/'/g, "'");
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 
-const grouped = new Map();
+  const grouped = new Map();
 
 filtered.forEach((item) => {
   const employeeName =
@@ -703,7 +703,7 @@ const employeeSections = employees
       (item) => Number(item.rating || 0) === 5
     ).length;
     const followUps = responses.filter(
-      (item) => Number(item.rating || 0) <= 2
+      (item) => (Number(item.rating || 0) >= 1 && Number(item.rating || 0) <= 2)
     ).length;
 
     const rows = responses
@@ -1166,7 +1166,7 @@ AeroStation Hub · Management of Reports
         const account =
           ACCOUNTS.find((entry) => entry.key === item.account) || null;
 
-        const isFollowUp = Number(item.rating || 0) <= 2;
+        const isFollowUp = Number(item.rating || 0) >= 1 && Number(item.rating || 0) <= 2;
 
         return (
           <article
