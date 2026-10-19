@@ -1,6 +1,6 @@
 // src/pages/BSODailyReportPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, getDocs, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, query, serverTimestamp, where, writeBatch, runTransaction, deleteDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { useNavigate } from "react-router-dom";
@@ -217,7 +217,8 @@ function countBagTags(value) {
 }
 
 function eventTypeLabel(type) {
-  if (type === "CODE_24") return "Code 24 / Bag Return";
+  if (type === "BAG_RETURN") return "Bag Return Request";
+  if (type === "CODE_24") return "Code 24";
   if (type === "CODE_39") return "Code 39";
   if (type === "EXCEPTION_DELIVERY") return "Exception Delivery";
   return "Other";
@@ -344,6 +345,7 @@ export default function BSODailyReportPage() {
   const { isMobile, isTablet } = useViewport();
   const canAccess = ["supervisor", "duty_manager", "station_manager"].includes(user?.role);
   const canBulkUpload = user?.role === "station_manager";
+  const canDeleteCase = user?.role === "station_manager";
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({
@@ -355,6 +357,12 @@ export default function BSODailyReportPage() {
   const [mtdReports, setMtdReports] = useState([]);
   const [loadingMtd, setLoadingMtd] = useState(true);
   const [expandedReportId, setExpandedReportId] = useState("");
+  const [editingCase, setEditingCase] = useState(null);
+  const [caseDraft, setCaseDraft] = useState(null);
+  const [caseNote, setCaseNote] = useState("");
+  const [removalReason, setRemovalReason] = useState("");
+  const [caseBusy, setCaseBusy] = useState(false);
+  const [caseError, setCaseError] = useState("");
   const [historyFilter, setHistoryFilter] = useState("MTD");
   const [historyStartDate, setHistoryStartDate] = useState("");
   const [historyEndDate, setHistoryEndDate] = useState("");
@@ -437,7 +445,7 @@ export default function BSODailyReportPage() {
       if (search) {
         const haystack = [
           row.pnr, row.bagTags, row.flightNumber, row.reportId, row.worldTracerId,
-          row.netTracerFile, row.employee, row.supervisorName, row.otherCategory, row.otherDescription
+          row.netTracerFile, row.passengerName, row.employee, row.supervisorName, row.otherCategory, row.otherDescription
         ].map((v) => String(v || "").toLowerCase()).join(" ");
         if (!haystack.includes(search)) return false;
       }
@@ -917,6 +925,87 @@ export default function BSODailyReportPage() {
     }
   };
 
+  const actor = () => ({ by: getVisibleName(user), userId: user?.id || user?.uid || "", role: user?.role || "", at: new Date().toISOString() });
+  const openCaseEditor = (report, index) => {
+    const event = report.events?.[index];
+    if (!event) return;
+    setEditingCase({ reportId: report.id, eventIndex: index });
+    setCaseDraft({ ...event });
+    setCaseNote(""); setRemovalReason(""); setCaseError("");
+  };
+  const updateDraft = (field, value) => setCaseDraft((prev) => ({ ...prev, [field]: value }));
+  const closeCaseEditor = () => { if (!caseBusy) { setEditingCase(null); setCaseDraft(null); setCaseError(""); } };
+  const updateCaseRecord = async (action, payload = {}) => {
+    if (!editingCase || !canAccess || caseBusy) return;
+    const { reportId, eventIndex } = editingCase;
+    setCaseBusy(true); setCaseError("");
+    try {
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, "bso_daily_reports", reportId);
+        const snapshot = await tx.get(ref);
+        if (!snapshot.exists()) throw new Error("Report no longer exists.");
+        const data = snapshot.data();
+        const events = Array.isArray(data.events) ? [...data.events] : [];
+        const original = events[eventIndex];
+        if (!original) throw new Error("Event no longer exists. Refresh the report.");
+        const audit = Array.isArray(data.changeHistory) ? [...data.changeHistory] : [];
+        const entry = { ...actor(), action, eventIndex, eventSequence: original.sequence || eventIndex + 1, eventType: original.eventType };
+        if (action === "EDIT") {
+          const edited = { ...original, ...payload.draft };
+          if (edited.eventType === "CODE_24") edited.employee = "";
+          if (edited.eventType === "CODE_24") edited.code24Created = true;
+          const changes = {};
+          Object.keys(edited).forEach((key) => {
+            if (JSON.stringify(original[key] ?? null) !== JSON.stringify(edited[key] ?? null)) changes[key] = { before: original[key] ?? null, after: edited[key] ?? null };
+          });
+          if (!Object.keys(changes).length) throw new Error("No changes to save.");
+          entry.changes = changes;
+          events[eventIndex] = edited;
+        } else if (action === "NOTE") {
+          const note = String(payload.note || "").trim();
+          if (!note) throw new Error("Enter a note first.");
+          const notes = Array.isArray(original.supervisorNotes) ? [...original.supervisorNotes] : [];
+          notes.push({ ...actor(), text: note });
+          events[eventIndex] = { ...original, supervisorNotes: notes };
+          entry.note = note;
+        } else if (action === "REQUEST_REMOVAL") {
+          const reason = String(payload.reason || "").trim();
+          if (!reason) throw new Error("Enter the reason for removal.");
+          const requests = Array.isArray(original.removalRequests) ? [...original.removalRequests] : [];
+          requests.push({ ...actor(), reason, status: "pending" });
+          events[eventIndex] = { ...original, removalRequests: requests };
+          entry.reason = reason;
+        } else if (action === "DELETE") {
+          if (!canDeleteCase) throw new Error("Only the Station Manager can delete events.");
+          entry.deletedEvent = original;
+          events.splice(eventIndex, 1);
+          events.forEach((event, index) => { events[index] = { ...event, sequence: index + 1 }; });
+        } else throw new Error("Unsupported action.");
+        audit.push(entry);
+        const count = (type) => events.filter((e) => e.eventType === type).length;
+        const exceptions = events.filter((e) => e.eventType === "EXCEPTION_DELIVERY");
+        tx.update(ref, {
+          events, changeHistory: audit, lastModifiedAt: serverTimestamp(), lastModifiedBy: getVisibleName(user),
+          totalEvents: events.length, bagReturnRequestCount: count("BAG_RETURN"), code24Count: count("CODE_24"),
+          code24BagReturnEvents: count("BAG_RETURN") + count("CODE_24"),
+          code24CreatedCount: events.filter((e) => e.eventType === "CODE_24" && (e.code24Created === true || e.code24Created === "Yes")).length,
+          code39Count: count("CODE_39"), exceptionDeliveryCount: exceptions.length,
+          exceptionFedExCount: exceptions.filter((e) => e.deliveryMethod === "FedEx").length,
+          exceptionSddCount: exceptions.filter((e) => e.deliveryMethod === "SDD").length,
+          exceptionOtherMethodCount: exceptions.filter((e) => !["FedEx", "SDD"].includes(e.deliveryMethod)).length,
+          otherCount: count("OTHER"),
+          code39BagsAffected: events.filter((e) => e.eventType === "CODE_39").reduce((n, e) => n + (Number(e.bagsChecked) || 0), 0),
+        });
+      });
+      await loadMtdReports();
+      setEditingCase(null); setCaseDraft(null); setCaseNote(""); setRemovalReason("");
+      setMessage(action === "EDIT" ? "Event updated and changes recorded." : action === "NOTE" ? "Supervisor note saved." : action === "REQUEST_REMOVAL" ? "Removal request sent to Management." : "Event deleted by Station Manager and logged.");
+    } catch (error) {
+      console.error("BSO case action failed:", error);
+      setCaseError(error?.message || "Could not update this event. Check your Firestore permissions.");
+    } finally { setCaseBusy(false); }
+  };
+
   const handlePrintReport = (report, events) => {
     if (!report) return;
     const printWindow = window.open("", "_blank", "width=1200,height=850");
@@ -1154,17 +1243,17 @@ export default function BSODailyReportPage() {
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-          <div><h2 style={{ margin: 0 }}>BSO MTD Reports</h2><div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>All AA BSO supervisors can review office submissions for the current month. This view is read-only.</div></div>
+          <div><h2 style={{ margin: 0 }}>BSO MTD Reports</h2><div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>All AA BSO supervisors can review office submissions for the current month. Supervisors may edit individual events, add notes, and request removal. All changes are logged.</div></div>
           <Button variant="secondary" onClick={loadMtdReports} disabled={loadingMtd}>{loadingMtd ? "Refreshing..." : "Refresh"}</Button>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit,minmax(175px,1fr))", gap: 10, marginBottom: 14 }}>
           <div><Label>View</Label><Select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="MTD">Month to Date</option><option value="TODAY">Today</option><option value="RANGE">Date Range</option></Select></div>
           {historyFilter === "RANGE" && <><div><Label>Start Date</Label><Input type="date" value={historyStartDate} onChange={(e) => setHistoryStartDate(e.target.value)} /></div><div><Label>End Date</Label><Input type="date" value={historyEndDate} onChange={(e) => setHistoryEndDate(e.target.value)} /></div></>}
-          <div><Label>Type</Label><Select value={historyType} onChange={(e) => setHistoryType(e.target.value)}><option value="ALL">All Types</option><option value="CODE_24">Code 24</option><option value="CODE_39">Code 39</option><option value="EXCEPTION_DELIVERY">Exception Delivery</option><option value="OTHER">Other</option></Select></div>
+          <div><Label>Type</Label><Select value={historyType} onChange={(e) => setHistoryType(e.target.value)}><option value="ALL">All Types</option><option value="BAG_RETURN">Bag Return Request</option><option value="CODE_24">Code 24</option><option value="CODE_39">Code 39</option><option value="EXCEPTION_DELIVERY">Exception Delivery</option><option value="OTHER">Other</option></Select></div>
           <div><Label>Supervisor</Label><Input value={historySupervisor} onChange={(e) => setHistorySupervisor(e.target.value)} placeholder="Supervisor name" /></div>
           <div><Label>Employee</Label><Input value={historyEmployee} onChange={(e) => setHistoryEmployee(e.target.value)} placeholder="Employee name" /></div>
-          <div><Label>Search</Label><Input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="PNR, bag tag, file, flight..." /></div>
+          <div><Label>Search</Label><Input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="File Number, Passenger Name, PNR, Bag Tag..." /></div>
         </div>
 
         {loadingMtd ? <div style={{ padding: 16, color: "#64748b", fontWeight: 700 }}>Loading BSO MTD reports...</div> : filteredHistoryReports.length === 0 ? <div style={{ padding: 16, background: "#f8fafc", borderRadius: 14, color: "#64748b", fontWeight: 700 }}>No BSO reports match the selected filters.</div> : <div style={{ display: "grid", gap: 10 }}>
@@ -1190,7 +1279,7 @@ export default function BSODailyReportPage() {
       const report = filteredHistoryReports.find((item) => item.id === expandedReportId);
       if (!report) return null;
       const allEvents = Array.isArray(report.events) ? report.events : [];
-      const events = allEvents.filter((event, index) => historyRows.some((row) => row.reportIdDoc === report.id && row.eventIndex === index));
+      const events = allEvents.map((event, eventIndex) => ({ event, eventIndex })).filter(({ eventIndex }) => historyRows.some((row) => row.reportIdDoc === report.id && row.eventIndex === eventIndex));
       return <div
         onClick={() => setExpandedReportId("")}
         style={{ position: "fixed", inset: 0, zIndex: 99998, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: isMobile ? 10 : 20 }}
@@ -1209,10 +1298,10 @@ export default function BSODailyReportPage() {
           </div>
 
           <div style={{ padding: isMobile ? 13 : 18, overflowY: "auto", WebkitOverflowScrolling: "touch", display: "grid", gap: 11 }}>
-            {events.map((event, index) => <div key={`${report.id}-${index}`} style={{ border: "1px solid #dbeafe", borderRadius: 15, padding: isMobile ? 12 : 14, background: "#fff" }}>
+            {events.map(({ event, eventIndex }, index) => <div key={`${report.id}-${eventIndex}`} style={{ border: "1px solid #dbeafe", borderRadius: 15, padding: isMobile ? 12 : 14, background: "#fff" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>{event.eventType === "BAG_RETURN" ? "Bag Return Request" : event.eventType === "CODE_24" ? "Code 24" : event.eventType === "CODE_39" ? "Code 39" : event.eventType === "EXCEPTION_DELIVERY" ? "Exception Delivery" : "Other"}</div>
-                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>Event #{event.sequence || index + 1}</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><span style={{ fontSize: 11, color: "#64748b", fontWeight: 800 }}>Event #{event.sequence || eventIndex + 1}</span><Button variant="secondary" onClick={() => openCaseEditor(report, eventIndex)}>Edit / Notes</Button></div>
               </div>
 
               <div style={{ marginTop: 11, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,minmax(0,1fr))", gap: 9, fontSize: 12.5, color: "#334155" }}>
@@ -1262,6 +1351,8 @@ export default function BSODailyReportPage() {
                 </>}
               </div>
 
+              {Array.isArray(event.supervisorNotes) && event.supervisorNotes.length > 0 && <div style={{ marginTop: 11, padding: 10, borderRadius: 11, background: "#eff6ff", fontSize: 12 }}><b>Supervisor / Management Notes</b>{event.supervisorNotes.map((note, noteIndex) => <div key={noteIndex} style={{ marginTop: 6 }}>{note.text} <span style={{ color: "#64748b" }}>— {note.by}, {timestampToLabel(note.at)}</span></div>)}</div>}
+              {Array.isArray(event.removalRequests) && event.removalRequests.length > 0 && <div style={{ marginTop: 10, padding: 10, borderRadius: 11, background: "#fffbeb", fontSize: 12 }}><b>Removal Requests</b>{event.removalRequests.map((request, requestIndex) => <div key={requestIndex} style={{ marginTop: 5 }}>{request.reason} — {request.by} ({request.status})</div>)}</div>}
               {event.comments && <div style={{ marginTop: 11, padding: 10, borderRadius: 11, background: "#f8fafc", color: "#475569", fontSize: 12.5 }}><b>Comments / Coaching:</b> {event.comments}</div>}
             </div>)}
 
@@ -1275,6 +1366,30 @@ export default function BSODailyReportPage() {
         </div>
       </div>;
     })()}
+
+    {editingCase && caseDraft && <div onClick={closeCaseEditor} style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,.65)", display: "grid", placeItems: "center", padding: isMobile ? 8 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, padding: isMobile ? 14 : 22, width: "100%", maxWidth: 850, maxHeight: "92vh", overflowY: "auto", boxSizing: "border-box" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}><div><h2 style={{ margin: 0 }}>Manage BSO Event</h2><div style={{ color: "#64748b", fontSize: 12 }}>Edit the case, add notes, or request removal. All actions are recorded.</div></div><Button variant="secondary" onClick={closeCaseEditor}>Close</Button></div>
+        {caseError && <div style={{ marginTop: 12, padding: 12, background: "#fff1f2", color: "#9f1239", borderRadius: 10, fontSize: 13 }}>{caseError}</div>}
+        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2,minmax(0,1fr))", gap: 12 }}>
+          <div><Label>Event Type</Label><Select value={caseDraft.eventType || "OTHER"} onChange={(e) => updateDraft("eventType", e.target.value)}>{EVENT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</Select></div>
+          {caseDraft.eventType !== "CODE_24" && <div><Label>Employee Involved</Label><Input value={caseDraft.employee || ""} onChange={(e) => updateDraft("employee", e.target.value)} /></div>}
+          {[["passengerName","Passenger Name"],["pnr","PNR"],["bagTags","Bag Tag Number(s)"],["flightNumber","Flight Number"]].map(([key, label]) => <div key={key}><Label>{label}</Label><Input value={caseDraft[key] || ""} onChange={(e) => updateDraft(key, e.target.value)} /></div>)}
+          <div><Label>Supervisor Review</Label><Select value={caseDraft.supervisorReview || "Process followed"} onChange={(e) => updateDraft("supervisorReview", e.target.value)}>{REVIEW_OPTIONS.map((option) => <option key={option}>{option}</option>)}</Select></div>
+          {caseDraft.eventType === "BAG_RETURN" && <><div><Label>Return Reason</Label><Select value={caseDraft.returnReason || ""} onChange={(e) => updateDraft("returnReason", e.target.value)}><option value="">Select reason</option>{RETURN_REASONS.map((option) => <option key={option}>{option}</option>)}</Select></div>{caseDraft.returnReason === "Other" && <div><Label>Other Reason</Label><Input value={caseDraft.returnReasonOther || ""} onChange={(e) => updateDraft("returnReasonOther", e.target.value)} /></div>}</>}
+          {caseDraft.eventType === "CODE_24" && <><div><Label>Code 24 Reason</Label><Select value={caseDraft.code24Reason || ""} onChange={(e) => updateDraft("code24Reason", e.target.value)}><option value="">Select reason</option>{CODE24_REASONS.map((option) => <option key={option}>{option}</option>)}</Select></div>{caseDraft.code24Reason === "Other" && <div><Label>Other Reason</Label><Input value={caseDraft.code24ReasonOther || ""} onChange={(e) => updateDraft("code24ReasonOther", e.target.value)} /></div>}<div style={{ gridColumn: "1 / -1" }}><Label>Code 24 Details</Label><Area value={caseDraft.code24Details || ""} onChange={(e) => updateDraft("code24Details", e.target.value)} /></div></>}
+          {caseDraft.eventType === "CODE_39" && [["reportId","Report ID / File Number"],["createDate","Create Date"],["status","Status"],["faultStation","Fault Station"],["lossCode","Loss Code"],["bagType","Bag Type"],["bagsChecked","Bags Checked"],["bagsReceived","Bags Received"],["worldTracerId","World Tracer ID"]].map(([key,label]) => <div key={key}><Label>{label}</Label><Input value={caseDraft[key] ?? ""} onChange={(e) => updateDraft(key, e.target.value)} /></div>)}
+          {caseDraft.eventType === "EXCEPTION_DELIVERY" && <><div><Label>NetTracer File</Label><Input value={caseDraft.netTracerFile || ""} onChange={(e) => updateDraft("netTracerFile", e.target.value)} /></div><div><Label>Exception Date</Label><Input type="date" value={caseDraft.exceptionDate || ""} onChange={(e) => updateDraft("exceptionDate", e.target.value)} /></div><div><Label>Agent Code</Label><Input value={caseDraft.agentCode || ""} onChange={(e) => updateDraft("agentCode", e.target.value)} /></div><div><Label>Exception Reason</Label><Select value={caseDraft.exceptionReason || ""} onChange={(e) => updateDraft("exceptionReason", e.target.value)}><option value="">Select reason</option>{EXCEPTION_REASONS.map((option) => <option key={option}>{option}</option>)}</Select></div>{caseDraft.exceptionReason === "Other" && <div><Label>Other Exception Reason</Label><Input value={caseDraft.exceptionReasonOther || ""} onChange={(e) => updateDraft("exceptionReasonOther", e.target.value)} /></div>}<div><Label>Delivery Method</Label><Select value={caseDraft.deliveryMethod || ""} onChange={(e) => updateDraft("deliveryMethod", e.target.value)}><option value="">Select method</option>{DELIVERY_METHODS.map((option) => <option key={option}>{option}</option>)}</Select></div></>}
+          {caseDraft.eventType === "OTHER" && <><div><Label>Other Category</Label><Input value={caseDraft.otherCategory || ""} onChange={(e) => updateDraft("otherCategory", e.target.value)} /></div><div><Label>Follow-up Required</Label><Select value={String(caseDraft.followUpRequired === true ? "Yes" : caseDraft.followUpRequired || "No")} onChange={(e) => updateDraft("followUpRequired", e.target.value)}><option>No</option><option>Yes</option></Select></div><div style={{ gridColumn: "1 / -1" }}><Label>Description</Label><Area value={caseDraft.otherDescription || ""} onChange={(e) => updateDraft("otherDescription", e.target.value)} /></div><div style={{ gridColumn: "1 / -1" }}><Label>Action Taken</Label><Area value={caseDraft.actionTaken || ""} onChange={(e) => updateDraft("actionTaken", e.target.value)} /></div></>}
+          {["BAG_RETURN","CODE_24"].includes(caseDraft.eventType) && <div><Label>BCC Referral</Label><Select value={caseDraft.bccReferral === true || caseDraft.bccReferral === "Yes" ? "Yes" : "No"} onChange={(e) => updateDraft("bccReferral", e.target.value)}><option>No</option><option>Yes</option></Select></div>}
+          {caseDraft.eventType !== "CODE_24" && <div style={{ gridColumn: "1 / -1" }}><Label>Comments / Coaching</Label><Area value={caseDraft.comments || ""} onChange={(e) => updateDraft("comments", e.target.value)} /></div>}
+        </div>
+        <div style={{ marginTop: 12 }}><Button disabled={caseBusy} onClick={() => updateCaseRecord("EDIT", { draft: caseDraft })}>{caseBusy ? "Saving..." : "Save Case Changes"}</Button></div>
+        <div style={{ marginTop: 18, borderTop: "1px solid #e2e8f0", paddingTop: 16 }}><h3 style={{ margin: "0 0 8px" }}>Add Supervisor / Management Note</h3><Area value={caseNote} onChange={(e) => setCaseNote(e.target.value)} placeholder="Add a follow-up note without changing the original case..." /><div style={{ marginTop: 8 }}><Button variant="secondary" disabled={caseBusy || !caseNote.trim()} onClick={() => updateCaseRecord("NOTE", { note: caseNote })}>Save Note</Button></div></div>
+        <div style={{ marginTop: 18, borderTop: "1px solid #e2e8f0", paddingTop: 16 }}><h3 style={{ margin: "0 0 8px" }}>Request Case Removal</h3><Area value={removalReason} onChange={(e) => setRemovalReason(e.target.value)} placeholder="Explain why this event is incorrect, nonexistent, or duplicated..." /><div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}><Button variant="secondary" disabled={caseBusy || !removalReason.trim()} onClick={() => updateCaseRecord("REQUEST_REMOVAL", { reason: removalReason })}>Send Removal Request</Button>{canDeleteCase && <Button variant="danger" disabled={caseBusy} onClick={() => { if (window.confirm("Permanently remove this event from the report? The action and original event will remain in the audit history.")) updateCaseRecord("DELETE"); }}>Delete Event (Station Manager)</Button>}</div></div>
+        {(() => { const currentReport = mtdReports.find((r) => r.id === editingCase.reportId); const entries = (currentReport?.changeHistory || []).filter((item) => item.eventIndex === editingCase.eventIndex).slice().reverse(); return <div style={{ marginTop: 18, borderTop: "1px solid #e2e8f0", paddingTop: 16 }}><h3 style={{ margin: "0 0 8px" }}>Audit History ({entries.length})</h3>{entries.length ? entries.map((entry, index) => <div key={index} style={{ padding: 9, border: "1px solid #e2e8f0", borderRadius: 9, marginTop: 6, fontSize: 12 }}><b>{entry.action}</b> — {entry.by} ({entry.role}) — {timestampToLabel(entry.at)}{entry.note && <div>Note: {entry.note}</div>}{entry.reason && <div>Reason: {entry.reason}</div>}{entry.changes && Object.entries(entry.changes).map(([key, values]) => <div key={key}><b>{key}:</b> {String(values.before ?? "—")} → {String(values.after ?? "—")}</div>)}</div>) : <div style={{ fontSize: 12, color: "#64748b" }}>No recorded changes for this event yet.</div>}</div>; })()}
+      </div>
+    </div>}
 
     {duplicateWarning && <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,.48)", display: "grid", placeItems: "center", padding: 18 }}>
       <div style={{ width: "100%", maxWidth: 620, background: "#fff", borderRadius: 20, boxShadow: "0 24px 70px rgba(15,23,42,.28)", overflow: "hidden" }}>
