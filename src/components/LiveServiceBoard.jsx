@@ -1,13 +1,14 @@
 // src/components/LiveServiceBoard.jsx
 // Read-only presentation component. Does not write to Firebase.
 // Props: wchrReports (array), umnrAssignments (array), onOpenWchr(report), onOpenUmnr(item)
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const ACTIVE_END_STATES = new Set(["COMPLETED", "CANCELLED", "STORED", "CLOSED", "DELIVERED", "REJECTED"]);
 const UMNR_LIVE_STATES = new Set(["ASSIGNED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT", "AT_GATE"]);
 const text = (v) => String(v ?? "").trim();
 const upper = (v) => text(v).toUpperCase();
 const formatStatus = (v) => text(v || "ASSIGNED").replace(/_/g, " ");
+const elapsed=(start,end)=>{if(!start)return "Not started";const a=new Date(start).getTime(),b=new Date(end).getTime();if(!Number.isFinite(a)||!Number.isFinite(b))return "Not available";const s=Math.max(0,Math.floor((b-a)/1000));return `${String(Math.floor(s/3600)).padStart(2,"0")}:${String(Math.floor(s/60)%60).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;};
 
 export function buildLiveServiceCards(wchrReports = [], umnrAssignments = []) {
   const wchr = (Array.isArray(wchrReports) ? wchrReports : [])
@@ -35,6 +36,10 @@ export function buildLiveServiceCards(wchrReports = [], umnrAssignments = []) {
       location: text(r.currentLocation || r.current_location || r.handoffLocation || r.gate) || "Not reported",
       flight: text(r.flightNumber || r.flight_number) || "—",
       updated: r.lastCustodyAt || r.updatedAt || r.last_location_update_at || r.updated_at || null,
+      pickupLocation: text(r.pickupLocation) || "Not recorded",
+      destination: upper(r.direction)==="OB" ? (text(r.gate) ? `Gate ${text(r.gate)}` : "Gate not recorded") : (text(r.handoffLocation)||"Authorized pickup point not recorded"),
+      pickedUpAt: r.pickedUpAt || null,
+      handoffAt: r.handoffAt || null,
       source: r,
     }));
   return [...wchr, ...umnr];
@@ -50,6 +55,8 @@ export default function LiveServiceBoard({
 }) {
   const [filter, setFilter] = useState("ALL");
   const [selected, setSelected] = useState(null);
+  const [clock,setClock]=useState(Date.now());
+  useEffect(()=>{const id=window.setInterval(()=>setClock(Date.now()),1000);return ()=>window.clearInterval(id);},[]);
   const cards = useMemo(() => buildLiveServiceCards(wchrReports, umnrAssignments), [wchrReports, umnrAssignments]);
   const pendingCards = (Array.isArray(pendingWchrReports) ? pendingWchrReports : []).map((r) => ({
     id: `PENDING:${text(r.id)}`, kind: "WCHR", code: `WCHR ${text(r.wheelchair_number) || "—"}`,
@@ -87,7 +94,9 @@ export default function LiveServiceBoard({
             <div style={{ fontWeight: 800, color: "#0f172a", marginTop: 6 }}>{card.code}</div>
             <div style={{ fontWeight: 600, color: "#334155" }}>{card.agent}</div>
             <div style={{ fontSize: 13, color: "#475569" }}>{formatStatus(card.status)} · {card.flight}</div>
-            <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>📍 {card.location}</div>
+            {card.kind==="UMNR" && <div style={{fontSize:12,marginTop:7,color:"#334155"}}><strong>Service Route:</strong> {card.pickupLocation} → {card.destination}</div>}
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>📍 Current location: {card.location}</div>
+            {card.kind==="UMNR" && <div style={{fontSize:13,marginTop:6,fontWeight:700}}>⏱ Service Timer: {elapsed(card.pickedUpAt,card.handoffAt||clock)}</div>}
           </button>
         ))}
       </div>
@@ -112,6 +121,7 @@ export default function LiveServiceBoard({
           <p><strong>Status:</strong> {formatStatus(chosen.status)}</p>
           <p><strong>Flight:</strong> {chosen.flight}</p>
           <p><strong>Last location:</strong> {chosen.location}</p>
+          {chosen.kind==="UMNR"&&<><p><strong>Service Route:</strong> {chosen.pickupLocation} → {chosen.destination}</p><p><strong>Service Timer:</strong> {elapsed(chosen.pickedUpAt,chosen.handoffAt||clock)}</p></>}
           <p style={{ color: "#64748b", fontSize: 12 }}>Full passenger/minor records and timelines should open through the authorized Dispatch details view. Sensitive data is intentionally excluded from this board.</p>
         </div>
       )}
