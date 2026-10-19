@@ -25,6 +25,14 @@ function SignaturePad({onSave,onCancel,busy}) {
 
 export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],employeeId=''}){
   const dispatch=mode==='dispatch';
+  const agentLabel=useCallback((agentId,storedName)=>{
+    const agent=agents.find(a=>String(a.id)===String(agentId));
+    const name=agent?.agent_name||agent?.employee_name||agent?.display_name||agent?.name||agent?.fullName||agent?.employeeName||agent?.displayName||agent?.login_username||agent?.loginUsername;
+    // Prefer a resolved roster name over an opaque stored Firebase identifier.
+    if(name&&String(name).trim()!==String(agentId))return String(name).trim();
+    if(storedName&&String(storedName).trim()!==String(agentId))return String(storedName).trim();
+    return agentId?'Agent name unavailable':'Unassigned';
+  },[agents]);
   const [items,setItems]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
   const [flightId,setFlightId]=useState(''),[direction,setDirection]=useState('IB');
   const [fullName,setFullName]=useState(''),[pnr,setPnr]=useState('');
@@ -52,7 +60,7 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
     if(!w){setError('Allow pop-ups to print the final report.');return;}
     const timeline=(x.timeline||[]).map(t=>`<tr><td>${escapeHtml(t.at)}</td><td>${escapeHtml(t.type)}</td><td>${escapeHtml(t.actor?.employeeId||t.actor?.id)}</td></tr>`).join('');
     const signature=/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(x.receiverSignature||'')?`<img alt="Receiver signature" style="max-width:440px;max-height:150px" src="${x.receiverSignature}"/>`:'Not available';
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>UMNR Service Report</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#172033}h1{border-bottom:2px solid #123b68;padding-bottom:10px}table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #ccd3dd;padding:9px;text-align:left}small{color:#555}@media print{button{display:none}}</style></head><body><h1>UMNR Final Service Report</h1><p><b>Minor:</b> ${escapeHtml(x.fullName)}<br><b>PNR:</b> ${escapeHtml(x.pnr)}<br><b>Flight:</b> ${escapeHtml(x.airline)} ${escapeHtml(x.flightNumber)}<br><b>Direction:</b> ${escapeHtml(x.direction)}<br><b>Assigned agent:</b> ${escapeHtml(x.agentName||x.agentId)}<br><b>Status:</b> ${escapeHtml(x.status)}<br><b>Handoff location:</b> ${escapeHtml(x.handoffLocation)}<br><b>Receiver:</b> ${escapeHtml(x.handoffTo)}<br><b>Handoff time:</b> ${escapeHtml(x.handoffAt)}<br><b>Handoff performed by:</b> ${escapeHtml(x.handoffBy?.employeeId)}</p><h2>Identity and authorization checks</h2><p>${['physicalIdInspected','idNameMatched','idPhotoMatched','authorizedReceiverMatched'].map(k=>`${escapeHtml(k)}: ${x.receiverChecks?.[k]?'Verified':'Not recorded'}`).join('<br>')}</p><h2>Receiver signature</h2>${signature}<h2>Service history</h2><table><thead><tr><th>Time</th><th>Event</th><th>Employee</th></tr></thead><tbody>${timeline}</tbody></table><small>Confidential operational record. No ID images or ID numbers stored.</small><p><button onclick="window.print()">Print</button></p></body></html>`);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>UMNR Service Report</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#172033}h1{border-bottom:2px solid #123b68;padding-bottom:10px}table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #ccd3dd;padding:9px;text-align:left}small{color:#555}@media print{button{display:none}}</style></head><body><h1>UMNR Final Service Report</h1><p><b>Minor:</b> ${escapeHtml(x.fullName)}<br><b>PNR:</b> ${escapeHtml(x.pnr)}<br><b>Flight:</b> ${escapeHtml(x.airline)} ${escapeHtml(x.flightNumber)}<br><b>Direction:</b> ${escapeHtml(x.direction)}<br><b>Assigned agent:</b> ${escapeHtml(agentLabel(x.agentId,x.agentName))}<br><b>Status:</b> ${escapeHtml(x.status)}<br><b>Handoff location:</b> ${escapeHtml(x.handoffLocation)}<br><b>Receiver:</b> ${escapeHtml(x.handoffTo)}<br><b>Handoff time:</b> ${escapeHtml(x.handoffAt)}<br><b>Handoff performed by:</b> ${escapeHtml(x.handoffBy?.employeeId)}</p><h2>Identity and authorization checks</h2><p>${['physicalIdInspected','idNameMatched','idPhotoMatched','authorizedReceiverMatched'].map(k=>`${escapeHtml(k)}: ${x.receiverChecks?.[k]?'Verified':'Not recorded'}`).join('<br>')}</p><h2>Receiver signature</h2>${signature}<h2>Service history</h2><table><thead><tr><th>Time</th><th>Event</th><th>Employee</th></tr></thead><tbody>${timeline}</tbody></table><small>Confidential operational record. No ID images or ID numbers stored.</small><p><button onclick="window.print()">Print</button></p></body></html>`);
     w.document.close();
   };
   return <section style={{border:'1px solid #bfdbfe',borderRadius:16,padding:18,background:'#fff',color:'#0f172a'}}>
@@ -73,10 +81,10 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
       const mayAct=!dispatch;
       const overdue=['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&(!stamp||tick-stamp.getTime()>=30*60000);
       return <article key={x.id} style={{border:'1px solid #e2e8f0',padding:14,borderRadius:12,background:overdue?'#fff7ed':'#f8fafc'}}>
-        <div><b>{x.fullName}</b> · {x.direction} · {x.airline} {x.flightNumber} · PNR {x.pnr}</div><div style={{fontSize:13,marginTop:5}}>Gate: {x.gate||'TBD'} · Assigned to: {x.agentName||agents.find(a=>String(a.id)===String(x.agentId))?.name||'Unassigned'}</div>
-        <small>Status: <b>{x.status}</b> · Agent: {x.agentName||agents.find(a=>String(a.id)===String(x.agentId))?.name||x.agentId||'Unassigned'}{overdue?' · CUSTODY CHECK DUE':''}</small>
+        <div><b>{x.fullName}</b> · {x.direction} · {x.airline} {x.flightNumber} · PNR {x.pnr}</div><div style={{fontSize:13,marginTop:5}}>Gate: {x.gate||'TBD'} · Assigned to: {agentLabel(x.agentId,x.agentName)}</div>
+        <small>Status: <b>{x.status}</b> · Agent: {agentLabel(x.agentId,x.agentName)}{overdue?' · CUSTODY CHECK DUE':''}</small>
         <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:10}}>
-          {dispatch&&['UNASSIGNED','REJECTED'].includes(x.status)&&<select style={{...input,width:200}} disabled={busy} defaultValue="" onChange={e=>{if(e.target.value)run('assign',{id:x.id,agentId:e.target.value})}}><option value="">Assign agent</option>{agents.map(a=><option key={a.id} value={a.id}>{a.name||a.fullName||a.employeeName||a.displayName||a.id}</option>)}</select>}
+          {dispatch&&['UNASSIGNED','REJECTED'].includes(x.status)&&<select style={{...input,width:200}} disabled={busy} defaultValue="" onChange={e=>{if(e.target.value)run('assign',{id:x.id,agentId:e.target.value})}}><option value="">Assign agent</option>{agents.map(a=><option key={a.id} value={a.id}>{agentLabel(a.id,a.name)}</option>)}</select>}
           {mayAct&&x.status==='ASSIGNED'&&<><button disabled={busy} style={button} onClick={()=>next(x,'ACCEPTED')}>Accept</button><button disabled={busy} style={button} onClick={()=>next(x,'REJECTED')}>Reject</button></>}
           {mayAct&&x.status==='ACCEPTED'&&<button disabled={busy} style={button} onClick={()=>next(x,'PICKED_UP')}>Pick Up</button>}
           {mayAct&&x.status==='PICKED_UP'&&<button disabled={busy} style={button} onClick={()=>next(x,'IN_TRANSIT')}>Start Transit</button>}
