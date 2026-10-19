@@ -444,7 +444,7 @@ export default function BSODailyReportPage() {
       const search = historySearch.trim().toLowerCase();
       if (search) {
         const haystack = [
-          row.pnr, row.bagTags, row.flightNumber, row.reportId, row.worldTracerId,
+          row.pnr, row.bagTags, row.passengerName, row.flightNumber, row.reportId, row.worldTracerId,
           row.netTracerFile, row.passengerName, row.employee, row.supervisorName, row.otherCategory, row.otherDescription
         ].map((v) => String(v || "").toLowerCase()).join(" ");
         if (!haystack.includes(search)) return false;
@@ -1233,8 +1233,9 @@ export default function BSODailyReportPage() {
     </>}
 
     {activeTab === "history" && <>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(5,minmax(0,1fr))", gap: 9 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(3,minmax(0,1fr))", gap: 9 }}>
         <Metric label={historyFilter === "TODAY" ? "Events Today" : "BSO Events MTD"} value={historyMetrics.total} />
+        <Metric label="Bag Return Requests" value={historyMetrics.bagReturn} tone="blue" />
         <Metric label="Code 24" value={historyMetrics.code24} tone="amber" />
         <Metric label="Code 39" value={historyMetrics.code39} tone="red" />
         <Metric label="Exception Delivery" value={historyMetrics.exceptions} tone="blue" />
@@ -1243,7 +1244,7 @@ export default function BSODailyReportPage() {
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-          <div><h2 style={{ margin: 0 }}>BSO MTD Reports</h2><div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>All AA BSO supervisors can review office submissions for the current month. Supervisors may edit individual events, add notes, and request removal. All changes are logged.</div></div>
+          <div><div style={{fontSize:10,fontWeight:900,color:"#1769aa",letterSpacing:".08em"}}>AA BSO · SHARED REPORTS DASHBOARD</div><h2 style={{ margin: "5px 0 0" }}>BSO MTD Reports</h2><div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>Shared Management Dashboard: Supervisors, Duty Managers and Station Manager see the same reports, metrics, filters and case details. All may edit cases, add notes and request removal; only the Station Manager may delete. Changes are logged.</div></div>
           <Button variant="secondary" onClick={loadMtdReports} disabled={loadingMtd}>{loadingMtd ? "Refreshing..." : "Refresh"}</Button>
         </div>
 
