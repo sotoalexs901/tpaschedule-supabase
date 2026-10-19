@@ -1,3 +1,14 @@
+
+Loading older messages…
+
+
+
+
+
+
+
+
+
 // src/pages/WchrDispatchPage.jsx
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -6248,17 +6259,8 @@ export default function WchrDispatchPage() {
           "Poppins, Inter, system-ui, sans-serif",
       }}
     >
-      {ENABLE_LIVE_BOARD_STAGING && <DispatchLiveBoardStaging />}
-      <section aria-label="UMNR operations" style={{ margin: "16px 0", border: "1px solid #bfdbfe", borderRadius: 14, padding: 16, background: "#f8fbff", color: "#0f172a" }}>
-        {import.meta.env.VITE_UMNR_ENABLED === "true" ? (
-          <UmnrOperationsPanel mode="dispatch" flights={dailyFlights} agents={agents.map(agent => ({ ...agent, name: getAgentName(agent) }))} />
-        ) : (
-          <div>
-            <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>UMNR · Dispatch</h2>
-            <p style={{ margin: 0, color: "#475569" }}>Module in preparation. UMNR service creation, assignments and custody actions are disabled until authorization, capacity controls and Firebase security are completed.</p>
-          </div>
-        )}
-      </section>
+
+
 
       {/* ====================================================== */}
       {/* HERO */}
@@ -8640,6 +8642,19 @@ export default function WchrDispatchPage() {
             </div>
           </PageCard>
         )}
+
+      {/* UMNR operational tools are below the main WCHR workflow. */}
+      {ENABLE_LIVE_BOARD_STAGING && <DispatchLiveBoardStaging />}
+      <section aria-label="UMNR operations" style={{ margin: "16px 0", border: "1px solid #bfdbfe", borderRadius: 14, padding: 16, background: "#f8fbff", color: "#0f172a" }}>
+        {import.meta.env.VITE_UMNR_ENABLED === "true" ? (
+          <UmnrOperationsPanel mode="dispatch" flights={dailyFlights} agents={agents.map(agent => ({ ...agent, name: getAgentName(agent) }))} />
+        ) : (
+          <div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>UMNR · Dispatch</h2>
+            <p style={{ margin: 0, color: "#475569" }}>Module in preparation. UMNR service creation, assignments and custody actions are disabled until authorization, capacity controls and Firebase security are completed.</p>
+          </div>
+        )}
+      </section>
 
       {/* ====================================================== */}
       {/* FOOTER */}
