@@ -66,8 +66,34 @@ exports.handler = async (event) => {
     const eventItem = (type, details={}) => ({ type, at: new Date().toISOString(), actor, ...details });
     if (action === 'list') {
       const snapshot = await services.orderBy('createdAt','desc').limit(150).get();
-      const items = snapshot.docs.map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,pickedUpAt:data.pickedUpAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
+      const items = snapshot.docs.filter(d=>!d.data().archived).map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,pickedUpAt:data.pickedUpAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
       return json(200,{items:manager ? items : items.filter(isMyService)});
+    }
+    if (action === 'archive') {
+      if (role !== 'station_manager') return json(403,{error:'Only Station Manager may archive UMNR services'});
+      const id=text(body.id,150), reason=text(body.reason,250);
+      if (!id || reason.length < 8) return json(400,{error:'Service and archive reason (8+ characters) required'});
+      const ref=services.doc(id);
+      await db.runTransaction(async tx=>{
+        const snap=await tx.get(ref);
+        if (!snap.exists) throw Error('Service not found');
+        const item=snap.data();
+        if (item.archived) throw Error('Service already archived');
+        if (!releaseStates.has(item.status)) throw Error('Only completed, cancelled or rejected services can be archived');
+        tx.update(ref,{archived:true,archivedAt:now,archivedBy:actor,archiveReason:reason,updatedAt:now,
+          timeline:admin.firestore.FieldValue.arrayUnion(eventItem('ARCHIVED',{reason}))});
+      });
+      return json(200,{ok:true});
+    }
+    if (action === 'billingList') {
+      if (!manager) return json(403,{error:'Management access required'});
+      const snapshot=await services.orderBy('createdAt','desc').limit(500).get();
+      const items=snapshot.docs.map(d=>{const v=d.data();return {id:d.id,...v,
+        createdAt:v.createdAt?.toDate?.()?.toISOString()||null,
+        pickedUpAt:v.pickedUpAt?.toDate?.()?.toISOString()||null,
+        handoffAt:v.handoffAt?.toDate?.()?.toISOString()||null,
+        archivedAt:v.archivedAt?.toDate?.()?.toISOString()||null};});
+      return json(200,{items});
     }
     if (action === 'create') {
       if (!manager) return json(403,{error:'Dispatch role required'});
