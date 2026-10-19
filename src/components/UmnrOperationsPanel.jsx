@@ -1,14 +1,3 @@
-
-Loading older messages…
-
-
-
-
-
-
-
-
-
 // src/components/UmnrOperationsPanel.jsx
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import { umnrRequest } from '../utils/umnrClient.js';
