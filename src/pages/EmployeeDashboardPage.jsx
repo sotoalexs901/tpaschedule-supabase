@@ -3836,149 +3836,57 @@ export default function EmployeeDashboardPage() {
             )}
           </GlassCard>
 
-          {!loading &&
-            featuredAnnouncement && (
-              <GlassCard
-                title={
-                  t.latestAnnouncement
-                }
-                subtitle={
-                  t.latestAnnouncementSubtitle
-                }
-                icon={"\u{1F4E2}"}
-                accent="#1f7cc1"
-                isMobile={
-                  isMobile
-                }
+          {!loading && featuredAnnouncement && (
+            <GlassCard
+              title={t.latestAnnouncement}
+              subtitle={t.latestAnnouncementSubtitle}
+              icon={"\u{1F4E2}"}
+              accent="#1f7cc1"
+              isMobile={isMobile}
+            >
+              <div
+                style={{
+                  borderRadius: 14,
+                  padding: isMobile ? 12 : 15,
+                  background: "linear-gradient(135deg, #edf7ff 0%, #ffffff 100%)",
+                  border: "1px solid #d6ebff",
+                }}
               >
-                <div
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 850, color: "#0f172a" }}>
+                  {featuredAnnouncement.title || "Announcement"}
+                </h3>
+                {featuredAnnouncement.subtitle && (
+                  <p style={{ margin: "5px 0 0", fontSize: 12, color: "#1769aa", fontWeight: 700 }}>
+                    {featuredAnnouncement.subtitle}
+                  </p>
+                )}
+                {featuredAnnouncement.body && (
+                  <p style={{
+                    margin: "8px 0 12px", fontSize: 12.5, color: "#475569",
+                    lineHeight: 1.5, overflow: "hidden", display: "-webkit-box",
+                    WebkitBoxOrient: "vertical", WebkitLineClamp: 2,
+                    overflowWrap: "anywhere", whiteSpace: "pre-line",
+                  }}>
+                    {featuredAnnouncement.body}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => document.getElementById("crew-announcements-section")?.scrollIntoView({ behavior: "smooth", block: "start" })}
                   style={{
-                    borderRadius:
-                      16,
-                    overflow:
-                      "hidden",
-                    background:
-                      "linear-gradient(135deg, #edf7ff 0%, #ffffff 100%)",
-                    border:
-                      "1px solid #d6ebff",
+                    border: "1px solid #bfdbfe", borderRadius: 10,
+                    background: "#ffffff", color: "#1d4ed8", fontWeight: 800,
+                    padding: "9px 13px", cursor: "pointer", fontSize: 12,
+                    marginTop: featuredAnnouncement.body ? 0 : 12,
                   }}
                 >
-                  <div
-                    style={{
-                      padding:
-                        isMobile
-                          ? 13
-                          : 15,
-                    }}
-                  >
-                    <h3
-                      style={{
-                        margin:
-                          0,
-                        fontSize:
-                          isMobile
-                            ? 16
-                            : 18,
-                        fontWeight:
-                          900,
-                        color:
-                          "#0f172a",
-                      }}
-                    >
-                      {featuredAnnouncement.title ||
-                        "Announcement"}
-                    </h3>
+                  {language === "es" ? "Ver anuncio completo" : "View Full Announcement"}
+                </button>
+              </div>
+            </GlassCard>
+          )}
 
-                    {featuredAnnouncement.subtitle && (
-                      <p
-                        style={{
-                          margin:
-                            "6px 0 0",
-                          fontSize:
-                            12,
-                          fontWeight:
-                            750,
-                          color:
-                            "#1769aa",
-                        }}
-                      >
-                        {
-                          featuredAnnouncement.subtitle
-                        }
-                      </p>
-                    )}
-
-                    {featuredAnnouncement.body && (
-                      <p
-                        style={{
-                          margin:
-                            "9px 0 0",
-                          fontSize:
-                            13,
-                          color:
-                            "#334155",
-                          lineHeight:
-                            1.65,
-                          whiteSpace:
-                            "pre-line",
-                        }}
-                      >
-                        {
-                          featuredAnnouncement.body
-                        }
-                      </p>
-                    )}
-
-                    <div
-                      style={{
-                        marginTop:
-                          9,
-                        fontSize:
-                          10.5,
-                        color:
-                          "#64748b",
-                        fontWeight:
-                          750,
-                      }}
-                    >
-                      By {APP_NAME}
-                    </div>
-                  </div>
-
-                  {featuredAnnouncement.imageUrl && (
-                    <div
-                      style={{
-                        borderTop:
-                          "1px solid #dbeafe",
-                        background:
-                          "#fff",
-                      }}
-                    >
-                      <img
-                        src={
-                          featuredAnnouncement.imageUrl
-                        }
-                        alt={
-                          featuredAnnouncement.title ||
-                          "Announcement"
-                        }
-                        style={{
-                          width:
-                            "100%",
-                          maxHeight:
-                            320,
-                          objectFit:
-                            "cover",
-                          display:
-                            "block",
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </GlassCard>
-            )}
-
+          <div id="crew-announcements-section" style={{ scrollMarginTop: 90 }}>
           <GlassCard
             title={
               t.announcementsTitle
@@ -4160,6 +4068,7 @@ export default function EmployeeDashboardPage() {
               </div>
             )}
           </GlassCard>
+          </div>
         </div>
 
         <div
