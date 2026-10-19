@@ -1,14 +1,3 @@
-
-Loading older messages…
-
-
-
-
-
-
-
-
-
 // src/pages/WchrDispatchPage.jsx
 
 import React, { useEffect, useMemo, useState } from "react";
