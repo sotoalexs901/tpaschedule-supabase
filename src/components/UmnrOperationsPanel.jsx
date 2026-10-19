@@ -4,6 +4,9 @@ import { umnrRequest } from '../utils/umnrClient.js';
 const button={padding:'9px 13px',border:'1px solid #bfdbfe',borderRadius:9,cursor:'pointer',background:'#eff6ff',fontWeight:700};
 const input={padding:10,border:'1px solid #cbd5e1',borderRadius:8,width:'100%',boxSizing:'border-box'};
 const finished=new Set(['DELIVERED','CANCELLED','REJECTED']);
+const localTime=v=>{if(!v)return 'Not recorded';const d=new Date(v);return Number.isNaN(d.getTime())?'Not recorded':d.toLocaleString();};
+const duration=(start,end)=>{if(!start)return 'Not started';const a=new Date(start).getTime(),b=new Date(end).getTime();if(!Number.isFinite(a)||!Number.isFinite(b))return 'Not available';const s=Math.max(0,Math.floor((b-a)/1000));return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s/60)%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
+
 
 function SignaturePad({onSave,onCancel,busy}) {
   const canvasRef=useRef(null),drawing=useRef(false),signed=useRef(false);
@@ -43,24 +46,38 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
   const [handoffLocation,setHandoffLocation]=useState('');
   const refresh=useCallback(async()=>{try{const r=await umnrRequest('list');setItems(r.items||[]);setError('');}catch(e){setError(e.message)}},[]);
   useEffect(()=>{refresh();const interval=setInterval(refresh,15000);return()=>clearInterval(interval)},[refresh]);
-  useEffect(()=>{const interval=setInterval(()=>setTick(Date.now()),30000);return()=>clearInterval(interval)},[]);
+  useEffect(()=>{const interval=setInterval(()=>setTick(Date.now()),1000);return()=>clearInterval(interval)},[]);
   const active=useMemo(()=>items.filter(x=>!finished.has(x.status)),[items]);
   const run=async(action,fields)=>{setBusy(true);setError('');setMessage('');try{await umnrRequest(action,fields);setMessage('UMNR updated.');await refresh();return true;}catch(e){setError(e.message);return false;}finally{setBusy(false)}};
   const create=async(e)=>{e.preventDefault();const ok=await run('create',{flightId,direction,fullName,pnr});if(ok){setFullName('');setPnr('');}};
   const next=(x,status)=>{
     let fields={id:x.id,status};
+    if(['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(status)){
+      const location=window.prompt('Enter the actual current location (do not enter an assumed location):',x.currentLocation||'');
+      if(location===null)return;
+      if(location.trim().length<3){setError('Actual current location is required.');return;}
+      fields.currentLocation=location.trim();
+    }
     if(status==='REJECTED'){const reason=window.prompt('Reason for rejecting this UMNR assignment:');if(!reason)return;fields.reason=reason}
     if(status==='DELIVERED'){setHandoff(x.id);setReceiverName('');setReceiverChecks({physicalIdInspected:false,idNameMatched:false,idPhotoMatched:false,authorizedReceiverMatched:false});setHandoffLocation(x.direction==='IB'?'Customs exit / authorized pickup point':'Gate / authorized crew handoff point');return;}
     if(status==='CANCELLED'&&!window.confirm('Cancel this UMNR service?'))return;
     run('advance',fields);
   };
+  const actorLabel=(t,x)=>{
+    const id=String(t?.actor?.employeeId||t?.actor?.id||'');
+    if(t?.actor?.name)return t.actor.name;
+    if(t?.agentName && t.type!=='ASSIGNED')return t.agentName;
+    if(t?.type==='ASSIGNED')return 'Dispatch (name not recorded)';
+    if(id && id===String(x.agentId))return agentLabel(x.agentId,x.agentName);
+    return 'Name not recorded';
+  };
   const printReport=(x)=>{
     const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const w=window.open('','_blank','width=850,height=900');
     if(!w){setError('Allow pop-ups to print the final report.');return;}
-    const timeline=(x.timeline||[]).map(t=>`<tr><td>${escapeHtml(t.at)}</td><td>${escapeHtml(t.type)}</td><td>${escapeHtml(t.actor?.employeeId||t.actor?.id)}</td></tr>`).join('');
+    const timeline=(x.timeline||[]).map(t=>`<tr><td>${escapeHtml(localTime(t.at))}</td><td>${escapeHtml(t.type)}</td><td>${escapeHtml(actorLabel(t,x))}</td></tr>`).join('');
     const signature=/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(x.receiverSignature||'')?`<img alt="Receiver signature" style="max-width:440px;max-height:150px" src="${x.receiverSignature}"/>`:'Not available';
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>UMNR Service Report</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#172033}h1{border-bottom:2px solid #123b68;padding-bottom:10px}table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #ccd3dd;padding:9px;text-align:left}small{color:#555}@media print{button{display:none}}</style></head><body><h1>UMNR Final Service Report</h1><p><b>Minor:</b> ${escapeHtml(x.fullName)}<br><b>PNR:</b> ${escapeHtml(x.pnr)}<br><b>Flight:</b> ${escapeHtml(x.airline)} ${escapeHtml(x.flightNumber)}<br><b>Direction:</b> ${escapeHtml(x.direction)}<br><b>Assigned agent:</b> ${escapeHtml(agentLabel(x.agentId,x.agentName))}<br><b>Status:</b> ${escapeHtml(x.status)}<br><b>Handoff location:</b> ${escapeHtml(x.handoffLocation)}<br><b>Receiver:</b> ${escapeHtml(x.handoffTo)}<br><b>Handoff time:</b> ${escapeHtml(x.handoffAt)}<br><b>Handoff performed by:</b> ${escapeHtml(x.handoffBy?.employeeId)}</p><h2>Identity and authorization checks</h2><p>${['physicalIdInspected','idNameMatched','idPhotoMatched','authorizedReceiverMatched'].map(k=>`${escapeHtml(k)}: ${x.receiverChecks?.[k]?'Verified':'Not recorded'}`).join('<br>')}</p><h2>Receiver signature</h2>${signature}<h2>Service history</h2><table><thead><tr><th>Time</th><th>Event</th><th>Employee</th></tr></thead><tbody>${timeline}</tbody></table><small>Confidential operational record. No ID images or ID numbers stored.</small><p><button onclick="window.print()">Print</button></p></body></html>`);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>UMNR Service Report</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#172033}h1{border-bottom:2px solid #123b68;padding-bottom:10px}table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #ccd3dd;padding:9px;text-align:left}small{color:#555}@media print{button{display:none}}</style></head><body><h1>UMNR Final Service Report</h1><p><b>Minor:</b> ${escapeHtml(x.fullName)}<br><b>PNR:</b> ${escapeHtml(x.pnr)}<br><b>Flight:</b> ${escapeHtml(x.airline)} ${escapeHtml(x.flightNumber)}<br><b>Direction:</b> ${escapeHtml(x.direction)}<br><b>Assigned agent:</b> ${escapeHtml(agentLabel(x.agentId,x.agentName))}<br><b>Status:</b> ${escapeHtml(x.status)}<br><b>Handoff location:</b> ${escapeHtml(x.handoffLocation)}<br><b>Receiver:</b> ${escapeHtml(x.handoffTo)}<br><b>Handoff time:</b> ${escapeHtml(localTime(x.handoffAt))}<br><b>Handoff performed by:</b> ${escapeHtml(x.handoffBy?.name||agentLabel(x.agentId,x.agentName))}</p><p><b>Pickup location:</b> ${escapeHtml(x.pickupLocation||'Not recorded')}<br><b>Final location:</b> ${escapeHtml(x.currentLocation||x.handoffLocation||'Not recorded')}<br><b>Picked up:</b> ${escapeHtml(localTime(x.pickedUpAt))}<br><b>Total service time:</b> ${escapeHtml(duration(x.pickedUpAt,x.handoffAt))}</p><h2>Identity and authorization checks</h2><p>${['physicalIdInspected','idNameMatched','idPhotoMatched','authorizedReceiverMatched'].map(k=>`${escapeHtml(k)}: ${x.receiverChecks?.[k]?'Verified':'Not recorded'}`).join('<br>')}</p><h2>Receiver signature</h2>${signature}<h2>Service history</h2><table><thead><tr><th>Time</th><th>Event</th><th>Employee</th></tr></thead><tbody>${timeline}</tbody></table><small>Confidential operational record. No ID images or ID numbers stored.</small><p><button onclick="window.print()">Print</button></p></body></html>`);
     w.document.close();
   };
   return <section style={{border:'1px solid #bfdbfe',borderRadius:16,padding:18,background:'#fff',color:'#0f172a'}}>
@@ -83,6 +100,11 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
       return <article key={x.id} style={{border:'1px solid #e2e8f0',padding:14,borderRadius:12,background:overdue?'#fff7ed':'#f8fafc'}}>
         <div><b>{x.fullName}</b> · {x.direction} · {x.airline} {x.flightNumber} · PNR {x.pnr}</div><div style={{fontSize:13,marginTop:5}}>Gate: {x.gate||'TBD'} · Assigned to: {agentLabel(x.agentId,x.agentName)}</div>
         <small>Status: <b>{x.status}</b> · Agent: {agentLabel(x.agentId,x.agentName)}{overdue?' · CUSTODY CHECK DUE':''}</small>
+        <div style={{fontSize:13,marginTop:8,padding:9,background:'#eef6ff',borderRadius:8}}>
+          <strong>Service Route:</strong> {x.pickupLocation||'Pickup not recorded'} → {x.direction==='OB'?(x.gate?`Gate ${x.gate}`:'Gate not recorded'):(x.handoffLocation||'Authorized pickup point not recorded')}
+          <div>Current location: {x.currentLocation||'Not recorded'}</div>
+          <div><strong>Service Timer:</strong> {duration(x.pickedUpAt,x.handoffAt||tick)} {x.status==='DELIVERED'?'(completed)':x.pickedUpAt?'(running)':''}</div>
+        </div>
         <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:10}}>
           {dispatch&&['UNASSIGNED','REJECTED'].includes(x.status)&&<select style={{...input,width:200}} disabled={busy} defaultValue="" onChange={e=>{if(e.target.value)run('assign',{id:x.id,agentId:e.target.value})}}><option value="">Assign agent</option>{agents.map(a=><option key={a.id} value={a.id}>{agentLabel(a.id,a.name)}</option>)}</select>}
           {mayAct&&x.status==='ASSIGNED'&&<><button disabled={busy} style={button} onClick={()=>next(x,'ACCEPTED')}>Accept</button><button disabled={busy} style={button} onClick={()=>next(x,'REJECTED')}>Reject</button></>}
@@ -108,7 +130,7 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
             if(ok)setHandoff(null);
           }}/>
         </div>}
-        <details style={{marginTop:9}}><summary>Audit history ({x.timeline?.length||0})</summary><div style={{fontSize:12}}>{(x.timeline||[]).map((t,i)=><p key={i}>{t.at} · {t.type} · {t.actor?.employeeId||t.actor?.id}</p>)}</div></details>
+        <details style={{marginTop:9}}><summary>Audit history ({x.timeline?.length||0})</summary><div style={{fontSize:12}}>{(x.timeline||[]).map((t,i)=><p key={i}>{localTime(t.at)} · {t.type} · {actorLabel(t,x)}{t.location?` · ${t.location}`:''}</p>)}</div></details>
       </article>
     })}</div>
   </section>;
