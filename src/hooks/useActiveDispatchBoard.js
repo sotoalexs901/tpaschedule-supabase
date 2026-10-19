@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
+import { umnrRequest } from "../utils/umnrClient.js";
 
 const clean = (value) => String(value ?? "").trim();
 const upper = (value) => clean(value).toUpperCase();
@@ -52,6 +53,8 @@ export default function useActiveDispatchBoard() {
   const [shifts, setShifts] = useState([]);
   const [ready, setReady] = useState({ reports: false, shifts: false });
   const [error, setError] = useState("");
+  const [umnrAssignments, setUmnrAssignments] = useState([]);
+  const [umnrError, setUmnrError] = useState("");
 
   useEffect(() => {
     const unsubReports = onSnapshot(collection(db, "wch_reports"), (snapshot) => {
@@ -65,7 +68,36 @@ export default function useActiveDispatchBoard() {
     return () => { unsubReports(); unsubShifts(); };
   }, []);
 
+  // UMNR is server-authorized; never subscribe to protected Firestore records directly.
+  // Failure of UMNR authorization must not interrupt the existing WCHR board.
+  useEffect(() => {
+    if (import.meta.env.VITE_UMNR_ENABLED !== "true") return;
+    let mounted = true;
+    let inFlight = false;
+    const loadUmnr = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const result = await umnrRequest("list");
+        if (mounted) {
+          setUmnrAssignments(Array.isArray(result.items) ? result.items : []);
+          setUmnrError("");
+        }
+      } catch (err) {
+        if (mounted) {
+          setUmnrAssignments([]); // Never display stale assignment data.
+          setUmnrError("UMNR Live Board unavailable. Review UMNR Dispatch for current status.");
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+    loadUmnr();
+    const interval = window.setInterval(loadUmnr, 15000);
+    return () => { mounted = false; window.clearInterval(interval); };
+  }, []);
+
   const wchrReports = useMemo(() => selectActiveWchrBoardReports(reports, shifts), [reports, shifts]);
   const pendingWchrReports = useMemo(() => selectPendingWchrBoardReports(reports, shifts), [reports, shifts]);
-  return { wchrReports, pendingWchrReports, umnrAssignments: [], loading: !ready.reports || !ready.shifts, error };
+  return { wchrReports, pendingWchrReports, umnrAssignments, loading: !ready.reports || !ready.shifts, error, umnrError };
 }
