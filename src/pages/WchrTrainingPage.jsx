@@ -626,6 +626,30 @@ const IB_STEPS = [
   },
 ];
 
+
+// UMNR training is a self-contained simulation; it never writes to live UMNR services.
+const UMNR_TOPICS = [
+  { key: "dispatch", emoji: "📋", status: "UNASSIGNED → ASSIGNED", en: ["WCHR Supervisor Dispatch", "The WCHR supervisor reviews the minor's service details, flight, route, pickup point and available agents before assigning the service.", "What must the supervisor confirm before assignment?", "Service details and an eligible available agent", "Assign without checking capacity", "Send an agent without recording the assignment"], es: ["Asignación del supervisor WCHR", "El supervisor WCHR revisa los datos del menor, vuelo, ruta, punto de recogida y agentes disponibles antes de asignar el servicio.", "¿Qué debe confirmar el supervisor antes de asignar?", "Datos del servicio y agente elegible disponible", "Asignar sin revisar capacidad", "Enviar un agente sin registrar la asignación"] },
+  { key: "capacity", emoji: "👥", status: "CAPACITY CHECK", en: ["UMNR / WCHR Capacity", "An agent may handle up to 10 UMNR services or one WCHR service, never both types at the same time. Follow supervisor capacity controls.", "Which assignment follows the capacity rule?", "An agent with UMNR services only, within the 10-minor limit", "Add a WCHR while the agent has an active UMNR", "Assign 11 UMNR services to one agent"], es: ["Capacidad UMNR / WCHR", "Un agente puede atender hasta 10 servicios UMNR o un servicio WCHR; nunca ambos tipos al mismo tiempo. Se debe respetar el control de capacidad.", "¿Cuál asignación respeta la regla?", "Agente con solo servicios UMNR, dentro del límite de 10 menores", "Agregar una WCHR mientras tiene UMNR activos", "Asignar 11 UMNR al mismo agente"] },
+  { key: "accept", emoji: "📱", status: "ASSIGNED → ACCEPTED", en: ["Accept Assigned UMNR", "The assigned agent checks the minor's name, flight number, route, pickup and destination before selecting Accept.", "What should the agent do first?", "Review the assignment and accept it", "Mark the minor as picked up before meeting them", "Mark the service delivered"], es: ["Aceptar el UMNR asignado", "El agente asignado revisa nombre del menor, número de vuelo, ruta, recogida y destino antes de seleccionar Accept.", "¿Qué debe hacer primero el agente?", "Revisar la asignación y aceptarla", "Marcar recogida antes de recibir al menor", "Marcar el servicio como entregado"] },
+  { key: "pickup", emoji: "🤝", status: "ACCEPTED → PICKED_UP", en: ["Physical Pickup and Custody", "Confirm the minor is physically received at the authorized pickup point. The system milestone must reflect the real handover of custody.", "When can PICKED_UP be recorded?", "After physically receiving the minor", "When the agent starts walking to pickup", "When the supervisor creates the assignment"], es: ["Recogida física y custodia", "Confirma que el menor fue recibido físicamente en el punto de recogida autorizado. El registro debe coincidir con el traspaso real de custodia.", "¿Cuándo se puede registrar PICKED_UP?", "Después de recibir físicamente al menor", "Cuando el agente camina hacia la recogida", "Cuando el supervisor crea la asignación"] },
+  { key: "transit", emoji: "🧭", status: "PICKED_UP → IN_TRANSIT", en: ["Transit and Route Updates", "Keep the minor under continuous supervision, follow the assigned route, and update the actual location and status as the journey progresses.", "What should you do during transit?", "Keep custody and update the actual journey", "Leave the minor alone while checking another service", "Record AT_GATE before arriving"], es: ["Traslado y actualización de ruta", "Mantén al menor bajo supervisión continua, sigue la ruta asignada y actualiza la ubicación y estado reales durante el traslado.", "¿Qué corresponde durante el traslado?", "Mantener custodia y actualizar el trayecto real", "Dejar al menor solo para atender otro servicio", "Registrar AT_GATE antes de llegar"] },
+  { key: "custody", emoji: "⏱️", status: "30-MIN CUSTODY CHECK", en: ["Custody Check Every 30 Minutes", "During an ongoing UMNR service, complete the required custody verification at least every 30 minutes. Do not treat a digital update as a substitute for physically checking the minor.", "What is required at the custody checkpoint?", "Physically verify the minor and record the custody check", "Automatically mark the service delivered", "Skip the check when the route is delayed"], es: ["Verificación de custodia cada 30 minutos", "Durante un servicio UMNR activo, completa la verificación de custodia requerida cada 30 minutos. La actualización digital no sustituye la comprobación física del menor.", "¿Qué se requiere en el control de custodia?", "Verificar físicamente al menor y registrar el control", "Marcar automáticamente el servicio como entregado", "Omitir el control si el trayecto se retrasa"] },
+  { key: "gate", emoji: "✈️", status: "IN_TRANSIT → AT_GATE", en: ["Arrival at the Gate", "Record AT_GATE only once the minor is physically at the correct gate. Arrival is not the same as an authorized custody handoff.", "What does AT_GATE confirm?", "The minor physically arrived at the assigned gate", "The minor was automatically delivered to an authorized person", "The agent can leave the minor unattended"], es: ["Llegada al gate", "Registra AT_GATE solo cuando el menor se encuentre físicamente en el gate correcto. Llegar no equivale a realizar una entrega autorizada.", "¿Qué confirma AT_GATE?", "El menor llegó físicamente al gate asignado", "El menor fue entregado automáticamente a una persona autorizada", "El agente puede dejar al menor sin supervisión"] },
+  { key: "receiver", emoji: "🪪", status: "AUTHORIZED HANDOFF", en: ["Verify Authorized Receiver", "Before releasing custody, check the receiver's physical ID, ID/name match, photo/person match and match to the authorized receiver. Record receiver name and handoff location.", "What if the receiver's ID does not match?", "Keep custody and immediately contact the WCHR supervisor", "Release the minor if the person knows the flight number", "Ask for a verbal promise and close the service"], es: ["Verificar persona autorizada", "Antes de entregar la custodia, revisa identificación física, coincidencia del nombre y documento, foto y persona, y autorización del receptor. Registra nombre y lugar de entrega.", "¿Qué hacer si la identificación no coincide?", "Mantener la custodia y contactar inmediatamente al supervisor WCHR", "Entregar al menor si la persona conoce el vuelo", "Aceptar una promesa verbal y cerrar el servicio"] },
+  { key: "signature", emoji: "✍️", status: "HANDOFF CONFIRMATION", en: ["Digital Signature and Custody Handoff", "Complete the authorized handoff record, including receiver verification and digital signature. Never record a handoff that has not physically occurred.", "When is the digital signature appropriate?", "At the actual authorized custody handoff", "Before the authorized receiver arrives", "After leaving the minor with an unverified person"], es: ["Firma digital y traspaso de custodia", "Completa el registro de entrega autorizada, incluyendo verificación del receptor y firma digital. Nunca registres una entrega que no haya ocurrido físicamente.", "¿Cuándo corresponde la firma digital?", "En el traspaso real de custodia autorizado", "Antes de que llegue la persona autorizada", "Después de dejar al menor con alguien sin verificar"] },
+  { key: "delivery", emoji: "✅", status: "AT_GATE → DELIVERED", en: ["Close Service and Review Report", "Only after the authorized handoff is completed should the service be marked DELIVERED. Review the custody timeline, location, recipient and signature in the final report.", "When may the service be closed as DELIVERED?", "After completing and documenting the authorized handoff", "Immediately after AT_GATE", "Whenever the shift ends, even without handoff"], es: ["Cerrar servicio y revisar reporte", "Solo después de completar la entrega autorizada se debe marcar DELIVERED. Revisa la cronología de custodia, ubicación, receptor y firma en el reporte final.", "¿Cuándo puede cerrarse como DELIVERED?", "Después de completar y documentar la entrega autorizada", "Inmediatamente después de AT_GATE", "Cuando termina el turno, aunque no haya entrega"] },
+];
+const UMNR_STEPS = UMNR_TOPICS.map((topic) => {
+  const make = (v) => ({title:v[0], description:v[1], instruction:v[1], prompt:v[2], options:[{label:v[3],correct:true},{label:v[4],correct:false},{label:v[5],correct:false}],success:v===topic.es?"Correcto. La seguridad del menor y los registros reales son prioritarios.":"Correct. The minor's safety and accurate records come first.",error:v===topic.es?"Esa acción no es segura. Revisa el procedimiento y vuelve a intentarlo.":"That action is not safe. Review the procedure and try again."});
+  return {key:topic.key,emoji:topic.emoji,status:topic.status,en:make(topic.en),es:make(topic.es)};
+});
+const UMNR_CHALLENGES = [
+  { id:"wrong_receiver", title:{en:"Unauthorized Person at Pickup",es:"Persona no autorizada en la entrega"},alert:{en:"Someone asks to take the minor but their ID does not match the authorized receiver.",es:"Una persona solicita recibir al menor, pero su identificación no coincide con el receptor autorizado."},question:{en:"What is the safest action?",es:"¿Cuál es la acción correcta?"},choices:[{label:{en:"Keep custody and escalate to the WCHR supervisor",es:"Mantener la custodia y avisar al supervisor WCHR"},correct:true},{label:{en:"Release the minor to avoid delay",es:"Entregar al menor para evitar demoras"},correct:false}],success:{en:"Correct. Never transfer custody without verified authorization.",es:"Correcto. Nunca transfieras la custodia sin autorización verificada."}},
+  { id:"delay", title:{en:"Delayed Transit and Custody Check",es:"Demora y control de custodia"},alert:{en:"The transfer is delayed and 30 minutes have passed since the last custody check.",es:"El traslado está demorado y han pasado 30 minutos desde el último control de custodia."},question:{en:"What should you do?",es:"¿Qué debes hacer?"},choices:[{label:{en:"Verify the minor, record the check and update the supervisor as needed",es:"Verificar al menor, registrar el control e informar al supervisor cuando corresponda"},correct:true},{label:{en:"Skip the check and close the service",es:"Omitir el control y cerrar el servicio"},correct:false}],success:{en:"Correct. Custody must remain continuous and traceable.",es:"Correcto. La custodia debe mantenerse continua y documentada."}},
+  { id:"mixed", title:{en:"Mixed Service Assignment",es:"Asignación de servicios mezclados"},alert:{en:"An agent already responsible for UMNR is offered a WCHR assignment.",es:"A un agente que ya tiene UMNR bajo su responsabilidad se le ofrece un servicio WCHR."},question:{en:"How should dispatch respond?",es:"¿Cómo debe responder Dispatch?"},choices:[{label:{en:"Do not mix UMNR and WCHR; choose an eligible agent",es:"No mezclar UMNR y WCHR; seleccionar un agente elegible"},correct:true},{label:{en:"Assign both if the agent agrees",es:"Asignar ambos si el agente está de acuerdo"},correct:false}],success:{en:"Correct. Follow the no-mixing capacity rule.",es:"Correcto. Respeta la regla de no mezclar servicios."}},
+];
+
 function PageCard({ children, style = {} }) {
   return (
     <div
@@ -819,6 +843,13 @@ function TrainingVisual({ scenario, stepKey, language }) {
     textAlign: "center",
   };
 
+  if (scenario === "UMNR") {
+    const stages = ["Dispatch", "Accept", "Pickup", "Custody", "Gate", "ID Check", "Handoff"];
+    return <div style={{...shell,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center",justifyContent:"center",minHeight:130}}>
+      <div style={{fontSize:34}}>🧒 🛡️</div>
+      {stages.map((stage,i)=><div key={stage} style={{padding:"10px 12px",borderRadius:13,background:i===0?"#dbeafe":"#fff",border:"1px solid #bfdbfe",fontWeight:800,fontSize:12,color:"#0f4c81"}}>{stage}</div>)}
+    </div>;
+  }
   if (scenario === "OB" && stepKey === "supervisor_assigns") {
     return (
       <div style={shell}>
@@ -1485,6 +1516,7 @@ function ActionSimulator({
     delivered: es ? "Entrega de pasajero" : "Passenger delivery",
     storage: es ? "Storage pendiente" : "Storage pending",
     available: es ? "Servicio completado" : "Service completed",
+    ...Object.fromEntries(UMNR_TOPICS.map((topic) => [topic.key, es ? topic.es[0] : topic.en[0]])),
   };
 
   const showTimer = [
@@ -1494,6 +1526,7 @@ function ActionSimulator({
     "ib_start_transit",
     "ib_journey",
     "delivered",
+    "transit", "custody", "gate",
   ].includes(stepKey);
 
   return (
@@ -1686,6 +1719,7 @@ const REAL_WORLD_CHALLENGES = {
       },
     },
   ],
+  UMNR: UMNR_CHALLENGES,
   IB: [
     {
       id: "wrong_wchr",
@@ -1891,6 +1925,7 @@ export default function WchrTrainingPage() {
   const [completedScenarios, setCompletedScenarios] = useState({
     OB: false,
     IB: false,
+    UMNR: false,
   });
   const [challengeMode, setChallengeMode] = useState(false);
   const [savingCompletion, setSavingCompletion] = useState(false);
@@ -1898,11 +1933,13 @@ export default function WchrTrainingPage() {
   const [scenarioStats, setScenarioStats] = useState({
     OB: { correct: 0, incorrect: 0, score: null, completedAt: "" },
     IB: { correct: 0, incorrect: 0, score: null, completedAt: "" },
+    UMNR: { correct: 0, incorrect: 0, score: null, completedAt: "" },
   });
 
   const steps = useMemo(() => {
     if (scenario === "OB") return OB_STEPS;
     if (scenario === "IB") return IB_STEPS;
+    if (scenario === "UMNR") return UMNR_STEPS;
     return [];
   }, [scenario]);
 
@@ -1923,9 +1960,10 @@ export default function WchrTrainingPage() {
       "journey",
       "ib_start_transit",
       "ib_journey",
+      "transit", "custody", "gate",
     ]);
 
-    if (currentStep.key === "start_transit" || currentStep.key === "ib_start_transit") {
+    if (currentStep.key === "start_transit" || currentStep.key === "ib_start_transit" || currentStep.key === "transit") {
       setElapsedSeconds(0);
     }
 
@@ -2046,13 +2084,15 @@ export default function WchrTrainingPage() {
         scenarioLabel:
           scenarioKey === "OB"
             ? "Outbound Counter to Gate"
-            : "Inbound CBP to Destination to Storage",
+            : scenarioKey === "IB"
+            ? "Inbound CBP to Destination to Storage"
+            : "UMNR Service and Authorized Custody Handoff",
         language,
         correctAnswers: Number(stats.correct || 0),
         incorrectAnswers: Number(stats.incorrect || 0),
         score,
         passed: score >= 80,
-        trainingVersion: "WCHR_INTERACTIVE_V5",
+        trainingVersion: scenarioKey === "UMNR" ? "UMNR_TRAINING_V1" : "WCHR_INTERACTIVE_V5",
         completedAt: serverTimestamp(),
         completedAtClient,
       });
@@ -2107,7 +2147,7 @@ export default function WchrTrainingPage() {
 
   const scenarioComplete = scenario && completedScenarios[scenario];
 
-  const allComplete = completedScenarios.OB && completedScenarios.IB;
+  const allComplete = completedScenarios.OB && completedScenarios.IB && completedScenarios.UMNR;
 
   return (
     <div
@@ -2248,8 +2288,8 @@ export default function WchrTrainingPage() {
               }}
             >
               {language === "en"
-                ? "Complete both scenarios to review the full WCHR workflow."
-                : "Completa ambos escenarios para repasar el flujo completo de WCHR."}
+                ? "Complete all three training scenarios to review WCHR and UMNR workflows."
+                : "Completa los tres entrenamientos para repasar los procedimientos WCHR y UMNR."}
             </div>
 
             <div
@@ -2274,6 +2314,13 @@ export default function WchrTrainingPage() {
                 subtitle={SCENARIOS.IB[language].subtitle}
                 description={SCENARIOS.IB[language].description}
                 onClick={() => startScenario("IB")}
+              />
+              <ScenarioCard
+                icon="🧒 🛡️"
+                title={language === "es" ? "Entrenamiento UMNR Service" : "UMNR Service Training"}
+                subtitle={language === "es" ? "Dispatch → Custodia → Entrega" : "Dispatch → Custody → Handoff"}
+                description={language === "es" ? "Practica la asignación, capacidad, seguimiento del menor, controles cada 30 minutos y entrega autorizada." : "Practice assignment, capacity, minor supervision, 30-minute custody checks and authorized handoff."}
+                onClick={() => startScenario("UMNR")}
               />
             </div>
 
@@ -2314,6 +2361,9 @@ export default function WchrTrainingPage() {
               >
                 IB: {completedScenarios.IB ? "Completed ✅" : "Pending"}
               </div>
+              <div style={{padding:14,borderRadius:16,background:completedScenarios.UMNR?"#ecfdf5":"#f8fbff",border:"1px solid #dbeafe",fontWeight:800,color:completedScenarios.UMNR?"#047857":"#64748b"}}>
+                UMNR: {completedScenarios.UMNR ? "Completed ✅" : "Pending"}
+              </div>
             </div>
           </PageCard>
 
@@ -2349,8 +2399,8 @@ export default function WchrTrainingPage() {
                   }}
                 >
                   {language === "en"
-                    ? "You completed both outbound and inbound guided scenarios."
-                    : "Completaste los escenarios guiados de salida y llegada."}
+                    ? "You completed outbound, inbound and UMNR guided scenarios."
+                    : "Completaste los escenarios de salida, llegada y UMNR."}
                 </div>
               </div>
             </PageCard>
@@ -2673,12 +2723,12 @@ export default function WchrTrainingPage() {
               {language === "es" ? "Modo Escenario Real" : "Real Scenario Mode"}
             </div>
             <div style={{ marginTop: 4, fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
-              {scenario === "OB" ? "Flight AV 219 · Gate F87" : "Inbound Arrival · CBP"}
+              {scenario === "OB" ? "Flight AV 219 · Gate F87" : scenario === "UMNR" ? "UMNR · Supervised Custody" : "Inbound Arrival · CBP"}
             </div>
             <div style={{ marginTop: 5, fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
               {scenario === "OB"
                 ? (language === "es" ? "Passenger: Maria Perez · WCHR #12 · Agent: Training User" : "Passenger: Maria Perez · WCHR #12 · Agent: Training User")
-                : (language === "es" ? "Passenger: Maria Perez · WCHR #12 · Destination: Main Terminal" : "Passenger: Maria Perez · WCHR #12 · Destination: Main Terminal")}
+                : scenario === "UMNR" ? (language === "es" ? "Menor de práctica · Agente: Training User · Receptor autorizado" : "Practice minor · Agent: Training User · Authorized receiver") : (language === "es" ? "Passenger: Maria Perez · WCHR #12 · Destination: Main Terminal" : "Passenger: Maria Perez · WCHR #12 · Destination: Main Terminal")}
             </div>
           </div>
 
@@ -2746,8 +2796,8 @@ export default function WchrTrainingPage() {
                   ? "You completed the Outbound Counter → Gate workflow."
                   : "Completaste el flujo Outbound Counter → Gate."
                 : language === "en"
-                ? "You completed the Inbound CBP → Destination → Storage workflow."
-                : "Completaste el flujo Inbound CBP → Destino → Storage."}
+                ? scenario === "UMNR" ? "You completed the UMNR Dispatch → Custody → Authorized Handoff workflow." : "You completed the Inbound CBP → Destination → Storage workflow."
+                : scenario === "UMNR" ? "Completaste el flujo UMNR Dispatch → Custodia → Entrega autorizada." : "Completaste el flujo Inbound CBP → Destino → Storage."}
             </div>
 
             <div
