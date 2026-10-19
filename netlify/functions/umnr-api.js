@@ -45,6 +45,19 @@ exports.handler = async (event) => {
     const role = String(user.role || '').toLowerCase();
     const manager = roles.has(role);
     const employeeId = text(user.employeeId || decoded.userDocId,100);
+    // Resolve the same employee document used by WCHR Agent Operations.
+    let employeeDoc = user.employeeId ? await db.collection('employees').doc(String(user.employeeId)).get() : null;
+    if ((!employeeDoc || !employeeDoc.exists) && (user.username || user.loginUsername)) {
+      for (const username of [user.username,user.loginUsername].filter(Boolean)) {
+        const matches=await db.collection('employees').where('loginUsername','==',username).limit(1).get();
+        if (!matches.empty) {employeeDoc=matches.docs[0];break;}
+      }
+    }
+    const employeeData=employeeDoc?.exists ? employeeDoc.data() : {};
+    const myAgentIds=new Set([employeeId,decoded.userDocId,employeeDoc?.exists ? employeeDoc.id : ''].filter(Boolean));
+    const isMyService=item=>myAgentIds.has(String(item.agentId||''));
+    const displayName=data=>text(data?.name||data?.fullName||data?.displayName||data?.employeeName||data?.loginUsername||'',120);
+    const myName=displayName(employeeData)||displayName(user);
     const body = JSON.parse(event.body || '{}');
     const action = text(body.action,30);
     const services = db.collection('umnr_services');
@@ -54,7 +67,7 @@ exports.handler = async (event) => {
     if (action === 'list') {
       const snapshot = await services.orderBy('createdAt','desc').limit(150).get();
       const items = snapshot.docs.map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
-      return json(200,{items:manager ? items : items.filter(x=>x.agentId===employeeId)});
+      return json(200,{items:manager ? items : items.filter(isMyService)});
     }
     if (action === 'create') {
       if (!manager) return json(403,{error:'Dispatch role required'});
@@ -92,8 +105,10 @@ exports.handler = async (event) => {
         if (!['UNASSIGNED','REJECTED'].includes(item.status)) throw Error('Service already assigned');
         const current=Number(c.exists?c.data().count:0);
         if (current>=10) throw Error('UMNR capacity reached');
+        const agentRecord=await tx.get(db.collection('employees').doc(agentId));
         tx.set(capacity,{count:current+1,updatedAt:now,lastAssignedServiceId:id},{merge:true});
-        tx.update(ref,{agentId,status:'ASSIGNED',updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('ASSIGNED',{agentId}))});
+        const agentName=displayName(agentRecord.exists?agentRecord.data():{}) || displayName(shiftData) || agentId;
+        tx.update(ref,{agentId,agentName,status:'ASSIGNED',updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('ASSIGNED',{agentId,agentName}))});
       });
       return json(200,{ok:true});
     }
@@ -103,10 +118,10 @@ exports.handler = async (event) => {
         const s=await tx.get(ref);
         if (!s.exists) throw Error('Service not found');
         const item=s.data();
-        if (item.agentId!==employeeId && !(manager && action==='advance' && text(body.status,20).toUpperCase()==='CANCELLED')) throw Error('Not assigned to you');
+        if (!isMyService(item) && !(manager && action==='advance' && text(body.status,20).toUpperCase()==='CANCELLED')) throw Error('Not assigned to you');
         
         if (action==='custody') {
-          if (item.agentId!==employeeId || !['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Custody not active or not assigned to you');
+          if (!isMyService(item) || !['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Custody not active or not assigned to you');
           tx.update(ref,{lastCustodyAt:now,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('CUSTODY_CHECK'))});
           return;
         }
@@ -123,7 +138,7 @@ exports.handler = async (event) => {
         const receiverSignature=String(body.receiverSignature || '');
         if(next==='DELIVERED' && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(receiverSignature) || receiverSignature.length>180000 || receiverSignature.length<250)) throw Error('Valid receiver signature required');
         if (next==='REJECTED' && !text(body.reason,250)) throw Error('Rejection reason required');
-        const patch={status:next,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem(next,{reason:text(body.reason,250)}))};
+        const patch={status:next,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem(next,{reason:text(body.reason,250),agentName:myName}))};
         if (next==='PICKED_UP') patch.lastCustodyAt=now;
         if (next==='DELIVERED') { patch.handoffTo=handoffTo; patch.handoffAt=now; patch.receiverSignature=receiverSignature; patch.receiverAuthorizationVerified=true; patch.receiverIdAndFormMatched=true; patch.receiverChecks={physicalIdInspected:true,idNameMatched:true,idPhotoMatched:true,authorizedReceiverMatched:true}; patch.handoffBy=actor; patch.handoffLocation=text(body.handoffLocation,120); }
         if (releaseStates.has(next) && item.agentId) {
