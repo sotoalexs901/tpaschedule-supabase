@@ -1,4 +1,4 @@
- src/pages/Code24ShiftReportPage.jsx
+src/pages/Code24ShiftReportPage.jsx
 
 import React, { useMemo, useState } from "react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
@@ -17,6 +17,9 @@ const CODE24_REASONS = [
   "Tracer created before supervisor review",
   "Other",
 ];
+
+const EXCEPTION_TYPES = ["Delivery delay", "Incorrect delivery", "Delivery not completed", "Unable to locate bag", "Customer dispute", "Other"];
+const EXCEPTION_STATUSES = ["Open", "Under Investigation", "Pending Follow-up", "Resolved", "Closed"];
 
 const REVIEW_OPTIONS = [
   "Process followed",
@@ -83,6 +86,10 @@ function newCode24Case() {
     supervisorReview: "Process followed",
     details: "",
   };
+}
+
+function newDeliveryException() {
+  return { id: makeId(), fileNumber: "", passengerName: "", pnr: "", flightNumber: "", exceptionType: "", exceptionTypeOther: "", status: "Open", resolution: "", actionsTaken: "", details: "", supervisorReview: "Follow-up required" };
 }
 
 function useViewport() {
@@ -331,6 +338,8 @@ export default function Code24ShiftReportPage() {
 
   const [saving, setSaving] = useState(false);
   const [showManagement, setShowManagement] = useState(false);
+  const [reportSearch, setReportSearch] = useState("");
+  const [activeReportSearch, setActiveReportSearch] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [form, setForm] = useState({
     reportDate: todayLocal(),
@@ -340,20 +349,22 @@ export default function Code24ShiftReportPage() {
     supervisorPosition: user?.position || getDefaultPosition(user?.role),
     notes: "",
     certification: false,
-    returnRequests: [newReturnRequest()],
-    code24Cases: [newCode24Case()],
+    returnRequests: [],
+    code24Cases: [],
+    deliveryExceptions: [],
   });
 
   const metrics = useMemo(() => {
     const returnRequests = form.returnRequests.length;
     const code24 = form.code24Cases.length;
-    const totalCases = returnRequests + code24;
+    const deliveryExceptions = form.deliveryExceptions.length;
+    const totalCases = returnRequests + code24 + deliveryExceptions;
     const bcc =
       form.returnRequests.filter((c) => c.bccReferral === "Yes").length +
       form.code24Cases.filter((c) => c.bccReferral === "Yes").length;
 
-    return { returnRequests, code24, totalCases, bcc };
-  }, [form.returnRequests, form.code24Cases]);
+    return { returnRequests, code24, deliveryExceptions, totalCases, bcc };
+  }, [form.returnRequests, form.code24Cases, form.deliveryExceptions]);
 
   const gridStyle = {
     display: "grid",
@@ -393,6 +404,10 @@ export default function Code24ShiftReportPage() {
     }));
   };
 
+  const updateDeliveryException = (id, field, value) => setForm(prev => ({...prev, deliveryExceptions: prev.deliveryExceptions.map(item => item.id === id ? {...item, [field]: value, ...(field === "exceptionType" && value !== "Other" ? {exceptionTypeOther:""} : {})} : item)}));
+  const addDeliveryException = () => setForm(prev => ({...prev, deliveryExceptions:[...prev.deliveryExceptions,newDeliveryException()]}));
+  const removeDeliveryException = id => setForm(prev => ({...prev, deliveryExceptions:prev.deliveryExceptions.filter(c=>c.id!==id)}));
+
   const addReturnRequest = () =>
     setForm((prev) => ({
       ...prev,
@@ -428,8 +443,8 @@ export default function Code24ShiftReportPage() {
       return false;
     }
 
-    if (!form.returnRequests.length && !form.code24Cases.length) {
-      setStatusMessage("Please add at least one Bag Return Request or Code 24 case.");
+    if (!form.returnRequests.length && !form.code24Cases.length && !form.deliveryExceptions.length) {
+      setStatusMessage("Please add at least one Bag Return Request, Code 24, or Delivery Exception.");
       return false;
     }
 
@@ -501,6 +516,13 @@ export default function Code24ShiftReportPage() {
       }
     }
 
+    for (let i=0;i<form.deliveryExceptions.length;i+=1) {
+      const c=form.deliveryExceptions[i];
+      if (!c.fileNumber.trim() || !c.exceptionType || !c.details.trim() || !c.actionsTaken.trim()) {setStatusMessage(`Delivery Exception #${i+1}: file number, exception type, details and actions taken are required.`);return false;}
+      if (c.exceptionType === "Other" && !c.exceptionTypeOther.trim()) {setStatusMessage(`Delivery Exception #${i+1}: explain the exception type.`);return false;}
+      if (["Resolved","Closed"].includes(c.status) && !c.resolution.trim()) {setStatusMessage(`Delivery Exception #${i+1}: resolution is required for a resolved or closed case.`);return false;}
+    }
+
     if (!form.certification) {
       setStatusMessage("Please confirm the supervisor certification before submitting.");
       return false;
@@ -549,6 +571,10 @@ export default function Code24ShiftReportPage() {
         })
       );
 
+      const cleanDeliveryExceptions = form.deliveryExceptions.map(({id,...c},index)=>({
+        sequence:index+1, caseType:"delivery_exception", fileNumber:c.fileNumber.trim().toUpperCase(), passengerName:c.passengerName.trim(), pnr:c.pnr.trim().toUpperCase(), flightNumber:c.flightNumber.trim().toUpperCase(), exceptionType:c.exceptionType, exceptionTypeOther:c.exceptionType==="Other"?c.exceptionTypeOther.trim():"", exceptionStatus:c.status, resolution:c.resolution.trim(), actionsTaken:c.actionsTaken.trim(), details:c.details.trim(), supervisorReview:c.supervisorReview, bccReferral:false
+      }));
+
       // Legacy-compatible combined array so existing management pages do not break.
       // New reports should prefer returnRequests and code24Cases.
       const legacyCases = [
@@ -558,6 +584,7 @@ export default function Code24ShiftReportPage() {
           code24Reason: "",
           code24ReasonOther: "",
         })),
+        ...cleanDeliveryExceptions.map(c=>({...c,code24Created:false,comments:c.details,employee:""})),
         ...cleanCode24Cases.map((c) => ({
           ...c,
           employee: "",
@@ -579,11 +606,13 @@ export default function Code24ShiftReportPage() {
 
         totalReturnRequests: cleanReturnRequests.length,
         code24CreatedCount: cleanCode24Cases.length,
-        totalCases: cleanReturnRequests.length + cleanCode24Cases.length,
+        deliveryExceptionCount: cleanDeliveryExceptions.length,
+        totalCases: cleanReturnRequests.length + cleanCode24Cases.length + cleanDeliveryExceptions.length,
         bccReferralCount: metrics.bcc,
 
         returnRequests: cleanReturnRequests,
         code24Cases: cleanCode24Cases,
+        deliveryExceptions: cleanDeliveryExceptions,
         cases: legacyCases,
 
         notes: form.notes.trim(),
@@ -598,7 +627,7 @@ export default function Code24ShiftReportPage() {
       });
 
       setStatusMessage(
-        "Bag Return / Code 24 shift report submitted successfully."
+        "AA BSO shift report submitted successfully."
       );
 
       setForm({
@@ -609,8 +638,9 @@ export default function Code24ShiftReportPage() {
         supervisorPosition: user?.position || getDefaultPosition(user?.role),
         notes: "",
         certification: false,
-        returnRequests: [newReturnRequest()],
-        code24Cases: [newCode24Case()],
+        returnRequests: [],
+        code24Cases: [],
+    deliveryExceptions: [],
       });
 
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -638,7 +668,7 @@ export default function Code24ShiftReportPage() {
   if (showManagement) return (
     <div style={{display:"grid",gap:12}}>
       <div><ActionButton variant="secondary" onClick={() => setShowManagement(false)}>← Back to Submit Report</ActionButton></div>
-      <Code24ManagementPage />
+      <Code24ManagementPage key={activeReportSearch} initialSearch={activeReportSearch} />
     </div>
   );
 
@@ -738,7 +768,7 @@ export default function Code24ShiftReportPage() {
                 letterSpacing: "-.035em",
               }}
             >
-              Bag Return / Code 24 Shift Report
+              AA BSO Shift Incident Report
             </h1>
 
             <p
@@ -750,7 +780,7 @@ export default function Code24ShiftReportPage() {
                 color: "rgba(255,255,255,.9)",
               }}
             >
-              Bag Return Requests and Code 24 tracers are documented separately.
+              Bag Return Requests, Code 24 tracers and Delivery Exceptions are documented separately.
               Employee involvement is required only for Bag Return Requests.
             </p>
 
@@ -767,7 +797,7 @@ export default function Code24ShiftReportPage() {
           </div>
 
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <ActionButton variant="secondary" onClick={() => setShowManagement(true)}>View Cases & Dashboard</ActionButton>
+            <ActionButton variant="secondary" onClick={() => { setActiveReportSearch(""); setShowManagement(true); }}>View Cases & Dashboard</ActionButton>
           <ActionButton
             variant="secondary"
             onClick={() => navigate("/dashboard")}
@@ -777,6 +807,26 @@ export default function Code24ShiftReportPage() {
           </div>
         </div>
       </div>
+
+      <PageCard style={{ padding: isMobile ? 14 : 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, color: "#0f172a" }}>Search Submitted Reports</h2>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Find a case by File Number, Passenger Name, PNR or Bag Tag Number.</p>
+          </div>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); setActiveReportSearch(reportSearch.trim()); setShowManagement(true); }} style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
+          <input
+            aria-label="Search reports by file number, passenger, PNR or bag tag"
+            value={reportSearch}
+            onChange={(e) => setReportSearch(e.target.value)}
+            placeholder="File Number, Passenger Name, PNR or Bag Tag Number..."
+            style={{ flex: "1 1 260px", minWidth: 0, border: "1px solid #cbd5e1", borderRadius: 11, padding: "11px 13px", fontSize: 13, boxSizing: "border-box" }}
+          />
+          <button type="submit" style={{ background: "#1769aa", color: "#fff", border: 0, borderRadius: 11, padding: "10px 20px", fontWeight: 800, cursor: "pointer" }}>Search Reports</button>
+          {reportSearch && <ActionButton variant="secondary" onClick={() => setReportSearch("")}>Clear</ActionButton>}
+        </form>
+      </PageCard>
 
       {statusMessage && (
         <PageCard style={{ padding: isMobile ? 12 : 16 }}>
@@ -854,7 +904,7 @@ export default function Code24ShiftReportPage() {
           display: "grid",
           gridTemplateColumns: isMobile
             ? "repeat(2,minmax(0,1fr))"
-            : "repeat(4,minmax(0,1fr))",
+            : "repeat(5,minmax(0,1fr))",
           gap: isMobile ? 8 : 12,
         }}
       >
@@ -870,6 +920,7 @@ export default function Code24ShiftReportPage() {
           detail="Tracer cases documented"
           tone="amber"
         />
+        <MetricCard label="Delivery Exceptions" value={metrics.deliveryExceptions} detail="Delivery incident files" tone="slate" />
         <MetricCard
           label="Total Cases"
           value={metrics.totalCases}
@@ -1339,6 +1390,22 @@ export default function Code24ShiftReportPage() {
       </PageCard>
 
       <PageCard style={{ padding: isMobile ? 14 : 20 }}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:14}}><div><div style={{fontSize:11,fontWeight:900,color:"#7c3aed"}}>SECTION 3</div><h2 style={{margin:"4px 0",fontSize:20}}>Delivery Exceptions</h2><p style={{margin:0,fontSize:12,color:"#64748b"}}>Document delivery files, exception types, actions and resolution status.</p></div><ActionButton variant="secondary" onClick={addDeliveryException}>+ Add Delivery Exception</ActionButton></div>
+        {!form.deliveryExceptions.length && <p style={{color:"#64748b",fontSize:13}}>No Delivery Exceptions for this shift.</p>}
+        <div style={{display:"grid",gap:14}}>{form.deliveryExceptions.map((item,index)=><div key={item.id} style={{border:"1px solid #ddd6fe",background:"#faf8ff",borderRadius:15,padding:15}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><strong>Delivery Exception #{index+1}</strong><ActionButton variant="danger" onClick={()=>removeDeliveryException(item.id)}>Remove</ActionButton></div>
+          <div style={gridStyle}>
+            {[["fileNumber","File / Case Number *"],["passengerName","Passenger Name"],["pnr","PNR"],["flightNumber","Flight Number"]].map(([key,label])=><div key={key}><FieldLabel>{label}</FieldLabel><TextInput value={item[key]} onChange={e=>updateDeliveryException(item.id,key,e.target.value)}/></div>)}
+            <div><FieldLabel>Exception Type *</FieldLabel><SelectInput value={item.exceptionType} onChange={e=>updateDeliveryException(item.id,"exceptionType",e.target.value)}><option value="">Select type</option>{EXCEPTION_TYPES.map(x=><option key={x}>{x}</option>)}</SelectInput></div>
+            <div><FieldLabel>Status *</FieldLabel><SelectInput value={item.status} onChange={e=>updateDeliveryException(item.id,"status",e.target.value)}>{EXCEPTION_STATUSES.map(x=><option key={x}>{x}</option>)}</SelectInput></div>
+            <div><FieldLabel>Supervisor Review</FieldLabel><SelectInput value={item.supervisorReview} onChange={e=>updateDeliveryException(item.id,"supervisorReview",e.target.value)}>{REVIEW_OPTIONS.map(x=><option key={x}>{x}</option>)}</SelectInput></div>
+          </div>
+          {item.exceptionType==="Other" && <div style={{marginTop:12}}><FieldLabel>Explain Exception Type *</FieldLabel><TextInput value={item.exceptionTypeOther} onChange={e=>updateDeliveryException(item.id,"exceptionTypeOther",e.target.value)}/></div>}
+          {[["details","Exception Details *"],["actionsTaken","Actions Taken / Follow-up *"],["resolution","Resolution / Final Outcome"]].map(([key,label])=><div key={key} style={{marginTop:12}}><FieldLabel>{label}{key==="resolution" && ["Resolved","Closed"].includes(item.status)?" *":""}</FieldLabel><TextArea value={item[key]} onChange={e=>updateDeliveryException(item.id,key,e.target.value)}/></div>)}
+        </div>)}</div>
+      </PageCard>
+
+      <PageCard style={{ padding: isMobile ? 14 : 20 }}>
         <h2
           style={{
             margin: "0 0 12px",
@@ -1386,7 +1453,7 @@ export default function Code24ShiftReportPage() {
               fontWeight: 700,
             }}
           >
-            I confirm that all Bag Return Requests and Code 24 cases handled during my shift have been reviewed and documented in the correct section. Employee involvement has been documented for Bag Return Requests, while Code 24 cases include the required operational details and follow-up information.
+            I confirm that all Bag Return Requests, Code 24 cases and Delivery Exceptions handled during my shift have been reviewed and documented in the correct section. Employee involvement has been documented for Bag Return Requests, while Code 24 cases include the required operational details and follow-up information.
           </span>
         </label>
       </PageCard>
