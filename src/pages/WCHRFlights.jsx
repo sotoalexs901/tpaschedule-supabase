@@ -1,4 +1,4 @@
- //src/pages/WCHRFlights.jsx
+//src/pages/WCHRFlights.jsx
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -21,6 +21,7 @@ import {
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import WchrOperationalClosePanel from "../components/WchrOperationalClosePanel.jsx";
+import UmnrBillingPanel from "../components/UmnrBillingPanel.jsx";
 
 import {
   APP_NAME,
@@ -3505,6 +3506,8 @@ export default function WCHRFlights() {
           "border-box",
       }}
     >
+      {(["station_manager","duty_manager","supervisor"].includes(String(user?.role||"").toLowerCase()) && import.meta.env.VITE_UMNR_ENABLED === "true") && <UmnrBillingPanel />}
+
       {/* HERO */}
 
       <div
