@@ -6251,7 +6251,7 @@ export default function WchrDispatchPage() {
       {ENABLE_LIVE_BOARD_STAGING && <DispatchLiveBoardStaging />}
       <section aria-label="UMNR operations" style={{ margin: "16px 0", border: "1px solid #bfdbfe", borderRadius: 14, padding: 16, background: "#f8fbff", color: "#0f172a" }}>
         {import.meta.env.VITE_UMNR_ENABLED === "true" ? (
-          <UmnrOperationsPanel mode="dispatch" flights={dailyFlights} agents={agents} />
+          <UmnrOperationsPanel mode="dispatch" flights={dailyFlights} agents={agents.map(agent => ({ ...agent, name: getAgentName(agent) }))} />
         ) : (
           <div>
             <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>UMNR · Dispatch</h2>
