@@ -36,11 +36,14 @@ exports.handler = async (event) => {
     if (!token) return json(401,{error:'Authentication required'});
     const firebase = app();
     const decoded = await firebase.auth().verifyIdToken(token, true);
-    if (decoded.umnr !== true || !decoded.userDocId) return json(403,{error:'UMNR access required'});
+    if (!decoded.userDocId) return json(403,{error:'User profile identification required'});
     const db = firebase.firestore();
     const userDoc = await db.collection('users').doc(decoded.userDocId).get();
-    if (!userDoc.exists || userDoc.data().umnrAccessEnabled !== true || userDoc.data().active === false)
-      return json(403,{error:'Access revoked'});
+    if (!userDoc.exists || userDoc.data().active === false)
+      return json(403,{error:'User profile missing or inactive'});
+    // All active users are eligible; synchronize their profile on first UMNR request.
+    if (userDoc.data().umnrAccessEnabled !== true)
+      await userDoc.ref.update({umnrAccessEnabled:true});
     const user = userDoc.data();
     const role = String(user.role || '').toLowerCase();
     const manager = roles.has(role);
