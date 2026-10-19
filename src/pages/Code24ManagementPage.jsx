@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+mport React, { useEffect, useMemo, useState } from "react";
 import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
@@ -32,7 +32,7 @@ function Field({label,children}) { return <label style={{display:"grid",gap:5,fo
 const diffFields = ["caseType","passengerName","pnr","flightNumber","employee","returnReason","returnReasonOther","code24Reason","code24ReasonOther","bccReferral","supervisorReview","comments","details","fileNumber","exceptionType","exceptionTypeOther","exceptionStatus","resolution","actionsTaken"];
 const auditLabel = {caseType:"Report Type",passengerName:"Passenger",pnr:"PNR",flightNumber:"Flight",employee:"Employee Involved",returnReason:"Return Reason",returnReasonOther:"Other Return Reason",code24Reason:"Code 24 Reason",code24ReasonOther:"Other Code 24 Reason",bccReferral:"BCC Referral",supervisorReview:"Supervisor Review",comments:"Comments",details:"Details",fileNumber:"File Number",exceptionType:"Exception Type",exceptionTypeOther:"Other Exception Type",exceptionStatus:"Exception Status",resolution:"Resolution",actionsTaken:"Actions Taken"};
 
-export default function Code24ManagementPage() {
+export default function Code24ManagementPage({ initialSearch = "" }) {
   const {user} = useUser(); const navigate = useNavigate();
   const canAccess = ["supervisor","duty_manager","station_manager"].includes(user?.role);
   const canDelete = user?.role === "station_manager";
@@ -41,7 +41,7 @@ export default function Code24ManagementPage() {
   const [selectedId,setSelectedId] = useState(""); const [editing,setEditing] = useState(null);
   const [noteText,setNoteText] = useState(""); const [noteCase,setNoteCase] = useState("");
   const [noteKind,setNoteKind] = useState("general"); const [saving,setSaving] = useState(false);
-  const [filters,setFilters] = useState({search:"",shift:"All",status:"All",from:"",to:""});
+  const [filters,setFilters] = useState({search:initialSearch,shift:"All",status:"All",from:"",to:""});
   useEffect(() => { if (!canAccess) return; return onSnapshot(collection(db,"code24_shift_reports"),snap => { const rows = snap.docs.map(d => ({id:d.id,...d.data()})); rows.sort((a,b) => String(b.reportDate || "").localeCompare(String(a.reportDate || "")) || Number(b.createdAt?.seconds || 0)-Number(a.createdAt?.seconds || 0)); setReports(rows); setLoading(false); setError(""); },err => {console.error(err);setError("Could not load reports. Check your access permissions.");setLoading(false);}); },[canAccess]);
   const selected = reports.find(r => r.id === selectedId);
   const filtered = useMemo(() => reports.filter(r => { const q=filters.search.trim().toLowerCase(); const hay=[r.supervisorName,r.shift,r.reportDate,...normalizedCases(r).flatMap(c=>[c.employee,c.passengerName,c.pnr,c.flightNumber,c.caseType,c.fileNumber,c.fileNo,c.fileId,c.bagTagNumber,c.bagTag,c.bagTagNo,c.bagTagNumbers,c.bagTags,c.tagNumber,c.baggageTagNumber,c.exceptionType])].flat().filter(v=>v!==null&&v!==undefined).join(" ").toLowerCase(); const compact = v => String(v).toLowerCase().replace(/[^a-z0-9]/g, ""); return (!q || hay.includes(q) || compact(hay).includes(compact(q))) && (filters.shift==="All" || r.shift===filters.shift) && (filters.status==="All" || (r.reviewStatus || "submitted")===filters.status) && (!filters.from || r.reportDate>=filters.from) && (!filters.to || r.reportDate<=filters.to); }),[reports,filters]);
