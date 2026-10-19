@@ -1,6 +1,7 @@
 // src/components/UmnrOperationsPanel.jsx
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import { umnrRequest } from '../utils/umnrClient.js';
+import { printUmnrReport } from '../utils/umnrReport.js';
 const button={padding:'9px 13px',border:'1px solid #bfdbfe',borderRadius:9,cursor:'pointer',background:'#eff6ff',fontWeight:700};
 const input={padding:10,border:'1px solid #cbd5e1',borderRadius:8,width:'100%',boxSizing:'border-box'};
 const finished=new Set(['DELIVERED','CANCELLED','REJECTED']);
@@ -71,15 +72,16 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
     if(id && id===String(x.agentId))return agentLabel(x.agentId,x.agentName);
     return 'Name not recorded';
   };
-  const printReport=(x)=>{
-    const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const w=window.open('','_blank','width=850,height=900');
-    if(!w){setError('Allow pop-ups to print the final report.');return;}
-    const timeline=(x.timeline||[]).map(t=>`<tr><td>${escapeHtml(localTime(t.at))}</td><td>${escapeHtml(t.type)}</td><td>${escapeHtml(actorLabel(t,x))}</td></tr>`).join('');
-    const signature=/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(x.receiverSignature||'')?`<img alt="Receiver signature" style="max-width:440px;max-height:150px" src="${x.receiverSignature}"/>`:'Not available';
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>UMNR Service Report</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#172033}h1{border-bottom:2px solid #123b68;padding-bottom:10px}table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #ccd3dd;padding:9px;text-align:left}small{color:#555}@media print{button{display:none}}</style></head><body><h1>UMNR Final Service Report</h1><p><b>Minor:</b> ${escapeHtml(x.fullName)}<br><b>PNR:</b> ${escapeHtml(x.pnr)}<br><b>Flight:</b> ${escapeHtml(x.airline)} ${escapeHtml(x.flightNumber)}<br><b>Direction:</b> ${escapeHtml(x.direction)}<br><b>Assigned agent:</b> ${escapeHtml(agentLabel(x.agentId,x.agentName))}<br><b>Status:</b> ${escapeHtml(x.status)}<br><b>Handoff location:</b> ${escapeHtml(x.handoffLocation)}<br><b>Receiver:</b> ${escapeHtml(x.handoffTo)}<br><b>Handoff time:</b> ${escapeHtml(localTime(x.handoffAt))}<br><b>Handoff performed by:</b> ${escapeHtml(x.handoffBy?.name||agentLabel(x.agentId,x.agentName))}</p><p><b>Pickup location:</b> ${escapeHtml(x.pickupLocation||'Not recorded')}<br><b>Final location:</b> ${escapeHtml(x.currentLocation||x.handoffLocation||'Not recorded')}<br><b>Picked up:</b> ${escapeHtml(localTime(x.pickedUpAt))}<br><b>Total service time:</b> ${escapeHtml(duration(x.pickedUpAt,x.handoffAt))}</p><h2>Identity and authorization checks</h2><p>${['physicalIdInspected','idNameMatched','idPhotoMatched','authorizedReceiverMatched'].map(k=>`${escapeHtml(k)}: ${x.receiverChecks?.[k]?'Verified':'Not recorded'}`).join('<br>')}</p><h2>Receiver signature</h2>${signature}<h2>Service history</h2><table><thead><tr><th>Time</th><th>Event</th><th>Employee</th></tr></thead><tbody>${timeline}</tbody></table><small>Confidential operational record. No ID images or ID numbers stored.</small><p><button onclick="window.print()">Print</button></p></body></html>`);
-    w.document.close();
+  const printReport=(x)=>printUmnrReport(x,agentLabel,actorLabel,setError);
+  const archiveService=async(x)=>{
+    if(!['DELIVERED','CANCELLED','REJECTED'].includes(x.status))return;
+    const reason=window.prompt('Archive this completed UMNR service? Enter the reason (minimum 8 characters). The record will remain available to Management for billing and audit:');
+    if(reason===null)return;
+    if(reason.trim().length<8){setError('Please enter an archive reason of at least 8 characters.');return;}
+    if(!window.confirm('Confirm archive? The service will disappear from Dispatch but remain in Management billing history.'))return;
+    await run('archive',{id:x.id,reason:reason.trim()});
   };
+
   return <section style={{border:'1px solid #bfdbfe',borderRadius:16,padding:18,background:'#fff',color:'#0f172a'}}>
     <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
       <div><h2 style={{margin:0}}>UMNR · {dispatch?'Dispatch':'My Services'}</h2><small>Shared WCHR flights · Inbound / Outbound · 30-minute custody checks</small></div>
@@ -112,7 +114,8 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
           {mayAct&&x.status==='PICKED_UP'&&<button disabled={busy} style={button} onClick={()=>next(x,'IN_TRANSIT')}>Start Transit</button>}
           {mayAct&&x.status==='IN_TRANSIT'&&<button disabled={busy} style={button} onClick={()=>next(x,'AT_GATE')}>At Gate / Handoff Point</button>}
           {mayAct&&['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&<button disabled={busy} style={button} onClick={()=>run('custody',{id:x.id})}>Custody Check</button>}{mayAct&&x.status==='AT_GATE'&&<button disabled={busy} style={button} onClick={()=>next(x,'DELIVERED')}>Authorized Handoff</button>}{x.status==='DELIVERED'&&<button type="button" style={button} onClick={()=>printReport(x)}>Print Final Report</button>}
-          {dispatch&&!finished.has(x.status)&&<button disabled={busy} style={button} onClick={()=>next(x,'CANCELLED')}>Cancel</button>}
+          {dispatch&&finished.has(x.status)&&<button disabled={busy} style={{...button,color:'#991b1b'}} onClick={()=>archiveService(x)}>Archive Service (Station Manager)</button>}
+           {dispatch&&!finished.has(x.status)&&<button disabled={busy} style={button} onClick={()=>next(x,'CANCELLED')}>Cancel</button>}
         </div>
         {handoff===x.id&&<div style={{marginTop:12,padding:12,borderRadius:12,border:'1px solid #bfdbfe',background:'#eff6ff'}}>
           <label>Authorized receiver full name<input style={input} maxLength={120} value={receiverName} onChange={e=>setReceiverName(e.target.value)} /></label>
