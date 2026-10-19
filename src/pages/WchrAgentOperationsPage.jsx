@@ -1,3 +1,14 @@
+
+Loading older messages…
+
+
+
+
+
+
+
+
+
 // src/pages/WchrAgentOperationsPage.jsx
 
 import UmnrOperationsPanel from "../components/UmnrOperationsPanel.jsx";
@@ -2850,16 +2861,7 @@ export default function WchrAgentOperationsPage() {
         boxSizing: "border-box",
       }}
     >
-      <section aria-label="UMNR operations" style={{ margin: "16px 0", border: "1px solid #bfdbfe", borderRadius: 14, padding: 16, background: "#f8fbff", color: "#0f172a" }}>
-        {import.meta.env.VITE_UMNR_ENABLED === "true" ? (
-          <UmnrOperationsPanel mode="agent" employeeId={agentId} />
-        ) : (
-          <div>
-            <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>UMNR · My Services</h2>
-            <p style={{ margin: 0, color: "#475569" }}>Module in preparation. UMNR service creation, assignments and custody actions are disabled until authorization, capacity controls and Firebase security are completed.</p>
-          </div>
-        )}
-      </section>
+
       {hasActiveUmnr && (
         <PageCard style={{ padding: 14, border: "1px solid #fed7aa", background: "#fff7ed" }}>
           <div style={{ color: "#9a3412", fontSize: 12.5, lineHeight: 1.55, fontWeight: 800 }}>
@@ -4347,6 +4349,18 @@ export default function WchrAgentOperationsPage() {
           </div>
         </PageCard>
       )}
+
+      {/* UMNR operational tools are below the main WCHR workflow. */}
+      <section aria-label="UMNR operations" style={{ margin: "16px 0", border: "1px solid #bfdbfe", borderRadius: 14, padding: 16, background: "#f8fbff", color: "#0f172a" }}>
+        {import.meta.env.VITE_UMNR_ENABLED === "true" ? (
+          <UmnrOperationsPanel mode="agent" employeeId={agentId} />
+        ) : (
+          <div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>UMNR · My Services</h2>
+            <p style={{ margin: 0, color: "#475569" }}>Module in preparation. UMNR service creation, assignments and custody actions are disabled until authorization, capacity controls and Firebase security are completed.</p>
+          </div>
+        )}
+      </section>
 
       {/* FOOTER */}
       <div
