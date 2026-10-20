@@ -976,7 +976,7 @@ function AppRouter() {
             path="wchr/intake"
             element={
               <ProtectedRoute
-                roles={["supervisor", "duty_manager", "station_manager"]}
+                roles={["agent", "supervisor", "duty_manager", "station_manager"]}
                 blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
                 <WCHRScan />
