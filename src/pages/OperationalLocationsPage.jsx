@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useUser } from '../UserContext.jsx';
 
 const COLLECTION = 'operational_locations';
@@ -30,7 +31,28 @@ export default function OperationalLocationsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState('');
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState('');
+  const [photoRemoved, setPhotoRemoved] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const change = (key, value) => setForm(old => ({ ...old, [key]: value }));
+  const resetPhoto = () => { setPhotoFile(null); setPhotoPreview(''); setExistingPhotoUrl(''); setPhotoRemoved(false); };
+  useEffect(() => {
+    if (!photoFile) { setPhotoPreview(''); return undefined; }
+    const url = URL.createObjectURL(photoFile);
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photoFile]);
+  const selectPhoto = e => {
+    setError('');
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('Use a JPG, PNG or WebP photo.'); e.target.value = ''; return; }
+    if (file.size > 8 * 1024 * 1024) { setError('Photo must be 8 MB or smaller.'); e.target.value = ''; return; }
+    setPhotoFile(file); setPhotoRemoved(false);
+    e.target.value = '';
+  };
 
   useEffect(() => {
     if (!allowed) { setLoading(false); return; }
@@ -72,21 +94,36 @@ export default function OperationalLocationsPage() {
     const data = { name, area, type, notes: text(form.notes), latitude: lat, longitude: lng, accuracyMeters: accuracy, gpsCapturedAt: form.capturedAt || null, updatedById: String(identity), updatedByName: userName(user), updatedAt: serverTimestamp() };
     setBusy(true);
     try {
+      let photoUrl = photoRemoved ? null : existingPhotoUrl || null;
+      let photoPath = null;
+      if (photoFile) {
+        setUploading(true);
+        const extension = photoFile.type === 'image/png' ? 'png' : photoFile.type === 'image/webp' ? 'webp' : 'jpg';
+        const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${extension}`;
+        photoPath = `operational_locations/${id}/${uniqueName}`;
+        const object = storageRef(getStorage(), photoPath);
+        await uploadBytes(object, photoFile, { contentType: photoFile.type, customMetadata: { locationId: id } });
+        photoUrl = await getDownloadURL(object);
+      }
       await runTransaction(db, async tx => {
         const ref = doc(db, COLLECTION, id);
         const existing = await tx.get(ref);
         if (!editingId && existing.exists()) throw new Error('A location with this ID already exists. Edit the existing record instead.');
         if (editingId && !existing.exists()) throw new Error('This location was removed. Refresh and retry.');
-        if (existing.exists()) tx.update(ref, data);
-        else tx.set(ref, { ...data, locationId: id, active: true, createdById: String(identity), createdByName: userName(user), createdAt: serverTimestamp() });
+        const photoFields = photoFile || photoRemoved
+          ? { photoUrl, photoPath: photoPath || null, photoUpdatedAt: serverTimestamp(), photoUpdatedByName: userName(user) }
+          : {};
+        if (existing.exists()) tx.update(ref, { ...data, ...photoFields });
+        else tx.set(ref, { ...data, ...photoFields, locationId: id, active: true, createdById: String(identity), createdByName: userName(user), createdAt: serverTimestamp() });
       });
-      setForm(blank); setEditingId(''); setMessage(`Location ${editingId ? 'updated' : 'registered'} successfully.`);
+      setForm(blank); setEditingId(''); resetPhoto(); setMessage(`Location ${editingId ? 'updated' : 'registered'} successfully.`);
     } catch (e) { setError(`Save failed: ${e.message}. Firestore permissions may need review.`); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setUploading(false); }
   };
 
   const edit = item => {
     setEditingId(item.id);
+    setPhotoFile(null); setPhotoPreview(''); setExistingPhotoUrl(item.photoUrl || ''); setPhotoRemoved(false);
     setForm({ name: item.name || '', area: AREAS.includes(item.area) ? item.area : 'Other', otherArea: AREAS.includes(item.area) ? '' : item.area || '', type: TYPES.includes(item.type) ? item.type : 'Other', otherType: TYPES.includes(item.type) ? '' : item.type || '', notes: item.notes || '', latitude: String(item.latitude ?? ''), longitude: String(item.longitude ?? ''), accuracyMeters: String(item.accuracyMeters ?? ''), capturedAt: item.gpsCapturedAt || '' });
     setError(''); setMessage('Editing an existing location. Capture GPS again if the position has changed.');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -123,12 +160,25 @@ export default function OperationalLocationsPage() {
       {form.area==='Other' && <label>New area name<input style={field} required value={form.otherArea} onChange={e=>change('otherArea',e.target.value)} /></label>}
       {form.type==='Other' && <label>New type<input style={field} required value={form.otherType} onChange={e=>change('otherType',e.target.value)} /></label>}
       <label>Operational notes (optional)<textarea style={field} rows={2} maxLength={500} placeholder="Level, terminal side, landmark or nearby route" value={form.notes} onChange={e=>change('notes',e.target.value)} /></label>
+      <div style={{padding:14,background:'#f8fafc',borderRadius:12,display:'grid',gap:10}}>
+        <strong>Location Photo (optional)</strong>
+        <p style={{fontSize:13,color:'#475569',margin:0}}>Take a photo with your phone or upload a JPG, PNG or WebP image (maximum 8 MB). Avoid photographing passengers, IDs, badges or restricted security information.</p>
+        <label style={{...button,display:'inline-block',width:'fit-content',cursor:busy?'not-allowed':'pointer'}}>
+          📷 Take Photo / Upload Photo
+          <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={selectPhoto} disabled={busy} style={{position:'absolute',width:1,height:1,opacity:0}} />
+        </label>
+        {(photoPreview || (existingPhotoUrl && !photoRemoved)) && <div style={{display:'grid',gap:8,justifyItems:'start'}}>
+          <img src={photoPreview || existingPhotoUrl} alt="Operational location preview" style={{width:'100%',maxWidth:440,maxHeight:260,objectFit:'contain',borderRadius:10,border:'1px solid #cbd5e1',background:'#fff'}} />
+          <button type="button" style={button} disabled={busy} onClick={()=>{setPhotoFile(null);setPhotoPreview('');setExistingPhotoUrl('');setPhotoRemoved(true);}}>Remove Photo</button>
+        </div>}
+        <small>Photo is stored in Firebase Storage and its reference is saved in the location record. Existing photos are not deleted from Storage when replaced or removed.</small>
+      </div>
       <div style={{padding:14,background:'#f8fafc',borderRadius:12}}>
         <button type="button" style={button} disabled={capturing||busy} onClick={capture}>{capturing?'Capturing GPS…':'📍 Capture My Location'}</button>
         <p style={{fontSize:13,color:'#475569'}}>GPS: {form.latitude && form.longitude ? `${form.latitude}, ${form.longitude}` : 'Not captured'} · Accuracy: {form.accuracyMeters === '' ? 'Unknown' : `±${form.accuracyMeters} m`}</p>
         <small>GPS accuracy indoors may be poor. The registered operational zone is authoritative; coordinates are supporting information. Capture is user-initiated, not continuous tracking.</small>
       </div>
-      <div style={{display:'flex',gap:10,flexWrap:'wrap'}}><button style={{...button,background:'#1769aa',color:'#fff'}} disabled={busy||capturing} type="submit">{busy?'Saving…':editingId?'Save Changes':'Save New Location'}</button>{editingId&&<button type="button" style={button} onClick={()=>{setEditingId('');setForm(blank);}}>Cancel Edit</button>}</div>
+      <div style={{display:'flex',gap:10,flexWrap:'wrap'}}><button style={{...button,background:'#1769aa',color:'#fff'}} disabled={busy||capturing} type="submit">{uploading?'Uploading photo…':busy?'Saving…':editingId?'Save Changes':'Save New Location'}</button>{editingId&&<button type="button" style={button} onClick={()=>{setEditingId('');setForm(blank);resetPhoto();}}>Cancel Edit</button>}</div>
     </form>
     <section style={{marginTop:24}}><h2>Registered Locations ({items.length})</h2><input style={field} placeholder="Search by location, area or ID" value={search} onChange={e=>setSearch(e.target.value)}/>
       {loading ? <p>Loading locations…</p> : visible.length===0 ? <p>No matching locations registered yet.</p> : <div style={{display:'grid',gap:10,marginTop:12}}>{visible.map(item=><article key={item.id} style={{padding:15,border:'1px solid #e2e8f0',borderRadius:12,background:'#fff'}}>
@@ -136,6 +186,7 @@ export default function OperationalLocationsPage() {
         <div style={{fontSize:13,color:'#475569',marginTop:5}}>{item.area} · {item.type} · ID: {item.id}</div>
         <div style={{fontSize:12,color:'#64748b',marginTop:5}}>GPS: {item.latitude}, {item.longitude} · ±{item.accuracyMeters ?? '?'} m · Updated: {displayTime(item.updatedAt)} · By: {item.updatedByName || item.createdByName || 'Unknown'}</div>
         {item.notes && <p style={{fontSize:13}}>{item.notes}</p>}
+        {item.photoUrl && <div style={{marginTop:10}}><img src={item.photoUrl} alt={`Registered location: ${item.name}`} loading="lazy" style={{width:'100%',maxWidth:320,maxHeight:190,objectFit:'cover',borderRadius:10,border:'1px solid #e2e8f0'}} /></div>}
         <div style={{display:'flex',gap:8,marginTop:10}}><button style={button} onClick={()=>edit(item)} disabled={busy}>Edit</button>{manager&&<button style={button} onClick={()=>toggle(item)} disabled={busy}>{item.active===false?'Reactivate':'Deactivate'}</button>}</div>
       </article>)}</div>}
     </section>
