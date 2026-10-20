@@ -30,6 +30,7 @@ import {
   clearAeroStationAppBadge,
 } from "../utils/appBadge.js";
 
+const PRIVACY_POLICY_VERSION = "2026.10.20";
 const WHATS_NEW_RELEASE = "2.0.5";
 const WHATS_NEW_STORAGE_PREFIX = "aerostation-whats-new-seen:";
 
@@ -93,6 +94,10 @@ export default function AppLayout() {
   const [wchrFollowUps, setWchrFollowUps] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [privacyChecking, setPrivacyChecking] = useState(true);
+  const [privacySaving, setPrivacySaving] = useState(false);
+  const [privacyError, setPrivacyError] = useState("");
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [whatsNewSaving, setWhatsNewSaving] = useState(false);
   const [whatsNewVersion, setWhatsNewVersion] = useState("");
@@ -111,6 +116,67 @@ export default function AppLayout() {
   const visiblePosition = useMemo(() => getVisiblePosition(user), [user]);
 
   const profilePhotoURL = user?.profilePhotoURL || "";
+
+  // ============================================================
+  // PRIVACY POLICY ACKNOWLEDGMENT - PER USER / PER VERSION
+  // This acknowledgment never requests or enables GPS permissions.
+  // ============================================================
+  useEffect(() => {
+    if (!user?.id) {
+      setPrivacyOpen(false);
+      setPrivacyChecking(false);
+      setPrivacyError("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setPrivacyChecking(true);
+    setPrivacyError("");
+    const checkPrivacy = async () => {
+      try {
+        const snapshot = await getDoc(doc(db, "users", String(user.id)));
+        if (cancelled) return;
+        if (!snapshot.exists()) {
+          setPrivacyError("Your account record could not be verified. Please contact management.");
+          setPrivacyOpen(true);
+          return;
+        }
+        const data = snapshot.data() || {};
+        setPrivacyOpen(!(
+          data.privacyPolicyAccepted === true &&
+          data.privacyPolicyVersion === PRIVACY_POLICY_VERSION
+        ));
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Could not verify privacy acknowledgment:", error);
+        setPrivacyError("Unable to verify your privacy acknowledgment. Please try again.");
+        setPrivacyOpen(true);
+      } finally {
+        if (!cancelled) setPrivacyChecking(false);
+      }
+    };
+    checkPrivacy();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  const acknowledgePrivacy = async () => {
+    if (!user?.id || privacySaving || privacyChecking) return;
+    setPrivacySaving(true);
+    setPrivacyError("");
+    try {
+      await updateDoc(doc(db, "users", String(user.id)), {
+        privacyPolicyAccepted: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+        privacyPolicyAcceptedAt: serverTimestamp(),
+      });
+      setPrivacyOpen(false);
+    } catch (error) {
+      console.error("Could not save privacy acknowledgment:", error);
+      setPrivacyError("Your acknowledgment could not be saved. Please retry or contact management.");
+    } finally {
+      setPrivacySaving(false);
+    }
+  };
 
   // ============================================================
   // WHAT'S NEW - PER USER / PER RELEASE
@@ -1891,7 +1957,33 @@ export default function AppLayout() {
         )}
       </header>
 
-      {whatsNewOpen && (
+      {(privacyChecking || privacyOpen) && user?.id && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 11000, background: "rgba(15,23,42,0.68)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, boxSizing: "border-box" }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="privacy-update-title" style={{ width: "100%", maxWidth: 620, maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 22, padding: 26, boxSizing: "border-box", boxShadow: "0 24px 80px rgba(15,23,42,0.3)" }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#1769aa", letterSpacing: 1 }}>AEROSTATION HUB · PRIVACY POLICY {PRIVACY_POLICY_VERSION}</div>
+            <h2 id="privacy-update-title" style={{ margin: "12px 0", color: "#0f172a", fontSize: 24 }}>Privacy Update — WCHR Live Location</h2>
+            {privacyChecking ? (
+              <p style={{ color: "#475569" }}>Checking your privacy acknowledgment...</p>
+            ) : (
+              <>
+                <p style={{ color: "#334155", lineHeight: 1.7 }}>We have updated our privacy policy to explain a <strong>WCHR-only operational feature</strong>. This feature does not track employees in other departments.</p>
+                <div style={{ background: "#f1f8ff", border: "1px solid #dbeafe", borderRadius: 15, padding: 16, color: "#334155", lineHeight: 1.7, fontSize: 14 }}>
+                  <p style={{ marginTop: 0 }}><strong>Simply installing, opening, or signing in to AeroStation Hub does not activate GPS tracking.</strong></p>
+                  <p>Live location applies only to authorized WCHR service operations, and only when the WCHR employee is <strong>Punched In</strong>, has explicitly enabled live location sharing, and has granted device location permission.</p>
+                  <p>Location updates stop when the employee <strong>Punches Out</strong> or turns off live location sharing. Tracking is not intended for off-duty monitoring.</p>
+                  <p style={{ marginBottom: 0 }}>Authorized WCHR management may view available, approximate location information for operational coordination and passenger assistance. GPS is not an exact gate-position confirmation.</p>
+                </div>
+                <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.65 }}><strong>By clicking “OK, I Acknowledge,” you confirm that you have read and understood this policy update.</strong> This acknowledgment does not activate location sharing or grant GPS permission.</p>
+                <p style={{ fontSize: 12, color: "#64748b" }}>Full policy: <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" style={{ color: "#1769aa", fontWeight: 800 }}>Read Privacy, Confidentiality &amp; Ownership Policy</a></p>
+                {privacyError && <div role="alert" style={{ color: "#9f1239", background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 10, padding: 12, fontSize: 13, marginBottom: 12 }}>{privacyError}</div>}
+                <button type="button" onClick={acknowledgePrivacy} disabled={privacySaving} style={{ width: "100%", padding: "14px 18px", border: 0, borderRadius: 13, background: "linear-gradient(135deg,#0f4c81,#1769aa)", color: "#fff", fontWeight: 800, fontSize: 15, cursor: privacySaving ? "wait" : "pointer" }}>{privacySaving ? "Saving acknowledgment..." : "OK, I Acknowledge"}</button>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+
+      {whatsNewOpen && !privacyOpen && !privacyChecking && (
         <div
           role="presentation"
           style={{
