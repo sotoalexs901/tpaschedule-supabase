@@ -108,6 +108,7 @@ export function getEmployeeIdentifier(employee, user = null) {
 export function buildAgentShiftPayload({
   employee,
   user,
+  lobbyAgent = false,
   trackingConsent = false,
   startingLocation = "",
 }) {
@@ -194,8 +195,11 @@ export function buildAgentShiftPayload({
     current_location:
       cleanText(startingLocation),
 
+    lobby_agent: lobbyAgent === true,
+    operational_role: lobbyAgent === true ? "LOBBY" : "FIELD",
+
     live_tracking_consent:
-      trackingConsent === true,
+      !lobbyAgent && trackingConsent === true,
 
     clock_in_at: serverTimestamp(),
     clock_out_at: null,
@@ -212,6 +216,7 @@ export function buildAgentShiftPayload({
 export async function punchInWchrAgent({
   employee,
   user,
+  lobbyAgent = false,
   trackingConsent = false,
   startingLocation = "",
 }) {
@@ -297,6 +302,7 @@ export async function punchInWchrAgent({
           serverTimestamp(),
       };
 
+      // Do not silently change the operational role of an existing active shift.
       if (cleanText(startingLocation)) {
         refreshedIdentity.current_location =
           cleanText(startingLocation);
@@ -325,6 +331,7 @@ export async function punchInWchrAgent({
   const payload = buildAgentShiftPayload({
     employee,
     user,
+    lobbyAgent,
     trackingConsent,
     startingLocation,
   });
@@ -360,8 +367,10 @@ export async function punchInWchrAgent({
 
       event_type: "PUNCH_IN",
 
+      lobby_agent: lobbyAgent === true,
+      operational_role: lobbyAgent === true ? "LOBBY" : "FIELD",
       live_tracking_consent:
-        trackingConsent === true,
+        !lobbyAgent && trackingConsent === true,
 
       created_at:
         serverTimestamp(),
