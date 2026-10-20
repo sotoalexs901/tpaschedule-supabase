@@ -1,4 +1,4 @@
-import { rankAgentsForService, nearestOperationalLocation, gpsRankAgentsForService } from "../utils/smartDispatchLocations.js";
+import { rankAgentsForService, nearestOperationalLocation, gpsRankAgentsForService, validGpsCoordinates } from "../utils/smartDispatchLocations.js";
 import { subscribeOperationalLocations } from "../utils/operationalLocations.js";
 // src/pages/WchrDispatchPage.jsx
 
@@ -1181,6 +1181,72 @@ function InventoryCard({
 // AGENT CARD
 // ============================================================
 
+// Phase 5: read-only GPS overview. Coordinates are plotted relative to registered
+// reference points, not on a surveyed terminal floorplan. Never writes assignments.
+function OperationalGpsMap({ agents = [], catalog = [], now = Date.now() }) {
+  const [expanded, setExpanded] = useState(false);
+  const [filter, setFilter] = useState("ALL");
+  const [selectedId, setSelectedId] = useState("");
+  const referencePoints = catalog.filter(p => p.active !== false && validGpsCoordinates(p.latitude, p.longitude));
+  const records = agents.map(agent => {
+    const consent = agent.live_tracking_consent === true;
+    const gps = agent.live_gps;
+    const estimate = consent ? nearestOperationalLocation(gps, catalog, { now }) : { status: "NO_CONSENT", nearest: null, fresh: false };
+    const eligible = consent && estimate.fresh && validGpsCoordinates(gps?.latitude, gps?.longitude);
+    return { agent, gps, estimate, eligible, availability: safeUpper(agent.availability_status) };
+  });
+  const mapped = records.filter(r => r.eligible);
+  const shown = mapped.filter(r => filter === "ALL" || r.availability === filter);
+  const points = [...referencePoints.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) })), ...mapped.map(r => ({ lat: Number(r.gps.latitude), lng: Number(r.gps.longitude) }))];
+  const latMin = points.length ? Math.min(...points.map(p => p.lat)) : 0;
+  const latMax = points.length ? Math.max(...points.map(p => p.lat)) : 1;
+  const lngMin = points.length ? Math.min(...points.map(p => p.lng)) : 0;
+  const lngMax = points.length ? Math.max(...points.map(p => p.lng)) : 1;
+  const latPad = Math.max((latMax - latMin) * .12, .00018);
+  const lngPad = Math.max((lngMax - lngMin) * .12, .00018);
+  const project = (lat, lng) => ({
+    x: 32 + ((Number(lng) - (lngMin - lngPad)) / (lngMax - lngMin + 2 * lngPad)) * 736,
+    y: 28 + (1 - (Number(lat) - (latMin - latPad)) / (latMax - latMin + 2 * latPad)) * 364,
+  });
+  const selected = records.find(r => r.agent.id === selectedId);
+  const hasAuthorizedFix = selected?.eligible === true;
+  return (
+    <div style={{ marginBottom: 16, border: "1px solid #bfdbfe", borderRadius: 17, background: "#f8fbff", padding: 13 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div><strong style={{ fontSize: 15, color: "#0f4c81" }}>TPA Operational GPS Overview</strong>
+          <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>{mapped.length} recent authorized GPS fixes · {records.length - mapped.length} unavailable / stale / no consent</div>
+        </div>
+        <button type="button" onClick={() => setExpanded(v => !v)} style={{ border: "1px solid #93c5fd", borderRadius: 10, padding: "9px 12px", color: "#1d4ed8", background: "white", cursor: "pointer", fontWeight: 800 }}>
+          {expanded ? "Hide Operational Map" : "View Operational Map"}
+        </button>
+      </div>
+      {expanded && <div style={{ marginTop: 13 }}>
+        <p style={{ fontSize: 11, lineHeight: 1.5, color: "#92400e", margin: "0 0 10px" }}>
+          GPS coordinate overview, NOT an airport floorplan. Indoor accuracy may be poor; nearest registered point is an estimate, not verified gate presence. Only recent (3 min) consented positions are plotted.
+        </p>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
+          {["ALL", "AVAILABLE", "BUSY", "BREAK", "UNAVAILABLE"].map(value => <button key={value} type="button" onClick={() => setFilter(value)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, background: filter === value ? "#dbeafe" : "white", padding: "6px 9px", fontSize: 11, cursor: "pointer", fontWeight: 800 }}>{value === "ALL" ? "All" : getAvailabilityLabel(value)}</button>)}
+        </div>
+        {points.length > 0 ? <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #cbd5e1", background: "#eff6ff" }}>
+          <svg viewBox="0 0 800 420" role="img" aria-label="Relative GPS positions and registered reference points" style={{ width: "100%", minWidth: 360, display: "block" }}>
+            <rect x="0" y="0" width="800" height="420" fill="#eff6ff" />
+            {[1,2,3].map(i => <g key={i}><line x1={i*200} y1="0" x2={i*200} y2="420" stroke="#dbeafe" /><line x1="0" y1={i*105} x2="800" y2={i*105} stroke="#dbeafe" /></g>)}
+            {referencePoints.map(p => { const xy = project(p.latitude, p.longitude); return <g key={p.id}><rect x={xy.x-5} y={xy.y-5} width="10" height="10" rx="2" fill="#64748b" /><text x={xy.x+9} y={xy.y-8} fontSize="11" fill="#475569">{String(p.name || "Reference").slice(0,22)}</text></g>; })}
+            {shown.map(r => { const xy = project(r.gps.latitude, r.gps.longitude); const isSelected = selectedId === r.agent.id; const color = r.availability === "AVAILABLE" ? "#16a34a" : r.availability === "BUSY" ? "#ea580c" : "#64748b"; return <g key={r.agent.id} onClick={() => setSelectedId(r.agent.id)} style={{ cursor: "pointer" }}><circle cx={xy.x} cy={xy.y} r={isSelected ? 12 : 9} fill={color} stroke="white" strokeWidth="3" /><text x={xy.x+13} y={xy.y+5} fontSize="12" fontWeight="700" fill="#0f172a">{getAgentName(r.agent).slice(0,22)}</text></g>; })}
+          </svg>
+        </div> : <div style={{ padding: 18, background: "white", borderRadius: 10, color: "#64748b" }}>No registered GPS reference points or current authorized agent fixes to plot.</div>}
+        <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>Squares = Duty Manager registered points · Green = Available · Orange = Busy · Gray = Other. Positions are relative GPS coordinates, not walking routes.</div>
+        {shown.length > 0 && <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>{shown.map(r => <button key={r.agent.id} type="button" onClick={() => setSelectedId(r.agent.id)} style={{ background: selectedId === r.agent.id ? "#dbeafe" : "white", border: "1px solid #cbd5e1", borderRadius: 9, padding: "7px 9px", cursor: "pointer", fontSize: 11 }}>{getAgentName(r.agent)} · {getAvailabilityLabel(r.availability)}</button>)}</div>}
+        {selected && <div style={{ background: "white", border: "1px solid #bfdbfe", borderRadius: 12, padding: 11, marginTop: 11, fontSize: 12, lineHeight: 1.8 }}>
+          <strong>{getAgentName(selected.agent)}</strong> · {getAvailabilityLabel(selected.availability)}<div>Reported: {selected.agent.current_location || "Not reported"}</div>
+          <div>GPS: {hasAuthorizedFix ? "Recent authorized fix" : selected.estimate.status === "NO_CONSENT" ? "Not authorized" : "Unavailable / stale"}</div>
+          {hasAuthorizedFix && <><div>Nearest reference: {selected.estimate.nearest?.location?.name || "No reference point"}{selected.estimate.nearest ? ` · approx. ${Math.round(selected.estimate.nearest.distanceMeters)} m straight-line` : ""}</div><div>Accuracy: {selected.estimate.accuracyMeters == null ? "Unknown" : `${Math.round(selected.estimate.accuracyMeters)} m`}</div><a href={`https://www.google.com/maps?q=${selected.gps.latitude},${selected.gps.longitude}`} target="_blank" rel="noopener noreferrer" style={{ color: "#1d4ed8" }}>Open in Google Maps</a></>}
+        </div>}
+      </div>}
+    </div>
+  );
+}
+
 function AgentGpsDetails({ agent, catalog = [] }) {
   const [expanded, setExpanded] = useState(false);
   const gps = agent.live_gps;
@@ -1207,7 +1273,7 @@ function AgentGpsDetails({ agent, catalog = [] }) {
           <div><strong>Nearest registered location:</strong> {nearest ? `${nearest.location.name} (${nearest.location.area || "TPA"})` : estimate.status === "STALE" ? "Unavailable: GPS fix is stale" : estimate.status === "NO_CONSENT" ? "Tracking not authorized" : "No recent GPS or registered reference points"}</div>
           {nearest && <div><strong>Approximate straight-line distance:</strong> {Math.round(nearest.distanceMeters)} m · Reference GPS accuracy: {nearest.location.accuracyMeters ?? "Unknown"} m</div>}
           {nearest && <div style={{fontSize:11,color:"#92400e"}}>Estimated nearest reference point only. Indoor position / gate not verified.</div>}
-          {hasCoords && <>
+          {hasCoords && agent.live_tracking_consent === true && <>
             <div><strong>Coordinates:</strong> {latitude.toFixed(6)}, {longitude.toFixed(6)}</div>
             <div><strong>Accuracy:</strong> {Number.isFinite(Number(gps.accuracy_m)) ? `${Math.round(Number(gps.accuracy_m))} m` : "Unknown"}</div>
             <div><strong>Last received:</strong> {timestamp ? timestamp.toLocaleString() : "Unknown"}</div>
@@ -8448,6 +8514,8 @@ export default function WchrDispatchPage() {
               {availableAgents.length} Available
             </div>
           </div>
+
+          <OperationalGpsMap agents={agents} catalog={operationalLocationCatalog} now={now} />
 
           {loadingAgents ? (
             <div
