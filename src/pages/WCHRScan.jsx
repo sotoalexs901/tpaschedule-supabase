@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { umnrRequest } from "../utils/umnrClient.js";
 import { useUser } from "../UserContext.jsx";
 
 import {
@@ -789,6 +790,9 @@ export default function WCHRScan() {
   // FORM
   // ============================================================
 
+  const [serviceType, setServiceType] = useState("WCHR");
+  const [umnrDirection, setUmnrDirection] = useState("OB");
+
   const [
     passengerName,
     setPassengerName,
@@ -1184,6 +1188,9 @@ export default function WCHRScan() {
 
   const formReady =
     useMemo(() => {
+      if (serviceType === "UMNR") {
+        return Boolean(cleanText(passengerName) && /^[A-Z0-9]{4,8}$/.test(cleanPnr(pnr)) && selectedFlight && !loadingFlights && ["IB", "OB"].includes(umnrDirection));
+      }
       return Boolean(
         cleanText(
           passengerName
@@ -1203,6 +1210,8 @@ export default function WCHRScan() {
           !loadingInventory
       );
     }, [
+      serviceType,
+      umnrDirection,
       passengerName,
       pnr,
       selectedFlight,
@@ -1219,6 +1228,7 @@ export default function WCHRScan() {
 
   const resetForm = () => {
     setPassengerName("");
+    setUmnrDirection("OB");
     setPnr("");
 
     setWchType(
@@ -1244,6 +1254,32 @@ export default function WCHRScan() {
 
   const handleSubmit =
     async () => {
+      if (serviceType === "UMNR") {
+        setError("");
+        setMessage("");
+        if (!user) { setError("You must be logged in."); return; }
+        if (!formReady || !selectedFlight) { setError("Complete the passenger name, valid PNR, flight and direction."); return; }
+        const name = normalizePassengerName(passengerName);
+        const reservation = cleanPnr(pnr);
+        if (!window.confirm(`Create UMNR service for ${name}?\nFlight: ${getFlightLabel(selectedFlight)}\nDirection: ${umnrDirection}\n\nDispatch will assign an agent.`)) return;
+        try {
+          setSubmitting(true);
+          await umnrRequest("create", {
+            flightId: selectedFlight.id,
+            direction: umnrDirection,
+            fullName: name,
+            pnr: reservation,
+          });
+          setMessage(`UMNR service for ${name} created successfully. Ready for Assignment in Dispatch. No agent has been assigned and the custody timer has not started.`);
+          resetForm();
+        } catch (submitError) {
+          console.error("UMNR intake error:", submitError);
+          setError(submitError?.message || "Unable to create UMNR service.");
+        } finally {
+          setSubmitting(false);
+        }
+        return;
+      }
       setError("");
       setMessage("");
 
@@ -2197,7 +2233,7 @@ export default function WCHRScan() {
                     "0.14em",
                 }}
               >
-                {APP_NAME} | WCHR Intake
+                {APP_NAME} | Passenger Intake
               </div>
 
               <h1
@@ -2220,7 +2256,7 @@ export default function WCHRScan() {
                     "-0.035em",
                 }}
               >
-                New WCHR Service
+                New Passenger Service
               </h1>
 
               <div
@@ -2235,8 +2271,7 @@ export default function WCHRScan() {
                     1.5,
                 }}
               >
-                Prepare the passenger service, select an approved flight and
-                reserve an available wheelchair for Dispatch.
+                Create WCHR or UMNR passenger services using flights opened by Dispatch.
               </div>
 
               <div
@@ -2548,7 +2583,7 @@ export default function WCHRScan() {
                 900,
             }}
           >
-            Prepare WCHR for Pickup
+            {serviceType === "UMNR" ? "Prepare UMNR for Dispatch" : "Prepare WCHR for Pickup"}
           </h2>
 
           <p
@@ -2566,11 +2601,22 @@ export default function WCHRScan() {
                 1.55,
             }}
           >
-            All required information must be completed before the wheelchair
-            becomes available to Dispatch.
+            {serviceType === "UMNR" ? "Register the unaccompanied minor. Dispatch will assign an agent before custody begins." : "All required information must be completed before the wheelchair becomes available to Dispatch."}
           </p>
         </div>
 
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+          {["WCHR", "UMNR"].map((type) => (
+            <ActionButton
+              key={type}
+              variant={serviceType === type ? "primary" : "secondary"}
+              disabled={submitting}
+              onClick={() => { setServiceType(type); setError(""); setMessage(""); }}
+            >
+              {type === "WCHR" ? "Wheelchair Service (WCHR)" : "Unaccompanied Minor (UMNR)"}
+            </ActionButton>
+          ))}
+        </div>
         {/* ==================================================== */}
         {/* PASSENGER */}
         {/* ==================================================== */}
@@ -2793,6 +2839,19 @@ export default function WCHRScan() {
           )}
         </div>
 
+        {serviceType === "UMNR" && (
+          <div style={{ marginTop: 17, padding: 16, borderRadius: 17, background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+            <FieldLabel>UMNR Direction *</FieldLabel>
+            <SelectInput value={umnrDirection} onChange={setUmnrDirection} disabled={submitting}>
+              <option value="OB">Outbound (OB)</option>
+              <option value="IB">Inbound (IB)</option>
+            </SelectInput>
+            <p style={{ fontSize: 12, color: "#475569", marginBottom: 0 }}>
+              Creating a UMNR does not assign an agent or begin physical custody. Dispatch controls assignments.
+            </p>
+          </div>
+        )}
+        {serviceType === "WCHR" && (<>
         {/* ==================================================== */}
         {/* WHEELCHAIR */}
         {/* ==================================================== */}
@@ -3224,6 +3283,7 @@ export default function WCHRScan() {
             </div>
           )}
 
+        </>)}
         {/* ==================================================== */}
         {/* SUBMIT */}
         {/* ==================================================== */}
@@ -3268,8 +3328,7 @@ export default function WCHRScan() {
                 620,
             }}
           >
-            The employee will not be assigned from this page. Agent assignment
-            is controlled exclusively from WCHR Dispatch.
+            The employee will not be assigned from this page. Agent assignment is controlled exclusively from Dispatch.
           </div>
 
           <ActionButton
@@ -3295,8 +3354,8 @@ export default function WCHRScan() {
             }}
           >
             {submitting
-              ? "Preparing WCHR..."
-              : "Mark Ready for Pickup"}
+               ? `Preparing ${serviceType}...`
+               : serviceType === "UMNR" ? "Create UMNR — Ready for Assignment" : "Mark Ready for Pickup"}
           </ActionButton>
         </div>
       </PageCard>
@@ -3353,12 +3412,12 @@ export default function WCHRScan() {
         >
           <InfoField
             label="1 | Intake"
-            value="Passenger + Flight + WCHR"
+            value="Passenger + Flight + Service Type"
           />
 
           <InfoField
             label="2 | Ready"
-            value="Timer Starts"
+            value="WCHR Ready / UMNR Unassigned"
           />
 
           <InfoField
@@ -3368,7 +3427,7 @@ export default function WCHRScan() {
 
           <InfoField
             label="4 | Agent"
-            value="Journey Begins"
+            value="Custody Begins at Pickup"
           />
         </div>
       </PageCard>
