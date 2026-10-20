@@ -66,8 +66,22 @@ exports.handler = async (event) => {
     const eventItem = (type, details={}) => ({ type, at: new Date().toISOString(), actor, ...details });
     if (action === 'list') {
       const snapshot = await services.orderBy('createdAt','desc').limit(150).get();
-      const items = snapshot.docs.map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,pickedUpAt:data.pickedUpAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
+      const items = snapshot.docs.filter(d=>!d.data().archivedAt).map(d=>{ const data=d.data(); return {id:d.id,...data,createdAt:data.createdAt?.toDate?.()?.toISOString() || null,lastCustodyAt:data.lastCustodyAt?.toDate?.()?.toISOString() || null,pickedUpAt:data.pickedUpAt?.toDate?.()?.toISOString() || null,handoffAt:data.handoffAt?.toDate?.()?.toISOString() || null}; });
       return json(200,{items:manager ? items : items.filter(item=>isMyService(item)||myAgentIds.has(String(item.pendingTransfer?.toAgentId||'')))});
+    }
+    if (action === 'archive') {
+      if (role !== 'station_manager') return json(403,{error:'Station Manager authorization required'});
+      const id=text(body.id,150), reason=text(body.reason,250);
+      if (!id || reason.length<8) return json(400,{error:'Service and archive reason (8+ characters) required'});
+      await db.runTransaction(async tx=>{
+        const ref=services.doc(id), snap=await tx.get(ref);
+        if(!snap.exists) throw Error('Service not found');
+        const item=snap.data();
+        if(!['DELIVERED','CANCELLED'].includes(item.status)) throw Error('Only delivered or cancelled services can be archived');
+        if(item.archivedAt) throw Error('Service already archived');
+        tx.update(ref,{archivedAt:now,archivedBy:actor,archiveReason:reason,updatedAt:now,timeline:admin.firestore.FieldValue.arrayUnion(eventItem('ARCHIVED',{reason}))});
+      });
+      return json(200,{ok:true});
     }
     if (action === 'create') {
       if (!manager) return json(403,{error:'Dispatch role required'});
@@ -102,6 +116,7 @@ exports.handler = async (event) => {
         if (shiftData.active_report_id) throw Error('Agent currently assigned to WCHR');
         if (!s.exists) throw Error('Service not found');
         const item=s.data();
+        if (item.archivedAt) throw Error('Service archived');
         if (!['UNASSIGNED','REJECTED'].includes(item.status)) throw Error('Service already assigned');
         const current=Number(c.exists?c.data().count:0);
         if (current>=10) throw Error('UMNR capacity reached');
@@ -121,6 +136,7 @@ exports.handler = async (event) => {
         const s=await tx.get(ref);
         if (!s.exists) throw Error('Service not found');
         const item=s.data();
+        if (item.archivedAt) throw Error('Service archived');
         if (!['ASSIGNED','ACCEPTED','PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Service cannot be transferred in its current state');
         if (String(item.agentId)===agentId) throw Error('Choose a different agent');
         const oldAgentId=String(item.agentId||'');
@@ -156,6 +172,7 @@ exports.handler = async (event) => {
         const s=await tx.get(ref);
         if (!s.exists) throw Error('Service not found');
         const item=s.data(), pending=item.pendingTransfer;
+        if(item.archivedAt) throw Error('Service archived');
         if (!pending || !myAgentIds.has(String(pending.toAgentId))) throw Error('Transfer is not assigned to you');
         if (!['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(item.status)) throw Error('Service not in active custody');
         if (location.toLowerCase()!==String(pending.location||'').toLowerCase()) throw Error('Transfer location must match the Dispatch handoff location');
@@ -175,6 +192,7 @@ exports.handler = async (event) => {
         const s=await tx.get(ref);
         if (!s.exists) throw Error('Service not found');
         const item=s.data();
+        if(item.archivedAt) throw Error('Service archived');
         if (!isMyService(item) && !(manager && action==='advance' && text(body.status,20).toUpperCase()==='CANCELLED')) throw Error('Not assigned to you');
         
         if (item.pendingTransfer && action==='advance' && text(body.status,20).toUpperCase()!=='CANCELLED') throw Error('Custody transfer pending; complete the handoff first');
