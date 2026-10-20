@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 
-const CURRENT_POLICY_VERSION = "2026.08.26";
+const CURRENT_POLICY_VERSION = "2026.10.20";
 
 function getUserName(user) {
   return (
