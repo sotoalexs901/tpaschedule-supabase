@@ -721,6 +721,7 @@ export default function WchrAgentOperationsPage() {
   );
 
   const [trackingConsent, setTrackingConsent] = useState(false);
+  const [lobbyMode, setLobbyMode] = useState(null); // Explicit choice each shift
   const [selectedLocation, setSelectedLocation] = useState("Counter");
   const [locationNote, setLocationNote] = useState("");
 
@@ -1317,7 +1318,13 @@ export default function WchrAgentOperationsPage() {
         return;
       }
 
+      if (lobbyMode === null) {
+        setError("Please choose whether you will work as a Lobby Agent today.");
+        return;
+      }
+
       await punchInWchrAgent({
+        lobbyMode,
         employee,
         user,
         trackingConsent,
@@ -1362,6 +1369,7 @@ export default function WchrAgentOperationsPage() {
         user,
       });
 
+      setLobbyMode(null);
       setMessage("Punch Out completed.");
     } catch (err) {
       console.error("Punch Out error:", err);
@@ -3401,11 +3409,21 @@ export default function WchrAgentOperationsPage() {
             </label>
           </div>
 
+          <div style={{ padding: 16, border: "1px solid #bfdbfe", borderRadius: 14, marginBottom: 16, background: "#eff6ff" }}>
+            <div style={{ fontWeight: 850, marginBottom: 9 }}>Will you be working as a Lobby Agent today?</div>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <label><input type="radio" name="lobby-shift" checked={lobbyMode === true} onChange={() => { setLobbyMode(true); setTrackingConsent(false); }} /> Yes — Lobby Agent (create WCHR / UMNR services)</label>
+              <label><input type="radio" name="lobby-shift" checked={lobbyMode === false} onChange={() => setLobbyMode(false)} /> No — WCHR Agent (receive Dispatch assignments)</label>
+            </div>
+            <div style={{ fontSize: 12, color: "#475569", marginTop: 8 }}>Lobby mode applies to this shift only. Lobby agents are not available for regular Dispatch assignments.</div>
+          </div>
+
           <ActionButton
             variant="success"
             disabled={
               employeeLoading ||
               !employee ||
+              lobbyMode === null ||
               busyAction === "punch-in"
             }
             onClick={handlePunchIn}
@@ -3417,6 +3435,14 @@ export default function WchrAgentOperationsPage() {
               ? "Punching In..."
               : "Punch In"}
           </ActionButton>
+        </PageCard>
+      )}
+
+      {isPunchedIn && shift?.shift_mode === "LOBBY_AGENT" && (
+        <PageCard style={{ padding: 18, background: "#eff6ff" }}>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>LOBBY AGENT — Active Shift</div>
+          <p style={{ marginTop: 0 }}>Create WCHR or UMNR passenger services. Dispatch will assign an available agent.</p>
+          <a href="/wchr/intake" style={{ display: "inline-block", padding: "11px 16px", background: "#1769aa", borderRadius: 10, color: "white", textDecoration: "none", fontWeight: 800 }}>+ New Passenger Service</a>
         </PageCard>
       )}
 
