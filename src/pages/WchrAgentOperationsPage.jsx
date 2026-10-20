@@ -722,6 +722,7 @@ export default function WchrAgentOperationsPage() {
 
   const [trackingConsent, setTrackingConsent] = useState(false);
   const [lobbyMode, setLobbyMode] = useState(null); // Explicit choice each shift
+  const [lobbyPromptOpen, setLobbyPromptOpen] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState("Counter");
   const [locationNote, setLocationNote] = useState("");
 
@@ -1331,6 +1332,7 @@ export default function WchrAgentOperationsPage() {
         startingLocation,
       });
 
+      setLobbyPromptOpen(false);
       setMessage(
         "Punch In completed. You are now active in WCHR operations."
       );
@@ -3409,24 +3411,14 @@ export default function WchrAgentOperationsPage() {
             </label>
           </div>
 
-          <div style={{ padding: 16, border: "1px solid #bfdbfe", borderRadius: 14, marginBottom: 16, background: "#eff6ff" }}>
-            <div style={{ fontWeight: 850, marginBottom: 9 }}>Will you be working as a Lobby Agent today?</div>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <label><input type="radio" name="lobby-shift" checked={lobbyMode === true} onChange={() => { setLobbyMode(true); setTrackingConsent(false); }} /> Yes — Lobby Agent (create WCHR / UMNR services)</label>
-              <label><input type="radio" name="lobby-shift" checked={lobbyMode === false} onChange={() => setLobbyMode(false)} /> No — WCHR Agent (receive Dispatch assignments)</label>
-            </div>
-            <div style={{ fontSize: 12, color: "#475569", marginTop: 8 }}>Lobby mode applies to this shift only. Lobby agents are not available for regular Dispatch assignments.</div>
-          </div>
-
           <ActionButton
             variant="success"
             disabled={
               employeeLoading ||
               !employee ||
-              lobbyMode === null ||
               busyAction === "punch-in"
             }
-            onClick={handlePunchIn}
+            onClick={() => { setLobbyMode(null); setLobbyPromptOpen(true); setError(""); }}
             style={{
               width: isMobile ? "100%" : "auto",
             }}
@@ -3436,6 +3428,31 @@ export default function WchrAgentOperationsPage() {
               : "Punch In"}
           </ActionButton>
         </PageCard>
+      )}
+
+      {lobbyPromptOpen && !isPunchedIn && (
+        <div
+          role="presentation"
+          style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(15, 23, 42, 0.58)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}
+        >
+          <div role="dialog" aria-modal="true" aria-labelledby="lobby-shift-title" style={{ width: "100%", maxWidth: 490, background: "#fff", borderRadius: 18, padding: 24, boxShadow: "0 24px 65px rgba(0,0,0,0.25)" }}>
+            <h2 id="lobby-shift-title" style={{ margin: "0 0 8px", fontSize: 21, color: "#0f172a" }}>Will you be working as a Lobby Agent today?</h2>
+            <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.5, marginBottom: 18 }}>Select your assignment for this shift. You will be asked again at your next Punch In.</p>
+            <label style={{ display: "flex", gap: 10, padding: 13, border: "1px solid #cbd5e1", borderRadius: 12, marginBottom: 10, cursor: "pointer" }}>
+              <input type="radio" name="lobby-shift-modal" checked={lobbyMode === true} onChange={() => { setLobbyMode(true); setTrackingConsent(false); }} />
+              <span><strong>Yes — Lobby Agent</strong><span style={{ display: "block", color: "#64748b", fontSize: 12 }}>Create WCHR and UMNR services. Not available for regular Dispatch assignments.</span></span>
+            </label>
+            <label style={{ display: "flex", gap: 10, padding: 13, border: "1px solid #cbd5e1", borderRadius: 12, cursor: "pointer" }}>
+              <input type="radio" name="lobby-shift-modal" checked={lobbyMode === false} onChange={() => setLobbyMode(false)} />
+              <span><strong>No — WCHR Agent</strong><span style={{ display: "block", color: "#64748b", fontSize: 12 }}>Receive regular Dispatch assignments.</span></span>
+            </label>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, flexWrap: "wrap" }}>
+              <button type="button" disabled={busyAction === "punch-in"} onClick={() => { setLobbyPromptOpen(false); setLobbyMode(null); }} style={{ padding: "10px 18px", border: "1px solid #cbd5e1", borderRadius: 10, background: "#fff", cursor: "pointer" }}>Cancel</button>
+              <button type="button" disabled={lobbyMode === null || busyAction === "punch-in"} onClick={async () => { await handlePunchIn(); }} style={{ padding: "10px 18px", border: 0, borderRadius: 10, background: lobbyMode === null ? "#94a3b8" : "#15803d", color: "#fff", fontWeight: 700, cursor: lobbyMode === null ? "not-allowed" : "pointer" }}>{busyAction === "punch-in" ? "Punching In..." : "Confirm Punch In"}</button>
+            </div>
+            {error && <p role="alert" style={{ color: "#b91c1c", fontSize: 12, marginTop: 12 }}>{error}</p>}
+          </div>
+        </div>
       )}
 
       {isPunchedIn && shift?.shift_mode === "LOBBY_AGENT" && (
