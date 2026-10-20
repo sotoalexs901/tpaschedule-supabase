@@ -67,6 +67,7 @@ import WchrDutyFollowUpPage from "./pages/WchrDutyFollowUpPage.jsx";
 import WchrOperationsHubPage from "./pages/WchrOperationsHubPage.jsx";
 import WchrAgentOperationsPage from "./pages/WchrAgentOperationsPage.jsx";
 import WchrDispatchPage from "./pages/WchrDispatchPage.jsx";
+import OperationalLocationsPage from "./pages/OperationalLocationsPage.jsx";
 import WchrTrainingPage from "./pages/WchrTrainingPage.jsx";
 import WchrTrainingManagementPage from "./pages/WchrTrainingManagementPage.jsx";
 
@@ -1051,6 +1052,16 @@ function AppRouter() {
                 blockedDepartments={["DL Cabin Service", "Cabin Service"]}
               >
                 <WCHRMonthlyClose />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* TPA LOCATION MANAGEMENT - management-only location naming */}
+          <Route
+            path="operational-locations"
+            element={
+              <ProtectedRoute roles={["station_manager", "duty_manager"]}>
+                <OperationalLocationsPage />
               </ProtectedRoute>
             }
           />
