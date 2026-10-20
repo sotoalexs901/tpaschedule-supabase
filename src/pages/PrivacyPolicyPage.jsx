@@ -8,8 +8,8 @@ import {
 } from "../config/appConfig.js";
 import "./PrivacyPolicyPage.css";
 
-const POLICY_VERSION = "2026.09.04";
-const PLATFORM_VERSION = "1.7";
+export const POLICY_VERSION = "2026.10.20";
+const PLATFORM_VERSION = "1.8";
 const OFFICIAL_DOMAIN = "aerostationhub.com";
 
 export default function PrivacyPolicyPage() {
@@ -82,7 +82,7 @@ export default function PrivacyPolicyPage() {
 
           <div className="privacy-page-meta">
             <span>
-              <strong>Effective:</strong> September 4, 2026
+              <strong>Effective:</strong> October 20, 2026
             </span>
 
             <span>
@@ -205,6 +205,7 @@ export default function PrivacyPolicyPage() {
                 notification tokens and notification enablement status.
               </li>
               <li>System access and activity information.</li>
+              <li>When separately authorized, work-shift live GPS coordinates, accuracy, location timestamps and operational-location estimates.</li>
               <li>
                 Other information necessary for authorized operational,
                 administrative, safety, security or compliance purposes.
@@ -338,6 +339,26 @@ export default function PrivacyPolicyPage() {
               employee's account on their personal device unless specifically
               authorized for a legitimate operational purpose.
             </p>
+          </PolicySection>
+
+          <PolicySection number="09A" title="Live Location During Active WCHR Shifts — October 2026 Update">
+            <p>
+              The WCHR operational module may request access to an employee's
+              device location to help authorized dispatch personnel coordinate
+              wheelchair services, review approximate agent availability and
+              provide advisory Smart Dispatch recommendations.
+            </p>
+            <ul>
+              <li>Live GPS updates are intended to operate only while the employee is <strong>Punched In</strong> to an active WCHR shift and has expressly enabled live-location consent.</li>
+              <li>Location access also requires permission from the device or browser. Acknowledging this policy does <strong>not</strong> grant device-level GPS permission or automatically activate tracking.</li>
+              <li>Live GPS tracking must stop on <strong>Punch Out</strong> or when live-location consent is withdrawn. Browser and device restrictions may also interrupt updates.</li>
+              <li>Authorized Duty Managers, supervisors or Station Management may view recent permitted locations for service coordination, safety and operational support, according to their system permissions.</li>
+              <li>GPS accuracy varies. A location estimate is not proof of an employee's exact gate, room or physical position. Smart Dispatch recommendations do not automatically assign a service.</li>
+              <li>Location records and timestamps may be processed as operational data subject to the platform's access controls, security and retention policies. This feature is not intended for off-duty tracking.</li>
+            </ul>
+            <div className="privacy-page-warning">
+              <strong>Employee acknowledgment:</strong> By selecting “OK, I Acknowledge” for this policy update, you confirm that you have been informed about the WCHR live-location feature, its operational purposes and its Punch In / Punch Out limits. Actual location sharing requires separate affirmative permission.
+            </div>
           </PolicySection>
 
           <PolicySection number="10" title="Confidentiality">
