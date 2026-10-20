@@ -31,6 +31,27 @@ import {
 } from "../utils/appBadge.js";
 
 const PRIVACY_POLICY_VERSION = "2026.10.20";
+const PRIVACY_ACK_STORAGE_PREFIX = "aerostation-privacy-ack:";
+
+function privacyAckStorageKey(userId) {
+  return `${PRIVACY_ACK_STORAGE_PREFIX}${String(userId)}`;
+}
+
+function hasLocalPrivacyAcknowledgment(userId) {
+  try {
+    return window.localStorage.getItem(privacyAckStorageKey(userId)) === PRIVACY_POLICY_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+function rememberPrivacyAcknowledgment(userId) {
+  try {
+    window.localStorage.setItem(privacyAckStorageKey(userId), PRIVACY_POLICY_VERSION);
+  } catch (error) {
+    console.warn("Unable to cache privacy acknowledgment locally:", error);
+  }
+}
 const WHATS_NEW_RELEASE = "2.0.5";
 const WHATS_NEW_STORAGE_PREFIX = "aerostation-whats-new-seen:";
 
@@ -130,11 +151,21 @@ export default function AppLayout() {
     }
 
     let cancelled = false;
-    setPrivacyChecking(true);
+    const userId = String(user.id);
+    setPrivacyOpen(false);
     setPrivacyError("");
+
+    // A successful prior Firestore acknowledgment is cached per account and
+    // policy version, so a new login on the same device does not prompt again.
+    if (hasLocalPrivacyAcknowledgment(userId)) {
+      setPrivacyChecking(false);
+      return undefined;
+    }
+
+    setPrivacyChecking(true);
     const checkPrivacy = async () => {
       try {
-        const snapshot = await getDoc(doc(db, "users", String(user.id)));
+        const snapshot = await getDoc(doc(db, "users", userId));
         if (cancelled) return;
         if (!snapshot.exists()) {
           setPrivacyError("Your account record could not be verified. Please contact management.");
@@ -142,10 +173,10 @@ export default function AppLayout() {
           return;
         }
         const data = snapshot.data() || {};
-        setPrivacyOpen(!(
-          data.privacyPolicyAccepted === true &&
-          data.privacyPolicyVersion === PRIVACY_POLICY_VERSION
-        ));
+        const alreadyAccepted = data.privacyPolicyAccepted === true &&
+          String(data.privacyPolicyVersion || "") === PRIVACY_POLICY_VERSION;
+        if (alreadyAccepted) rememberPrivacyAcknowledgment(userId);
+        setPrivacyOpen(!alreadyAccepted);
       } catch (error) {
         if (cancelled) return;
         console.error("Could not verify privacy acknowledgment:", error);
@@ -161,14 +192,17 @@ export default function AppLayout() {
 
   const acknowledgePrivacy = async () => {
     if (!user?.id || privacySaving || privacyChecking) return;
+    const userId = String(user.id);
     setPrivacySaving(true);
     setPrivacyError("");
     try {
-      await updateDoc(doc(db, "users", String(user.id)), {
+      await updateDoc(doc(db, "users", userId), {
         privacyPolicyAccepted: true,
         privacyPolicyVersion: PRIVACY_POLICY_VERSION,
         privacyPolicyAcceptedAt: serverTimestamp(),
       });
+      // Cache only after the Firestore write succeeds. No GPS consent is given.
+      rememberPrivacyAcknowledgment(userId);
       setPrivacyOpen(false);
     } catch (error) {
       console.error("Could not save privacy acknowledgment:", error);
