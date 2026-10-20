@@ -1187,6 +1187,7 @@ function OperationalGpsMap({ agents = [], catalog = [], now = Date.now() }) {
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState("ALL");
   const [selectedId, setSelectedId] = useState("");
+  const [selectedReferenceId, setSelectedReferenceId] = useState("");
   const referencePoints = catalog.filter(p => p.active !== false && validGpsCoordinates(p.latitude, p.longitude));
   const records = agents.map(agent => {
     const consent = agent.live_tracking_consent === true;
@@ -1208,6 +1209,15 @@ function OperationalGpsMap({ agents = [], catalog = [], now = Date.now() }) {
     x: 32 + ((Number(lng) - (lngMin - lngPad)) / (lngMax - lngMin + 2 * lngPad)) * 736,
     y: 28 + (1 - (Number(lat) - (latMin - latPad)) / (latMax - latMin + 2 * latPad)) * 364,
   });
+  const selectedReference = referencePoints.find(p => p.id === selectedReferenceId);
+  const nearbyReferenceAgents = selectedReference ? mapped.map(r => {
+    const lat1 = Number(selectedReference.latitude) * Math.PI / 180;
+    const lat2 = Number(r.gps.latitude) * Math.PI / 180;
+    const dLat = (Number(r.gps.latitude) - Number(selectedReference.latitude)) * Math.PI / 180;
+    const dLng = (Number(r.gps.longitude) - Number(selectedReference.longitude)) * Math.PI / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return { ...r, distanceMeters: 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h))) };
+  }).sort((a,b) => a.distanceMeters - b.distanceMeters) : [];
   const selected = records.find(r => r.agent.id === selectedId);
   const hasAuthorizedFix = selected?.eligible === true;
   return (
@@ -1231,12 +1241,28 @@ function OperationalGpsMap({ agents = [], catalog = [], now = Date.now() }) {
           <svg viewBox="0 0 800 420" role="img" aria-label="Relative GPS positions and registered reference points" style={{ width: "100%", minWidth: 360, display: "block" }}>
             <rect x="0" y="0" width="800" height="420" fill="#eff6ff" />
             {[1,2,3].map(i => <g key={i}><line x1={i*200} y1="0" x2={i*200} y2="420" stroke="#dbeafe" /><line x1="0" y1={i*105} x2="800" y2={i*105} stroke="#dbeafe" /></g>)}
-            {referencePoints.map(p => { const xy = project(p.latitude, p.longitude); return <g key={p.id}><rect x={xy.x-5} y={xy.y-5} width="10" height="10" rx="2" fill="#64748b" /><text x={xy.x+9} y={xy.y-8} fontSize="11" fill="#475569">{String(p.name || "Reference").slice(0,22)}</text></g>; })}
-            {shown.map(r => { const xy = project(r.gps.latitude, r.gps.longitude); const isSelected = selectedId === r.agent.id; const color = r.availability === "AVAILABLE" ? "#16a34a" : r.availability === "BUSY" ? "#ea580c" : "#64748b"; return <g key={r.agent.id} onClick={() => setSelectedId(r.agent.id)} style={{ cursor: "pointer" }}><circle cx={xy.x} cy={xy.y} r={isSelected ? 12 : 9} fill={color} stroke="white" strokeWidth="3" /><text x={xy.x+13} y={xy.y+5} fontSize="12" fontWeight="700" fill="#0f172a">{getAgentName(r.agent).slice(0,22)}</text></g>; })}
+            {referencePoints.map(p => { const xy = project(p.latitude, p.longitude); const isSelected = selectedReferenceId === p.id; return <g key={p.id} onClick={() => { setSelectedReferenceId(p.id); setSelectedId(""); }} style={{cursor:"pointer"}}><rect x={xy.x-(isSelected ? 8 : 6)} y={xy.y-(isSelected ? 8 : 6)} width={isSelected ? 16 : 12} height={isSelected ? 16 : 12} rx="2" fill={isSelected ? "#1d4ed8" : "#64748b"} stroke="white" strokeWidth="2" /><text x={xy.x+10} y={xy.y-9} fontSize="11" fill="#475569">{String(p.name || "Reference").slice(0,22)}</text></g>; })}
+            {shown.map(r => { const xy = project(r.gps.latitude, r.gps.longitude); const isSelected = selectedId === r.agent.id; const color = r.availability === "AVAILABLE" ? "#16a34a" : r.availability === "BUSY" ? "#ea580c" : "#64748b"; return <g key={r.agent.id} onClick={() => { setSelectedId(r.agent.id); setSelectedReferenceId(""); }} style={{ cursor: "pointer" }}><circle cx={xy.x} cy={xy.y} r={isSelected ? 12 : 9} fill={color} stroke="white" strokeWidth="3" /><text x={xy.x+13} y={xy.y+5} fontSize="12" fontWeight="700" fill="#0f172a">{getAgentName(r.agent).slice(0,22)}</text></g>; })}
           </svg>
         </div> : <div style={{ padding: 18, background: "white", borderRadius: 10, color: "#64748b" }}>No registered GPS reference points or current authorized agent fixes to plot.</div>}
         <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>Squares = Duty Manager registered points · Green = Available · Orange = Busy · Gray = Other. Positions are relative GPS coordinates, not walking routes.</div>
-        {shown.length > 0 && <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>{shown.map(r => <button key={r.agent.id} type="button" onClick={() => setSelectedId(r.agent.id)} style={{ background: selectedId === r.agent.id ? "#dbeafe" : "white", border: "1px solid #cbd5e1", borderRadius: 9, padding: "7px 9px", cursor: "pointer", fontSize: 11 }}>{getAgentName(r.agent)} · {getAvailabilityLabel(r.availability)}</button>)}</div>}
+        {shown.length > 0 && <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>{shown.map(r => <button key={r.agent.id} type="button" onClick={() => { setSelectedId(r.agent.id); setSelectedReferenceId(""); }} style={{ background: selectedId === r.agent.id ? "#dbeafe" : "white", border: "1px solid #cbd5e1", borderRadius: 9, padding: "7px 9px", cursor: "pointer", fontSize: 11 }}>{getAgentName(r.agent)} · {getAvailabilityLabel(r.availability)}</button>)}</div>}
+        {referencePoints.length > 0 && <div style={{marginTop:12}}>
+          <div style={{fontSize:12,fontWeight:800,color:"#334155",marginBottom:7}}>Registered operational locations · select to view photo and nearby agents</div>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{referencePoints.map(p => <button key={p.id} type="button" onClick={() => { setSelectedReferenceId(p.id); setSelectedId(""); }} style={{background:selectedReferenceId === p.id ? "#dbeafe" : "white",border:"1px solid #cbd5e1",borderRadius:9,padding:"7px 9px",cursor:"pointer",fontSize:11}}>{p.photoUrl ? "📷 " : "📍 "}{p.name} · {p.area || "TPA"}</button>)}</div>
+        </div>}
+        {selectedReference && <div style={{background:"white",border:"1px solid #bfdbfe",borderRadius:12,padding:13,marginTop:11,fontSize:12,lineHeight:1.7}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}><strong style={{fontSize:15,color:"#0f4c81"}}>{selectedReference.name}</strong><button type="button" onClick={() => setSelectedReferenceId("")} style={{background:"white",border:"1px solid #cbd5e1",borderRadius:7,padding:"4px 9px",cursor:"pointer"}}>Close</button></div>
+          <div><strong>Area:</strong> {selectedReference.area || "TPA"} · <strong>Type:</strong> {selectedReference.type || "Not specified"}</div>
+          {selectedReference.notes && <div><strong>Notes:</strong> {selectedReference.notes}</div>}
+          {selectedReference.photoUrl ? <img src={selectedReference.photoUrl} alt={`Duty Manager registered photo of ${selectedReference.name}`} loading="lazy" style={{display:"block",marginTop:9,width:"100%",maxWidth:480,maxHeight:280,objectFit:"contain",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:10}} /> : <div style={{color:"#64748b",marginTop:6}}>No reference photo registered yet.</div>}
+          <div style={{marginTop:8}}><strong>Registered GPS:</strong> {Number(selectedReference.latitude).toFixed(6)}, {Number(selectedReference.longitude).toFixed(6)}</div>
+          <div><strong>Reference accuracy:</strong> {selectedReference.accuracyMeters == null ? "Unknown" : `${Math.round(Number(selectedReference.accuracyMeters))} m`}</div>
+          <a href={`https://www.google.com/maps?q=${selectedReference.latitude},${selectedReference.longitude}`} target="_blank" rel="noopener noreferrer" style={{color:"#1d4ed8",fontWeight:700}}>Open reference in Google Maps</a>
+          <div style={{marginTop:11,fontWeight:800}}>Agents closest to this reference (recent authorized GPS only)</div>
+          {nearbyReferenceAgents.length === 0 ? <div style={{color:"#64748b"}}>No recent authorized agent GPS fixes available.</div> : nearbyReferenceAgents.slice(0,8).map(r => <div key={r.agent.id} style={{padding:"5px 0",borderBottom:"1px solid #f1f5f9"}}><strong>{getAgentName(r.agent)}</strong> · {getAvailabilityLabel(r.availability)} · approx. {Math.round(r.distanceMeters)} m straight-line · GPS accuracy {Number.isFinite(Number(r.gps.accuracy_m)) ? `${Math.round(Number(r.gps.accuracy_m))} m` : "unknown"}</div>)}
+          <div style={{fontSize:11,color:"#92400e",marginTop:8}}>Distances are GPS estimates, not walking routes or confirmed gate presence. Smart Dispatch remains advisory; no assignments are made from this map.</div>
+        </div>}
         {selected && <div style={{ background: "white", border: "1px solid #bfdbfe", borderRadius: 12, padding: 11, marginTop: 11, fontSize: 12, lineHeight: 1.8 }}>
           <strong>{getAgentName(selected.agent)}</strong> · {getAvailabilityLabel(selected.availability)}<div>Reported: {selected.agent.current_location || "Not reported"}</div>
           <div>GPS: {hasAuthorizedFix ? "Recent authorized fix" : selected.estimate.status === "NO_CONSENT" ? "Not authorized" : "Unavailable / stale"}</div>
