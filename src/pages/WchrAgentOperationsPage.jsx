@@ -1134,6 +1134,58 @@ export default function WchrAgentOperationsPage() {
     safeUpper(shift?.status) ===
     WCHR_AGENT_STATUS.ACTIVE;
 
+  // GPS is independent of the manually selected operational location.
+  // Browser geolocation only runs while the app is open and the shift is active.
+  const [gpsState, setGpsState] = useState("inactive");
+  useEffect(() => {
+    if (!agentId || !isPunchedIn || shift?.live_tracking_consent !== true) {
+      setGpsState("inactive");
+      return undefined;
+    }
+    if (!navigator.geolocation) {
+      setGpsState("unsupported");
+      return undefined;
+    }
+    let cancelled = false;
+    let lastSaved = 0;
+    setGpsState("waiting");
+    const watcher = navigator.geolocation.watchPosition(
+      async (position) => {
+        if (cancelled) return;
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+        setGpsState("active");
+        const currentTime = Date.now();
+        if (currentTime - lastSaved < 15000) return;
+        lastSaved = currentTime;
+        try {
+          await updateDoc(doc(db, "wchr_agent_shifts", agentId), {
+            live_gps: {
+              latitude,
+              longitude,
+              accuracy_m: position.coords.accuracy ?? null,
+              recorded_at: serverTimestamp(),
+              source: "browser_geolocation",
+            },
+          });
+        } catch (error) {
+          console.error("WCHR GPS update failed", error);
+          setGpsState("save-error");
+        }
+      },
+      (error) => {
+        console.warn("WCHR GPS unavailable", error);
+        setGpsState(error.code === 1 ? "permission-denied" : "unavailable");
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+    );
+    return () => {
+      cancelled = true;
+      navigator.geolocation.clearWatch(watcher);
+    };
+  }, [agentId, isPunchedIn, shift?.live_tracking_consent]);
+
   const availability = safeUpper(
     shift?.availability_status
   );
@@ -3191,6 +3243,20 @@ export default function WchrAgentOperationsPage() {
           )}
         </div>
       </PageCard>
+
+      {isPunchedIn && (
+        <PageCard style={{ padding: 14, marginBottom: 12 }}>
+          <strong>Live GPS Tracking</strong>
+          <p style={{ fontSize: 12, margin: "7px 0", color: "#475569" }}>
+            {shift?.live_tracking_consent === true
+              ? `GPS status: ${gpsState}. Location updates automatically while this page is open and your device allows location access.`
+              : "GPS tracking not authorized for this shift. Your operational location can still be updated manually."}
+          </p>
+          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+            GPS is approximate indoors. Punch Out stops GPS collection on this page.
+          </p>
+        </PageCard>
+      )}
 
       {/* Independent mobile-friendly location update while on duty and idle. */}
       {isPunchedIn && !activeReport && (
