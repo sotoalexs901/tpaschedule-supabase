@@ -84,7 +84,14 @@ exports.handler = async (event) => {
       return json(200,{ok:true});
     }
     if (action === 'create') {
-      if (!manager) return json(403,{error:'Dispatch role required'});
+      // Lobby agents may prepare intake, but never assign or manage Dispatch.
+      const lobbyShiftRef = db.collection('wchr_agent_shifts').doc(employeeDoc?.exists ? employeeDoc.id : employeeId);
+      const lobbyShift = manager ? null : await lobbyShiftRef.get();
+      const lobbyAuthorized = !!(lobbyShift?.exists &&
+        String(lobbyShift.data()?.status || '').toUpperCase() === 'ACTIVE' &&
+        lobbyShift.data()?.lobby_agent === true &&
+        String(lobbyShift.data()?.user_id || lobbyShift.data()?.userId || '') === String(decoded.userDocId));
+      if (!manager && !lobbyAuthorized) return json(403,{error:'Active Lobby Punch In or Dispatch role required'});
       const flightId = text(body.flightId,120), name = text(body.fullName,120);
       const pnr = text(body.pnr,12).toUpperCase(), direction = text(body.direction,2).toUpperCase();
       if (!flightId || name.length < 2 || !/^[A-Z0-9]{4,8}$/.test(pnr) || !['IB','OB'].includes(direction))
@@ -92,9 +99,13 @@ exports.handler = async (event) => {
       const flight = await db.collection('wchr_daily_flights').doc(flightId).get();
       if (!flight.exists) return json(404,{error:'Existing WCHR flight not found'});
       const f = flight.data();
+      const flightStatus = String(f.status || f.flight_status || '').toUpperCase();
+      if (['CANCELLED','CLOSED','COMPLETED','ARCHIVED'].includes(flightStatus) || f.is_open === false || f.approved === false)
+        return json(409,{error:'Flight is not open for new passenger services'});
       const ref = services.doc();
       await ref.set({flightId, flightNumber:text(f.flight_number,30), airline:text(f.airline,40),
         gate:text(f.gate,30), direction, fullName:name, pnr, agentId:'', status:'UNASSIGNED',
+        readyForAssignment:true, intakeSource:manager?'DISPATCH':'LOBBY',
         lastCustodyAt:null, pickedUpAt:null, pickupLocation:'', currentLocation:'', handoffTo:'', createdAt:now, updatedAt:now,
         timeline:[eventItem('CREATED')], createdBy:actor.id});
       return json(200,{id:ref.id});
