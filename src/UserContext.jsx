@@ -7,6 +7,8 @@ import React, {
   useState,
 } from "react";
 
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "./firebase";
 import { endUmnrSession } from "./utils/umnrClient.js";
 
 const UserContext = createContext({
@@ -14,6 +16,8 @@ const UserContext = createContext({
   setUser: () => {},
   logout: () => {},
 });
+
+const PRIVACY_POLICY_VERSION = "2026.10.20";
 
 const STORAGE_KEY = "tpa_ops_user";
 const LAST_ACTIVITY_KEY = "tpa_ops_last_activity";
@@ -25,15 +29,53 @@ const WARNING_MS = WARNING_MINUTES * 60 * 1000;
 const LOGOUT_MS = LOGOUT_MINUTES * 60 * 1000;
 
 export function UserProvider({ children }) {
-  const [user, setUserState] = useState(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch (error) {
-      console.error("Error reading saved user:", error);
-      return null;
+  // Never expose restored sessions before the current privacy record is verified.
+  const [user, setUserState] = useState(null);
+  const [sessionChecking, setSessionChecking] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function restoreSession() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (!saved?.id) {
+          localStorage.removeItem(STORAGE_KEY);
+          return;
+        }
+        const lastActivity = Number(localStorage.getItem(LAST_ACTIVITY_KEY));
+        if (!Number.isFinite(lastActivity) || !lastActivity || Date.now() - lastActivity >= LOGOUT_MS) {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
+          return;
+        }
+        // Firebase is authoritative. A locally saved acceptance is not proof.
+        const snapshot = await getDoc(doc(db, "users", String(saved.id)));
+        if (cancelled) return;
+        const data = snapshot.exists() ? snapshot.data() : null;
+        if (data?.privacyPolicyAccepted === true &&
+            String(data?.privacyPolicyVersion || "") === PRIVACY_POLICY_VERSION) {
+          setUserState({ ...saved, privacyPolicyAccepted: true,
+            privacyPolicyVersion: PRIVACY_POLICY_VERSION });
+        } else {
+          // The login screen requests the current acknowledgment after PIN verification.
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
+          endUmnrSession().catch(() => {});
+        }
+      } catch (error) {
+        console.error("Could not verify restored session privacy status:", error);
+        // Fail closed. Do not trust cached data if Firestore cannot be reached.
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+      } finally {
+        if (!cancelled) setSessionChecking(false);
+      }
     }
-  });
+    restoreSession();
+    return () => { cancelled = true; };
+  }, []);
 
   const [showSessionWarning, setShowSessionWarning] = useState(false);
 
@@ -130,6 +172,7 @@ export function UserProvider({ children }) {
   };
 
   useEffect(() => {
+    if (sessionChecking) return;
     try {
       if (user) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
@@ -139,7 +182,7 @@ export function UserProvider({ children }) {
     } catch (error) {
       console.error("Error syncing user to storage:", error);
     }
-  }, [user]);
+  }, [user, sessionChecking]);
 
   useEffect(() => {
     if (!user) {
@@ -208,9 +251,9 @@ export function UserProvider({ children }) {
 
   return (
     <UserContext.Provider value={value}>
-      {children}
+      {!sessionChecking && children}
 
-      {user && showSessionWarning && (
+      {!sessionChecking && user && showSessionWarning && (
         <div
           style={{
             position: "fixed",
