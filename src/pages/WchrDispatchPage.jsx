@@ -1,3 +1,5 @@
+import { rankAgentsForService } from "../utils/smartDispatchLocations.js";
+import { subscribeOperationalLocations } from "../utils/operationalLocations.js";
 // src/pages/WchrDispatchPage.jsx
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -1977,6 +1979,24 @@ function DispatchLiveBoardStaging() {
 // MAIN
 // ============================================================
 
+// Advisory ranking only; operational catalog does not replace agent Live Location.
+function smartDispatchRecommendations(service, agents, getUmnrCount, catalog) {
+  const pickup = service?.current_location || service?.ready_location || service?.pickup_location || "";
+  if (!String(pickup).trim()) return { pickup: "Not recorded", candidates: [], warning: "Record the service pickup location before matching." };
+  const ranked = rankAgentsForService({
+    serviceLocation: pickup,
+    agents,
+    catalog,
+    isEligible: agent =>
+      safeUpper(agent.status) === WCHR_AGENT_STATUS.ACTIVE &&
+      safeUpper(agent.availability_status) === WCHR_AGENT_AVAILABILITY.AVAILABLE &&
+      !cleanText(agent.active_report_id) &&
+      getUmnrCount(agent.id) === 0,
+    adjacency: {}, // No assumed gate proximity from indoor GPS or a newly registered point.
+  });
+  return { pickup, candidates: ranked.candidates, warning: ranked.warning };
+}
+
 export default function WchrDispatchPage() {
   const { user } =
     useUser();
@@ -2000,6 +2020,11 @@ export default function WchrDispatchPage() {
     agents,
     setAgents,
   ] = useState([]);
+
+  const [operationalLocationCatalog, setOperationalLocationCatalog] = useState([]);
+  useEffect(() => subscribeOperationalLocations(setOperationalLocationCatalog, error => {
+    console.warn("Operational location catalog unavailable; legacy location matching remains available.", error);
+  }), []);
 
   const umnrEnabled = import.meta.env.VITE_UMNR_ENABLED === "true";
 
@@ -8631,6 +8656,31 @@ export default function WchrDispatchPage() {
             </div>
           </PageCard>
         )}
+
+      {/* Advisory WCHR Smart Dispatch; assignment remains in existing supervisor workflow. */}
+      <section aria-label="WCHR Smart Dispatch" style={{ margin: "16px 0", padding: 18, background: "#f8fbff", border: "1px solid #bfdbfe", borderRadius: 14 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 19 }}>Smart Dispatch · WCHR</h2>
+        <p style={{ fontSize: 13, color: "#475569" }}>Suggestions use the agents' existing Live Location reports and the operational location name catalog. GPS does not verify proximity inside the airport. Assignment requires supervisor confirmation.</p>
+        <label style={{ display: "block", marginBottom: 12 }}>
+          <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>Service to assign</span>
+          <select value={selectedReportId || ""} onChange={e => setSelectedReportId(e.target.value)} style={{ width: "100%", maxWidth: 480, padding: 10, border: "1px solid #bfdbfe", borderRadius: 9 }}>
+            <option value="">Select WCHR service</option>
+            {reports.filter(r => !["DELIVERED", "CANCELLED", "COMPLETED"].includes(safeUpper(r.status)) && !cleanText(r.wchr_agent_id || r.assigned_agent_id)).map(r => <option key={r.id} value={r.id}>WCHR {r.wheelchair_number || "—"} · {r.current_location || r.ready_location || "Location not recorded"}</option>)}
+          </select>
+        </label>
+        {selectedReport && (() => {
+          const match = smartDispatchRecommendations(selectedReport, agents, getUmnrCountForAgent, operationalLocationCatalog);
+          return <div>
+            <div style={{ fontSize: 13, marginBottom: 8 }}><b>Pickup:</b> {match.pickup}</div>
+            <p style={{ fontSize: 12, color: "#92400e" }}>{match.warning}</p>
+            {match.candidates.length === 0 ? <p>No eligible WCHR agents currently available.</p> : match.candidates.map(({agent, location, exact, fresh, nearby}) => <div key={agent.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, padding: 10, marginBottom: 6, border: "1px solid #dbeafe", borderRadius: 10, background: exact ? "#ecfdf5" : "#fff" }}>
+              <div><b>{getAgentName(agent)}</b><div style={{ fontSize: 12 }}>{location || "Location not reported"} · {exact ? (fresh ? "Same reported location · recent update" : "Same reported location · time unverified") : nearby ? "Configured nearby area" : "Proximity not verified"}</div></div>
+              <button type="button" onClick={() => setSelectedAgentId(agent.id)} style={{ border: "1px solid #93c5fd", borderRadius: 8, padding: "8px 12px", background: selectedAgentId === agent.id ? "#bfdbfe" : "#eff6ff", cursor: "pointer" }}>{selectedAgentId === agent.id ? "Selected for review" : "Review assignment"}</button>
+            </div>)}
+            <p style={{ fontSize: 12, color: "#475569" }}>Use the existing Assignment Preview and Assign WCHR controls to confirm. This panel never assigns automatically.</p>
+          </div>;
+        })()}
+      </section>
 
       {/* UMNR operational tools are below the main WCHR workflow. */}
       {ENABLE_LIVE_BOARD_STAGING && <DispatchLiveBoardStaging />}
