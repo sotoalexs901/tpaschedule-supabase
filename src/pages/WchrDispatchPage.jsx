@@ -1181,6 +1181,40 @@ function InventoryCard({
 // AGENT CARD
 // ============================================================
 
+function AgentGpsDetails({ agent }) {
+  const [expanded, setExpanded] = useState(false);
+  const gps = agent.live_gps;
+  const latitude = Number(gps?.latitude);
+  const longitude = Number(gps?.longitude);
+  const hasCoords = Number.isFinite(latitude) && Number.isFinite(longitude) && gps?.latitude != null && gps?.longitude != null;
+  const rawTime = gps?.recorded_at;
+  const timestamp = rawTime?.toDate?.() || (rawTime?.seconds ? new Date(rawTime.seconds * 1000) : null);
+  const ageMinutes = timestamp ? (Date.now() - timestamp.getTime()) / 60000 : Infinity;
+  const live = hasCoords && ageMinutes >= 0 && ageMinutes <= 3 && agent.live_tracking_consent === true;
+  const mapUrl = hasCoords ? `https://www.google.com/maps?q=${latitude},${longitude}` : null;
+  return (
+    <div style={{ marginTop: 8, borderTop: "1px solid #e2e8f0", paddingTop: 8 }}>
+      <button type="button" onClick={() => setExpanded(!expanded)}
+        style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 9, padding: "7px 10px", fontWeight: 800, fontSize: 11, color: "#1d4ed8", cursor: "pointer" }}>
+        {expanded ? "Hide GPS details" : "View Live GPS / Location"}
+      </button>
+      {expanded && (
+        <div style={{ marginTop: 9, fontSize: 12, lineHeight: 1.7, color: "#334155", overflowWrap: "anywhere" }}>
+          <div><strong>GPS:</strong> {agent.live_tracking_consent !== true ? "Not authorized" : live ? "Live (recent fix)" : hasCoords ? "Last known / stale" : "Waiting for GPS"}</div>
+          <div><strong>Operational location:</strong> {agent.current_location || "Not reported"} (separate from GPS)</div>
+          {hasCoords && <>
+            <div><strong>Coordinates:</strong> {latitude.toFixed(6)}, {longitude.toFixed(6)}</div>
+            <div><strong>Accuracy:</strong> {Number.isFinite(Number(gps.accuracy_m)) ? `${Math.round(Number(gps.accuracy_m))} m` : "Unknown"}</div>
+            <div><strong>Last received:</strong> {timestamp ? timestamp.toLocaleString() : "Unknown"}</div>
+            <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#1d4ed8", fontWeight: 800 }}>Open GPS location in Google Maps</a>
+          </>}
+          <div style={{ fontSize: 11, color: "#64748b" }}>GPS is approximate indoors and requires an open app and device permission. A stale fix is not a current position.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AgentCard({
   agent,
   selected,
@@ -1521,6 +1555,7 @@ function SupervisorAgentCard({
           flexWrap: "wrap",
         }}
       >
+        <AgentGpsDetails agent={agent} />
         {canSupervisorPunchOut && (
           <ActionButton
             variant="danger"
