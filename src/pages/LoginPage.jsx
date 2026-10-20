@@ -22,7 +22,7 @@ import {
 import "./LoginPage.css";
 import { startUmnrSession } from "../utils/umnrClient.js";
 
-const PRIVACY_POLICY_VERSION = "2026.08.26";
+const PRIVACY_POLICY_VERSION = "2026.10.20";
 // One AeroStation Hub login. The UMNR token exchange happens silently,
 // only after the employee has accepted the privacy policy.
 // Never block the existing WCHR login if UMNR backend is unavailable.
@@ -517,8 +517,8 @@ export default function LoginPage() {
               <p>
                 {APP_NAME} has implemented its
                 Privacy, Confidentiality &amp; Ownership
-                Policy. Please review and acknowledge
-                this notice before continuing.
+                Policy, updated October 20, 2026.
+                Please review the update before continuing.
               </p>
 
               <div className="privacy-notice">
@@ -534,6 +534,27 @@ export default function LoginPage() {
                   authorized business use.
                 </p>
 
+              </div>
+
+              <div className="privacy-notice" style={{ borderLeft: "4px solid #1769aa" }}>
+                <strong>October 2026 Update — WCHR Live Location</strong>
+                <p>
+                  AeroStation Hub may use approximate live location for WCHR
+                  service coordination, authorized operational monitoring, and
+                  advisory dispatch. Tracking requires an active Punch In,
+                  separately enabled live-location consent, and permission
+                  from the device or browser.
+                </p>
+                <p>
+                  Tracking stops on Punch Out or withdrawal of live-location
+                  consent. GPS accuracy varies and does not automatically
+                  assign services.
+                </p>
+                <p>
+                  <strong>Important:</strong> Accepting this policy confirms
+                  that you have been informed of this update. It does not
+                  activate GPS or replace separate live-location consent.
+                </p>
               </div>
 
               <div className="privacy-rules">
@@ -618,7 +639,10 @@ export default function LoginPage() {
                   </strong>{" "}
                   and understand my responsibility to
                   protect confidential information
-                  accessed through {APP_NAME}.
+                  accessed through {APP_NAME}. I also acknowledge
+                  the October 2026 WCHR live-location notice and understand
+                  that location tracking requires separate consent and
+                  an active Punch In.
                 </span>
 
               </label>
