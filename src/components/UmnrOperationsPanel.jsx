@@ -1,4 +1,4 @@
-/ src/components/UmnrOperationsPanel.jsx
+// src/components/UmnrOperationsPanel.jsx
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import { umnrRequest } from '../utils/umnrClient.js';
 import { printUmnrReport } from '../utils/umnrReport.js';
