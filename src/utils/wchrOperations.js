@@ -108,9 +108,9 @@ export function getEmployeeIdentifier(employee, user = null) {
 export function buildAgentShiftPayload({
   employee,
   user,
-  lobbyAgent = false,
   trackingConsent = false,
   startingLocation = "",
+  lobbyMode = false,
 }) {
   const agentId = getEmployeeIdentifier(employee, user);
 
@@ -185,9 +185,10 @@ export function buildAgentShiftPayload({
       ),
 
     status: WCHR_AGENT_STATUS.ACTIVE,
+    shift_mode: lobbyMode ? "LOBBY_AGENT" : "WCHR_AGENT",
 
     availability_status:
-      WCHR_AGENT_AVAILABILITY.AVAILABLE,
+      lobbyMode ? WCHR_AGENT_AVAILABILITY.UNAVAILABLE : WCHR_AGENT_AVAILABILITY.AVAILABLE,
 
     active_report_id: "",
     active_wheelchair_number: "",
@@ -195,11 +196,8 @@ export function buildAgentShiftPayload({
     current_location:
       cleanText(startingLocation),
 
-    lobby_agent: lobbyAgent === true,
-    operational_role: lobbyAgent === true ? "LOBBY" : "FIELD",
-
     live_tracking_consent:
-      !lobbyAgent && trackingConsent === true,
+      !lobbyMode && trackingConsent === true,
 
     clock_in_at: serverTimestamp(),
     clock_out_at: null,
@@ -216,9 +214,9 @@ export function buildAgentShiftPayload({
 export async function punchInWchrAgent({
   employee,
   user,
-  lobbyAgent = false,
   trackingConsent = false,
   startingLocation = "",
+  lobbyMode = false,
 }) {
   const agentId = getEmployeeIdentifier(employee, user);
 
@@ -302,7 +300,6 @@ export async function punchInWchrAgent({
           serverTimestamp(),
       };
 
-      // Do not silently change the operational role of an existing active shift.
       if (cleanText(startingLocation)) {
         refreshedIdentity.current_location =
           cleanText(startingLocation);
@@ -331,9 +328,9 @@ export async function punchInWchrAgent({
   const payload = buildAgentShiftPayload({
     employee,
     user,
-    lobbyAgent,
     trackingConsent,
     startingLocation,
+    lobbyMode,
   });
 
   await setDoc(
@@ -366,11 +363,10 @@ export async function punchInWchrAgent({
         payload.current_location,
 
       event_type: "PUNCH_IN",
+      shift_mode: payload.shift_mode,
 
-      lobby_agent: lobbyAgent === true,
-      operational_role: lobbyAgent === true ? "LOBBY" : "FIELD",
       live_tracking_consent:
-        !lobbyAgent && trackingConsent === true,
+        trackingConsent === true,
 
       created_at:
         serverTimestamp(),
@@ -455,6 +451,7 @@ export async function punchOutWchrAgent({
     {
       status:
         WCHR_AGENT_STATUS.OFF_DUTY,
+      shift_mode: "OFF_DUTY",
 
       availability_status:
         WCHR_AGENT_AVAILABILITY.UNAVAILABLE,
