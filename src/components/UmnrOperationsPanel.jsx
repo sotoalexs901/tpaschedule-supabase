@@ -1,10 +1,10 @@
-// src/components/UmnrOperationsPanel.jsx
+/ src/components/UmnrOperationsPanel.jsx
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import { umnrRequest } from '../utils/umnrClient.js';
 import { printUmnrReport } from '../utils/umnrReport.js';
 const button={padding:'9px 13px',border:'1px solid #bfdbfe',borderRadius:9,cursor:'pointer',background:'#eff6ff',fontWeight:700};
 const input={padding:10,border:'1px solid #cbd5e1',borderRadius:8,width:'100%',boxSizing:'border-box'};
-const finished=new Set(['DELIVERED','CANCELLED','REJECTED']);
+const finished=new Set(['DELIVERED','CANCELLED']);
 const localTime=v=>{if(!v)return 'Not recorded';const d=new Date(v);return Number.isNaN(d.getTime())?'Not recorded':d.toLocaleString();};
 const duration=(start,end)=>{if(!start)return 'Not started';const a=new Date(start).getTime(),b=new Date(end).getTime();if(!Number.isFinite(a)||!Number.isFinite(b))return 'Not available';const s=Math.max(0,Math.floor((b-a)/1000));return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s/60)%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
 
@@ -53,8 +53,9 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
   const refresh=useCallback(async()=>{try{const r=await umnrRequest('list');setItems(r.items||[]);setError('');}catch(e){setError(e.message)}},[]);
   useEffect(()=>{refresh();const interval=setInterval(refresh,15000);return()=>clearInterval(interval)},[refresh]);
   useEffect(()=>{const interval=setInterval(()=>setTick(Date.now()),1000);return()=>clearInterval(interval)},[]);
-  const active=useMemo(()=>items.filter(x=>!finished.has(x.status)),[items]);
-  const pendingAssignment=!dispatch?active.find(x=>x.status==='ASSIGNED'&&!dismissedAssignments.includes(x.id)):null;
+  const visible=useMemo(()=>dispatch?items:items.filter(x=>String(employeeId).trim() && (String(x.agentId)===String(employeeId)||String(x.pendingTransfer?.toAgentId)===String(employeeId))),[dispatch,items,employeeId]);
+  const active=useMemo(()=>visible.filter(x=>!finished.has(x.status)),[visible]);
+  const pendingAssignment=!dispatch?active.find(x=>x.status==='ASSIGNED'&&String(x.agentId)===String(employeeId)&&!dismissedAssignments.includes(x.id)):null;
   const pendingCustody=!dispatch?active.find(x=>x.pendingTransfer&&String(x.pendingTransfer.toAgentId)===String(employeeId)):null;
   const run=async(action,fields)=>{setBusy(true);setError('');setMessage('');try{await umnrRequest(action,fields);setMessage('UMNR updated.');await refresh();return true;}catch(e){setError(e.message);return false;}finally{setBusy(false)}};
   const create=async(e)=>{e.preventDefault();const ok=await run('create',{flightId,direction,fullName,pnr});if(ok){setFullName('');setPnr('');}};
@@ -81,7 +82,7 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
   };
   const printReport=(x)=>printUmnrReport(x,agentLabel,actorLabel,setError);
   const archiveService=async(x)=>{
-    if(!['DELIVERED','CANCELLED','REJECTED'].includes(x.status))return;
+    if(!['DELIVERED','CANCELLED'].includes(x.status))return;
     const reason=window.prompt('Archive this completed UMNR service? Enter the reason (minimum 8 characters). The record will remain available to Management for billing and audit:');
     if(reason===null)return;
     if(reason.trim().length<8){setError('Please enter an archive reason of at least 8 characters.');return;}
@@ -106,7 +107,7 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
     </form>}
     <div style={{marginTop:16,display:'grid',gap:10}}>{active.length===0?<p>No active UMNR services.</p>:active.map(x=>{
       const stamp=x.lastCustodyAt?new Date(x.lastCustodyAt._seconds?x.lastCustodyAt._seconds*1000:x.lastCustodyAt):null;
-      const mayAct=!dispatch;
+      const mayAct=!dispatch&&String(employeeId).trim()!==''&&String(x.agentId)===String(employeeId)&&!x.pendingTransfer;
       const overdue=['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&(!stamp||tick-stamp.getTime()>=30*60000);
       return <article key={x.id} style={{border:'1px solid #e2e8f0',padding:14,borderRadius:12,background:overdue?'#fff7ed':'#f8fafc'}}>
         <div><b>{x.fullName}</b> · {x.direction} · {x.airline} {x.flightNumber} · PNR {x.pnr}</div><div style={{fontSize:13,marginTop:5}}>Gate: {x.gate||'TBD'} · Assigned to: {agentLabel(x.agentId,x.agentName)}</div>
@@ -126,7 +127,7 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
           {mayAct&&x.status==='IN_TRANSIT'&&<button disabled={busy} style={button} onClick={()=>next(x,'AT_GATE')}>At Gate / Handoff Point</button>}
           {mayAct&&['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&<button disabled={busy} style={button} onClick={()=>run('custody',{id:x.id})}>Custody Check</button>}{mayAct&&x.status==='AT_GATE'&&<button disabled={busy} style={button} onClick={()=>next(x,'DELIVERED')}>Authorized Handoff</button>}{x.status==='DELIVERED'&&<button type="button" style={button} onClick={()=>printReport(x)}>Print Final Report</button>}
           {dispatch&&finished.has(x.status)&&<button disabled={busy} style={{...button,color:'#991b1b'}} onClick={()=>archiveService(x)}>Archive Service (Station Manager)</button>}
-           {dispatch&&!finished.has(x.status)&&<button disabled={busy} style={button} onClick={()=>next(x,'CANCELLED')}>Cancel</button>}
+           {dispatch&&!finished.has(x.status)&&x.status!=='REJECTED'&&<button disabled={busy} style={button} onClick={()=>next(x,'CANCELLED')}>Cancel</button>}
         </div>
         {dispatch&&transferId===x.id&&<div style={{padding:12,marginTop:10,border:'1px solid #bfdbfe',borderRadius:10,display:'grid',gap:8}}><strong>Transfer UMNR to another agent</strong><select style={input} value={transferAgent} onChange={e=>setTransferAgent(e.target.value)}><option value="">Select receiving agent</option>{agents.filter(a=>String(a.id)!==String(x.agentId)).map(a=><option key={a.id} value={a.id}>{agentLabel(a.id,a.name)}</option>)}</select><input style={input} placeholder="Transfer reason (minimum 8 characters)" value={transferReason} onChange={e=>setTransferReason(e.target.value)}/>{['PICKED_UP','IN_TRANSIT','AT_GATE'].includes(x.status)&&<input style={input} placeholder="Actual physical handoff location" value={transferLocation} onChange={e=>setTransferLocation(e.target.value)}/>}<p style={{fontSize:12,margin:0}}>After pickup, the current agent retains custody until the receiving agent confirms physical handoff.</p><div style={{display:'flex',gap:8}}><button type="button" style={button} disabled={busy||!transferAgent||transferReason.trim().length<8} onClick={async()=>{const ok=await run('transfer',{id:x.id,agentId:transferAgent,reason:transferReason.trim(),location:transferLocation.trim()});if(ok)setTransferId('');}}>Submit Transfer</button><button type="button" style={button} onClick={()=>setTransferId('')}>Cancel</button></div></div>}
         {handoff===x.id&&<div style={{marginTop:12,padding:12,borderRadius:12,border:'1px solid #bfdbfe',background:'#eff6ff'}}>
@@ -148,6 +149,13 @@ export default function UmnrOperationsPanel({mode='agent',flights=[],agents=[],e
         <details style={{marginTop:9}}><summary>Audit history ({x.timeline?.length||0})</summary><div style={{fontSize:12}}>{(x.timeline||[]).map((t,i)=><p key={i}>{localTime(t.at)} · {t.type} · {actorLabel(t,x)}{t.location?` · ${t.location}`:''}</p>)}</div></details>
       </article>
     })}</div>
-
+    {dispatch&&visible.some(x=>finished.has(x.status))&&<div style={{marginTop:20}}>
+      <h3>Completed services · Pending archive</h3>
+      {visible.filter(x=>finished.has(x.status)).map(x=><div key={x.id} style={{padding:12,border:'1px solid #cbd5e1',borderRadius:9,marginBottom:8}}>
+        <b>{x.fullName}</b> · {x.flightNumber} · {x.status}{' '}
+        <button type="button" style={button} onClick={()=>printReport(x)}>Print Final Report</button>{' '}
+        <button type="button" disabled={busy} style={button} onClick={()=>archiveService(x)}>Archive (Station Manager)</button>
+      </div>)}
+    </div>}
   </section>;
 }
