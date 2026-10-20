@@ -1044,14 +1044,14 @@ export default function WchrOperationsHubPage() {
 
     list.push({
       icon: "NEW",
-      title: "New WCHR Service",
+      title: "New Passenger Service",
       description:
-        "Create a passenger wheelchair service from approved daily flights and available inventory.",
+        "Create WCHR or UMNR services from approved daily flights. Dispatch assigns the agent.",
       route: "/wchr/intake",
       badge: "INTAKE",
       badgeTone: "blue",
       visible:
-        isSupervisorOrAbove,
+        isSupervisorOrAbove || (currentUserPunchedIn && currentUserShift?.shift_mode === "LOBBY_AGENT"),
     });
 
     list.push({
@@ -1142,6 +1142,7 @@ export default function WchrOperationsHubPage() {
   }, [
     currentUserHasAssignment,
     currentUserPunchedIn,
+    currentUserShift?.shift_mode,
     isDutyOrStation,
     isSupervisorOrAbove,
     activeServices.length,
