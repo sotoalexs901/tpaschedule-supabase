@@ -1,4 +1,4 @@
-import { rankAgentsForService } from "../utils/smartDispatchLocations.js";
+import { rankAgentsForService, nearestOperationalLocation, gpsRankAgentsForService } from "../utils/smartDispatchLocations.js";
 import { subscribeOperationalLocations } from "../utils/operationalLocations.js";
 // src/pages/WchrDispatchPage.jsx
 
@@ -1181,7 +1181,7 @@ function InventoryCard({
 // AGENT CARD
 // ============================================================
 
-function AgentGpsDetails({ agent }) {
+function AgentGpsDetails({ agent, catalog = [] }) {
   const [expanded, setExpanded] = useState(false);
   const gps = agent.live_gps;
   const latitude = Number(gps?.latitude);
@@ -1191,6 +1191,8 @@ function AgentGpsDetails({ agent }) {
   const timestamp = rawTime?.toDate?.() || (rawTime?.seconds ? new Date(rawTime.seconds * 1000) : null);
   const ageMinutes = timestamp ? (Date.now() - timestamp.getTime()) / 60000 : Infinity;
   const live = hasCoords && ageMinutes >= 0 && ageMinutes <= 3 && agent.live_tracking_consent === true;
+  const estimate = agent.live_tracking_consent === true ? nearestOperationalLocation(gps, catalog) : { status: "NO_CONSENT", nearest: null };
+  const nearest = estimate.nearest;
   const mapUrl = hasCoords ? `https://www.google.com/maps?q=${latitude},${longitude}` : null;
   return (
     <div style={{ marginTop: 8, borderTop: "1px solid #e2e8f0", paddingTop: 8 }}>
@@ -1201,7 +1203,10 @@ function AgentGpsDetails({ agent }) {
       {expanded && (
         <div style={{ marginTop: 9, fontSize: 12, lineHeight: 1.7, color: "#334155", overflowWrap: "anywhere" }}>
           <div><strong>GPS:</strong> {agent.live_tracking_consent !== true ? "Not authorized" : live ? "Live (recent fix)" : hasCoords ? "Last known / stale" : "Waiting for GPS"}</div>
-          <div><strong>Operational location:</strong> {agent.current_location || "Not reported"} (separate from GPS)</div>
+          <div><strong>Reported operational location:</strong> {agent.current_location || "Not reported"} (separate from GPS)</div>
+          <div><strong>Nearest registered location:</strong> {nearest ? `${nearest.location.name} (${nearest.location.area || "TPA"})` : estimate.status === "STALE" ? "Unavailable: GPS fix is stale" : estimate.status === "NO_CONSENT" ? "Tracking not authorized" : "No recent GPS or registered reference points"}</div>
+          {nearest && <div><strong>Approximate straight-line distance:</strong> {Math.round(nearest.distanceMeters)} m · Reference GPS accuracy: {nearest.location.accuracyMeters ?? "Unknown"} m</div>}
+          {nearest && <div style={{fontSize:11,color:"#92400e"}}>Estimated nearest reference point only. Indoor position / gate not verified.</div>}
           {hasCoords && <>
             <div><strong>Coordinates:</strong> {latitude.toFixed(6)}, {longitude.toFixed(6)}</div>
             <div><strong>Accuracy:</strong> {Number.isFinite(Number(gps.accuracy_m)) ? `${Math.round(Number(gps.accuracy_m))} m` : "Unknown"}</div>
@@ -1399,6 +1404,7 @@ function SupervisorAgentCard({
   hasLiveReport,
   isMobile,
   umnrCount = 0,
+  operationalLocationCatalog = [],
 }) {
   const punchedIn =
     safeUpper(agent.status) === WCHR_AGENT_STATUS.ACTIVE;
@@ -1555,7 +1561,7 @@ function SupervisorAgentCard({
           flexWrap: "wrap",
         }}
       >
-        <AgentGpsDetails agent={agent} />
+        <AgentGpsDetails agent={agent} catalog={operationalLocationCatalog} />
         {canSupervisorPunchOut && (
           <ActionButton
             variant="danger"
@@ -2018,15 +2024,17 @@ function DispatchLiveBoardStaging() {
 function smartDispatchRecommendations(service, agents, getUmnrCount, catalog) {
   const pickup = service?.current_location || service?.ready_location || service?.pickup_location || "";
   if (!String(pickup).trim()) return { pickup: "Not recorded", candidates: [], warning: "Record the service pickup location before matching." };
+  const eligible = agent =>
+    safeUpper(agent.status) === WCHR_AGENT_STATUS.ACTIVE &&
+    safeUpper(agent.availability_status) === WCHR_AGENT_AVAILABILITY.AVAILABLE &&
+    !cleanText(agent.active_report_id) && getUmnrCount(agent.id) === 0;
+  const gpsRanked = gpsRankAgentsForService({ serviceLocation: pickup, agents, catalog, isEligible: eligible });
+  if (gpsRanked) return { pickup, candidates: gpsRanked.candidates, warning: gpsRanked.warning, gpsBased: true };
   const ranked = rankAgentsForService({
     serviceLocation: pickup,
     agents,
     catalog,
-    isEligible: agent =>
-      safeUpper(agent.status) === WCHR_AGENT_STATUS.ACTIVE &&
-      safeUpper(agent.availability_status) === WCHR_AGENT_AVAILABILITY.AVAILABLE &&
-      !cleanText(agent.active_report_id) &&
-      getUmnrCount(agent.id) === 0,
+    isEligible: eligible,
     adjacency: {}, // No assumed gate proximity from indoor GPS or a newly registered point.
   });
   return { pickup, candidates: ranked.candidates, warning: ranked.warning };
@@ -8505,6 +8513,7 @@ export default function WchrDispatchPage() {
                       clearBusy={busyClearAgentId === agent.id}
                       hasLiveReport={agentHasLiveReport(agent)}
                       umnrCount={getUmnrCountForAgent(agent.id)}
+                      operationalLocationCatalog={operationalLocationCatalog}
                     />
                   )
                 )}
@@ -8695,7 +8704,7 @@ export default function WchrDispatchPage() {
       {/* Advisory WCHR Smart Dispatch; assignment remains in existing supervisor workflow. */}
       <section aria-label="WCHR Smart Dispatch" style={{ margin: "16px 0", padding: 18, background: "#f8fbff", border: "1px solid #bfdbfe", borderRadius: 14 }}>
         <h2 style={{ margin: "0 0 8px", fontSize: 19 }}>Smart Dispatch · WCHR</h2>
-        <p style={{ fontSize: 13, color: "#475569" }}>Suggestions use the agents' existing Live Location reports and the operational location name catalog. GPS does not verify proximity inside the airport. Assignment requires supervisor confirmation.</p>
+        <p style={{ fontSize: 13, color: "#475569" }}>Suggestions use recent authorized GPS and Duty Manager reference points when available. Distances are straight-line estimates; otherwise reported locations are used. Supervisor confirms every assignment.</p>
         <label style={{ display: "block", marginBottom: 12 }}>
           <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>Service to assign</span>
           <select value={selectedReportId || ""} onChange={e => setSelectedReportId(e.target.value)} style={{ width: "100%", maxWidth: 480, padding: 10, border: "1px solid #bfdbfe", borderRadius: 9 }}>
@@ -8708,8 +8717,8 @@ export default function WchrDispatchPage() {
           return <div>
             <div style={{ fontSize: 13, marginBottom: 8 }}><b>Pickup:</b> {match.pickup}</div>
             <p style={{ fontSize: 12, color: "#92400e" }}>{match.warning}</p>
-            {match.candidates.length === 0 ? <p>No eligible WCHR agents currently available.</p> : match.candidates.map(({agent, location, exact, fresh, nearby}) => <div key={agent.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, padding: 10, marginBottom: 6, border: "1px solid #dbeafe", borderRadius: 10, background: exact ? "#ecfdf5" : "#fff" }}>
-              <div><b>{getAgentName(agent)}</b><div style={{ fontSize: 12 }}>{location || "Location not reported"} · {exact ? (fresh ? "Same reported location · recent update" : "Same reported location · time unverified") : nearby ? "Configured nearby area" : "Proximity not verified"}</div></div>
+            {match.candidates.length === 0 ? <p>No eligible WCHR agents currently available.</p> : match.candidates.map(({agent, location, exact, fresh, nearby, distanceMeters, gpsEstimate}) => <div key={agent.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, padding: 10, marginBottom: 6, border: "1px solid #dbeafe", borderRadius: 10, background: exact ? "#ecfdf5" : "#fff" }}>
+              <div><b>{getAgentName(agent)}</b><div style={{ fontSize: 12 }}>{location || "Location not reported"} · {match.gpsBased ? (distanceMeters != null ? `GPS approx. ${Math.round(distanceMeters)} m straight-line · ${gpsEstimate?.nearest?.location?.name || "Nearest point unavailable"} (estimated)` : "No recent authorized GPS · location unverified") : exact ? (fresh ? "Same reported location · recent update" : "Same reported location · time unverified") : nearby ? "Configured nearby area" : "Proximity not verified"}</div></div>
               <button type="button" onClick={() => setSelectedAgentId(agent.id)} style={{ border: "1px solid #93c5fd", borderRadius: 8, padding: "8px 12px", background: selectedAgentId === agent.id ? "#bfdbfe" : "#eff6ff", cursor: "pointer" }}>{selectedAgentId === agent.id ? "Selected for review" : "Review assignment"}</button>
             </div>)}
             <p style={{ fontSize: 12, color: "#475569" }}>Use the existing Assignment Preview and Assign WCHR controls to confirm. This panel never assigns automatically.</p>
