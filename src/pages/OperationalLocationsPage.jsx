@@ -11,7 +11,7 @@ const AREAS = ['Main Terminal', 'Airside A', 'Airside C', 'Airside E', 'Airside 
 const TYPES = ['Counter', 'Gate', 'Lobby', 'Security', 'CBP / Customs', 'Storage', 'Train', 'Other'];
 const field = { width: '100%', boxSizing: 'border-box', padding: 11, borderRadius: 9, border: '1px solid #cbd5e1', background: '#fff' };
 const button = { padding: '11px 15px', borderRadius: 9, border: '1px solid #bfdbfe', background: '#eff6ff', cursor: 'pointer', fontWeight: 700 };
-const blank = { name: '', area: 'Airside F', otherArea: '', type: 'Counter', otherType: '', notes: '', latitude: '', longitude: '', accuracyMeters: '', capturedAt: '' };
+const blank = { name: '', area: 'Airside F', otherArea: '', type: 'Counter', otherType: '', notes: '', latitude: '', longitude: '', accuracyMeters: '', radiusMeters: '60', capturedAt: '' };
 const slug = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
 const text = value => String(value || '').trim();
 const displayTime = value => { const d = value?.toDate?.() || (value ? new Date(value) : null); return d && !Number.isNaN(d.getTime()) ? d.toLocaleString() : 'Not available'; };
@@ -83,15 +83,16 @@ export default function OperationalLocationsPage() {
     const name = text(form.name);
     const area = form.area === 'Other' ? text(form.otherArea) : form.area;
     const type = form.type === 'Other' ? text(form.otherType) : form.type;
-    const lat = Number(form.latitude), lng = Number(form.longitude), accuracy = Number(form.accuracyMeters);
+    const lat = Number(form.latitude), lng = Number(form.longitude), accuracy = Number(form.accuracyMeters), radius = Number(form.radiusMeters);
     if (name.length < 3 || !area || !type) { setError('Provide a location name, area, and type.'); return; }
     if (form.latitude === '' || form.longitude === '' || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) { setError('Capture valid GPS coordinates first.'); return; }
     if (form.accuracyMeters === '' || !Number.isFinite(accuracy) || accuracy < 0) { setError('GPS accuracy is required.'); return; }
+    if (!Number.isFinite(radius) || radius < 15 || radius > 300) { setError('Detection radius must be between 15 and 300 meters.'); return; }
     if (!form.capturedAt && !editingId) { setError('Capture the GPS location before saving.'); return; }
     const id = editingId || slug(`${area}_${name}`);
     if (!id) { setError('Invalid location ID.'); return; }
     const identity = user?.uid || user?.id || user?.employeeId || '';
-    const data = { name, area, type, notes: text(form.notes), latitude: lat, longitude: lng, accuracyMeters: accuracy, gpsCapturedAt: form.capturedAt || null, updatedById: String(identity), updatedByName: userName(user), updatedAt: serverTimestamp() };
+    const data = { name, area, type, notes: text(form.notes), latitude: lat, longitude: lng, accuracyMeters: accuracy, radiusMeters: radius, gpsCapturedAt: form.capturedAt || null, updatedById: String(identity), updatedByName: userName(user), updatedAt: serverTimestamp() };
     setBusy(true);
     try {
       let photoUrl = photoRemoved ? null : existingPhotoUrl || null;
@@ -124,7 +125,7 @@ export default function OperationalLocationsPage() {
   const edit = item => {
     setEditingId(item.id);
     setPhotoFile(null); setPhotoPreview(''); setExistingPhotoUrl(item.photoUrl || ''); setPhotoRemoved(false);
-    setForm({ name: item.name || '', area: AREAS.includes(item.area) ? item.area : 'Other', otherArea: AREAS.includes(item.area) ? '' : item.area || '', type: TYPES.includes(item.type) ? item.type : 'Other', otherType: TYPES.includes(item.type) ? '' : item.type || '', notes: item.notes || '', latitude: String(item.latitude ?? ''), longitude: String(item.longitude ?? ''), accuracyMeters: String(item.accuracyMeters ?? ''), capturedAt: item.gpsCapturedAt || '' });
+    setForm({ name: item.name || '', area: AREAS.includes(item.area) ? item.area : 'Other', otherArea: AREAS.includes(item.area) ? '' : item.area || '', type: TYPES.includes(item.type) ? item.type : 'Other', otherType: TYPES.includes(item.type) ? '' : item.type || '', notes: item.notes || '', latitude: String(item.latitude ?? ''), longitude: String(item.longitude ?? ''), accuracyMeters: String(item.accuracyMeters ?? ''), radiusMeters: String(item.radiusMeters ?? 60), capturedAt: item.gpsCapturedAt || '' });
     setError(''); setMessage('Editing an existing location. Capture GPS again if the position has changed.');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -176,6 +177,7 @@ export default function OperationalLocationsPage() {
       <div style={{padding:14,background:'#f8fafc',borderRadius:12}}>
         <button type="button" style={button} disabled={capturing||busy} onClick={capture}>{capturing?'Capturing GPS…':'📍 Capture My Location'}</button>
         <p style={{fontSize:13,color:'#475569'}}>GPS: {form.latitude && form.longitude ? `${form.latitude}, ${form.longitude}` : 'Not captured'} · Accuracy: {form.accuracyMeters === '' ? 'Unknown' : `±${form.accuracyMeters} m`}</p>
+        <label style={{display:'block',marginTop:10}}>Detection radius (meters)<input type="number" min="15" max="300" step="5" style={field} value={form.radiusMeters} onChange={e=>change('radiusMeters',e.target.value)} /></label>
         <small>GPS accuracy indoors may be poor. The registered operational zone is authoritative; coordinates are supporting information. Capture is user-initiated, not continuous tracking.</small>
       </div>
       <div style={{display:'flex',gap:10,flexWrap:'wrap'}}><button style={{...button,background:'#1769aa',color:'#fff'}} disabled={busy||capturing} type="submit">{uploading?'Uploading photo…':busy?'Saving…':editingId?'Save Changes':'Save New Location'}</button>{editingId&&<button type="button" style={button} onClick={()=>{setEditingId('');setForm(blank);resetPhoto();}}>Cancel Edit</button>}</div>
@@ -184,7 +186,7 @@ export default function OperationalLocationsPage() {
       {loading ? <p>Loading locations…</p> : visible.length===0 ? <p>No matching locations registered yet.</p> : <div style={{display:'grid',gap:10,marginTop:12}}>{visible.map(item=><article key={item.id} style={{padding:15,border:'1px solid #e2e8f0',borderRadius:12,background:'#fff'}}>
         <div style={{display:'flex',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}><strong>{item.name}</strong><span style={{color:item.active===false?'#b45309':'#15803d'}}>{item.active===false?'Inactive':'Active'}</span></div>
         <div style={{fontSize:13,color:'#475569',marginTop:5}}>{item.area} · {item.type} · ID: {item.id}</div>
-        <div style={{fontSize:12,color:'#64748b',marginTop:5}}>GPS: {item.latitude}, {item.longitude} · ±{item.accuracyMeters ?? '?'} m · Updated: {displayTime(item.updatedAt)} · By: {item.updatedByName || item.createdByName || 'Unknown'}</div>
+        <div style={{fontSize:12,color:'#64748b',marginTop:5}}>GPS: {item.latitude}, {item.longitude} · ±{item.accuracyMeters ?? '?'} m · Radius: {item.radiusMeters ?? 60} m · Updated: {displayTime(item.updatedAt)} · By: {item.updatedByName || item.createdByName || 'Unknown'}</div>
         {item.notes && <p style={{fontSize:13}}>{item.notes}</p>}
         {item.photoUrl && <div style={{marginTop:10}}><img src={item.photoUrl} alt={`Registered location: ${item.name}`} loading="lazy" style={{width:'100%',maxWidth:320,maxHeight:190,objectFit:'cover',borderRadius:10,border:'1px solid #e2e8f0'}} /></div>}
         <div style={{display:'flex',gap:8,marginTop:10}}><button style={button} onClick={()=>edit(item)} disabled={busy}>Edit</button>{manager&&<button style={button} onClick={()=>toggle(item)} disabled={busy}>{item.active===false?'Reactivate':'Deactivate'}</button>}</div>
