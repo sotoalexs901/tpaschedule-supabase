@@ -50,33 +50,8 @@ const WCHR_TYPES = [
   "WCHC",
 ];
 
-const START_LOCATIONS = [
-  "Counter",
-  "AV Ticket Counter",
-  "SY Ticket Counter",
-  "AM Ticket Counter",
-  "Outside TSA",
-  "TSA",
-  "Security",
-  "Train",
-  "Airside F",
-  "Gate F78",
-  "Gate F79",
-  "Gate F80",
-  "Gate F81",
-  "Gate F82",
-  "Gate F83",
-  "Gate F84",
-  "Gate F85",
-  "Gate F86",
-  "Gate F87",
-  "Gate F88",
-  "Gate F89",
-  "Gate F90",
-  "Main Terminal",
-  "Wheelchair Storage",
-  "Other",
-];
+// Pickup locations are managed by Duty Managers in TPA Location Management.
+const OPERATIONAL_LOCATIONS_COLLECTION = "operational_locations";
 
 const PERSONAL_WCHR_VALUE =
   "__PERSONAL_WCHR__";
@@ -813,9 +788,7 @@ export default function WCHRScan() {
   const [
     startLocation,
     setStartLocation,
-  ] = useState(
-    "Counter"
-  );
+  ] = useState("");
 
   const [
     selectedFlightId,
@@ -840,6 +813,10 @@ export default function WCHRScan() {
     inventory,
     setInventory,
   ] = useState([]);
+
+  const [operationalLocations, setOperationalLocations] = useState([]);
+  const [loadingLocations, setLoadingLocations] = useState(true);
+  const [locationsError, setLocationsError] = useState("");
 
   const [
     loadingFlights,
@@ -1124,6 +1101,44 @@ export default function WCHRScan() {
   }, []);
 
   // ============================================================
+  // LIVE DUTY MANAGER OPERATIONAL LOCATIONS
+  // ============================================================
+  useEffect(() => {
+    setLoadingLocations(true);
+    const unsubscribe = onSnapshot(
+      collection(db, OPERATIONAL_LOCATIONS_COLLECTION),
+      (snapshot) => {
+        const locations = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .filter((item) => item.active !== false && cleanText(item.name))
+          .sort((a, b) =>
+            cleanText(a.area).localeCompare(cleanText(b.area)) ||
+            cleanText(a.name).localeCompare(cleanText(b.name))
+          );
+        setOperationalLocations(locations);
+        setStartLocation((previous) =>
+          locations.some((item) => item.id === previous) ? previous : ""
+        );
+        setLoadingLocations(false);
+        setLocationsError("");
+      },
+      (listenerError) => {
+        console.error("Operational locations listener error:", listenerError);
+        setOperationalLocations([]);
+        setStartLocation("");
+        setLoadingLocations(false);
+        setLocationsError("Unable to load Duty Manager locations. Check read access to operational_locations.");
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const selectedStartLocation = useMemo(
+    () => operationalLocations.find((item) => item.id === startLocation) || null,
+    [operationalLocations, startLocation]
+  );
+
+  // ============================================================
   // SELECTED FLIGHT
   // ============================================================
 
@@ -1203,9 +1218,8 @@ export default function WCHRScan() {
           cleanText(
             wchType
           ) &&
-          cleanText(
-            startLocation
-          ) &&
+          selectedStartLocation &&
+          !loadingLocations &&
           !loadingFlights &&
           !loadingInventory
       );
@@ -1217,7 +1231,8 @@ export default function WCHRScan() {
       selectedFlight,
       selectedWheelchairId,
       wchType,
-      startLocation,
+      selectedStartLocation,
+      loadingLocations,
       loadingFlights,
       loadingInventory,
     ]);
@@ -1235,9 +1250,7 @@ export default function WCHRScan() {
       "WCHR"
     );
 
-    setStartLocation(
-      "Counter"
-    );
+    setStartLocation("");
 
     setSelectedFlightId(
       ""
@@ -1371,10 +1384,12 @@ export default function WCHRScan() {
           selectedFlight.gate
         );
 
-      const finalStartLocation =
-        cleanText(
-          startLocation
-        );
+      const finalStartLocation = cleanText(selectedStartLocation?.name);
+      const finalStartLocationId = selectedStartLocation?.id || "";
+      if (!finalStartLocation || !finalStartLocationId) {
+        setError("Select an active pickup location registered by Duty Managers.");
+        return;
+      }
 
       const finalWchrType =
         safeUpper(
@@ -1673,6 +1688,9 @@ export default function WCHRScan() {
                 ready_location:
                   finalStartLocation,
 
+                ready_location_id:
+                  finalStartLocationId,
+
                 timer_started_at:
                   serverTimestamp(),
 
@@ -1729,11 +1747,17 @@ export default function WCHRScan() {
                 pickup_location:
                   finalStartLocation,
 
+                pickup_location_id:
+                  finalStartLocationId,
+
                 pickup_at:
                   null,
 
                 initial_pickup_location:
                   finalStartLocation,
+
+                initial_pickup_location_id:
+                  finalStartLocationId,
 
                 initial_pickup_at:
                   null,
@@ -1827,7 +1851,7 @@ export default function WCHRScan() {
                   "",
 
                 tracking_type:
-                  "MANUAL",
+                  "OPERATIONAL_LOCATION_REGISTRY",
               }
             );
 
@@ -1942,6 +1966,9 @@ export default function WCHRScan() {
 
                 location:
                   finalStartLocation,
+
+                location_id:
+                  finalStartLocationId,
 
                 previous_location:
                   "",
@@ -3111,38 +3138,34 @@ export default function WCHRScan() {
           </div>
 
           <div>
-            <FieldLabel>
-              Pickup Location *
-            </FieldLabel>
-
+            <FieldLabel>Pickup Location — Duty Manager Registry *</FieldLabel>
             <SelectInput
-              value={
-                startLocation
-              }
-              onChange={
-                setStartLocation
-              }
-              disabled={
-                submitting
-              }
+              value={startLocation}
+              onChange={setStartLocation}
+              disabled={submitting || loadingLocations || operationalLocations.length === 0}
             >
-              {START_LOCATIONS.map(
-                (
-                  location
-                ) => (
-                  <option
-                    key={
-                      location
-                    }
-                    value={
-                      location
-                    }
-                  >
-                    {location}
-                  </option>
-                )
-              )}
+              <option value="">
+                {loadingLocations
+                  ? "Loading registered locations..."
+                  : operationalLocations.length
+                  ? "Select a registered pickup location"
+                  : "No active locations available"}
+              </option>
+              {operationalLocations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name} ({location.area || location.type || "TPA"})
+                </option>
+              ))}
             </SelectInput>
+            {locationsError && (
+              <p role="alert" style={{ color: "#b91c1c", fontSize: 12 }}>
+                {locationsError}
+              </p>
+            )}
+            <p style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+              Active locations are synchronized with TPA Location Management.
+              This is the passenger pickup point, not the creator's GPS position.
+            </p>
           </div>
         </div>
 
@@ -3241,7 +3264,7 @@ export default function WCHRScan() {
                 <InfoField
                   label="Pickup"
                   value={
-                    startLocation
+                    selectedStartLocation?.name || "Not selected"
                   }
                 />
               </div>
