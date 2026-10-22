@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { matchOperationalLocation } from "../utils/operationalGeofence.js";
 import { useUser } from "../UserContext.jsx";
 
 import {
@@ -723,6 +724,14 @@ export default function WchrAgentOperationsPage() {
   const [trackingConsent, setTrackingConsent] = useState(false);
   const [lobbyMode, setLobbyMode] = useState(null); // Explicit choice each shift
   const [lobbyPromptOpen, setLobbyPromptOpen] = useState(false);
+  const [operationalZones, setOperationalZones] = useState([]);
+  const [zoneLoadError, setZoneLoadError] = useState("");
+  const [autoLocationStatus, setAutoLocationStatus] = useState("Waiting for GPS");
+  useEffect(() => onSnapshot(collection(db, "operational_locations"), snap => {
+    setOperationalZones(snap.docs.map(d => ({id:d.id,...d.data()})).filter(x=>x.active!==false));
+    setZoneLoadError("");
+  }, err => { setZoneLoadError("Location catalog unavailable: " + err.message); }), []);
+
   const [selectedLocation, setSelectedLocation] = useState("Counter");
   const [locationNote, setLocationNote] = useState("");
 
@@ -1136,57 +1145,43 @@ export default function WchrAgentOperationsPage() {
     safeUpper(shift?.status) ===
     WCHR_AGENT_STATUS.ACTIVE;
 
-  // GPS is independent of the manually selected operational location.
-  // Browser geolocation only runs while the app is open and the shift is active.
+  // Geofenced operational location for both Lobby and WCHR Agents.
+  // Requires explicit consent and a foreground browser with location permission.
   const [gpsState, setGpsState] = useState("inactive");
   useEffect(() => {
     if (!agentId || !isPunchedIn || shift?.live_tracking_consent !== true) {
-      setGpsState("inactive");
-      return undefined;
+      setGpsState("inactive"); return undefined;
     }
-    if (!navigator.geolocation) {
-      setGpsState("unsupported");
-      return undefined;
-    }
-    let cancelled = false;
-    let lastSaved = 0;
+    if (!navigator.geolocation) { setGpsState("unsupported"); return undefined; }
+    let cancelled=false, lastSaved=0, candidate="", consecutive=0;
     setGpsState("waiting");
-    const watcher = navigator.geolocation.watchPosition(
-      async (position) => {
-        if (cancelled) return;
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-        setGpsState("active");
-        const currentTime = Date.now();
-        if (currentTime - lastSaved < 15000) return;
-        lastSaved = currentTime;
-        try {
-          await updateDoc(doc(db, "wchr_agent_shifts", agentId), {
-            live_gps: {
-              latitude,
-              longitude,
-              accuracy_m: position.coords.accuracy ?? null,
-              recorded_at: serverTimestamp(),
-              source: "browser_geolocation",
-            },
-          });
-        } catch (error) {
-          console.error("WCHR GPS update failed", error);
-          setGpsState("save-error");
+    const watcher=navigator.geolocation.watchPosition(async position => {
+      if(cancelled) return;
+      const {latitude,longitude,accuracy}=position.coords;
+      if(!Number.isFinite(latitude)||!Number.isFinite(longitude)) return;
+      const zone=matchOperationalLocation(position.coords,operationalZones);
+      const name=zone?.name||"";
+      if(name && name===candidate) consecutive++; else { candidate=name; consecutive=1; }
+      const confirmed=Boolean(name && consecutive>=2);
+      setGpsState("active");
+      setAutoLocationStatus(confirmed?`Detected: ${name}`:name?`Verifying: ${name}`:"Location not detected (GPS uncertain or outside saved areas)");
+      const nowMs=Date.now();
+      if(nowMs-lastSaved<15000) return;
+      lastSaved=nowMs;
+      try {
+        const fields={live_gps:{latitude,longitude,accuracy_m:accuracy??null,recorded_at:serverTimestamp(),source:"browser_geolocation"}};
+        if(confirmed && name!==shift?.current_location) {
+          fields.current_location=name;
+          fields.location_source="gps_geofence";
+          fields.location_id=zone.id;
+          fields.location_updated_at=serverTimestamp();
         }
-      },
-      (error) => {
-        console.warn("WCHR GPS unavailable", error);
-        setGpsState(error.code === 1 ? "permission-denied" : "unavailable");
-      },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
-    );
-    return () => {
-      cancelled = true;
-      navigator.geolocation.clearWatch(watcher);
-    };
-  }, [agentId, isPunchedIn, shift?.live_tracking_consent]);
+        await updateDoc(doc(db,"wchr_agent_shifts",agentId),fields);
+      } catch(err) { console.error("Geofence GPS update failed",err); setGpsState("save-error"); }
+    }, err=>{setGpsState(err.code===1?"permission-denied":"unavailable");setAutoLocationStatus("GPS unavailable");},
+    {enableHighAccuracy:true,maximumAge:10000,timeout:20000});
+    return ()=>{cancelled=true;navigator.geolocation.clearWatch(watcher);};
+  },[agentId,isPunchedIn,shift?.live_tracking_consent,shift?.current_location,operationalZones]);
 
   const availability = safeUpper(
     shift?.availability_status
@@ -1312,11 +1307,13 @@ export default function WchrAgentOperationsPage() {
       setError("");
       setMessage("");
 
-      const startingLocation = cleanText(selectedLocation);
-
-      if (!startingLocation) {
-        setError("Please select your starting location before Punch In.");
-        return;
+      let startingLocation="Location Not Detected";
+      if (trackingConsent && operationalZones.length && navigator.geolocation) {
+        try {
+          const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,maximumAge:0,timeout:15000}));
+          const match=matchOperationalLocation(position.coords,operationalZones);
+          if(match) startingLocation=match.name;
+        } catch(err) { console.warn("Punch In GPS unavailable",err); }
       }
 
       if (lobbyMode === null) {
@@ -1333,9 +1330,7 @@ export default function WchrAgentOperationsPage() {
       });
 
       setLobbyPromptOpen(false);
-      setMessage(
-        "Punch In completed. You are now active in WCHR operations."
-      );
+      setMessage(`Punched In at ${startingLocation}. GPS will update the area while this page is open and permission is granted.`);
     } catch (err) {
       console.error("Punch In error:", err);
 
@@ -3260,7 +3255,7 @@ export default function WchrAgentOperationsPage() {
           <p style={{ fontSize: 12, margin: "7px 0", color: "#475569" }}>
             {shift?.live_tracking_consent === true
               ? `GPS status: ${gpsState}. Location updates automatically while this page is open and your device allows location access.`
-              : "GPS tracking not authorized for this shift. Your operational location can still be updated manually."}
+              : "GPS tracking not authorized for this shift. Location is not tracked automatically."}
           </p>
           <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
             GPS is approximate indoors. Punch Out stops GPS collection on this page.
@@ -3268,37 +3263,12 @@ export default function WchrAgentOperationsPage() {
         </PageCard>
       )}
 
-      {/* Independent mobile-friendly location update while on duty and idle. */}
-      {isPunchedIn && !activeReport && (
-        <PageCard style={{ padding: isMobile ? 15 : 20, marginBottom: 12 }}>
-          <h3 style={{ margin: "0 0 5px", fontSize: 17, color: "#0f172a" }}>
-            Update My Location
-          </h3>
-          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b" }}>
-            Update your location without Punch Out. Your active shift and availability remain unchanged.
-          </p>
-          <div style={{ marginBottom: 11 }}>
-            <FieldLabel>Current location: {shift?.current_location || "Not set"}</FieldLabel>
-            <SelectInput
-              value={selectedLocation}
-              disabled={Boolean(busyAction)}
-              onChange={(event) => setSelectedLocation(event.target.value)}
-            >
-              {AGENT_LOCATIONS.map((location) => (
-                <option key={location} value={location}>{location}</option>
-              ))}
-            </SelectInput>
-          </div>
-          <ActionButton
-            variant="primary"
-            disabled={Boolean(busyAction) || !cleanText(selectedLocation)}
-            onClick={handleUpdateLocation}
-            style={{ width: isMobile ? "100%" : "auto", minHeight: 44 }}
-          >
-            {busyAction === "location" ? "Updating..." : "Update Location"}
-          </ActionButton>
-        </PageCard>
-      )}
+      {isPunchedIn && <PageCard style={{padding:15,marginBottom:12}}>
+        <h3 style={{margin:"0 0 7px"}}>Automatic Location</h3>
+        <p style={{margin:0}}>Current area: <strong>{shift?.current_location || "Location Not Detected"}</strong></p>
+        <p style={{fontSize:12,color:"#64748b"}}>{autoLocationStatus} · GPS: {gpsState}</p>
+        {zoneLoadError && <p role="alert">{zoneLoadError}</p>}
+      </PageCard>}
 
       {/* PUNCH IN */}
       {!isPunchedIn && (
@@ -3329,29 +3299,10 @@ export default function WchrAgentOperationsPage() {
             Punch In to become visible to WCHR Supervisors as an active agent.
           </p>
 
-          <div style={{ marginBottom: 14 }}>
-            <FieldLabel>Starting Location</FieldLabel>
-            <SelectInput
-              value={selectedLocation}
-              disabled={busyAction === "punch-in"}
-              onChange={(event) => setSelectedLocation(event.target.value)}
-            >
-              {AGENT_LOCATIONS.map((location) => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
-            </SelectInput>
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 11,
-                lineHeight: 1.5,
-                color: "#64748b",
-              }}
-            >
-              Select where you are starting your WCHR shift. This location will be visible immediately in Dispatch.
-            </div>
+          <div style={{marginBottom:14,padding:12,background:"#f8fafc",borderRadius:10}}>
+            <strong>Automatic starting location</strong>
+            <p style={{fontSize:12,margin:"5px 0"}}>When you confirm Punch In, the app checks the saved Duty Manager zones. If GPS cannot reliably match a zone, it records Location Not Detected.</p>
+            {zoneLoadError && <p role="alert">{zoneLoadError}</p>}
           </div>
 
           <div
@@ -3394,7 +3345,7 @@ export default function WchrAgentOperationsPage() {
                     color: "#0f172a",
                   }}
                 >
-                  Allow live operational tracking during my WCHR shift
+                  Allow automatic location detection during my shift
                 </div>
 
                 <div
@@ -3439,7 +3390,7 @@ export default function WchrAgentOperationsPage() {
             <h2 id="lobby-shift-title" style={{ margin: "0 0 8px", fontSize: 21, color: "#0f172a" }}>Will you be working as a Lobby Agent today?</h2>
             <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.5, marginBottom: 18 }}>Select your assignment for this shift. You will be asked again at your next Punch In.</p>
             <label style={{ display: "flex", gap: 10, padding: 13, border: "1px solid #cbd5e1", borderRadius: 12, marginBottom: 10, cursor: "pointer" }}>
-              <input type="radio" name="lobby-shift-modal" checked={lobbyMode === true} onChange={() => { setLobbyMode(true); setTrackingConsent(false); }} />
+              <input type="radio" name="lobby-shift-modal" checked={lobbyMode === true} onChange={() => setLobbyMode(true)} />
               <span><strong>Yes — Lobby Agent</strong><span style={{ display: "block", color: "#64748b", fontSize: 12 }}>Create WCHR and UMNR services. Not available for regular Dispatch assignments.</span></span>
             </label>
             <label style={{ display: "flex", gap: 10, padding: 13, border: "1px solid #cbd5e1", borderRadius: 12, cursor: "pointer" }}>
