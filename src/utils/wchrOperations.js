@@ -197,7 +197,7 @@ export function buildAgentShiftPayload({
       cleanText(startingLocation),
 
     live_tracking_consent:
-      !lobbyMode && trackingConsent === true,
+      trackingConsent === true,
 
     clock_in_at: serverTimestamp(),
     clock_out_at: null,
@@ -460,6 +460,8 @@ export async function punchOutWchrAgent({
       active_wheelchair_number: "",
 
       current_location: "",
+      live_tracking_consent: false,
+      live_gps: null,
 
       clock_out_at:
         serverTimestamp(),
