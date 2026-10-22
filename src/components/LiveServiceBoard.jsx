@@ -10,17 +10,37 @@ const upper = (v) => text(v).toUpperCase();
 const formatStatus = (v) => text(v || "ASSIGNED").replace(/_/g, " ");
 const elapsed=(start,end)=>{if(!start)return "Not started";const a=new Date(start).getTime(),b=new Date(end).getTime();if(!Number.isFinite(a)||!Number.isFinite(b))return "Not available";const s=Math.max(0,Math.floor((b-a)/1000));return `${String(Math.floor(s/3600)).padStart(2,"0")}:${String(Math.floor(s/60)%60).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;};
 
+// Resolve the displayed stage from recorded journey milestones before any stale
+// assignment label. Read-only: this never changes a report in Firestore.
+export function resolveWchrBoardStatus(report = {}) {
+  const status = upper(report.tracking_status || report.service_status);
+  const assignment = upper(report.assignment_status);
+  const has = (...keys) => keys.some((key) => Boolean(report[key]));
+  const terminal = new Set(["COMPLETED", "CANCELLED", "STORED", "CLOSED", "DELIVERED", "BOARDED"]);
+  if (terminal.has(status)) return status;
+  if (has("pax_boarded_at", "boarded_at")) return "PAX_BOARDED";
+  if (has("delivered_at", "pax_delivered_at")) return "PAX_DELIVERED";
+  if (has("gate_arrival_at", "at_gate_at")) return "AT_GATE";
+  if (has("picked_up_at", "pickup_at", "ib_picked_up_at")) return "PAX_PICKED_UP";
+  if (has("accepted_at", "assignment_accepted_at") || ["ACCEPTED", "IN_PROGRESS"].includes(assignment)) return "ACCEPTED";
+  // Status is used only if it is a recognized journey stage, not a stale
+  // PENDING_ACCEPTANCE value that conflicts with milestones above.
+  if (["PAX_PICKED_UP", "PICKED_UP", "IN_TRANSIT", "AT_GATE", "BOARDING", "PAX_BOARDED", "PAX_DELIVERED"].includes(status)) return status;
+  if (assignment === "PENDING_ACCEPTANCE") return "PENDING_ACCEPTANCE";
+  return status || "ASSIGNED";
+}
+
 export function buildLiveServiceCards(wchrReports = [], umnrAssignments = []) {
   const wchr = (Array.isArray(wchrReports) ? wchrReports : [])
-    .filter((r) => r && !ACTIVE_END_STATES.has(upper(r.tracking_status || r.service_status)))
+    .filter((r) => r && !ACTIVE_END_STATES.has(upper(r.tracking_status)) && !ACTIVE_END_STATES.has(upper(r.service_status)))
     .filter((r) => text(r.wchr_agent_id || r.assigned_agent_id || r.wchr_agent_name))
     .map((r) => ({
       id: `WCHR:${text(r.id)}`,
       kind: "WCHR",
       code: `WCHR ${text(r.wheelchair_number) || "—"}`,
       agent: text(r.wchr_agent_name || r.assigned_wchr_agent || r.assigned_agent_name) || "Assigned agent",
-      status: upper((r.assignment_status === "PENDING_ACCEPTANCE" ? "PENDING_ACCEPTANCE" : r.assignment_acceptance_status === "REJECTED" ? "REJECTED" : null) || r.tracking_status || r.service_status || "ASSIGNED"),
-      location: text(r.current_location || r.last_known_location) || "Not reported",
+      status: resolveWchrBoardStatus(r),
+      location: text(r.board_agent_location || r.current_location || r.last_known_location) || "Not reported",
       flight: text(r.flight_number || r.flightNumber) || "—",
       updated: r.last_location_update_at || r.last_updated_at || null,
       pickupLocation: text(r.pickup_location || r.ib_pickup_location || r.ready_location) || "Not recorded",
