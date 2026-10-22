@@ -24,6 +24,8 @@ import PrivacyAcknowledgmentsPage from "./pages/PrivacyAcknowledgmentsPage.jsx";
 import ReportsDataManagementPage from "./pages/ReportsDataManagementPage.jsx";
 
 import DashboardPage from "./pages/DashboardPage.jsx";
+import GseInventoryPage from "./pages/GseInventoryPage.jsx";
+import GseManagementPage from "./pages/GseManagementPage.jsx";
 import DashboardEditorPage from "./pages/DashboardEditorPage.jsx";
 import SchedulePage from "./pages/SchedulePage.jsx";
 import BlockedEmployeesPage from "./pages/BlockedEmployeesPage.jsx";
@@ -906,6 +908,18 @@ function AppRouter() {
           {/* Legacy Code 24 routes */}
           <Route path="code24/submit" element={<Navigate to="/bso-daily-report" replace />} />
           <Route path="code24/management" element={<Navigate to="/bso-daily-management" replace />} />
+
+          {/* EULEN GSE */}
+          <Route path="gse/inventory" element={
+            <ProtectedRoute roles={["agent", "supervisor", "duty_manager", "station_manager"]}>
+              <GseInventoryPage />
+            </ProtectedRoute>
+          } />
+          <Route path="gse/management" element={
+            <ProtectedRoute roles={["supervisor", "duty_manager", "station_manager"]}>
+              <GseManagementPage />
+            </ProtectedRoute>
+          } />
 
           {/* WCHR OPERATIONS */}
 
