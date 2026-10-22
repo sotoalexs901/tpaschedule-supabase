@@ -32,18 +32,33 @@ export function selectActiveWchrBoardReports(reports = [], shifts = []) {
         board_agent_location: clean(shift.current_location),
         board_agent_name: clean(shift.agent_name),
         board_availability: clean(shift.availability_status),
+        board_agent_id: clean(shift.id),
+        board_live_tracking_consent: shift.live_tracking_consent === true,
+        board_live_gps: shift.live_tracking_consent === true ? shift.live_gps || null : null,
+        board_shift_status: clean(shift.status),
       };
     });
 }
 
 export function selectPendingWchrBoardReports(reports = [], shifts = []) {
   const activeIds = new Set(selectActiveWchrBoardReports(reports, shifts).map((r) => clean(r.id)));
-  const terminal = new Set(["STORED", "CANCELLED", "COMPLETED", "CLOSED", "DELIVERED"]);
+  const terminal = new Set(["STORED", "CANCELLED", "COMPLETED", "CLOSED", "DELIVERED", "BOARDED", "PENDING_STORAGE", "AT_GATE", "BOARDING", "IN_TRANSIT", "PICKED_UP"]);
+  const today = new Date();
+  const localDay = (value) => {
+    if (!value) return null;
+    if (typeof value?.toDate === "function") return value.toDate().toLocaleDateString("en-CA");
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleDateString("en-CA");
+  };
   return reports.filter((r) => {
     if (!r || activeIds.has(clean(r.id))) return false;
     const state = upper(r.tracking_status || r.service_status);
-    // A boarded passenger should not be shown as awaiting assignment.
-    if (terminal.has(state) || state === "BOARDED") return false;
+    if (terminal.has(state)) return false;
+    const assignment = upper(r.assignment_status);
+    if (!["UNASSIGNED", "READY_FOR_ASSIGNMENT", "NEW"].includes(assignment) && !["NEW", "READY_FOR_PICKUP", "READY_FOR_ASSIGNMENT"].includes(state)) return false;
+    if (clean(r.wchr_agent_id || r.assigned_agent_id || r.wchr_agent_name || r.assigned_wchr_agent)) return false;
+    const date = localDay(r.flight_date || r.flightDate || r.service_date || r.created_at);
+    if (!date || date !== today.toLocaleDateString("en-CA")) return false;
     return Boolean(clean(r.id)) && Boolean(clean(r.flight_number || r.flightNumber));
   });
 }
