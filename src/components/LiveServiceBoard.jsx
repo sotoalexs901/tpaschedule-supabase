@@ -23,6 +23,15 @@ export function buildLiveServiceCards(wchrReports = [], umnrAssignments = []) {
       location: text(r.current_location || r.last_known_location) || "Not reported",
       flight: text(r.flight_number || r.flightNumber) || "—",
       updated: r.last_location_update_at || r.last_updated_at || null,
+      pickupLocation: text(r.pickup_location || r.ib_pickup_location || r.ready_location) || "Not recorded",
+      destination: text(r.destination_location || r.gate_location || r.gate || r.gate_number) || "Not recorded",
+      acceptedAt: r.accepted_at || r.assignment_accepted_at || null,
+      pickedUpAt: r.picked_up_at || r.pickup_at || r.ib_picked_up_at || null,
+      gateAt: r.gate_arrival_at || r.at_gate_at || null,
+      boardedAt: r.pax_boarded_at || r.boarded_at || r.delivered_at || null,
+      agentId: text(r.board_agent_id || r.wchr_agent_id || r.assigned_agent_id),
+      gpsConsent: r.board_live_tracking_consent === true,
+      gps: r.board_live_gps || null,
       source: r,
     }));
   const umnr = (Array.isArray(umnrAssignments) ? umnrAssignments : [])
@@ -55,6 +64,7 @@ export default function LiveServiceBoard({
 }) {
   const [filter, setFilter] = useState("ALL");
   const [selected, setSelected] = useState(null);
+  const [showAgentLocation, setShowAgentLocation] = useState(false);
   const [clock,setClock]=useState(Date.now());
   useEffect(()=>{const id=window.setInterval(()=>setClock(Date.now()),1000);return ()=>window.clearInterval(id);},[]);
   const cards = useMemo(() => buildLiveServiceCards(wchrReports, umnrAssignments), [wchrReports, umnrAssignments]);
@@ -70,6 +80,7 @@ export default function LiveServiceBoard({
   const counts = { ALL: cards.length, WCHR: cards.filter((c) => c.kind === "WCHR").length, UMNR: cards.filter((c) => c.kind === "UMNR").length };
   const open = (card) => {
     setSelected(card.id);
+    setShowAgentLocation(false);
     if (card.kind === "WCHR" && typeof onOpenWchr === "function") onOpenWchr(card.source);
     if (card.kind === "UMNR" && typeof onOpenUmnr === "function") onOpenUmnr(card.source);
   };
@@ -117,10 +128,26 @@ export default function LiveServiceBoard({
             <strong>{chosen.kind}: {chosen.code}</strong>
             <button type="button" onClick={() => setSelected(null)} aria-label="Close details">✕</button>
           </div>
-          <p><strong>Employee:</strong> {chosen.agent}</p>
+          <p><strong>Employee:</strong> {chosen.kind === "WCHR" ? <button type="button" onClick={() => setShowAgentLocation((v) => !v)} style={{ color: "#1d4ed8", textDecoration: "underline", border: 0, background: "transparent", cursor: "pointer", fontWeight: 700 }}>{chosen.agent} · View location</button> : chosen.agent}</p>
+          {showAgentLocation && chosen.kind === "WCHR" && (() => {
+            const gps = chosen.gps;
+            const ts = gps?.recorded_at?.toDate?.() || (gps?.recorded_at?.seconds ? new Date(gps.recorded_at.seconds * 1000) : gps?.recorded_at ? new Date(gps.recorded_at) : null);
+            const validTime = ts && !Number.isNaN(ts.getTime());
+            const fresh = validTime && clock - ts.getTime() < 120000;
+            const hasFix = chosen.gpsConsent && gps && Number.isFinite(Number(gps.latitude)) && Number.isFinite(Number(gps.longitude)) && gps.latitude != null && gps.longitude != null;
+            return <div style={{ padding: 12, background: "#eff6ff", borderRadius: 10 }}>
+              <strong>Employee operational location:</strong> {chosen.source.board_agent_location || "Not reported"}<br />
+              <strong>GPS:</strong> {!chosen.gpsConsent ? "Not authorized" : !hasFix ? "Location unavailable" : fresh ? "Recent fix" : "Last known location (not live)"}<br />
+              {hasFix && <><strong>Last update:</strong> {validTime ? ts.toLocaleString() : "Unknown"}<br /><a href={`https://www.google.com/maps?q=${gps.latitude},${gps.longitude}`} target="_blank" rel="noopener noreferrer">Open last GPS location in Google Maps</a></>}
+            </div>;
+          })()}
           <p><strong>Status:</strong> {formatStatus(chosen.status)}</p>
           <p><strong>Flight:</strong> {chosen.flight}</p>
           <p><strong>Last location:</strong> {chosen.location}</p>
+          {chosen.kind === "WCHR" && <div style={{ background: "#f8fafc", padding: 12, borderRadius: 10 }}><strong>Service journey</strong>
+            <p>Pickup: {chosen.pickupLocation} → Destination: {chosen.destination}</p>
+            {[ ["Assignment accepted", chosen.acceptedAt], ["Passenger picked up", chosen.pickedUpAt], ["Gate arrival", chosen.gateAt], ["Passenger boarded / delivered", chosen.boardedAt] ].map(([label, date]) => <p key={label} style={{ margin: "6px 0" }}>{date ? "✓" : "○"} {label}: {date ? (date?.toDate?.() || (date?.seconds ? new Date(date.seconds * 1000) : new Date(date))).toLocaleString() : "Not recorded"}</p>)}
+          </div>}
           {chosen.kind==="UMNR"&&<><p><strong>Service Route:</strong> {chosen.pickupLocation} → {chosen.destination}</p><p><strong>Service Timer:</strong> {elapsed(chosen.pickedUpAt,chosen.handoffAt||clock)}</p></>}
           <p style={{ color: "#64748b", fontSize: 12 }}>Full passenger/minor records and timelines should open through the authorized Dispatch details view. Sensitive data is intentionally excluded from this board.</p>
         </div>
