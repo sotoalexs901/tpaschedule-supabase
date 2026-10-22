@@ -20,8 +20,8 @@ export function selectActiveWchrBoardReports(reports = [], shifts = []) {
   }
   return reports
     .filter((report) => report && activeShifts.has(clean(report.id)))
-    .filter((report) => !["STORED", "CANCELLED", "COMPLETED", "CLOSED"].includes(
-      upper(report.tracking_status || report.service_status)
+    .filter((report) => !["STORED", "CANCELLED", "COMPLETED", "CLOSED", "DELIVERED", "BOARDED"].some(
+      (state) => state === upper(report.tracking_status) || state === upper(report.service_status)
     ))
     .map((report) => {
       const shift = activeShifts.get(clean(report.id));
