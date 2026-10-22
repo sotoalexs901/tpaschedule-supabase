@@ -1234,6 +1234,14 @@ export default function AppLayout() {
       });
     }
 
+    // EULEN GSE (department-specific restriction requires your Ramp department values)
+    if (["agent", "supervisor", "duty_manager", "station_manager"].includes(user?.role)) {
+      submissionReports.push({ to: "/gse/inventory", label: "GSE Inventory", icon: "\u{1F69C}" });
+    }
+    if (["supervisor", "duty_manager", "station_manager"].includes(user?.role)) {
+      managementReports.push({ to: "/gse/management", label: "GSE Management", icon: "\u{1F6E0}" });
+    }
+
     if (canAccessTimesheets) {
       submissionReports.push({
         to: "/timesheets/submit",
