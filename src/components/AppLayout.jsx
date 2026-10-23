@@ -1644,6 +1644,30 @@ export default function AppLayout() {
         aria-expanded={menuOpen}
       >{menuOpen ? "×" : "☰"}</button>
       <div className="aerohub-workspace">
+        <header className="aerohub-mobile-stationbar" aria-label="TPA station information">
+          <div className="aerohub-mobile-stationbar__station">
+            <strong>TPA <span>· Tampa International Airport</span></strong>
+            <small>Station Operations Center</small>
+          </div>
+          <div className="aerohub-mobile-stationbar__meta">
+            <div className="aerohub-mobile-stationbar__clock">
+              <strong>{new Intl.DateTimeFormat("en-US", {timeZone:"America/New_York", hour:"numeric",minute:"2-digit"}).format(stationNow)}</strong>
+              <small>{new Intl.DateTimeFormat("en-US", {timeZone:"America/New_York",weekday:"short",month:"short",day:"numeric",year:"numeric"}).format(stationNow)} · ET</small>
+            </div>
+            <div className="aerohub-mobile-stationbar__weather" title={weatherError ? "Live weather currently unavailable" : "Current conditions near TPA, not a flight delay advisory"}>
+              <span aria-hidden="true">{stationWeather ? ([0,1].includes(stationWeather.weather_code) ? "☀️" : [2,3].includes(stationWeather.weather_code) ? "☁️" : [95,96,99].includes(stationWeather.weather_code) ? "⛈️" : "🌦️") : "🌤️"}</span>
+              <div><strong>{stationWeather ? `${Math.round(stationWeather.temperature_2m)}°F` : "—"}</strong><small>{stationWeather ? "TPA weather" : "Weather unavailable"}</small></div>
+            </div>
+          </div>
+          <div className="aerohub-mobile-stationbar__actions">
+            {isManagementUser && <OperationalAlertBell value={operationalAlerts} onClick={() => navigate("/dashboard")} />}
+            {isManagementUser && <StatusPill label="WCHR" value={wchrFollowUps} active={wchrFollowUps > 0} onClick={() => navigate("/wchr")} />}
+            <StatusPill label="Messages" value={unreadMessages} active={unreadMessages > 0} onClick={() => navigate("/messages")} />
+            <StatusPill label="Notifications" value={unreadNotifications} active={unreadNotifications > 0} onClick={() => navigate("/notifications")} />
+            {isManagementUser && <StatusPill label="Day Off" value={pendingTimeOff} active={pendingTimeOff > 0} onClick={() => navigate("/timeoff-requests")} />}
+            <button type="button" onClick={logout} className="aerohub-logout">Logout</button>
+          </div>
+        </header>
         <header className="aerohub-topbar">
           <div className="aerohub-topbar-left">
             <button type="button" className="aerohub-mobile-menu" onClick={() => setMenuOpen(v => !v)} aria-expanded={menuOpen} aria-controls="aerohub-primary-navigation" aria-label={menuOpen ? "Close navigation" : "Open navigation"}>☰</button>
