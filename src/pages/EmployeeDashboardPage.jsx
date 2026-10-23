@@ -544,8 +544,8 @@ function GlassCard({
               {title}
             </h2>
 
-            {subtitle && (
-              {!isMobile && <p
+            {subtitle && !isMobile && (
+              <p
                 style={{
                   margin: "4px 0 0",
                   fontSize: 11.5,
