@@ -165,8 +165,8 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
       style={{
         background: "rgba(255,255,255,0.94)",
         border: "1px solid #e2e8f0",
-        borderRadius: isMobile ? 16 : 20,
-        padding: isMobile ? 14 : 16,
+        borderRadius: isMobile ? 13 : 20,
+        padding: isMobile ? 10 : 16,
         boxShadow: "0 12px 28px rgba(15,23,42,0.05)",
         position: "relative",
         overflow: "hidden",
@@ -192,7 +192,7 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
         <div>
           <div
             style={{
-              fontSize: 11,
+              fontSize: isMobile ? 9.5 : 11,
               fontWeight: 800,
               color: "#64748b",
               textTransform: "uppercase",
@@ -204,8 +204,8 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
 
           <div
             style={{
-              marginTop: 6,
-              fontSize: isMobile ? 22 : 26,
+              marginTop: isMobile ? 3 : 6,
+              fontSize: isMobile ? 18 : 26,
               fontWeight: 800,
               color: "#0f172a",
             }}
@@ -215,8 +215,8 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
 
           <div
             style={{
-              marginTop: 3,
-              fontSize: 11.5,
+              marginTop: isMobile ? 1 : 3,
+              fontSize: isMobile ? 10.5 : 11.5,
               color: "#64748b",
             }}
           >
@@ -226,14 +226,14 @@ function StatCard({ title, value, subtitle, accent, icon, isMobile }) {
 
         <div
           style={{
-            width: 38,
-            height: 38,
-            borderRadius: 12,
+            width: isMobile ? 32 : 38,
+            height: isMobile ? 32 : 38,
+            borderRadius: isMobile ? 10 : 12,
             background: `${accent}16`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 18,
+            fontSize: isMobile ? 15 : 18,
           }}
         >
           {icon}
@@ -256,8 +256,8 @@ function GlassCard({
       style={{
         background: "rgba(255,255,255,0.94)",
         border: "1px solid #e2e8f0",
-        borderRadius: isMobile ? 18 : 22,
-        padding: isMobile ? 15 : 18,
+        borderRadius: isMobile ? 15 : 22,
+        padding: isMobile ? 12 : 18,
         boxShadow: "0 14px 32px rgba(15,23,42,0.05)",
         minWidth: 0,
       }}
@@ -267,8 +267,8 @@ function GlassCard({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 10,
-          marginBottom: 13,
+          gap: isMobile ? 8 : 10,
+          marginBottom: isMobile ? 9 : 13,
           flexWrap: "wrap",
         }}
       >
@@ -282,15 +282,15 @@ function GlassCard({
         >
           <div
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 12,
+              width: isMobile ? 32 : 36,
+              height: isMobile ? 32 : 36,
+              borderRadius: isMobile ? 10 : 12,
               background: `${accent}16`,
               color: accent,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 17,
+              fontSize: isMobile ? 15 : 17,
             }}
           >
             {icon}
@@ -1050,12 +1050,12 @@ export default function DashboardPage() {
           borderRadius: isMobile ? 16 : 18,
           padding:
             isMobile
-              ? "12px 14px"
+              ? "10px 12px"
               : "12px 16px",
           color: "#fff",
           boxShadow:
             "0 12px 28px rgba(15,76,129,0.16)",
-          marginBottom: 14,
+          marginBottom: isMobile ? 10 : 14,
         }}
       >
         <div
@@ -1082,9 +1082,9 @@ export default function DashboardPage() {
           >
             <div
               style={{
-                width: 42,
-                height: 42,
-                borderRadius: 12,
+                width: isMobile ? 36 : 42,
+                height: isMobile ? 36 : 42,
+                borderRadius: isMobile ? 10 : 12,
                 background: "#fff",
                 overflow: "hidden",
                 flexShrink: 0,
@@ -1123,7 +1123,7 @@ export default function DashboardPage() {
                   marginTop: 2,
                   fontSize:
                     isMobile
-                      ? 16
+                      ? 15
                       : 18,
                   fontWeight: 800,
                 }}
@@ -1146,8 +1146,8 @@ export default function DashboardPage() {
                 "rgba(255,255,255,0.10)",
               color: "#fff",
               borderRadius: 11,
-              padding: "8px 12px",
-              fontSize: 11,
+              padding: isMobile ? "7px 10px" : "8px 12px",
+              fontSize: isMobile ? 10.5 : 11,
               fontWeight: 700,
               cursor: "pointer",
               width:
@@ -1164,7 +1164,7 @@ export default function DashboardPage() {
       {canTrackTimesheets && (
         <div
           style={{
-            marginBottom: 16,
+            marginBottom: isMobile ? 10 : 16,
           }}
         >
           <OperationalAlertsPanel
@@ -1197,8 +1197,8 @@ export default function DashboardPage() {
             isMobile
               ? "1fr 1fr"
               : "repeat(auto-fit,minmax(180px,1fr))",
-          gap: 12,
-          marginBottom: 16,
+          gap: isMobile ? 8 : 12,
+          marginBottom: isMobile ? 10 : 16,
         }}
       >
         {stats.map((item) => (
@@ -1217,13 +1217,13 @@ export default function DashboardPage() {
             isMobile
               ? "1fr"
               : "minmax(0,1.7fr) minmax(320px,1fr)",
-          gap: 16,
+          gap: isMobile ? 10 : 16,
         }}
       >
         <div
           style={{
             display: "grid",
-            gap: 16,
+            gap: isMobile ? 10 : 16,
             minWidth: 0,
           }}
         >
