@@ -1,150 +1,72 @@
-/* AeroStation Hub 2.0 - mobile header and layout patch
-   Import AFTER aerohub-shell.css. No changes to application logic. */
+/* AeroStation Hub - mobile navigation and header correction.
+   Imported after aerohub-shell.css in src/main.jsx. */
 @media (max-width: 760px) {
-  html, body, #root {
-    width: 100%;
-    max-width: 100%;
-    margin: 0;
+  html, body, #root { width: 100%; max-width: 100%; margin: 0; }
+  body { background: #f3f6fb; }
+  .aerohub-shell, .aerohub-shell--collapsed {
+    --sidebar-width: 0px; display: block; width: 100%; min-width: 0;
+    min-height: 100dvh; background: #f3f6fb;
   }
-
-  .aerohub-shell,
-  .aerohub-shell--collapsed {
-    --sidebar-width: 0px;
-    width: 100%;
-    min-width: 0;
-    display: block;
+  .aerohub-workspace, .aerohub-shell--collapsed .aerohub-workspace {
+    width: 100% !important; max-width: 100%; min-width: 0; margin: 0 !important;
   }
-
-  .aerohub-workspace {
-    width: 100%;
-    min-width: 0;
-    margin-left: 0;
-  }
-
-  /* Keep the station header visible instead of expanding horizontally. */
   .aerohub-topbar {
-    position: relative;
-    top: auto;
-    z-index: 45;
-    width: 100%;
-    min-width: 0;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px 10px;
-    padding: 10px 12px;
-    box-sizing: border-box;
+    position: relative; top: 0; z-index: 10; display: grid;
+    grid-template-columns: minmax(0, 1fr); width: 100%;
+    min-height: 0; padding: 10px 12px; gap: 9px;
+    background: #fff; box-sizing: border-box;
   }
-
-  .aerohub-topbar-left {
-    min-width: 0;
-    gap: 8px;
-  }
-
+  .aerohub-topbar-left { display: flex; align-items: center; gap: 10px; }
   .aerohub-mobile-menu {
-    flex: 0 0 auto;
-    min-width: 38px;
-    min-height: 38px;
-    padding: 6px 9px;
+    display: inline-flex !important; align-items: center; justify-content: center;
+    flex: 0 0 42px; height: 42px; border: 1px solid #d5e0eb;
+    background: #f8fafc; color: #124a80; border-radius: 10px;
+    cursor: pointer; touch-action: manipulation;
   }
-
-  .aerohub-station-heading {
-    min-width: 0;
-  }
-
-  .aerohub-station-heading strong {
-    font-size: 13px;
-  }
-
-  .aerohub-station-heading small {
-    display: block;
-    max-width: 155px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 10px;
-  }
-
+  .aerohub-station-heading { flex: 1; min-width: 0; }
+  .aerohub-station-heading strong { font-size: 14px; }
+  .aerohub-station-heading strong span { display: none; }
+  .aerohub-station-heading small { font-size: 11px; }
   .aerohub-station-meta {
-    margin: 0;
-    min-width: 0;
-    gap: 8px;
-    justify-self: end;
+    margin: 0; display: flex; flex-wrap: wrap; gap: 10px;
+    align-items: center; justify-content: space-between;
   }
-
-  .aerohub-station-clock strong,
-  .aerohub-station-weather strong {
-    font-size: 12px;
-  }
-
-  .aerohub-station-clock small,
-  .aerohub-station-weather small {
-    font-size: 9px;
-  }
-
-  .aerohub-station-weather {
-    padding-left: 8px;
-    gap: 4px;
-  }
-
-  .aerohub-station-weather > span {
-    font-size: 18px;
-  }
-
-  /* Pills scroll inside their own row, never push the dashboard wider. */
+  .aerohub-station-clock strong, .aerohub-station-weather strong { font-size: 13px; }
+  .aerohub-station-clock small, .aerohub-station-weather small { font-size: 10px; }
   .aerohub-topbar-actions {
-    grid-column: 1 / -1;
-    display: flex;
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    gap: 6px;
-    padding: 2px 0 5px;
+    display: flex; width: 100%; min-width: 0; max-width: 100%;
+    overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; gap: 7px;
+    justify-content: flex-start; padding: 2px 0 5px;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
   }
+  .aerohub-topbar-actions > * { flex-shrink: 0; }
+  .aerohub-main { width: 100%; min-width: 0; margin: 0; padding: 10px; }
 
-  .aerohub-topbar-actions > * {
-    flex-shrink: 0;
+  /* Mobile drawer must be above the header and every dashboard card. */
+  .aerohub-sidebar, .aerohub-shell--collapsed .aerohub-sidebar {
+    position: fixed !important; top: 0 !important; bottom: 0 !important;
+    left: 0 !important; right: auto !important;
+    width: min(310px, 86vw) !important; max-width: 86vw;
+    height: 100dvh; z-index: 10002 !important;
+    transform: translate3d(-110%, 0, 0) !important;
+    visibility: hidden; pointer-events: none;
+    transition: transform .22s ease, visibility .22s ease;
+    overflow: hidden; display: flex; flex-direction: column;
+    background: #10243e;
   }
-
-  .aerohub-main {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    margin: 0;
-    padding: 10px;
-    box-sizing: border-box;
+  .aerohub-sidebar.aerohub-sidebar--open,
+  .aerohub-shell--collapsed .aerohub-sidebar.aerohub-sidebar--open {
+    transform: translate3d(0, 0, 0) !important;
+    visibility: visible !important; pointer-events: auto !important;
   }
-
-  /* Ensure sidebar is a drawer rather than a page-width column. */
-  .aerohub-sidebar {
-    width: min(290px, 86vw);
-    max-width: 86vw;
+  .aerohub-mobile-backdrop {
+    display: block !important; position: fixed !important; inset: 0 !important;
+    width: 100vw; height: 100dvh; border: 0;
+    background: rgba(8, 20, 36, .6); z-index: 10001 !important;
   }
-
-  .aerohub-sidebar--open {
-    transform: translateX(0);
-  }
-}
-
-@media (max-width: 390px) {
-  .aerohub-topbar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .aerohub-station-meta {
-    grid-row: 2;
-    justify-self: start;
-    padding-left: 46px;
-  }
-
-  .aerohub-topbar-actions {
-    grid-row: 3;
-  }
+  .aerohub-sidebar-close { display: block; margin-left: auto; }
+  .aerohub-sidebar-collapse { display: none; }
+  .aerohub-shell--collapsed .aerohub-sidebar-brand { justify-content: flex-start; }
+  .aerohub-shell--collapsed .aerohub-nav-link { justify-content: flex-start; }
+  .aerohub-sidebar-nav { min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 }
