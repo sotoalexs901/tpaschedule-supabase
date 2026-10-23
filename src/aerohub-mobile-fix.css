@@ -1,0 +1,150 @@
+/* AeroStation Hub 2.0 - mobile header and layout patch
+   Import AFTER aerohub-shell.css. No changes to application logic. */
+@media (max-width: 760px) {
+  html, body, #root {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  .aerohub-shell,
+  .aerohub-shell--collapsed {
+    --sidebar-width: 0px;
+    width: 100%;
+    min-width: 0;
+    display: block;
+  }
+
+  .aerohub-workspace {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  /* Keep the station header visible instead of expanding horizontally. */
+  .aerohub-topbar {
+    position: relative;
+    top: auto;
+    z-index: 45;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 12px;
+    box-sizing: border-box;
+  }
+
+  .aerohub-topbar-left {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .aerohub-mobile-menu {
+    flex: 0 0 auto;
+    min-width: 38px;
+    min-height: 38px;
+    padding: 6px 9px;
+  }
+
+  .aerohub-station-heading {
+    min-width: 0;
+  }
+
+  .aerohub-station-heading strong {
+    font-size: 13px;
+  }
+
+  .aerohub-station-heading small {
+    display: block;
+    max-width: 155px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+  }
+
+  .aerohub-station-meta {
+    margin: 0;
+    min-width: 0;
+    gap: 8px;
+    justify-self: end;
+  }
+
+  .aerohub-station-clock strong,
+  .aerohub-station-weather strong {
+    font-size: 12px;
+  }
+
+  .aerohub-station-clock small,
+  .aerohub-station-weather small {
+    font-size: 9px;
+  }
+
+  .aerohub-station-weather {
+    padding-left: 8px;
+    gap: 4px;
+  }
+
+  .aerohub-station-weather > span {
+    font-size: 18px;
+  }
+
+  /* Pills scroll inside their own row, never push the dashboard wider. */
+  .aerohub-topbar-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 2px 0 5px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .aerohub-topbar-actions > * {
+    flex-shrink: 0;
+  }
+
+  .aerohub-main {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+
+  /* Ensure sidebar is a drawer rather than a page-width column. */
+  .aerohub-sidebar {
+    width: min(290px, 86vw);
+    max-width: 86vw;
+  }
+
+  .aerohub-sidebar--open {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 390px) {
+  .aerohub-topbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .aerohub-station-meta {
+    grid-row: 2;
+    justify-self: start;
+    padding-left: 46px;
+  }
+
+  .aerohub-topbar-actions {
+    grid-row: 3;
+  }
+}
