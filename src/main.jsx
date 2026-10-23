@@ -1,10 +1,11 @@
 // src/main.jsx
-import './aerohub-mobile-fix.css';
+
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import "./styles.css";
-
+import './styles.css';
+import './aerohub-shell.css';
+import './aerohub-mobile-fix.css';
 import { UserProvider, useUser } from "./UserContext.jsx";
 
 import {
