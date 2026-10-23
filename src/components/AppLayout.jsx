@@ -1635,6 +1635,14 @@ export default function AppLayout() {
           {(!sidebarCollapsed || menuOpen) && <div><strong>{visibleName}</strong><small>{visiblePosition}</small></div>}
         </div>
       </aside>
+      <button
+        type="button"
+        className="aerohub-mobile-floating-menu"
+        onClick={() => setMenuOpen(v => !v)}
+        aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+        aria-controls="aerohub-primary-navigation"
+        aria-expanded={menuOpen}
+      >{menuOpen ? "×" : "☰"}</button>
       <div className="aerohub-workspace">
         <header className="aerohub-topbar">
           <div className="aerohub-topbar-left">
