@@ -1605,9 +1605,9 @@ export default function AppLayout() {
   // ============================================================
 
   return (
-    <div className={`aerohub-shell ${sidebarCollapsed ? "aerohub-shell--collapsed" : ""}`}>
+    <div className={`aerohub-shell ${sidebarCollapsed ? "aerohub-shell--collapsed" : ""} ${menuOpen ? "aerohub-shell--menu-open" : ""}`}>
       {menuOpen && <button className="aerohub-mobile-backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
-      <aside className={`aerohub-sidebar ${menuOpen ? "aerohub-sidebar--open" : ""}`} aria-label="Main navigation">
+      <aside id="aerohub-primary-navigation" className={`aerohub-sidebar ${menuOpen ? "aerohub-sidebar--open" : ""}`} aria-label="Main navigation">
         <div className="aerohub-sidebar-brand">
           <img src="/icons/aerostation-icon.png" alt="" />
           {(!sidebarCollapsed || menuOpen) && <div><strong>{APP_NAME}</strong><small>{APP_SUBTITLE}</small></div>}
@@ -1638,7 +1638,7 @@ export default function AppLayout() {
       <div className="aerohub-workspace">
         <header className="aerohub-topbar">
           <div className="aerohub-topbar-left">
-            <button type="button" className="aerohub-mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Open navigation">☰</button>
+            <button type="button" className="aerohub-mobile-menu" onClick={() => setMenuOpen(v => !v)} aria-expanded={menuOpen} aria-controls="aerohub-primary-navigation" aria-label={menuOpen ? "Close navigation" : "Open navigation"}>☰</button>
             <div className="aerohub-station-heading"><strong>TPA <span>· Tampa International Airport</span></strong><small>Station Operations Center</small></div>
           </div>
           <div className="aerohub-station-meta">
